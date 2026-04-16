@@ -476,3 +476,78 @@ fn test_no_steps_total_flag() {
     assert!(state.get("code_steps_total").is_none());
     assert!(state.get("code_step").is_none());
 }
+
+#[test]
+fn test_corrupt_json_state_file_returns_error() {
+    // State file exists but contains invalid JSON. run_impl's
+    // serde_json::from_str returns Err, propagated via `?` to
+    // run() which hits the Err branch (json_error + process::exit).
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "corrupt-state";
+    let repo = create_git_repo(dir.path(), branch);
+    let state_dir = flow_states_dir(&repo);
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(state_dir.join(format!("{}.json", branch)), "not valid json").unwrap();
+
+    let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "should exit non-zero for corrupt state"
+    );
+    // json_error prints to stdout, not stderr
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Invalid JSON") || stdout.contains("state file"),
+        "stdout should mention the parse failure: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_mode_string_config_via_subprocess() {
+    // Exercises resolve_mode's `cfg.is_string()` branch through
+    // the subprocess path (run → run_impl → resolve_mode).
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "mode-string";
+    let repo = create_git_repo(dir.path(), branch);
+    let skills = json!({"flow-code": "auto"});
+    create_state(&repo, branch, "flow-plan", "complete", Some(skills));
+
+    let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
+    assert_eq!(output.status.code(), Some(0));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["mode"]["commit"], "auto");
+    assert_eq!(data["mode"]["continue"], "auto");
+}
+
+#[test]
+fn test_mutate_state_failure_returns_error() {
+    // Make the state file read-only after creation so mutate_state
+    // fails when trying to write back. Exercises run_impl's
+    // mutate_state Err path.
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "mutate-fail";
+    let repo = create_git_repo(dir.path(), branch);
+    create_state(&repo, branch, "flow-plan", "complete", None);
+
+    let state_file = flow_states_dir(&repo).join(format!("{}.json", branch));
+    fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
+
+    let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
+    // Restore permissions for cleanup
+    let _ = fs::set_permissions(&state_file, fs::Permissions::from_mode(0o644));
+    assert_eq!(output.status.code(), Some(0)); // Application error, not process error
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap()
+            .contains("State mutation failed"),
+        "should report mutation failure: {}",
+        data["message"]
+    );
+}
