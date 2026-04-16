@@ -124,6 +124,35 @@ mod tests {
     }
 
     #[test]
+    fn update_step_array_state_returns_true_but_preserves_array() {
+        // Exercises the non-object guard at line 24-25. When the state
+        // root is an array, the guard fires and returns without writing
+        // start_step. mutate_state itself succeeds (no IO error) so
+        // update_step returns true — but the array root is preserved.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, "[]").unwrap();
+        let result = update_step(&path, 5);
+        assert!(result);
+        let content = fs::read_to_string(&path).unwrap();
+        let val: Value = serde_json::from_str(&content).unwrap();
+        assert!(val.is_array(), "array root must be preserved");
+    }
+
+    #[test]
+    fn update_step_string_state_returns_true_but_preserves_string() {
+        // Same guard, different type variant (string root).
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, "\"hello\"").unwrap();
+        let result = update_step(&path, 5);
+        assert!(result);
+        let content = fs::read_to_string(&path).unwrap();
+        let val: Value = serde_json::from_str(&content).unwrap();
+        assert!(val.is_string(), "string root must be preserved");
+    }
+
+    #[test]
     fn test_update_step_preserves_other_fields() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");

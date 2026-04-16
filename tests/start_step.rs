@@ -23,6 +23,7 @@ fn run_start_step(repo: &Path, args: &[&str]) -> Output {
         .args(args)
         .current_dir(repo)
         .env("CLAUDE_PLUGIN_ROOT", env!("CARGO_MANIFEST_DIR"))
+        .env_remove("FLOW_CI_RUNNING")
         .output()
         .unwrap()
 }
@@ -122,4 +123,34 @@ fn start_step_handles_corrupt_state_without_crash() {
     assert_eq!(output.status.code(), Some(0));
     let data = parse_output(&output);
     assert_eq!(data["status"], "skipped");
+}
+
+#[test]
+fn start_step_exec_wrapping_enters_exec_path() {
+    // Exercises the exec() wrapping path (lines 42-63 in start_step.rs).
+    // In the test environment the binary lives under target/llvm-cov-target/
+    // so the 3-parent bin/flow resolution points at a nonexistent path.
+    // exec() fails and the error handler at lines 62-63 fires (eprintln +
+    // exit 1). This covers the subcommand-wrapping branch and the exec
+    // error handler.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let state = json!({"branch": "feat", "current_phase": "flow-start"});
+    write_state(&repo, "feat", &state);
+
+    let output = run_start_step(&repo, &["--step", "1", "--branch", "feat", "--", "version"]);
+
+    // exec() fails → eprintln! "Failed to exec" → exit 1
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "exec should fail in test env; stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Failed to exec"),
+        "stderr should contain the exec error message, got: {}",
+        stderr
+    );
 }

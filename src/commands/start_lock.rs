@@ -705,6 +705,40 @@ mod tests {
     }
 
     #[test]
+    fn release_error_when_file_persists() {
+        // Exercises the release error branch: after remove_file fails
+        // (permission denied on read-only dir), the file still exists
+        // and release returns status="error".
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let queue_dir = dir.path().join("queue");
+        fs::create_dir(&queue_dir).unwrap();
+        let entry = queue_dir.join("locked-feature");
+        fs::write(&entry, "").unwrap();
+
+        // Drop guard restores permissions even if an assertion panics,
+        // preventing leaked read-only dirs in the temp tree.
+        struct PermGuard(std::path::PathBuf);
+        impl Drop for PermGuard {
+            fn drop(&mut self) {
+                let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
+            }
+        }
+
+        fs::set_permissions(&queue_dir, fs::Permissions::from_mode(0o555)).unwrap();
+        let _guard = PermGuard(queue_dir.clone());
+
+        let result = release("locked-feature", &queue_dir);
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("persists after unlink"));
+        assert_eq!(result["was_present"], true);
+    }
+
+    #[test]
     fn test_list_queue_future_mtime_not_stale() {
         // A queue entry with mtime in the future (clock skew) must not be
         // classified as stale. The stale check computes (now - mtime); a future

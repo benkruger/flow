@@ -11,6 +11,8 @@ use std::process::{Command, Output};
 
 use serde_json::{json, Value};
 
+use std::os::unix::fs::PermissionsExt;
+
 use common::{flow_states_dir, parse_output};
 
 // --- Test helpers ---
@@ -242,4 +244,134 @@ fn test_slack_skipped_without_config() {
         data.get("slack").is_none() || data["slack"]["status"] == "skipped",
         "Slack should be skipped without config"
     );
+}
+
+#[test]
+fn test_finalize_missing_state_file() {
+    // Exercises lines 48-52: state file does not exist → status=error.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo(dir.path());
+    // Do NOT create a state file
+
+    let output = run_start_finalize(&repo, "nonexistent-branch", &[]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("No state file"),
+        "error should mention missing state file, got: {}",
+        data["message"]
+    );
+}
+
+#[test]
+fn test_finalize_corrupt_state_returns_error() {
+    // Exercises lines 83-90: mutate_state fails on corrupt JSON → status=error.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo(dir.path());
+    let state_dir = flow_states_dir(&repo);
+    fs::create_dir_all(&state_dir).unwrap();
+    // Write corrupt content that exists but is not valid JSON
+    fs::write(state_dir.join("corrupt-branch.json"), "not json{{{").unwrap();
+
+    let output = run_start_finalize(&repo, "corrupt-branch", &[]);
+    assert_eq!(output.status.code(), Some(0));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("State mutation failed"),
+        "error should mention mutation failure, got: {}",
+        data["message"]
+    );
+}
+
+// Note: lines 103-107 (phase_complete error guard) are defensive dead
+// code — phase_complete() in phase_transition.rs always returns
+// status="ok". The guard protects against a future change to
+// phase_complete that introduces an error return. No test can trigger
+// this path without modifying phase_complete itself.
+
+#[test]
+fn test_slack_success_stores_thread_ts() {
+    // Exercises lines 132-160: Slack success path stores thread_ts
+    // and appends to notifications[]. Uses a fake curl stub that
+    // returns a valid Slack response.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo(dir.path());
+    create_state_file(&repo, "slack-ok-branch", "auto");
+
+    // Create a curl stub that returns a valid Slack response
+    let stub_dir = repo.join(".stub-bin");
+    fs::create_dir_all(&stub_dir).unwrap();
+    let curl_stub = stub_dir.join("curl");
+    fs::write(
+        &curl_stub,
+        "#!/bin/bash\necho '{\"ok\": true, \"ts\": \"1234567890.123456\"}'",
+    )
+    .unwrap();
+    fs::set_permissions(&curl_stub, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args([
+            "start-finalize",
+            "--branch",
+            "slack-ok-branch",
+            "--pr-url",
+            "https://github.com/test/repo/pull/42",
+        ])
+        .current_dir(&repo)
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-fake-token")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C12345")
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                stub_dir.display(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        )
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    // The response should include the slack field since it wasn't skipped
+    assert!(
+        data.get("slack").is_some(),
+        "Response should include slack field when Slack call succeeds"
+    );
+    assert_eq!(data["slack"]["status"], "ok");
+
+    // Check state file for thread_ts and notifications
+    let state_path = flow_states_dir(&repo).join("slack-ok-branch.json");
+    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    assert_eq!(
+        state["slack_thread_ts"], "1234567890.123456",
+        "thread_ts should be stored in state"
+    );
+    let notifications = state["notifications"].as_array();
+    assert!(
+        notifications.is_some() && !notifications.unwrap().is_empty(),
+        "notifications[] should be populated"
+    );
+    assert_eq!(notifications.unwrap()[0]["phase"], "flow-start");
+    assert_eq!(notifications.unwrap()[0]["ts"], "1234567890.123456");
 }
