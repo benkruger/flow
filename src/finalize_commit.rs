@@ -1,9 +1,14 @@
 //! Commit, cleanup, pull, push.
 //!
-//! Enforces CI before committing: calls [`ci::run_impl`] as the first step
-//! in [`run_impl`]. If CI fails, returns an error and commits nothing.
-//! When the CI sentinel is fresh (CI already passed for this tree state),
-//! the check noops instantly — no overhead on the happy path.
+//! Two gates run before committing:
+//!
+//! 1. **CI gate** — calls [`ci::run_impl`]. If CI fails, returns an error
+//!    and commits nothing. When the CI sentinel is fresh (CI already passed
+//!    for this tree state), the check noops instantly.
+//! 2. **Plan-deviation gate** — calls [`plan_deviation::run_impl`] to
+//!    cross-reference plan-named test fixture values against the staged
+//!    diff. If an unacknowledged drift is detected, returns an error with
+//!    `step = "plan_deviation"` and a structured stderr message.
 //!
 //! Usage:
 //!   bin/flow finalize-commit <message-file> <branch>
@@ -12,7 +17,7 @@
 //!   Success:   {"status": "ok", "sha": "<commit-hash>", "pull_merged": <bool>}
 //!   Warning:   {"status": "ok", "sha": "", "pull_merged": true, "warning": "..."}
 //!   Conflict:  {"status": "conflict", "files": ["file1.py", ...]}
-//!   Error:     {"status": "error", "step": "ci|commit|pull|push", "message": "..."}
+//!   Error:     {"status": "error", "step": "ci|plan_deviation|commit|pull|push", "message": "..."}
 
 use std::fs;
 use std::process::{Command, Stdio};

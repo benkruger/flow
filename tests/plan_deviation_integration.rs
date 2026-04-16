@@ -307,4 +307,13 @@ fn finalize_commit_diff_diverges_without_log_blocks() {
         stderr
     );
     assert_eq!(code, 1);
+
+    // Verify the gate recorded the block in the durable log.
+    let log_path = repo.join(".flow-states").join(format!("{}.log", BRANCH));
+    let log_content = fs::read_to_string(&log_path).unwrap_or_default();
+    assert!(
+        log_content.contains("plan_deviation (blocked"),
+        "log file must contain the blocked-entry line; log={}",
+        log_content
+    );
 }

@@ -13,8 +13,7 @@
 //! drift it blocks the commit with a structured stderr message
 //! and a JSON error response on stdout; the error message names
 //! the deviation and supplies the exact `bin/flow log` command
-//! the user should run to acknowledge it. Task 9 of the feature
-//! plan wires this module into `finalize_commit::run_impl`.
+//! the user should run to acknowledge it.
 //!
 //! ## Detection scope
 //!
@@ -139,17 +138,25 @@ fn diff_fn_regex() -> &'static Regex {
 /// Cached regex for double-quoted string literals in any
 /// context. Used on the diff side to harvest every literal
 /// appearing on added lines inside a plan-named test body.
+/// Escape-aware: `\"` inside the literal does not terminate
+/// the match, symmetric with the plan-side assignment regex.
 fn double_quoted_literal_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r#""([^"]*)""#).expect("double-quoted literal regex must compile"))
+    RE.get_or_init(|| {
+        Regex::new(r#""([^"\\]*(?:\\.[^"\\]*)*)""#)
+            .expect("double-quoted literal regex must compile")
+    })
 }
 
 /// Cached regex for single-quoted string literals in any
-/// context. Applies to Python-style fixtures embedded in Rust
-/// fence blocks when the plan author uses single quotes.
+/// context. Escape-aware: `\'` inside the literal does not
+/// terminate the match, symmetric with the double-quoted form.
 fn single_quoted_literal_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r#"'([^']*)'"#).expect("single-quoted literal regex must compile"))
+    RE.get_or_init(|| {
+        Regex::new(r#"'([^'\\]*(?:\\.[^'\\]*)*)'"#)
+            .expect("single-quoted literal regex must compile")
+    })
 }
 
 /// Scan plan prose and a staged diff for plan signature
@@ -206,6 +213,11 @@ fn extract_plan_triples(plan_content: &str) -> Vec<(String, String, String, usiz
     let mut in_block = false;
     let mut block_lang = String::new();
     let mut current_fn: Option<String> = None;
+    // Track the triple count at the last fence-open so an
+    // unclosed fence can be rewound — triples collected after
+    // the stray opener are discarded. Mirrors the rewind
+    // discipline in `scope_enumeration::compute_fenced_mask`.
+    let mut triples_at_fence_open: Option<usize> = None;
 
     for (rel_idx, line) in lines.iter().enumerate().take(tasks_end).skip(tasks_start) {
         let trimmed = line.trim_start();
@@ -216,9 +228,11 @@ fn extract_plan_triples(plan_content: &str) -> Vec<(String, String, String, usiz
                 in_block = false;
                 block_lang.clear();
                 current_fn = None;
+                triples_at_fence_open = None;
             } else {
                 in_block = true;
                 block_lang = rest.trim().to_string();
+                triples_at_fence_open = Some(triples.len());
             }
             continue;
         }
@@ -256,14 +270,31 @@ fn extract_plan_triples(plan_content: &str) -> Vec<(String, String, String, usiz
         }
     }
 
+    // Unclosed fence at section end: discard triples collected
+    // inside the stray opener so prose that follows an unclosed
+    // fence does not produce false-positive deviations.
+    if let Some(rewind_to) = triples_at_fence_open {
+        triples.truncate(rewind_to);
+    }
+
     triples
 }
 
 /// Returns the 0-indexed line number of the first line after a
 /// `## Tasks` heading, or `None` if no such heading exists.
+/// Tracks Markdown fence state so a `## Tasks` literal inside a
+/// fenced code block in a preceding section is not matched.
 fn find_tasks_section_start(lines: &[&str]) -> Option<usize> {
+    let mut in_fence = false;
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim_start();
+        if trimmed.starts_with("```") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
         if trimmed == "## Tasks" || trimmed.starts_with("## Tasks ") {
             return Some(i + 1);
         }
@@ -273,12 +304,13 @@ fn find_tasks_section_start(lines: &[&str]) -> Option<usize> {
 
 /// Returns the 0-indexed line number of the next level-2
 /// Markdown heading after `start`, or `lines.len()` if no such
-/// heading exists before EOF. Level-3+ headings (`### `) do not
-/// terminate the Tasks section.
+/// heading exists before EOF. `"### "` does not start with
+/// `"## "` (byte 2 is `#` not ` `), so level-3+ headings are
+/// excluded by the `starts_with` check alone.
 fn find_next_level_2_heading(lines: &[&str], start: usize) -> usize {
     for (i, line) in lines.iter().enumerate().skip(start) {
         let trimmed = line.trim_start();
-        if trimmed.starts_with("## ") && !trimmed.starts_with("### ") {
+        if trimmed.starts_with("## ") {
             return i;
         }
     }
@@ -355,9 +387,22 @@ fn extract_diff_literals(staged_diff: &str) -> HashMap<String, HashSet<String>> 
 /// `log_content` is empty or carries those tokens on separate
 /// lines.
 pub fn acknowledged(deviation: &Deviation, log_content: &str) -> bool {
-    log_content
-        .lines()
-        .any(|line| line.contains(&deviation.test_name) && line.contains(&deviation.plan_value))
+    // Empty plan_value would match any line (`"".is_empty()` is
+    // always true for `contains`). Guard against trivial
+    // acknowledgment of empty-string fixture values.
+    if deviation.plan_value.is_empty() {
+        return false;
+    }
+    log_content.lines().any(|line| {
+        if !line.contains(&deviation.test_name) {
+            return false;
+        }
+        // Verify plan_value appears independently — not just as
+        // a substring of test_name. Remove all occurrences of
+        // test_name from the line, then check the remainder.
+        let without_test_name = line.replace(&deviation.test_name, "");
+        without_test_name.contains(&deviation.plan_value)
+    })
 }
 
 /// Run the full plan-deviation detection gate for a branch.
