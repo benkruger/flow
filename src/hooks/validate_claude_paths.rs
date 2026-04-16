@@ -43,11 +43,14 @@ pub fn is_protected_path(file_path: &str) -> bool {
         }
     }
 
-    // Check for CLAUDE.md at any level.
-    if let Some(filename) = components.last() {
-        if filename.eq_ignore_ascii_case("CLAUDE.md") {
-            return true;
-        }
+    // Check for CLAUDE.md at any level. The empty-string early-return
+    // above guarantees `components` is non-empty, so `.last()` is always
+    // `Some`. Substituting `""` for the unreachable None case keeps the
+    // comparison safe (`""` cannot match `"CLAUDE.md"` under any casing)
+    // and avoids producing a None arm that no test can reach.
+    let filename = components.last().copied().unwrap_or("");
+    if filename.eq_ignore_ascii_case("CLAUDE.md") {
+        return true;
     }
 
     false
