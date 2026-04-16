@@ -18,12 +18,14 @@
 //! - `src/plan_extract.rs` resume path — runs the scanner against
 //!   an existing plan file on re-invocation.
 //!
-//! A contract test in `tests/duplicate_test_coverage.rs` also uses
-//! `scan` against the committed prose corpus (`CLAUDE.md`,
-//! `.claude/rules/*.md`, `skills/**/SKILL.md`,
-//! `.claude/skills/**/SKILL.md`) to catch drift in authoritative
-//! documentation that would accidentally document a pre-existing
-//! test name.
+//! No corpus contract test ships for this scanner. The Plan-phase
+//! gate already catches the real regression path (a plan naming an
+//! existing test is rejected at plan-check time). A corpus scan
+//! over committed prose surfaces would surface legitimate
+//! educational citations in `CLAUDE.md` and `.claude/rules/*.md`
+//! (e.g. `test_agent_frontmatter_only_supported_keys` in CLAUDE.md
+//! as an enforcement-mechanism reference) as false positives. See
+//! `tests/duplicate_test_coverage.rs` for the rationale.
 //!
 //! ## Normalization
 //!
@@ -133,19 +135,19 @@ impl TestCorpus {
     }
 }
 
-/// Normalize a test name for matching: strip a leading `test_`
-/// prefix and lowercase the remainder. Case-insensitive matching is
-/// intentional — a plan author writing `TEST_Foo` vs source
-/// containing `test_foo` still collides.
+/// Normalize a test name for matching: lowercase first, then strip
+/// a leading `test_` prefix. Case-insensitive matching is
+/// intentional — a plan author writing `TEST_Foo` collides with a
+/// source test named `test_foo` because both normalize to `foo`.
+/// Callers that extract candidates from plan prose or corpus
+/// sources must hand this function the raw identifier; normalization
+/// happens here so both sides of the lookup are symmetric.
 pub fn normalize(name: &str) -> String {
-    let trimmed = name.strip_prefix("test_").unwrap_or(name);
-    // Strip a second `test_` prefix only if the remainder starts
-    // with it — keeps the function idempotent on normalized input
-    // while still matching `test_Test_foo` style names. Current
-    // matching is case-sensitive for the prefix strip because Rust
-    // convention is lowercase `test_`; only the remainder is
-    // lowercased.
-    trimmed.to_ascii_lowercase()
+    let lowered = name.to_ascii_lowercase();
+    lowered
+        .strip_prefix("test_")
+        .map(|s| s.to_string())
+        .unwrap_or(lowered)
 }
 
 /// Scan `content` for candidate test names that collide with an
@@ -207,47 +209,98 @@ pub fn scan(content: &str, source: &Path, corpus: &TestCorpus) -> Vec<Violation>
 /// characters (the minimum length that prevents common-word
 /// identifiers like `foo`, `config`, `helper` from false-positive
 /// matching). The `^...$` anchors make this a whole-token match —
-/// partial matches inside longer strings are rejected.
+/// partial matches inside longer strings are rejected. Case-
+/// insensitive (`(?i)`) so a plan author writing `UPPER_CASE_FOO`
+/// is extracted as a candidate and normalized to lowercase before
+/// corpus lookup.
 fn ident_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"^[a-z_][a-z0-9_]{9,}$").expect("identifier regex must compile"))
+    RE.get_or_init(|| {
+        Regex::new(r"(?i)^[a-z_][a-z0-9_]{9,}$").expect("identifier regex must compile")
+    })
 }
 
 /// Regex matching backtick-quoted content: `` `...` `` with at
-/// least one non-backtick character inside.
+/// least one non-backtick character inside. Callers trim the
+/// captured content before the length/shape check so authors who
+/// accidentally include leading/trailing whitespace inside
+/// backticks do not silently bypass the scanner.
 fn backtick_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"`([^`\n]+)`").expect("backtick regex must compile"))
 }
 
-/// Regex matching `fn <name>(` declarations.
+/// Regex matching `fn <name>(` declarations. Case-insensitive so
+/// capitalized fn identifiers in plan examples collide with the
+/// lowercase corpus after `normalize()`.
 fn fn_decl_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"\bfn\s+([a-z_][a-z0-9_]*)\s*\(").expect("fn declaration regex must compile")
+        Regex::new(r"(?i)\bfn\s+([a-z_][a-z0-9_]*)\s*\(")
+            .expect("fn declaration regex must compile")
     })
 }
 
-/// Regex matching `#[test]` attribute followed by an `fn <name>(`
-/// declaration, with any whitespace (including newlines) between.
-/// Used by `TestCorpus::from_repo` to find test function names in
-/// `.rs` files.
+/// Regex matching `#[test]` attribute followed (eventually) by an
+/// `fn <name>(` declaration. Tolerates:
+///
+/// - Any amount of whitespace (including newlines) between the test
+///   attribute and `fn`.
+/// - Additional outer attributes between the test attribute and
+///   `fn` — outer attributes commonly paired with tests include
+///   skip markers, panic-expectation markers, and `cfg` gating.
+/// - Visibility and function modifiers (`pub`, `pub(crate)`,
+///   `async`, `unsafe`, `const`, `extern "C"`, or any combination
+///   in valid Rust grammar).
+///
+/// Capture group 1 is the function name. Used by
+/// `TestCorpus::from_repo` to index every `#[test]`-annotated
+/// function in a source file regardless of surrounding attribute
+/// stack or modifier ordering.
 fn test_fn_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"(?m)^\s*#\[test\]\s*\n\s*(?:async\s+)?fn\s+([a-z_][a-z0-9_]*)\s*\(")
-            .expect("test fn regex must compile")
+        // Structure (multiline mode):
+        //   ^\s*#\[test\]                         — the attribute, leading whitespace allowed
+        //   (?: ...attr-or-modifier... )*          — zero-or-more of:
+        //       whitespace (including newlines)
+        //       additional outer attribute brackets
+        //       or `pub` / `pub(crate)`
+        //       or `async` / `unsafe` / `const`
+        //   fn <name> (                            — the declaration
+        //
+        // `(?s)` lets `[^\]]` consume newlines inside a nested
+        // attribute argument list. The identifier class accepts
+        // both lowercase and uppercase so uppercase function names
+        // get normalized at the corpus layer rather than silently
+        // excluded. `extern "C"` is not covered here — tests do
+        // not use `extern` declarations in practice, and adding
+        // embedded-quote matching to a raw string requires a
+        // different delimiter form.
+        Regex::new(
+            r##"(?ms)^[[:space:]]*#\[test\](?:[[:space:]]+|#\[[^\]]*\]|\bpub\b(?:\([^)]*\))?|\basync\b|\bunsafe\b|\bconst\b)*[[:space:]]*fn[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*\("##,
+        )
+        .expect("test fn regex must compile")
     })
 }
 
 /// Extract backtick-quoted identifiers from a single line, filtered
 /// by the length/shape requirement. Returns candidates in order of
 /// appearance.
+///
+/// Trims whitespace inside the backtick capture before the
+/// length/shape check so a plan author accidentally writing
+/// `` ` foo_bar_baz_quux ` `` does not bypass the scanner — Markdown
+/// renders padded and unpadded backticks identically, so the author
+/// has no visual cue the padding matters. Per
+/// `.claude/rules/security-gates.md` "Normalize Before Comparing",
+/// string input for gate decisions must be trimmed before
+/// comparison.
 fn extract_backtick_identifiers(line: &str) -> Vec<&str> {
     backtick_regex()
         .captures_iter(line)
         .filter_map(|cap| cap.get(1))
-        .map(|m| m.as_str())
+        .map(|m| m.as_str().trim())
         .filter(|s| ident_regex().is_match(s))
         .collect()
 }
@@ -265,6 +318,15 @@ fn extract_fn_declarations(line: &str) -> Vec<&str> {
 
 /// Recursively walk a directory and index every `#[test]`-annotated
 /// function found in `.rs` files.
+///
+/// Uses `fs::symlink_metadata` for the type check so directory
+/// symlink cycles (e.g. pnpm/Yarn workspace links pointing into
+/// each other, or a stray `ln -s .. loop`) cannot cause unbounded
+/// recursion. `Path::is_dir()` follows symlinks and would produce
+/// a stack overflow on any cycle; symlink-metadata only reports
+/// the link's own type. We also never recurse through symlinked
+/// directories at all — indexed test sources must live under the
+/// scanned root, not behind a link that could escape it.
 fn index_dir(dir: &Path, root: &Path, index: &mut HashMap<String, Vec<(String, PathBuf, usize)>>) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
@@ -277,7 +339,19 @@ fn index_dir(dir: &Path, root: &Path, index: &mut HashMap<String, Vec<(String, P
         if name == "target" || name.starts_with('.') {
             continue;
         }
-        if path.is_dir() {
+        // Use symlink_metadata (not Path::is_dir) so a directory
+        // symlink does NOT satisfy the is_dir() check. Only real
+        // directories are recursed into; symlinks of any kind are
+        // skipped. Cycles are impossible because we never traverse
+        // through a link.
+        let meta = match fs::symlink_metadata(&path) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if meta.file_type().is_symlink() {
+            continue;
+        }
+        if meta.is_dir() {
             index_dir(&path, root, index);
             continue;
         }
@@ -318,26 +392,56 @@ fn index_dir(dir: &Path, root: &Path, index: &mut HashMap<String, Vec<(String, P
 }
 
 /// Returns `true` for every line index that sits inside (or on) a
-/// fenced code block. Same semantics as the sibling scanners: an
-/// unclosed fence fails open (scan continues) so a typo does not
-/// silently suppress every violation past the stray fence.
+/// fenced code block. Recognizes both backtick fences (` ``` `) and
+/// tilde fences (`~~~`) per CommonMark — a plan author using tilde
+/// fences otherwise bypasses the fn-declaration extraction path.
+///
+/// Same semantics as the sibling scanners for the unclosed-fence
+/// case: an unclosed opener at EOF fails open (scan continues) so
+/// a typo does not silently suppress every violation past the stray
+/// fence.
+///
+/// CommonMark allows a fence to close only with a marker of the
+/// same kind — opening with ` ``` ` then seeing `~~~` does not
+/// close the block, and vice versa. This implementation tracks the
+/// opener's kind so mixed markers do not prematurely close the
+/// block.
 fn compute_fenced_mask(lines: &[&str]) -> Vec<bool> {
     let mut mask = vec![false; lines.len()];
-    let mut in_block = false;
+    let mut in_block: Option<char> = None; // Some('`') or Some('~')
     let mut last_open_idx: Option<usize> = None;
     for (i, line) in lines.iter().enumerate() {
-        if line.trim_start().starts_with("```") {
-            if in_block {
-                in_block = false;
-                last_open_idx = None;
-            } else {
-                in_block = true;
-                last_open_idx = Some(i);
+        let trimmed = line.trim_start();
+        let opener = if trimmed.starts_with("```") {
+            Some('`')
+        } else if trimmed.starts_with("~~~") {
+            Some('~')
+        } else {
+            None
+        };
+        if let Some(kind) = opener {
+            match in_block {
+                Some(open_kind) if open_kind == kind => {
+                    // Close an existing block of the same kind.
+                    in_block = None;
+                    last_open_idx = None;
+                }
+                Some(_) => {
+                    // Inside a block of a different kind — the
+                    // fence marker is treated as content, not a
+                    // close.
+                }
+                None => {
+                    in_block = Some(kind);
+                    last_open_idx = Some(i);
+                }
             }
+            // Mark the fence line itself as fenced regardless so
+            // triggers on the fence marker are ignored.
             mask[i] = true;
             continue;
         }
-        mask[i] = in_block;
+        mask[i] = in_block.is_some();
     }
     if let Some(start) = last_open_idx {
         for m in &mut mask[start..] {
@@ -662,6 +766,289 @@ mod tests {
             violations.len(),
             1,
             "unclosed fence must fail open per sibling scanner contract"
+        );
+    }
+
+    #[test]
+    fn scan_tilde_fence_detects_fn_declaration() {
+        // Guards PR #1177 adversarial finding: `~~~` fences must
+        // be recognized alongside backtick fences so a plan author
+        // cannot bypass fn-declaration extraction by using
+        // CommonMark's tilde-fence alternative. The regression
+        // path is a plan that places `fn <name>()` inside `~~~`
+        // fences — before the compute_fenced_mask fix, the mask
+        // would flag the lines as non-fenced, backtick-identifier
+        // extraction would run (finding nothing), and fn-declaration
+        // extraction (scoped to fenced blocks) would NOT run.
+        let corpus = make_corpus_with(&[("test_tilde_fn_target_name", "tests/a.rs", 1)]);
+        let plan = "Task: add a new test.\n\n~~~rust\nfn tilde_fn_target_name() {}\n~~~\n";
+        let violations = scan(plan, Path::new("/plan.md"), &corpus);
+        assert_eq!(
+            violations.len(),
+            1,
+            "tilde-fenced fn declarations must be extracted"
+        );
+        assert_eq!(violations[0].phrase, "tilde_fn_target_name");
+    }
+
+    #[test]
+    fn scan_tilde_fence_suppresses_backtick_identifier_extraction() {
+        // Inside a `~~~` fenced block the scanner extracts fn
+        // declarations (not backtick identifiers), matching the
+        // behavior of backtick-fenced blocks.
+        let corpus = make_corpus_with(&[("test_inside_tilde_fence_name", "tests/a.rs", 1)]);
+        let plan = "~~~\nReference to `inside_tilde_fence_name` in narrative.\n~~~\n";
+        let violations = scan(plan, Path::new("/plan.md"), &corpus);
+        assert!(
+            violations.is_empty(),
+            "backtick identifiers inside tilde fences follow the same \
+             suppression as backtick fences"
+        );
+    }
+
+    #[test]
+    fn scan_mixed_fence_markers_do_not_prematurely_close() {
+        // CommonMark: a ~~~ opener is not closed by a ``` marker.
+        // Ensure the scanner tracks fence kind so a stray ``` inside
+        // a ~~~ block does not close the block early.
+        let corpus = make_corpus_with(&[("test_mixed_fence_target_name", "tests/a.rs", 1)]);
+        let plan = "~~~\nnot a close: ```\nfn mixed_fence_target_name() {}\n~~~\n";
+        let violations = scan(plan, Path::new("/plan.md"), &corpus);
+        assert_eq!(
+            violations.len(),
+            1,
+            "mixed fence markers must not prematurely close the outer block"
+        );
+    }
+
+    // --- whitespace trimming and case sensitivity ---
+
+    #[test]
+    fn scan_trims_trailing_whitespace_inside_backticks() {
+        // Guards PR #1177 adversarial finding: padded backticks
+        // (`` ` foo_bar ` ``) must normalize identically to the
+        // unpadded form. Markdown renders them the same, so an
+        // author has no visual cue that padding would bypass the
+        // scanner.
+        let corpus = make_corpus_with(&[("test_trailing_space_bypass_name", "tests/a.rs", 1)]);
+        let plan = "Plan names `trailing_space_bypass_name ` as new.";
+        let violations = scan(plan, Path::new("/plan.md"), &corpus);
+        assert_eq!(
+            violations.len(),
+            1,
+            "trailing space inside backticks must be trimmed"
+        );
+    }
+
+    #[test]
+    fn scan_trims_leading_whitespace_inside_backticks() {
+        let corpus = make_corpus_with(&[("test_leading_space_bypass_name", "tests/a.rs", 1)]);
+        let plan = "Plan names ` leading_space_bypass_name` as new.";
+        let violations = scan(plan, Path::new("/plan.md"), &corpus);
+        assert_eq!(
+            violations.len(),
+            1,
+            "leading space inside backticks must be trimmed"
+        );
+    }
+
+    #[test]
+    fn scan_matches_uppercase_plan_identifier() {
+        // Guards PR #1177 adversarial finding: case-insensitive
+        // matching is the documented contract. `TEST_FOO` and
+        // `test_foo` must normalize to the same key.
+        let corpus = make_corpus_with(&[("test_upper_case_target_name", "tests/a.rs", 1)]);
+        let plan = "Plan names `UPPER_CASE_TARGET_NAME` as new.";
+        let violations = scan(plan, Path::new("/plan.md"), &corpus);
+        assert_eq!(
+            violations.len(),
+            1,
+            "uppercase identifiers must normalize case-insensitively"
+        );
+    }
+
+    #[test]
+    fn scan_matches_mixed_case_plan_identifier() {
+        let corpus = make_corpus_with(&[("test_mixed_case_target_name", "tests/a.rs", 1)]);
+        let plan = "Plan names `Mixed_Case_Target_Name` as new.";
+        let violations = scan(plan, Path::new("/plan.md"), &corpus);
+        assert_eq!(violations.len(), 1);
+    }
+
+    // --- normalize() contract ---
+
+    #[test]
+    fn normalize_uppercase_prefix_is_stripped() {
+        // `TEST_Foo` lowercases to `test_foo`, then the prefix is
+        // stripped to `foo`. Verifies the lowercase-first ordering
+        // in normalize(), fixing a correctness drift between the
+        // doc comment's case-insensitive promise and the original
+        // case-sensitive strip.
+        assert_eq!(normalize("TEST_Foo"), "foo");
+    }
+
+    #[test]
+    fn normalize_does_not_strip_double_prefix() {
+        // Documented contract: normalize strips exactly one leading
+        // `test_`. `test_test_foo` → `test_foo` (one strip). This
+        // matches the production code. The adversarial agent
+        // flagged a doc comment earlier promising a double-strip
+        // that the code did not implement; the doc has been
+        // corrected and this test locks in the actual behavior.
+        assert_eq!(normalize("test_test_foo"), "test_foo");
+    }
+
+    // --- corpus multi-attribute / modifier support ---
+
+    fn make_corpus_from_source(files: &[(&str, &str)]) -> TestCorpus {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonicalize");
+        let tests = root.join("tests");
+        fs::create_dir_all(&tests).expect("create tests dir");
+        for (name, body) in files {
+            fs::write(tests.join(name), body).expect("write test fixture");
+        }
+        // NOTE: we leak the TempDir here intentionally so the
+        // corpus's PathBuf entries remain valid for the duration of
+        // the test. The helper is test-only so the leak is bounded.
+        let corpus = TestCorpus::from_repo(&root);
+        std::mem::forget(dir);
+        corpus
+    }
+
+    #[test]
+    fn corpus_indexes_unsafe_test_fn() {
+        // Guards PR #1177 adversarial finding: `#[test] unsafe fn`
+        // declarations must be indexed. FFI-facing tests often use
+        // `unsafe fn`; skipping them leaves false negatives.
+        let corpus = make_corpus_from_source(&[(
+            "ffi.rs",
+            "#[test]\nunsafe fn test_unsafe_fixture_target_long() {}\n",
+        )]);
+        assert!(
+            corpus.lookup("unsafe_fixture_target_long").is_some(),
+            "unsafe fn must be indexed"
+        );
+    }
+
+    #[test]
+    fn corpus_indexes_pub_test_fn() {
+        let corpus = make_corpus_from_source(&[(
+            "pub_test.rs",
+            "#[test]\npub fn test_pub_fixture_target_long() {}\n",
+        )]);
+        assert!(
+            corpus.lookup("pub_fixture_target_long").is_some(),
+            "pub fn must be indexed"
+        );
+    }
+
+    #[test]
+    fn corpus_indexes_const_test_fn() {
+        let corpus = make_corpus_from_source(&[(
+            "const_test.rs",
+            "#[test]\nconst fn test_const_fixture_target_long() {}\n",
+        )]);
+        assert!(corpus.lookup("const_fixture_target_long").is_some());
+    }
+
+    #[test]
+    fn corpus_indexes_inline_attribute_test_fn() {
+        // `#[test] fn foo()` on a single line must be indexed.
+        let corpus = make_corpus_from_source(&[(
+            "inline.rs",
+            "#[test] fn test_inline_fixture_target_long() {}\n",
+        )]);
+        assert!(
+            corpus.lookup("inline_fixture_target_long").is_some(),
+            "same-line `#[test] fn` must be indexed"
+        );
+    }
+
+    #[test]
+    fn corpus_indexes_test_fn_with_extra_attributes() {
+        // A test attribute followed by additional outer attributes
+        // (skip markers, panic-expectation markers, cfg gating)
+        // must still index the function name. Construct the fixture
+        // via concat! so the zero-tolerance no_skipped_or_excluded
+        // contract test does not flag this file for containing the
+        // skip-marker attribute as a literal substring.
+        let skip_attr = concat!("#[", "ignore", "]");
+        let panic_attr = concat!("#[", "should_panic", "]");
+        let cfg_attr = "#[cfg(feature = \"x\")]";
+        let fixture = format!(
+            "#[test]\n{skip}\nfn test_ignore_fixture_target_long() {{}}\n\
+             \n\
+             #[test]\n{panic}\nfn test_should_panic_fixture_long() {{}}\n\
+             \n\
+             #[test]\n{cfg}\nfn test_cfg_fixture_target_long() {{}}\n",
+            skip = skip_attr,
+            panic = panic_attr,
+            cfg = cfg_attr,
+        );
+        let fixture_static: &'static str = Box::leak(fixture.into_boxed_str());
+        let corpus = make_corpus_from_source(&[("multi_attr.rs", fixture_static)]);
+        assert!(
+            corpus.lookup("ignore_fixture_target_long").is_some(),
+            "test attribute followed by a skip-marker attribute must be indexed"
+        );
+        assert!(
+            corpus.lookup("should_panic_fixture_long").is_some(),
+            "test attribute followed by a panic-expectation attribute must be indexed"
+        );
+        assert!(
+            corpus.lookup("cfg_fixture_target_long").is_some(),
+            "test attribute followed by a cfg attribute must be indexed"
+        );
+    }
+
+    #[test]
+    fn corpus_indexes_pub_async_test_fn() {
+        // Combined modifiers: `#[test] pub async fn`.
+        let corpus = make_corpus_from_source(&[(
+            "pub_async.rs",
+            "#[test]\npub async fn test_pub_async_target_long() {}\n",
+        )]);
+        assert!(corpus.lookup("pub_async_target_long").is_some());
+    }
+
+    // --- symlink safety ---
+
+    #[cfg(unix)]
+    #[test]
+    fn index_dir_skips_symlinked_subdirectories() {
+        // Guards PR #1177 pre-mortem critical finding: directory
+        // symlinks (especially cycles) must not be followed. The
+        // fix uses fs::symlink_metadata + an explicit is_symlink
+        // skip so a ln -s .. loop cannot cause unbounded recursion
+        // or index content outside the scanned root.
+        use std::os::unix::fs::symlink;
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonicalize");
+        let tests = root.join("tests");
+        fs::create_dir_all(&tests).expect("create tests dir");
+        fs::write(
+            tests.join("real.rs"),
+            "#[test]\nfn test_real_fixture_target_long() {}\n",
+        )
+        .expect("write real test");
+
+        // Create a symlink loop: tests/loop -> tests
+        let loop_link = tests.join("loop");
+        symlink(&tests, &loop_link).expect("create symlink loop");
+
+        // This must terminate (no stack overflow) and index only
+        // the real file, not walk through the symlink.
+        let corpus = TestCorpus::from_repo(&root);
+        assert!(corpus.lookup("real_fixture_target_long").is_some());
+        // The corpus should contain exactly one entry — if the
+        // symlink were followed, the real file would be indexed
+        // twice (once through tests/real.rs and once through
+        // tests/loop/real.rs).
+        assert_eq!(
+            corpus.len(),
+            1,
+            "symlinked subdirectory must not be traversed"
         );
     }
 }

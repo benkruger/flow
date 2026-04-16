@@ -473,6 +473,15 @@ vocabulary and the motivating PR #1155 incident.
 
 ### Duplicate Test Coverage Check
 
+Plans that name a test function matching an existing test in the
+suite typically waste a Code Review cycle — the duplicate is
+caught by the reviewer agent and one of the two tests is deleted,
+work that could have been prevented at Plan time. This subsection
+gates Plan-phase completion on a mechanical scanner so the
+duplication is surfaced before the Code phase writes the second
+test. Violations carry `existing_test` and `existing_file` fields
+so the author can see both sides of the collision inline.
+
 When a plan names a new test function whose normalized form (strip
 `test_` prefix, lowercase) matches an existing test in the repo's
 corpus, the duplicate-test-coverage scanner flags the proposal so

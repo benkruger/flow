@@ -192,7 +192,14 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 /// Serialize a duplicate-test-coverage violation with its extra
 /// `existing_test` and `existing_file` fields so the skill's repair
 /// loop can name both the proposed test and its pre-existing twin.
-fn duplicate_violation_to_tagged_json(v: &duplicate_test_coverage::Violation) -> Value {
+///
+/// Shared with `src/plan_extract.rs::violations_response` — both
+/// callsites MUST produce the same JSON shape so the skill's repair
+/// loop renders consistent output regardless of which path triggered
+/// the failure. If a field is added to
+/// `duplicate_test_coverage::Violation`, updating this helper
+/// automatically updates both callers.
+pub(crate) fn duplicate_violation_to_tagged_json(v: &duplicate_test_coverage::Violation) -> Value {
     json!({
         "file": v.file.display().to_string(),
         "line": v.line,
@@ -502,61 +509,36 @@ mod tests {
         );
     }
 
-    /// The duplicate-test-coverage scanner runs inside `run_impl`
-    /// against the real test corpus. A plan fixture that names an
-    /// existing test — here, the canonical PR #1173 incident name
-    /// `stop_continue_qa_pending_fallback_blocks` — must produce a
-    /// `duplicate-test-coverage` violation with `existing_test` and
-    /// `existing_file` fields populated so the skill's repair loop
-    /// can point the author at both the proposed and pre-existing
-    /// test locations.
+    /// Hermetic unit test for the duplicate-test-coverage JSON
+    /// serialization. Builds a synthetic `Violation` from the
+    /// scanner module and serializes it via the shared helper, so
+    /// the test does not depend on the live test corpus and will
+    /// not break if any specific test in the repo is renamed. The
+    /// end-to-end scanner-against-corpus behavior is covered by
+    /// the hermetic integration tests in
+    /// `src/duplicate_test_coverage.rs` that build a `TestCorpus`
+    /// from a `TempDir` fixture.
     #[test]
-    fn run_impl_aggregates_duplicate_violations() {
-        let tmp = std::env::temp_dir().join(format!("plan-check-dup-{}.md", std::process::id()));
-        // Name a test that exists in the worktree's tests/hooks.rs
-        // (`stop_continue_qa_pending_fallback_blocks` from PR #1173).
-        // Prose-only — no scope-enumeration or external-input-audit
-        // triggers.
-        let plan_content = "## Tasks\n\n\
-            Write `stop_continue_qa_pending_fallback_blocks` as a new subprocess test.\n";
-        std::fs::write(&tmp, plan_content).expect("write fixture plan");
-
-        let args = Args {
-            branch: None,
-            plan_file: Some(tmp.to_string_lossy().to_string()),
+    fn duplicate_violation_json_shape_has_all_required_fields() {
+        let v = duplicate_test_coverage::Violation {
+            file: PathBuf::from("/tmp/plan.md"),
+            line: 42,
+            phrase: "foo_bar_baz_quux".to_string(),
+            context: "Plan names `foo_bar_baz_quux` as a new test.".to_string(),
+            existing_test: "test_foo_bar_baz_quux".to_string(),
+            existing_file: "tests/hooks.rs:1499".to_string(),
         };
-        let result = run_impl(&args).expect("run_impl returns business response");
-        let _ = std::fs::remove_file(&tmp);
-
-        assert_eq!(result["status"], "error");
-        let violations = result["violations"]
-            .as_array()
-            .expect("violations is an array");
-        let dup: Vec<&Value> = violations
-            .iter()
-            .filter(|v| v["rule"].as_str() == Some("duplicate-test-coverage"))
-            .collect();
-        assert!(
-            !dup.is_empty(),
-            "expected at least one duplicate-test-coverage violation, got rules: {:?}",
-            violations
-                .iter()
-                .map(|v| v["rule"].as_str().unwrap_or(""))
-                .collect::<Vec<_>>()
+        let json = duplicate_violation_to_tagged_json(&v);
+        assert_eq!(json["file"], "/tmp/plan.md");
+        assert_eq!(json["line"], 42);
+        assert_eq!(json["phrase"], "foo_bar_baz_quux");
+        assert_eq!(
+            json["context"],
+            "Plan names `foo_bar_baz_quux` as a new test."
         );
-        // Each duplicate violation must carry existing_test + existing_file.
-        for v in &dup {
-            assert!(
-                v["existing_test"].as_str().is_some(),
-                "existing_test field missing from violation: {:?}",
-                v
-            );
-            assert!(
-                v["existing_file"].as_str().is_some(),
-                "existing_file field missing from violation: {:?}",
-                v
-            );
-        }
+        assert_eq!(json["rule"], "duplicate-test-coverage");
+        assert_eq!(json["existing_test"], "test_foo_bar_baz_quux");
+        assert_eq!(json["existing_file"], "tests/hooks.rs:1499");
     }
 
     /// Regression: `run_impl` must NOT panic when the current git

@@ -371,15 +371,9 @@ fn violations_response(
         }));
     }
     for v in dup_violations {
-        violations_json.push(json!({
-            "file": v.file.display().to_string(),
-            "line": v.line,
-            "phrase": v.phrase,
-            "context": v.context,
-            "rule": "duplicate-test-coverage",
-            "existing_test": v.existing_test,
-            "existing_file": v.existing_file,
-        }));
+        // Shared helper with `plan_check.rs` so the JSON shape
+        // stays in sync across both gate callsites.
+        violations_json.push(crate::plan_check::duplicate_violation_to_tagged_json(v));
     }
     let total = scope_violations.len() + audit_violations.len() + dup_violations.len();
     // Reuse the message builder from plan_check so both gate

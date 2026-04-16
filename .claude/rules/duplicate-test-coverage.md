@@ -27,25 +27,41 @@ could have prevented.
 
 ## The Rule
 
-The scanner normalizes every candidate test name by stripping a
-leading `test_` prefix and lowercasing the remainder. It then looks
-up the normalized form in the committed test corpus
-(`tests/**/*.rs` integration tests plus
-`src/**/*.rs` inline `#[test]`-annotated functions). Any match is a
-violation.
+The scanner normalizes every candidate test name via
+`normalize(name)` — lowercase first, then strip a leading `test_`
+prefix — so matching is symmetric across case and prefix. It then
+looks up the normalized form in the committed test corpus
+(`tests/**/*.rs` integration tests plus `src/**/*.rs` inline
+`#[test]`-annotated functions). Any match is a violation.
+
+The corpus regex recognizes `#[test]` attributes followed by a
+function declaration regardless of:
+
+- Intervening attributes (`#[ignore]`,
+  `#[should_panic(expected = "...")]`, `#[cfg(feature = "...")]`,
+  `#[cfg_attr(...)]`).
+- Modifiers (`pub`, `pub(crate)`, `async`, `unsafe`, `const`,
+  `extern "C"`).
+- Same-line declarations (`#[test] fn foo() {}`) vs. newline-
+  separated forms.
 
 Candidate test names in plan prose come from two sources:
 
-1. **Rust declarations** inside fenced code blocks:
+1. **Rust declarations** inside fenced code blocks (both backtick
+   ` ``` ` and tilde `~~~` fences per CommonMark):
    `fn <snake_name>(` lines.
 2. **Backtick-quoted identifiers** in prose: tokens matching
-   `^[a-z_][a-z0-9_]{9,}$` (length ≥ 10 characters) inside
-   backticks. The length filter prevents common-word identifiers
-   like `foo_bar` from false-positive matching.
+   `(?i)^[a-z_][a-z0-9_]{9,}$` (length ≥ 10 characters,
+   case-insensitive) inside backticks. Captured content is trimmed
+   before the length/shape check so padded backticks like
+   `` ` foo_bar_baz_quux ` `` do not silently bypass the scanner.
+   The length filter prevents common-word identifiers like
+   `foo_bar` from false-positive matching.
 
 The matching is symmetric: a plan naming `test_foo_bar_quux_blocks`
 and an existing `foo_bar_quux_blocks` both normalize to
-`foo_bar_quux_blocks` and collide.
+`foo_bar_quux_blocks` and collide. Case is also symmetric —
+`TEST_FOO_BAR_QUUX_BLOCKS` normalizes identically.
 
 ## Opt-Out Grammar
 
@@ -89,11 +105,32 @@ All three callsites return the same JSON error shape
 `rule="duplicate-test-coverage"` tags, so the repair loop is
 identical regardless of which path triggered the failure.
 
-A corpus contract test in `tests/duplicate_test_coverage.rs`
-covers the committed prose surfaces (`CLAUDE.md`,
-`.claude/rules/*.md`, `skills/**/SKILL.md`,
-`.claude/skills/**/SKILL.md`) so future regressions in those
-surfaces fail CI immediately.
+### No corpus contract test
+
+Unlike the sibling `scope_enumeration` and `external_input_audit`
+rules, this rule intentionally ships without a corpus contract
+test over `CLAUDE.md`, `.claude/rules/*.md`, `skills/**/SKILL.md`,
+and `.claude/skills/**/SKILL.md`. The reason is empirical: the
+first attempt at such a scanner produced 18+ false positives on
+legitimate educational citations — `test_agent_frontmatter_only_supported_keys`
+in CLAUDE.md naming an enforcement mechanism,
+`production_ci_decider_tree_changed_returns_not_skipped` in
+`.claude/rules/extract-helper-refactor.md` as a reference pattern,
+and similar references across 8 rule files.
+
+Per `.claude/rules/tests-guard-real-regressions.md` "Forbidden
+patterns: Duplicate guards for a property already covered by an
+existing plan-check scanner," the corpus scan adds no protection
+on top of the Plan-phase gate already shipped. A plan that
+copy-pastes a test name from committed prose is caught by the
+same `plan_check` invocation that runs over plan content, so the
+documented-name-in-prose path never escapes the gate. Per
+`.claude/rules/scope-enumeration.md` "False-positive sweep before
+expanding the vocabulary" (count ≥ 5 → revert), the corpus scan
+was reverted to a documented empty marker at
+`tests/duplicate_test_coverage.rs`; its module doc comment
+records the rationale so future sessions do not re-derive this
+conclusion.
 
 ## How to Apply
 
@@ -136,7 +173,8 @@ merge-conflict trip-wire.
 ## Cross-References
 
 - `.claude/rules/tests-guard-real-regressions.md` — the prose
-  discipline this gate enforces mechanically.
+  discipline this gate enforces mechanically. Also the authority
+  that explains why no corpus contract test ships.
 - `.claude/rules/scope-enumeration.md` — structurally sibling
   gate; shares the opt-out grammar and three-callsite topology.
 - `.claude/rules/external-input-audit-gate.md` — the other
@@ -147,4 +185,5 @@ merge-conflict trip-wire.
 - `src/duplicate_test_coverage.rs` — the scanner implementation.
 - `src/plan_check.rs` — the standard-path gate.
 - `src/plan_extract.rs` — the extracted and resume gates.
-- `tests/duplicate_test_coverage.rs` — the corpus contract test.
+- `tests/duplicate_test_coverage.rs` — documented empty marker
+  explaining why no corpus contract test ships.
