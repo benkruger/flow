@@ -73,15 +73,12 @@ pub fn create_state(queue: &[Value], state_dir: &Path) -> Value {
         "current_index": null,
     });
 
-    match serde_json::to_string_pretty(&state) {
-        Ok(content) => {
-            if let Err(e) = std::fs::write(&state_path, content) {
-                return json!({"status": "error", "message": format!("Failed to write state: {}", e)});
-            }
-            json!({"status": "ok"})
-        }
-        Err(e) => json!({"status": "error", "message": format!("Failed to serialize: {}", e)}),
+    // serde_json::to_string_pretty on a `json!({...})` literal is infallible.
+    let content = serde_json::to_string_pretty(&state).expect("json! literal serializes");
+    if let Err(e) = std::fs::write(&state_path, content) {
+        return json!({"status": "error", "message": format!("Failed to write state: {}", e)});
     }
+    json!({"status": "ok"})
 }
 
 /// Mark queue item at index as in_progress.
@@ -1206,5 +1203,352 @@ mod tests {
 
         let result = run_impl(&args).unwrap();
         assert_eq!(result["status"], "error");
+    }
+
+    // --- build_queue_item ---
+
+    #[test]
+    fn build_queue_item_missing_issue_number_defaults_to_zero() {
+        let item = build_queue_item(&json!({"title": "No number"}));
+        assert_eq!(item["issue_number"], 0);
+        assert_eq!(item["title"], "No number");
+    }
+
+    #[test]
+    fn build_queue_item_missing_title_defaults_to_empty() {
+        let item = build_queue_item(&json!({"issue_number": 42}));
+        assert_eq!(item["issue_number"], 42);
+        assert_eq!(item["title"], "");
+    }
+
+    // --- start_issue edge branches ---
+
+    #[test]
+    fn start_issue_negative_index_returns_out_of_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        create_state(&sample_queue(), &state_dir);
+        let state_path = state_dir.join("orchestrate.json");
+
+        let result = start_issue(&state_path, -1);
+        assert_eq!(result["status"], "error");
+        assert!(result["message"].as_str().unwrap().contains("out of range"));
+    }
+
+    #[test]
+    fn start_issue_queue_item_non_object_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let state_path = state_dir.join("orchestrate.json");
+        // Valid object root with a non-object queue entry — bypasses the
+        // root-level guard and hits the per-item guard at start_issue:120-124.
+        fs::write(
+            &state_path,
+            serde_json::to_string_pretty(&json!({
+                "started_at": "2026-03-20T22:00:00-07:00",
+                "completed_at": null,
+                "queue": [42],
+                "current_index": null,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let result = start_issue(&state_path, 0);
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("Queue item is not a JSON object"));
+    }
+
+    #[test]
+    fn start_issue_mutate_state_io_error() {
+        let dir = tempfile::tempdir().unwrap();
+        // state_path points to a directory — Path::exists() returns true
+        // (short-circuits the "not found" early-return), then mutate_state's
+        // OpenOptions::open fails with EISDIR.
+        let state_path = dir.path().join("orchestrate.json");
+        fs::create_dir(&state_path).unwrap();
+
+        let result = start_issue(&state_path, 0);
+        assert_eq!(result["status"], "error");
+        // mutate_state's Io variant formats as "I/O error: ...".
+        assert!(
+            result["message"].as_str().unwrap().contains("I/O error"),
+            "expected I/O error, got: {}",
+            result["message"]
+        );
+    }
+
+    // --- record_outcome edge branches ---
+
+    #[test]
+    fn record_outcome_negative_index_returns_out_of_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        create_state(&sample_queue(), &state_dir);
+        let state_path = state_dir.join("orchestrate.json");
+
+        let result = record_outcome(&state_path, -1, "completed", None, None, None);
+        assert_eq!(result["status"], "error");
+        assert!(result["message"].as_str().unwrap().contains("out of range"));
+    }
+
+    #[test]
+    fn record_outcome_queue_item_non_object_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let state_path = state_dir.join("orchestrate.json");
+        fs::write(
+            &state_path,
+            serde_json::to_string_pretty(&json!({
+                "started_at": "2026-03-20T22:00:00-07:00",
+                "completed_at": null,
+                "queue": ["not-an-object"],
+                "current_index": null,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let result = record_outcome(&state_path, 0, "completed", None, None, None);
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("Queue item is not a JSON object"));
+    }
+
+    #[test]
+    fn record_outcome_empty_pr_url_not_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        create_state(&sample_queue(), &state_dir);
+        let state_path = state_dir.join("orchestrate.json");
+
+        let result = record_outcome(&state_path, 0, "completed", Some(""), None, None);
+        assert_eq!(result["status"], "ok");
+
+        let content = fs::read_to_string(&state_path).unwrap();
+        let state: Value = serde_json::from_str(&content).unwrap();
+        // pr_url should still be null (the empty-string filter prevented the write).
+        assert!(state["queue"][0]["pr_url"].is_null());
+    }
+
+    #[test]
+    fn record_outcome_empty_branch_not_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        create_state(&sample_queue(), &state_dir);
+        let state_path = state_dir.join("orchestrate.json");
+
+        let result = record_outcome(&state_path, 0, "completed", None, Some(""), None);
+        assert_eq!(result["status"], "ok");
+
+        let content = fs::read_to_string(&state_path).unwrap();
+        let state: Value = serde_json::from_str(&content).unwrap();
+        assert!(state["queue"][0]["branch"].is_null());
+    }
+
+    #[test]
+    fn record_outcome_empty_reason_not_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        create_state(&sample_queue(), &state_dir);
+        let state_path = state_dir.join("orchestrate.json");
+
+        let result = record_outcome(&state_path, 0, "failed", None, None, Some(""));
+        assert_eq!(result["status"], "ok");
+
+        let content = fs::read_to_string(&state_path).unwrap();
+        let state: Value = serde_json::from_str(&content).unwrap();
+        assert!(state["queue"][0]["reason"].is_null());
+    }
+
+    // --- read_state edge branches ---
+
+    #[test]
+    fn read_state_corrupt_json_returns_invalid_json_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = dir.path().join("orchestrate.json");
+        fs::write(&state_path, "{bad json").unwrap();
+
+        let result = read_state(&state_path);
+        assert_eq!(result["status"], "error");
+        assert!(result["message"].as_str().unwrap().contains("Invalid JSON"));
+    }
+
+    #[test]
+    fn read_state_fs_read_error_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        // state_path points to a directory — fs::read_to_string returns Err.
+        let state_path = dir.path().join("orchestrate.json");
+        fs::create_dir(&state_path).unwrap();
+
+        let result = read_state(&state_path);
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("Failed to read"));
+    }
+
+    // --- next_issue edge branches ---
+
+    #[test]
+    fn next_issue_corrupt_json_returns_invalid_json_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = dir.path().join("orchestrate.json");
+        fs::write(&state_path, "{bad json").unwrap();
+
+        let result = next_issue(&state_path);
+        assert_eq!(result["status"], "error");
+        assert!(result["message"].as_str().unwrap().contains("Invalid JSON"));
+    }
+
+    #[test]
+    fn next_issue_no_queue_key_returns_done() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = dir.path().join("orchestrate.json");
+        fs::write(&state_path, "{}").unwrap();
+
+        let result = next_issue(&state_path);
+        assert_eq!(result["status"], "done");
+    }
+
+    #[test]
+    fn next_issue_fs_read_error_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = dir.path().join("orchestrate.json");
+        fs::create_dir(&state_path).unwrap();
+
+        let result = next_issue(&state_path);
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("Failed to read"));
+    }
+
+    // --- create_state edge branches ---
+
+    #[test]
+    fn create_state_existing_corrupt_json_overwrites() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        // Existing but corrupt — the `if let Ok(existing) = ...` guard
+        // at create_state:56 is False, so the "already in progress" check
+        // is skipped and the file gets overwritten.
+        fs::write(state_dir.join("orchestrate.json"), "{bad json").unwrap();
+
+        let result = create_state(&sample_queue(), &state_dir);
+        assert_eq!(result["status"], "ok");
+
+        let content = fs::read_to_string(state_dir.join("orchestrate.json")).unwrap();
+        let state: Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(state["queue"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn orchestrate_create_state_write_failure_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        // Pre-create the target path as a directory — fs::write EISDIRs.
+        fs::create_dir(state_dir.join("orchestrate.json")).unwrap();
+
+        let result = create_state(&sample_queue(), &state_dir);
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("Failed to write state"));
+    }
+
+    #[test]
+    fn create_state_create_dir_all_failure_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        // The "parent" for state_dir is a regular file — create_dir_all
+        // cannot descend into it, returning Err.
+        let blocker = dir.path().join("blocker");
+        fs::write(&blocker, "not a directory").unwrap();
+        let state_dir = blocker.join(".flow-states");
+
+        let result = create_state(&sample_queue(), &state_dir);
+        assert_eq!(result["status"], "error");
+        assert!(result["message"]
+            .as_str()
+            .unwrap()
+            .contains("Failed to create directory"));
+    }
+
+    // --- run_impl --create error branches ---
+
+    #[test]
+    fn run_impl_create_missing_queue_file_returns_err() {
+        let dir = tempfile::tempdir().unwrap();
+        let args = Args {
+            create: true,
+            start_issue: None,
+            record_outcome: None,
+            complete: false,
+            read: false,
+            next: false,
+            queue_file: Some(
+                dir.path()
+                    .join("nonexistent.json")
+                    .to_string_lossy()
+                    .to_string(),
+            ),
+            state_dir: Some(dir.path().to_string_lossy().to_string()),
+            state_file: None,
+            outcome: None,
+            pr_url: None,
+            branch: None,
+            reason: None,
+        };
+
+        let result = run_impl(&args);
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("Failed to read queue file"),
+            "expected read-failure err, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn run_impl_create_malformed_queue_json_returns_err() {
+        let dir = tempfile::tempdir().unwrap();
+        let queue_file = dir.path().join("queue.json");
+        fs::write(&queue_file, "{bad json").unwrap();
+
+        let args = Args {
+            create: true,
+            start_issue: None,
+            record_outcome: None,
+            complete: false,
+            read: false,
+            next: false,
+            queue_file: Some(queue_file.to_string_lossy().to_string()),
+            state_dir: Some(dir.path().to_string_lossy().to_string()),
+            state_file: None,
+            outcome: None,
+            pr_url: None,
+            branch: None,
+            reason: None,
+        };
+
+        let result = run_impl(&args);
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("Invalid queue JSON"),
+            "expected parse-failure err, got: {}",
+            err
+        );
     }
 }
