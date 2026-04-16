@@ -868,3 +868,61 @@ fn branch_override_does_not_call_fetch_issue_info() {
     assert_eq!(data["status"], "ok");
     assert_eq!(data["branch"], "pre-derived-branch");
 }
+
+// --- Error paths in run() ---
+
+#[test]
+fn prompt_file_nonexistent_returns_error() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "rails", None);
+
+    let output = run_init_state(
+        dir.path(),
+        &[
+            "prompt error test",
+            "--prompt-file",
+            "/nonexistent/path/to/prompt",
+        ],
+    );
+
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "Should fail when prompt file does not exist"
+    );
+    let data = parse_stdout(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "prompt_file");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Could not read prompt file"),
+        "Error should mention prompt file read failure"
+    );
+}
+
+#[test]
+fn create_state_write_failure_returns_error() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "rails", None);
+
+    // Create .flow-states as a regular FILE (not a directory).
+    // This blocks fs::create_dir_all inside create_state, triggering the
+    // error closure at init_state.rs line 102.
+    fs::write(dir.path().join(".flow-states"), "not a directory").unwrap();
+
+    let output = run_init_state(dir.path(), &["write failure test"]);
+
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "Should fail when .flow-states cannot be created as a directory"
+    );
+    let data = parse_stdout(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(
+        data["step"], "create_state",
+        "Error should come from the create_state step"
+    );
+}
