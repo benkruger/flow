@@ -255,3 +255,14 @@ fn claude_md_no_test_coverage_references() {
          bullet — coverage waivers are forbidden."
     );
 }
+
+// Stale tombstones for PR #1176 and PR #1154 removed — both PRs merged
+// before the oldest open PR was created, so no active branch can
+// resurrect the deleted code via merge conflict. The structural scanner
+// `source_contains_pub_fn_run_with_process_exit` and its unit test
+// module `source_scanner_tests` were also removed as orphaned helpers.
+//
+// PR #1176: format_complete_summary, format_issues_summary,
+//   format_pr_timings — pub fn run wrappers replaced by run_impl_main
+// PR #1154: TUI refactor — run_terminal, activate_iterm_tab, open_url,
+//   find_bin_flow, module-level run, atty_check removed

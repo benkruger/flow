@@ -177,14 +177,20 @@ check requires fixing violations in the same commit").
 **Execute all tasks in the group sequentially.** Run the full TDD
 cycle (write failing test, implement, refactor, run targeted tests)
 and the Architecture Check independently. After completing each
-task's TDD cycle, record it and persist the task name for TUI display:
+task's TDD cycle, record it and persist the task name for TUI display.
+Both updates can go in a single call:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_task=<n>
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_task=<n> --set code_task_name="<description>"
 ```
 
+For atomic groups with multiple tasks, batch all counter advances in
+one call. `apply_updates` processes `--set` arguments sequentially
+against mutating in-memory state, so each +1 step is validated in
+order. Example for tasks 3-5:
+
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_task_name="<description>"
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_task=3 --set code_task=4 --set code_task=5 --set code_task_name="<description>"
 ```
 
 Do NOT run `bin/flow ci` and do NOT commit after intermediate tasks.

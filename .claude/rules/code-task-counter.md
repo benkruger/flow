@@ -56,12 +56,27 @@ discipline applies: increment the counter once per task in the
 group before the single commit lands. The atomic-group rule
 governs commit boundaries; this rule governs the counter.
 
+For atomic groups, batch all counter advances in a single CLI
+call using multiple `--set` arguments:
+
+```text
+bin/flow set-timestamp --set code_task=4 --set code_task=5 --set code_task=6
+```
+
+`apply_updates` processes `--set` arguments sequentially against
+mutating in-memory state — each +1 step is validated in order
+within the call. This avoids N separate CLI invocations while
+preserving the +1 invariant.
+
 ## Enforcement
 
 `bin/flow set-timestamp --set code_task=<n>` enforces the
-"increment by exactly 1" invariant at the Rust layer — the
-command rejects any attempt to skip values. This rule documents
-the convention; the command enforces it mechanically.
+"increment by exactly 1" invariant per `--set` argument, not per
+CLI invocation. Each `--set code_task=N` in a single call is
+validated against the state as mutated by preceding `--set` args
+in the same call. A jump (e.g., `--set code_task=5` when current
+is 0) is rejected; sequential steps (e.g., `--set code_task=1
+--set code_task=2`) succeed.
 
 ## Cross-References
 

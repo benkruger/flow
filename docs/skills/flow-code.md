@@ -46,7 +46,10 @@ group** with the reason they cannot be committed individually.
 All tasks in the group are executed sequentially — each gets a full TDD
 cycle and its own `code_task` increment — but `bin/flow ci` and commit
 happen once after the last task. The `code_task` counter still increments
-by exactly 1 per task; only the commit is deferred.
+by exactly 1 per task; only the commit is deferred. For efficiency, batch
+all counter advances in a single `set-timestamp` call with multiple
+`--set code_task=N` arguments — `apply_updates` validates each step
+sequentially against the in-memory state.
 
 ---
 
