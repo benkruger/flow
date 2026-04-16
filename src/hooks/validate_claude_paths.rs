@@ -16,6 +16,12 @@ use crate::flow_paths::FlowStatesDir;
 /// Protected: .claude/rules/ (any depth), .claude/skills/ (any depth),
 /// CLAUDE.md (any level).
 /// Not protected: .claude/settings.json, .claude/settings.local.json.
+///
+/// Matching is ASCII-case-insensitive for `.claude`, `rules`, `skills`,
+/// and `CLAUDE.md` so a caller on a case-insensitive filesystem
+/// (macOS APFS/HFS+ by default) cannot bypass the gate by writing to
+/// `.CLAUDE/rules/foo.md` or `Claude.md` — which resolve to the same
+/// inode as the protected names.
 pub fn is_protected_path(file_path: &str) -> bool {
     if file_path.is_empty() {
         return false;
@@ -27,19 +33,19 @@ pub fn is_protected_path(file_path: &str) -> bool {
         .map(|c| c.as_os_str().to_str().unwrap_or(""))
         .collect();
 
-    // Check for .claude/rules/ or .claude/skills/ at any depth
+    // Check for .claude/rules/ or .claude/skills/ at any depth.
     for (i, comp) in components.iter().enumerate() {
-        if *comp == ".claude" && i + 1 < components.len() {
+        if comp.eq_ignore_ascii_case(".claude") && i + 1 < components.len() {
             let next = components[i + 1];
-            if next == "rules" || next == "skills" {
+            if next.eq_ignore_ascii_case("rules") || next.eq_ignore_ascii_case("skills") {
                 return true;
             }
         }
     }
 
-    // Check for CLAUDE.md at any level
+    // Check for CLAUDE.md at any level.
     if let Some(filename) = components.last() {
-        if *filename == "CLAUDE.md" {
+        if filename.eq_ignore_ascii_case("CLAUDE.md") {
             return true;
         }
     }
@@ -231,6 +237,31 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn test_is_protected_path_mixed_case_claude_md() {
+        // On case-insensitive filesystems (macOS APFS/HFS+ default),
+        // `Claude.md`, `claude.md`, and `CLAUDE.md` all resolve to the
+        // same inode. The gate must reject every variant.
+        assert!(is_protected_path("/project/Claude.md"));
+        assert!(is_protected_path("/project/claude.md"));
+    }
+
+    #[test]
+    fn test_is_protected_path_mixed_case_claude_dir() {
+        // `.CLAUDE/rules/foo.md` and `.Claude/rules/foo.md` must be
+        // blocked on case-insensitive filesystems.
+        assert!(is_protected_path("/project/.CLAUDE/rules/foo.md"));
+        assert!(is_protected_path("/project/.Claude/rules/foo.md"));
+    }
+
+    #[test]
+    fn test_is_protected_path_mixed_case_rules_and_skills() {
+        // The `rules` / `skills` component must also case-fold so a
+        // caller can't write to `.claude/Rules/foo.md` to bypass.
+        assert!(is_protected_path("/project/.claude/Rules/foo.md"));
+        assert!(is_protected_path("/project/.claude/SKILLS/foo/SKILL.md"));
+    }
+
     // --- validate tests ---
 
     #[test]
@@ -355,7 +386,7 @@ mod tests {
         assert!(msg.contains("--content-file"));
     }
 
-    // --- find_project_root_in ---
+    // --- find_project_root_in tests ---
 
     #[test]
     fn find_project_root_in_returns_cwd_when_flow_states_present() {
@@ -387,12 +418,16 @@ mod tests {
         assert_eq!(find_project_root_in(&root), None);
     }
 
-    // --- run_impl_main ---
+    // --- run_impl_main tests ---
 
     /// Seed a fixture laid out as `<root>/.flow-states/<branch>.json`
     /// plus `<root>/.worktrees/<branch>/.git` marker so the worktree
     /// cwd `<root>/.worktrees/<branch>` resolves project_root via
     /// `find_project_root_in` and branch via `detect_branch_from_path`.
+    ///
+    /// Returns the path to `<root>/.worktrees/<branch>` — the worktree
+    /// directory callers pass to `run_impl_main` as `cwd` and use as
+    /// the parent for target `file_path` values.
     fn seed_active_flow_fixture(root: &Path, branch: &str) -> std::path::PathBuf {
         std::fs::create_dir_all(root.join(".flow-states")).unwrap();
         std::fs::write(
