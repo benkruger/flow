@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use super::{detect_branch_from_cwd, is_flow_active, read_hook_input, resolve_main_root};
+use super::{detect_branch_from_path, is_flow_active, read_hook_input, resolve_main_root};
 use crate::flow_paths::FlowStatesDir;
 
 /// Check if a file path targets a protected .claude/ location.
@@ -73,10 +73,13 @@ pub fn validate(file_path: &str, flow_active: bool) -> (bool, String) {
     )
 }
 
-/// Find the project root by walking up from CWD for `.flow-states/` directory.
-fn find_project_root() -> Option<std::path::PathBuf> {
-    let cwd = std::env::current_dir().ok()?;
-    let mut current = cwd.as_path().to_path_buf();
+/// Find the project root by walking up from `cwd` for a `.flow-states/`
+/// directory. Pure helper — accepts `cwd` as a parameter so unit tests
+/// can drive every branch with a `TempDir` fixture. Mirrors the sibling
+/// cwd-injection pattern in `src/hooks/mod.rs`
+/// (`find_settings_and_root_from`, `detect_branch_from_path`).
+fn find_project_root_in(cwd: &Path) -> Option<std::path::PathBuf> {
+    let mut current = cwd.to_path_buf();
     loop {
         if FlowStatesDir::new(&current).path().is_dir() {
             return Some(current);
@@ -88,11 +91,21 @@ fn find_project_root() -> Option<std::path::PathBuf> {
     None
 }
 
-/// Run the validate-claude-paths hook (entry point from CLI).
-pub fn run() {
-    let hook_input = match read_hook_input() {
-        Some(input) => input,
-        None => std::process::exit(0),
+/// Pure core of the validate-claude-paths hook.
+///
+/// Accepts the parsed stdin payload and the resolved cwd as injected
+/// dependencies so every branch is reachable from unit tests with a
+/// `TempDir` fixture. Follows the `run_impl_main` pattern in
+/// `.claude/rules/rust-patterns.md` — `process::exit` and stderr I/O
+/// live in the thin `run()` wrapper below.
+///
+/// Return contract:
+/// - `(0, None)` → allow silently (wrapper exits 0, no stderr)
+/// - `(2, Some(message))` → block (wrapper prints message to stderr, exits 2)
+pub fn run_impl_main(hook_input: Option<serde_json::Value>, cwd: &Path) -> (i32, Option<String>) {
+    let hook_input = match hook_input {
+        Some(v) => v,
+        None => return (0, None),
     };
 
     let tool_input = hook_input
@@ -105,12 +118,12 @@ pub fn run() {
         .and_then(|v| v.as_str())
         .unwrap_or("");
     if file_path.is_empty() {
-        std::process::exit(0);
+        return (0, None);
     }
 
-    let project_root = find_project_root();
+    let project_root = find_project_root_in(cwd);
     let branch = if project_root.is_some() {
-        detect_branch_from_cwd()
+        detect_branch_from_path(cwd)
     } else {
         None
     };
@@ -121,11 +134,25 @@ pub fn run() {
 
     let (allowed, message) = validate(file_path, flow_active);
     if !allowed {
-        eprintln!("{}", message);
-        std::process::exit(2);
+        return (2, Some(message));
     }
 
-    std::process::exit(0);
+    (0, None)
+}
+
+/// Run the validate-claude-paths hook (entry point from CLI).
+///
+/// Thin wrapper: reads stdin, resolves `std::env::current_dir()`,
+/// calls `run_impl_main`, writes any block message to stderr, and
+/// exits with the returned code.
+pub fn run() {
+    let input = read_hook_input();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"));
+    let (code, message) = run_impl_main(input, &cwd);
+    if let Some(m) = message {
+        eprintln!("{}", m);
+    }
+    std::process::exit(code);
 }
 
 #[cfg(test)]
@@ -317,5 +344,138 @@ mod tests {
         assert!(msg.contains("write-rule"));
         assert!(msg.contains("--path"));
         assert!(msg.contains("--content-file"));
+    }
+
+    // --- find_project_root_in ---
+
+    #[test]
+    fn find_project_root_in_returns_cwd_when_flow_states_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        std::fs::create_dir_all(root.join(".flow-states")).unwrap();
+        assert_eq!(find_project_root_in(&root), Some(root));
+    }
+
+    #[test]
+    fn find_project_root_in_returns_ancestor_when_flow_states_in_parent() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        std::fs::create_dir_all(root.join(".flow-states")).unwrap();
+        let deep = root.join("sub").join("deep");
+        std::fs::create_dir_all(&deep).unwrap();
+        assert_eq!(find_project_root_in(&deep), Some(root));
+    }
+
+    #[test]
+    fn find_project_root_in_returns_none_when_no_flow_states() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        // No .flow-states/ at root or any ancestor created by this test.
+        // If a real .flow-states/ exists at a parent of the tempdir on
+        // the developer machine, this test would fail — signaling that
+        // the isolation assumption is wrong. CI runs in a fresh env
+        // without such ancestors.
+        assert_eq!(find_project_root_in(&root), None);
+    }
+
+    // --- run_impl_main ---
+
+    /// Seed a fixture laid out as `<root>/.flow-states/<branch>.json`
+    /// plus `<root>/.worktrees/<branch>/.git` marker so the worktree
+    /// cwd `<root>/.worktrees/<branch>` resolves project_root via
+    /// `find_project_root_in` and branch via `detect_branch_from_path`.
+    fn seed_active_flow_fixture(root: &Path, branch: &str) -> std::path::PathBuf {
+        std::fs::create_dir_all(root.join(".flow-states")).unwrap();
+        std::fs::write(
+            root.join(".flow-states").join(format!("{}.json", branch)),
+            "{}",
+        )
+        .unwrap();
+        let worktree = root.join(".worktrees").join(branch);
+        std::fs::create_dir_all(&worktree).unwrap();
+        std::fs::write(worktree.join(".git"), "gitdir: fake\n").unwrap();
+        worktree
+    }
+
+    #[test]
+    fn run_impl_main_returns_zero_when_hook_input_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let (code, msg) = run_impl_main(None, &root);
+        assert_eq!(code, 0);
+        assert!(msg.is_none());
+    }
+
+    #[test]
+    fn run_impl_main_returns_zero_when_file_path_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let input = serde_json::json!({"tool_input": {}});
+        let (code, msg) = run_impl_main(Some(input), &root);
+        assert_eq!(code, 0);
+        assert!(msg.is_none());
+    }
+
+    #[test]
+    fn run_impl_main_returns_zero_when_no_project_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        // No .flow-states/ anywhere — find_project_root_in returns None,
+        // flow_active is false, so even a protected file_path is allowed.
+        let input = serde_json::json!({
+            "tool_input": {"file_path": "/anything/.claude/rules/foo.md"}
+        });
+        let (code, msg) = run_impl_main(Some(input), &root);
+        assert_eq!(code, 0);
+        assert!(msg.is_none());
+    }
+
+    #[test]
+    fn run_impl_main_returns_block_when_flow_active_and_protected_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let worktree = seed_active_flow_fixture(&root, "feat");
+        let target = worktree.join(".claude/rules/foo.md");
+        let input = serde_json::json!({
+            "tool_input": {"file_path": target.to_string_lossy()}
+        });
+        let (code, msg) = run_impl_main(Some(input), &worktree);
+        assert_eq!(code, 2);
+        let msg = msg.expect("block returns Some(message)");
+        assert!(msg.contains("BLOCKED"), "message: {}", msg);
+    }
+
+    #[test]
+    fn run_impl_main_returns_zero_when_flow_active_and_unprotected_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let worktree = seed_active_flow_fixture(&root, "feat");
+        let target = worktree.join("src/lib.rs");
+        let input = serde_json::json!({
+            "tool_input": {"file_path": target.to_string_lossy()}
+        });
+        let (code, msg) = run_impl_main(Some(input), &worktree);
+        assert_eq!(code, 0);
+        assert!(msg.is_none());
+    }
+
+    #[test]
+    fn run_impl_main_returns_zero_when_branch_none() {
+        // project_root resolves (`.flow-states/` present) but cwd is
+        // outside any `.worktrees/<branch>/` layout, so
+        // `detect_branch_from_path` falls back to `git branch
+        // --show-current` in cwd. TempDir has no git repo → None.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        std::fs::create_dir_all(root.join(".flow-states")).unwrap();
+        // cwd is a sub-directory under root, not under .worktrees/.
+        let sub = root.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        let input = serde_json::json!({
+            "tool_input": {"file_path": "/anything/.claude/rules/foo.md"}
+        });
+        let (code, msg) = run_impl_main(Some(input), &sub);
+        assert_eq!(code, 0);
+        assert!(msg.is_none());
     }
 }
