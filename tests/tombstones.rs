@@ -266,3 +266,63 @@ fn claude_md_no_test_coverage_references() {
 //   format_pr_timings — pub fn run wrappers replaced by run_impl_main
 // PR #1154: TUI refactor — run_terminal, activate_iterm_tab, open_url,
 //   find_bin_flow, module-level run, atty_check removed
+
+// --- Coverage supersession tombstones (issue #1197) ---
+//
+// Two guards inside `start_finalize::run_impl` and `start_gate::run_impl`
+// are unreachable dead code. The deletions close a class of uncoverable
+// branches so the 100% coverage target is achievable. These structural
+// tombstones scan the enclosing `run_impl` function body for the
+// forbidden patterns plus enumerated bypasses.
+
+#[test]
+fn test_start_finalize_no_phase_complete_error_guard() {
+    // Tombstone: removed in PR #1206. phase_complete() is infallible —
+    // status is always "ok". The guard was unreachable dead code.
+    let root = common::repo_root();
+    let path = root.join("src/start_finalize.rs");
+    let content = fs::read_to_string(&path).expect("src/start_finalize.rs must exist");
+    let tail = content
+        .split_once("fn run_impl(")
+        .map(|(_, t)| t)
+        .expect("run_impl must exist");
+    let body = tail
+        .split_once("\npub fn run(")
+        .map(|(b, _)| b)
+        .unwrap_or(tail);
+    for forbidden in &[
+        r#"phase_result["status"] == "error""#,
+        r#"phase_result["status"] != "ok""#,
+    ] {
+        assert!(
+            !body.contains(forbidden),
+            "start_finalize::run_impl must not contain `{}` — phase_complete is infallible",
+            forbidden
+        );
+    }
+}
+
+#[test]
+fn test_start_gate_no_unexpected_deps_status_guard() {
+    // Tombstone: removed in PR #1206. Earlier branches return early on
+    // every non-deps_changed case; reaching this line requires
+    // deps_changed == true, so the guard was unreachable.
+    let root = common::repo_root();
+    let path = root.join("src/start_gate.rs");
+    let content = fs::read_to_string(&path).expect("src/start_gate.rs must exist");
+    let tail = content
+        .split_once("fn run_impl(")
+        .map(|(_, t)| t)
+        .expect("run_impl must exist");
+    let body = tail
+        .split_once("\nfn commit_deps(")
+        .map(|(b, _)| b)
+        .unwrap_or(tail);
+    for forbidden in &["!deps_changed", "deps_changed == false"] {
+        assert!(
+            !body.contains(forbidden),
+            "start_gate::run_impl must not contain `{}` — dead guard, deps_changed is true on reach",
+            forbidden
+        );
+    }
+}

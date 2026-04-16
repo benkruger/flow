@@ -100,13 +100,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         ),
     );
 
-    if phase_result["status"] == "error" {
-        return Ok(json!({
-            "status": "error",
-            "message": phase_result["message"],
-        }));
-    }
-
     let formatted_time = phase_result["formatted_time"]
         .as_str()
         .unwrap_or("<1m")

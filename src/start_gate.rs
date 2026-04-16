@@ -128,11 +128,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
             .get("changes")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-    let deps_changed = deps_result["status"] == "ok"
-        && deps_result
-            .get("changes")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
     let deps_error = deps_result["status"] == "error";
 
     if deps_error {
@@ -156,14 +151,9 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         return Ok(json!({"status": "clean"}));
     }
 
-    // Step 4: Post-deps CI (only if deps changed)
-    if !deps_changed {
-        return Ok(json!({
-            "status": "error",
-            "message": format!("Unexpected deps status: {}", deps_result["status"]),
-            "step": "update_deps",
-        }));
-    }
+    // Step 4: Post-deps CI. Reaching this point means dependencies were
+    // updated (the deps_error, deps_skipped, and deps_no_changes branches
+    // all returned early above).
     let post_ci_args = ci::Args {
         force: false,
         retry: 3,
