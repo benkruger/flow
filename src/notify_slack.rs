@@ -278,33 +278,25 @@ pub fn notify(args: &Args) -> Value {
     })
 }
 
-/// CLI entry with injectable dependencies and writer.
-///
-/// Computes the notify result via `notify_with_deps` and writes it as JSON
-/// followed by a newline to `writer`. Production `run` binds the closures
-/// to `read_slack_config` + `post_message_inner(…, run_curl_with_timeout)`
-/// and passes `std::io::stdout()` so the CLI prints a single JSON line.
+/// Main-arm dispatcher: compute the notify result and pair it with an
+/// exit code. Always returns `(value, 0)` — failure modes surface as
+/// `status: "error"` inside the Value, never via shell exit code.
+/// `notify-slack` is best-effort by design: a failed Slack post must not
+/// fail the calling phase.
 #[allow(clippy::type_complexity)]
-pub fn run_with_deps(
+pub fn run_impl_main(
     args: Args,
     config_reader: &dyn Fn() -> Option<SlackConfig>,
     poster: &dyn Fn(&str, &str, &str, Option<&str>) -> Value,
-    writer: &mut dyn std::io::Write,
-) {
-    let result = notify_with_deps(&args, config_reader, poster);
-    let _ = writeln!(writer, "{}", result);
+) -> (Value, i32) {
+    (notify_with_deps(&args, config_reader, poster), 0)
 }
 
-pub fn run(args: Args) {
-    let mut stdout = std::io::stdout();
-    run_with_deps(
-        args,
-        &read_slack_config,
-        &|bot, channel, text, tts| {
-            post_message_inner(bot, channel, text, tts, &run_curl_with_timeout)
-        },
-        &mut stdout,
-    );
+pub fn run(args: Args) -> ! {
+    let (value, code) = run_impl_main(args, &read_slack_config, &|bot, channel, text, tts| {
+        post_message_inner(bot, channel, text, tts, &run_curl_with_timeout)
+    });
+    crate::dispatch::dispatch_json(value, code)
 }
 
 #[cfg(test)]
@@ -629,27 +621,23 @@ mod tests {
         assert_eq!(tts.as_deref(), Some("1234567890.123456"));
     }
 
-    // --- run_with_deps ---
+    // --- run_impl_main ---
 
     #[test]
-    fn run_with_deps_prints_notify_json() {
+    fn notify_slack_run_impl_main_writes_skipped_json_when_unconfigured() {
         let args = test_args("flow-start", "hi", None, None, None);
         let config_reader = || None;
         let poster = |_: &str, _: &str, _: &str, _: Option<&str>| -> Value {
             json!({"status": "ok", "ts": "9.9"})
         };
-        let mut buf: Vec<u8> = Vec::new();
-        run_with_deps(args, &config_reader, &poster, &mut buf);
-        let out = String::from_utf8(buf).unwrap();
-        // When config_reader returns None the result is the skipped JSON.
-        assert!(out.contains("\"status\":\"skipped\""));
-        // writeln! appends a newline; the production path needs the newline
-        // so `run` output is line-delimited for shell consumers.
-        assert!(out.ends_with('\n'));
+        let (value, code) = run_impl_main(args, &config_reader, &poster);
+        assert_eq!(value["status"], "skipped");
+        assert_eq!(value["reason"], "no slack config");
+        assert_eq!(code, 0);
     }
 
     #[test]
-    fn run_with_deps_success_writes_ok_json() {
+    fn notify_slack_run_impl_main_writes_ok_json_on_success() {
         let args = test_args("flow-start", "hi", None, None, None);
         let config_reader = || {
             Some(SlackConfig {
@@ -660,11 +648,10 @@ mod tests {
         let poster = |_: &str, _: &str, _: &str, _: Option<&str>| -> Value {
             json!({"status": "ok", "ts": "9.9"})
         };
-        let mut buf: Vec<u8> = Vec::new();
-        run_with_deps(args, &config_reader, &poster, &mut buf);
-        let out = String::from_utf8(buf).unwrap();
-        assert!(out.contains("\"status\":\"ok\""));
-        assert!(out.contains("\"ts\":\"9.9\""));
+        let (value, code) = run_impl_main(args, &config_reader, &poster);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["ts"], "9.9");
+        assert_eq!(code, 0);
     }
 
     #[test]

@@ -343,3 +343,21 @@ fn test_no_weak_coverage_language_in_prose_corpus() {
 //   format_pr_timings — pub fn run wrappers replaced by run_impl_main
 // PR #1154: TUI refactor — run_terminal, activate_iterm_tab, open_url,
 //   find_bin_flow, module-level run, atty_check removed
+
+#[test]
+fn notify_slack_no_run_with_deps_writer_seam() {
+    // Tombstone: removed in PR #1224. run_with_deps(args, config_reader,
+    // poster, writer) was superseded by run_impl_main returning
+    // (Value, i32) plus dispatch::dispatch_json. The writer-injection
+    // seam exists nowhere in production after this PR, so a merge that
+    // re-introduces it is a regression.
+    let root = common::repo_root();
+    let path = root.join("src/notify_slack.rs");
+    let content = fs::read_to_string(&path).expect("notify_slack.rs must exist");
+    assert!(
+        !content.contains("pub fn run_with_deps"),
+        "src/notify_slack.rs must not contain `pub fn run_with_deps` — \
+         superseded by run_impl_main returning (Value, i32) per \
+         .claude/rules/supersession.md."
+    );
+}
