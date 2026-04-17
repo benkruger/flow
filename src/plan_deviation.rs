@@ -731,6 +731,49 @@ mod tests {
     }
 
     #[test]
+    fn is_reserved_key_matches_all_four_keywords() {
+        assert!(is_reserved_key("let"));
+        assert!(is_reserved_key("const"));
+        assert!(is_reserved_key("static"));
+        assert!(is_reserved_key("mut"));
+    }
+
+    #[test]
+    fn is_reserved_key_rejects_user_identifiers() {
+        assert!(!is_reserved_key("foo"));
+        assert!(!is_reserved_key("expected_value"));
+        assert!(!is_reserved_key("LET")); // case-sensitive
+        assert!(!is_reserved_key(""));
+    }
+
+    #[test]
+    fn find_tasks_section_skips_tasks_heading_inside_code_fence() {
+        let lines = vec!["```", "## Tasks", "```", "## Tasks", "content"];
+        // The first "## Tasks" is inside a fence and must be skipped;
+        // the second (post-fence) is the real start.
+        assert_eq!(find_tasks_section_start(&lines), Some(4));
+    }
+
+    #[test]
+    fn find_tasks_section_none_when_absent() {
+        let lines = vec!["## Context", "## Approach", "content"];
+        assert_eq!(find_tasks_section_start(&lines), None);
+    }
+
+    #[test]
+    fn find_next_level_2_heading_returns_len_when_no_h2_after_start() {
+        let lines = vec!["## Tasks", "content", "### sub-heading"];
+        // Starting at index 1, no more ## headings — falls back to lines.len()
+        assert_eq!(find_next_level_2_heading(&lines, 1), 3);
+    }
+
+    #[test]
+    fn find_next_level_2_heading_stops_at_next_h2() {
+        let lines = vec!["## Tasks", "body", "## Next", "more"];
+        assert_eq!(find_next_level_2_heading(&lines, 1), 2);
+    }
+
+    #[test]
     fn acknowledged_log_line_contains_both_returns_true() {
         let dev = make_deviation("test_foo", "/flow:flow-plan");
         let log = "2026-04-15T10:00:00-08:00 [Phase 3] Plan signature deviation: test_foo drifted from /flow:flow-plan to /flow:flow-code-review. Reason: X.\n";
