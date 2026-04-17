@@ -66,9 +66,10 @@ edge cases, off-by-one errors, null handling gaps, error propagation,
 race conditions, and security vulnerabilities (injection, auth bypass,
 data exposure).
 
-**Tenant 5 — Test coverage.** Are the changes adequately tested?
-Meaningful assertions, edge cases covered, error paths exercised. Gaps
-are proven by adversarial tests that fail.
+**Tenant 5 — Test coverage.** Every production line must be exercised by
+a named test. Any uncovered line is a Real finding. Meaningful
+assertions, edge cases covered, error paths exercised. Gaps are proven
+by adversarial tests that fail.
 
 **Tenant 6 — Documentation.** Do the docs match the code after these
 changes? CLAUDE.md, `.claude/rules/`, README, doc comments, and inline

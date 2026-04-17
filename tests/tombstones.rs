@@ -256,6 +256,61 @@ fn claude_md_no_test_coverage_references() {
     );
 }
 
+// --- Weak-coverage prose loophole closure ---
+//
+// Weak-coverage language ("adequate test coverage", "adequately tested")
+// is the prose surface through which a reviewer or reviewer agent could
+// justify shipping below 100% coverage. The 100% gate in `bin/test`
+// (`--fail-under-*` ratchet) and `.claude/rules/no-waivers.md` are the
+// load-bearing mechanisms; this scanner prevents the prose from drifting
+// back in via merge conflict or accidental edit. Scope is intentionally
+// narrow: agent reports, skill instructions, and public docs — the
+// surfaces where the phrases would license below-100% shipping. The
+// `.claude/rules/` and `CLAUDE.md` corpus is excluded because those
+// files discuss the coverage discipline and may legitimately cite the
+// forbidden phrases. The `tests/` corpus is excluded because this
+// scanner file contains the phrases as search input.
+
+/// Weak-coverage phrases that must not reappear in the user-facing
+/// prose corpus. Re-introducing either phrase would let a reviewer
+/// agent cite "adequate"/"adequately" coverage as grounds for
+/// shipping below 100%, defeating the `--fail-under-*` ratchet in
+/// `bin/test` and the `.claude/rules/no-waivers.md` discipline.
+const WEAK_COVERAGE_PHRASES: &[&str] = &["adequate test coverage", "adequately tested"];
+
+/// Scan scope for the weak-coverage check. Only `agents/`, `skills/`,
+/// and `docs/` are scanned — those are the prose surfaces where the
+/// forbidden phrases would license below-100% shipping. `.claude/rules/`
+/// and `CLAUDE.md` legitimately discuss the coverage discipline, and
+/// `tests/tombstones.rs` contains the phrases as search input. None of
+/// those paths fall under the scan directories, so the scanner cannot
+/// reach its own literals.
+const WEAK_COVERAGE_SCAN_DIRS: &[&str] = &["agents", "skills", "docs"];
+
+#[test]
+fn test_no_weak_coverage_language_in_prose_corpus() {
+    let root = common::repo_root();
+    let mut violations: Vec<String> = Vec::new();
+    for dir in WEAK_COVERAGE_SCAN_DIRS {
+        let dir_path = root.join(dir);
+        for (rel, content) in common::collect_md_files(&dir_path) {
+            for (idx, line) in content.lines().enumerate() {
+                for phrase in WEAK_COVERAGE_PHRASES {
+                    if line.contains(phrase) {
+                        violations.push(format!("{}/{}:{} — {}", dir, rel, idx + 1, phrase));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "Weak-coverage language found in prose corpus \
+         (see .claude/rules/no-waivers.md and issue #1195):\n\n{}",
+        violations.join("\n")
+    );
+}
+
 // Stale tombstones for PR #1176 and PR #1154 removed — both PRs merged
 // before the oldest open PR was created, so no active branch can
 // resurrect the deleted code via merge conflict. The structural scanner

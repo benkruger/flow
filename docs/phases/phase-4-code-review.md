@@ -23,7 +23,7 @@ Every finding must map to one of these tenants:
 2. **Simplicity** — is there unnecessary complexity?
 3. **Maintainability** — can a newcomer understand this?
 4. **Correctness** — logic errors, edge cases, security?
-5. **Test coverage** — are changes adequately tested?
+5. **Test coverage** — every production line exercised by a named test; any uncovered line is a Real finding
 6. **Documentation** — do docs match the code after these changes?
 
 ---
