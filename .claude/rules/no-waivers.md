@@ -84,6 +84,49 @@ The Plan-phase reviewer must either strengthen the verification task
 to hard-gate on per-file 100% or revise the acceptance criteria to
 match what the tasks actually produce.
 
+## Plan-Phase Coverage-Floor Trigger
+
+The `--fail-under-*` thresholds in `bin/test` are a ratchet: they
+only move up. The rule "bump the matching threshold in the same
+commit that earned the improvement" is stated in the Enforcement
+section below, but the discipline is invisible at plan time unless
+the plan surfaces the coverage impact of its proposed changes. A
+missed bump leaves the floor below the achieved coverage, silently
+allowing a regression on the next PR — the ratchet is load-bearing,
+and a plan that adds code without acknowledging coverage impact
+defeats it.
+
+**The rule.** Every plan that changes Rust source under `src/*.rs`
+must include, in its Risks or Approach section, a coverage-impact
+statement. Two forms are acceptable:
+
+1. **Expected improvement.** If the changes are expected to move
+   aggregate coverage across a whole-percent boundary (new tests,
+   newly-covered branches, deleted dead code), the plan identifies
+   the current `--fail-under-lines`, `--fail-under-regions`, and
+   `--fail-under-functions` values in `bin/test` and includes a task
+   to bump the matching threshold in the same commit that earns the
+   improvement. The bump task names the new threshold value and the
+   file (`bin/test`) that receives the edit.
+2. **No expected change.** If the changes are expected NOT to move
+   coverage (documentation-only, rule-only, prose tombstone,
+   refactor that preserves covered-line parity), the plan states so
+   explicitly with a one-line rationale. A plan that is silent on
+   coverage impact is incomplete, even when the changes are
+   prose-only — the explicit acknowledgement is the discipline.
+
+**Code-phase check.** After the last coverage-changing commit, the
+Code phase re-reads the aggregate TOTAL from the full-suite `bin/flow
+ci` output and confirms the threshold matches the floor. If the
+TOTAL crosses the threshold's whole-percent boundary, bump the
+threshold in the same commit (or the next commit before the Code
+phase completes). If the TOTAL sits below the threshold, CI would
+already be failing — the gate catches that class.
+
+**Code Review-phase check.** The reviewer agent verifies the bump
+landed when the plan said it would. A missing bump is a Real
+finding to fix in Step 4 per `.claude/rules/code-review-scope.md`.
+
 ## Why
 
 The waiver path is a slippery slope. Once a plan proposes a waiver
@@ -144,6 +187,10 @@ When designing a plan that touches code:
 5. If the plan has a "verify 100%" task, confirm the task body
    hard-gates on per-file 100% (not measurement-only). Measurement
    tasks are not coverage completion tasks.
+6. Add the coverage-impact statement required by the
+   Plan-Phase Coverage-Floor Trigger section above — either a
+   threshold-bump task or an explicit "no expected change"
+   rationale. A silent plan is an incomplete plan.
 
 ## How to Apply (Code Phase)
 
