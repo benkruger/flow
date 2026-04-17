@@ -434,27 +434,30 @@ pub fn fast_inner(
 /// carries a failure message when CI ran and failed.
 pub type CiDecider = dyn Fn(&Path, &Path, &str, bool) -> (bool, Option<String>);
 
-/// Production CI-decider for the Complete phase dirty-check block.
+/// Signature of the injectable CI runner seam used inside
+/// `production_ci_decider_inner`.
 ///
-/// Returns `(ci_skipped, ci_failed_output)`:
-/// - `ci_skipped` is `true` only when the sentinel file's stored tree
-///   snapshot matches the current cwd's snapshot — a prior
-///   `bin/flow ci` run on this same tree already passed and the
-///   current `complete-fast` call can skip re-running CI.
-/// - `ci_failed_output` is `Some(msg)` when CI runs and fails; `None`
-///   when CI is skipped or runs and passes.
+/// Mirrors `ci::run_impl(args, cwd, root, ci_running_flag)`'s shape:
+/// `(Value, i32)` where `Value` carries the structured result and the
+/// `i32` is the exit code. Unit tests pass mock closures that return
+/// canned responses without spawning a real CI subprocess.
+pub type CiRunner = dyn Fn(&ci::Args, &Path, &Path, bool) -> (Value, i32);
+
+/// Testable core of the Complete-phase CI dirty-check decider with
+/// an injectable `ci_runner`. Each branch — `tree_changed`, sentinel
+/// hit, sentinel stale, sentinel unreadable, sentinel miss + CI pass,
+/// sentinel miss + CI fail — is reachable from a unit test either via
+/// fixture control (sentinel file state) or via the injected
+/// `ci_runner`.
 ///
-/// A `tree_changed` input (main was merged into the branch, dirtying
-/// the tree) short-circuits to `(false, None)` without invoking CI.
-/// The `ci_stale` path itself is produced by `fast_inner` from its
-/// own `tree_changed` argument, not from this return value — the same
-/// `(false, None)` is returned when CI runs and passes, which does
-/// not produce `ci_stale`.
-fn production_ci_decider(
+/// Returns `(ci_skipped, ci_failed_output)` — see
+/// `production_ci_decider` for semantics.
+fn production_ci_decider_inner(
     root: &Path,
     cwd: &Path,
     branch: &str,
     tree_changed: bool,
+    ci_runner: &CiRunner,
 ) -> (bool, Option<String>) {
     if tree_changed {
         return (false, None);
@@ -481,7 +484,7 @@ fn production_ci_decider(
         branch: Some(branch.to_string()),
         simulate_branch: None,
     };
-    let (ci_result, ci_code) = ci::run_impl(&ci_args, cwd, root, false);
+    let (ci_result, ci_code) = ci_runner(&ci_args, cwd, root, false);
     if ci_code != 0 {
         let msg = ci_result
             .get("message")
@@ -492,6 +495,36 @@ fn production_ci_decider(
     } else {
         (false, None)
     }
+}
+
+/// Production CI-decider for the Complete phase dirty-check block.
+///
+/// Returns `(ci_skipped, ci_failed_output)`:
+/// - `ci_skipped` is `true` only when the sentinel file's stored tree
+///   snapshot matches the current cwd's snapshot — a prior
+///   `bin/flow ci` run on this same tree already passed and the
+///   current `complete-fast` call can skip re-running CI.
+/// - `ci_failed_output` is `Some(msg)` when CI runs and fails; `None`
+///   when CI is skipped or runs and passes.
+///
+/// A `tree_changed` input (main was merged into the branch, dirtying
+/// the tree) short-circuits to `(false, None)` without invoking CI.
+/// The `ci_stale` path itself is produced by `fast_inner` from its
+/// own `tree_changed` argument, not from this return value — the same
+/// `(false, None)` is returned when CI runs and passes, which does
+/// not produce `ci_stale`.
+///
+/// Wraps `production_ci_decider_inner` with the production
+/// `ci::run_impl` closure for the CI dispatch.
+fn production_ci_decider(
+    root: &Path,
+    cwd: &Path,
+    branch: &str,
+    tree_changed: bool,
+) -> (bool, Option<String>) {
+    production_ci_decider_inner(root, cwd, branch, tree_changed, &|args, cwd, root, flag| {
+        ci::run_impl(args, cwd, root, flag)
+    })
 }
 
 /// Core complete-fast logic with injectable `root`, `runner`, and
@@ -1413,6 +1446,142 @@ mod tests {
         // sentinel, so fast_inner's ci_stale path surfaces.
         let dir = tempfile::tempdir().unwrap();
         let (skipped, failed) = production_ci_decider(dir.path(), dir.path(), "test-feature", true);
+        assert!(!skipped);
+        assert!(failed.is_none());
+    }
+
+    // --- production_ci_decider_inner ---
+
+    fn ci_runner_ok() -> impl Fn(&ci::Args, &Path, &Path, bool) -> (Value, i32) {
+        |_, _, _, _| (json!({"status": "ok"}), 0)
+    }
+
+    fn ci_runner_failure() -> impl Fn(&ci::Args, &Path, &Path, bool) -> (Value, i32) {
+        |_, _, _, _| {
+            (
+                json!({"status": "error", "message": "ci failed on sample test"}),
+                1,
+            )
+        }
+    }
+
+    fn ci_runner_panicking() -> impl Fn(&ci::Args, &Path, &Path, bool) -> (Value, i32) {
+        |_, _, _, _| panic!("ci_runner should not be invoked in this branch")
+    }
+
+    /// Branch A: `tree_changed == true` short-circuits to
+    /// `(false, None)` without invoking the ci_runner. Verifies the
+    /// short-circuit by passing a panicking runner — if the decider
+    /// called it, the test would panic.
+    #[test]
+    fn production_ci_decider_inner_tree_changed_returns_not_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = ci_runner_panicking();
+        let (skipped, failed) =
+            production_ci_decider_inner(dir.path(), dir.path(), "feature", true, &runner);
+        assert!(!skipped);
+        assert!(failed.is_none());
+    }
+
+    /// Branch B: sentinel file exists with content matching
+    /// `ci::tree_snapshot(cwd, None)`. The decider returns
+    /// `(true, None)` and does not invoke ci_runner — panicking runner
+    /// proves the runner was not invoked.
+    #[test]
+    fn production_ci_decider_inner_sentinel_hit_returns_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let snapshot = ci::tree_snapshot(dir.path(), None);
+        let sentinel = ci::sentinel_path(dir.path(), "feature");
+        if let Some(parent) = sentinel.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(&sentinel, &snapshot).unwrap();
+
+        let runner = ci_runner_panicking();
+        let (skipped, failed) =
+            production_ci_decider_inner(dir.path(), dir.path(), "feature", false, &runner);
+        assert!(skipped);
+        assert!(failed.is_none());
+    }
+
+    /// Branch C: sentinel miss, ci_runner reports success. The decider
+    /// returns `(false, None)` — CI ran and passed, so ci_skipped is
+    /// false (fresh run) and no failure message is attached.
+    #[test]
+    fn production_ci_decider_inner_ci_success_returns_not_skipped_no_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = ci_runner_ok();
+        let (skipped, failed) =
+            production_ci_decider_inner(dir.path(), dir.path(), "feature", false, &runner);
+        assert!(!skipped);
+        assert!(failed.is_none());
+    }
+
+    /// Branch D: sentinel miss, ci_runner reports failure. The decider
+    /// returns `(false, Some("ci failed on sample test"))` — the
+    /// failure message is extracted from the runner's Value.message.
+    #[test]
+    fn production_ci_decider_inner_ci_failure_returns_failure_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = ci_runner_failure();
+        let (skipped, failed) =
+            production_ci_decider_inner(dir.path(), dir.path(), "feature", false, &runner);
+        assert!(!skipped);
+        let msg = failed.expect("ci_runner signaled failure via exit code 1");
+        assert!(
+            msg.contains("ci failed on sample test"),
+            "expected failure message to be extracted from runner Value.message, got: {}",
+            msg
+        );
+    }
+
+    /// Branch E: sentinel path exists as a directory (not a file), so
+    /// `fs::read_to_string` returns `Err`. The decider treats the read
+    /// Err as a miss and dispatches to ci_runner — the ci_runner_ok
+    /// success confirms the dispatch happened.
+    #[test]
+    fn production_ci_decider_inner_sentinel_unreadable_treats_as_miss() {
+        let dir = tempfile::tempdir().unwrap();
+        let sentinel = ci::sentinel_path(dir.path(), "feature");
+        // Put a directory at the sentinel path so sentinel.exists()
+        // is true but read_to_string fails.
+        fs::create_dir_all(&sentinel).unwrap();
+        let runner = ci_runner_ok();
+        let (skipped, failed) =
+            production_ci_decider_inner(dir.path(), dir.path(), "feature", false, &runner);
+        assert!(!skipped);
+        assert!(failed.is_none());
+    }
+
+    /// Branch F: sentinel file exists, read succeeds, but the stored
+    /// content does not equal `ci::tree_snapshot(cwd, None)`. The
+    /// decider treats the mismatch as a miss and dispatches to
+    /// ci_runner. ci_runner_failure's message confirms the dispatch
+    /// happened (a sentinel-hit would skip runner invocation entirely).
+    #[test]
+    fn production_ci_decider_inner_sentinel_stale_snapshot_treats_as_miss() {
+        let dir = tempfile::tempdir().unwrap();
+        let sentinel = ci::sentinel_path(dir.path(), "feature");
+        if let Some(parent) = sentinel.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(&sentinel, "NOT_THE_REAL_SNAPSHOT").unwrap();
+        let runner = ci_runner_failure();
+        let (skipped, failed) =
+            production_ci_decider_inner(dir.path(), dir.path(), "feature", false, &runner);
+        assert!(!skipped);
+        assert!(failed.is_some());
+    }
+
+    /// Wrapper delegation: `production_ci_decider` delegates to
+    /// `production_ci_decider_inner`. Exercises the wrapper closure
+    /// via the `tree_changed == true` short-circuit so the real
+    /// `ci::run_impl` is never reached, but the delegation is proved
+    /// by observing the expected `(false, None)` return.
+    #[test]
+    fn production_ci_decider_wraps_inner_with_real_ci_runner() {
+        let dir = tempfile::tempdir().unwrap();
+        let (skipped, failed) = production_ci_decider(dir.path(), dir.path(), "feature", true);
         assert!(!skipped);
         assert!(failed.is_none());
     }

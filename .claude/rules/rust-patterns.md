@@ -182,6 +182,40 @@ Drop unwind. The production caller passes the real cleanup closure
 guarantee. Per `.claude/rules/panic-safe-cleanup.md`, the closure
 must swallow its own errors because `Drop` cannot return them.
 
+**Three-tier dispatch for subprocess-coordinating modules.** When a
+main-arm subcommand coordinates external subprocesses (git, other
+`bin/flow` subcommands, notifiers, CI runners), the pattern grows a
+third tier to keep subprocess calls injectable:
+
+1. `pub fn run_impl_with_deps(args, root, cwd, ...closures) -> Value`
+   — testable core with injectable closures for every subprocess
+   callout. Returns `Value` unconditionally when every failure mode
+   can be represented as a `status: "error"` payload.
+2. `pub fn run_impl(args) -> Value` (or `Result<Value, String>` when
+   an infrastructure `Err` path is reachable) — production binder
+   that supplies the real closures.
+3. `pub fn run_impl_main(args, root, cwd) -> (Value, i32)` — main-arm
+   dispatcher that wraps into the `(Value, i32)` contract.
+
+Reference implementations: the four start-family modules
+(`src/start_init.rs`, `src/start_gate.rs`, `src/start_workspace.rs`,
+`src/start_finalize.rs`) follow this three-tier pattern. Only
+`start_init` keeps `run_impl -> Result<Value, String>` and adds a
+seam-level `run_impl_main_with_deps` — its module doc comment
+documents the asymmetry and the reason (`plug_root_finder=None` and
+init-state subprocess `Err` are reachable infrastructure failures
+that need to map to exit code 1).
+
+**Exit code convention for business errors.** When `run_impl` returns
+`Value` unconditionally, the paired `run_impl_main` wraps as
+`(v, 0)` — exit code is always `0`. Callers distinguish success from
+failure by parsing the JSON `status` field, not by shell exit code.
+This matches the pre-existing convention of `format_complete_summary`,
+`format_issues_summary`, `format_pr_timings`, and `tui_data`. Exit
+code `1` is reserved for infrastructure failures that escape the JSON
+contract (surfaced via `Err` from a fallible `run_impl`, then wrapped
+as `(err_json, 1)` by `run_impl_main`).
+
 ## Test Subprocess Stdio
 
 Cargo's test harness does not capture inherited child-process stdio.

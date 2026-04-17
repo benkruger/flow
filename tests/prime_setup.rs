@@ -555,6 +555,71 @@ fn install_script_creates_executable_file() {
     assert!(mode & 0o111 != 0, "Script should be executable");
 }
 
+/// Error branch: `fs::create_dir_all` fails because the parent path
+/// is a file rather than a directory. `install_script` returns Err
+/// with a "Could not create directory" message.
+#[test]
+fn install_script_create_dir_failure_returns_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let blocker = tmp.path().join("blocker");
+    fs::write(&blocker, "not a dir").unwrap();
+    // target_dir sits UNDER blocker, which is a regular file —
+    // create_dir_all cannot create a child under a file.
+    let target_dir = blocker.join("subdir");
+    let result = prime_setup::install_script(&target_dir, "any", "content");
+    assert!(result.is_err(), "expected Err when parent is a file");
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("Could not create directory"),
+        "expected create_dir_all error, got: {}",
+        msg
+    );
+}
+
+/// Error branch: `fs::write` fails because the target path is an
+/// existing directory. `install_script` returns Err with a
+/// "Could not write" message.
+#[test]
+fn install_script_write_failure_returns_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let target_dir = tmp.path().join("subdir");
+    fs::create_dir_all(&target_dir).unwrap();
+    // The target filename resolves to a pre-existing DIRECTORY so
+    // fs::write cannot replace it with file contents.
+    let filename = "collides-with-dir";
+    fs::create_dir_all(target_dir.join(filename)).unwrap();
+    let result = prime_setup::install_script(&target_dir, filename, "content");
+    assert!(result.is_err(), "expected Err when target is a directory");
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("Could not write"),
+        "expected write error, got: {}",
+        msg
+    );
+}
+
+/// Error branch: `write_version_marker` fails when `.flow.json`
+/// resolves to a path that cannot be written — simulated by making
+/// `.flow.json` itself an existing directory.
+#[test]
+fn version_marker_write_failure_returns_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let flow_json_as_dir = tmp.path().join(".flow.json");
+    fs::create_dir(&flow_json_as_dir).unwrap();
+    let result =
+        prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None);
+    assert!(
+        result.is_err(),
+        "expected Err when .flow.json is a directory"
+    );
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("Could not write"),
+        "expected write error, got: {}",
+        msg
+    );
+}
+
 // ── install_pre_commit_hook ─────────────────────────────────
 
 #[test]

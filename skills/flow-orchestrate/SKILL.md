@@ -69,9 +69,19 @@ Stop.
 
 ## Step 2 — Initialize orchestration state
 
-Build the queue from the filtered issues. Sort by issue number ascending. Write the queue to a temporary file and create the orchestration state:
+Build the queue from the filtered issues. Sort by issue number ascending.
+`.flow-states/orchestrate-queue.json` is a machine-level singleton that
+may pre-exist from a prior orchestration; route the write through
+`bin/flow write-rule` so Claude Code's Write-tool preflight cannot fire
+(see `.claude/rules/file-tool-preflights.md`). Each item must have
+`issue_number` (integer) and `title` (string) fields.
 
-Write the queue JSON to `.flow-states/orchestrate-queue.json` using the Write tool. Each item must have `issue_number` (integer) and `title` (string) fields.
+Write the queue JSON to `.flow-states/orchestrate-queue-content.json`
+using the Write tool, then apply the write:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path .flow-states/orchestrate-queue.json --content-file .flow-states/orchestrate-queue-content.json
+```
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow orchestrate-state --create --queue-file .flow-states/orchestrate-queue.json --state-dir .flow-states

@@ -471,3 +471,50 @@ fn diff_stats_with_merge_commit_in_history() {
         files
     );
 }
+
+/// Subprocess: `phase-transition --action <invalid>` hits the
+/// "Invalid action" branch of `run_impl_main`. Complements
+/// `error_invalid_phase` which covers the invalid-phase branch.
+#[test]
+fn error_invalid_action() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "test-feature");
+    let state = make_state("flow-start", &[("flow-start", "in_progress")]);
+    setup_state(dir.path(), "test-feature", &state);
+
+    let (code, json) = run(dir.path(), "flow-start", "frobnicate", &[]);
+    assert_eq!(code, 1);
+    assert_eq!(json["status"], "error");
+    assert!(json["message"].as_str().unwrap().contains("Invalid action"));
+}
+
+/// Subprocess: `phase-transition --branch <slash-branch>` exercises
+/// the `FlowPaths::try_new` None branch. Per
+/// `.claude/rules/external-input-validation.md`, CLI `--branch`
+/// overrides must surface structured errors rather than panic.
+#[test]
+fn error_slash_branch_returns_structured_error_no_panic() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "test-feature");
+    let state = make_state("flow-start", &[("flow-start", "in_progress")]);
+    setup_state(dir.path(), "test-feature", &state);
+
+    let (code, json) = run(
+        dir.path(),
+        "flow-start",
+        "complete",
+        &["--branch", "feature/with-slash"],
+    );
+    // Slash branches are rejected by `FlowPaths::try_new` in
+    // `run_impl_main` with an "Invalid branch name" error. Exit 1, no
+    // panic. Guards the regression where the branch validation is
+    // replaced with `FlowPaths::new` (panicking constructor).
+    assert_eq!(code, 1);
+    assert_eq!(json["status"], "error");
+    let msg = json["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("Invalid branch name"),
+        "expected 'Invalid branch name' error, got: {}",
+        msg
+    );
+}
