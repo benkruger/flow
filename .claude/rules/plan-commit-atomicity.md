@@ -76,6 +76,62 @@ gap — either the Code phase skipped the verification check, or the
 plan's atomicity was not actually load-bearing and the marker was
 misused. Either way, the finding reaches this file.
 
+## Optimization-Driven Batching (Non-Atomic Tasks Combined)
+
+The rule above governs SPLITTING marked atomic groups. The inverse
+— COMBINING non-atomic tasks into one commit for efficiency — is
+also a Code-phase decision that must be logged.
+
+When the plan lists N tasks individually (not marked as an atomic
+group) and the Code phase decides to land them in one commit
+because:
+
+- Each task's CI measurement would re-run the same test suite
+  against the same worktree snapshot, making per-task commits
+  wasteful, OR
+- The tasks are structurally identical in shape (e.g., "add N
+  subprocess tests to the same test file") so splitting into N
+  commits produces N near-identical diffs that add no review
+  value, OR
+- Some other objective efficiency criterion applies
+
+…the batching is permitted, but the decision must be logged at the
+moment of batching:
+
+```bash
+bin/flow log <branch> "[Phase 3] Batch decision: combining Tasks N-M (<description>) into one commit for <reason>. Each task is independently shippable; no test assertion spans the boundary; the split would <cost>."
+```
+
+The log entry serves the same three readers as the split-decision
+log (immediate Code phase, Code Review reviewer agent, Learn
+analyst) and captures the criterion so future sessions can
+recognize the same shape.
+
+### When NOT to batch
+
+Combining non-atomic tasks into one commit is NOT permitted when:
+
+- A test added in one task asserts behavior implemented in another
+  task — at a minimum, the content-presence rule from the atomic-
+  group criterion applies.
+- The commit message would need to describe two unrelated concerns
+  (e.g., "add coverage tests" and "refactor state-file parsing")
+  — that is a sign the tasks belong in separate commits for
+  review clarity.
+- The plan explicitly lists the tasks as separate with distinct
+  commit-message subjects — the plan author already made the
+  call; Code should honor it unless the Code-phase discovery
+  genuinely supersedes the plan's intent (in which case log the
+  deviation and combine).
+
+### Learn-phase audit
+
+The learn-analyst checks for undocumented batching the same way it
+checks for undocumented atomic-group splits. An unlogged batch
+becomes a process-gap finding. The fix is either to add the log
+entry retroactively in a state note or to ensure future Code
+phases log the batch decision at the point it is made.
+
 ## Plan Signature Deviations Must Be Logged
 
 The atomic-group rule above covers commit boundaries. The same
