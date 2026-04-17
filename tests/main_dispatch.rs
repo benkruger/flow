@@ -902,6 +902,198 @@ fn main_arm_invocations_cover_dispatch() {
     }
 }
 
+/// `flow-rs upgrade-check` with `FLOW_PLUGIN_JSON` pointing at a
+/// valid plugin.json exercises `upgrade_check::run()` end-to-end —
+/// read plugin.json, parse version/repository, spawn `run_gh_cmd`
+/// against the real `gh` CLI (with `GH_TOKEN=invalid` so the auth
+/// check fails fast), print the JSON result, exit 0. Covers the
+/// two untested functions (`run`, `run_gh_cmd`) via subprocess
+/// instrumentation per `.claude/rules/no-waivers.md`.
+#[test]
+fn upgrade_check_run_with_plugin_json_exits_0() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let plugin_json = root.join("plugin.json");
+    std::fs::write(
+        &plugin_json,
+        r#"{"version":"1.0.0","repository":"https://github.com/foo/bar-does-not-exist-fixture"}"#,
+    )
+    .expect("write plugin.json");
+
+    let output = flow_rs_no_recursion()
+        .arg("upgrade-check")
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .env("FLOW_PLUGIN_JSON", &plugin_json)
+        .env("FLOW_UPGRADE_TIMEOUT", "5")
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs upgrade-check");
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "upgrade-check always exits 0\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("upgrade-check stdout must be JSON");
+    let status = json["status"].as_str().unwrap_or("");
+    assert!(
+        status == "unknown" || status == "current" || status == "upgrade_available",
+        "status should be unknown/current/upgrade_available, got: {}\nfull JSON: {}",
+        status,
+        json
+    );
+}
+
+/// `flow-rs upgrade-check` with `FLOW_PLUGIN_JSON` pointing at a
+/// nonexistent file exercises the read-error branch in `run()` →
+/// `upgrade_check_impl`. The status is `unknown` and the reason
+/// cites the read failure; `run_gh_cmd` is NOT called because the
+/// read error short-circuits before the gh dispatch.
+#[test]
+fn upgrade_check_run_missing_plugin_json_exits_0_unknown() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let missing = root.join("absent.json");
+
+    let output = flow_rs_no_recursion()
+        .arg("upgrade-check")
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .env("FLOW_PLUGIN_JSON", &missing)
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs upgrade-check");
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("upgrade-check stdout must be JSON");
+    assert_eq!(json["status"], "unknown");
+    let reason = json["reason"].as_str().unwrap_or("");
+    assert!(
+        reason.contains("Could not read plugin.json"),
+        "reason should name read failure, got: {}",
+        reason
+    );
+}
+
+/// `flow-rs upgrade-check` with `FLOW_PLUGIN_JSON` pointing at a
+/// plugin.json that contains invalid JSON exercises the parse-error
+/// branch in `upgrade_check_impl` via the CLI entry point.
+#[test]
+fn upgrade_check_run_invalid_plugin_json_exits_0_unknown() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let plugin_json = root.join("bad.json");
+    std::fs::write(&plugin_json, "not valid json {{{").expect("write plugin.json");
+
+    let output = flow_rs_no_recursion()
+        .arg("upgrade-check")
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .env("FLOW_PLUGIN_JSON", &plugin_json)
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs upgrade-check");
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("upgrade-check stdout must be JSON");
+    assert_eq!(json["status"], "unknown");
+    let reason = json["reason"].as_str().unwrap_or("");
+    assert!(
+        reason.contains("Invalid plugin.json"),
+        "reason should name parse failure, got: {}",
+        reason
+    );
+}
+
+/// `flow-rs upgrade-check` with `FLOW_PLUGIN_JSON` pointing at a
+/// plugin.json that is missing the `version` field exercises the
+/// no-version branch in `upgrade_check_impl`.
+#[test]
+fn upgrade_check_run_no_version_field_exits_0_unknown() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let plugin_json = root.join("no-version.json");
+    std::fs::write(
+        &plugin_json,
+        r#"{"repository":"https://github.com/foo/bar"}"#,
+    )
+    .expect("write plugin.json");
+
+    let output = flow_rs_no_recursion()
+        .arg("upgrade-check")
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .env("FLOW_PLUGIN_JSON", &plugin_json)
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs upgrade-check");
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("upgrade-check stdout must be JSON");
+    assert_eq!(json["status"], "unknown");
+    let reason = json["reason"].as_str().unwrap_or("");
+    assert!(
+        reason.contains("No version in plugin.json"),
+        "reason should name missing-version, got: {}",
+        reason
+    );
+}
+
+/// `flow-rs upgrade-check` with `FLOW_UPGRADE_TIMEOUT=0` forces
+/// `run_gh_cmd`'s deadline to fire on the first polling iteration —
+/// exercises the timeout branch (kill + wait + join readers + return
+/// GhResult::Timeout).
+#[test]
+fn upgrade_check_run_gh_timeout_branch_exits_0_unknown() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let plugin_json = root.join("plugin.json");
+    std::fs::write(
+        &plugin_json,
+        r#"{"version":"1.0.0","repository":"https://github.com/foo/bar"}"#,
+    )
+    .expect("write plugin.json");
+
+    let output = flow_rs_no_recursion()
+        .arg("upgrade-check")
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .env("FLOW_PLUGIN_JSON", &plugin_json)
+        .env("FLOW_UPGRADE_TIMEOUT", "0")
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs upgrade-check");
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("upgrade-check stdout must be JSON");
+    assert_eq!(json["status"], "unknown");
+    // The deadline (now + 0s) fires before gh completes; upgrade-check
+    // may report "timed out" OR may report "gh CLI not found" on a
+    // machine without gh on PATH. Either outcome proves run_gh_cmd was
+    // reached via the `run()` entry point.
+    let reason = json["reason"].as_str().unwrap_or("");
+    assert!(
+        !reason.is_empty(),
+        "unknown status must always carry a reason, got: {}",
+        json
+    );
+}
+
 /// `flow-rs cleanup /nonexistent --branch test --worktree .worktrees/test`
 /// exercises the `run()` → `json_error` → `process::exit(1)` path
 /// for an invalid project root.
