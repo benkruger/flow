@@ -261,3 +261,127 @@ fn requires_reinit_when_setup_hash_mismatches() {
         .unwrap()
         .contains("/flow:flow-prime"));
 }
+
+// --- Infrastructure-failure branches in run_impl ---
+
+/// Subprocess: `prime-check` when `CLAUDE_PLUGIN_ROOT` points at a
+/// directory that has no `.claude-plugin/plugin.json`. Exercises the
+/// `fs::read_to_string` Err branch inside `run_impl`, which produces
+/// a structured error rather than panicking.
+#[test]
+fn prime_check_reports_missing_plugin_json_via_subprocess() {
+    let tmp = tempfile::tempdir().unwrap();
+    let bogus_plugin = tempfile::tempdir().unwrap();
+    // plugin_root exists but has no .claude-plugin/plugin.json.
+    write_flow_json(
+        tmp.path(),
+        json!({
+            "flow_version": "0.0.1",
+            "config_hash": "x",
+            "setup_hash": "y",
+        }),
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .arg("prime-check")
+        .current_dir(tmp.path())
+        .env("CLAUDE_PLUGIN_ROOT", bogus_plugin.path())
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+
+    // Infrastructure failure is printed to stdout as status=error.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"status\":\"error\""),
+        "expected status=error for missing plugin.json, got: {}",
+        stdout
+    );
+}
+
+/// Subprocess: `prime-check` when plugin.json exists but cannot be
+/// parsed as JSON. Exercises the `serde_json::from_str` Err branch in
+/// `run_impl`.
+#[test]
+fn prime_check_reports_malformed_plugin_json_via_subprocess() {
+    let tmp = tempfile::tempdir().unwrap();
+    let bogus_plugin = tempfile::tempdir().unwrap();
+    fs::create_dir_all(bogus_plugin.path().join(".claude-plugin")).unwrap();
+    fs::write(
+        bogus_plugin
+            .path()
+            .join(".claude-plugin")
+            .join("plugin.json"),
+        "{not valid json",
+    )
+    .unwrap();
+    write_flow_json(
+        tmp.path(),
+        json!({
+            "flow_version": "0.0.1",
+            "config_hash": "x",
+            "setup_hash": "y",
+        }),
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .arg("prime-check")
+        .current_dir(tmp.path())
+        .env("CLAUDE_PLUGIN_ROOT", bogus_plugin.path())
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"status\":\"error\""),
+        "expected status=error for malformed plugin.json, got: {}",
+        stdout
+    );
+}
+
+/// Subprocess: `prime-check` when plugin.json is valid JSON but
+/// missing the `version` field. Exercises the
+/// `ok_or_else("plugin.json missing version")` branch in `run_impl`.
+#[test]
+fn prime_check_reports_missing_plugin_version_via_subprocess() {
+    let tmp = tempfile::tempdir().unwrap();
+    let bogus_plugin = tempfile::tempdir().unwrap();
+    fs::create_dir_all(bogus_plugin.path().join(".claude-plugin")).unwrap();
+    fs::write(
+        bogus_plugin
+            .path()
+            .join(".claude-plugin")
+            .join("plugin.json"),
+        r#"{"name": "flow"}"#,
+    )
+    .unwrap();
+    write_flow_json(
+        tmp.path(),
+        json!({
+            "flow_version": "0.0.1",
+            "config_hash": "x",
+            "setup_hash": "y",
+        }),
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .arg("prime-check")
+        .current_dir(tmp.path())
+        .env("CLAUDE_PLUGIN_ROOT", bogus_plugin.path())
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"status\":\"error\""),
+        "expected status=error for plugin.json missing version, got: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("version"),
+        "expected 'version' in message, got: {}",
+        stdout
+    );
+}
