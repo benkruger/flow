@@ -151,7 +151,7 @@ pub(crate) fn initial_commit_push_pr(
 /// [`project_root`] and `current_dir()`.
 pub fn run_impl(args: &Args) -> Value {
     let root = project_root();
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or(PathBuf::from("."));
     run_impl_with_paths(args, &root, &cwd)
 }
 

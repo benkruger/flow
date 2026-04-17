@@ -647,7 +647,7 @@ pub fn run_impl_inner(
     }
 
     // --- CI dirty check (no simulate-branch) ---
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or(PathBuf::from("."));
     let (ci_skipped, ci_failed_output) = ci_decider(root, &cwd, &branch, tree_changed);
 
     // --- GitHub CI check ---

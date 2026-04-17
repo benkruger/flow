@@ -430,7 +430,7 @@ pub fn run_impl(
 }
 
 pub fn run(args: Args) {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
     let root = crate::git::project_root();
     match run_impl(&args, &cwd, &root) {
         Err(msg) => {

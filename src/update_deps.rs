@@ -173,7 +173,7 @@ pub fn run_impl(cwd: &Path, env_timeout: Option<&str>) -> (Value, i32) {
 
 /// CLI entry point for `bin/flow update-deps`.
 pub fn run() {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or(PathBuf::from("."));
     let env_timeout = std::env::var("FLOW_UPDATE_DEPS_TIMEOUT").ok();
     let (result, code) = run_impl(&cwd, env_timeout.as_deref());
     println!("{}", serde_json::to_string(&result).unwrap());

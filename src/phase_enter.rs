@@ -176,7 +176,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     // Drift guard: phase entry is a state mutation, so it must run
     // from inside the subdirectory the flow was started in. See
     // [`crate::cwd_scope::enforce`].
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
     if let Err(msg) = crate::cwd_scope::enforce(&cwd, &root) {
         return Ok(json!({"status": "error", "message": msg}));
     }

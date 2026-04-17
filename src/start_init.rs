@@ -74,13 +74,18 @@ pub struct Args {
 /// Default subprocess runner for `init-state`. Spawns the current
 /// executable with the given args and cwd, capturing stdout/stderr.
 fn default_init_state_runner(args: &[String], cwd: &Path) -> Result<Output, String> {
-    let self_exe = std::env::current_exe()
-        .map_err(|e| format!("Could not determine current executable: {}", e))?;
-    std::process::Command::new(&self_exe)
+    let self_exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => return Err(format!("Could not determine current executable: {}", e)),
+    };
+    match std::process::Command::new(&self_exe)
         .args(args)
         .current_dir(cwd)
         .output()
-        .map_err(|e| format!("Failed to spawn init-state: {}", e))
+    {
+        Ok(o) => Ok(o),
+        Err(e) => Err(format!("Failed to spawn init-state: {}", e)),
+    }
 }
 
 /// Default upgrade-check binder. Resolves the plugin.json path and runs
@@ -113,8 +118,14 @@ pub fn run_impl_with_deps(
     let state_dir = FlowStatesDir::new(root).path().to_path_buf();
     let _ = fs::create_dir_all(&state_dir);
 
-    let plug_root = plug_root_finder()
-        .ok_or_else(|| "CLAUDE_PLUGIN_ROOT not set and could not detect plugin root".to_string())?;
+    let plug_root = match plug_root_finder() {
+        Some(p) => p,
+        None => {
+            return Err(
+                "CLAUDE_PLUGIN_ROOT not set and could not detect plugin root".to_string(),
+            );
+        }
+    };
 
     // --- Pre-lock: derive canonical branch name ---
     // Read prompt non-destructively (init-state will read+delete via --prompt-file later)
@@ -264,8 +275,14 @@ pub fn run_impl_with_deps(
     // lands back in the same subdirectory after the worktree is created.
     // canonicalize() handles symlinks; strip_prefix returns relative.
     let relative_cwd = {
-        let cwd_canon = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
-        let root_canon = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        let cwd_canon = match cwd.canonicalize() {
+            Ok(p) => p,
+            Err(_) => cwd.to_path_buf(),
+        };
+        let root_canon = match root.canonicalize() {
+            Ok(p) => p,
+            Err(_) => root.to_path_buf(),
+        };
         match cwd_canon.strip_prefix(&root_canon) {
             Ok(rel) => rel.to_string_lossy().into_owned(),
             Err(_) => String::new(),
@@ -385,7 +402,7 @@ pub fn run_impl_with_deps(
 /// check, and the default init-state subprocess runner.
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     let root = project_root();
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or(PathBuf::from("."));
     run_impl_with_deps(
         args,
         &root,

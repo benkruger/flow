@@ -269,7 +269,7 @@ pub fn run_impl_with_deps(
 /// [`project_root`] and `current_dir()` for the root and cwd.
 pub fn run_impl(args: &Args) -> Value {
     let root = project_root();
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or(PathBuf::from("."));
     run_impl_with_deps(
         args,
         &root,

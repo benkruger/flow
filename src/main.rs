@@ -576,19 +576,19 @@ fn main() {
         }
         Some(Commands::StartGate(args)) => {
             let root = project_root();
-            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
             let (v, code) = start_gate::run_impl_main(&args, &root, &cwd);
             flow_rs::dispatch::dispatch_json(v, code);
         }
         Some(Commands::StartInit(args)) => {
             let root = project_root();
-            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
             let (v, code) = start_init::run_impl_main(&args, &root, &cwd);
             flow_rs::dispatch::dispatch_json(v, code);
         }
         Some(Commands::StartWorkspace(args)) => {
             let root = project_root();
-            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
             let (v, code) = start_workspace::run_impl_main(&args, &root, &cwd);
             flow_rs::dispatch::dispatch_json(v, code);
         }

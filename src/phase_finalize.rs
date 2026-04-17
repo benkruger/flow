@@ -60,7 +60,7 @@ pub type NotifierFn = dyn Fn(&notify_slack::Args) -> Value;
 /// `run_impl_with_deps`.
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     let root = project_root();
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
     run_impl_with_deps(&root, &cwd, args, &notify_slack::notify)
 }
 

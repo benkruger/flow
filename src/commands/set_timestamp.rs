@@ -29,9 +29,12 @@ pub fn set_nested(obj: &mut Value, path_parts: &[&str], value: Value) -> Result<
     for part in intermediate {
         current = match current {
             Value::Array(arr) => {
-                let index: usize = part
-                    .parse()
-                    .map_err(|_| format!("Expected numeric index for list, got '{}'", part))?;
+                let index: usize = match part.parse() {
+                    Ok(n) => n,
+                    Err(_) => {
+                        return Err(format!("Expected numeric index for list, got '{}'", part))
+                    }
+                };
                 if index >= arr.len() {
                     return Err(format!(
                         "Index {} out of range (list has {} items)",
@@ -57,9 +60,10 @@ pub fn set_nested(obj: &mut Value, path_parts: &[&str], value: Value) -> Result<
     let key = final_key[0];
     match current {
         Value::Array(arr) => {
-            let index: usize = key
-                .parse()
-                .map_err(|_| format!("Expected numeric index for list, got '{}'", key))?;
+            let index: usize = match key.parse() {
+                Ok(n) => n,
+                Err(_) => return Err(format!("Expected numeric index for list, got '{}'", key)),
+            };
             if index >= arr.len() {
                 return Err(format!(
                     "Index {} out of range (list has {} items)",
@@ -150,9 +154,15 @@ pub fn apply_updates(state: &mut Value, set_args: &[String]) -> Result<Vec<Updat
         let path_parts: Vec<&str> = path.split('.').collect();
 
         if path_parts == ["code_task"] {
-            let int_val = value
-                .as_i64()
-                .ok_or_else(|| format!("code_task must be an integer, got '{}'", raw_value))?;
+            let int_val = match value.as_i64() {
+                Some(n) => n,
+                None => {
+                    return Err(format!(
+                        "code_task must be an integer, got '{}'",
+                        raw_value
+                    ))
+                }
+            };
             validate_code_task(state, int_val)?;
         }
 
@@ -175,7 +185,7 @@ pub fn run(set_args: Vec<String>, branch_override: Option<String>) {
     // subdirectory of a mono-repo would silently record values
     // against the wrong assumed scope. See
     // [`crate::cwd_scope::enforce`].
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
     if let Err(msg) = crate::cwd_scope::enforce(&cwd, &root) {
         json_error(&msg, &[]);
         process::exit(1);

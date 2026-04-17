@@ -92,8 +92,10 @@ pub fn run_impl(args: &Args, repo_root: &Path) -> Result<String, String> {
         return Err(format!("Error: {} not found", notes_file.display()));
     }
 
-    let content = fs::read_to_string(&notes_file)
-        .map_err(|e| format!("Error reading {}: {}", notes_file.display(), e))?;
+    let content = match fs::read_to_string(&notes_file) {
+        Ok(c) => c,
+        Err(e) => return Err(format!("Error reading {}: {}", notes_file.display(), e)),
+    };
 
     let extracted = extract(version, &content);
     if extracted.is_empty() {
@@ -101,11 +103,14 @@ pub fn run_impl(args: &Args, repo_root: &Path) -> Result<String, String> {
     }
 
     let out_dir = repo_root.join("tmp");
-    fs::create_dir_all(&out_dir).map_err(|e| format!("Error creating tmp dir: {}", e))?;
+    if let Err(e) = fs::create_dir_all(&out_dir) {
+        return Err(format!("Error creating tmp dir: {}", e));
+    }
 
     let out_path = out_dir.join(format!("release-notes-{}.md", version));
-    fs::write(&out_path, format!("{}\n", extracted))
-        .map_err(|e| format!("Error writing {}: {}", out_path.display(), e))?;
+    if let Err(e) = fs::write(&out_path, format!("{}\n", extracted)) {
+        return Err(format!("Error writing {}: {}", out_path.display(), e));
+    }
 
     Ok(format!("Written to {}", out_path.display()))
 }
