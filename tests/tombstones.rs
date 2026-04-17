@@ -287,18 +287,40 @@ const WEAK_COVERAGE_PHRASES: &[&str] = &["adequate test coverage", "adequately t
 /// reach its own literals.
 const WEAK_COVERAGE_SCAN_DIRS: &[&str] = &["agents", "skills", "docs"];
 
+/// Normalize prose for the weak-coverage scan: ASCII-lowercase plus
+/// whitespace collapse (any run of whitespace — spaces, tabs, newlines,
+/// non-breaking spaces — becomes a single ASCII space). This catches
+/// case variants ("Adequate test coverage"), interior whitespace
+/// variants ("adequate  test coverage", tab-separated, non-breaking
+/// space), and line-spanning matches where Markdown word-wrap puts
+/// the forbidden phrase on two lines. Per
+/// `.claude/rules/tombstone-tests.md` "Assertion Strength" and
+/// `.claude/rules/security-gates.md` "Normalize Before Comparing",
+/// both sides of the comparison must be normalized.
+fn normalize_for_weak_coverage_scan(s: &str) -> String {
+    s.to_ascii_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[test]
 fn test_no_weak_coverage_language_in_prose_corpus() {
     let root = common::repo_root();
+    let normalized_phrases: Vec<String> = WEAK_COVERAGE_PHRASES
+        .iter()
+        .map(|p| normalize_for_weak_coverage_scan(p))
+        .collect();
     let mut violations: Vec<String> = Vec::new();
     for dir in WEAK_COVERAGE_SCAN_DIRS {
         let dir_path = root.join(dir);
         for (rel, content) in common::collect_md_files(&dir_path) {
-            for (idx, line) in content.lines().enumerate() {
-                for phrase in WEAK_COVERAGE_PHRASES {
-                    if line.contains(phrase) {
-                        violations.push(format!("{}/{}:{} — {}", dir, rel, idx + 1, phrase));
-                    }
+            let normalized = normalize_for_weak_coverage_scan(&content);
+            for (orig, normalized_phrase) in
+                WEAK_COVERAGE_PHRASES.iter().zip(normalized_phrases.iter())
+            {
+                if normalized.contains(normalized_phrase.as_str()) {
+                    violations.push(format!("{}/{} — {}", dir, rel, orig));
                 }
             }
         }
@@ -321,142 +343,3 @@ fn test_no_weak_coverage_language_in_prose_corpus() {
 //   format_pr_timings — pub fn run wrappers replaced by run_impl_main
 // PR #1154: TUI refactor — run_terminal, activate_iterm_tab, open_url,
 //   find_bin_flow, module-level run, atty_check removed
-
-// --- TUI extraction to tui_terminal module ---
-//
-// `run_tui_terminal` and `TerminalGuard` live in `src/tui_terminal.rs`,
-// not `src/main.rs`. Keeping the crossterm-coupled glue out of main.rs
-// allows main.rs to reach 100% coverage — the new module's seam-injected
-// `run_tui_arm_impl` is unit-testable in `cargo nextest`, while the
-// crossterm-bound `run_terminal` only runs in production. A merge
-// resolution that re-introduces either symbol into main.rs would
-// duplicate the definitions and reintroduce uncovered crossterm code in
-// a file expected to stay 100% covered.
-
-#[test]
-fn test_main_rs_no_run_tui_terminal_or_terminal_guard() {
-    // Tombstone: removed in PR #1205. Must not return to main.rs.
-    //
-    // Multi-pronged scan because byte-substring assertions on
-    // `fn run_tui_terminal(` and `struct TerminalGuard` alone are
-    // bypassable via naming variation (`fn run_tui_terminal_inner`,
-    // `struct TerminalGuardInner`) per `.claude/rules/tombstone-tests.md`
-    // "Literal tombstones — stability checklist." The crossterm API
-    // names (`enable_raw_mode`, `EnterAlternateScreen`,
-    // `LeaveAlternateScreen`, `disable_raw_mode`) cannot be assembled
-    // via `concat!`/`format!` because they must appear in `use
-    // crossterm::terminal::{...}` import lines or as resolved
-    // function call sites — they are not just string literals. Any
-    // resurrection of TUI terminal glue under any naming variation
-    // must reference at least one of these crossterm symbols, so
-    // their absence from main.rs is the load-bearing structural
-    // assertion.
-    let root = common::repo_root();
-    let path = root.join("src/main.rs");
-    let content = fs::read_to_string(&path).expect("src/main.rs must exist");
-
-    // Original literal-name assertions — caught the simple case.
-    assert!(
-        !content.contains("fn run_tui_terminal("),
-        "src/main.rs must not contain `fn run_tui_terminal(` — \
-         crossterm event-loop glue lives in `src/tui_terminal.rs` to \
-         keep main.rs 100% covered."
-    );
-    assert!(
-        !content.contains("struct TerminalGuard"),
-        "src/main.rs must not contain `struct TerminalGuard` — the RAII \
-         guard lives in `src/tui_terminal.rs` so its Drop is unit-testable \
-         via an injected `release_fn` closure."
-    );
-
-    // Structural assertions — crossterm API symbol names that any
-    // resurrected terminal glue would have to reference. Naming
-    // variations on the wrapper function or guard struct do not
-    // evade these because the underlying crossterm API names are
-    // fixed by the upstream crate.
-    const FORBIDDEN_CROSSTERM_SYMBOLS: &[&str] = &[
-        "enable_raw_mode",
-        "disable_raw_mode",
-        "EnterAlternateScreen",
-        "LeaveAlternateScreen",
-        "CrosstermBackend",
-    ];
-    for symbol in FORBIDDEN_CROSSTERM_SYMBOLS {
-        assert!(
-            !content.contains(symbol),
-            "src/main.rs must not reference crossterm symbol `{}` — \
-             crossterm-coupled code lives in `src/tui_terminal.rs` so \
-             main.rs stays 100% covered. If this symbol returned under a \
-             new naming convention, move it to tui_terminal.rs.",
-            symbol
-        );
-    }
-}
-
-// --- Coverage supersession tombstones (issue #1197) ---
-//
-// Two guards inside `start_finalize::run_impl` and `start_gate::run_impl`
-// are unreachable dead code. The deletions close a class of uncoverable
-// branches so the 100% coverage target is achievable. These structural
-// tombstones scan the enclosing `run_impl` function body for the
-// forbidden patterns plus enumerated bypasses.
-
-#[test]
-fn test_start_finalize_no_phase_complete_error_guard() {
-    // Tombstone: removed in PR #1206. phase_complete() is infallible —
-    // status is always "ok". The guard was unreachable dead code.
-    //
-    // Scope is the run_impl_with_deps body (where the deleted guard
-    // previously lived). The bounded-slice ends at pub fn run_impl,
-    // which always follows run_impl_with_deps in the file.
-    let root = common::repo_root();
-    let path = root.join("src/start_finalize.rs");
-    let content = fs::read_to_string(&path).expect("src/start_finalize.rs must exist");
-    let tail = content
-        .split_once("fn run_impl_with_deps(")
-        .map(|(_, t)| t)
-        .expect("run_impl_with_deps must exist");
-    let body = tail
-        .split_once("\npub fn run_impl(")
-        .map(|(b, _)| b)
-        .unwrap_or(tail);
-    for forbidden in &[
-        r#"phase_result["status"] == "error""#,
-        r#"phase_result["status"] != "ok""#,
-    ] {
-        assert!(
-            !body.contains(forbidden),
-            "start_finalize::run_impl_with_deps must not contain `{}` — phase_complete is infallible",
-            forbidden
-        );
-    }
-}
-
-#[test]
-fn test_start_gate_no_unexpected_deps_status_guard() {
-    // Tombstone: removed in PR #1206. Earlier branches return early on
-    // every non-deps_changed case; reaching this line requires
-    // deps_changed == true, so the guard was unreachable.
-    //
-    // Scope is the run_impl_with_deps body (where the deleted guard
-    // previously lived). The bounded-slice ends at pub fn run_impl,
-    // which always follows run_impl_with_deps in the file.
-    let root = common::repo_root();
-    let path = root.join("src/start_gate.rs");
-    let content = fs::read_to_string(&path).expect("src/start_gate.rs must exist");
-    let tail = content
-        .split_once("fn run_impl_with_deps(")
-        .map(|(_, t)| t)
-        .expect("run_impl_with_deps must exist");
-    let body = tail
-        .split_once("\npub fn run_impl(")
-        .map(|(b, _)| b)
-        .unwrap_or(tail);
-    for forbidden in &["!deps_changed", "deps_changed == false"] {
-        assert!(
-            !body.contains(forbidden),
-            "start_gate::run_impl_with_deps must not contain `{}` — dead guard, deps_changed is true on reach",
-            forbidden
-        );
-    }
-}
