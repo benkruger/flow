@@ -133,11 +133,17 @@ fn fail_closed_message(detail: &str) -> String {
     )
 }
 
+#[derive(Debug)]
 pub struct IssueResult {
     pub url: String,
     pub number: Option<i64>,
     pub id: Option<i64>,
 }
+
+/// Type alias for the gh-runner closure used by `_with_runner` seams.
+/// Production binds to `&run_gh_cmd`. Tests inject mock closures
+/// returning queued `Result<String, String>` responses per call.
+pub type GhRunner = dyn Fn(&[&str], Option<Duration>) -> Result<String, String>;
 
 /// Read body text from a file and delete the file.
 ///
@@ -170,16 +176,16 @@ pub fn parse_issue_number(url: &str) -> Option<i64> {
     re.captures(url).and_then(|cap| cap[1].parse().ok())
 }
 
-/// Fetch the REST API database ID for an issue.
-///
-/// The database ID is the integer ID used by REST API endpoints for
-/// sub-issues and dependencies. This is NOT the GraphQL node_id.
-///
-/// Returns (id, error). id is Some(integer) or None.
-pub fn fetch_database_id(repo: &str, number: i64) -> (Option<i64>, Option<String>) {
+/// Fetch the REST API database ID for an issue via an injected runner.
+/// Production wraps this with `&run_gh_cmd`. Tests inject mocks.
+pub fn fetch_database_id_with_runner(
+    repo: &str,
+    number: i64,
+    runner: &GhRunner,
+) -> (Option<i64>, Option<String>) {
     let timeout = Duration::from_secs(LOCAL_TIMEOUT);
     let api_path = format!("repos/{}/issues/{}", repo, number);
-    match run_gh_cmd(&["gh", "api", &api_path, "--jq", ".id"], Some(timeout)) {
+    match runner(&["gh", "api", &api_path, "--jq", ".id"], Some(timeout)) {
         Ok(stdout) => match stdout.trim().parse::<i64>() {
             Ok(id) => (Some(id), None),
             Err(_) => (
@@ -191,17 +197,24 @@ pub fn fetch_database_id(repo: &str, number: i64) -> (Option<i64>, Option<String
     }
 }
 
-/// Run gh issue create and return issue details.
+/// Fetch the REST API database ID for an issue.
 ///
-/// Includes label-not-found retry logic: if the label doesn't exist,
-/// tries to create it, then retries. If label creation fails, retries
-/// without the label.
-pub fn create_issue(
+/// The database ID is the integer ID used by REST API endpoints for
+/// sub-issues and dependencies. This is NOT the GraphQL node_id.
+///
+/// Returns (id, error). id is Some(integer) or None.
+pub fn fetch_database_id(repo: &str, number: i64) -> (Option<i64>, Option<String>) {
+    fetch_database_id_with_runner(repo, number, &run_gh_cmd)
+}
+
+/// Create-issue with an injected gh runner (testable seam).
+pub fn create_issue_with_runner(
     repo: &str,
     title: &str,
     label: Option<&str>,
     body: Option<&str>,
     milestone: Option<&str>,
+    runner: &GhRunner,
 ) -> Result<IssueResult, String> {
     let timeout = Duration::from_secs(LOCAL_TIMEOUT);
 
@@ -230,14 +243,16 @@ pub fn create_issue(
     }
 
     let cmd_refs: Vec<&str> = cmd_args.iter().map(|s| s.as_str()).collect();
-    match run_gh_cmd(&cmd_refs, Some(timeout)) {
-        Ok(url) => Ok(build_issue_result(repo, url)),
+    match runner(&cmd_refs, Some(timeout)) {
+        Ok(url) => Ok(build_issue_result_with_runner(repo, url, runner)),
         Err(error) => {
             // Label-not-found retry logic
             if let Some(l) = label {
                 let err_lower = error.to_lowercase();
                 if err_lower.contains("label") && err_lower.contains("not found") {
-                    return retry_with_label(repo, title, l, body, milestone, timeout);
+                    return retry_with_label_with_runner(
+                        repo, title, l, body, milestone, timeout, runner,
+                    );
                 }
             }
             Err(error)
@@ -245,16 +260,35 @@ pub fn create_issue(
     }
 }
 
-fn retry_with_label(
+/// Run gh issue create and return issue details.
+///
+/// Includes label-not-found retry logic: if the label doesn't exist,
+/// tries to create it, then retries. If label creation fails, retries
+/// without the label.
+pub fn create_issue(
+    repo: &str,
+    title: &str,
+    label: Option<&str>,
+    body: Option<&str>,
+    milestone: Option<&str>,
+) -> Result<IssueResult, String> {
+    create_issue_with_runner(repo, title, label, body, milestone, &run_gh_cmd)
+}
+
+/// Retry-with-label with an injected gh runner. Production wraps with
+/// `&run_gh_cmd`. Tests drive the label-create success/failure branches
+/// and the retry-with/without-label branches via the runner queue.
+pub fn retry_with_label_with_runner(
     repo: &str,
     title: &str,
     label: &str,
     body: Option<&str>,
     milestone: Option<&str>,
     timeout: Duration,
+    runner: &GhRunner,
 ) -> Result<IssueResult, String> {
     // Try creating the label
-    let label_created = run_gh_cmd(
+    let label_created = runner(
         &["gh", "label", "create", label, "--repo", repo],
         Some(timeout),
     )
@@ -284,14 +318,14 @@ fn retry_with_label(
     }
 
     let retry_refs: Vec<&str> = retry_args.iter().map(|s| s.as_str()).collect();
-    let url = run_gh_cmd(&retry_refs, Some(timeout))?;
-    Ok(build_issue_result(repo, url))
+    let url = runner(&retry_refs, Some(timeout))?;
+    Ok(build_issue_result_with_runner(repo, url, runner))
 }
 
-fn build_issue_result(repo: &str, url: String) -> IssueResult {
+fn build_issue_result_with_runner(repo: &str, url: String, runner: &GhRunner) -> IssueResult {
     let number = parse_issue_number(&url);
     let db_id = number.and_then(|n| {
-        let (id, _) = fetch_database_id(repo, n);
+        let (id, _) = fetch_database_id_with_runner(repo, n, runner);
         id
     });
     IssueResult {
@@ -762,5 +796,147 @@ mod tests {
     fn args_override_defaults_to_false() {
         let args = Args::try_parse_from(["issue", "--title", "Test"]).unwrap();
         assert!(!args.override_code_review_ban);
+    }
+
+    // --- _with_runner seams (create_issue, retry_with_label, fetch_database_id) ---
+
+    use std::cell::RefCell;
+    use std::collections::VecDeque;
+
+    type GhResult = Result<String, String>;
+
+    fn mock_runner(responses: Vec<GhResult>) -> impl Fn(&[&str], Option<Duration>) -> GhResult {
+        let queue = RefCell::new(VecDeque::from(responses));
+        move |_args: &[&str], _timeout: Option<Duration>| -> GhResult {
+            queue
+                .borrow_mut()
+                .pop_front()
+                .expect("no more mock responses")
+        }
+    }
+
+    #[test]
+    fn create_issue_with_runner_returns_result_on_runner_ok() {
+        let runner = mock_runner(vec![
+            Ok("https://github.com/owner/name/issues/42".to_string()),
+            Ok("12345".to_string()),
+        ]);
+        let result =
+            create_issue_with_runner("owner/name", "Title", None, None, None, &runner).unwrap();
+        assert_eq!(result.url, "https://github.com/owner/name/issues/42");
+        assert_eq!(result.number, Some(42));
+        assert_eq!(result.id, Some(12345));
+    }
+
+    #[test]
+    fn create_issue_with_runner_propagates_err_when_label_none() {
+        let runner = mock_runner(vec![Err("network down".to_string())]);
+        let err =
+            create_issue_with_runner("owner/name", "Title", None, None, None, &runner).unwrap_err();
+        assert!(err.contains("network down"));
+    }
+
+    #[test]
+    fn create_issue_with_runner_label_not_found_triggers_retry() {
+        // Sequence: create fails with "label not found" → label create OK → retry OK → fetch_database_id OK
+        let runner = mock_runner(vec![
+            Err("could not add label: label not found".to_string()),
+            Ok(String::new()),
+            Ok("https://github.com/owner/name/issues/77".to_string()),
+            Ok("9999".to_string()),
+        ]);
+        let result =
+            create_issue_with_runner("owner/name", "Title", Some("Bug"), None, None, &runner)
+                .unwrap();
+        assert_eq!(result.number, Some(77));
+        assert_eq!(result.id, Some(9999));
+    }
+
+    #[test]
+    fn create_issue_with_runner_propagates_unrelated_err() {
+        let runner = mock_runner(vec![Err("authentication failed".to_string())]);
+        let err = create_issue_with_runner("owner/name", "Title", Some("Bug"), None, None, &runner)
+            .unwrap_err();
+        assert!(err.contains("authentication failed"));
+    }
+
+    #[test]
+    fn retry_with_label_with_runner_label_created_then_retry_succeeds() {
+        let runner = mock_runner(vec![
+            Ok(String::new()),
+            Ok("https://github.com/owner/name/issues/55".to_string()),
+            Ok("5555".to_string()),
+        ]);
+        let result = retry_with_label_with_runner(
+            "owner/name",
+            "Title",
+            "Flow",
+            None,
+            None,
+            Duration::from_secs(5),
+            &runner,
+        )
+        .unwrap();
+        assert_eq!(result.number, Some(55));
+    }
+
+    #[test]
+    fn retry_with_label_with_runner_label_create_fails_retries_without_label() {
+        let runner = mock_runner(vec![
+            Err("label create permission denied".to_string()),
+            Ok("https://github.com/owner/name/issues/33".to_string()),
+            Ok("3333".to_string()),
+        ]);
+        let result = retry_with_label_with_runner(
+            "owner/name",
+            "Title",
+            "Flow",
+            None,
+            None,
+            Duration::from_secs(5),
+            &runner,
+        )
+        .unwrap();
+        assert_eq!(result.number, Some(33));
+    }
+
+    #[test]
+    fn retry_with_label_with_runner_retry_fails_propagates_err() {
+        let runner = mock_runner(vec![Ok(String::new()), Err("retry timeout".to_string())]);
+        let err = retry_with_label_with_runner(
+            "owner/name",
+            "Title",
+            "Flow",
+            None,
+            None,
+            Duration::from_secs(5),
+            &runner,
+        )
+        .unwrap_err();
+        assert!(err.contains("retry timeout"));
+    }
+
+    #[test]
+    fn fetch_database_id_with_runner_returns_id_on_ok_numeric() {
+        let runner = mock_runner(vec![Ok("42".to_string())]);
+        let (id, err) = fetch_database_id_with_runner("owner/name", 1, &runner);
+        assert_eq!(id, Some(42));
+        assert!(err.is_none());
+    }
+
+    #[test]
+    fn fetch_database_id_with_runner_returns_err_on_invalid_id() {
+        let runner = mock_runner(vec![Ok("not-a-number".to_string())]);
+        let (id, err) = fetch_database_id_with_runner("owner/name", 1, &runner);
+        assert!(id.is_none());
+        assert!(err.unwrap().contains("Invalid ID"));
+    }
+
+    #[test]
+    fn fetch_database_id_with_runner_propagates_runner_err() {
+        let runner = mock_runner(vec![Err("api down".to_string())]);
+        let (id, err) = fetch_database_id_with_runner("owner/name", 1, &runner);
+        assert!(id.is_none());
+        assert!(err.unwrap().contains("api down"));
     }
 }
