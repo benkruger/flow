@@ -372,8 +372,25 @@ pub fn preflight_inner(
         }
     };
 
-    // Read state file
-    let state_path = FlowPaths::new(root, &branch).state_file();
+    // Read state file. External-input audit: `branch` may be the
+    // `--branch` CLI override per `.claude/rules/external-input-validation.md`;
+    // slash-containing or empty values cannot address flat
+    // `.flow-states/` paths, so use `try_new` and surface a structured
+    // error rather than panicking.
+    let state_path = match FlowPaths::try_new(root, &branch) {
+        Some(paths) => paths.state_file(),
+        None => {
+            return json!({
+                "status": "error",
+                "message": format!(
+                    "Branch '{}' is not a valid FLOW branch (contains '/' or is empty). \
+                     FLOW state files use a flat layout that cannot address slash-containing \
+                     branches; resume the flow in its canonical branch name.",
+                    branch
+                )
+            });
+        }
+    };
     let mut state: Option<Value> = None;
     let mut inferred = false;
 
