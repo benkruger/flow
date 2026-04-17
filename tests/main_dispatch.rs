@@ -430,6 +430,126 @@ fn main_init_state_empty_name_exits_1() {
     );
 }
 
+/// `flow-rs init-state "valid-name"` in an isolated tempdir exits 1
+/// because no `.flow.json` exists. Covers the delegation line of the
+/// `InitState` arm body — the `commands::init_state::run` call that
+/// runs after the empty-name guard passes.
+#[test]
+fn main_init_state_valid_name_no_flow_json_exits_1() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+    let output = flow_rs_no_recursion()
+        .args(["init-state", "valid-name"])
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .output()
+        .expect("spawn flow-rs init-state");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Could not read .flow.json"),
+        "expected stdout to surface the .flow.json read failure, got: {}",
+        stdout
+    );
+}
+
+/// `flow-rs start-step --step 1 --branch <valid> -- echo ok` covers the
+/// `if subcommand.first() == Some("--")` true branch in the `StartStep`
+/// arm body of `main.rs`. The arm strips `--` and delegates to
+/// `commands::start_step::run`, which exits 1 because no `bin/flow`
+/// exists relative to the spawned-binary path inside the tempdir.
+#[test]
+fn main_start_step_double_dash_strips() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+    let output = flow_rs_no_recursion()
+        .args([
+            "start-step",
+            "--step",
+            "1",
+            "--branch",
+            "test-fixture-branch",
+            "--",
+            "echo",
+            "ok",
+        ])
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .output()
+        .expect("spawn flow-rs start-step");
+    // Arm enters, the if-branch strips the leading "--", and delegation
+    // to start_step::run exits 1 (exec to bin/flow fails — bin/flow does
+    // not exist relative to the test binary's path inside the tempdir).
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// `flow-rs start-step --step 1 --branch <valid> echo ok` (no `--`)
+/// covers the `else` branch of the arm-body arg-massage block — the
+/// subcommand vec passes through unchanged.
+#[test]
+fn main_start_step_no_double_dash_passes_through() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+    let output = flow_rs_no_recursion()
+        .args([
+            "start-step",
+            "--step",
+            "1",
+            "--branch",
+            "test-fixture-branch",
+            "echo",
+            "ok",
+        ])
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .output()
+        .expect("spawn flow-rs start-step");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// `flow-rs tui` invoked via subprocess (no controlling TTY on the
+/// child) exits 1. Covers the `Tui` arm body in `main.rs` and the
+/// production `tui_terminal::run_tui_arm` wrapper, which detects the
+/// non-TTY case and returns `Err(("Error: ...", 1))`.
+#[test]
+fn main_tui_non_tty_exits_1() {
+    let output = flow_rs_no_recursion()
+        .arg("tui")
+        .output()
+        .expect("spawn flow-rs tui");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("flow tui requires an interactive terminal"),
+        "expected stderr to surface the non-TTY rejection message, got: {}",
+        stderr
+    );
+}
+
 /// `flow-rs cleanup /nonexistent --branch test --worktree .worktrees/test`
 /// exercises the `run()` → `json_error` → `process::exit(1)` path
 /// for an invalid project root.
