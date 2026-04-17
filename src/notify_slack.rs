@@ -82,11 +82,23 @@ pub fn build_config(bot_token: &str, channel: &str) -> Option<SlackConfig> {
     })
 }
 
+/// Read slack config via injected env-readers. Production wraps this with
+/// closures that call `std::env::var(TOKEN_ENV)` and
+/// `std::env::var(CHANNEL_ENV)`. The seam exists so unit tests cover the
+/// configuration build paths without `std::env::set_var` (forbidden in
+/// parallel tests per `.claude/rules/testing-gotchas.md`).
+pub fn read_slack_config_with_env(
+    token_reader: &dyn Fn() -> String,
+    channel_reader: &dyn Fn() -> String,
+) -> Option<SlackConfig> {
+    build_config(&token_reader(), &channel_reader())
+}
+
 /// Read slack config from env vars. Returns None if not configured.
 pub fn read_slack_config() -> Option<SlackConfig> {
-    let bot_token = std::env::var(TOKEN_ENV).unwrap_or_default();
-    let channel = std::env::var(CHANNEL_ENV).unwrap_or_default();
-    build_config(&bot_token, &channel)
+    read_slack_config_with_env(&|| std::env::var(TOKEN_ENV).unwrap_or_default(), &|| {
+        std::env::var(CHANNEL_ENV).unwrap_or_default()
+    })
 }
 
 /// Format a Slack notification message.
@@ -319,6 +331,31 @@ mod tests {
     #[test]
     fn build_config_both_empty() {
         assert!(build_config("", "").is_none());
+    }
+
+    // --- read_slack_config_with_env ---
+
+    #[test]
+    fn read_slack_config_with_env_returns_config_when_both_present() {
+        let token = || "xoxb-test-token".to_string();
+        let channel = || "C12345".to_string();
+        let config = read_slack_config_with_env(&token, &channel).unwrap();
+        assert_eq!(config.bot_token, "xoxb-test-token");
+        assert_eq!(config.channel, "C12345");
+    }
+
+    #[test]
+    fn read_slack_config_with_env_returns_none_when_token_empty() {
+        let token = || String::new();
+        let channel = || "C12345".to_string();
+        assert!(read_slack_config_with_env(&token, &channel).is_none());
+    }
+
+    #[test]
+    fn read_slack_config_with_env_returns_none_when_channel_empty() {
+        let token = || "xoxb-test-token".to_string();
+        let channel = || String::new();
+        assert!(read_slack_config_with_env(&token, &channel).is_none());
     }
 
     // --- format_message ---
