@@ -206,12 +206,11 @@ test. The gate is `bin/test` itself — on full-suite runs it passes
 aggregate falls below its threshold, CI exits non-zero and
 `finalize-commit` blocks the commit.
 
-The thresholds are a ratchet: they only move up. When a PR earns a
-whole-percent improvement the matching flag is bumped in the same
-commit. A regression that would require a lower floor is a
-CI-blocking failure, not a reason to lower the gate.
+The thresholds are pinned at 100/100/100. They are never lowered —
+a regression is a CI-blocking failure, not grounds to relax the
+gate.
 
-The ratchet is the load-bearing mechanism. `.claude/rules/no-waivers.md`
+The 100/100/100 gate is the load-bearing mechanism. `.claude/rules/no-waivers.md`
 forbids per-line waiver files and the "measurement-only task"
 antipattern that lets a session declare victory at <100%. The Code
 Review reviewer agent treats any uncovered line as a Real finding
@@ -237,7 +236,7 @@ Key test files: `tests/structural.rs` (config invariants, version consistency), 
 ## Conventions
 
 - **Never invoke `/flow-release` unless the user explicitly runs it** — fixing a bug does not authorize a release. Committing a fix and releasing it are separate decisions. The user decides when to ship.
-- All commits via `/flow:flow-commit` skill — no exceptions, no shortcuts, no "just this once". Measurement-only tasks (e.g., a coverage TOTAL capture or a threshold verification re-run) still route through `/flow:flow-commit` — the commit skill's `git diff --cached` check handles the empty diff via its "Nothing to commit" return path, so the session never needs a shortcut. Infrastructure commits during `start-gate` (e.g., `commit_deps` for dependency lock files) are the sole carve-out: they commit directly via Rust under the start lock, before any worktree exists.
+- All commits via `/flow:flow-commit` skill — no exceptions, no shortcuts, no "just this once". The commit skill's `git diff --cached` check handles empty diffs via its "Nothing to commit" return path, so a session that only needs to verify CI never needs a shortcut. Infrastructure commits during `start-gate` (e.g., `commit_deps` for dependency lock files) are the sole carve-out: they commit directly via Rust under the start lock, before any worktree exists.
 - All changes require `bin/flow ci` green before committing — tests are the gate
 - New skills are automatically covered by `tests/skill_contracts.rs` (glob-based discovery)
 - Namespace is `flow:` — plugin.json name is `"flow"`
