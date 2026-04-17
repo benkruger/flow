@@ -200,11 +200,14 @@ pub fn run_impl(args: &Args) -> Value {
 }
 
 /// Main-arm entry point: returns the `(Value, i32)` contract that
-/// `dispatch::dispatch_json` consumes. `start_finalize::run_impl`
-/// always returns `Ok` at the Rust level — business errors appear in
-/// the `status: "error"` payload with exit code `0`.
-pub fn run_impl_main(args: &Args) -> (Value, i32) {
-    (run_impl(args), 0)
+/// `dispatch::dispatch_json` consumes. Takes `root: &Path` per
+/// `.claude/rules/rust-patterns.md` "Main-arm dispatch" so inline
+/// tests can pass a `TempDir` fixture instead of the host
+/// `project_root()`. `start_finalize::run_impl_with_deps` always
+/// returns `Value` — business errors appear in the `status: "error"`
+/// payload with exit code `0`.
+pub fn run_impl_main(args: &Args, root: &Path) -> (Value, i32) {
+    (run_impl_with_deps(args, root, &notify_slack::notify), 0)
 }
 
 #[cfg(test)]
@@ -457,27 +460,19 @@ mod tests {
 
     #[test]
     fn finalize_run_impl_main_err_path() {
-        // run_impl_main wraps run_impl into the `(Value, i32)` contract
-        // that dispatch::dispatch_json consumes. start_finalize's
-        // run_impl always returns `Value` (no Result) because no
-        // internal step produces a Rust-level Err — every failure
-        // mode surfaces as a `status: "error"` business payload with
-        // exit code 0. This test drives the missing-state-file
-        // scenario through run_impl directly (run_impl_main just
-        // wraps the value) and asserts the exit code is 0 with the
-        // error payload visible.
+        // Drive the missing-state-file scenario through run_impl_main
+        // against a TempDir so the injected root scopes the FlowPaths
+        // resolution to the fixture. Asserts the `(Value, 0)`
+        // contract: business errors appear as `status:"error"` in the
+        // Value with exit code 0.
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_path_buf();
-        std::env::set_current_dir(&root).ok();
         let args = Args {
-            branch: "nonexistent-err-path-branch".to_string(),
+            branch: "main-err-branch".to_string(),
             pr_url: None,
             auto: false,
         };
-        // Exercise the wrap directly via the seam, since production
-        // `run_impl_main` binds to the real `project_root()`.
-        let value = run_impl_with_deps(&args, &root, &panicking_notifier);
-        let (v, code) = (value, 0i32);
+        let (v, code) = run_impl_main(&args, &root);
         assert_eq!(code, 0, "exit code is 0 for business errors");
         assert_eq!(v["status"], "error");
         assert!(v["message"]
@@ -488,16 +483,15 @@ mod tests {
 
     #[test]
     fn finalize_run_impl_main_happy_wraps_with_exit_zero() {
-        // Sanity: run_impl_main returns (ok_value, 0) on the happy
-        // path.
+        // Happy path via run_impl_main directly. pr_url=None so the
+        // production notify_slack binder is never invoked.
         let (_dir, root) = seed_state("happy-main-branch", "auto");
         let args = Args {
             branch: "happy-main-branch".to_string(),
             pr_url: None,
             auto: false,
         };
-        let value = run_impl_with_deps(&args, &root, &panicking_notifier);
-        let (v, code) = (value, 0i32);
+        let (v, code) = run_impl_main(&args, &root);
         assert_eq!(code, 0);
         assert_eq!(v["status"], "ok");
     }

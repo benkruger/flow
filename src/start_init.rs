@@ -20,6 +20,22 @@
 //! testable without spawning the real `init-state` binary, touching
 //! `CLAUDE_PLUGIN_ROOT`, or making a GitHub API call. Production
 //! [`run_impl`] is a one-line binder.
+//!
+//! ## Why start_init has `run_impl_main_with_deps`
+//!
+//! Among the four start-family modules, only `start_init` exposes
+//! [`run_impl_main_with_deps`] alongside [`run_impl_main`]. The
+//! asymmetry reflects a concrete testability need: `start_init` is
+//! the one module whose `run_impl` can return `Result::Err` at the
+//! Rust level (when `plug_root_finder` yields `None` or the
+//! init-state subprocess fails to spawn). The `Err` arm of
+//! `run_impl_main` maps to exit code `1` per the `(err_json, 1)`
+//! dispatch convention, and the only way to exercise that arm from a
+//! unit test is to inject a dep that produces `Err`. Hence the
+//! seam-accepting entry point. `start_gate`, `start_workspace`, and
+//! `start_finalize` have no reachable `Err` path in `run_impl`, so
+//! their `run_impl_main` is a trivial `(v, 0)` wrapper with no seam
+//! variant.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -421,14 +437,15 @@ pub fn run_impl_main_with_deps(
 
 /// Production main-arm entry point: binds [`run_impl_main_with_deps`]
 /// to the real `plugin_root`, `prime_check::run_impl`, default
-/// upgrade check, and default init-state subprocess runner.
-pub fn run_impl_main(args: &Args) -> (Value, i32) {
-    let root = project_root();
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+/// upgrade check, and default init-state subprocess runner. Takes
+/// `root: &Path` and `cwd: &Path` per `.claude/rules/rust-patterns.md`
+/// "Main-arm dispatch" so inline tests can pass a `TempDir` fixture
+/// instead of the host `project_root()`/`current_dir()`.
+pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
     run_impl_main_with_deps(
         args,
-        &root,
-        &cwd,
+        root,
+        cwd,
         &plugin_root,
         &prime_check::run_impl,
         &default_upgrade_check,

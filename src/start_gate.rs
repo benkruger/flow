@@ -272,11 +272,25 @@ pub fn run_impl(args: &Args) -> Value {
 }
 
 /// Main-arm entry point: returns the `(Value, i32)` contract that
-/// `dispatch::dispatch_json` consumes. `start_gate::run_impl` always
-/// returns `Value` — business errors appear in the `status: "error"`
-/// payload with exit code `0`.
-pub fn run_impl_main(args: &Args) -> (Value, i32) {
-    (run_impl(args), 0)
+/// `dispatch::dispatch_json` consumes. Takes `root: &Path` and
+/// `cwd: &Path` per `.claude/rules/rust-patterns.md` "Main-arm
+/// dispatch" so inline tests can pass a `TempDir` fixture instead of
+/// the host `project_root()`/`current_dir()`. `run_impl_with_deps`
+/// always returns `Value` — business errors appear in the
+/// `status: "error"` payload with exit code `0`.
+pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
+    (
+        run_impl_with_deps(
+            args,
+            root,
+            cwd,
+            &git_pull,
+            &ci::run_impl,
+            &run_update_deps,
+            &commit_deps,
+        ),
+        0,
+    )
 }
 
 /// Commit dependency changes to main and push.
@@ -848,33 +862,22 @@ mod tests {
 
     #[test]
     fn start_gate_run_impl_main_err_path() {
-        // start_gate's run_impl always returns `Value` — no Rust-level
-        // Err path. The "err path" is the business-error scenario
-        // where a subprocess step signals failure via the returned
-        // payload. Exercises git_pull_fn=Err via run_impl_with_deps
-        // (the production binder used by run_impl_main) and asserts
-        // run_impl_main would wrap the result as (status:error value,
-        // exit 0).
+        // Drive the git-pull-error scenario through run_impl_main
+        // against a TempDir. run_impl_main calls run_impl_with_deps
+        // bound to the real git_pull, ci::run_impl, run_update_deps,
+        // and commit_deps — in this test the tempdir is not a git
+        // repo so real git_pull returns Err, which run_impl_with_deps
+        // propagates as a status:"error" step:"git_pull" payload.
+        // run_impl_main wraps with exit 0 per the business-error
+        // convention.
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_path_buf();
         seed_state(&root, "main-err-branch");
         let args = Args {
             branch: "main-err-branch".to_string(),
         };
-        let pull_err = |_: &Path| -> Result<(), String> { Err("simulated failure".to_string()) };
-
-        let value = run_impl_with_deps(
-            &args,
-            &root,
-            &root,
-            &pull_err,
-            &ok_ci,
-            &deps_no_changes_ok,
-            &commit_ok,
-        );
-        // run_impl_main wraps the seam's return value with exit 0:
-        let (v, code) = (value, 0i32);
-        assert_eq!(code, 0);
+        let (v, code) = run_impl_main(&args, &root, &root);
+        assert_eq!(code, 0, "exit code is 0 for business errors");
         assert_eq!(v["status"], "error");
         assert_eq!(v["step"], "git_pull");
     }

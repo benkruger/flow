@@ -595,19 +595,26 @@ fn main() {
             commands::start_step::run(step, &branch, subcommand);
         }
         Some(Commands::StartFinalize(args)) => {
-            let (v, code) = start_finalize::run_impl_main(&args);
+            let root = project_root();
+            let (v, code) = start_finalize::run_impl_main(&args, &root);
             flow_rs::dispatch::dispatch_json(v, code);
         }
         Some(Commands::StartGate(args)) => {
-            let (v, code) = start_gate::run_impl_main(&args);
+            let root = project_root();
+            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let (v, code) = start_gate::run_impl_main(&args, &root, &cwd);
             flow_rs::dispatch::dispatch_json(v, code);
         }
         Some(Commands::StartInit(args)) => {
-            let (v, code) = start_init::run_impl_main(&args);
+            let root = project_root();
+            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let (v, code) = start_init::run_impl_main(&args, &root, &cwd);
             flow_rs::dispatch::dispatch_json(v, code);
         }
         Some(Commands::StartWorkspace(args)) => {
-            let (v, code) = start_workspace::run_impl_main(&args);
+            let root = project_root();
+            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let (v, code) = start_workspace::run_impl_main(&args, &root, &cwd);
             flow_rs::dispatch::dispatch_json(v, code);
         }
         Some(Commands::FormatStatus { branch }) => {
