@@ -23,7 +23,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{self, Output};
+use std::process::Output;
 
 use clap::Parser;
 use serde_json::{json, Value};
@@ -34,7 +34,6 @@ use crate::commands::start_step::update_step;
 use crate::flow_paths::FlowStatesDir;
 use crate::git::project_root;
 use crate::label_issues::{label_issues, LABEL};
-use crate::output::json_error;
 use crate::prime_check;
 use crate::upgrade_check::{self, GhResult};
 use crate::utils::{
@@ -382,17 +381,59 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     )
 }
 
-/// CLI entry point.
-pub fn run(args: Args) {
-    match run_impl(&args) {
-        Ok(result) => {
-            println!("{}", serde_json::to_string(&result).unwrap());
-        }
-        Err(e) => {
-            json_error(&e, &[]);
-            process::exit(1);
-        }
+/// Testable main-arm entry point with injected dependencies.
+///
+/// Wraps [`run_impl_with_deps`] into the `(Value, i32)` contract that
+/// `dispatch::dispatch_json` consumes. `run_impl_with_deps` returns
+/// `Err` when `plug_root_finder` yields `None` or `init_state_runner`
+/// fails — both infrastructure failures that surface as
+/// `(err_json, 1)`. Every other scenario returns `(Ok value, 0)`.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn run_impl_main_with_deps(
+    args: &Args,
+    root: &Path,
+    cwd: &Path,
+    plug_root_finder: &dyn Fn() -> Option<PathBuf>,
+    prime_check_fn: &dyn Fn(&Path, &Path) -> Result<Value, String>,
+    upgrade_check_fn: &dyn Fn(&Path) -> Value,
+    init_state_runner: &dyn Fn(&[String], &Path) -> Result<Output, String>,
+) -> (Value, i32) {
+    match run_impl_with_deps(
+        args,
+        root,
+        cwd,
+        plug_root_finder,
+        prime_check_fn,
+        upgrade_check_fn,
+        init_state_runner,
+    ) {
+        Ok(v) => (v, 0),
+        Err(e) => (
+            json!({
+                "status": "error",
+                "message": e,
+                "step": "start_init_run_impl",
+            }),
+            1,
+        ),
     }
+}
+
+/// Production main-arm entry point: binds [`run_impl_main_with_deps`]
+/// to the real `plugin_root`, `prime_check::run_impl`, default
+/// upgrade check, and default init-state subprocess runner.
+pub fn run_impl_main(args: &Args) -> (Value, i32) {
+    let root = project_root();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    run_impl_main_with_deps(
+        args,
+        &root,
+        &cwd,
+        &plugin_root,
+        &prime_check::run_impl,
+        &default_upgrade_check,
+        &default_init_state_runner,
+    )
 }
 
 #[cfg(test)]
@@ -727,5 +768,72 @@ mod tests {
         .unwrap();
         assert_eq!(result["status"], "locked");
         assert_eq!(result["feature"], "other-feature");
+    }
+
+    // --- run_impl_main ---
+
+    #[test]
+    fn start_init_run_impl_main_err_path() {
+        // run_impl_main_with_deps wraps run_impl_with_deps. When the
+        // plug_root_finder returns None, the inner Result is Err and
+        // the wrap produces (err_json, 1) with step=start_init_run_impl.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        let args = Args {
+            feature_name: "main-err-branch".to_string(),
+            auto: false,
+            prompt_file: None,
+        };
+        let finder = || -> Option<PathBuf> { None };
+
+        let (v, code) = run_impl_main_with_deps(
+            &args,
+            &root,
+            &root,
+            &finder,
+            &ok_prime_check,
+            &ok_upgrade_check,
+            &panic_init_runner,
+        );
+        assert_eq!(code, 1);
+        assert_eq!(v["status"], "error");
+        assert_eq!(v["step"], "start_init_run_impl");
+        assert!(v["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("CLAUDE_PLUGIN_ROOT"));
+    }
+
+    #[test]
+    fn start_init_run_impl_main_ok_wraps_with_exit_zero() {
+        // Sanity: happy path through run_impl_main_with_deps.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        let plug_root = root.clone();
+        let args = Args {
+            feature_name: "main-ok-branch".to_string(),
+            auto: false,
+            prompt_file: None,
+        };
+        let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
+        let runner = |_: &[String], _: &Path| -> Result<Output, String> {
+            Ok(Output {
+                status: std::os::unix::process::ExitStatusExt::from_raw(0),
+                stdout: br#"{"status":"ok"}"#.to_vec(),
+                stderr: Vec::new(),
+            })
+        };
+
+        let (v, code) = run_impl_main_with_deps(
+            &args,
+            &root,
+            &root,
+            &finder,
+            &ok_prime_check,
+            &ok_upgrade_check,
+            &runner,
+        );
+        assert_eq!(code, 0);
+        assert_eq!(v["status"], "ready");
     }
 }
