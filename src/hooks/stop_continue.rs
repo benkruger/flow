@@ -873,6 +873,43 @@ mod tests {
         assert!(!should_block);
     }
 
+    /// RAII guard that restores file permissions on Drop. Protects
+    /// chmod-000 tests from leaking a mode-000 file when an assertion
+    /// inside the test body panics before the inline restore runs.
+    /// Per `.claude/rules/panic-safe-cleanup.md`.
+    struct PermissionGuard {
+        path: std::path::PathBuf,
+        restore_mode: u32,
+    }
+    impl Drop for PermissionGuard {
+        fn drop(&mut self) {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&self.path, fs::Permissions::from_mode(self.restore_mode));
+        }
+    }
+
+    /// Covers the `Err(_) => return (false, None)` arm on line 234 of
+    /// `check_qa_pending`: qa_path.exists() succeeds but read_to_string
+    /// fails with EACCES. Uses chmod 000 to make the breadcrumb
+    /// unreadable while still satisfying the existence check.
+    #[test]
+    fn test_check_qa_pending_unreadable_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let qa_path = state_dir.join("qa-pending.json");
+        fs::write(&qa_path, r#"{"_continue_context": "x"}"#).unwrap();
+        fs::set_permissions(&qa_path, fs::Permissions::from_mode(0o000)).unwrap();
+        let _guard = PermissionGuard {
+            path: qa_path.clone(),
+            restore_mode: 0o644,
+        };
+        let (should_block, context) = check_qa_pending(dir.path());
+        assert!(!should_block);
+        assert!(context.is_none());
+    }
+
     // --- set_tab_color ---
     // Note: write_tab_sequences writes to /dev/tty, which may or may not be
     // writable in the test environment. We test that set_tab_color does not
@@ -911,6 +948,29 @@ mod tests {
         fs::write(&state_path, "{bad json").unwrap();
 
         // Should not panic — falls through to detect_repo fallback
+        set_tab_color(dir.path(), "test", &state_path);
+    }
+
+    /// Covers the `Err(_) => write_tab_sequences(...)` arm on line 266
+    /// of `set_tab_color`: state_path.exists() returns true but
+    /// read_to_string fails with EACCES. Uses chmod 000 to make the
+    /// state file unreadable while still satisfying the existence
+    /// check. Verifies that set_tab_color routes through the
+    /// detect_repo fallback without panicking.
+    #[test]
+    fn test_set_tab_color_unreadable_state_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let state_path = state_dir.join("test.json");
+        fs::write(&state_path, r#"{"repo": "owner/repo"}"#).unwrap();
+        fs::set_permissions(&state_path, fs::Permissions::from_mode(0o000)).unwrap();
+        let _guard = PermissionGuard {
+            path: state_path.clone(),
+            restore_mode: 0o644,
+        };
+        // Should fall through to detect_repo without panicking.
         set_tab_color(dir.path(), "test", &state_path);
     }
 

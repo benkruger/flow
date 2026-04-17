@@ -1058,6 +1058,22 @@ mod tests {
         assert!(should_block_background("npm run flow", false).is_none());
     }
 
+    /// Covers the `None => return false` arm on line 374 of
+    /// `is_flow_command`: a command whose `split_whitespace().next()`
+    /// returns `None` — i.e., empty string or pure whitespace. A flow
+    /// context (`flow_active = true`) would block non-flow commands via
+    /// the "inside flow" branch; passing `flow_active = false` forces the
+    /// empty-command path through `is_flow_command` directly.
+    #[test]
+    fn test_is_flow_command_empty_returns_false() {
+        assert!(should_block_background("", false).is_none());
+    }
+
+    #[test]
+    fn test_is_flow_command_whitespace_only_returns_false() {
+        assert!(should_block_background("   \t", false).is_none());
+    }
+
     // --- is_bg_truthy: defensive JSON type handling ---
 
     #[test]
@@ -1479,6 +1495,36 @@ mod tests {
         assert!(
             !allowed,
             "backtick inside double quotes must be blocked — bash expands it; got: {msg}"
+        );
+    }
+
+    /// Covers the backslash-escape arm of scan_unquoted's Double state
+    /// (lines 225-229 of validate_pretool.rs): when the scanner is inside
+    /// a double-quoted span and encounters `\`, it advances past the
+    /// escaped byte so the escaped character is treated as literal. A
+    /// double-quoted string containing `\"` should pass through without
+    /// tripping the compound-operator predicate, even though `"` would
+    /// normally close the quote.
+    #[test]
+    fn test_allows_escaped_double_quote_inside_double_quoted_arg() {
+        let cmd = r#"echo "hello \"world\"""#;
+        let (allowed, msg) = validate(cmd, None, true);
+        assert!(
+            allowed,
+            "escaped double quote inside double-quoted arg must be literal; got: {msg}"
+        );
+    }
+
+    /// Covers the backslash-escape arm of scan_unquoted's Double state
+    /// from the redirect-predicate layer: a backslash-escaped `>` inside
+    /// double quotes must not be treated as shell redirection.
+    #[test]
+    fn test_allows_escaped_redirect_inside_double_quoted_arg() {
+        let cmd = r#"echo "result \> output""#;
+        let (allowed, msg) = validate(cmd, None, true);
+        assert!(
+            allowed,
+            "escaped redirect char inside double-quoted arg must be literal; got: {msg}"
         );
     }
 

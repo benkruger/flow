@@ -16,13 +16,32 @@ pub fn mutate_state<F>(state_path: &Path, transform_fn: F) -> Result<Value, Muta
 where
     F: FnOnce(&mut Value),
 {
+    mutate_state_with_lock(state_path, transform_fn, |f| f.lock_exclusive())
+}
+
+/// Test seam for `mutate_state` — accepts an injectable lock closure so
+/// unit tests can simulate `lock_exclusive()` failures without triggering
+/// real OS-level lock contention. The public wrapper above supplies
+/// `fs2::FileExt::lock_exclusive`; the inline `Lock` error test in
+/// `#[cfg(test)] mod tests` passes a closure that returns `Err` so the
+/// `MutateError::Lock` arm is exercised. No production caller uses this
+/// function directly.
+fn mutate_state_with_lock<F, L>(
+    state_path: &Path,
+    transform_fn: F,
+    lock_fn: L,
+) -> Result<Value, MutateError>
+where
+    F: FnOnce(&mut Value),
+    L: FnOnce(&std::fs::File) -> std::io::Result<()>,
+{
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
         .open(state_path)
         .map_err(|e| MutateError::Io(format!("{}: {}", state_path.display(), e)))?;
 
-    file.lock_exclusive().map_err(|e| {
+    lock_fn(&file).map_err(|e| {
         MutateError::Lock(format!("Failed to lock {}: {}", state_path.display(), e))
     })?;
 
@@ -300,10 +319,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("nonexistent.json");
         let err = mutate_state(&path, |_| {}).unwrap_err();
-        match err {
-            MutateError::Io(_) => {}
-            other => panic!("Expected Io variant, got: {:?}", other),
-        }
+        assert!(
+            matches!(err, MutateError::Io(_)),
+            "Expected Io variant, got: {:?}",
+            err
+        );
     }
 
     #[test]
@@ -312,10 +332,36 @@ mod tests {
         let path = dir.path().join("state.json");
         fs::write(&path, "{invalid").unwrap();
         let err = mutate_state(&path, |_| {}).unwrap_err();
-        match err {
-            MutateError::Json(_) => {}
-            other => panic!("Expected Json variant, got: {:?}", other),
-        }
+        assert!(
+            matches!(err, MutateError::Json(_)),
+            "Expected Json variant, got: {:?}",
+            err
+        );
+    }
+
+    /// Covers the `MutateError::Lock` arm (lines 26-27 of the
+    /// pre-refactor `mutate_state` body, now lines 35-37 of
+    /// `mutate_state_with_lock`). The lock failure is simulated by
+    /// passing a closure that returns `Err(io::Error)` in place of
+    /// `fs2::FileExt::lock_exclusive`. No OS-level lock manipulation
+    /// is needed — the seam lets the test inject the failure
+    /// deterministically.
+    #[test]
+    fn mutate_state_with_lock_error_wraps_as_lock_variant() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, "{}").unwrap();
+        let err = mutate_state_with_lock(
+            &path,
+            |_| {},
+            |_| Err(std::io::Error::other("simulated lock failure")),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, MutateError::Lock(ref m) if m.contains("simulated lock failure")),
+            "Expected Lock variant with simulated message, got: {:?}",
+            err
+        );
     }
 
     // --- write_and_truncate ---
@@ -354,15 +400,19 @@ mod tests {
         // Open read-only — write_all will fail with a permission error.
         let mut file = OpenOptions::new().read(true).open(&path).unwrap();
         let err = write_and_truncate(&mut file, b"new data").unwrap_err();
-        match err {
-            MutateError::Io(msg) => {
-                assert!(
-                    msg.contains("Failed to write") || msg.contains("Failed to seek"),
-                    "expected write or seek failure, got: {}",
-                    msg
-                );
-            }
-            other => panic!("Expected Io variant, got: {:?}", other),
-        }
+        let msg = match &err {
+            MutateError::Io(m) => m.clone(),
+            _ => String::new(),
+        };
+        assert!(
+            matches!(err, MutateError::Io(_)),
+            "Expected Io variant, got: {:?}",
+            err
+        );
+        assert!(
+            msg.contains("Failed to write") || msg.contains("Failed to seek"),
+            "expected write or seek failure, got: {}",
+            msg
+        );
     }
 }

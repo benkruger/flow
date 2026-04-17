@@ -43,6 +43,38 @@ pub fn create_state(
     start_steps_total: Option<i64>,
     relative_cwd: &str,
 ) -> Result<(), String> {
+    create_state_with_tty(
+        project_root,
+        branch,
+        skills,
+        prompt,
+        commit_format,
+        start_step,
+        start_steps_total,
+        relative_cwd,
+        detect_tty(),
+    )
+}
+
+/// Test seam for `create_state` that accepts the computed session-tty
+/// value as a parameter. The public wrapper above calls `detect_tty()`
+/// to produce the value; this inner form lets unit tests pass
+/// `Some("/dev/ttys0")` or `None` directly so both arms of the
+/// `match tty { Some(t) => json!(t), None => Value::Null }` branch
+/// are exercised without requiring a real PTY. No production caller
+/// uses this function directly.
+#[allow(clippy::too_many_arguments)]
+fn create_state_with_tty(
+    project_root: &Path,
+    branch: &str,
+    skills: Option<&IndexMap<String, SkillConfig>>,
+    prompt: &str,
+    commit_format: Option<&str>,
+    start_step: Option<i64>,
+    start_steps_total: Option<i64>,
+    relative_cwd: &str,
+    tty: Option<String>,
+) -> Result<(), String> {
     let current_time = now();
     let phases = build_initial_phases(&current_time);
 
@@ -66,8 +98,8 @@ pub fn create_state(
     );
     state.insert(
         "session_tty".into(),
-        match detect_tty() {
-            Some(tty) => json!(tty),
+        match tty {
+            Some(t) => json!(t),
             None => Value::Null,
         },
     );
@@ -306,6 +338,50 @@ mod tests {
         assert_eq!(state["schema_version"], 1);
         assert_eq!(state["branch"], "test-feature");
         assert_eq!(state["current_phase"], "flow-start");
+    }
+
+    /// Covers the `Some(t) => json!(t)` arm on line 94 of
+    /// `create_state_with_tty`: subprocess tests spawn `flow-rs` via
+    /// `.output()` which does not allocate a PTY, so `detect_tty()`
+    /// returns None in every existing test. The inner seam accepts an
+    /// explicit `Option<String>` so this unit test exercises the
+    /// `Some` branch by passing a synthesized tty string.
+    #[test]
+    fn create_state_with_tty_some_writes_tty_to_state() {
+        let dir = tempfile::tempdir().unwrap();
+        create_state_with_tty(
+            dir.path(),
+            "tty-some",
+            None,
+            "prompt",
+            None,
+            None,
+            None,
+            "",
+            Some("/dev/ttys999".to_string()),
+        )
+        .unwrap();
+        let state = read_state(dir.path(), "tty-some");
+        assert_eq!(state["session_tty"], "/dev/ttys999");
+    }
+
+    #[test]
+    fn create_state_with_tty_none_writes_null() {
+        let dir = tempfile::tempdir().unwrap();
+        create_state_with_tty(
+            dir.path(),
+            "tty-none",
+            None,
+            "prompt",
+            None,
+            None,
+            None,
+            "",
+            None,
+        )
+        .unwrap();
+        let state = read_state(dir.path(), "tty-none");
+        assert!(state["session_tty"].is_null());
     }
 
     // --- Null PR fields ---
