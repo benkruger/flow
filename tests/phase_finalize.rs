@@ -493,3 +493,63 @@ fn test_pr_url_without_thread_ts_attempts_slack() {
     // Skipped slack results are omitted from the response by design.
     assert!(data.get("slack").is_none());
 }
+
+/// Subprocess: state file exists but contains malformed JSON.
+/// `mutate_state` cannot parse it and `run_impl_with_deps` returns a
+/// structured error via the `State mutation failed:` branch rather
+/// than panicking.
+#[test]
+fn test_malformed_state_file_returns_mutation_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "malformed-state";
+    let repo = create_git_repo(dir.path());
+    let state_dir = flow_states_dir(&repo);
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(
+        state_dir.join(format!("{}.json", branch)),
+        "{not valid json at all",
+    )
+    .unwrap();
+
+    let output = run_phase_finalize(&repo, &["--phase", "flow-code", "--branch", branch]);
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    let message = data["message"].as_str().unwrap_or("");
+    assert!(
+        message.to_lowercase().contains("state mutation")
+            || message.to_lowercase().contains("failed"),
+        "expected state-mutation error, got: {}",
+        message
+    );
+}
+
+/// Subprocess: passing `--thread-ts` but no Slack credentials means
+/// the notifier returns `status=skipped`. The response omits the
+/// `slack` key per the omit-when-skipped branch.
+#[test]
+fn test_thread_ts_without_slack_credentials_omits_slack_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "thread-no-creds";
+    let repo = create_git_repo(dir.path());
+    create_state(&repo, branch, "flow-code", "auto");
+
+    let output = run_phase_finalize(
+        &repo,
+        &[
+            "--phase",
+            "flow-code",
+            "--branch",
+            branch,
+            "--thread-ts",
+            "1234567890.123456",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(0));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert!(
+        data.get("slack").is_none(),
+        "expected no slack key when status=skipped, got: {:?}",
+        data.get("slack")
+    );
+}
