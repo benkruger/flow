@@ -550,6 +550,295 @@ fn main_tui_non_tty_exits_1() {
     );
 }
 
+/// Parameterized sweep that invokes every thin `Some(Commands::X(args)) =>
+/// X::run(args)` arm in `src/main.rs` to drive the arm body's region
+/// instrumentation. Each entry passes the minimal args clap requires;
+/// each invocation runs in an isolated tempdir with `GIT_CEILING_DIRECTORIES`
+/// set so the spawned child cannot escape into the host repo. Exit codes
+/// vary (most subcommands exit 1 on missing state, some exit 0 cleanly,
+/// hooks exit 0 on empty stdin). The assertion is uniform: stderr must
+/// not contain `"panicked at"`. The test's job is to enter the arm
+/// body — what the underlying `X::run` does once entered is the owning
+/// module's coverage concern, out of scope for `main.rs` 100%.
+///
+/// Arms `Cleanup`, `FinalizeCommit`, `StartLock`, `CheckPhase`, `TuiData`,
+/// `InitState`, `StartStep`, `Tui`, `External`, and `None` are covered
+/// by dedicated tests above and are intentionally excluded from the
+/// sweep.
+#[test]
+fn main_arm_invocations_cover_dispatch() {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    fn run_sweep_entry(
+        subcommand: &str,
+        args: &[&str],
+        stdin_json: Option<&str>,
+    ) -> std::process::Output {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+        let mut cmd = flow_rs_no_recursion();
+        cmd.arg(subcommand);
+        cmd.args(args);
+        cmd.current_dir(&root);
+        cmd.env("GIT_CEILING_DIRECTORIES", &root);
+        if let Some(input) = stdin_json {
+            cmd.stdin(Stdio::piped());
+            cmd.stdout(Stdio::piped());
+            cmd.stderr(Stdio::piped());
+            let mut child = cmd.spawn().expect("spawn flow-rs");
+            child
+                .stdin
+                .as_mut()
+                .expect("stdin")
+                .write_all(input.as_bytes())
+                .expect("write stdin");
+            child.wait_with_output().expect("wait_with_output")
+        } else {
+            cmd.output().expect("spawn flow-rs")
+        }
+    }
+
+    fn run_hook_sweep(hook_name: &str) -> std::process::Output {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+        let mut cmd = flow_rs_no_recursion();
+        cmd.args(["hook", hook_name]);
+        cmd.current_dir(&root);
+        cmd.env("GIT_CEILING_DIRECTORIES", &root);
+        cmd.stdin(Stdio::piped());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+        let mut child = cmd.spawn().expect("spawn flow-rs hook");
+        child
+            .stdin
+            .as_mut()
+            .expect("stdin")
+            .write_all(b"{}")
+            .expect("write stdin");
+        child.wait_with_output().expect("wait_with_output")
+    }
+
+    // (subcommand, args, optional stdin) — each entry hits one thin arm.
+    let invocations: &[(&str, &[&str], Option<&str>)] = &[
+        ("bump-version", &[], None),
+        ("check-freshness", &[], None),
+        ("ci", &[], None),
+        ("build", &[], None),
+        ("test", &[], None),
+        ("lint", &[], None),
+        ("format", &[], None),
+        ("update-deps", &[], None),
+        ("analyze-issues", &[], None),
+        (
+            "append-note",
+            &["--note", "x", "--branch", "test-fixture"],
+            None,
+        ),
+        (
+            "add-finding",
+            &[
+                "--finding",
+                "x",
+                "--reason",
+                "y",
+                "--outcome",
+                "fixed",
+                "--phase",
+                "flow-code",
+                "--branch",
+                "test-fixture",
+            ],
+            None,
+        ),
+        (
+            "add-issue",
+            &[
+                "--label",
+                "Tech Debt",
+                "--title",
+                "x",
+                "--url",
+                "u",
+                "--phase",
+                "flow-code",
+                "--branch",
+                "test-fixture",
+            ],
+            None,
+        ),
+        (
+            "add-notification",
+            &[
+                "--phase",
+                "flow-code",
+                "--ts",
+                "1.0",
+                "--message",
+                "m",
+                "--branch",
+                "test-fixture",
+            ],
+            None,
+        ),
+        (
+            "issue",
+            &["--title", "x", "--body-file", "/nonexistent"],
+            None,
+        ),
+        (
+            "close-issue",
+            &["--repo", "x/y", "--issue-number", "1"],
+            None,
+        ),
+        ("close-issues", &[], None),
+        (
+            "create-sub-issue",
+            &["--repo", "x/y", "--parent", "1", "--child", "2"],
+            None,
+        ),
+        (
+            "link-blocked-by",
+            &[
+                "--repo",
+                "x/y",
+                "--blocked-number",
+                "1",
+                "--blocking-number",
+                "2",
+            ],
+            None,
+        ),
+        ("create-milestone", &["--repo", "x/y", "--title", "m"], None),
+        ("extract-release-notes", &["1.0.0"], None),
+        ("prime-check", &[], None),
+        ("prime-setup", &[], None),
+        ("promote-permissions", &[], None),
+        (
+            "auto-close-parent",
+            &["--repo", "x/y", "--parent", "1"],
+            None,
+        ),
+        ("complete-fast", &["--branch", "test-fixture"], None),
+        ("complete-preflight", &["--branch", "test-fixture"], None),
+        ("complete-merge", &["--branch", "test-fixture"], None),
+        ("complete-finalize", &["--branch", "test-fixture"], None),
+        ("complete-post-merge", &["--branch", "test-fixture"], None),
+        (
+            "set-timestamp",
+            &["--set", "x=1", "--branch", "test-fixture"],
+            None,
+        ),
+        ("set-blocked", &[], None),
+        ("clear-blocked", &[], None),
+        ("log", &["test-fixture", "msg"], None),
+        ("generate-id", &[], None),
+        (
+            "start-finalize",
+            &["--branch", "test-fixture", "--pr-url", "u"],
+            None,
+        ),
+        ("start-gate", &["--branch", "test-fixture"], None),
+        ("start-init", &["test-fixture"], None),
+        (
+            "start-workspace",
+            &["test-fixture", "--branch", "test-fixture"],
+            None,
+        ),
+        ("session-context", &[], None),
+        ("label-issues", &["--repo", "x/y"], None),
+        ("format-issues-summary", &["--branch", "test-fixture"], None),
+        (
+            "format-complete-summary",
+            &["--branch", "test-fixture"],
+            None,
+        ),
+        ("format-pr-timings", &["--branch", "test-fixture"], None),
+        ("format-status", &["--branch", "test-fixture"], None),
+        (
+            "notify-slack",
+            &["--phase", "flow-code", "--message", "m"],
+            None,
+        ),
+        (
+            "write-rule",
+            &["--path", "/nonexistent", "--content", "x"],
+            None,
+        ),
+        (
+            "phase-enter",
+            &["--phase", "flow-code", "--branch", "test-fixture"],
+            None,
+        ),
+        (
+            "phase-finalize",
+            &["--phase", "flow-code", "--branch", "test-fixture"],
+            None,
+        ),
+        ("plan-check", &[], None),
+        ("plan-extract", &[], None),
+        (
+            "render-pr-body",
+            &["--pr", "1", "--branch", "test-fixture"],
+            None,
+        ),
+        ("update-pr-body", &["--branch", "test-fixture"], None),
+        ("orchestrate-report", &[], None),
+        ("orchestrate-state", &["--init"], None),
+        ("tombstone-audit", &[], None),
+        ("upgrade-check", &[], None),
+        ("qa-mode", &["--get"], None),
+        ("qa-reset", &["nonexistent-template"], None),
+        ("qa-verify", &["--branch", "test-fixture"], None),
+        ("scaffold-qa", &["nonexistent-template"], None),
+    ];
+
+    for (sub, args, stdin) in invocations {
+        let output = run_sweep_entry(sub, args, *stdin);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains("panicked at"),
+            "subcommand `{}` panicked unexpectedly:\nstderr: {}",
+            sub,
+            stderr
+        );
+        assert!(
+            !stderr.contains("thread 'main' panicked"),
+            "subcommand `{}` panicked on main thread:\nstderr: {}",
+            sub,
+            stderr
+        );
+    }
+
+    // Hook subcommands receive empty JSON `{}` on stdin so they early-
+    // return on missing required fields rather than blocking.
+    let hooks = [
+        "validate-pretool",
+        "validate-claude-paths",
+        "validate-worktree-paths",
+        "validate-ask-user",
+        "stop-continue",
+        "stop-failure",
+        "post-compact",
+    ];
+    for hook in hooks {
+        let output = run_hook_sweep(hook);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains("panicked at"),
+            "hook `{}` panicked unexpectedly:\nstderr: {}",
+            hook,
+            stderr
+        );
+        assert!(
+            !stderr.contains("thread 'main' panicked"),
+            "hook `{}` panicked on main thread:\nstderr: {}",
+            hook,
+            stderr
+        );
+    }
+}
+
 /// `flow-rs cleanup /nonexistent --branch test --worktree .worktrees/test`
 /// exercises the `run()` → `json_error` → `process::exit(1)` path
 /// for an invalid project root.
