@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::process;
 
 use clap::Parser;
 use serde_json::{json, Value};
@@ -7,7 +6,6 @@ use serde_json::{json, Value};
 use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
-use crate::output::{json_error, json_ok};
 use crate::phase_config::phase_names;
 use crate::utils::now;
 
@@ -27,28 +25,34 @@ pub struct Args {
     pub branch: Option<String>,
 }
 
-pub fn run(args: Args) {
-    let root = project_root();
-    let branch = match resolve_branch(args.branch.as_deref(), &root) {
+/// Main-arm dispatcher with injected root. Returns `(value, exit_code)`:
+/// `(ok+note_count, 0)` on success, `(no_state, 0)` when the state file
+/// is missing, `(error+message, 1)` on resolve-branch failure,
+/// state-read failure, or mutate_state failure.
+pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
+    let branch = match resolve_branch(args.branch.as_deref(), root) {
         Some(b) => b,
         None => {
-            json_error("Could not determine current branch", &[]);
-            process::exit(1);
+            return (
+                json!({"status": "error", "message": "Could not determine current branch"}),
+                1,
+            );
         }
     };
-    let state_path = FlowPaths::new(&root, &branch).state_file();
+    let state_path = FlowPaths::new(root, &branch).state_file();
 
     if !state_path.exists() {
-        println!(r#"{{"status":"no_state"}}"#);
-        process::exit(0);
+        return (json!({"status": "no_state"}), 0);
     }
 
     // Read current_phase before mutating
     let phase = match read_current_phase(&state_path) {
         Some(p) => p,
         None => {
-            json_error("Could not read state file", &[]);
-            process::exit(1);
+            return (
+                json!({"status": "error", "message": "Could not read state file"}),
+                1,
+            );
         }
     };
 
@@ -79,13 +83,19 @@ pub fn run(args: Args) {
     }) {
         Ok(state) => {
             let count = state["notes"].as_array().map(|a| a.len()).unwrap_or(0);
-            json_ok(&[("note_count", json!(count))]);
+            (json!({"status": "ok", "note_count": count}), 0)
         }
-        Err(e) => {
-            json_error(&format!("Failed to append note: {}", e), &[]);
-            process::exit(1);
-        }
+        Err(e) => (
+            json!({"status": "error", "message": format!("Failed to append note: {}", e)}),
+            1,
+        ),
     }
+}
+
+pub fn run(args: Args) -> ! {
+    let root = project_root();
+    let (value, code) = run_impl_main(args, &root);
+    crate::dispatch::dispatch_json(value, code)
 }
 
 fn read_current_phase(state_path: &Path) -> Option<String> {
@@ -329,5 +339,61 @@ mod tests {
         assert!(note.get("timestamp").is_some());
         assert!(note.get("type").is_some());
         assert!(note.get("note").is_some());
+    }
+
+    // --- run_impl_main ---
+
+    fn make_args(branch: Option<&str>) -> Args {
+        Args {
+            note: "test note".to_string(),
+            note_type: "correction".to_string(),
+            branch: branch.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn append_note_run_impl_main_no_state_returns_no_state_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let args = make_args(Some("missing-branch"));
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(value["status"], "no_state");
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn append_note_run_impl_main_success_returns_note_count_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(
+            state_dir.join("present-branch.json"),
+            r#"{"current_phase":"flow-plan","notes":[]}"#,
+        )
+        .unwrap();
+        let args = make_args(Some("present-branch"));
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["note_count"], 1);
+    }
+
+    #[test]
+    fn append_note_run_impl_main_state_read_failure_returns_error_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        // Malformed JSON makes read_current_phase return None (after exists() passes).
+        fs::write(state_dir.join("present-branch.json"), "{not json").unwrap();
+        let args = make_args(Some("present-branch"));
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(value["status"], "error");
+        assert_eq!(code, 1);
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Could not read state file"));
     }
 }
