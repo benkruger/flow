@@ -584,6 +584,17 @@ fn main_arm_invocations_cover_dispatch() {
         cmd.args(args);
         cmd.current_dir(&root);
         cmd.env("GIT_CEILING_DIRECTORIES", &root);
+        // Neutralize gh CLI auth so any subcommand that shells out to
+        // `gh` (close-issue, create-sub-issue, link-blocked-by,
+        // create-milestone, auto-close-parent, label-issues, qa-reset,
+        // qa-verify, scaffold-qa) fails with an immediate auth error
+        // rather than blocking on a network timeout in CI environments
+        // without GitHub credentials. `GH_TOKEN=invalid` forces gh to
+        // fail at the auth check before issuing any HTTP request.
+        // Setting `HOME` to the tempdir prevents gh from reading a
+        // user-level config that could supply a real token.
+        cmd.env("GH_TOKEN", "invalid");
+        cmd.env("HOME", &root);
         if let Some(input) = stdin_json {
             cmd.stdin(Stdio::piped());
             cmd.stdout(Stdio::piped());
@@ -608,6 +619,11 @@ fn main_arm_invocations_cover_dispatch() {
         cmd.args(["hook", hook_name]);
         cmd.current_dir(&root);
         cmd.env("GIT_CEILING_DIRECTORIES", &root);
+        // Same neutralization as run_sweep_entry — hook subcommands
+        // can also shell out to `gh` (e.g., stop-failure capturing
+        // PR context).
+        cmd.env("GH_TOKEN", "invalid");
+        cmd.env("HOME", &root);
         cmd.stdin(Stdio::piped());
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());

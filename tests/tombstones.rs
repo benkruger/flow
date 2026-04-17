@@ -281,9 +281,26 @@ fn claude_md_no_test_coverage_references() {
 #[test]
 fn test_main_rs_no_run_tui_terminal_or_terminal_guard() {
     // Tombstone: removed in PR #1205. Must not return to main.rs.
+    //
+    // Multi-pronged scan because byte-substring assertions on
+    // `fn run_tui_terminal(` and `struct TerminalGuard` alone are
+    // bypassable via naming variation (`fn run_tui_terminal_inner`,
+    // `struct TerminalGuardInner`) per `.claude/rules/tombstone-tests.md`
+    // "Literal tombstones — stability checklist." The crossterm API
+    // names (`enable_raw_mode`, `EnterAlternateScreen`,
+    // `LeaveAlternateScreen`, `disable_raw_mode`) cannot be assembled
+    // via `concat!`/`format!` because they must appear in `use
+    // crossterm::terminal::{...}` import lines or as resolved
+    // function call sites — they are not just string literals. Any
+    // resurrection of TUI terminal glue under any naming variation
+    // must reference at least one of these crossterm symbols, so
+    // their absence from main.rs is the load-bearing structural
+    // assertion.
     let root = common::repo_root();
     let path = root.join("src/main.rs");
     let content = fs::read_to_string(&path).expect("src/main.rs must exist");
+
+    // Original literal-name assertions — caught the simple case.
     assert!(
         !content.contains("fn run_tui_terminal("),
         "src/main.rs must not contain `fn run_tui_terminal(` — \
@@ -296,4 +313,27 @@ fn test_main_rs_no_run_tui_terminal_or_terminal_guard() {
          guard lives in `src/tui_terminal.rs` so its Drop is unit-testable \
          via an injected `release_fn` closure."
     );
+
+    // Structural assertions — crossterm API symbol names that any
+    // resurrected terminal glue would have to reference. Naming
+    // variations on the wrapper function or guard struct do not
+    // evade these because the underlying crossterm API names are
+    // fixed by the upstream crate.
+    const FORBIDDEN_CROSSTERM_SYMBOLS: &[&str] = &[
+        "enable_raw_mode",
+        "disable_raw_mode",
+        "EnterAlternateScreen",
+        "LeaveAlternateScreen",
+        "CrosstermBackend",
+    ];
+    for symbol in FORBIDDEN_CROSSTERM_SYMBOLS {
+        assert!(
+            !content.contains(symbol),
+            "src/main.rs must not reference crossterm symbol `{}` — \
+             crossterm-coupled code lives in `src/tui_terminal.rs` so \
+             main.rs stays 100% covered. If this symbol returned under a \
+             new naming convention, move it to tui_terminal.rs.",
+            symbol
+        );
+    }
 }
