@@ -120,6 +120,54 @@ directly at the caller, or delete the branch entirely if it is
 unreachable from any production path. Every branch must land under
 one of the three classifications before the plan is complete.
 
+## Constructor Invariant Audit
+
+When the extracted block contains a constructor call that panics on
+invalid input — `FlowPaths::new`, any function with a `panic!`,
+`assert!`, or `unwrap` on a parameter — the extraction surfaces an
+input-validation contract that may have been silently held by the
+prior call site. The Plan phase must audit that contract before the
+extraction lands.
+
+The audit answers two questions per panicking constructor:
+
+1. **What input does the constructor panic on?** Read the
+   constructor's invariant assertion. For `FlowPaths::new` the
+   answer is "empty branch" or "branch containing `/`".
+2. **Where does the input enter the new function?** If the input
+   is sourced from a CLI flag (`--branch`), state-file value, git
+   subprocess output, env var, or any other external source, the
+   extraction is also a callsite of the panicking constructor under
+   the discipline named in `.claude/rules/external-input-validation.md`
+   ("Trusted-but-external" or "Untrusted" classification). The new
+   public surface MUST use the fallible variant
+   (`FlowPaths::try_new`, `Option`-returning, `Result`-returning)
+   and translate the invalid case into a structured error rather
+   than propagating the panic.
+
+The audit produces a row in the plan's
+`.claude/rules/external-input-audit-gate.md` callsite table even
+when the extraction is not adding a new panic — perpetuating an
+existing one across an extraction boundary still counts as a
+new public callsite.
+
+The motivating incident is PR #1224 (issue #1201, the gh-tools
+coverage refactor): the Code phase extracted ten state-mutator
+`run_impl_main` functions out of their pre-existing `run` wrappers
+and preserved the `FlowPaths::new(root, &branch)` call inside the
+new public surface. The branches arrived from
+`resolve_branch(args.branch.as_deref(), ...)` — which forwards
+`--branch` raw from the CLI. Four of the new public surfaces
+(`add_finding`, `add_issue`, `add_notification`, `append_note`)
+panicked on `--branch feature/foo` and on `--branch ''`. Code Review
+adversarial caught all four, and Step 4 fixed each by switching to
+`FlowPaths::try_new`. A Plan-phase Constructor Invariant Audit
+would have surfaced the gap before the extraction landed.
+
+The audit complements the Branch Enumeration Table — branch
+enumeration covers internal control flow; constructor invariant
+audit covers the input contract the extracted block carries.
+
 ## Enforcement
 
 Iteration 1 of this rule is **prose-only** — there is no scanner
@@ -188,17 +236,28 @@ and every Approach paragraph for the trigger phrasings listed in
 5. If any branch fails the classification step, revise the extraction
    design until every branch fits. Do not ship the plan with an
    unclassified branch.
+6. Apply the Constructor Invariant Audit to every panicking
+   constructor call inside the extracted block. If any input arrives
+   from an external source, the new public surface must use the
+   fallible variant and translate invalid inputs into structured
+   errors. Cross-reference the audit row in the plan's
+   external-input-audit table.
 
 **Code phase.** Execute the plan tasks in order. For each branch the
 plan enumerated, write the named test before or alongside the
 implementation per the `.claude/rules/skill-authoring.md` Plan Task
 Ordering rule. A Plan Test Verification check at commit time
-confirms every plan-named test function exists in the codebase.
+confirms every plan-named test function exists in the codebase. For
+every panicking constructor in the extracted block, replace the call
+with the fallible variant per the Constructor Invariant Audit.
 
 **Code Review phase.** The reviewer agent cross-references the plan's
 Branch Enumeration Table against the landed tests. Any plan-named
 test function missing from the codebase is a Real finding fixed in
-Step 4 per `.claude/rules/code-review-scope.md`.
+Step 4 per `.claude/rules/code-review-scope.md`. The adversarial
+agent writes failing tests against external-input boundaries
+(slash branches, empty strings, NUL bytes) of every new public
+surface — these tests catch missed Constructor Invariant Audits.
 
 ## Motivating Incident
 
@@ -252,6 +311,15 @@ Commit references:
   extract-helper enumeration enumerates branches a refactor
   introduces. The two rules run at the same Plan-phase step and
   share the prose-only enforcement model.
+- `.claude/rules/external-input-validation.md` — the prose
+  discipline for fallible constructors. The Constructor Invariant
+  Audit subsection forwards every panicking constructor encountered
+  during extraction to this rule's callsite classification.
+- `.claude/rules/external-input-audit-gate.md` — the Plan-phase
+  gate that enforces a callsite audit table when a plan proposes
+  panic/assert tightenings. Extracting an existing panic across a
+  refactor boundary is the same shape — the audit table must name
+  the new public surface.
 - `.claude/rules/skill-authoring.md` — Plan Task Ordering (TDD order)
   and Simplest Approach First (iteration 1 is instructional only, no
   mechanical scanner).
