@@ -984,6 +984,152 @@ mod tests {
         assert!(!msg.contains("external-input-audit-gate.md"));
     }
 
+    // --- is_decomposed ---
+
+    #[test]
+    fn is_decomposed_matches_case_insensitive() {
+        let issue = json!({"labels": [{"name": "Decomposed"}]});
+        assert!(is_decomposed(&issue));
+        let issue = json!({"labels": [{"name": "decomposed"}]});
+        assert!(is_decomposed(&issue));
+        let issue = json!({"labels": [{"name": "DECOMPOSED"}]});
+        assert!(is_decomposed(&issue));
+    }
+
+    #[test]
+    fn is_decomposed_false_without_label() {
+        let issue = json!({"labels": [{"name": "Bug"}, {"name": "Tech Debt"}]});
+        assert!(!is_decomposed(&issue));
+    }
+
+    #[test]
+    fn is_decomposed_false_on_missing_labels() {
+        let issue = json!({"title": "x"});
+        assert!(!is_decomposed(&issue));
+    }
+
+    #[test]
+    fn is_decomposed_false_on_empty_labels() {
+        let issue = json!({"labels": []});
+        assert!(!is_decomposed(&issue));
+    }
+
+    // --- read_dag_mode ---
+
+    #[test]
+    fn read_dag_mode_default_when_missing() {
+        let state = json!({});
+        assert_eq!(read_dag_mode(&state), "auto");
+    }
+
+    #[test]
+    fn read_dag_mode_explicit_never() {
+        let state = json!({"skills": {"flow-plan": {"dag": "never"}}});
+        assert_eq!(read_dag_mode(&state), "never");
+    }
+
+    #[test]
+    fn read_dag_mode_explicit_always() {
+        let state = json!({"skills": {"flow-plan": {"dag": "always"}}});
+        assert_eq!(read_dag_mode(&state), "always");
+    }
+
+    #[test]
+    fn read_dag_mode_empty_string_falls_back_to_default() {
+        let state = json!({"skills": {"flow-plan": {"dag": ""}}});
+        assert_eq!(read_dag_mode(&state), "auto");
+    }
+
+    // --- is_heading_terminated ---
+
+    #[test]
+    fn is_heading_terminated_accepts_newline_tab_space_eof() {
+        assert!(is_heading_terminated(""));
+        assert!(is_heading_terminated("\n"));
+        assert!(is_heading_terminated("\r"));
+        assert!(is_heading_terminated("   \n"));
+        assert!(is_heading_terminated("\t\n"));
+        assert!(is_heading_terminated("   "));
+    }
+
+    #[test]
+    fn is_heading_terminated_rejects_text_content() {
+        assert!(!is_heading_terminated(" foo"));
+        assert!(!is_heading_terminated("x"));
+    }
+
+    // --- find_heading ---
+
+    #[test]
+    fn find_heading_at_start() {
+        let body = "## Implementation Plan\n\ncontent";
+        assert_eq!(find_heading(body, "## Implementation Plan"), Some(0));
+    }
+
+    #[test]
+    fn find_heading_after_prose() {
+        let body = "# Title\n\n## Implementation Plan\n\nbody";
+        assert_eq!(find_heading(body, "## Implementation Plan"), Some(9));
+    }
+
+    #[test]
+    fn find_heading_not_found_when_inline() {
+        let body = "Some text with ## Implementation Plan inline.";
+        assert_eq!(find_heading(body, "## Implementation Plan"), None);
+    }
+
+    #[test]
+    fn find_heading_not_found_when_absent() {
+        let body = "# Title\n\n## Context\n\n## Tasks\n";
+        assert_eq!(find_heading(body, "## Implementation Plan"), None);
+    }
+
+    // --- count_tasks ---
+
+    #[test]
+    fn count_tasks_counts_h4_tasks_only() {
+        let content = "### Something\n#### Task 1: A\n#### Task 2: B\n### Other\n";
+        assert_eq!(count_tasks(content), 2);
+    }
+
+    #[test]
+    fn count_tasks_skips_code_blocks() {
+        let content = "#### Task 1: Real\n```\n#### Task 99: In code\n```\n#### Task 2: Real\n";
+        assert_eq!(count_tasks(content), 2);
+    }
+
+    #[test]
+    fn count_tasks_returns_zero_when_none() {
+        let content = "### Heading\ncontent without task headings\n";
+        assert_eq!(count_tasks(content), 0);
+    }
+
+    // --- extract_implementation_plan ---
+
+    #[test]
+    fn extract_implementation_plan_returns_section_content() {
+        let body =
+            "# Title\n\n## Implementation Plan\n\nbody line 1\nbody line 2\n\n## Next\ntail\n";
+        let extracted = extract_implementation_plan(body).unwrap();
+        assert!(extracted.contains("body line 1"));
+        assert!(extracted.contains("body line 2"));
+        assert!(!extracted.contains("tail"));
+        assert!(!extracted.contains("# Title"));
+    }
+
+    #[test]
+    fn extract_implementation_plan_none_when_empty_section() {
+        let body = "## Implementation Plan\n\n## Next section\n";
+        assert_eq!(extract_implementation_plan(body), None);
+    }
+
+    #[test]
+    fn extract_implementation_plan_runs_to_eof_when_no_next_heading() {
+        let body = "## Implementation Plan\n\ntail content only\n";
+        let extracted = extract_implementation_plan(body).unwrap();
+        assert!(extracted.contains("tail content only"));
+    }
+
     // --- complete_plan_phase error path ---
 
     /// When `mutate_state` fails (e.g. non-existent state file path),
