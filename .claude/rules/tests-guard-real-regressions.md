@@ -120,6 +120,34 @@ now ships as a documented empty marker per step 4 above.
   legitimately discuss the forbidden term (requiring an ever-
   growing exemption list).
 
+## Coverage-Required Tests
+
+The 100% coverage gate (`--fail-under-lines/regions/functions` in
+`bin/test`, backed by `.claude/rules/no-waivers.md`) makes every
+production line a named consumer. A test whose sole purpose is to
+cover a branch that has no other named consumer is NOT speculation
+under this rule — it satisfies the rule by naming:
+
+- **The specific regression.** A future edit deletes this line
+  without a test witness, or a refactor makes the line unreachable
+  without a test that would notice.
+- **The code path.** `cargo-llvm-cov nextest` reports the line
+  uncovered on the next `bin/flow ci` run, which trips the
+  `--fail-under-*` gate in `bin/test` and blocks the commit.
+- **The named consumer.** The 100% coverage gate itself — the
+  `--fail-under-*` flags in `bin/test` and the
+  `.claude/rules/no-waivers.md` discipline that forbids ever
+  lowering the thresholds.
+
+Coverage-required tests should be tightly scoped: one test per
+branch, asserting what the branch produces or returns. Avoid
+exercising adjacent branches in the same test body; one test per
+branch keeps the regression path unambiguous when the test fails.
+
+When reviewing a coverage-required test, verify it trips when the
+covered line is deleted. Mutation-style thinking applies: comment
+out the line and confirm the test fails before committing.
+
 ## How to Apply
 
 **Plan phase.** When a plan task adds a test, the task description
@@ -177,3 +205,6 @@ themselves (silently). I reverted the test.
   — a rule that intentionally ships without a corpus contract
   test per the viability check above, with the deferral rationale
   inline.
+- `.claude/rules/no-waivers.md` — the 100% coverage discipline
+  that names coverage-required tests as having a valid named
+  consumer.
