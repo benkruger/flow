@@ -93,6 +93,15 @@ pub(crate) fn should_reject_for_code_review(
     if content.trim().is_empty() {
         return None;
     }
+    // Defense in depth: serde_json's default last-wins behavior on
+    // duplicate keys lets a crafted state file like
+    // `{"current_phase":"flow-code-review","current_phase":"flow-learn"}`
+    // bypass the gate when the parsed value is read normally. Scan the
+    // raw content for ANY occurrence of `"current_phase"` followed by a
+    // value that normalizes to `flow-code-review`. If any match, reject.
+    if raw_contains_code_review_phase(content) {
+        return Some(code_review_block_message());
+    }
     let phase_norm = match serde_json::from_str::<serde_json::Value>(content) {
         Ok(state) => match state.get("current_phase").and_then(|v| v.as_str()) {
             Some(s) => s.replace('\0', "").trim().to_ascii_lowercase(),
@@ -109,17 +118,52 @@ pub(crate) fn should_reject_for_code_review(
         }
     };
     if phase_norm == "flow-code-review" {
-        Some(
-            "bin/flow issue is disabled during Code Review. All real \
-             findings must be fixed in Step 4. If this is a FLOW \
-             process gap, file it during Phase 5 Learn. If truly \
-             needed, pass --override-code-review-ban with an \
-             explicit reason."
-                .to_string(),
-        )
+        Some(code_review_block_message())
     } else {
         None
     }
+}
+
+/// Standard rejection message returned by both the parsed-value gate
+/// and the raw-text duplicate-key defense.
+fn code_review_block_message() -> String {
+    "bin/flow issue is disabled during Code Review. All real \
+     findings must be fixed in Step 4. If this is a FLOW \
+     process gap, file it during Phase 5 Learn. If truly \
+     needed, pass --override-code-review-ban with an \
+     explicit reason."
+        .to_string()
+}
+
+/// Defense-in-depth scanner against duplicate-key bypass. Walks the
+/// raw JSON text looking for every `"current_phase"` key occurrence
+/// and inspecting the value that follows. Returns true if any
+/// occurrence's value normalizes to `flow-code-review`. Per
+/// `.claude/rules/security-gates.md` "Enumerate Bypass Variants",
+/// duplicate keys (serde last-wins) and BOM are explicitly enumerated;
+/// this scanner closes the duplicate-key surface.
+fn raw_contains_code_review_phase(content: &str) -> bool {
+    let needle = "\"current_phase\"";
+    let mut start = 0;
+    while let Some(pos) = content[start..].find(needle) {
+        let key_end = start + pos + needle.len();
+        // Skip any whitespace and the colon.
+        let after_key = content[key_end..].trim_start();
+        if let Some(rest) = after_key.strip_prefix(':') {
+            let after_colon = rest.trim_start();
+            if let Some(value_body) = after_colon.strip_prefix('"') {
+                if let Some(end_quote) = value_body.find('"') {
+                    let value = &value_body[..end_quote];
+                    let normalized = value.replace('\0', "").trim().to_ascii_lowercase();
+                    if normalized == "flow-code-review" {
+                        return true;
+                    }
+                }
+            }
+        }
+        start = key_end;
+    }
+    false
 }
 
 fn fail_closed_message(detail: &str) -> String {
@@ -780,10 +824,29 @@ mod tests {
 
     #[test]
     fn gate_fails_closed_when_state_has_bom() {
-        // UTF-8 BOM prefix breaks serde_json parsing.
+        // UTF-8 BOM prefix breaks serde_json parsing. The defense-in-
+        // depth raw-text scanner catches the literal current_phase key
+        // before parsing, so BOM-prefixed code-review state still
+        // blocks (with the standard Code Review message rather than
+        // the fail-closed message).
         let state = "\u{feff}{\"current_phase\":\"flow-code-review\"}";
         let msg = should_reject_for_code_review(Some(state), false);
-        assert!(msg.is_some(), "BOM prefix must fail CLOSED");
+        assert!(msg.is_some(), "BOM prefix must not bypass the gate");
+        assert!(msg.unwrap().contains("Code Review"));
+    }
+
+    #[test]
+    fn gate_fails_closed_when_state_has_bom_and_no_code_review() {
+        // BOM-prefixed state with a non-code-review phase must
+        // fail-closed: the raw scanner finds no flow-code-review key,
+        // so the parser path runs, fails on BOM, and surfaces the
+        // not-valid-JSON message.
+        let state = "\u{feff}{\"current_phase\":\"flow-learn\"}";
+        let msg = should_reject_for_code_review(Some(state), false);
+        assert!(
+            msg.is_some(),
+            "BOM-prefixed state must fail CLOSED on parse error"
+        );
         assert!(msg.unwrap().contains("not valid JSON"));
     }
 
@@ -820,6 +883,48 @@ mod tests {
         let state = "{\"current_phase\":\"flow-code-review\\u0000\"}";
         let msg = should_reject_for_code_review(Some(state), false);
         assert!(msg.is_some(), "embedded NUL must not bypass the gate");
+        assert!(msg.unwrap().contains("Code Review"));
+    }
+
+    #[test]
+    fn gate_blocks_when_current_phase_duplicate_key_serde_last_wins() {
+        // Per .claude/rules/security-gates.md "Enumerate Bypass
+        // Variants" §5: serde_json's default last-wins behavior with
+        // duplicate keys would let a crafted state file
+        // {"current_phase":"flow-code-review","current_phase":"flow-learn"}
+        // bypass the parsed-value gate. The raw-text scanner must
+        // catch any current_phase key whose value normalizes to
+        // flow-code-review regardless of position.
+        let state = r#"{"current_phase":"flow-code-review","current_phase":"flow-learn"}"#;
+        let msg = should_reject_for_code_review(Some(state), false);
+        assert!(
+            msg.is_some(),
+            "duplicate-key bypass must not defeat the gate"
+        );
+        assert!(msg.unwrap().contains("Code Review"));
+    }
+
+    #[test]
+    fn gate_blocks_when_duplicate_key_in_reverse_order() {
+        // Symmetric: even when the bypass value comes first, the
+        // raw scanner finds the flow-code-review occurrence later in
+        // the document.
+        let state = r#"{"current_phase":"flow-learn","current_phase":"flow-code-review"}"#;
+        let msg = should_reject_for_code_review(Some(state), false);
+        assert!(
+            msg.is_some(),
+            "duplicate-key bypass must not defeat the gate"
+        );
+        assert!(msg.unwrap().contains("Code Review"));
+    }
+
+    #[test]
+    fn gate_blocks_when_current_phase_value_has_padding_in_raw_text() {
+        // Whitespace-padded current_phase value must be caught by the
+        // raw-text scanner as well as the parsed-value path.
+        let state = r#"{"current_phase":" flow-code-review "}"#;
+        let msg = should_reject_for_code_review(Some(state), false);
+        assert!(msg.is_some());
         assert!(msg.unwrap().contains("Code Review"));
     }
 

@@ -11,8 +11,8 @@
 //!
 //! # Public entry points
 //!
-//! The module exposes a two-tier layering so inline tests can drive every
-//! branch without env-var mutation or real `curl` subprocesses:
+//! The module exposes a layered architecture so inline tests can drive
+//! every branch without env-var mutation or real `curl` subprocesses:
 //!
 //! - [`notify_with_deps`] — dependency-injected core. Accepts a
 //!   `config_reader` closure returning `Option<SlackConfig>` and a
@@ -20,16 +20,22 @@
 //! - [`notify`] — production binder that wires `notify_with_deps` to
 //!   [`read_slack_config`] (env-var reader) and [`post_message_inner`]
 //!   bound to [`run_curl_with_timeout`] (real curl subprocess).
-//! - [`run_with_deps`] — CLI layer with an injected
-//!   `writer: &mut dyn Write`. Computes the notify result and writes one
-//!   JSON line. Testable via in-memory `Vec<u8>` buffers.
-//! - [`run`] — production CLI entry. Wires `run_with_deps` to
-//!   `std::io::stdout()` and the production closures above.
+//! - [`read_slack_config_with_env`] — env-var reader parameterized over
+//!   `token_reader` and `channel_reader` closures so tests can drive
+//!   present/absent/empty without process-wide env mutation.
+//! - [`run_curl_with_timeout_inner`] — curl subprocess wrapper
+//!   parameterized over a `child_factory` closure so tests can drive
+//!   spawn failure, timeout, and stderr capture without real `curl`.
+//! - [`run_impl_main`] — main-arm dispatcher accepting injected
+//!   `config_reader` and `poster` closures, returning `(Value, i32)`.
+//!   Production wraps via [`run`].
+//! - [`run`] — production CLI entry. Routes `run_impl_main` through
+//!   [`crate::dispatch::dispatch_json`] for stdout/exit-code dispatch.
 //!
 //! The inner [`post_message_inner`] closure seam (injected `curl` runner)
-//! predates this split and remains the existing test entry for the
-//! `curl` response-parsing branches (success, 4xx/5xx, invalid JSON,
-//! timeout) via the inline `mock_curl` helper.
+//! is the existing test entry for the `curl` response-parsing branches
+//! (success, 4xx/5xx, invalid JSON, timeout) via the inline `mock_curl`
+//! helper.
 
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};

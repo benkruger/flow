@@ -351,13 +351,23 @@ fn notify_slack_no_run_with_deps_writer_seam() {
     // (Value, i32) plus dispatch::dispatch_json. The writer-injection
     // seam exists nowhere in production after this PR, so a merge that
     // re-introduces it is a regression.
+    //
+    // Structural assertion: a literal byte-substring check against
+    // `pub fn run_with_deps` is bypassable by trivial visibility or
+    // modifier shapes (`pub(crate) fn`, `pub async fn`, `pub unsafe
+    // fn`). Per `.claude/rules/tombstone-tests.md` "Assertion Strength"
+    // structural construct, scan the file for any `fn run_with_deps(`
+    // declaration regardless of preceding modifiers.
     let root = common::repo_root();
     let path = root.join("src/notify_slack.rs");
     let content = fs::read_to_string(&path).expect("notify_slack.rs must exist");
+    const FORBIDDEN: &str = "fn run_with_deps(";
     assert!(
-        !content.contains("pub fn run_with_deps"),
-        "src/notify_slack.rs must not contain `pub fn run_with_deps` — \
-         superseded by run_impl_main returning (Value, i32) per \
-         .claude/rules/supersession.md."
+        !content.contains(FORBIDDEN),
+        "src/notify_slack.rs must not contain a `fn run_with_deps(` \
+         declaration — superseded by run_impl_main returning (Value, i32) \
+         per .claude/rules/supersession.md. Match catches every \
+         visibility/modifier shape (pub, pub(crate), pub async, pub \
+         unsafe, etc.)."
     );
 }

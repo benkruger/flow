@@ -118,11 +118,16 @@ pub struct Args {
     pub remove: bool,
 }
 
-/// Main-arm dispatcher. Reads the state file, extracts issue numbers
-/// from the prompt, and labels them. Returns `(value, exit_code)`:
-/// `(error+message+step, 1)` on state-file read or parse failure,
-/// `(ok+labeled+failed, 0)` on success.
-pub fn run_impl_main(args: Args) -> (Value, i32) {
+/// Main-arm dispatcher with injected child_factory. Reads the state
+/// file, extracts issue numbers from the prompt, and labels them via
+/// the injected factory. Tests pass a mock child_factory to exercise
+/// the gh-spawning branch without spawning real `gh`. Returns
+/// `(value, exit_code)`: `(error+message+step, 1)` on state-file read
+/// or parse failure, `(ok+labeled+failed, 0)` on success.
+pub fn run_impl_main_with_runner(
+    args: Args,
+    child_factory: &dyn Fn(&[&str]) -> std::io::Result<Child>,
+) -> (Value, i32) {
     let state_path = Path::new(&args.state_file);
     if !state_path.exists() {
         return (
@@ -166,7 +171,7 @@ pub fn run_impl_main(args: Args) -> (Value, i32) {
     let prompt = state.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
     let issue_numbers = extract_issue_numbers(prompt);
     let action = if args.add { "add" } else { "remove" };
-    let result = label_issues(&issue_numbers, action);
+    let result = label_issues_with_runner(&issue_numbers, action, child_factory);
 
     (
         json!({
@@ -176,6 +181,18 @@ pub fn run_impl_main(args: Args) -> (Value, i32) {
         }),
         0,
     )
+}
+
+/// Production main-arm dispatcher: wires `run_impl_main_with_runner`
+/// to the real `gh` subprocess.
+pub fn run_impl_main(args: Args) -> (Value, i32) {
+    run_impl_main_with_runner(args, &|cmd_args| {
+        Command::new("gh")
+            .args(cmd_args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    })
 }
 
 pub fn run(args: Args) -> ! {
@@ -366,5 +383,74 @@ mod tests {
         assert_eq!(value["status"], "ok");
         assert_eq!(value["labeled"].as_array().unwrap().len(), 0);
         assert_eq!(value["failed"].as_array().unwrap().len(), 0);
+    }
+
+    // --- run_impl_main_with_runner (seam wired through dispatcher) ---
+
+    #[test]
+    fn label_issues_run_impl_main_with_runner_dispatches_to_seam() {
+        // Plan-named: prove run_impl_main_with_runner reaches
+        // label_issues_with_runner with the injected child_factory, so
+        // a future refactor of the dispatcher can't silently bypass the
+        // seam. Per .claude/rules/subprocess-test-hygiene.md, the test
+        // never spawns real `gh`.
+        let dir = tempfile::tempdir().unwrap();
+        let state_file = dir.path().join("state.json");
+        std::fs::write(
+            &state_file,
+            r#"{"prompt":"work on #42 and #43","branch":"test"}"#,
+        )
+        .unwrap();
+        let args = Args {
+            state_file: state_file.to_string_lossy().to_string(),
+            add: true,
+            remove: false,
+        };
+        let factory = |_args: &[&str]| {
+            Command::new("sh")
+                .args(["-c", "exit 0"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let (value, code) = run_impl_main_with_runner(args, &factory);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["labeled"].as_array().unwrap().len(), 2);
+        assert_eq!(value["failed"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn label_issues_run_impl_main_with_runner_mixed_outcomes_partitions_correctly() {
+        // Plan-named (R2): exercise mixed success/failure partitioning
+        // through the dispatcher. The first issue's gh exit succeeds;
+        // the second exits non-zero. Result must split labeled vs failed.
+        let dir = tempfile::tempdir().unwrap();
+        let state_file = dir.path().join("state.json");
+        std::fs::write(
+            &state_file,
+            r#"{"prompt":"work on #1 and #2","branch":"test"}"#,
+        )
+        .unwrap();
+        let args = Args {
+            state_file: state_file.to_string_lossy().to_string(),
+            add: true,
+            remove: false,
+        };
+        let factory = |args: &[&str]| {
+            // args = ["issue", "edit", "<num>", flag, LABEL]
+            let num = args[2];
+            let cmd = if num == "1" { "exit 0" } else { "exit 1" };
+            Command::new("sh")
+                .args(["-c", cmd])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let (value, code) = run_impl_main_with_runner(args, &factory);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["labeled"], serde_json::json!([1]));
+        assert_eq!(value["failed"], serde_json::json!([2]));
     }
 }

@@ -120,7 +120,14 @@ pub fn run_impl_with_root(args: &Args, root: &Path, cwd: &Path) -> Result<usize,
 
     let branch = resolve_branch(args.branch.as_deref(), root)
         .ok_or_else(|| "Could not determine current branch".to_string())?;
-    let state_path = FlowPaths::new(root, &branch).state_file();
+    // Branch reaches us either from `current_branch()` (raw git output)
+    // or from `--branch` CLI override (raw user input). Both are
+    // external inputs per `.claude/rules/external-input-validation.md`,
+    // so use the fallible constructor to reject slash-containing or
+    // empty branches as a structured error rather than a panic.
+    let state_path = FlowPaths::try_new(root, &branch)
+        .ok_or_else(|| format!("Invalid branch '{}'", branch))?
+        .state_file();
 
     if !state_path.exists() {
         return Err("no_state".to_string());
@@ -634,5 +641,24 @@ mod tests {
         assert_eq!(value["status"], "ok");
         assert_eq!(value["finding_count"], 1);
         assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn add_finding_run_impl_main_slash_branch_returns_structured_error_no_panic() {
+        // Regression: --branch feature/foo previously panicked via
+        // FlowPaths::new. Per .claude/rules/external-input-validation.md
+        // CLI subcommand entry callsite discipline, --branch is external
+        // input and must use FlowPaths::try_new with a structured error
+        // return.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let args = make_args("fixed", "flow-learn", Some("feature/foo"));
+        let (value, code) = run_impl_main(args, &root, &root);
+        assert_eq!(code, 1);
+        assert_eq!(value["status"], "error");
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Invalid branch 'feature/foo'"));
     }
 }

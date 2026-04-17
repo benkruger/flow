@@ -116,11 +116,17 @@ fn close_single_issue(
     }
 }
 
-/// Main-arm dispatcher. Reads the state file, extracts issue numbers,
-/// and calls close_issues. Returns `(value, exit_code)` — `(error, 1)`
-/// on state-file read or parse failure, `(ok+closed+failed, 0)` on
-/// success (the `failed` list captures per-issue gh failures).
-pub fn run_impl_main(args: Args) -> (Value, i32) {
+/// Main-arm dispatcher with injected child_factory. Reads the state
+/// file, extracts issue numbers, and calls `close_issues_with_runner`
+/// with the injected factory. Tests pass a mock child_factory to
+/// exercise the gh-spawning branch without spawning real `gh`.
+/// Returns `(value, exit_code)` — `(error, 1)` on state-file read or
+/// parse failure, `(ok+closed+failed, 0)` on success (the `failed`
+/// list captures per-issue gh failures).
+pub fn run_impl_main_with_runner(
+    args: Args,
+    child_factory: &dyn Fn(&[&str]) -> std::io::Result<Child>,
+) -> (Value, i32) {
     let content = match fs::read_to_string(&args.state_file) {
         Ok(c) => c,
         Err(e) => {
@@ -145,7 +151,7 @@ pub fn run_impl_main(args: Args) -> (Value, i32) {
     let repo = state.get("repo").and_then(|v| v.as_str());
     let issue_numbers = extract_issue_numbers(prompt);
 
-    let (closed, failed) = close_issues(&issue_numbers, repo);
+    let (closed, failed) = close_issues_with_runner(&issue_numbers, repo, child_factory);
 
     (
         json!({
@@ -155,6 +161,18 @@ pub fn run_impl_main(args: Args) -> (Value, i32) {
         }),
         0,
     )
+}
+
+/// Production main-arm dispatcher: wires `run_impl_main_with_runner`
+/// to the real `gh` subprocess.
+pub fn run_impl_main(args: Args) -> (Value, i32) {
+    run_impl_main_with_runner(args, &|cmd_args| {
+        Command::new("gh")
+            .args(cmd_args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    })
 }
 
 pub fn run(args: Args) -> ! {
@@ -278,6 +296,39 @@ mod tests {
         assert_eq!(code, 0);
         assert_eq!(value["status"], "ok");
         assert_eq!(value["closed"].as_array().unwrap().len(), 0);
+        assert_eq!(value["failed"].as_array().unwrap().len(), 0);
+    }
+
+    // --- run_impl_main_with_runner (seam wired through dispatcher) ---
+
+    #[test]
+    fn close_issues_run_impl_main_with_runner_dispatches_to_seam() {
+        // Plan-named: prove run_impl_main_with_runner reaches
+        // close_issues_with_runner with the injected child_factory, so
+        // a future refactor of the dispatcher can't silently bypass the
+        // seam. Per .claude/rules/subprocess-test-hygiene.md, the test
+        // never spawns real `gh`.
+        let dir = tempfile::tempdir().unwrap();
+        let state_file = dir.path().join("state.json");
+        fs::write(
+            &state_file,
+            r#"{"prompt":"work on #42 and #43","repo":"owner/repo"}"#,
+        )
+        .unwrap();
+        let args = Args {
+            state_file: state_file.to_string_lossy().to_string(),
+        };
+        let factory = |_args: &[&str]| {
+            Command::new("sh")
+                .args(["-c", "exit 0"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let (value, code) = run_impl_main_with_runner(args, &factory);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["closed"].as_array().unwrap().len(), 2);
         assert_eq!(value["failed"].as_array().unwrap().len(), 0);
     }
 }
