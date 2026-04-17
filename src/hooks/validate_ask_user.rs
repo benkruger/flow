@@ -230,6 +230,23 @@ mod tests {
         assert!(resp.is_none());
     }
 
+    /// RAII guard that restores file permissions on Drop. Protects
+    /// chmod-000 tests from leaking a mode-000 file when an assertion
+    /// inside the test body panics before the inline restore runs.
+    /// Per `.claude/rules/panic-safe-cleanup.md`, any resource whose
+    /// released state is not the default must be wrapped in a Drop
+    /// impl to guarantee cleanup on panic unwind.
+    struct PermissionGuard {
+        path: std::path::PathBuf,
+        restore_mode: u32,
+    }
+    impl Drop for PermissionGuard {
+        fn drop(&mut self) {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&self.path, fs::Permissions::from_mode(self.restore_mode));
+        }
+    }
+
     /// Covers the `Err(_) => return (true, String::new(), None)` arm on
     /// line 67 of `validate`: `state_path.exists()` succeeds but
     /// `read_to_string` fails. A file mode of `0o000` on macOS passes
@@ -241,9 +258,11 @@ mod tests {
         let unreadable = dir.path().join("unreadable.json");
         fs::write(&unreadable, "{}").unwrap();
         fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000)).unwrap();
+        let _guard = PermissionGuard {
+            path: unreadable.clone(),
+            restore_mode: 0o644,
+        };
         let (allowed, msg, resp) = validate(Some(&unreadable));
-        // Restore permissions so tempdir cleanup on drop works.
-        let _ = fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o644));
         assert!(allowed);
         assert!(msg.is_empty());
         assert!(resp.is_none());
