@@ -3,7 +3,7 @@ name: adversarial
 description: "Adversarial test generation. Writes tests designed to break the implementation, runs them, and reports failures as findings."
 model: opus
 tools: Read, Glob, Grep, Write, Bash
-maxTurns: 40
+maxTurns: 100
 ---
 
 # Adversarial Test Generation
