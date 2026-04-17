@@ -1,12 +1,11 @@
-use std::process;
+use std::path::Path;
 
 use clap::Parser;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
-use crate::output::{json_error, json_ok};
 use crate::phase_config::phase_names;
 use crate::utils::now;
 
@@ -39,20 +38,37 @@ pub struct Args {
     pub branch: Option<String>,
 }
 
-pub fn run(args: Args) {
-    let root = project_root();
-    let branch = match resolve_branch(args.branch.as_deref(), &root) {
+/// Main-arm dispatcher with injected root. Returns `(value, exit_code)`:
+/// `(ok+notification_count, 0)` on success, `(no_state, 0)` when the
+/// state file is missing, `(error+message, 1)` on resolve-branch failure
+/// or mutate_state failure.
+pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
+    let branch = match resolve_branch(args.branch.as_deref(), root) {
         Some(b) => b,
         None => {
-            json_error("Could not determine current branch", &[]);
-            process::exit(1);
+            return (
+                json!({"status": "error", "message": "Could not determine current branch"}),
+                1,
+            );
         }
     };
-    let state_path = FlowPaths::new(&root, &branch).state_file();
+    // Branch reaches us either from `current_branch()` (raw git output)
+    // or from `--branch` CLI override (raw user input). Both are
+    // external inputs per `.claude/rules/external-input-validation.md`,
+    // so use the fallible constructor to reject slash-containing or
+    // empty branches as a structured error rather than a panic.
+    let state_path = match FlowPaths::try_new(root, &branch) {
+        Some(p) => p.state_file(),
+        None => {
+            return (
+                json!({"status": "error", "message": format!("Invalid branch '{}'", branch)}),
+                1,
+            );
+        }
+    };
 
     if !state_path.exists() {
-        println!(r#"{{"status":"no_state"}}"#);
-        process::exit(0);
+        return (json!({"status": "no_state"}), 0);
     }
 
     let preview = truncate_preview(&args.message);
@@ -90,13 +106,19 @@ pub fn run(args: Args) {
                 .as_array()
                 .map(|a| a.len())
                 .unwrap_or(0);
-            json_ok(&[("notification_count", json!(count))]);
+            (json!({"status": "ok", "notification_count": count}), 0)
         }
-        Err(e) => {
-            json_error(&format!("Failed to add notification: {}", e), &[]);
-            process::exit(1);
-        }
+        Err(e) => (
+            json!({"status": "error", "message": format!("Failed to add notification: {}", e)}),
+            1,
+        ),
     }
+}
+
+pub fn run(args: Args) -> ! {
+    let root = project_root();
+    let (value, code) = run_impl_main(args, &root);
+    crate::dispatch::dispatch_json(value, code)
 }
 
 fn truncate_preview(message: &str) -> String {
@@ -304,5 +326,81 @@ mod tests {
 
         let result = mutate_state(&path, |_| {});
         assert!(result.is_err());
+    }
+
+    // --- run_impl_main ---
+
+    fn make_args(branch: Option<&str>) -> Args {
+        Args {
+            phase: "flow-code".to_string(),
+            ts: "5555555555.555555".to_string(),
+            thread_ts: "1111111111.111111".to_string(),
+            message: "test message".to_string(),
+            branch: branch.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn add_notification_run_impl_main_no_state_returns_no_state_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let args = make_args(Some("missing-branch"));
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(value["status"], "no_state");
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn add_notification_run_impl_main_success_returns_count_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(
+            state_dir.join("present-branch.json"),
+            r#"{"current_phase":"flow-code","slack_notifications":[]}"#,
+        )
+        .unwrap();
+        let args = make_args(Some("present-branch"));
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["notification_count"], 1);
+    }
+
+    #[test]
+    fn add_notification_run_impl_main_mutate_state_failure_returns_error_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(state_dir.join("present-branch.json"), "{not json").unwrap();
+        let args = make_args(Some("present-branch"));
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(value["status"], "error");
+        assert_eq!(code, 1);
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Failed to add notification"));
+    }
+
+    #[test]
+    fn add_notification_run_impl_main_slash_branch_returns_structured_error_no_panic() {
+        // Regression: --branch feature/foo previously panicked via
+        // FlowPaths::new. Per .claude/rules/external-input-validation.md
+        // CLI subcommand entry callsite discipline, --branch is external
+        // input and must use FlowPaths::try_new with a structured error
+        // return.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let args = make_args(Some("feature/foo"));
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(code, 1);
+        assert_eq!(value["status"], "error");
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Invalid branch 'feature/foo'"));
     }
 }

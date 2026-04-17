@@ -7,15 +7,14 @@
 //!   Success: {"status": "ok"}
 //!   Error:   {"status": "error", "message": "..."}
 
-use std::path::Path;
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 use clap::Parser;
+use serde_json::{json, Value};
 
 use crate::complete_preflight::LOCAL_TIMEOUT;
 use crate::github::detect_repo;
-use crate::output::{json_error, json_ok};
 
 #[derive(Parser, Debug)]
 #[command(name = "close-issue", about = "Close a GitHub issue")]
@@ -29,16 +28,27 @@ pub struct Args {
     pub number: i64,
 }
 
-/// Close a GitHub issue and return error message or None on success.
-pub fn close_issue_by_number(repo: &str, number: i64) -> Option<String> {
+/// Close a GitHub issue via injected child_factory. Returns Some(error)
+/// on failure or None on success. Tests inject sh/sleep child factories
+/// to exercise the success, non-zero-exit, timeout, and spawn-error
+/// branches without spawning real `gh`.
+pub fn close_issue_with_runner(
+    repo: &str,
+    number: i64,
+    child_factory: &dyn Fn(&[&str]) -> std::io::Result<Child>,
+) -> Option<String> {
     let timeout = Duration::from_secs(LOCAL_TIMEOUT);
 
-    let mut child = match Command::new("gh")
-        .args(["issue", "close", "--repo", repo, &number.to_string()])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-    {
+    let args: Vec<String> = vec![
+        "issue".to_string(),
+        "close".to_string(),
+        "--repo".to_string(),
+        repo.to_string(),
+        number.to_string(),
+    ];
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+
+    let mut child = match child_factory(&arg_refs) {
         Ok(c) => c,
         Err(e) => return Some(format!("Failed to spawn: {}", e)),
     };
@@ -78,44 +88,106 @@ pub fn close_issue_by_number(repo: &str, number: i64) -> Option<String> {
     }
 }
 
-fn detect_repo_or_fail(cwd: Option<&Path>) -> String {
-    match detect_repo(cwd) {
-        Some(r) => r,
-        None => {
-            json_error(
-                "Could not detect repo from git remote. Use --repo owner/name.",
-                &[],
-            );
-            std::process::exit(1);
-        }
-    }
+/// Close a GitHub issue and return error message or None on success.
+pub fn close_issue_by_number(repo: &str, number: i64) -> Option<String> {
+    close_issue_with_runner(repo, number, &|args| {
+        Command::new("gh")
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    })
 }
 
-pub fn run(args: Args) {
-    let repo = args.repo.unwrap_or_else(|| detect_repo_or_fail(None));
+/// Main-arm dispatcher with injected repo_resolver. Returns
+/// `(value, exit_code)`. The repo_resolver closure returns the detected
+/// repo (or None when `git remote` has no origin); production binds it
+/// to `detect_repo(None)`. Tests pass closures returning Some/None.
+pub fn run_impl_main(args: Args, repo_resolver: &dyn Fn() -> Option<String>) -> (Value, i32) {
+    let repo = match args.repo {
+        Some(r) => r,
+        None => match repo_resolver() {
+            Some(r) => r,
+            None => {
+                return (
+                    json!({"status": "error", "message": "Could not detect repo from git remote. Use --repo owner/name."}),
+                    1,
+                );
+            }
+        },
+    };
 
-    let error = close_issue_by_number(&repo, args.number);
-
-    if let Some(e) = error {
-        json_error(&e, &[]);
-        std::process::exit(1);
+    if let Some(e) = close_issue_by_number(&repo, args.number) {
+        return (json!({"status": "error", "message": e}), 1);
     }
 
-    json_ok(&[]);
+    (json!({"status": "ok"}), 0)
+}
+
+pub fn run(args: Args) -> ! {
+    let (value, code) = run_impl_main(args, &|| detect_repo(None));
+    crate::dispatch::dispatch_json(value, code)
 }
 
 #[cfg(test)]
 mod tests {
-    // close_issue_by_number shells out to `gh` and is therefore not
-    // unit-testable without process mocking. Unit tests in this module
-    // cover the pure helper functions instead; the gh path is exercised
-    // end-to-end by the QA harness.
+    use super::*;
+
+    // --- close_issue_with_runner ---
 
     #[test]
-    fn detect_repo_or_fail_returns_some() {
-        // This test just validates the function signature — the actual
-        // detection runs against `git remote`, which we cannot mock in
-        // a unit test without spawning a real git process. End-to-end
-        // coverage of detect_repo_or_fail lives in the QA harness.
+    fn close_issue_with_runner_returns_none_on_success() {
+        let factory = |_args: &[&str]| {
+            Command::new("sh")
+                .args(["-c", "exit 0"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let result = close_issue_with_runner("owner/repo", 42, &factory);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn close_issue_with_runner_returns_stderr_on_nonzero() {
+        let factory = |_args: &[&str]| {
+            Command::new("sh")
+                .args(["-c", "echo boom 1>&2; exit 1"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let err = close_issue_with_runner("owner/repo", 42, &factory).unwrap();
+        assert!(err.contains("boom"));
+    }
+
+    #[test]
+    fn close_issue_with_runner_returns_spawn_error() {
+        let factory = |_args: &[&str]| -> std::io::Result<Child> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no such binary",
+            ))
+        };
+        let err = close_issue_with_runner("owner/repo", 42, &factory).unwrap();
+        assert!(err.contains("Failed to spawn"));
+    }
+
+    // --- run_impl_main ---
+
+    #[test]
+    fn close_issue_run_impl_main_no_repo_returns_error_tuple() {
+        let args = Args {
+            repo: None,
+            number: 42,
+        };
+        let resolver = || None;
+        let (value, code) = run_impl_main(args, &resolver);
+        assert_eq!(value["status"], "error");
+        assert_eq!(code, 1);
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Could not detect repo"));
     }
 }
