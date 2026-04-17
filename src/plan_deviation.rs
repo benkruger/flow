@@ -223,7 +223,13 @@ fn extract_plan_triples(plan_content: &str) -> Vec<(String, String, String, usiz
         let trimmed = line.trim_start();
         let one_indexed_line = rel_idx + 1;
 
-        if let Some(rest) = trimmed.strip_prefix("```") {
+        // Recognize both backtick (```) and tilde (~~~) fences per
+        // CommonMark so a plan author's tilde-fenced Rust block does
+        // not silently disable fixture extraction for that block.
+        let fence_rest = trimmed
+            .strip_prefix("```")
+            .or_else(|| trimmed.strip_prefix("~~~"));
+        if let Some(rest) = fence_rest {
             if in_block {
                 in_block = false;
                 block_lang.clear();
@@ -288,7 +294,7 @@ fn find_tasks_section_start(lines: &[&str]) -> Option<usize> {
     let mut in_fence = false;
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim_start();
-        if trimmed.starts_with("```") {
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
             in_fence = !in_fence;
             continue;
         }
@@ -304,12 +310,23 @@ fn find_tasks_section_start(lines: &[&str]) -> Option<usize> {
 
 /// Returns the 0-indexed line number of the next level-2
 /// Markdown heading after `start`, or `lines.len()` if no such
-/// heading exists before EOF. `"### "` does not start with
-/// `"## "` (byte 2 is `#` not ` `), so level-3+ headings are
-/// excluded by the `starts_with` check alone.
+/// heading exists before EOF. Tracks both backtick and tilde
+/// fences per CommonMark so a `## ` inside a fenced example
+/// block under the Tasks section does not silently truncate the
+/// scan scope. `"### "` does not start with `"## "` (byte 2 is
+/// `#` not ` `), so level-3+ headings are excluded by the
+/// `starts_with` check alone.
 fn find_next_level_2_heading(lines: &[&str], start: usize) -> usize {
+    let mut in_fence = false;
     for (i, line) in lines.iter().enumerate().skip(start) {
         let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
         if trimmed.starts_with("## ") {
             return i;
         }
@@ -728,6 +745,49 @@ mod tests {
             plan_value: plan_value.to_string(),
             plan_line: 1,
         }
+    }
+
+    #[test]
+    fn is_reserved_key_matches_all_four_keywords() {
+        assert!(is_reserved_key("let"));
+        assert!(is_reserved_key("const"));
+        assert!(is_reserved_key("static"));
+        assert!(is_reserved_key("mut"));
+    }
+
+    #[test]
+    fn is_reserved_key_rejects_user_identifiers() {
+        assert!(!is_reserved_key("foo"));
+        assert!(!is_reserved_key("expected_value"));
+        assert!(!is_reserved_key("LET")); // case-sensitive
+        assert!(!is_reserved_key(""));
+    }
+
+    #[test]
+    fn find_tasks_section_skips_tasks_heading_inside_code_fence() {
+        let lines = vec!["```", "## Tasks", "```", "## Tasks", "content"];
+        // The first "## Tasks" is inside a fence and must be skipped;
+        // the second (post-fence) is the real start.
+        assert_eq!(find_tasks_section_start(&lines), Some(4));
+    }
+
+    #[test]
+    fn find_tasks_section_none_when_absent() {
+        let lines = vec!["## Context", "## Approach", "content"];
+        assert_eq!(find_tasks_section_start(&lines), None);
+    }
+
+    #[test]
+    fn find_next_level_2_heading_returns_len_when_no_h2_after_start() {
+        let lines = vec!["## Tasks", "content", "### sub-heading"];
+        // Starting at index 1, no more ## headings — falls back to lines.len()
+        assert_eq!(find_next_level_2_heading(&lines, 1), 3);
+    }
+
+    #[test]
+    fn find_next_level_2_heading_stops_at_next_h2() {
+        let lines = vec!["## Tasks", "body", "## Next", "more"];
+        assert_eq!(find_next_level_2_heading(&lines, 1), 2);
     }
 
     #[test]

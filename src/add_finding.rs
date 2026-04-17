@@ -1,12 +1,11 @@
-use std::process;
+use std::path::Path;
 
 use clap::Parser;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
-use crate::output::{json_error, json_ok};
 use crate::phase_config::phase_names;
 use crate::utils::now;
 
@@ -95,9 +94,11 @@ fn normalize_gate_input(s: &str) -> String {
     s.replace('\0', "").trim().to_ascii_lowercase()
 }
 
-/// Fallible implementation — returns `Ok(finding_count)` on success,
-/// `Err("no_state")` when no state file exists, or `Err(message)` on failure.
-pub fn run_impl(args: &Args) -> Result<usize, String> {
+/// Fallible implementation with injected root/cwd — returns
+/// `Ok(finding_count)` on success, `Err("no_state")` when no state file
+/// exists, or `Err(message)` on failure. Tests pass tempdir paths;
+/// production wraps via [`run_impl`].
+pub fn run_impl_with_root(args: &Args, root: &Path, cwd: &Path) -> Result<usize, String> {
     if !VALID_OUTCOMES.contains(&args.outcome.as_str()) {
         return Err(format!(
             "Invalid outcome '{}'. Valid: {}",
@@ -110,19 +111,23 @@ pub fn run_impl(args: &Args) -> Result<usize, String> {
         return Err(msg);
     }
 
-    let root = project_root();
-
     // Drift guard: state mutations must happen from inside the
     // subdirectory the flow was started in. Without this, a user who
     // cds out of an `api/`-scoped flow into `ios/` could record
     // findings against the wrong subtree. See
     // [`crate::cwd_scope::enforce`].
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    crate::cwd_scope::enforce(&cwd, &root)?;
+    crate::cwd_scope::enforce(cwd, root)?;
 
-    let branch = resolve_branch(args.branch.as_deref(), &root)
+    let branch = resolve_branch(args.branch.as_deref(), root)
         .ok_or_else(|| "Could not determine current branch".to_string())?;
-    let state_path = FlowPaths::new(&root, &branch).state_file();
+    // Branch reaches us either from `current_branch()` (raw git output)
+    // or from `--branch` CLI override (raw user input). Both are
+    // external inputs per `.claude/rules/external-input-validation.md`,
+    // so use the fallible constructor to reject slash-containing or
+    // empty branches as a structured error rather than a panic.
+    let state_path = FlowPaths::try_new(root, &branch)
+        .ok_or_else(|| format!("Invalid branch '{}'", branch))?
+        .state_file();
 
     if !state_path.exists() {
         return Err("no_state".to_string());
@@ -165,20 +170,31 @@ pub fn run_impl(args: &Args) -> Result<usize, String> {
     Ok(state["findings"].as_array().map(|a| a.len()).unwrap_or(0))
 }
 
-pub fn run(args: Args) {
-    match run_impl(&args) {
-        Ok(count) => {
-            json_ok(&[("finding_count", json!(count))]);
-        }
-        Err(msg) if msg == "no_state" => {
-            println!(r#"{{"status":"no_state"}}"#);
-            process::exit(0);
-        }
-        Err(msg) => {
-            json_error(&msg, &[]);
-            process::exit(1);
-        }
+/// Fallible implementation — returns `Ok(finding_count)` on success,
+/// `Err("no_state")` when no state file exists, or `Err(message)` on failure.
+pub fn run_impl(args: &Args) -> Result<usize, String> {
+    let root = project_root();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    run_impl_with_root(args, &root, &cwd)
+}
+
+/// Main-arm dispatcher: pair the run_impl result with an exit code.
+/// Returns `(value, 0)` on success or no-state, `(error_value, 1)` on
+/// any other error. The no-state case carries `"status": "no_state"`
+/// per the existing CLI contract.
+pub fn run_impl_main(args: Args, root: &Path, cwd: &Path) -> (Value, i32) {
+    match run_impl_with_root(&args, root, cwd) {
+        Ok(count) => (json!({"status": "ok", "finding_count": count}), 0),
+        Err(msg) if msg == "no_state" => (json!({"status": "no_state"}), 0),
+        Err(msg) => (json!({"status": "error", "message": msg}), 1),
     }
+}
+
+pub fn run(args: Args) -> ! {
+    let root = project_root();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let (value, code) = run_impl_main(args, &root, &cwd);
+    crate::dispatch::dispatch_json(value, code)
 }
 
 #[cfg(test)]
@@ -558,5 +574,91 @@ mod tests {
             code_review_filing_gate("rule_written", "flow-code-review").is_some(),
             "rule_written is a Learn-phase outcome, not Code Review"
         );
+    }
+
+    // --- run_impl_main ---
+
+    fn make_args(outcome: &str, phase: &str, branch: Option<&str>) -> Args {
+        Args {
+            finding: "test-finding".to_string(),
+            reason: "test-reason".to_string(),
+            outcome: outcome.to_string(),
+            phase: phase.to_string(),
+            issue_url: None,
+            path: None,
+            branch: branch.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn add_finding_run_impl_main_invalid_outcome_returns_error_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let args = make_args("not-an-outcome", "flow-learn", Some("test-branch"));
+        let (value, code) = run_impl_main(args, &root, &root);
+        assert_eq!(value["status"], "error");
+        assert_eq!(code, 1);
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Invalid outcome"));
+    }
+
+    #[test]
+    fn add_finding_run_impl_main_code_review_filing_blocked_returns_error_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let args = make_args("filed", "flow-code-review", Some("test-branch"));
+        let (value, code) = run_impl_main(args, &root, &root);
+        assert_eq!(value["status"], "error");
+        assert_eq!(code, 1);
+        assert!(value["message"].as_str().unwrap().contains("Code Review"));
+    }
+
+    #[test]
+    fn add_finding_run_impl_main_no_state_returns_no_state_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let args = make_args("fixed", "flow-learn", Some("missing-branch"));
+        let (value, code) = run_impl_main(args, &root, &root);
+        assert_eq!(value["status"], "no_state");
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn add_finding_run_impl_main_success_returns_finding_count_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::write(
+            state_dir.join("present-branch.json"),
+            r#"{"current_phase":"flow-learn","findings":[]}"#,
+        )
+        .unwrap();
+        let args = make_args("fixed", "flow-learn", Some("present-branch"));
+        let (value, code) = run_impl_main(args, &root, &root);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["finding_count"], 1);
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn add_finding_run_impl_main_slash_branch_returns_structured_error_no_panic() {
+        // Regression: --branch feature/foo previously panicked via
+        // FlowPaths::new. Per .claude/rules/external-input-validation.md
+        // CLI subcommand entry callsite discipline, --branch is external
+        // input and must use FlowPaths::try_new with a structured error
+        // return.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let args = make_args("fixed", "flow-learn", Some("feature/foo"));
+        let (value, code) = run_impl_main(args, &root, &root);
+        assert_eq!(code, 1);
+        assert_eq!(value["status"], "error");
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Invalid branch 'feature/foo'"));
     }
 }
