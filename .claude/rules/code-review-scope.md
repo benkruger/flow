@@ -54,56 +54,67 @@ still Real findings and still get fixed in Step 4. A new rule
 without a sweep of the codebase is incomplete — see
 `.claude/rules/scope-expansion.md` for the decision tree.
 
-## Rules Landed on Main Mid-Flow
+## Rules or Skills Landed on Main Mid-Flow
 
-The same retroactive-fix discipline applies when a rule update lands
-on **main** during an active Code or Code Review phase on an
-already-started branch. Rule updates flow into the current session
-via the auto-inserted `system-reminder` that surfaces edited rule
-files — the Code phase sees the updated rule text even though the
-feature branch forked before it was written.
+The same retroactive-fix discipline applies when a rule update OR a
+skill update lands on **main** during an active Code or Code Review
+phase on an already-started branch. Both rule files
+(`.claude/rules/*.md`) and skill files (`skills/**/SKILL.md` and
+`.claude/skills/**/SKILL.md`) flow into the current session via the
+auto-inserted `system-reminder` that surfaces edited files — the
+Code phase sees the updated text even though the feature branch
+forked before it was written.
+
+Skills are the same drift surface as rules: both are dynamic
+instructions the Code phase follows. A skill that adds a new step,
+changes a gate, or tightens a commit convention can retroactively
+flag the current branch's in-progress work, exactly the way a rule
+update does. The decision tree below is written against rules, but
+every criterion applies identically to skill updates.
 
 When this happens, the Code phase has a decision to make:
 
 1. **Proactively sweep the files the branch is already modifying**
-   for pre-existing violations of the new rule, or
+   for pre-existing violations of the new rule or skill, or
 2. **Defer the sweep to Code Review**, where the Reviewer and
    Adversarial agents will catch the same violations under the new
-   rule's lens.
+   rule's or skill's lens.
 
 ### Decision criteria
 
-Take the proactive sweep path when the new rule's violation class is:
+Take the proactive sweep path when the new rule's or skill's
+violation class is:
 
 - **Security-sensitive** — panics on untrusted input, missing
   auth/authz checks, data exposure, injection surfaces. Cost of
   deferring is a potential production incident.
-- **Adjacent to already-changed code** — the rule flags code on the
-  same function, file, or module the current task is already
-  touching. Sweeping is nearly free; deferring just moves the same
-  edit to a later phase.
-- **Cheap to verify** — the rule has a mechanical enforcer
+- **Adjacent to already-changed code** — the rule or skill flags
+  code on the same function, file, or module the current task is
+  already touching. Sweeping is nearly free; deferring just moves
+  the same edit to a later phase.
+- **Cheap to verify** — the rule or skill has a mechanical enforcer
   (`bin/flow plan-check`, `tests/*.rs` contract test, hook) that
   will run during `bin/flow ci` and immediately surface the
   violation.
 
-Defer to Code Review when the new rule's violation class is:
+Defer to Code Review when the violation class is:
 
 - **Incidental** — style, documentation shape, comment quality.
-- **Wide-blast-radius** — the rule flags code across many files the
-  current PR does not touch, and sweeping would balloon scope.
-- **Still being refined** — the rule file's commit history shows
-  recent churn, suggesting the wording is not yet stable enough to
-  build structural guards around.
+- **Wide-blast-radius** — the rule or skill flags code across many
+  files the current PR does not touch, and sweeping would balloon
+  scope.
+- **Still being refined** — the file's commit history shows recent
+  churn, suggesting the wording is not yet stable enough to build
+  structural guards around.
 
 ### Logging the decision
 
 **Whichever path you take, log the decision** via
-`bin/flow log <branch> "[Phase N] Rule drift: <rule file> landed on
-main. Decision: <proactive sweep | defer to Code Review>. Reason:
+`bin/flow log <branch> "[Phase N] <Rule | Skill> drift: <file> landed
+on main. Decision: <proactive sweep | defer to Code Review>. Reason:
 <criterion>"`. The log entry is what distinguishes "Claude noticed
-the rule and consciously chose a path" from "Claude ignored the
-rule". The Learn phase analyst reads the log when auditing rule
+the change and consciously chose a path" from "Claude ignored the
+change". The Learn phase analyst reads the log when auditing
 compliance and treats an undocumented decision as a process gap.
 
 ### Motivating incident
@@ -123,4 +134,5 @@ changed code, so "proactively sweep" would also have been
 defensible). What was missing was the log entry — the decision was
 implicit, leaving Learn to infer the reasoning from commit messages
 and absent state notes. This section codifies the logging
-discipline.
+discipline. The incident involved a rule update; the same logging
+discipline applies to skill updates by symmetry.

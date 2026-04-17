@@ -120,6 +120,72 @@ now ships as a documented empty marker per step 4 above.
   legitimately discuss the forbidden term (requiring an ever-
   growing exemption list).
 
+## Coverage-Required Tests
+
+The 100% coverage gate (`--fail-under-lines/regions/functions` in
+`bin/test`, backed by `.claude/rules/no-waivers.md`) makes every
+production line a named consumer. A test whose sole purpose is to
+cover a branch that has no other named consumer is NOT speculation
+under this rule — it satisfies the rule by naming:
+
+- **The specific regression.** A future edit deletes this line
+  without a test witness, or a refactor makes the line unreachable
+  without a test that would notice.
+- **The code path.** `cargo-llvm-cov nextest` reports the line
+  uncovered on the next `bin/flow ci` run, which trips the
+  `--fail-under-*` gate in `bin/test` and blocks the commit.
+- **The named consumer.** The 100% coverage gate itself — the
+  `--fail-under-*` flags in `bin/test` and the
+  `.claude/rules/no-waivers.md` discipline that forbids ever
+  lowering the thresholds.
+
+Coverage-required tests should be tightly scoped: one test per
+branch, asserting what the branch produces or returns. Avoid
+exercising adjacent branches in the same test body; one test per
+branch keeps the regression path unambiguous when the test fails.
+
+### Placement
+
+Coverage-required tests live alongside the code they exercise.
+Two placements are canonical, matching the broader Rust-test
+patterns the project already uses:
+
+- **Inline unit tests in a `#[cfg(test)] mod tests` block inside
+  the source file** — when the test exercises a private function,
+  an internal helper, or a pure branch that does not need a real
+  filesystem or subprocess fixture. Reference pattern:
+  `src/complete_fast.rs::production_ci_decider_tree_changed_returns_not_skipped`
+  sits inside `src/complete_fast.rs` because it exercises a pure
+  helper defined in the same module.
+- **Integration tests in `tests/<module>.rs`** — when the test
+  needs subprocess spawning (`CARGO_BIN_EXE_flow-rs`), a real
+  `TempDir`, or the CLI surface. Reference pattern: subprocess
+  tests in `tests/main_dispatch.rs` and `tests/concurrency.rs`.
+
+Group related coverage-required tests under a section-marker
+comment naming the branch family the tests cover (see
+`.claude/rules/rust-patterns.md` "Test Module Section Markers").
+Naming conventions follow the production function's name so a
+grep from code to test is immediate.
+
+### Mutation-style verification
+
+When reviewing a coverage-required test, verify it trips when the
+covered line is deleted. The three-step procedure:
+
+1. Run `bin/flow test -- <test_name>` and confirm the test passes
+   against the current implementation.
+2. Comment out (or delete) the production line the test claims to
+   cover. Re-run `bin/flow test -- <test_name>` and confirm the
+   test now fails.
+3. Restore the production line. Re-run once more and confirm the
+   test passes again.
+
+A test that still passes with the line removed is speculative —
+it is not actually exercising the line. Strengthen the assertion
+(check a value the line produces, not just that the function
+returns without panic) before committing.
+
 ## How to Apply
 
 **Plan phase.** When a plan task adds a test, the task description
@@ -177,3 +243,9 @@ themselves (silently). I reverted the test.
   — a rule that intentionally ships without a corpus contract
   test per the viability check above, with the deferral rationale
   inline.
+- `.claude/rules/no-waivers.md` — the 100% coverage discipline
+  that names coverage-required tests as having a valid named
+  consumer.
+- `.claude/rules/rust-patterns.md` "Test Module Section Markers"
+  — naming and grouping conventions for coverage-required tests
+  placed inline in source files or grouped in `tests/*.rs`.

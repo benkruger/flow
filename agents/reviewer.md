@@ -114,8 +114,8 @@ For each finding, produce a structured block:
 
 If no credible issues are found, report:
 
-**No findings.** The changes are correct, follow conventions, and have
-adequate test coverage based on the available evidence.
+**No findings.** The changes are correct, follow conventions, and every
+production line is exercised by a named test.
 
 ## Reasoning Discipline
 

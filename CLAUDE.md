@@ -197,6 +197,30 @@ Phase 2 (Plan) gates completion on three scanners that share `bin/flow plan-chec
 
 Tombstone tests prevent merge conflicts from silently resurrecting deleted code. The lifecycle has two halves: creation (`.claude/rules/tombstone-tests.md`) and removal (`bin/flow tombstone-audit`). Standalone tombstones (file-existence, source-content checks) live in `tests/tombstones.rs`. Topical tombstones that are integral to a test domain (skill_contracts, structural, dispatcher) stay in their respective test files. The `tombstone-audit` subcommand scans ALL `tests/*.rs` files for PR references, queries GitHub for merge dates, and classifies each as stale or current. Code Review Step 1 runs the audit; Step 4 removes stale tombstones.
 
+### 100% Coverage Is Enforced
+
+Every production line in `src/*.rs` must be exercised by a named
+test. The gate is `bin/test` itself — on full-suite runs it passes
+`--fail-under-lines <L>`, `--fail-under-regions <R>`, and
+`--fail-under-functions <F>` to `cargo llvm-cov nextest`. When any
+aggregate falls below its threshold, CI exits non-zero and
+`finalize-commit` blocks the commit.
+
+The thresholds are a ratchet: they only move up. When a PR earns a
+whole-percent improvement the matching flag is bumped in the same
+commit. A regression that would require a lower floor is a
+CI-blocking failure, not a reason to lower the gate.
+
+The ratchet is the load-bearing mechanism. `.claude/rules/no-waivers.md`
+forbids per-line waiver files and the "measurement-only task"
+antipattern that lets a session declare victory at <100%. The Code
+Review reviewer agent treats any uncovered line as a Real finding
+per `.claude/rules/code-review-scope.md`. Coverage-required tests —
+tests whose only purpose is to exercise a branch — are explicitly
+sanctioned by `.claude/rules/tests-guard-real-regressions.md`
+"Coverage-Required Tests" because the gate itself names their
+consumer.
+
 ## Test Architecture
 
 All tests are Rust integration tests in `tests/*.rs`. Shared helpers in `tests/common/mod.rs` provide `repo_root()`, `bin_dir()`, `hooks_dir()`, `skills_dir()`, `docs_dir()`, `agents_dir()`, `load_phases()`, `load_hooks()`, `plugin_version()`, `phase_order()`, `utility_skills()`, `read_skill()`, `collect_md_files()`, and `create_git_repo_with_remote()`.
