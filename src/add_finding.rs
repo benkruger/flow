@@ -229,32 +229,25 @@ mod tests {
     #[test]
     fn add_finding_happy_path() {
         let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
         let state = make_state("test-feature");
-        let path = write_state(dir.path(), "test-feature", &state);
+        let path = write_state(&root, "test-feature", &state);
 
-        let names = phase_names();
-        let phase = "flow-code-review";
-        let phase_name = names.get(phase).cloned().unwrap_or_default();
-        let timestamp = now();
+        let args = Args {
+            finding: "Unused import in parser.rs".to_string(),
+            reason: "False positive — import used in macro expansion".to_string(),
+            outcome: "dismissed".to_string(),
+            phase: "flow-code-review".to_string(),
+            issue_url: None,
+            path: None,
+            branch: Some("test-feature".to_string()),
+        };
 
-        let result = mutate_state(&path, |s| {
-            if s.get("findings").is_none() || !s["findings"].is_array() {
-                s["findings"] = json!([]);
-            }
-            if let Some(arr) = s["findings"].as_array_mut() {
-                arr.push(json!({
-                    "finding": "Unused import in parser.rs",
-                    "reason": "False positive — import used in macro expansion",
-                    "outcome": "dismissed",
-                    "phase": phase,
-                    "phase_name": phase_name,
-                    "timestamp": timestamp,
-                }));
-            }
-        })
-        .unwrap();
+        let count = run_impl_with_root(&args, &root, &root).unwrap();
+        assert_eq!(count, 1);
 
-        let findings = result["findings"].as_array().unwrap();
+        let on_disk: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let findings = on_disk["findings"].as_array().unwrap();
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0]["finding"], "Unused import in parser.rs");
         assert_eq!(
@@ -296,20 +289,27 @@ mod tests {
     #[test]
     fn add_finding_creates_array_if_missing() {
         let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
         fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join("test.json");
+        let path = state_dir.join("test-feature.json");
+        // State file with no `findings` key — exercises production line
+        // 151 (`state["findings"] = json!([]);`) inside the mutate_state
+        // closure. The branch only fires when the field is absent.
         fs::write(&path, r#"{"current_phase": "flow-code-review"}"#).unwrap();
 
-        mutate_state(&path, |s| {
-            if s.get("findings").is_none() || !s["findings"].is_array() {
-                s["findings"] = json!([]);
-            }
-            if let Some(arr) = s["findings"].as_array_mut() {
-                arr.push(json!({"finding": "test", "outcome": "fixed"}));
-            }
-        })
-        .unwrap();
+        let args = Args {
+            finding: "test".to_string(),
+            reason: "test reason".to_string(),
+            outcome: "fixed".to_string(),
+            phase: "flow-code-review".to_string(),
+            issue_url: None,
+            path: None,
+            branch: Some("test-feature".to_string()),
+        };
+
+        let count = run_impl_with_root(&args, &root, &root).unwrap();
+        assert_eq!(count, 1);
 
         let content = fs::read_to_string(&path).unwrap();
         let on_disk: Value = serde_json::from_str(&content).unwrap();
@@ -536,30 +536,34 @@ mod tests {
         );
     }
 
-    /// Verify that an array-root state file triggers the object guard's
-    /// early return, leaving the file unchanged and preventing an
-    /// IndexMut panic on non-object root types.
+    /// Verify that an array-root state file triggers the production
+    /// object guard's early return inside `run_impl_with_root`'s
+    /// mutate_state closure (line 147-149), leaving the file unchanged
+    /// and preventing an IndexMut panic on non-object root types.
     #[test]
     fn add_finding_array_root_state_noop() {
         let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
         fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join("test.json");
-        let content = "[1, 2, 3]";
-        fs::write(&path, content).unwrap();
+        let path = state_dir.join("test-feature.json");
+        fs::write(&path, "[1, 2, 3]").unwrap();
 
-        mutate_state(&path, |state| {
-            if !(state.is_object() || state.is_null()) {
-                return;
-            }
-            if state.get("findings").is_none() || !state["findings"].is_array() {
-                state["findings"] = json!([]);
-            }
-            if let Some(arr) = state["findings"].as_array_mut() {
-                arr.push(json!({"finding": "should not appear"}));
-            }
-        })
-        .unwrap();
+        let args = Args {
+            finding: "should not appear".to_string(),
+            reason: "guard should reject".to_string(),
+            outcome: "fixed".to_string(),
+            phase: "flow-code-review".to_string(),
+            issue_url: None,
+            path: None,
+            branch: Some("test-feature".to_string()),
+        };
+
+        // Production short-circuits via the object-guard early return
+        // and reports zero findings (state["findings"].as_array() is
+        // None on an array root).
+        let count = run_impl_with_root(&args, &root, &root).unwrap();
+        assert_eq!(count, 0);
 
         let after = fs::read_to_string(&path).unwrap();
         let parsed: Value = serde_json::from_str(&after).unwrap();

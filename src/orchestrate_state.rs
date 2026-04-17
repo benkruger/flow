@@ -1488,6 +1488,32 @@ mod tests {
 
     // --- run_impl --create error branches ---
 
+    /// Exercises line 395 — the catch-all "No action specified" arm.
+    /// Constructs Args with every action flag unset to bypass clap's
+    /// ArgGroup requirement (which would otherwise reject the call at
+    /// parse time).
+    #[test]
+    fn run_impl_no_action_returns_no_action_error() {
+        let args = Args {
+            create: false,
+            start_issue: None,
+            record_outcome: None,
+            complete: false,
+            read: false,
+            next: false,
+            queue_file: None,
+            state_dir: None,
+            state_file: None,
+            outcome: None,
+            pr_url: None,
+            branch: None,
+            reason: None,
+        };
+        let value = run_impl(&args).unwrap();
+        assert_eq!(value["status"], "error");
+        assert_eq!(value["message"], "No action specified");
+    }
+
     #[test]
     fn run_impl_create_missing_queue_file_returns_err() {
         let dir = tempfile::tempdir().unwrap();

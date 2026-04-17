@@ -499,13 +499,11 @@ mod tests {
             "expected at least one external-input-audit violation, got rules: {:?}",
             rules
         );
+        let message = result["message"].as_str().unwrap_or("").to_string();
         assert!(
-            result["message"]
-                .as_str()
-                .unwrap_or("")
-                .contains("plan-check violation"),
+            message.contains("plan-check violation"),
             "message must summarize total: {:?}",
-            result["message"]
+            message
         );
     }
 

@@ -737,6 +737,41 @@ mod tests {
 
     // --- tree_snapshot tests ---
 
+    /// Exercises lines 175-184 of `format_elapsed` — three formatting
+    /// branches: sub-1s ms, sub-1m fractional seconds, ≥1m
+    /// minutes-and-seconds. The minutes branch is the regression-prone
+    /// one (only fires on long CI runs).
+    #[test]
+    fn format_elapsed_under_one_second_uses_ms() {
+        assert_eq!(format_elapsed(0), "0ms");
+        assert_eq!(format_elapsed(999), "999ms");
+    }
+
+    #[test]
+    fn format_elapsed_under_one_minute_uses_fractional_seconds() {
+        assert_eq!(format_elapsed(1_000), "1.0s");
+        assert_eq!(format_elapsed(38_600), "38.6s");
+        assert_eq!(format_elapsed(59_999), "60.0s");
+    }
+
+    #[test]
+    fn format_elapsed_one_minute_and_above_uses_minutes_seconds() {
+        assert_eq!(format_elapsed(60_000), "1m0s");
+        assert_eq!(format_elapsed(125_000), "2m5s");
+        assert_eq!(format_elapsed(3_605_000), "60m5s");
+    }
+
+    /// Exercises line 191 — early return when the phase list is empty.
+    /// `eprint_summary` writes to stderr so the test asserts no panic
+    /// and trusts the early-return contract via `eprint_summary` being
+    /// a noop for the empty input.
+    #[test]
+    fn eprint_summary_empty_phases_is_noop() {
+        // No assertion target other than "does not panic" — the function
+        // returns `()` and writes nothing.
+        eprint_summary(&[], 0);
+    }
+
     #[test]
     fn tree_snapshot_empty_repo_returns_64_char_hex() {
         let dir = tempfile::tempdir().unwrap();
@@ -972,6 +1007,50 @@ mod tests {
         assert_eq!(out["status"], "ok");
         assert_eq!(out["skipped"], false);
         assert!(fixture_sentinel(&f).exists());
+    }
+
+    /// Exercises lines 354 and 357 — `run_once` propagates
+    /// `FLOW_CI_REBUILD=1` and `FLOW_SIMULATE_BRANCH=<sim>` to the
+    /// spawned tool when `rebuild=true` and `simulate_branch=Some`.
+    /// The script writes its env-var visibility to a marker file the
+    /// test then reads back to confirm propagation.
+    #[test]
+    fn run_once_propagates_rebuild_and_simulate_branch_env() {
+        let f = make_ci_fixture();
+        let marker = f.path.join("env-marker");
+        let script = f.path.join("env-probe.sh");
+        write_script(
+            &script,
+            &format!(
+                "#!/usr/bin/env bash\nprintf 'rebuild=%s sim=%s\\n' \"${{FLOW_CI_REBUILD:-}}\" \"${{FLOW_SIMULATE_BRANCH:-}}\" > {}\nexit 0\n",
+                marker.display()
+            ),
+        );
+        let tools = single_tool(&script);
+
+        let (out, code) = run_once(
+            &f.path,
+            &f.path,
+            &tools,
+            Some(&f.branch),
+            true,
+            Some("simulated-feature"),
+            true,
+        );
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+
+        let env_dump = std::fs::read_to_string(&marker).unwrap();
+        assert!(
+            env_dump.contains("rebuild=1"),
+            "FLOW_CI_REBUILD not propagated; got: {}",
+            env_dump
+        );
+        assert!(
+            env_dump.contains("sim=simulated-feature"),
+            "FLOW_SIMULATE_BRANCH not propagated; got: {}",
+            env_dump
+        );
     }
 
     #[test]
@@ -1457,6 +1536,49 @@ exit 0
         assert_eq!(code, 1);
         assert_eq!(out["consistent"], true);
         assert!(out["output"].as_str().unwrap().contains("TOOL2 FAILED"));
+    }
+
+    /// Exercises lines 497 and 500 — `run_with_retry` propagates
+    /// `FLOW_CI_REBUILD=1` and `FLOW_SIMULATE_BRANCH=<sim>` to the
+    /// spawned tool when `rebuild=true` and `simulate_branch=Some`.
+    /// Mirror of `run_once_propagates_rebuild_and_simulate_branch_env`.
+    #[test]
+    fn run_with_retry_propagates_rebuild_and_simulate_branch_env() {
+        let f = make_ci_fixture();
+        let marker = f.path.join("retry-env-marker");
+        let script = f.path.join("retry-env-probe.sh");
+        write_script(
+            &script,
+            &format!(
+                "#!/usr/bin/env bash\nprintf 'rebuild=%s sim=%s\\n' \"${{FLOW_CI_REBUILD:-}}\" \"${{FLOW_SIMULATE_BRANCH:-}}\" > {}\nexit 0\n",
+                marker.display()
+            ),
+        );
+        let tools = single_tool(&script);
+
+        let (out, code) = run_with_retry(
+            &f.path,
+            &f.path,
+            &tools,
+            Some(&f.branch),
+            1,
+            Some("retry-feature"),
+            true,
+        );
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+
+        let env_dump = std::fs::read_to_string(&marker).unwrap();
+        assert!(
+            env_dump.contains("rebuild=1"),
+            "FLOW_CI_REBUILD not propagated; got: {}",
+            env_dump
+        );
+        assert!(
+            env_dump.contains("sim=retry-feature"),
+            "FLOW_SIMULATE_BRANCH not propagated; got: {}",
+            env_dump
+        );
     }
 
     #[test]

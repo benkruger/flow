@@ -214,23 +214,30 @@ mod tests {
         assert_eq!(notifs[1]["message_preview"], "new");
     }
 
+    /// Exercises production line 91 (`state["slack_notifications"] =
+    /// json!([])`) — the auto-create branch fires when the state file
+    /// lacks the key.
     #[test]
     fn add_notification_creates_array_if_missing() {
         let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
         fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join("test.json");
+        let path = state_dir.join("test-feature.json");
         fs::write(&path, r#"{"current_phase": "flow-code"}"#).unwrap();
 
-        mutate_state(&path, |s| {
-            if s.get("slack_notifications").is_none() || !s["slack_notifications"].is_array() {
-                s["slack_notifications"] = json!([]);
-            }
-            if let Some(arr) = s["slack_notifications"].as_array_mut() {
-                arr.push(json!({"phase": "flow-code", "message_preview": "test"}));
-            }
-        })
-        .unwrap();
+        let args = Args {
+            phase: "flow-code".to_string(),
+            ts: "1234.5678".to_string(),
+            thread_ts: "1234.0000".to_string(),
+            message: "test".to_string(),
+            branch: Some("test-feature".to_string()),
+        };
+
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["notification_count"], 1);
 
         let content = fs::read_to_string(&path).unwrap();
         let on_disk: Value = serde_json::from_str(&content).unwrap();
@@ -286,32 +293,30 @@ mod tests {
         );
     }
 
-    /// Verify that an array-root state file triggers the object guard's
-    /// early return, leaving the file unchanged and preventing an
-    /// IndexMut panic on non-object root types.
+    /// Verify that an array-root state file triggers the production
+    /// object guard's early return inside `run_impl_main`'s
+    /// mutate_state closure (lines 87-89), leaving the file unchanged.
     #[test]
     fn add_notification_array_root_state_noop() {
         let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
         fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join("test.json");
-        let content = "[1, 2, 3]";
-        fs::write(&path, content).unwrap();
+        let path = state_dir.join("test-feature.json");
+        fs::write(&path, "[1, 2, 3]").unwrap();
 
-        mutate_state(&path, |state| {
-            if !(state.is_object() || state.is_null()) {
-                return;
-            }
-            if state.get("slack_notifications").is_none()
-                || !state["slack_notifications"].is_array()
-            {
-                state["slack_notifications"] = json!([]);
-            }
-            if let Some(arr) = state["slack_notifications"].as_array_mut() {
-                arr.push(json!({"phase": "flow-code", "message_preview": "should not appear"}));
-            }
-        })
-        .unwrap();
+        let args = Args {
+            phase: "flow-code".to_string(),
+            ts: "1234.5678".to_string(),
+            thread_ts: "1234.0000".to_string(),
+            message: "should not appear".to_string(),
+            branch: Some("test-feature".to_string()),
+        };
+
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["notification_count"], 0);
 
         let after = fs::read_to_string(&path).unwrap();
         let parsed: Value = serde_json::from_str(&after).unwrap();

@@ -1148,6 +1148,18 @@ mod tests {
 
     // --- Adversarial findings: array state and empty hook session_id ---
 
+    /// Exercises line 329 — the array-root early-return guard inside
+    /// `check_discussion_mode`'s mutate_state closure. The function must
+    /// not crash on a malformed state file and must report no block.
+    #[test]
+    fn test_check_discussion_mode_array_state_file_does_not_crash() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, r#"["not", "an", "object"]"#).unwrap();
+        let result = check_discussion_mode(&path);
+        assert!(!result.should_block);
+    }
+
     #[test]
     fn test_check_continue_array_state_file_does_not_crash() {
         // An array-shaped state file must not panic when the Stop

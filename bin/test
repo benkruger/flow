@@ -26,6 +26,14 @@ if [ "${1:-}" = "--file" ]; then
   exit
 fi
 
+# `bin/test --report` re-renders the cached coverage data with
+# missing-line numbers. Requires a prior full-suite run to have
+# populated target/llvm-cov-target/. Read-only; no rebuild.
+if [ "${1:-}" = "--report" ]; then
+  shift
+  exec cargo llvm-cov report --show-missing-lines "$@"
+fi
+
 # Full-suite invocations (no filter args) are the CI gate. They must
 # rebuild flow-rs artifacts from clean so llvm-cov measures a single,
 # coherent source generation.

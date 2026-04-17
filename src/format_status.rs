@@ -411,6 +411,7 @@ mod tests {
 
     fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
         let mut phases = serde_json::Map::new();
+        let phase_names = crate::phase_config::phase_names();
         let all_phases = [
             "flow-start",
             "flow-plan",
@@ -425,18 +426,11 @@ mod tests {
                 .find(|(k, _)| *k == p)
                 .map(|(_, v)| *v)
                 .unwrap_or("pending");
+            let name = phase_names.get(p).cloned().unwrap_or_default();
             phases.insert(
                 p.to_string(),
                 json!({
-                    "name": match p {
-                        "flow-start" => "Start",
-                        "flow-plan" => "Plan",
-                        "flow-code" => "Code",
-                        "flow-code-review" => "Code Review",
-                        "flow-learn" => "Learn",
-                        "flow-complete" => "Complete",
-                        _ => p,
-                    },
+                    "name": name,
                     "status": status,
                     "started_at": null,
                     "completed_at": null,
@@ -1014,6 +1008,81 @@ mod tests {
         std::fs::create_dir_all(root.join(".flow-states")).unwrap();
         let result = run_impl_main(Some("nonexistent-branch"), &root);
         assert_eq!(result, Ok((String::new(), 1)));
+    }
+
+    /// Exercises lines 376-377 — the fallback branch where the requested
+    /// branch has no state file BUT another state file exists in the
+    /// project. `run_impl_main` falls through to render whatever state
+    /// files are present.
+    #[test]
+    fn format_status_run_impl_main_unknown_branch_falls_back_to_other_state_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        // Plant a sibling state file under a different branch name so
+        // find_state_files(root, "") returns something while
+        // find_state_files(root, requested_branch) returns empty.
+        let mut sibling = make_state(
+            "flow-plan",
+            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        );
+        sibling["branch"] = json!("sibling-feature");
+        std::fs::write(
+            state_dir.join("sibling-feature.json"),
+            serde_json::to_string(&sibling).unwrap(),
+        )
+        .unwrap();
+
+        let (text, code) = run_impl_main(Some("requested-but-absent"), &root).expect("ok path");
+        // The fallback rendered the sibling flow's panel, so exit 0 with
+        // non-empty text.
+        assert_eq!(code, 0);
+        assert!(
+            text.contains("sibling-feature"),
+            "expected sibling branch name in fallback panel, got: {}",
+            text
+        );
+    }
+
+    /// Exercises line 72 — the `Subdir` line is emitted when the state's
+    /// `relative_cwd` is non-empty (mono-repo flow started in a subdir).
+    #[test]
+    fn format_panel_renders_subdir_line_when_relative_cwd_set() {
+        let mut state = make_state(
+            "flow-plan",
+            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        );
+        state["relative_cwd"] = json!("api");
+        let panel = format_panel(&state, "9.9.9", None, false, None);
+        assert!(
+            panel.contains("Subdir  : api"),
+            "expected Subdir line, got: {}",
+            panel
+        );
+    }
+
+    /// Exercises line 37 — the early return when state has no `phases`
+    /// key. `format_panel` returns an empty string rather than panic.
+    #[test]
+    fn format_panel_no_phases_key_returns_empty_string() {
+        let state = json!({
+            "branch": "test-feature",
+            "current_phase": "flow-plan",
+        });
+        assert_eq!(format_panel(&state, "9.9.9", None, false, None), "");
+    }
+
+    /// Exercises line 208 — the early return when `format_all_complete`
+    /// is invoked with a state that lacks a `phases` key. The function
+    /// is `pub` so the direct call path is part of the API contract.
+    #[test]
+    fn format_all_complete_no_phases_key_returns_empty_string() {
+        let state = json!({
+            "branch": "test-feature",
+            "pr_url": "https://example.com/pr/1",
+        });
+        assert_eq!(format_all_complete(&state, "9.9.9", false, None), "");
     }
 
     #[test]

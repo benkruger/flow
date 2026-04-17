@@ -171,50 +171,79 @@ pub fn apply_updates(state: &mut Value, set_args: &[String]) -> Result<Vec<Updat
     Ok(updates)
 }
 
-/// Run the set-timestamp command.
-pub fn run(set_args: Vec<String>, branch_override: Option<String>) {
-    let root = project_root();
+/// Outcome of [`run_impl_main`]: a JSON payload (success or error
+/// shape) and a paired exit code.
+pub type RunOutcome = (Value, i32);
 
+/// Testable core of the set-timestamp command. Returns the payload the
+/// CLI wrapper would print plus the exit code. Tests pass tempdir
+/// `root`/`cwd` to bypass git resolution and the on-disk state file.
+pub fn run_impl_main(
+    set_args: &[String],
+    branch_override: Option<&str>,
+    root: &std::path::Path,
+    cwd: &std::path::Path,
+) -> RunOutcome {
     // Drift guard: set-timestamp is the general-purpose state mutator
     // for mid-phase fields. Writing to the state file from the wrong
     // subdirectory of a mono-repo would silently record values
     // against the wrong assumed scope. See
     // [`crate::cwd_scope::enforce`].
-    let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
-    if let Err(msg) = crate::cwd_scope::enforce(&cwd, &root) {
-        json_error(&msg, &[]);
-        process::exit(1);
+    if let Err(msg) = crate::cwd_scope::enforce(cwd, root) {
+        return (json!({"status": "error", "message": msg}), 1);
     }
 
-    let branch = match resolve_branch(branch_override.as_deref(), &root) {
+    let branch = match resolve_branch(branch_override, root) {
         Some(b) => b,
         None => {
-            json_error("Could not determine current branch", &[]);
-            process::exit(1);
+            return (
+                json!({
+                    "status": "error",
+                    "message": "Could not determine current branch"
+                }),
+                1,
+            );
         }
     };
 
-    let state_path = FlowPaths::new(&root, &branch).state_file();
+    let state_path = FlowPaths::new(root, &branch).state_file();
 
     if !state_path.exists() {
-        json_error(
-            &format!("No state file found: {}", state_path.display()),
-            &[],
+        return (
+            json!({
+                "status": "error",
+                "message": format!("No state file found: {}", state_path.display())
+            }),
+            1,
         );
-        process::exit(1);
     }
 
     let mut collected_updates: Vec<Update> = Vec::new();
+    let mut apply_error: Option<String> = None;
 
-    let result = mutate_state(&state_path, |state| match apply_updates(state, &set_args) {
-        Ok(updates) => {
-            collected_updates = updates;
-        }
-        Err(e) => {
-            json_error(&e, &[]);
-            process::exit(1);
+    // Snapshot state before applying updates so a mid-way failure can
+    // restore the original — `apply_updates` mutates in place, so the
+    // pre-extraction implementation relied on `process::exit` inside
+    // the closure to abort the post-closure `mutate_state` write. The
+    // testable extraction returns errors instead of exiting, so we
+    // restore the snapshot here to preserve "no partial mutation on
+    // error" semantics.
+    let result = mutate_state(&state_path, |state| {
+        let backup = state.clone();
+        match apply_updates(state, set_args) {
+            Ok(updates) => {
+                collected_updates = updates;
+            }
+            Err(e) => {
+                *state = backup;
+                apply_error = Some(e);
+            }
         }
     });
+
+    if let Some(msg) = apply_error {
+        return (json!({"status": "error", "message": msg}), 1);
+    }
 
     match result {
         Ok(_) => {
@@ -222,17 +251,37 @@ pub fn run(set_args: Vec<String>, branch_override: Option<String>) {
                 .iter()
                 .map(|u| json!({"path": u.path, "value": u.value}))
                 .collect();
-            json_ok(&[("updates", json!(updates_json))]);
+            (json!({"status": "ok", "updates": updates_json}), 0)
         }
         Err(e) => {
             let msg = e.to_string();
-            if msg.contains("Invalid JSON") || msg.contains("JSON error") {
-                json_error(&format!("Could not read state file: {}", msg), &[]);
+            let message = if msg.contains("Invalid JSON") || msg.contains("JSON error") {
+                format!("Could not read state file: {}", msg)
             } else {
-                json_error(&msg, &[]);
-            }
-            process::exit(1);
+                msg
+            };
+            (json!({"status": "error", "message": message}), 1)
         }
+    }
+}
+
+/// Run the set-timestamp command.
+pub fn run(set_args: Vec<String>, branch_override: Option<String>) {
+    let root = project_root();
+    let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
+    let (value, code) = run_impl_main(&set_args, branch_override.as_deref(), &root, &cwd);
+    if code == 0 {
+        // Emit the success shape via the existing json_ok helper to
+        // preserve the historical key ordering and pretty-printing.
+        let updates = value.get("updates").cloned().unwrap_or(json!([]));
+        json_ok(&[("updates", updates)]);
+    } else {
+        let msg = value
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("error");
+        json_error(msg, &[]);
+        process::exit(code);
     }
 }
 
@@ -533,6 +582,99 @@ mod tests {
         let result = set_nested(&mut obj, &["a", "x"], json!("v"));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("bool"));
+    }
+
+    /// Exercises the no-state-file path: a valid branch is provided but
+    /// no `.flow-states/<branch>.json` exists.
+    #[test]
+    fn run_impl_main_no_state_file_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let (value, code) = run_impl_main(
+            &["foo=bar".to_string()],
+            Some("set-ts-no-state"),
+            &root,
+            &root,
+        );
+        assert_eq!(code, 1);
+        assert_eq!(value["status"], "error");
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("No state file found"));
+    }
+
+    /// Exercises the apply_updates error path: a malformed `--set` arg
+    /// (missing `=`) causes apply_updates to return Err. The state file
+    /// must remain unchanged because the closure restores its snapshot
+    /// before mutate_state writes.
+    #[test]
+    fn run_impl_main_invalid_set_arg_returns_error_and_preserves_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        let state_path = state_dir.join("set-ts-invalid.json");
+        let original = r#"{"branch":"set-ts-invalid","existing":"value"}"#;
+        std::fs::write(&state_path, original).unwrap();
+
+        let (value, code) = run_impl_main(
+            &["no_equals_sign".to_string()],
+            Some("set-ts-invalid"),
+            &root,
+            &root,
+        );
+        assert_eq!(code, 1);
+        assert_eq!(value["status"], "error");
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("expected path=value"));
+
+        let after: Value =
+            serde_json::from_str(&std::fs::read_to_string(&state_path).unwrap()).unwrap();
+        assert_eq!(after["existing"], "value");
+    }
+
+    /// Exercises the mutate_state error path: corrupt JSON in the state
+    /// file → mutate_state returns Err which is rewritten to "Could not
+    /// read state file: <details>".
+    #[test]
+    fn run_impl_main_corrupt_state_file_returns_could_not_read_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        let state_path = state_dir.join("set-ts-corrupt.json");
+        std::fs::write(&state_path, "{not-json").unwrap();
+
+        let (value, code) = run_impl_main(
+            &["foo=bar".to_string()],
+            Some("set-ts-corrupt"),
+            &root,
+            &root,
+        );
+        assert_eq!(code, 1);
+        assert_eq!(value["status"], "error");
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Could not read state file"));
+    }
+
+    /// Direct unit test for `value_type_name` covering the Array and
+    /// Object arms (lines 97-98). Both production callsites match Array
+    /// and Object before falling into the catch-all that calls this
+    /// function, so the arms are unreachable from production but kept
+    /// for forward-compat if a new callsite ever reaches them.
+    #[test]
+    fn value_type_name_covers_all_variants() {
+        assert_eq!(value_type_name(&Value::Null), "NoneType");
+        assert_eq!(value_type_name(&json!(true)), "bool");
+        assert_eq!(value_type_name(&json!(7)), "int");
+        assert_eq!(value_type_name(&json!("hello")), "str");
+        assert_eq!(value_type_name(&json!([1, 2])), "list");
+        assert_eq!(value_type_name(&json!({"k": "v"})), "dict");
     }
 
     #[test]

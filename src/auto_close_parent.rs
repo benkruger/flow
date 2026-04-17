@@ -698,6 +698,39 @@ mod tests {
         ));
     }
 
+    /// Exercises production line 186 — sub-issues fetch fails when the
+    /// parent number is provided directly. The parent-fetch branch is
+    /// skipped, so the runner's first call is the sub_issues lookup.
+    #[test]
+    fn check_parent_closed_with_runner_sub_issues_fetch_error_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let runner: &GhApiRunner = &|_, _| Err("network error".to_string());
+        assert!(!check_parent_closed_with_runner(
+            "owner/repo",
+            5,
+            Some(10),
+            &cwd,
+            runner
+        ));
+    }
+
+    /// Exercises production line 247 — milestone fetch fails when the
+    /// milestone number is provided directly. Mirrors the parent variant.
+    #[test]
+    fn check_milestone_closed_with_runner_milestone_fetch_error_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let runner: &GhApiRunner = &|_, _| Err("network error".to_string());
+        assert!(!check_milestone_closed_with_runner(
+            "owner/repo",
+            5,
+            Some(3),
+            &cwd,
+            runner
+        ));
+    }
+
     #[test]
     fn check_milestone_closed_with_runner_open_issues_nonzero_returns_false() {
         let dir = tempfile::tempdir().unwrap();

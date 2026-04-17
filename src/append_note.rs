@@ -157,29 +157,23 @@ mod tests {
     #[test]
     fn append_note_happy_path() {
         let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
         let state = make_state("test-feature");
-        let path = write_state(dir.path(), "test-feature", &state);
+        let path = write_state(&root, "test-feature", &state);
 
-        let result = mutate_state(&path, |s| {
-            let names = phase_names();
-            let phase = "flow-plan";
-            let phase_name = names.get(phase).cloned().unwrap_or_default();
-            if s.get("notes").is_none() || !s["notes"].is_array() {
-                s["notes"] = json!([]);
-            }
-            if let Some(arr) = s["notes"].as_array_mut() {
-                arr.push(json!({
-                    "phase": phase,
-                    "phase_name": phase_name,
-                    "timestamp": now(),
-                    "type": "correction",
-                    "note": "test note",
-                }));
-            }
-        })
-        .unwrap();
+        let args = Args {
+            note: "test note".to_string(),
+            note_type: "correction".to_string(),
+            branch: Some("test-feature".to_string()),
+        };
 
-        let notes = result["notes"].as_array().unwrap();
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["note_count"], 1);
+
+        let on_disk: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let notes = on_disk["notes"].as_array().unwrap();
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0]["phase"], "flow-plan");
         assert_eq!(notes[0]["phase_name"], "Plan");
@@ -214,24 +208,27 @@ mod tests {
         assert_eq!(on_disk["notes"].as_array().unwrap().len(), 3);
     }
 
+    /// Exercises production line 88 (`state["notes"] = json!([])`) —
+    /// the auto-create branch fires when the state file lacks the key.
     #[test]
     fn append_note_creates_array_if_missing() {
         let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
         fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join("test.json");
-        // State with no notes key
+        let path = state_dir.join("test-feature.json");
         fs::write(&path, r#"{"current_phase": "flow-code"}"#).unwrap();
 
-        mutate_state(&path, |s| {
-            if s.get("notes").is_none() || !s["notes"].is_array() {
-                s["notes"] = json!([]);
-            }
-            if let Some(arr) = s["notes"].as_array_mut() {
-                arr.push(json!({"note": "first"}));
-            }
-        })
-        .unwrap();
+        let args = Args {
+            note: "first".to_string(),
+            note_type: "correction".to_string(),
+            branch: Some("test-feature".to_string()),
+        };
+
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["note_count"], 1);
 
         let content = fs::read_to_string(&path).unwrap();
         let on_disk: Value = serde_json::from_str(&content).unwrap();
@@ -293,30 +290,33 @@ mod tests {
         assert_eq!(read_current_phase(&path), None);
     }
 
-    /// Verify that an array-root state file triggers the object guard's
-    /// early return, leaving the file unchanged and preventing an
-    /// IndexMut panic on non-object root types.
+    /// Verify that an array-root state file triggers the production
+    /// object guard's early return inside `run_impl_main`'s
+    /// mutate_state closure (lines 84-86), leaving the file unchanged.
     #[test]
     fn append_note_array_root_state_noop() {
         let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
         fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join("test.json");
-        let content = "[1, 2, 3]";
-        fs::write(&path, content).unwrap();
+        let path = state_dir.join("test-feature.json");
+        fs::write(&path, "[1, 2, 3]").unwrap();
 
-        mutate_state(&path, |state| {
-            if !(state.is_object() || state.is_null()) {
-                return;
-            }
-            if state.get("notes").is_none() || !state["notes"].is_array() {
-                state["notes"] = json!([]);
-            }
-            if let Some(arr) = state["notes"].as_array_mut() {
-                arr.push(json!({"note": "should not appear"}));
-            }
-        })
-        .unwrap();
+        let args = Args {
+            note: "should not appear".to_string(),
+            note_type: "correction".to_string(),
+            branch: Some("test-feature".to_string()),
+        };
+
+        // read_current_phase returns Some("flow-start") on an array root
+        // (because get("current_phase") on Array returns None, which the
+        // unwrap_or path turns into "flow-start"). mutate_state then
+        // short-circuits via the object guard, so the noop-on-array
+        // contract holds.
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["note_count"], 0);
 
         let after = fs::read_to_string(&path).unwrap();
         let parsed: Value = serde_json::from_str(&after).unwrap();

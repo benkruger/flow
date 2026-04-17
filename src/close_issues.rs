@@ -36,9 +36,21 @@ pub fn close_issues_with_runner(
     repo: Option<&str>,
     child_factory: &dyn Fn(&[&str]) -> std::io::Result<Child>,
 ) -> (Vec<Value>, Vec<Value>) {
+    close_issues_with_runner_and_timeout(issue_numbers, repo, LOCAL_TIMEOUT, child_factory)
+}
+
+/// Seam-injected variant accepting a custom timeout (in seconds). Tests
+/// pass `0` so the elapsed-time check trips on the first poll and the
+/// timeout-arm message is exercised in `close_single_issue`.
+pub fn close_issues_with_runner_and_timeout(
+    issue_numbers: &[i64],
+    repo: Option<&str>,
+    timeout_secs: u64,
+    child_factory: &dyn Fn(&[&str]) -> std::io::Result<Child>,
+) -> (Vec<Value>, Vec<Value>) {
     let mut closed = Vec::new();
     let mut failed = Vec::new();
-    let timeout = Duration::from_secs(LOCAL_TIMEOUT);
+    let timeout = Duration::from_secs(timeout_secs);
 
     for &num in issue_numbers {
         match close_single_issue(num, repo, timeout, child_factory) {
@@ -303,6 +315,30 @@ mod tests {
         assert_eq!(value["status"], "ok");
         assert_eq!(value["closed"].as_array().unwrap().len(), 0);
         assert_eq!(value["failed"].as_array().unwrap().len(), 0);
+    }
+
+    /// Exercises lines 113-118 — `close_single_issue` polling timeout
+    /// fires when elapsed >= timeout. The `_with_timeout` seam exposes
+    /// the threshold so tests pass `0`; the first poll trips immediately
+    /// even though the child is still running.
+    #[test]
+    fn close_issues_with_runner_and_timeout_zero_marks_issue_failed() {
+        use std::process::Stdio;
+        let factory = |_args: &[&str]| {
+            Command::new("sh")
+                .args(["-c", "sleep 60"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let (closed, failed) = close_issues_with_runner_and_timeout(&[42], None, 0, &factory);
+        assert!(closed.is_empty());
+        assert_eq!(failed.len(), 1);
+        assert!(
+            failed[0]["error"].as_str().unwrap().contains("timeout"),
+            "got: {:?}",
+            failed[0]
+        );
     }
 
     #[test]

@@ -93,9 +93,11 @@ pub fn check_freshness_impl(
         return json!({"status": "up_to_date"});
     }
 
-    // Step 3: git merge origin/main
-    let merge_result = git_cmd(&["git", "merge", "origin/main"], NETWORK_TIMEOUT);
-    match &merge_result {
+    // Step 3: git merge origin/main. The match is exhaustive across
+    // every CmdResult variant — extracting `merge_stderr` from the
+    // failing-Ok arm (returncode != 0) avoids the dead catch-all that
+    // a separate post-match destructure would otherwise produce.
+    let merge_stderr = match git_cmd(&["git", "merge", "origin/main"], NETWORK_TIMEOUT) {
         CmdResult::Timeout => {
             return json!({
                 "status": "error",
@@ -111,13 +113,7 @@ pub fn check_freshness_impl(
             }
             return out;
         }
-        _ => {}
-    }
-
-    // Merge failed — capture its stderr for the fallthrough error message.
-    let merge_stderr = match &merge_result {
         CmdResult::Ok { stderr, .. } => stderr.trim().to_string(),
-        _ => String::new(),
     };
 
     // Step 4: git status --porcelain to detect conflicts.
@@ -648,6 +644,31 @@ mod tests {
         assert_eq!(result["retries"], 2);
         let state: Value = serde_json::from_str(&fs::read_to_string(&state_file).unwrap()).unwrap();
         assert_eq!(state["freshness_retries"], 2);
+    }
+
+    /// Exercises lines 161, 175 — the `is_object() || is_null()`
+    /// early-return guards inside `read_retries` and `increment_retries`.
+    /// An array-root state file makes both guards fire, so both helpers
+    /// return 0. The freshness flow continues to merge → increment, and
+    /// the final "merged" payload reports retries=0 because increment
+    /// noop-ed under the guard.
+    #[test]
+    fn test_retry_array_root_state_skips_read_and_increment() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        fs::write(&path, "[1, 2, 3]").unwrap();
+        let responses = vec![
+            ok(),       // fetch
+            err(1, ""), // merge-base (not ancestor)
+            ok(),       // merge succeeds
+        ];
+        let mut git = mock_runner(responses);
+        let result = check_freshness_impl(Some(&path), &mut git);
+        assert_eq!(result, json!({"status": "merged", "retries": 0}));
+        // State file is still an array (mutate_state writes back unchanged).
+        let after: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(after.is_array(), "Root should still be an array");
+        assert_eq!(after.as_array().unwrap().len(), 3);
     }
 
     #[test]

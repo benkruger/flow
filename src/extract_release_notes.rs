@@ -261,6 +261,45 @@ mod tests {
         assert!(contents.contains("First release content."));
     }
 
+    /// Exercises line 97 — the read_to_string Err arm. When
+    /// RELEASE-NOTES.md is a directory instead of a file, exists() is
+    /// true but read_to_string fails with EISDIR.
+    #[test]
+    fn run_impl_release_notes_is_directory_returns_read_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        // Create RELEASE-NOTES.md as a DIRECTORY so .exists() returns
+        // true but fs::read_to_string fails.
+        std::fs::create_dir(root.join("RELEASE-NOTES.md")).unwrap();
+        let args = Args {
+            version: Some("v0.1.0".to_string()),
+        };
+        let err = run_impl(&args, &root).unwrap_err();
+        assert!(
+            err.contains("Error reading"),
+            "expected read error message, got: {}",
+            err
+        );
+    }
+
+    /// Exercises line 107 — the create_dir_all Err arm. When `tmp` is
+    /// pre-occupied as a regular file, create_dir_all fails.
+    #[test]
+    fn run_impl_tmp_is_existing_file_returns_create_dir_error() {
+        let (_dir, root) = setup_repo_with_notes("## v0.1.0\n\nContent.");
+        // Pre-occupy `tmp` as a file so create_dir_all fails.
+        std::fs::write(root.join("tmp"), "regular file").unwrap();
+        let args = Args {
+            version: Some("v0.1.0".to_string()),
+        };
+        let err = run_impl(&args, &root).unwrap_err();
+        assert!(
+            err.contains("Error creating tmp dir"),
+            "expected create-dir error message, got: {}",
+            err
+        );
+    }
+
     #[test]
     fn run_impl_accepts_version_with_or_without_v_prefix() {
         let (_dir, root) = setup_repo_with_notes("## 0.5.0\n\nNotes here.");

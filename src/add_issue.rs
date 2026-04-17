@@ -200,23 +200,29 @@ mod tests {
         assert_eq!(issues[1]["title"], "new");
     }
 
+    /// Exercises production line 86 (`state["issues_filed"] = json!([])`)
+    /// — the auto-create branch fires when the state file lacks the key.
     #[test]
     fn add_issue_creates_array_if_missing() {
         let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
         fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join("test.json");
-        fs::write(&path, r#"{"current_phase": "flow-code"}"#).unwrap();
+        let path = state_dir.join("test-feature.json");
+        fs::write(&path, r#"{"current_phase": "flow-learn"}"#).unwrap();
 
-        mutate_state(&path, |s| {
-            if s.get("issues_filed").is_none() || !s["issues_filed"].is_array() {
-                s["issues_filed"] = json!([]);
-            }
-            if let Some(arr) = s["issues_filed"].as_array_mut() {
-                arr.push(json!({"label": "Flaky Test", "title": "test"}));
-            }
-        })
-        .unwrap();
+        let args = Args {
+            label: "Flaky Test".to_string(),
+            title: "test".to_string(),
+            url: "https://example.com/1".to_string(),
+            phase: "flow-learn".to_string(),
+            branch: Some("test-feature".to_string()),
+        };
+
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["issue_count"], 1);
 
         let content = fs::read_to_string(&path).unwrap();
         let on_disk: Value = serde_json::from_str(&content).unwrap();
@@ -241,30 +247,30 @@ mod tests {
         assert_eq!(on_disk["issues_filed"][0]["title"], "persisted");
     }
 
-    /// Verify that an array-root state file triggers the object guard's
-    /// early return, leaving the file unchanged and preventing an
-    /// IndexMut panic on non-object root types.
+    /// Verify that an array-root state file triggers the production
+    /// object guard's early return inside `run_impl_main`'s
+    /// mutate_state closure (lines 82-84), leaving the file unchanged.
     #[test]
     fn add_issue_array_root_state_noop() {
         let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
         fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join("test.json");
-        let content = "[1, 2, 3]";
-        fs::write(&path, content).unwrap();
+        let path = state_dir.join("test-feature.json");
+        fs::write(&path, "[1, 2, 3]").unwrap();
 
-        mutate_state(&path, |state| {
-            if !(state.is_object() || state.is_null()) {
-                return;
-            }
-            if state.get("issues_filed").is_none() || !state["issues_filed"].is_array() {
-                state["issues_filed"] = json!([]);
-            }
-            if let Some(arr) = state["issues_filed"].as_array_mut() {
-                arr.push(json!({"label": "Rule", "title": "should not appear"}));
-            }
-        })
-        .unwrap();
+        let args = Args {
+            label: "Rule".to_string(),
+            title: "should not appear".to_string(),
+            url: "https://example.com/1".to_string(),
+            phase: "flow-learn".to_string(),
+            branch: Some("test-feature".to_string()),
+        };
+
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["issue_count"], 0);
 
         let after = fs::read_to_string(&path).unwrap();
         let parsed: Value = serde_json::from_str(&after).unwrap();

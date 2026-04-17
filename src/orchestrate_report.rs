@@ -298,6 +298,29 @@ mod tests {
         );
     }
 
+    /// Exercises line 33 (`Err(_) => return 0`) — the second
+    /// `parse_from_rfc3339` failing path. `bad_timestamps` exercises the
+    /// first parse failure; this one keeps started_at valid and breaks
+    /// completed only.
+    #[test]
+    fn test_compute_duration_valid_started_bad_completed_returns_zero() {
+        assert_eq!(
+            compute_duration_seconds("2026-03-20T22:00:00-07:00", Some("not-a-date")),
+            0
+        );
+    }
+
+    /// Exercises lines 37-38 — the negative-diff branch when completed
+    /// is earlier than started (e.g., a clock skew between machines).
+    #[test]
+    fn test_compute_duration_negative_diff_clamped_to_zero() {
+        let secs = compute_duration_seconds(
+            "2026-03-21T06:00:00-07:00",
+            Some("2026-03-20T22:00:00-07:00"),
+        );
+        assert_eq!(secs, 0);
+    }
+
     #[test]
     fn test_compute_duration_valid() {
         let secs = compute_duration_seconds(
@@ -616,6 +639,26 @@ mod tests {
             summary.contains("\u{2014} Unknown"),
             "expected `Unknown` reason in Failed section, got: {}",
             summary
+        );
+    }
+
+    /// Exercises lines 167-170 — the read_to_string Err arm. Plant the
+    /// state-file path as a directory so `exists()` is true but
+    /// `read_to_string` fails with EISDIR.
+    #[test]
+    fn generate_and_write_report_read_failure_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = dir.path().join("orchestrate.json");
+        fs::create_dir(&state_path).unwrap();
+        let result = generate_and_write_report(&state_path, dir.path());
+        assert_eq!(result["status"], "error");
+        assert!(
+            result["message"]
+                .as_str()
+                .unwrap()
+                .contains("Failed to read state file"),
+            "got: {}",
+            result["message"]
         );
     }
 

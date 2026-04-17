@@ -581,6 +581,20 @@ mod tests {
         // No tests/ or src/ dirs created — corpus must still build.
         let corpus = TestCorpus::from_repo(&root);
         assert_eq!(corpus.len(), 0);
+        assert!(corpus.is_empty(), "empty corpus must report is_empty()");
+    }
+
+    /// Direct unit test for `TestCorpus::is_empty()` — covers both the
+    /// true and false branches via a populated corpus and an empty one.
+    #[test]
+    fn test_corpus_is_empty_returns_false_when_populated() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonicalize");
+        let tests = root.join("tests");
+        fs::create_dir_all(&tests).expect("create tests dir");
+        fs::write(tests.join("a.rs"), "#[test]\nfn test_present() {}\n").expect("write");
+        let corpus = TestCorpus::from_repo(&root);
+        assert!(!corpus.is_empty());
     }
 
     // --- scan ---
