@@ -74,11 +74,12 @@ pub fn detect_branch_from_path(cwd: &Path) -> Option<String> {
                     .ok()?
                     .to_string_lossy()
                     .to_string();
-                return if branch == "." || branch.is_empty() {
-                    None
-                } else {
-                    Some(branch)
-                };
+                // The loop guard `current != *worktrees_dir` prevents
+                // strip_prefix from yielding an empty or "." remainder —
+                // every entry into the body runs while `current` is
+                // strictly a descendant of worktrees_dir, so the
+                // remainder is always a non-empty branch name.
+                return Some(branch);
             }
             current = current.parent()?.to_path_buf();
         }

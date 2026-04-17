@@ -230,6 +230,25 @@ mod tests {
         assert!(resp.is_none());
     }
 
+    /// Covers the `Err(_) => return (true, String::new(), None)` arm on
+    /// line 67 of `validate`: `state_path.exists()` succeeds but
+    /// `read_to_string` fails. A file mode of `0o000` on macOS passes
+    /// the `exists()` metadata check but the read returns EACCES.
+    #[test]
+    fn test_validate_allows_unreadable_state_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let unreadable = dir.path().join("unreadable.json");
+        fs::write(&unreadable, "{}").unwrap();
+        fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000)).unwrap();
+        let (allowed, msg, resp) = validate(Some(&unreadable));
+        // Restore permissions so tempdir cleanup on drop works.
+        let _ = fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o644));
+        assert!(allowed);
+        assert!(msg.is_empty());
+        assert!(resp.is_none());
+    }
+
     #[test]
     fn test_validate_allows_no_auto_continue() {
         let dir = tempfile::tempdir().unwrap();
