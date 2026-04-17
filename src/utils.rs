@@ -217,6 +217,14 @@ pub fn plugin_root() -> Option<std::path::PathBuf> {
 /// copies to eliminate duplication. Shared by complete_preflight,
 /// complete_merge, complete_post_merge, and complete_fast.
 pub fn bin_flow_path() -> String {
+    // Env-var override for subprocess tests that need to stub
+    // `bin/flow` at a test-isolated path. Production callers never
+    // set this variable; it is read only when present.
+    if let Ok(override_path) = std::env::var("FLOW_BIN_PATH") {
+        if !override_path.is_empty() {
+            return override_path;
+        }
+    }
     std::env::current_exe()
         .ok()
         .and_then(|p| p.parent()?.parent()?.parent().map(|d| d.to_path_buf()))

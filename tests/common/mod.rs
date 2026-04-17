@@ -271,6 +271,57 @@ pub fn create_git_repo_with_remote(parent: &Path) -> PathBuf {
     repo
 }
 
+/// Build a Complete-phase state JSON value for subprocess test fixtures.
+///
+/// Returns a `serde_json::Value` describing a state file whose
+/// `flow-start`, `flow-plan`, `flow-code`, and `flow-code-review`
+/// phases are `"complete"`, whose `flow-learn` phase has the status
+/// passed in `learn_status` (use `"complete"` for a state that should
+/// pass the Complete-phase Learn gate, or `"pending"` to exercise
+/// gate-failure paths), and whose `flow-complete` phase is
+/// `"pending"`. Also populates `schema_version`, `branch`,
+/// `pr_number` (42), `pr_url`, `prompt`, and `repo` ("test/test") so
+/// downstream commands that read any of these fields find non-empty
+/// values.
+///
+/// `skills_override`, when `Some`, sets `state["skills"]` to the
+/// provided value so subprocess tests can drive mode resolution
+/// (`auto` vs `manual`) through the per-phase `skills.<phase>`
+/// config.
+///
+/// The caller serializes the returned value and writes it to
+/// `<repo>/.flow-states/<branch>.json`; this helper does not touch
+/// the filesystem. The Complete-phase subprocess tests
+/// (`tests/complete_finalize.rs`, `tests/complete_fast.rs`,
+/// `tests/complete_preflight.rs`, `tests/complete_merge.rs`,
+/// `tests/complete_post_merge.rs`) are the named consumers.
+pub fn make_complete_state(
+    branch: &str,
+    learn_status: &str,
+    skills_override: Option<Value>,
+) -> Value {
+    let mut state = json!({
+        "schema_version": 1,
+        "branch": branch,
+        "repo": "test/test",
+        "pr_number": 42,
+        "pr_url": "https://github.com/test/test/pull/42",
+        "prompt": "test feature",
+        "phases": {
+            "flow-start": {"status": "complete"},
+            "flow-plan": {"status": "complete"},
+            "flow-code": {"status": "complete"},
+            "flow-code-review": {"status": "complete"},
+            "flow-learn": {"status": learn_status},
+            "flow-complete": {"status": "pending"}
+        }
+    });
+    if let Some(skills) = skills_override {
+        state["skills"] = skills;
+    }
+    state
+}
+
 /// Write .flow.json with version and optional skills config.
 ///
 /// `prime_setup` writes the file with these two keys (plus hashes,
