@@ -165,9 +165,12 @@ the DAG file and plan file were already created by plan-extract — and the
 `## Implementation Plan` section.
 
 If the `issue_body` from plan-extract is non-null and represents an
-older-format decomposed issue (no Implementation Plan section), write the
-issue body to `<project_root>/.flow-states/<branch>-dag.md` using the
-Write tool, wrapped with a markdown heading:
+older-format decomposed issue (no Implementation Plan section), wrap the
+issue body with a markdown heading and route it through `bin/flow write-rule`
+so Claude Code's Write-tool preflight cannot fire on a pre-existing DAG file
+(see `.claude/rules/file-tool-preflights.md`).
+
+**Write the content** to `.flow-states/<branch>-dag-content.md` using the Write tool, wrapped with a markdown heading:
 
 ```text
 # Pre-Decomposed Analysis: <feature description>
@@ -175,7 +178,13 @@ Write tool, wrapped with a markdown heading:
 <issue body>
 ```
 
-Store the path in the state file:
+**Apply the write** to the final DAG path:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-states/<branch>-dag.md --content-file .flow-states/<branch>-dag-content.md
+```
+
+**Store the path** in the state file:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.dag=<dag_file_path>
@@ -214,23 +223,25 @@ The decompose plugin will produce structured DAG output:
 an impact preview, an XML DAG plan with nodes and dependencies,
 node-by-node reasoning, and a synthesis.
 
-After the decompose plugin returns, save the complete decompose output:
+After the decompose plugin returns, save the complete decompose output. The DAG file at `.flow-states/<branch>-dag.md` may pre-exist from a prior attempt, context compaction, or `--continue-step` re-entry, which would trip Claude Code's Write-tool preflight ("if this is an existing file, you MUST use the Read tool first"). Route the write through `bin/flow write-rule` — it does `fs::write` unconditionally in Rust so the preflight cannot fire. See `.claude/rules/file-tool-preflights.md`.
 
-1. Capture everything the decompose plugin produced — the XML DAG plan,
-   all node executions with quality scores, and the synthesis block.
-   Do not summarize, condense, reorganize, or rewrite any part of the
-   decompose output. The saved file must contain the full response
-   exactly as the plugin produced it.
-   Write it verbatim to `<project_root>/.flow-states/<branch>-dag.md`
-   using the Write tool, wrapped with a markdown heading:
+**Capture the content.** Build the full content to write — the XML DAG plan, all node executions with quality scores, and the synthesis block exactly as the plugin produced it. Do not summarize, condense, reorganize, or rewrite any part of the decompose output. Wrap with a markdown heading:
 
-   ```text
-   # DAG Analysis: <feature description>
+```text
+# DAG Analysis: <feature description>
 
-   <complete output from decompose plugin>
-   ```
+<complete output from decompose plugin>
+```
 
-2. Store the path in the state file:
+**Write the content** to `.flow-states/<branch>-dag-content.md` using the Write tool.
+
+**Apply the write** to the final DAG path via `bin/flow write-rule`:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-states/<branch>-dag.md --content-file .flow-states/<branch>-dag-content.md
+```
+
+**Store the path** in the state file:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.dag=<dag_file_path>
@@ -266,8 +277,14 @@ in the content.
 - Promote all headings by one level: `###` becomes `##`, `####` becomes
   `###`. This converts the issue's nested headings into the plan file's
   top-level structure.
-- Write the promoted content to
-  `<project_root>/.flow-states/<branch>-plan.md` using the Write tool.
+- Write the promoted content to `.flow-states/<branch>-plan-content.md`
+  using the Write tool, then route it to the final plan path via
+  `bin/flow write-rule` so the Write-tool preflight cannot fire on a
+  pre-existing plan file (see `.claude/rules/file-tool-preflights.md`):
+
+  ```bash
+  ${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-states/<branch>-plan.md --content-file .flow-states/<branch>-plan-content.md
+  ```
 - Light validation: use Glob and Read to verify that files referenced in
   the Tasks section exist. Note any missing files (they may need to be
   created by the implementation) but do not block or re-derive the plan.
@@ -573,9 +590,18 @@ Always include TDD order — test task before every implementation task.
 
 ### Plan file structure
 
-Write the plan file to `<project_root>/.flow-states/<branch>-plan.md`
-where `<branch>` is the feature branch name. This keeps the plan
-alongside other feature artifacts in `.flow-states/`.
+Write the plan to `.flow-states/<branch>-plan-content.md` using the
+Write tool, then route it to the final plan path at
+`<project_root>/.flow-states/<branch>-plan.md` via `bin/flow write-rule`
+so Claude Code's Write-tool preflight cannot fire on a pre-existing
+plan file (see `.claude/rules/file-tool-preflights.md`):
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-states/<branch>-plan.md --content-file .flow-states/<branch>-plan-content.md
+```
+
+`<branch>` is the feature branch name. This keeps the plan alongside
+other feature artifacts in `.flow-states/`.
 
 The plan file should include these sections:
 
@@ -656,7 +682,11 @@ Parse the JSON output:
 - **If `"status": "error"`** — the response contains a `violations`
   array with `file`, `line`, `phrase`, `context`, and `rule` fields.
   Render the violations inline in your response so the user can see
-  each flagged phrase and which rule fired, then use the Edit tool
+  each flagged phrase and which rule fired. Use the Read tool on the
+  plan file at `.flow-states/<branch>-plan.md` first to satisfy Claude
+  Code's Edit-tool preflight ("You must use your Read tool at least
+  once in the conversation before editing" — see
+  `.claude/rules/file-tool-preflights.md`), then use the Edit tool
   on the plan file to fix each violation according to the cited
   `rule`:
   - **`rule: "scope-enumeration"`** — add a named list (inline
