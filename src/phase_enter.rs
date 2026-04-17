@@ -61,7 +61,24 @@ fn resolve_state(args: &Args) -> Result<(PathBuf, String, PathBuf), Value> {
         }
     };
 
-    let state_path = FlowPaths::new(&root, &branch).state_file();
+    // `branch` here comes from `resolve_branch`, which may return a raw
+    // git ref (slash-containing, empty) when a `--branch` override names
+    // a non-existent state. Use `try_new` per
+    // `.claude/rules/external-input-validation.md` so the CLI surfaces a
+    // structured error rather than a Rust panic.
+    let paths = match FlowPaths::try_new(&root, &branch) {
+        Some(p) => p,
+        None => {
+            return Err(json!({
+                "status": "error",
+                "message": format!(
+                    "Invalid branch name: '{}' (must be non-empty and contain no '/')",
+                    branch
+                )
+            }));
+        }
+    };
+    let state_path = paths.state_file();
     if !state_path.exists() {
         return Err(json!({
             "status": "error",

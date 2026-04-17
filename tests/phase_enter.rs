@@ -552,6 +552,36 @@ fn test_mutate_state_failure_returns_error() {
     );
 }
 
+/// Subprocess: `phase-enter --branch <slash-branch>` exercises the
+/// `FlowPaths::try_new` None branch for a slash-containing branch
+/// inside `resolve_state`. Returns structured error with exit 0, no
+/// panic. Guards the regression where `resolve_state` used
+/// `FlowPaths::new` (panicking) and any slash branch like
+/// `feature/foo` would crash the CLI. Consumer: every skill and hook
+/// that invokes `bin/flow phase-enter` during an active flow —
+/// per `.claude/rules/external-input-validation.md`, CLI `--branch`
+/// overrides must never panic.
+#[test]
+fn test_slash_branch_returns_structured_error_no_panic() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let repo = create_git_repo(&root, "main");
+
+    let output = run_phase_enter(
+        &repo,
+        &["--phase", "flow-code", "--branch", "feature/with-slash"],
+    );
+    assert_eq!(output.status.code(), Some(0));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    let message = data["message"].as_str().unwrap_or("");
+    assert!(
+        message.contains("Invalid branch name"),
+        "expected 'Invalid branch name' error, got: {}",
+        message
+    );
+}
+
 /// Subprocess: `phase-enter` on a phase that is already `complete`
 /// hits the gate-failure branch that the inline tests don't exercise
 /// at this specific shape (starting complete state, trying to re-enter).
@@ -564,17 +594,19 @@ fn test_reenter_complete_phase_returns_gate_error() {
     // flow-code by asserting the gate behavior.
     create_state(&repo, branch, "flow-start", "auto", None);
 
-    // Attempt to enter flow-start — which is already complete —
-    // should fail the gate.
+    // Enter flow-start — the first phase in PHASE_ORDER has no
+    // predecessor, so gate_check returns the "no predecessor" error.
+    // Guards the regression where gate_check's "no predecessor" branch
+    // silently succeeds (would let phase-enter re-initialize the first
+    // phase mid-flow and lose state).
     let output = run_phase_enter(&repo, &["--phase", "flow-start", "--branch", branch]);
     assert_eq!(output.status.code(), Some(0));
     let data = parse_output(&output);
-    // gate_check may or may not reject re-entering the current in-progress
-    // phase depending on the implementation; what matters is no panic and
-    // a structured response.
+    assert_eq!(data["status"], "error");
+    let message = data["message"].as_str().unwrap_or("");
     assert!(
-        data["status"] == "ok" || data["status"] == "error",
-        "expected structured response, got: {:?}",
-        data
+        message.contains("no predecessor") || message.contains("phase order"),
+        "expected 'no predecessor' gate error, got: {}",
+        message
     );
 }
