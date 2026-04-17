@@ -335,15 +335,17 @@ fn build_issue_result_with_runner(repo: &str, url: String, runner: &GhRunner) ->
     }
 }
 
-/// Run a gh CLI command, returning stdout on success.
-/// Returns Err with the error message on failure or timeout.
-pub fn run_gh_cmd(args: &[&str], timeout: Option<Duration>) -> Result<String, String> {
-    let mut child = Command::new(args[0])
-        .args(&args[1..])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn: {}", e))?;
+/// Run a gh-shaped subprocess via an injected child factory, returning
+/// stdout on success. The seam exists so unit tests cover the success,
+/// non-zero-exit, timeout-kill, and spawn-error branches without
+/// spawning real `gh`. Production wraps this with a closure that calls
+/// `Command::new(args[0]).args(&args[1..])`.
+pub fn run_gh_cmd_inner(
+    args: &[&str],
+    timeout: Option<Duration>,
+    child_factory: &dyn Fn(&[&str]) -> std::io::Result<std::process::Child>,
+) -> Result<String, String> {
+    let mut child = child_factory(args).map_err(|e| format!("Failed to spawn: {}", e))?;
 
     if let Some(dur) = timeout {
         let start = std::time::Instant::now();
@@ -379,6 +381,18 @@ pub fn run_gh_cmd(args: &[&str], timeout: Option<Duration>) -> Result<String, St
         }
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
+}
+
+/// Run a gh CLI command, returning stdout on success.
+/// Returns Err with the error message on failure or timeout.
+pub fn run_gh_cmd(args: &[&str], timeout: Option<Duration>) -> Result<String, String> {
+    run_gh_cmd_inner(args, timeout, &|args| {
+        Command::new(args[0])
+            .args(&args[1..])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+    })
 }
 
 pub fn extract_error(stderr: &str, stdout: &str) -> String {
@@ -938,5 +952,68 @@ mod tests {
         let (id, err) = fetch_database_id_with_runner("owner/name", 1, &runner);
         assert!(id.is_none());
         assert!(err.unwrap().contains("api down"));
+    }
+
+    // --- run_gh_cmd_inner ---
+
+    use std::process::{Child, Stdio};
+
+    #[test]
+    fn run_gh_cmd_inner_success_returns_stdout() {
+        let factory = |_args: &[&str]| {
+            std::process::Command::new("sh")
+                .args(["-c", "echo ok"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let out =
+            run_gh_cmd_inner(&["irrelevant"], Some(Duration::from_secs(5)), &factory).unwrap();
+        assert_eq!(out, "ok");
+    }
+
+    #[test]
+    fn run_gh_cmd_inner_nonzero_returns_extracted_error() {
+        let factory = |_args: &[&str]| {
+            std::process::Command::new("sh")
+                .args(["-c", "echo boom 1>&2; exit 1"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let err =
+            run_gh_cmd_inner(&["irrelevant"], Some(Duration::from_secs(5)), &factory).unwrap_err();
+        assert!(err.contains("boom"));
+    }
+
+    #[test]
+    fn run_gh_cmd_inner_timeout_kills_child_returns_err() {
+        let factory = |_args: &[&str]| {
+            std::process::Command::new("sleep")
+                .arg("5")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let err =
+            run_gh_cmd_inner(&["irrelevant"], Some(Duration::from_secs(1)), &factory).unwrap_err();
+        assert!(
+            err.to_lowercase().contains("timed out"),
+            "expected timeout error, got {}",
+            err
+        );
+    }
+
+    #[test]
+    fn run_gh_cmd_inner_spawn_error_returns_err() {
+        let factory = |_args: &[&str]| -> std::io::Result<Child> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no such binary",
+            ))
+        };
+        let err =
+            run_gh_cmd_inner(&["irrelevant"], Some(Duration::from_secs(5)), &factory).unwrap_err();
+        assert!(err.contains("no such binary") || err.contains("Failed to spawn"));
     }
 }
