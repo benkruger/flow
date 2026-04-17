@@ -118,26 +118,29 @@ pub fn run_impl_with_root(args: &Args, root: &Path, cwd: &Path) -> Result<usize,
     // [`crate::cwd_scope::enforce`].
     crate::cwd_scope::enforce(cwd, root)?;
 
-    let branch = resolve_branch(args.branch.as_deref(), root)
-        .ok_or_else(|| "Could not determine current branch".to_string())?;
+    let branch = match resolve_branch(args.branch.as_deref(), root) {
+        Some(b) => b,
+        None => return Err("Could not determine current branch".to_string()),
+    };
     // Branch reaches us either from `current_branch()` (raw git output)
     // or from `--branch` CLI override (raw user input). Both are
     // external inputs per `.claude/rules/external-input-validation.md`,
     // so use the fallible constructor to reject slash-containing or
     // empty branches as a structured error rather than a panic.
-    let state_path = FlowPaths::try_new(root, &branch)
-        .ok_or_else(|| format!("Invalid branch '{}'", branch))?
-        .state_file();
+    let state_path = match FlowPaths::try_new(root, &branch) {
+        Some(p) => p.state_file(),
+        None => return Err(format!("Invalid branch '{}'", branch)),
+    };
 
     if !state_path.exists() {
         return Err("no_state".to_string());
     }
 
     let names = phase_names();
-    let phase_name = names
-        .get(&args.phase)
-        .cloned()
-        .unwrap_or_else(|| args.phase.clone());
+    let phase_name = match names.get(&args.phase) {
+        Some(n) => n.clone(),
+        None => args.phase.clone(),
+    };
     let timestamp = now();
 
     let state = mutate_state(&state_path, |state| {
@@ -147,35 +150,37 @@ pub fn run_impl_with_root(args: &Args, root: &Path, cwd: &Path) -> Result<usize,
         if state.get("findings").is_none() || !state["findings"].is_array() {
             state["findings"] = json!([]);
         }
-        if let Some(arr) = state["findings"].as_array_mut() {
-            let mut entry = json!({
-                "finding": args.finding,
-                "reason": args.reason,
-                "outcome": args.outcome,
-                "phase": args.phase,
-                "phase_name": phase_name,
-                "timestamp": timestamp,
-            });
-            if let Some(ref url) = args.issue_url {
-                entry["issue_url"] = json!(url);
-            }
-            if let Some(ref path) = args.path {
-                entry["path"] = json!(path);
-            }
-            arr.push(entry);
+        // The block above guarantees state["findings"] is an array, so
+        // as_array_mut returns Some unconditionally — no defensive
+        // if-let needed.
+        let arr = state["findings"]
+            .as_array_mut()
+            .expect("findings is always an array here");
+        let mut entry = json!({
+            "finding": args.finding,
+            "reason": args.reason,
+            "outcome": args.outcome,
+            "phase": args.phase,
+            "phase_name": phase_name,
+            "timestamp": timestamp,
+        });
+        if let Some(ref url) = args.issue_url {
+            entry["issue_url"] = json!(url);
         }
+        if let Some(ref path) = args.path {
+            entry["path"] = json!(path);
+        }
+        arr.push(entry);
+    });
+    let state = match state {
+        Ok(s) => s,
+        Err(e) => return Err(format!("Failed to add finding: {}", e)),
+    };
+
+    Ok(match state["findings"].as_array() {
+        Some(a) => a.len(),
+        None => 0,
     })
-    .map_err(|e| format!("Failed to add finding: {}", e))?;
-
-    Ok(state["findings"].as_array().map(|a| a.len()).unwrap_or(0))
-}
-
-/// Fallible implementation — returns `Ok(finding_count)` on success,
-/// `Err("no_state")` when no state file exists, or `Err(message)` on failure.
-pub fn run_impl(args: &Args) -> Result<usize, String> {
-    let root = project_root();
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    run_impl_with_root(args, &root, &cwd)
 }
 
 /// Main-arm dispatcher: pair the run_impl result with an exit code.
@@ -192,7 +197,7 @@ pub fn run_impl_main(args: Args, root: &Path, cwd: &Path) -> (Value, i32) {
 
 pub fn run(args: Args) -> ! {
     let root = project_root();
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
     let (value, code) = run_impl_main(args, &root, &cwd);
     crate::dispatch::dispatch_json(value, code)
 }
@@ -641,6 +646,204 @@ mod tests {
         assert_eq!(value["status"], "ok");
         assert_eq!(value["finding_count"], 1);
         assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn add_finding_run_impl_main_success_with_issue_url_writes_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::write(
+            state_dir.join("with-url.json"),
+            r#"{"current_phase":"flow-learn","findings":[]}"#,
+        )
+        .unwrap();
+        let args = Args {
+            finding: "process gap".to_string(),
+            reason: "filed as flow issue".to_string(),
+            outcome: "filed".to_string(),
+            phase: "flow-learn".to_string(),
+            issue_url: Some("https://github.com/test/test/issues/42".to_string()),
+            path: None,
+            branch: Some("with-url".to_string()),
+        };
+        let (value, code) = run_impl_main(args, &root, &root);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(code, 0);
+        let on_disk: Value = serde_json::from_str(
+            &std::fs::read_to_string(state_dir.join("with-url.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            on_disk["findings"][0]["issue_url"],
+            "https://github.com/test/test/issues/42"
+        );
+    }
+
+    #[test]
+    fn add_finding_run_impl_main_success_with_path_writes_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::write(
+            state_dir.join("with-path.json"),
+            r#"{"current_phase":"flow-learn","findings":[]}"#,
+        )
+        .unwrap();
+        let args = Args {
+            finding: "no rule for X".to_string(),
+            reason: "wrote rule".to_string(),
+            outcome: "rule_written".to_string(),
+            phase: "flow-learn".to_string(),
+            issue_url: None,
+            path: Some(".claude/rules/x.md".to_string()),
+            branch: Some("with-path".to_string()),
+        };
+        let (value, code) = run_impl_main(args, &root, &root);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(code, 0);
+        let on_disk: Value = serde_json::from_str(
+            &std::fs::read_to_string(state_dir.join("with-path.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(on_disk["findings"][0]["path"], ".claude/rules/x.md");
+    }
+
+    #[test]
+    fn add_finding_run_impl_main_unknown_phase_falls_back_to_phase_string() {
+        // phase_names lookup returns None for an unrecognized phase →
+        // unwrap_or_else fires, copying args.phase into the entry's
+        // phase_name field verbatim.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::write(
+            state_dir.join("custom-phase.json"),
+            r#"{"current_phase":"flow-learn","findings":[]}"#,
+        )
+        .unwrap();
+        let args = make_args("fixed", "custom-unknown-phase", Some("custom-phase"));
+        let (value, code) = run_impl_main(args, &root, &root);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(code, 0);
+        let on_disk: Value = serde_json::from_str(
+            &std::fs::read_to_string(state_dir.join("custom-phase.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            on_disk["findings"][0]["phase_name"], "custom-unknown-phase",
+            "phase_name should fall back to the raw phase string"
+        );
+    }
+
+    #[test]
+    fn add_finding_run_impl_main_no_findings_field_creates_array() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        // State file without "findings" key — closure must create the array
+        std::fs::write(
+            state_dir.join("no-findings.json"),
+            r#"{"current_phase":"flow-learn"}"#,
+        )
+        .unwrap();
+        let args = make_args("fixed", "flow-learn", Some("no-findings"));
+        let (value, code) = run_impl_main(args, &root, &root);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["finding_count"], 1);
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn add_finding_run_impl_main_findings_wrong_type_resets_to_array() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        // State file where "findings" is the wrong type (string instead of array)
+        // — closure must reset it to an empty array.
+        std::fs::write(
+            state_dir.join("wrong-type.json"),
+            r#"{"current_phase":"flow-learn","findings":"not-an-array"}"#,
+        )
+        .unwrap();
+        let args = make_args("fixed", "flow-learn", Some("wrong-type"));
+        let (value, code) = run_impl_main(args, &root, &root);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["finding_count"], 1);
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn add_finding_run_impl_main_cwd_drift_returns_error() {
+        // cwd_scope::enforce surfaces an Err when cwd is outside the
+        // expected relative_cwd subdirectory recorded in state. Init a git
+        // repo, write a state file with relative_cwd="api", and call from
+        // a sibling "ios/" cwd.
+        use std::process::Command;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        // Init git repo on a known branch
+        let run_git = |args: &[&str]| {
+            Command::new("git")
+                .args(args)
+                .current_dir(&root)
+                .output()
+                .expect("git command failed");
+        };
+        run_git(&["init", "--initial-branch", "drift-feature"]);
+        run_git(&["config", "user.email", "t@t.com"]);
+        run_git(&["config", "user.name", "T"]);
+        run_git(&["config", "commit.gpgsign", "false"]);
+        run_git(&["commit", "--allow-empty", "-m", "init"]);
+
+        // Write state with relative_cwd="api"
+        let state_dir = root.join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::write(
+            state_dir.join("drift-feature.json"),
+            r#"{"current_phase":"flow-learn","findings":[],"relative_cwd":"api"}"#,
+        )
+        .unwrap();
+        std::fs::create_dir(root.join("api")).unwrap();
+        std::fs::create_dir(root.join("ios")).unwrap();
+        let ios = root.join("ios").canonicalize().unwrap();
+
+        let args = make_args("fixed", "flow-learn", None);
+        let (value, code) = run_impl_main(args, &root, &ios);
+        assert_eq!(value["status"], "error");
+        assert_eq!(code, 1);
+        let msg = value["message"].as_str().unwrap();
+        assert!(
+            msg.contains("cwd drift"),
+            "expected cwd drift message, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn add_finding_run_impl_main_mutate_state_failure_returns_error() {
+        // When the state path is a directory rather than a file, mutate_state
+        // fails to read/write and propagates an error. run_impl_with_root
+        // wraps it with "Failed to add finding".
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        // Place a directory where the state file would be — read/write fail.
+        std::fs::create_dir(state_dir.join("bad-state.json")).unwrap();
+        let args = make_args("fixed", "flow-learn", Some("bad-state"));
+        let (value, code) = run_impl_main(args, &root, &root);
+        assert_eq!(value["status"], "error");
+        assert_eq!(code, 1);
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Failed to add finding"));
     }
 
     #[test]

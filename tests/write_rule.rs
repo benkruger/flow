@@ -126,3 +126,34 @@ fn write_rule_creates_nested_parent_directories() {
     assert!(target.exists());
     assert_eq!(fs::read_to_string(&target).unwrap(), "nested");
 }
+
+#[test]
+fn write_rule_target_parent_blocked_by_file_errors() {
+    // Drives the write_rule Err arm of run(): create_dir_all fails when
+    // a regular file occupies the parent path that needs to be a dir.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let content_file = dir.path().join("c.md");
+    fs::write(&content_file, "body").unwrap();
+    let blocker = dir.path().join("blocker");
+    fs::write(&blocker, "I am a file, not a directory").unwrap();
+    let target = blocker.join("nested").join("rule.md");
+
+    let output = run_write_rule(
+        &repo,
+        &[
+            "--path",
+            target.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(data["message"]
+        .as_str()
+        .unwrap_or("")
+        .contains("Could not create directories"));
+}

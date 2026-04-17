@@ -68,10 +68,10 @@ pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
     }
 
     let names = phase_names();
-    let phase_name = names
-        .get(&args.phase)
-        .cloned()
-        .unwrap_or_else(|| args.phase.clone());
+    let phase_name = match names.get(&args.phase) {
+        Some(n) => n.clone(),
+        None => args.phase.clone(),
+    };
     let timestamp = now();
 
     match mutate_state(&state_path, |state| {
@@ -85,22 +85,25 @@ pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
         if state.get("issues_filed").is_none() || !state["issues_filed"].is_array() {
             state["issues_filed"] = json!([]);
         }
-        if let Some(arr) = state["issues_filed"].as_array_mut() {
-            arr.push(json!({
-                "label": args.label,
-                "title": args.title,
-                "url": args.url,
-                "phase": args.phase,
-                "phase_name": phase_name,
-                "timestamp": timestamp,
-            }));
-        }
+        // The block above guarantees state["issues_filed"] is an array,
+        // so as_array_mut returns Some unconditionally.
+        let arr = state["issues_filed"]
+            .as_array_mut()
+            .expect("issues_filed is always an array here");
+        arr.push(json!({
+            "label": args.label,
+            "title": args.title,
+            "url": args.url,
+            "phase": args.phase,
+            "phase_name": phase_name,
+            "timestamp": timestamp,
+        }));
     }) {
         Ok(state) => {
-            let count = state["issues_filed"]
-                .as_array()
-                .map(|a| a.len())
-                .unwrap_or(0);
+            let count = match state["issues_filed"].as_array() {
+                Some(a) => a.len(),
+                None => 0,
+            };
             (json!({"status": "ok", "issue_count": count}), 0)
         }
         Err(e) => (
@@ -337,6 +340,69 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Failed to add issue"));
+    }
+
+    #[test]
+    fn add_issue_run_impl_main_array_root_returns_ok_zero_count() {
+        // State file root is an array — closure's object guard fires the
+        // early return, leaving issues_filed as Value::Null. The
+        // as_array() match arm None branch returns count 0.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(state_dir.join("array-root.json"), "[1, 2, 3]").unwrap();
+        let args = make_args(Some("array-root"));
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["issue_count"], 0);
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn add_issue_run_impl_main_unknown_phase_falls_back_to_phase_string() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(
+            state_dir.join("unknown-phase.json"),
+            r#"{"current_phase":"flow-learn","issues_filed":[]}"#,
+        )
+        .unwrap();
+        let mut args = make_args(Some("unknown-phase"));
+        args.phase = "custom-unknown-phase".to_string();
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(code, 0);
+        let on_disk: Value = serde_json::from_str(
+            &fs::read_to_string(state_dir.join("unknown-phase.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            on_disk["issues_filed"][0]["phase_name"], "custom-unknown-phase",
+            "phase_name should fall back to raw phase string"
+        );
+    }
+
+    #[test]
+    fn add_issue_run_impl_main_findings_wrong_type_resets_to_array() {
+        // State file where "issues_filed" is the wrong type (string instead
+        // of array) — closure must reset it to an empty array.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(
+            state_dir.join("wrong-type.json"),
+            r#"{"current_phase":"flow-learn","issues_filed":"not-an-array"}"#,
+        )
+        .unwrap();
+        let args = make_args(Some("wrong-type"));
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["issue_count"], 1);
+        assert_eq!(code, 0);
     }
 
     #[test]

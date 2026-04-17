@@ -73,10 +73,10 @@ pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
 
     let preview = truncate_preview(&args.message);
     let names = phase_names();
-    let phase_name = names
-        .get(&args.phase)
-        .cloned()
-        .unwrap_or_else(|| args.phase.clone());
+    let phase_name = match names.get(&args.phase) {
+        Some(n) => n.clone(),
+        None => args.phase.clone(),
+    };
     let timestamp = now();
 
     match mutate_state(&state_path, |state| {
@@ -90,22 +90,25 @@ pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
         if state.get("slack_notifications").is_none() || !state["slack_notifications"].is_array() {
             state["slack_notifications"] = json!([]);
         }
-        if let Some(arr) = state["slack_notifications"].as_array_mut() {
-            arr.push(json!({
-                "phase": args.phase,
-                "phase_name": phase_name,
-                "ts": args.ts,
-                "thread_ts": args.thread_ts,
-                "message_preview": preview,
-                "timestamp": timestamp,
-            }));
-        }
+        // The block above guarantees state["slack_notifications"] is an
+        // array, so as_array_mut returns Some unconditionally.
+        let arr = state["slack_notifications"]
+            .as_array_mut()
+            .expect("slack_notifications is always an array here");
+        arr.push(json!({
+            "phase": args.phase,
+            "phase_name": phase_name,
+            "ts": args.ts,
+            "thread_ts": args.thread_ts,
+            "message_preview": preview,
+            "timestamp": timestamp,
+        }));
     }) {
         Ok(state) => {
-            let count = state["slack_notifications"]
-                .as_array()
-                .map(|a| a.len())
-                .unwrap_or(0);
+            let count = match state["slack_notifications"].as_array() {
+                Some(a) => a.len(),
+                None => 0,
+            };
             (json!({"status": "ok", "notification_count": count}), 0)
         }
         Err(e) => (
@@ -383,6 +386,67 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Failed to add notification"));
+    }
+
+    #[test]
+    fn add_notification_run_impl_main_array_root_returns_ok_zero_count() {
+        // State root is an array — closure guard fires early return,
+        // leaving slack_notifications as Value::Null. as_array() None
+        // branch returns count 0.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(state_dir.join("array-root.json"), "[1, 2, 3]").unwrap();
+        let args = make_args(Some("array-root"));
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["notification_count"], 0);
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn add_notification_run_impl_main_unknown_phase_falls_back_to_phase_string() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(
+            state_dir.join("unknown-phase.json"),
+            r#"{"current_phase":"flow-code","slack_notifications":[]}"#,
+        )
+        .unwrap();
+        let mut args = make_args(Some("unknown-phase"));
+        args.phase = "custom-unknown-phase".to_string();
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(code, 0);
+        let on_disk: Value = serde_json::from_str(
+            &fs::read_to_string(state_dir.join("unknown-phase.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            on_disk["slack_notifications"][0]["phase_name"],
+            "custom-unknown-phase"
+        );
+    }
+
+    #[test]
+    fn add_notification_run_impl_main_findings_wrong_type_resets_to_array() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(
+            state_dir.join("wrong-type.json"),
+            r#"{"current_phase":"flow-code","slack_notifications":"not-an-array"}"#,
+        )
+        .unwrap();
+        let args = make_args(Some("wrong-type"));
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["notification_count"], 1);
+        assert_eq!(code, 0);
     }
 
     #[test]

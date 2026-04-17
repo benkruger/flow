@@ -319,6 +319,46 @@ fn add_finding_multiple_invocations_append() {
 }
 
 #[test]
+fn add_finding_no_branch_no_git_returns_branch_resolution_error() {
+    // Subprocess cwd is a non-git tempdir AND no --branch override is
+    // passed. resolve_branch falls back to current_branch() which returns
+    // None for non-git dirs, so run_impl_with_root surfaces the
+    // "Could not determine current branch" error and exits 1.
+    let dir = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .arg("add-finding")
+        .args([
+            "--finding",
+            "x",
+            "--reason",
+            "y",
+            "--outcome",
+            "fixed",
+            "--phase",
+            "flow-code",
+        ])
+        .current_dir(dir.path())
+        .env("CLAUDE_PLUGIN_ROOT", env!("CARGO_MANIFEST_DIR"))
+        .env("GIT_CEILING_DIRECTORIES", dir.path())
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(data["message"]
+        .as_str()
+        .unwrap_or("")
+        .contains("Could not determine current branch"));
+}
+
+#[test]
 fn add_finding_array_root_state_returns_ok_zero() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
