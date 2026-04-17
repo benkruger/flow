@@ -61,7 +61,7 @@ in the state file via `bin/flow add-issue`. The task continues after filing.
 
 During the TDD cycle, run the specific file for fast feedback:
 
-The targeted test command is `bin/flow test --file <path>`, which spawns the project's `bin/test --file <path>` (the user-owned script). For language-agnostic dispatch, see `Repo-Local Tool Delegation` in the project CLAUDE.md.
+The targeted test command is `bin/flow ci --test --file <path>`, which forwards `--file <path>` to the project's `bin/test` script. For language-agnostic dispatch, see `Repo-Local Tool Delegation` in the project CLAUDE.md.
 
 `bin/flow ci` only runs when the task is done and the diff is approved.
 

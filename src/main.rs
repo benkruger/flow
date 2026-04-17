@@ -8,7 +8,6 @@ use flow_rs::add_notification;
 use flow_rs::analyze_issues;
 use flow_rs::append_note;
 use flow_rs::auto_close_parent;
-use flow_rs::build;
 use flow_rs::bump_version;
 use flow_rs::check_freshness;
 use flow_rs::check_phase;
@@ -26,7 +25,6 @@ use flow_rs::create_milestone;
 use flow_rs::create_sub_issue;
 use flow_rs::extract_release_notes;
 use flow_rs::finalize_commit;
-use flow_rs::format_check;
 use flow_rs::format_complete_summary;
 use flow_rs::format_issues_summary;
 use flow_rs::format_pr_timings;
@@ -36,7 +34,6 @@ use flow_rs::hooks;
 use flow_rs::issue;
 use flow_rs::label_issues;
 use flow_rs::link_blocked_by;
-use flow_rs::lint;
 use flow_rs::notify_slack;
 use flow_rs::orchestrate_report;
 use flow_rs::orchestrate_state;
@@ -58,7 +55,6 @@ use flow_rs::start_finalize;
 use flow_rs::start_gate;
 use flow_rs::start_init;
 use flow_rs::start_workspace;
-use flow_rs::test_runner;
 use flow_rs::tombstone_audit;
 use flow_rs::tui_data;
 use flow_rs::update_deps;
@@ -115,19 +111,8 @@ enum Commands {
     },
 
     /// Run bin/ci with dirty-check optimization, retry logic, and CI sentinel management.
+    /// Use --format/--lint/--build/--test to run a single phase, or --force to bypass the sentinel skip.
     Ci(ci::Args),
-
-    /// Spawn the repo-local ./bin/build script with FLOW_CI_RUNNING set.
-    Build(build::Args),
-
-    /// Spawn the repo-local ./bin/test script with --file and trailing args forwarded.
-    Test(test_runner::Args),
-
-    /// Spawn the repo-local ./bin/lint script with FLOW_CI_RUNNING set.
-    Lint(lint::Args),
-
-    /// Spawn the repo-local ./bin/format script with FLOW_CI_RUNNING set.
-    Format(format_check::Args),
 
     /// Run bin/dependencies with a configurable timeout and report git status changes.
     #[command(name = "update-deps")]
@@ -502,10 +487,6 @@ fn main() {
             flow_rs::dispatch::dispatch_json(out, code);
         }
         Some(Commands::Ci(args)) => ci::run(args),
-        Some(Commands::Build(args)) => build::run(args),
-        Some(Commands::Test(args)) => test_runner::run(args),
-        Some(Commands::Lint(args)) => lint::run(args),
-        Some(Commands::Format(args)) => format_check::run(args),
         Some(Commands::UpdateDeps) => update_deps::run(),
         Some(Commands::AnalyzeIssues(args)) => analyze_issues::run(args),
         Some(Commands::AppendNote(args)) => append_note::run(args),

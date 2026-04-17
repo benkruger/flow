@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # FLOW-STUB-UNCONFIGURED (remove this line once you configure a real linter)
-# FLOW linter — called by `bin/flow lint` and `bin/flow ci`.
+# FLOW linter — called by `bin/flow ci` (and `bin/flow ci --lint`).
 #
 # Treat every warning as a CI failure so the gate stays meaningful.
 # This stub does nothing yet — uncomment one of the lines below for

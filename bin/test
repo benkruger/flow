@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# FLOW test runner — called by `bin/flow test` and `bin/flow ci`.
+# FLOW test runner — called by `bin/flow ci` (and `bin/flow ci --test`).
 #
 # Two modes:
 #   bin/test                                 — full suite via cargo llvm-cov + nextest
@@ -44,7 +44,7 @@ fi
 # Cleaning flow-rs at the package scope removes stale binaries while
 # keeping the dep cache (`target/llvm-cov-target/debug/deps/*` for
 # serde, regex, etc.) warm, so rebuild is package-scoped rather than
-# from-zero. Filtered runs (`bin/flow test -- <filter>`) skip this
+# from-zero. Filtered runs (`bin/flow ci --test -- <filter>`) skip this
 # branch entirely and keep the full incremental cache.
 #
 # The profraw sweep following the clean removes accumulated coverage

@@ -1,7 +1,7 @@
 # Tool Dispatch
 
-FLOW's `bin/flow ci`, `bin/flow build`, `bin/flow lint`,
-`bin/flow format`, and `bin/flow test` all delegate to repo-local
+FLOW's `bin/flow ci` (and its single-phase variants
+`--format`/`--lint`/`--build`/`--test`) delegate to repo-local
 `./bin/<tool>` scripts. The user owns the actual tool commands and
 FLOW provides the orchestration layer. This rule covers the invariants
 the orchestration layer must maintain.
@@ -63,8 +63,8 @@ When adding a new stub template or a new auto-installed script:
 ## Full-Suite `bin/test` Runs Clean First
 
 `bin/test` is invoked in two modes: full-suite (no filter args) and
-filtered (`bin/flow test -- <filter>`). Full-suite runs are the CI gate
-used by `start-gate`, `finalize-commit`, and manual `bin/flow ci`
+filtered (`bin/flow ci --test -- <filter>`). Full-suite runs are the CI
+gate used by `start-gate`, `finalize-commit`, and manual `bin/flow ci`
 invocations. Filtered runs are for iterative development.
 
 The full-suite mode MUST run `cargo clean -p flow-rs --target-dir

@@ -184,7 +184,7 @@ Capture these two values for Step 2:
 
 - `<temp_test_file>` = `.flow-states/<branch>-adversarial_test` (the
   agent appends the extension)
-- `<test_command>` = `${CLAUDE_PLUGIN_ROOT}/bin/flow test --file <temp_test_file>`
+- `<test_command>` = `${CLAUDE_PLUGIN_ROOT}/bin/flow ci --test --file <temp_test_file>`
 
 The adversarial agent always launches. If the project's `bin/test`
 does not support a `--file` flag (or cannot compile a single file in

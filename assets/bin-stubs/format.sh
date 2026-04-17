@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # FLOW-STUB-UNCONFIGURED (remove this line once you configure a real format checker)
-# FLOW format checker — called by `bin/flow format` and `bin/flow ci`.
+# FLOW format checker — called by `bin/flow ci` (and `bin/flow ci --format`).
 #
 # `bin/flow ci` runs format → lint → build → test in sequence; format
 # is first because it is the cheapest fail-fast check. This stub does

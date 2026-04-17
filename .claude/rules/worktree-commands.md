@@ -35,9 +35,10 @@ directly: `.flow-states/`, `~/.claude/`, plugin cache paths.
 ## Never invoke cargo directly
 
 Never run `cargo test`, `cargo build`, or any `cargo` subcommand
-directly via the Bash tool. Use `bin/flow test -- <filter>` for
+directly via the Bash tool. Use `bin/flow ci --test -- <filter>` for
 targeted test execution and `bin/flow ci` for full builds. All
-build tool access routes through `bin/flow` subcommands.
+build tool access routes through `bin/flow ci` (with optional
+`--format`/`--lint`/`--build`/`--test` flags for single-phase runs).
 
 Direct cargo invocations bypass the permission whitelist, which causes
 RTK to intercept the command and prompt the user. This is especially

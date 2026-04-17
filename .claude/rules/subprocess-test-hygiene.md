@@ -132,7 +132,7 @@ subprocess test lacking env neutralization:
 2. Fix by adding the missing `env_remove` / `env` calls at the
    spawn site OR extending a shared helper
 3. Verify by running the test in an environment with the
-   credential set (e.g., `GH_TOKEN=<real-token> bin/flow test
+   credential set (e.g., `GH_TOKEN=<real-token> bin/flow ci --test
    -- <test>`) — the test must still pass without making
    network calls
 

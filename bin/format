@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# FLOW format checker — called by `bin/flow format` and `bin/flow ci`.
+# FLOW format checker — called by `bin/flow ci` (and `bin/flow ci --format`).
 # Receives no arguments; returns nonzero if formatting is wrong.
 set -euo pipefail
 exec cargo fmt --check

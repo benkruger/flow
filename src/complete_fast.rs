@@ -483,6 +483,11 @@ fn production_ci_decider_inner(
         retry: 0,
         branch: Some(branch.to_string()),
         simulate_branch: None,
+        format: false,
+        lint: false,
+        build: false,
+        test: false,
+        trailing: Vec::new(),
     };
     let (ci_result, ci_code) = ci_runner(&ci_args, cwd, root, false);
     if ci_code != 0 {

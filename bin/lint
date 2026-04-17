@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# FLOW linter — called by `bin/flow lint` and `bin/flow ci`.
+# FLOW linter — called by `bin/flow ci` (and `bin/flow ci --lint`).
 # Treats every clippy warning as an error so CI gates on lint cleanliness.
 set -euo pipefail
 export RUSTFLAGS="${RUSTFLAGS:-} -D warnings"

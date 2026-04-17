@@ -188,7 +188,7 @@ false-positive sweep. The protocol is:
 
 1. Add the candidate noun to `SCOPE_TRIGGER_PATTERN` on a scratch
    branch (or via a local `git stash` edit) and run
-   `bin/flow test -- scope_enumeration`. The contract test in
+   `bin/flow ci --test -- scope_enumeration`. The contract test in
    `tests/scope_enumeration.rs` will report every pre-existing
    prose line in `CLAUDE.md`, `.claude/rules/*.md`, `skills/**/SKILL.md`,
    and `.claude/skills/**/SKILL.md` that now triggers.

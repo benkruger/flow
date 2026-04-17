@@ -86,6 +86,11 @@ pub fn run_impl_with_deps(
         retry: 3,
         branch: Some("main".to_string()),
         simulate_branch: None,
+        format: false,
+        lint: false,
+        build: false,
+        test: false,
+        trailing: Vec::new(),
     };
     let (ci_result, _ci_code) = ci_runner(&ci_args, cwd, root, false);
     let _ = append_log(
@@ -179,6 +184,11 @@ pub fn run_impl_with_deps(
         retry: 3,
         branch: Some("main".to_string()),
         simulate_branch: None,
+        format: false,
+        lint: false,
+        build: false,
+        test: false,
+        trailing: Vec::new(),
     };
     let (post_ci_result, _post_ci_code) = ci_runner(&post_ci_args, cwd, root, false);
     let _ = append_log(

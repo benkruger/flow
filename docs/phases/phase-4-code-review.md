@@ -34,8 +34,8 @@ Every finding must map to one of these tenants:
 
 Collect all artifacts: full branch diff, substantive diff (whitespace
 changes filtered via `git diff -w`), plan file, CLAUDE.md,
-`.claude/rules/` files, and check whether `bin/flow test` exists for
-adversarial testing.
+`.claude/rules/` files, and check whether `bin/flow ci --test` exists
+for adversarial testing.
 
 ### Step 2 — Launch
 

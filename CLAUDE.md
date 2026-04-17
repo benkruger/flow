@@ -83,9 +83,11 @@ CI will fail if these are missing:
 ## Development Environment
 
 - Run tests with `bin/flow ci` only — never invoke cargo directly
-- `bin/flow ci` runs `bin/flow format`, `bin/flow lint`, `bin/flow build`, `bin/flow test` in sequence (format first for fail-fast)
-- **Use `bin/flow test -- <filter>` for targeted test runs during development** — `bin/flow ci` runs the full suite and is the gate before committing. `bin/flow test -- hooks` runs every test in `tests/hooks.rs`. Never call cargo directly — always use `bin/flow test` or `bin/flow ci`.
-- **Full-suite `bin/flow test` rebuilds `flow-rs` from clean; filtered runs stay incremental.** `bin/test` runs `cargo clean -p flow-rs --target-dir target/llvm-cov-target` at the top of the no-filter-args branch so full-suite coverage numbers come from a single source generation. Filtered runs (`bin/flow test -- <filter>`) skip the clean and keep cargo-llvm-cov's `--no-clean` fast path. See "Start-Gate CI on Main as Serialization Point" below for why this matters on main's long-lived target dir.
+- `bin/flow ci` runs `./bin/format`, `./bin/lint`, `./bin/build`, `./bin/test` in sequence (format first for fail-fast)
+- `bin/flow ci --format`/`--lint`/`--build`/`--test` runs only that single phase. Single-phase runs disable both sentinel read and write — one tool passing does not satisfy the all-four-passed contract the sentinel encodes.
+- `bin/flow ci --force` runs all four AND bypasses the sentinel skip
+- **Use `bin/flow ci --test -- <filter>` for targeted test runs during development** — `bin/flow ci` runs the full suite and is the gate before committing. `bin/flow ci --test -- hooks` runs every test in `tests/hooks.rs`. Never call cargo directly — always use `bin/flow ci`.
+- **Full-suite `bin/flow ci --test` rebuilds `flow-rs` from clean; filtered runs stay incremental.** `bin/test` runs `cargo clean -p flow-rs --target-dir target/llvm-cov-target` at the top of the no-filter-args branch so full-suite coverage numbers come from a single source generation. Filtered runs (`bin/flow ci --test -- <filter>`) skip the clean and keep cargo-llvm-cov's `--no-clean` fast path. See "Start-Gate CI on Main as Serialization Point" below for why this matters on main's long-lived target dir.
 - Dependencies managed via `bin/dependencies` (runs `cargo update`)
 
 ## Architecture
@@ -100,7 +102,7 @@ Skills are pure Markdown instructions (`skills/<name>/SKILL.md`). The only execu
 
 ### Repo-Local Tool Delegation
 
-`bin/flow ci`, `bin/flow build`, `bin/flow lint`, `bin/flow format`, and `bin/flow test` all spawn `./bin/<tool>` from cwd. The user's `bin/<tool>` script owns the actual command (cargo, pytest, go test, etc.). FLOW contributes:
+`bin/flow ci` (and its single-phase variants `--format`/`--lint`/`--build`/`--test`) spawns `./bin/<tool>` from cwd. The user's `bin/<tool>` script owns the actual command (cargo, pytest, go test, etc.). FLOW contributes:
 
 - Sentinel-based dirty-check optimization (`tree_snapshot` SHA-256 over HEAD + diff + untracked)
 - Retry/flaky classification (test only)

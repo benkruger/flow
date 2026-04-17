@@ -173,10 +173,10 @@ grep from code to test is immediate.
 When reviewing a coverage-required test, verify it trips when the
 covered line is deleted. The three-step procedure:
 
-1. Run `bin/flow test -- <test_name>` and confirm the test passes
+1. Run `bin/flow ci --test -- <test_name>` and confirm the test passes
    against the current implementation.
 2. Comment out (or delete) the production line the test claims to
-   cover. Re-run `bin/flow test -- <test_name>` and confirm the
+   cover. Re-run `bin/flow ci --test -- <test_name>` and confirm the
    test now fails.
 3. Restore the production line. Re-run once more and confirm the
    test passes again.

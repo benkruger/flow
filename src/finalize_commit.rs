@@ -298,6 +298,11 @@ pub fn run_impl(
         retry: 0,
         branch: Some(args.branch.clone()),
         simulate_branch: None,
+        format: false,
+        lint: false,
+        build: false,
+        test: false,
+        trailing: Vec::new(),
     };
     let (ci_result, ci_code) = crate::ci::run_impl(&ci_args, cwd, root, false);
 

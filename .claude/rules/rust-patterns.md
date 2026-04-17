@@ -449,9 +449,10 @@ permission check) to ONE entry point in a CLI command family, the
 same guard must be added to every sibling entry point in the same
 family. FLOW has two relevant families:
 
-- **CI-tier runners:** `bin/flow ci`, `bin/flow build`, `bin/flow lint`,
-  `bin/flow format`, `bin/flow test` (`src/ci.rs`, `src/build.rs`,
-  `src/lint.rs`, `src/format_check.rs`, `src/test_runner.rs`).
+- **CI-tier runner:** `bin/flow ci` (`src/ci.rs`). The `--format`/
+  `--lint`/`--build`/`--test` single-phase flags route through the
+  same `ci::run_impl` entry, so the guard added once to `ci::run`
+  covers every phase variant.
 - **State mutators:** `bin/flow phase-enter`, `bin/flow phase-finalize`,
   `bin/flow phase-transition`, `bin/flow set-timestamp`,
   `bin/flow add-finding`, `bin/flow add-issue`,

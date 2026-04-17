@@ -29,6 +29,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::Instant;
 
 use clap::Parser;
 use serde_json::{json, Value};
@@ -52,6 +53,43 @@ pub struct Args {
     /// Set FLOW_SIMULATE_BRANCH in the child env and mix it into the snapshot hash
     #[arg(long = "simulate-branch")]
     pub simulate_branch: Option<String>,
+    /// Run only the format step. Mutually exclusive with --lint/--build/--test.
+    /// Single-phase runs disable sentinel read+write because one tool passing
+    /// does not satisfy the all-four-passed contract the sentinel encodes.
+    #[arg(long, group = "phase_filter")]
+    pub format: bool,
+    /// Run only the lint step. See --format for sentinel semantics.
+    #[arg(long, group = "phase_filter")]
+    pub lint: bool,
+    /// Run only the build step. See --format for sentinel semantics.
+    #[arg(long, group = "phase_filter")]
+    pub build: bool,
+    /// Run only the test step. See --format for sentinel semantics.
+    #[arg(long, group = "phase_filter")]
+    pub test: bool,
+    /// Trailing args forwarded to the spawned `./bin/<tool>`.
+    /// Only meaningful with a single-phase flag (`--format`/`--lint`/
+    /// `--build`/`--test`); ignored otherwise. Use `--` to separate:
+    /// `bin/flow ci --test -- hooks` or `bin/flow ci --test --file path`.
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    pub trailing: Vec<String>,
+}
+
+impl Args {
+    /// Returns the selected single phase, or None when all four run.
+    pub fn selected_phase(&self) -> Option<&'static str> {
+        if self.format {
+            Some("format")
+        } else if self.lint {
+            Some("lint")
+        } else if self.build {
+            Some("build")
+        } else if self.test {
+            Some("test")
+        } else {
+            None
+        }
+    }
 }
 
 /// A tool in the CI sequence: name for display, program + args for spawning.
@@ -129,6 +167,38 @@ pub fn any_tool_is_stub(tools: &[CiTool]) -> bool {
 /// Also used by [`crate::finalize_commit::run_impl`] to refresh the sentinel after a clean commit.
 pub fn sentinel_path(root: &Path, branch: &str) -> PathBuf {
     FlowPaths::new(root, branch).ci_sentinel()
+}
+
+/// Format an elapsed-ms count as a short human string: `523ms`,
+/// `2.3s`, or `3m12s`. Used by the end-of-run summary line.
+pub fn format_elapsed(ms: u64) -> String {
+    if ms < 1000 {
+        format!("{}ms", ms)
+    } else if ms < 60_000 {
+        format!("{:.1}s", (ms as f64) / 1000.0)
+    } else {
+        let total_secs = ms / 1000;
+        let minutes = total_secs / 60;
+        let secs = total_secs % 60;
+        format!("{}m{}s", minutes, secs)
+    }
+}
+
+/// Print the end-of-run summary to stderr:
+/// `--- format: 0.5s | lint: 38.6s | build: 8.9s | test: 3m12s | total: 4m00s ---`
+fn eprint_summary(phases: &[(String, u64)], total_ms: u64) {
+    if phases.is_empty() {
+        return;
+    }
+    let parts: Vec<String> = phases
+        .iter()
+        .map(|(name, ms)| format!("{}: {}", name, format_elapsed(*ms)))
+        .collect();
+    eprintln!(
+        "\n--- {} | total: {} ---",
+        parts.join(" | "),
+        format_elapsed(total_ms)
+    );
 }
 
 /// Run a git command in `cwd`, returning its stdout as a lossy UTF-8 string.
@@ -224,6 +294,7 @@ pub fn run_once(
     branch: Option<&str>,
     force: bool,
     simulate_branch: Option<&str>,
+    rebuild: bool,
 ) -> (Value, i32) {
     if tools.is_empty() {
         // A repo with no bin/{format,lint,build,test} scripts has no
@@ -264,8 +335,13 @@ pub fn run_once(
         }
     }
 
+    let start = Instant::now();
+    let mut phases: Vec<(String, u64)> = Vec::new();
+
     for tool in tools {
-        eprintln!("\n=== {} ===", tool.name);
+        let elapsed_before = start.elapsed().as_secs_f64();
+        eprintln!("\n[{:.1}s] === {} ===", elapsed_before, tool.name);
+        let tool_start = Instant::now();
 
         let mut cmd = Command::new(&tool.program);
         cmd.args(&tool.args)
@@ -274,6 +350,9 @@ pub fn run_once(
         if force {
             cmd.env("FLOW_CI_FORCE", "1");
         }
+        if rebuild {
+            cmd.env("FLOW_CI_REBUILD", "1");
+        }
         if let Some(sim) = simulate_branch {
             cmd.env("FLOW_SIMULATE_BRANCH", sim);
         }
@@ -281,6 +360,10 @@ pub fn run_once(
         let status = match cmd.status() {
             Ok(s) => s,
             Err(e) => {
+                let tool_ms = tool_start.elapsed().as_millis() as u64;
+                phases.push((tool.name.clone(), tool_ms));
+                let total_ms = start.elapsed().as_millis() as u64;
+                eprint_summary(&phases, total_ms);
                 if let Some(ref path) = sentinel {
                     let _ = fs::remove_file(path);
                 }
@@ -288,22 +371,37 @@ pub fn run_once(
                     json!({
                         "status": "error",
                         "message": format!("failed to run {} ({}): {}", tool.name, tool.program, e),
+                        "elapsed_ms": total_ms,
+                        "phases": phases_to_json(&phases),
                     }),
                     1,
                 );
             }
         };
 
+        let tool_ms = tool_start.elapsed().as_millis() as u64;
+        phases.push((tool.name.clone(), tool_ms));
+
         if !status.success() {
+            let total_ms = start.elapsed().as_millis() as u64;
+            eprint_summary(&phases, total_ms);
             if let Some(ref path) = sentinel {
                 let _ = fs::remove_file(path);
             }
             return (
-                json!({"status": "error", "message": format!("{} failed", tool.name)}),
+                json!({
+                    "status": "error",
+                    "message": format!("{} failed", tool.name),
+                    "elapsed_ms": total_ms,
+                    "phases": phases_to_json(&phases),
+                }),
                 1,
             );
         }
     }
+
+    let total_ms = start.elapsed().as_millis() as u64;
+    eprint_summary(&phases, total_ms);
 
     if let Some(ref path) = sentinel {
         if any_stub {
@@ -319,11 +417,27 @@ pub fn run_once(
             let _ = fs::write(path, &snapshot);
         }
     }
-    let mut response = json!({"status": "ok", "skipped": false});
+    let mut response = json!({
+        "status": "ok",
+        "skipped": false,
+        "elapsed_ms": total_ms,
+        "phases": phases_to_json(&phases),
+    });
     if any_stub {
         response["stubs_detected"] = json!(true);
     }
     (response, 0)
+}
+
+/// Convert `[(name, elapsed_ms)]` into the JSON array shape emitted in
+/// `run_once`/`run_with_retry` responses: `[{"name":"format","elapsed_ms":523},...]`.
+fn phases_to_json(phases: &[(String, u64)]) -> Value {
+    Value::Array(
+        phases
+            .iter()
+            .map(|(name, ms)| json!({"name": name, "elapsed_ms": ms}))
+            .collect(),
+    )
 }
 
 /// Retry CI path with flaky/consistent classification.
@@ -341,6 +455,7 @@ pub fn run_with_retry(
     branch: Option<&str>,
     max_attempts: u32,
     simulate_branch: Option<&str>,
+    rebuild: bool,
 ) -> (Value, i32) {
     if tools.is_empty() {
         // Mirror [`run_once`]: no gate → fail loudly. A retry run that
@@ -358,16 +473,29 @@ pub fn run_with_retry(
     let any_stub = any_tool_is_stub(tools);
     let sentinel = branch.map(|b| sentinel_path(root, b));
     let mut first_failure_output: Option<String> = None;
+    let start = Instant::now();
+    let mut phases: Vec<(String, u64)> = Vec::new();
 
     for attempt in 1..=max_attempts {
         let mut attempt_failed = false;
         let mut attempt_output = String::new();
+        let mut attempt_phases: Vec<(String, u64)> = Vec::new();
 
         for tool in tools {
+            let elapsed_before = start.elapsed().as_secs_f64();
+            eprintln!(
+                "\n[{:.1}s] === {} (attempt {}) ===",
+                elapsed_before, tool.name, attempt
+            );
+            let tool_start = Instant::now();
+
             let mut cmd = Command::new(&tool.program);
             cmd.args(&tool.args)
                 .current_dir(cwd)
                 .env("FLOW_CI_RUNNING", "1");
+            if rebuild {
+                cmd.env("FLOW_CI_REBUILD", "1");
+            }
             if let Some(sim) = simulate_branch {
                 cmd.env("FLOW_SIMULATE_BRANCH", sim);
             }
@@ -375,15 +503,25 @@ pub fn run_with_retry(
             let output = match cmd.output() {
                 Ok(o) => o,
                 Err(e) => {
+                    let tool_ms = tool_start.elapsed().as_millis() as u64;
+                    attempt_phases.push((tool.name.clone(), tool_ms));
+                    phases.extend(attempt_phases);
+                    let total_ms = start.elapsed().as_millis() as u64;
+                    eprint_summary(&phases, total_ms);
                     return (
                         json!({
                             "status": "error",
                             "message": format!("failed to run {} ({}): {}", tool.name, tool.program, e),
+                            "elapsed_ms": total_ms,
+                            "phases": phases_to_json(&phases),
                         }),
                         1,
                     );
                 }
             };
+
+            let tool_ms = tool_start.elapsed().as_millis() as u64;
+            attempt_phases.push((tool.name.clone(), tool_ms));
 
             if !output.status.success() {
                 attempt_output.push_str(&String::from_utf8_lossy(&output.stdout));
@@ -392,6 +530,8 @@ pub fn run_with_retry(
                 break;
             }
         }
+
+        phases.extend(attempt_phases);
 
         if !attempt_failed {
             let snapshot = tree_snapshot(cwd, simulate_branch);
@@ -407,7 +547,14 @@ pub fn run_with_retry(
                     let _ = fs::write(path, &snapshot);
                 }
             }
-            let mut result = json!({"status": "ok", "attempts": attempt});
+            let total_ms = start.elapsed().as_millis() as u64;
+            eprint_summary(&phases, total_ms);
+            let mut result = json!({
+                "status": "ok",
+                "attempts": attempt,
+                "elapsed_ms": total_ms,
+                "phases": phases_to_json(&phases),
+            });
             if attempt > 1 {
                 result["flaky"] = json!(true);
                 result["first_failure_output"] = json!(first_failure_output.unwrap_or_default());
@@ -428,12 +575,16 @@ pub fn run_with_retry(
         }
     }
 
+    let total_ms = start.elapsed().as_millis() as u64;
+    eprint_summary(&phases, total_ms);
     (
         json!({
             "status": "error",
             "attempts": max_attempts,
             "consistent": true,
             "output": first_failure_output.unwrap_or_default(),
+            "elapsed_ms": total_ms,
+            "phases": phases_to_json(&phases),
         }),
         1,
     )
@@ -462,12 +613,13 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
     }
 
     let resolved_branch = crate::git::resolve_branch_in(args.branch.as_deref(), cwd, root);
+    let selected = args.selected_phase();
 
-    // Sentinel skip check — before tool discovery.
-    // This allows callers like finalize_commit to skip instantly when the
-    // tree state hasn't changed, even before any bin/<tool> scripts are
-    // checked. Applies to both retry and non-retry paths.
-    if !args.force {
+    // Sentinel skip check — only when running all four phases.
+    // Single-phase runs (--format/--lint/--build/--test) bypass the
+    // sentinel because one tool passing does not satisfy the
+    // all-four-passed contract the sentinel encodes.
+    if selected.is_none() && !args.force {
         if let Some(ref branch) = resolved_branch {
             let snapshot = tree_snapshot(cwd, args.simulate_branch.as_deref());
             let sentinel = sentinel_path(root, branch);
@@ -488,16 +640,55 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
         }
     }
 
-    let tools = bin_tool_sequence(cwd);
+    let mut tools = bin_tool_sequence(cwd);
+    if let Some(phase) = selected {
+        tools.retain(|t| t.name == phase);
+        if tools.is_empty() {
+            return (
+                json!({
+                    "status": "error",
+                    "message": format!(
+                        "No ./bin/{} script found. Either create it or run /flow:flow-prime to install a stub.",
+                        phase
+                    ),
+                }),
+                1,
+            );
+        }
+        // Forward trailing args to the single tool. retain leaves the
+        // matching CiTool with empty args from bin_tool_sequence; we
+        // extend it with whatever the user passed after the flag (e.g.
+        // `--test -- hooks` → `["--", "hooks"]` becomes args; `--test
+        // --file path` → `["--file", "path"]`).
+        if !args.trailing.is_empty() {
+            tools[0].args.extend(args.trailing.iter().cloned());
+        }
+    }
+
+    // For single-phase runs, pass branch=None to disable sentinel
+    // writes inside run_once/run_with_retry. The all-four-passed
+    // contract is the only thing the sentinel records.
+    let sentinel_branch = if selected.is_some() {
+        None
+    } else {
+        resolved_branch.as_deref()
+    };
+
+    // Force-rebuild semantics: only `--build` sets FLOW_CI_REBUILD=1 on
+    // the spawned child. format/lint/test caches are correct and
+    // re-running them from scratch wastes time; cargo build is the one
+    // phase where the user explicitly wants a clean recompile.
+    let rebuild = matches!(selected, Some("build"));
 
     if args.retry > 0 {
         run_with_retry(
             cwd,
             root,
             &tools,
-            resolved_branch.as_deref(),
+            sentinel_branch,
             args.retry,
             args.simulate_branch.as_deref(),
+            rebuild,
         )
     } else {
         // Force=true since we already checked the sentinel above.
@@ -505,9 +696,10 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
             cwd,
             root,
             &tools,
-            resolved_branch.as_deref(),
+            sentinel_branch,
             true,
             args.simulate_branch.as_deref(),
+            rebuild,
         )
     }
 }
@@ -767,7 +959,15 @@ mod tests {
         write_script(&script, "#!/usr/bin/env bash\nexit 0\n");
         let tools = single_tool(&script);
 
-        let (out, code) = run_once(&f.path, &f.path, &tools, Some(&f.branch), false, None);
+        let (out, code) = run_once(
+            &f.path,
+            &f.path,
+            &tools,
+            Some(&f.branch),
+            false,
+            None,
+            false,
+        );
         assert_eq!(code, 0);
         assert_eq!(out["status"], "ok");
         assert_eq!(out["skipped"], false);
@@ -781,10 +981,26 @@ mod tests {
         write_script(&script, "#!/usr/bin/env bash\nexit 0\n");
         let tools = single_tool(&script);
 
-        let (first, _) = run_once(&f.path, &f.path, &tools, Some(&f.branch), false, None);
+        let (first, _) = run_once(
+            &f.path,
+            &f.path,
+            &tools,
+            Some(&f.branch),
+            false,
+            None,
+            false,
+        );
         assert_eq!(first["skipped"], false);
 
-        let (second, code) = run_once(&f.path, &f.path, &tools, Some(&f.branch), false, None);
+        let (second, code) = run_once(
+            &f.path,
+            &f.path,
+            &tools,
+            Some(&f.branch),
+            false,
+            None,
+            false,
+        );
         assert_eq!(code, 0);
         assert_eq!(second["skipped"], true);
     }
@@ -797,7 +1013,15 @@ mod tests {
         let tools = single_tool(&pass);
 
         // Create sentinel
-        let _ = run_once(&f.path, &f.path, &tools, Some(&f.branch), false, None);
+        let _ = run_once(
+            &f.path,
+            &f.path,
+            &tools,
+            Some(&f.branch),
+            false,
+            None,
+            false,
+        );
         assert!(fixture_sentinel(&f).exists());
 
         // Replace with failing tool
@@ -805,7 +1029,15 @@ mod tests {
         write_script(&fail, "#!/usr/bin/env bash\nexit 1\n");
         let fail_tools = single_tool(&fail);
 
-        let (out, code) = run_once(&f.path, &f.path, &fail_tools, Some(&f.branch), true, None);
+        let (out, code) = run_once(
+            &f.path,
+            &f.path,
+            &fail_tools,
+            Some(&f.branch),
+            true,
+            None,
+            false,
+        );
         assert_eq!(code, 1);
         assert_eq!(out["status"], "error");
         assert!(!fixture_sentinel(&f).exists());
@@ -818,10 +1050,18 @@ mod tests {
         write_script(&script, "#!/usr/bin/env bash\nexit 0\n");
         let tools = single_tool(&script);
 
-        let (first, _) = run_once(&f.path, &f.path, &tools, Some(&f.branch), false, None);
+        let (first, _) = run_once(
+            &f.path,
+            &f.path,
+            &tools,
+            Some(&f.branch),
+            false,
+            None,
+            false,
+        );
         assert_eq!(first["skipped"], false);
 
-        let (second, code) = run_once(&f.path, &f.path, &tools, Some(&f.branch), true, None);
+        let (second, code) = run_once(&f.path, &f.path, &tools, Some(&f.branch), true, None, false);
         assert_eq!(code, 0);
         assert_eq!(second["skipped"], false);
     }
@@ -855,7 +1095,15 @@ mod tests {
             },
         ];
 
-        let (out, code) = run_once(&f.path, &f.path, &tools, Some(&f.branch), false, None);
+        let (out, code) = run_once(
+            &f.path,
+            &f.path,
+            &tools,
+            Some(&f.branch),
+            false,
+            None,
+            false,
+        );
         assert_eq!(code, 1);
         assert_eq!(out["status"], "error");
         assert!(out["message"].as_str().unwrap().contains("format"));
@@ -868,7 +1116,7 @@ mod tests {
         // fail CI loudly — an "ok skipped" result would silently pass
         // every commit in a non-primed project.
         let f = make_ci_fixture();
-        let (out, code) = run_once(&f.path, &f.path, &[], Some(&f.branch), false, None);
+        let (out, code) = run_once(&f.path, &f.path, &[], Some(&f.branch), false, None, false);
         assert_eq!(code, 1);
         assert_eq!(out["status"], "error");
         assert!(out["message"]
@@ -882,7 +1130,7 @@ mod tests {
         // Mirror [`run_once_empty_tools_errors`]: retry mode must not
         // cache a useless sentinel when there are no tools to run.
         let f = make_ci_fixture();
-        let (out, code) = run_with_retry(&f.path, &f.path, &[], Some(&f.branch), 3, None);
+        let (out, code) = run_with_retry(&f.path, &f.path, &[], Some(&f.branch), 3, None, false);
         assert_eq!(code, 1);
         assert_eq!(out["status"], "error");
         assert!(out.get("skipped").is_none());
@@ -904,7 +1152,15 @@ mod tests {
         );
         let tools = single_tool(&script);
 
-        let (out, code) = run_once(&f.path, &f.path, &tools, Some(&f.branch), false, None);
+        let (out, code) = run_once(
+            &f.path,
+            &f.path,
+            &tools,
+            Some(&f.branch),
+            false,
+            None,
+            false,
+        );
         assert_eq!(code, 0);
         assert_eq!(out["status"], "ok");
         assert_eq!(out["stubs_detected"], true);
@@ -924,7 +1180,7 @@ mod tests {
         );
         let tools = single_tool(&script);
 
-        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 3, None);
+        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 3, None, false);
         assert_eq!(code, 0);
         assert_eq!(out["status"], "ok");
         assert_eq!(out["stubs_detected"], true);
@@ -949,7 +1205,7 @@ mod tests {
         fs::create_dir_all(&flow_states).unwrap();
         fs::write(flow_states.join("unrelated-marker.txt"), "x").unwrap();
 
-        let (out, code) = run_once(&f.path, &f.path, &tools, None, false, None);
+        let (out, code) = run_once(&f.path, &f.path, &tools, None, false, None, false);
         assert_eq!(code, 0);
         assert_eq!(out["skipped"], false);
         let entries: Vec<_> = fs::read_dir(&flow_states)
@@ -969,7 +1225,7 @@ mod tests {
         write_script(&script, "#!/usr/bin/env bash\nexit 0\n");
         let tools = single_tool(&script);
 
-        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 3, None);
+        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 3, None, false);
         assert_eq!(code, 0);
         assert_eq!(out["status"], "ok");
         assert_eq!(out["attempts"], 1);
@@ -1003,7 +1259,7 @@ exit 0
         );
         let tools = single_tool(&script);
 
-        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 3, None);
+        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 3, None, false);
         assert_eq!(code, 0);
         assert_eq!(out["status"], "ok");
         assert_eq!(out["attempts"], 2);
@@ -1022,7 +1278,7 @@ exit 0
         );
         let tools = single_tool(&script);
 
-        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 3, None);
+        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 3, None, false);
         assert_eq!(code, 1);
         assert_eq!(out["status"], "error");
         assert_eq!(out["attempts"], 3);
@@ -1038,6 +1294,11 @@ exit 0
             retry: 0,
             branch: None,
             simulate_branch: None,
+            format: false,
+            lint: false,
+            build: false,
+            test: false,
+            trailing: Vec::new(),
         }
     }
 
@@ -1110,6 +1371,7 @@ exit 0
             force: false,
             retry: 2,
             simulate_branch: None,
+            ..default_args()
         };
         let (out, code) = run_impl(&args, &f.path, &f.path, false);
         assert_eq!(code, 0);
@@ -1138,6 +1400,7 @@ exit 0
             force: false,
             retry: 0,
             simulate_branch: None,
+            ..default_args()
         };
         let (first_out, _) = run_impl(&args_first, &f.path, &f.path, false);
         assert_eq!(first_out["skipped"], false);
@@ -1149,6 +1412,7 @@ exit 0
             force: false,
             retry: 2,
             simulate_branch: None,
+            ..default_args()
         };
         let (out, code) = run_impl(&args_retry, &f.path, &f.path, false);
         assert_eq!(code, 0);
@@ -1189,7 +1453,7 @@ exit 0
                 args: vec![],
             },
         ];
-        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 2, None);
+        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 2, None, false);
         assert_eq!(code, 1);
         assert_eq!(out["consistent"], true);
         assert!(out["output"].as_str().unwrap().contains("TOOL2 FAILED"));
@@ -1220,7 +1484,7 @@ fi
             ),
         );
         let tools = single_tool(&script);
-        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 3, None);
+        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 3, None, false);
         assert_eq!(code, 0);
         assert_eq!(out["flaky"], true);
         assert_eq!(out["attempts"], 2);
@@ -1244,7 +1508,7 @@ fi
             "#!/usr/bin/env bash\necho 'ALWAYS FAIL' >&2\nexit 1\n",
         );
         let tools = single_tool(&script);
-        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 2, None);
+        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 2, None, false);
         assert_eq!(code, 1);
         assert_eq!(out["consistent"], true);
         assert!(
@@ -1290,7 +1554,7 @@ fi
             program: "/nonexistent/path/to/tool".to_string(),
             args: vec![],
         }];
-        let (out, code) = run_once(&f.path, &f.path, &tools, Some(&f.branch), true, None);
+        let (out, code) = run_once(&f.path, &f.path, &tools, Some(&f.branch), true, None, false);
         assert_eq!(code, 1);
         assert_eq!(out["status"], "error");
         assert!(out["message"].as_str().unwrap().contains("failed to run"));
@@ -1305,7 +1569,7 @@ fi
             program: "/nonexistent/path/to/tool".to_string(),
             args: vec![],
         }];
-        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 2, None);
+        let (out, code) = run_with_retry(&f.path, &f.path, &tools, Some(&f.branch), 2, None, false);
         assert_eq!(code, 1);
         assert_eq!(out["status"], "error");
         assert!(out["message"].as_str().unwrap().contains("failed to run"));
@@ -1328,5 +1592,208 @@ fi
         assert_eq!(code, 1);
         assert_eq!(out["status"], "error");
         assert!(!out["message"].as_str().unwrap().is_empty());
+    }
+
+    // --- Single-phase flag tests (--format/--lint/--build/--test) ---
+
+    #[test]
+    fn args_selected_phase_none_when_no_flag_set() {
+        let args = default_args();
+        assert_eq!(args.selected_phase(), None);
+    }
+
+    #[test]
+    fn args_selected_phase_format() {
+        let args = Args {
+            format: true,
+            ..default_args()
+        };
+        assert_eq!(args.selected_phase(), Some("format"));
+    }
+
+    #[test]
+    fn args_selected_phase_lint() {
+        let args = Args {
+            lint: true,
+            ..default_args()
+        };
+        assert_eq!(args.selected_phase(), Some("lint"));
+    }
+
+    #[test]
+    fn args_selected_phase_build() {
+        let args = Args {
+            build: true,
+            ..default_args()
+        };
+        assert_eq!(args.selected_phase(), Some("build"));
+    }
+
+    #[test]
+    fn args_selected_phase_test() {
+        let args = Args {
+            test: true,
+            ..default_args()
+        };
+        assert_eq!(args.selected_phase(), Some("test"));
+    }
+
+    #[test]
+    fn run_impl_format_flag_runs_only_format() {
+        let f = make_ci_fixture();
+        // Install all four scripts, but only format should run.
+        for name in ["format", "lint", "build", "test"] {
+            let marker = f.path.join(format!("{}-ran", name));
+            let marker_str = marker.to_string_lossy().to_string();
+            write_script(
+                &f.path.join("bin").join(name),
+                &format!("#!/usr/bin/env bash\ntouch {}\nexit 0\n", marker_str),
+            );
+        }
+        let args = Args {
+            branch: Some(f.branch.clone()),
+            format: true,
+            ..default_args()
+        };
+        let (out, code) = run_impl(&args, &f.path, &f.path, false);
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+        assert!(f.path.join("format-ran").exists(), "format must have run");
+        assert!(!f.path.join("lint-ran").exists(), "lint must not have run");
+        assert!(
+            !f.path.join("build-ran").exists(),
+            "build must not have run"
+        );
+        assert!(!f.path.join("test-ran").exists(), "test must not have run");
+    }
+
+    #[test]
+    fn run_impl_test_flag_runs_only_test() {
+        let f = make_ci_fixture();
+        for name in ["format", "lint", "build", "test"] {
+            let marker = f.path.join(format!("{}-ran", name));
+            let marker_str = marker.to_string_lossy().to_string();
+            write_script(
+                &f.path.join("bin").join(name),
+                &format!("#!/usr/bin/env bash\ntouch {}\nexit 0\n", marker_str),
+            );
+        }
+        let args = Args {
+            branch: Some(f.branch.clone()),
+            test: true,
+            ..default_args()
+        };
+        let (out, code) = run_impl(&args, &f.path, &f.path, false);
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+        assert!(f.path.join("test-ran").exists(), "test must have run");
+        assert!(
+            !f.path.join("format-ran").exists(),
+            "format must not have run"
+        );
+    }
+
+    #[test]
+    fn run_impl_format_flag_missing_script_returns_specific_error() {
+        let f = make_ci_fixture();
+        // No bin/format installed.
+        let args = Args {
+            branch: Some(f.branch.clone()),
+            format: true,
+            ..default_args()
+        };
+        let (out, code) = run_impl(&args, &f.path, &f.path, false);
+        assert_eq!(code, 1);
+        assert_eq!(out["status"], "error");
+        let msg = out["message"].as_str().unwrap();
+        assert!(
+            msg.contains("./bin/format script"),
+            "error must name the missing script: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn run_impl_single_phase_does_not_write_sentinel() {
+        // A passing single-phase run must NOT write the all-four-passed
+        // sentinel — because a single tool passing does not satisfy the
+        // contract the sentinel encodes.
+        let f = make_ci_fixture();
+        write_script(
+            &f.path.join("bin").join("format"),
+            "#!/usr/bin/env bash\nexit 0\n",
+        );
+        let args = Args {
+            branch: Some(f.branch.clone()),
+            format: true,
+            ..default_args()
+        };
+        let (out, code) = run_impl(&args, &f.path, &f.path, false);
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+        assert!(
+            !fixture_sentinel(&f).exists(),
+            "single-phase run must not write the all-passed sentinel"
+        );
+    }
+
+    #[test]
+    fn run_impl_single_phase_ignores_existing_sentinel() {
+        // A pre-existing matching sentinel must NOT short-circuit a
+        // single-phase run. The user explicitly asked to run that tool;
+        // honoring an old all-passed sentinel would silently skip it.
+        let f = make_ci_fixture();
+        write_script(
+            &f.path.join("bin").join("format"),
+            "#!/usr/bin/env bash\nexit 0\n",
+        );
+        // First write the sentinel via a normal full run.
+        let full = Args {
+            branch: Some(f.branch.clone()),
+            ..default_args()
+        };
+        let _ = run_impl(&full, &f.path, &f.path, false);
+        assert!(fixture_sentinel(&f).exists());
+
+        // Now request --format only: should run, not skip.
+        let args = Args {
+            branch: Some(f.branch.clone()),
+            format: true,
+            ..default_args()
+        };
+        let (out, code) = run_impl(&args, &f.path, &f.path, false);
+        assert_eq!(code, 0);
+        assert_eq!(out["skipped"], false);
+    }
+
+    #[test]
+    fn run_impl_force_bypasses_sentinel_skip() {
+        // --force must run all four phases even when the sentinel matches.
+        let f = make_ci_fixture();
+        write_script(
+            &f.path.join("bin").join("format"),
+            "#!/usr/bin/env bash\nexit 0\n",
+        );
+        // Seed the sentinel via a normal run.
+        let full = Args {
+            branch: Some(f.branch.clone()),
+            ..default_args()
+        };
+        let (first, _) = run_impl(&full, &f.path, &f.path, false);
+        assert_eq!(first["skipped"], false);
+
+        // Second run without force should skip via sentinel.
+        let (skipped_out, _) = run_impl(&full, &f.path, &f.path, false);
+        assert_eq!(skipped_out["skipped"], true);
+
+        // Third run WITH --force should not skip.
+        let forced = Args {
+            branch: Some(f.branch.clone()),
+            force: true,
+            ..default_args()
+        };
+        let (forced_out, code) = run_impl(&forced, &f.path, &f.path, false);
+        assert_eq!(code, 0);
+        assert_eq!(forced_out["skipped"], false);
     }
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # FLOW-STUB-UNCONFIGURED (remove this line once you configure a real test runner)
-# FLOW test runner — called by `bin/flow test` and `bin/flow ci`.
+# FLOW test runner — called by `bin/flow ci` (and `bin/flow ci --test`).
 #
 # Two invocation forms:
 #   bin/test                                 — full suite

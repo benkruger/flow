@@ -717,10 +717,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().canonicalize().unwrap();
         let result = run_git_cmd(&["/usr/bin/true"], 5, &cwd);
-        assert!(matches!(
-            result,
-            CmdResult::Ok { returncode: 0, .. }
-        ));
+        assert!(matches!(result, CmdResult::Ok { returncode: 0, .. }));
     }
 
     #[test]
@@ -728,10 +725,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().canonicalize().unwrap();
         let result = run_git_cmd(&["/usr/bin/false"], 5, &cwd);
-        assert!(matches!(
-            result,
-            CmdResult::Ok { returncode: 1, .. }
-        ));
+        assert!(matches!(result, CmdResult::Ok { returncode: 1, .. }));
     }
 
     #[test]
@@ -741,7 +735,10 @@ mod tests {
         let result = run_git_cmd(&["/no/such/binary/here-deadbeef"], 5, &cwd);
         assert!(matches!(
             result,
-            CmdResult::Ok { returncode: 127, .. }
+            CmdResult::Ok {
+                returncode: 127,
+                ..
+            }
         ));
     }
 
