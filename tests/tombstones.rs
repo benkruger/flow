@@ -261,7 +261,7 @@ fn claude_md_no_test_coverage_references() {
 // Weak-coverage language ("adequate test coverage", "adequately tested")
 // is the prose surface through which a reviewer or reviewer agent could
 // justify shipping below 100% coverage. The 100% gate in `bin/test`
-// (`--fail-under-*` ratchet) and `.claude/rules/no-waivers.md` are the
+// (`--fail-under-*` gate) and `.claude/rules/no-waivers.md` are the
 // load-bearing mechanisms; this scanner prevents the prose from drifting
 // back in via merge conflict or accidental edit. Scope is intentionally
 // narrow: agent reports, skill instructions, and public docs — the
@@ -274,7 +274,7 @@ fn claude_md_no_test_coverage_references() {
 /// Weak-coverage phrases that must not reappear in the user-facing
 /// prose corpus. Re-introducing either phrase would let a reviewer
 /// agent cite "adequate"/"adequately" coverage as grounds for
-/// shipping below 100%, defeating the `--fail-under-*` ratchet in
+/// shipping below 100%, defeating the `--fail-under-*` gate in
 /// `bin/test` and the `.claude/rules/no-waivers.md` discipline.
 const WEAK_COVERAGE_PHRASES: &[&str] = &["adequate test coverage", "adequately tested"];
 

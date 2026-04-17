@@ -58,14 +58,10 @@ if [ $# -eq 0 ] && [ "${FLOW_CI_FORCE:-}" != "1" ]; then
   /usr/bin/find . -maxdepth 1 -name "default_*.profraw" -delete 2>/dev/null || true
 fi
 
-# Coverage floors. Each threshold is the floor of the current aggregate
-# TOTAL — i.e., `floor(actual_whole_percent)`. The floor is a ratchet:
-# it tracks every whole-percent improvement and never moves down. When
-# coverage crosses into a new whole-percent range, bump the matching
-# threshold in the same commit that earned it so the gate captures the
-# new floor and protects against regression below it. The target is
-# 100/100/100 — coverage waivers are forbidden, so any code that
-# appears uncoverable must be refactored until it is testable.
+# Coverage gate. Pinned at 100/100/100 — any uncovered region,
+# function, or line fails CI and blocks the commit. No ratchet, no
+# floor, no waivers. Code that appears uncoverable must be
+# refactored until it is testable. See .claude/rules/no-waivers.md.
 # Merge stderr+stdout through awk so nextest sees a non-TTY (no animated
 # progress bar dumping hundreds of frames). The awk filter:
 #   - Converts each PASS line to a dot (wraps at terminal width)
@@ -77,9 +73,9 @@ fi
 #   produce LEAK lines during the run which pass through the awk filter in full)
 # pipefail (set above) preserves cargo llvm-cov's exit code.
 cargo llvm-cov --no-cfg-coverage --no-clean \
-  --fail-under-lines 97 \
-  --fail-under-regions 97 \
-  --fail-under-functions 95 \
+  --fail-under-lines 100 \
+  --fail-under-regions 100 \
+  --fail-under-functions 100 \
   nextest --status-level pass --final-status-level fail "$@" 2>&1 | awk '
 /^ *PASS / {
   printf "."
