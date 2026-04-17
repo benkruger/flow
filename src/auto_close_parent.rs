@@ -17,10 +17,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use clap::Parser;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::complete_preflight::LOCAL_TIMEOUT;
-use crate::output::json_ok;
 use crate::utils::run_cmd;
 
 #[derive(Parser, Debug)]
@@ -38,8 +37,15 @@ pub struct Args {
     pub issue_number: i64,
 }
 
+/// Type alias for the gh-api runner closure used by `_with_runner`
+/// seams. Production binds to a closure wrapping `run_cmd`. Tests
+/// inject mock closures returning queued or fixed
+/// `Result<String, String>` responses per call so the test never
+/// spawns a real `gh` subprocess.
+pub type GhApiRunner = dyn Fn(&[&str], &Path) -> Result<String, String>;
+
 /// Run a gh command, returning stdout on success or an error string on failure.
-fn run_api(args: &[&str], cwd: &Path) -> Result<String, String> {
+pub fn run_api(args: &[&str], cwd: &Path) -> Result<String, String> {
     match run_cmd(args, cwd, "api", Some(Duration::from_secs(LOCAL_TIMEOUT))) {
         Ok((stdout, _stderr)) => Ok(stdout),
         Err(e) => Err(e.message),
@@ -75,8 +81,20 @@ pub fn parse_issue_fields(json_str: &str) -> (Option<i64>, Option<i64>) {
 /// Returns (parent_number_or_None, milestone_number_or_None).
 /// Best-effort: returns (None, None) on any failure.
 pub fn fetch_issue_fields(repo: &str, issue_number: i64, cwd: &Path) -> (Option<i64>, Option<i64>) {
+    fetch_issue_fields_with_runner(repo, issue_number, cwd, &run_api)
+}
+
+/// Seam-injected variant of [`fetch_issue_fields`]. Tests pass a mock
+/// runner returning canned responses or simulated failures so they
+/// never spawn `gh`.
+pub fn fetch_issue_fields_with_runner(
+    repo: &str,
+    issue_number: i64,
+    cwd: &Path,
+    runner: &GhApiRunner,
+) -> (Option<i64>, Option<i64>) {
     let url = format!("repos/{}/issues/{}", repo, issue_number);
-    let stdout = match run_api(&["gh", "api", &url], cwd) {
+    let stdout = match runner(&["gh", "api", &url], cwd) {
         Ok(s) => s,
         Err(_) => return (None, None),
     };
@@ -130,12 +148,23 @@ pub fn check_parent_closed(
     parent_number: Option<i64>,
     cwd: &Path,
 ) -> bool {
+    check_parent_closed_with_runner(repo, issue_number, parent_number, cwd, &run_api)
+}
+
+/// Seam-injected variant of [`check_parent_closed`].
+pub fn check_parent_closed_with_runner(
+    repo: &str,
+    issue_number: i64,
+    parent_number: Option<i64>,
+    cwd: &Path,
+    runner: &GhApiRunner,
+) -> bool {
     let parent = match parent_number {
         Some(n) => n,
         None => {
             // Standalone call — fetch the parent number
             let url = format!("repos/{}/issues/{}", repo, issue_number);
-            let stdout = match run_api(&["gh", "api", &url, "--jq", ".parent_issue.number"], cwd) {
+            let stdout = match runner(&["gh", "api", &url, "--jq", ".parent_issue.number"], cwd) {
                 Ok(s) => s,
                 Err(_) => return false,
             };
@@ -152,7 +181,7 @@ pub fn check_parent_closed(
 
     // Get all sub-issues of the parent
     let url = format!("repos/{}/issues/{}/sub_issues", repo, parent);
-    let stdout = match run_api(&["gh", "api", &url], cwd) {
+    let stdout = match runner(&["gh", "api", &url], cwd) {
         Ok(s) => s,
         Err(_) => return false,
     };
@@ -162,7 +191,7 @@ pub fn check_parent_closed(
     }
 
     // All closed — close the parent
-    run_api(
+    runner(
         &["gh", "issue", "close", &parent.to_string(), "--repo", repo],
         cwd,
     )
@@ -180,12 +209,23 @@ pub fn check_milestone_closed(
     milestone_number: Option<i64>,
     cwd: &Path,
 ) -> bool {
+    check_milestone_closed_with_runner(repo, issue_number, milestone_number, cwd, &run_api)
+}
+
+/// Seam-injected variant of [`check_milestone_closed`].
+pub fn check_milestone_closed_with_runner(
+    repo: &str,
+    issue_number: i64,
+    milestone_number: Option<i64>,
+    cwd: &Path,
+    runner: &GhApiRunner,
+) -> bool {
     let milestone = match milestone_number {
         Some(n) => n,
         None => {
             // Standalone call — fetch the milestone number
             let url = format!("repos/{}/issues/{}", repo, issue_number);
-            let stdout = match run_api(&["gh", "api", &url, "--jq", ".milestone.number"], cwd) {
+            let stdout = match runner(&["gh", "api", &url, "--jq", ".milestone.number"], cwd) {
                 Ok(s) => s,
                 Err(_) => return false,
             };
@@ -202,7 +242,7 @@ pub fn check_milestone_closed(
 
     // Check milestone open_issues count
     let url = format!("repos/{}/milestones/{}", repo, milestone);
-    let stdout = match run_api(&["gh", "api", &url], cwd) {
+    let stdout = match runner(&["gh", "api", &url], cwd) {
         Ok(s) => s,
         Err(_) => return false,
     };
@@ -212,7 +252,7 @@ pub fn check_milestone_closed(
     }
 
     // All closed — close the milestone
-    run_api(
+    runner(
         &[
             "gh",
             "api",
@@ -227,30 +267,63 @@ pub fn check_milestone_closed(
     .is_ok()
 }
 
-/// CLI entry point for auto-close-parent.
-pub fn run(args: Args) {
-    let cwd = match std::env::current_dir() {
-        Ok(d) => d,
-        Err(_) => {
-            println!(
-                "{}",
-                json!({"status": "ok", "parent_closed": false, "milestone_closed": false})
-            );
-            return;
-        }
-    };
+/// Main-arm dispatcher with injected cwd. Always returns
+/// `(Value, 0)` — auto-close is best-effort by design and the parent /
+/// milestone close decisions surface as boolean fields in the success
+/// payload, never as an error exit.
+pub fn run_impl_main(args: Args, cwd: &Path) -> (Value, i32) {
+    run_impl_main_with_runner(args, cwd, &run_api)
+}
 
+/// Seam-injected variant of [`run_impl_main`]. Tests pass a mock
+/// runner so they exercise the dispatch shape without spawning real
+/// `gh`. Per `.claude/rules/subprocess-test-hygiene.md`, this avoids
+/// network calls in unit tests that would otherwise inherit
+/// `GH_TOKEN` from the developer's environment.
+pub fn run_impl_main_with_runner(args: Args, cwd: &Path, runner: &GhApiRunner) -> (Value, i32) {
     // Fetch both fields in one API call to avoid redundant requests
-    let (parent_number, milestone_number) = fetch_issue_fields(&args.repo, args.issue_number, &cwd);
+    let (parent_number, milestone_number) =
+        fetch_issue_fields_with_runner(&args.repo, args.issue_number, cwd, runner);
 
-    let parent_closed = check_parent_closed(&args.repo, args.issue_number, parent_number, &cwd);
-    let milestone_closed =
-        check_milestone_closed(&args.repo, args.issue_number, milestone_number, &cwd);
+    let parent_closed =
+        check_parent_closed_with_runner(&args.repo, args.issue_number, parent_number, cwd, runner);
+    let milestone_closed = check_milestone_closed_with_runner(
+        &args.repo,
+        args.issue_number,
+        milestone_number,
+        cwd,
+        runner,
+    );
 
-    json_ok(&[
-        ("parent_closed", json!(parent_closed)),
-        ("milestone_closed", json!(milestone_closed)),
-    ]);
+    (
+        json!({
+            "status": "ok",
+            "parent_closed": parent_closed,
+            "milestone_closed": milestone_closed,
+        }),
+        0,
+    )
+}
+
+/// CLI entry point for auto-close-parent.
+pub fn run(args: Args) -> ! {
+    // current_dir() can fail in deleted-cwd environments, certain
+    // container runtimes, and chroot jails. The historical contract
+    // is to short-circuit with a best-effort safe-default response
+    // rather than spawn `gh` against an undefined cwd. This best-
+    // effort behavior is documented as a hard contract by the module
+    // doc comment ("Best-effort throughout — any failure continues
+    // silently") and is required by Phase 6 Complete cleanup, which
+    // calls `auto-close-parent` as a non-critical step.
+    let cwd = match std::env::current_dir() {
+        Ok(c) => c,
+        Err(_) => crate::dispatch::dispatch_json(
+            json!({"status": "ok", "parent_closed": false, "milestone_closed": false}),
+            0,
+        ),
+    };
+    let (value, code) = run_impl_main(args, &cwd);
+    crate::dispatch::dispatch_json(value, code)
 }
 
 #[cfg(test)]
@@ -367,5 +440,62 @@ mod tests {
         // null defaults to 1 via unwrap_or
         let json = r#"{"open_issues": null}"#;
         assert!(!should_close_milestone(json));
+    }
+
+    // --- run_impl_main / run_impl_main_with_runner ---
+
+    #[test]
+    fn auto_close_parent_run_impl_main_with_runner_all_runner_failures_returns_ok() {
+        // Inject a runner that fails every call. Per the best-effort
+        // contract, fetch_issue_fields returns (None, None), the
+        // standalone fetches in check_parent_closed and
+        // check_milestone_closed both fail, and the function returns
+        // OK with both close booleans false. Test never spawns gh
+        // (subprocess hygiene per .claude/rules/subprocess-test-hygiene.md).
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let args = Args {
+            repo: "owner/repo".to_string(),
+            issue_number: 999,
+        };
+        let runner: &GhApiRunner = &|_, _| Err("simulated".to_string());
+        let (value, code) = run_impl_main_with_runner(args, &cwd, runner);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["parent_closed"], false);
+        assert_eq!(value["milestone_closed"], false);
+    }
+
+    #[test]
+    fn auto_close_parent_run_impl_main_with_runner_happy_path_closes_both() {
+        // Inject responses simulating: fetch_issue_fields returns
+        // parent_number=10, milestone_number=3; sub_issues all closed;
+        // milestone open_issues=0; close calls succeed.
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let args = Args {
+            repo: "owner/repo".to_string(),
+            issue_number: 5,
+        };
+        let queue: std::cell::RefCell<std::collections::VecDeque<String>> =
+            std::cell::RefCell::new(std::collections::VecDeque::from(vec![
+                // fetch_issue_fields → repos/owner/repo/issues/5
+                r#"{"parent_issue":{"number":10},"milestone":{"number":3}}"#.to_string(),
+                // check_parent_closed → repos/owner/repo/issues/10/sub_issues
+                r#"[{"number":5,"state":"closed"},{"number":6,"state":"closed"}]"#.to_string(),
+                // close parent → gh issue close 10 --repo owner/repo
+                String::new(),
+                // check_milestone_closed → repos/owner/repo/milestones/3
+                r#"{"open_issues":0}"#.to_string(),
+                // close milestone → PATCH state=closed
+                String::new(),
+            ]));
+        let runner: &GhApiRunner =
+            &move |_, _| Ok(queue.borrow_mut().pop_front().unwrap_or_default());
+        let (value, code) = run_impl_main_with_runner(args, &cwd, runner);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["parent_closed"], true);
+        assert_eq!(value["milestone_closed"], true);
     }
 }

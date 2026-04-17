@@ -24,7 +24,6 @@ use crate::complete_preflight::LOCAL_TIMEOUT;
 use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::github::detect_repo;
-use crate::output::{json_error, json_ok};
 
 #[derive(Parser, Debug)]
 #[command(name = "issue", about = "Create a GitHub issue")]
@@ -94,6 +93,15 @@ pub(crate) fn should_reject_for_code_review(
     if content.trim().is_empty() {
         return None;
     }
+    // Defense in depth: serde_json's default last-wins behavior on
+    // duplicate keys lets a crafted state file like
+    // `{"current_phase":"flow-code-review","current_phase":"flow-learn"}`
+    // bypass the gate when the parsed value is read normally. Scan the
+    // raw content for ANY occurrence of `"current_phase"` followed by a
+    // value that normalizes to `flow-code-review`. If any match, reject.
+    if raw_contains_code_review_phase(content) {
+        return Some(code_review_block_message());
+    }
     let phase_norm = match serde_json::from_str::<serde_json::Value>(content) {
         Ok(state) => match state.get("current_phase").and_then(|v| v.as_str()) {
             Some(s) => s.replace('\0', "").trim().to_ascii_lowercase(),
@@ -110,17 +118,52 @@ pub(crate) fn should_reject_for_code_review(
         }
     };
     if phase_norm == "flow-code-review" {
-        Some(
-            "bin/flow issue is disabled during Code Review. All real \
-             findings must be fixed in Step 4. If this is a FLOW \
-             process gap, file it during Phase 5 Learn. If truly \
-             needed, pass --override-code-review-ban with an \
-             explicit reason."
-                .to_string(),
-        )
+        Some(code_review_block_message())
     } else {
         None
     }
+}
+
+/// Standard rejection message returned by both the parsed-value gate
+/// and the raw-text duplicate-key defense.
+fn code_review_block_message() -> String {
+    "bin/flow issue is disabled during Code Review. All real \
+     findings must be fixed in Step 4. If this is a FLOW \
+     process gap, file it during Phase 5 Learn. If truly \
+     needed, pass --override-code-review-ban with an \
+     explicit reason."
+        .to_string()
+}
+
+/// Defense-in-depth scanner against duplicate-key bypass. Walks the
+/// raw JSON text looking for every `"current_phase"` key occurrence
+/// and inspecting the value that follows. Returns true if any
+/// occurrence's value normalizes to `flow-code-review`. Per
+/// `.claude/rules/security-gates.md` "Enumerate Bypass Variants",
+/// duplicate keys (serde last-wins) and BOM are explicitly enumerated;
+/// this scanner closes the duplicate-key surface.
+fn raw_contains_code_review_phase(content: &str) -> bool {
+    let needle = "\"current_phase\"";
+    let mut start = 0;
+    while let Some(pos) = content[start..].find(needle) {
+        let key_end = start + pos + needle.len();
+        // Skip any whitespace and the colon.
+        let after_key = content[key_end..].trim_start();
+        if let Some(rest) = after_key.strip_prefix(':') {
+            let after_colon = rest.trim_start();
+            if let Some(value_body) = after_colon.strip_prefix('"') {
+                if let Some(end_quote) = value_body.find('"') {
+                    let value = &value_body[..end_quote];
+                    let normalized = value.replace('\0', "").trim().to_ascii_lowercase();
+                    if normalized == "flow-code-review" {
+                        return true;
+                    }
+                }
+            }
+        }
+        start = key_end;
+    }
+    false
 }
 
 fn fail_closed_message(detail: &str) -> String {
@@ -133,11 +176,17 @@ fn fail_closed_message(detail: &str) -> String {
     )
 }
 
+#[derive(Debug)]
 pub struct IssueResult {
     pub url: String,
     pub number: Option<i64>,
     pub id: Option<i64>,
 }
+
+/// Type alias for the gh-runner closure used by `_with_runner` seams.
+/// Production binds to `&run_gh_cmd`. Tests inject mock closures
+/// returning queued `Result<String, String>` responses per call.
+pub type GhRunner = dyn Fn(&[&str], Option<Duration>) -> Result<String, String>;
 
 /// Read body text from a file and delete the file.
 ///
@@ -170,16 +219,16 @@ pub fn parse_issue_number(url: &str) -> Option<i64> {
     re.captures(url).and_then(|cap| cap[1].parse().ok())
 }
 
-/// Fetch the REST API database ID for an issue.
-///
-/// The database ID is the integer ID used by REST API endpoints for
-/// sub-issues and dependencies. This is NOT the GraphQL node_id.
-///
-/// Returns (id, error). id is Some(integer) or None.
-pub fn fetch_database_id(repo: &str, number: i64) -> (Option<i64>, Option<String>) {
+/// Fetch the REST API database ID for an issue via an injected runner.
+/// Production wraps this with `&run_gh_cmd`. Tests inject mocks.
+pub fn fetch_database_id_with_runner(
+    repo: &str,
+    number: i64,
+    runner: &GhRunner,
+) -> (Option<i64>, Option<String>) {
     let timeout = Duration::from_secs(LOCAL_TIMEOUT);
     let api_path = format!("repos/{}/issues/{}", repo, number);
-    match run_gh_cmd(&["gh", "api", &api_path, "--jq", ".id"], Some(timeout)) {
+    match runner(&["gh", "api", &api_path, "--jq", ".id"], Some(timeout)) {
         Ok(stdout) => match stdout.trim().parse::<i64>() {
             Ok(id) => (Some(id), None),
             Err(_) => (
@@ -191,17 +240,24 @@ pub fn fetch_database_id(repo: &str, number: i64) -> (Option<i64>, Option<String
     }
 }
 
-/// Run gh issue create and return issue details.
+/// Fetch the REST API database ID for an issue.
 ///
-/// Includes label-not-found retry logic: if the label doesn't exist,
-/// tries to create it, then retries. If label creation fails, retries
-/// without the label.
-pub fn create_issue(
+/// The database ID is the integer ID used by REST API endpoints for
+/// sub-issues and dependencies. This is NOT the GraphQL node_id.
+///
+/// Returns (id, error). id is Some(integer) or None.
+pub fn fetch_database_id(repo: &str, number: i64) -> (Option<i64>, Option<String>) {
+    fetch_database_id_with_runner(repo, number, &run_gh_cmd)
+}
+
+/// Create-issue with an injected gh runner (testable seam).
+pub fn create_issue_with_runner(
     repo: &str,
     title: &str,
     label: Option<&str>,
     body: Option<&str>,
     milestone: Option<&str>,
+    runner: &GhRunner,
 ) -> Result<IssueResult, String> {
     let timeout = Duration::from_secs(LOCAL_TIMEOUT);
 
@@ -230,14 +286,16 @@ pub fn create_issue(
     }
 
     let cmd_refs: Vec<&str> = cmd_args.iter().map(|s| s.as_str()).collect();
-    match run_gh_cmd(&cmd_refs, Some(timeout)) {
-        Ok(url) => Ok(build_issue_result(repo, url)),
+    match runner(&cmd_refs, Some(timeout)) {
+        Ok(url) => Ok(build_issue_result_with_runner(repo, url, runner)),
         Err(error) => {
             // Label-not-found retry logic
             if let Some(l) = label {
                 let err_lower = error.to_lowercase();
                 if err_lower.contains("label") && err_lower.contains("not found") {
-                    return retry_with_label(repo, title, l, body, milestone, timeout);
+                    return retry_with_label_with_runner(
+                        repo, title, l, body, milestone, timeout, runner,
+                    );
                 }
             }
             Err(error)
@@ -245,16 +303,35 @@ pub fn create_issue(
     }
 }
 
-fn retry_with_label(
+/// Run gh issue create and return issue details.
+///
+/// Includes label-not-found retry logic: if the label doesn't exist,
+/// tries to create it, then retries. If label creation fails, retries
+/// without the label.
+pub fn create_issue(
+    repo: &str,
+    title: &str,
+    label: Option<&str>,
+    body: Option<&str>,
+    milestone: Option<&str>,
+) -> Result<IssueResult, String> {
+    create_issue_with_runner(repo, title, label, body, milestone, &run_gh_cmd)
+}
+
+/// Retry-with-label with an injected gh runner. Production wraps with
+/// `&run_gh_cmd`. Tests drive the label-create success/failure branches
+/// and the retry-with/without-label branches via the runner queue.
+pub fn retry_with_label_with_runner(
     repo: &str,
     title: &str,
     label: &str,
     body: Option<&str>,
     milestone: Option<&str>,
     timeout: Duration,
+    runner: &GhRunner,
 ) -> Result<IssueResult, String> {
     // Try creating the label
-    let label_created = run_gh_cmd(
+    let label_created = runner(
         &["gh", "label", "create", label, "--repo", repo],
         Some(timeout),
     )
@@ -284,14 +361,14 @@ fn retry_with_label(
     }
 
     let retry_refs: Vec<&str> = retry_args.iter().map(|s| s.as_str()).collect();
-    let url = run_gh_cmd(&retry_refs, Some(timeout))?;
-    Ok(build_issue_result(repo, url))
+    let url = runner(&retry_refs, Some(timeout))?;
+    Ok(build_issue_result_with_runner(repo, url, runner))
 }
 
-fn build_issue_result(repo: &str, url: String) -> IssueResult {
+fn build_issue_result_with_runner(repo: &str, url: String, runner: &GhRunner) -> IssueResult {
     let number = parse_issue_number(&url);
     let db_id = number.and_then(|n| {
-        let (id, _) = fetch_database_id(repo, n);
+        let (id, _) = fetch_database_id_with_runner(repo, n, runner);
         id
     });
     IssueResult {
@@ -301,15 +378,17 @@ fn build_issue_result(repo: &str, url: String) -> IssueResult {
     }
 }
 
-/// Run a gh CLI command, returning stdout on success.
-/// Returns Err with the error message on failure or timeout.
-pub fn run_gh_cmd(args: &[&str], timeout: Option<Duration>) -> Result<String, String> {
-    let mut child = Command::new(args[0])
-        .args(&args[1..])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn: {}", e))?;
+/// Run a gh-shaped subprocess via an injected child factory, returning
+/// stdout on success. The seam exists so unit tests cover the success,
+/// non-zero-exit, timeout-kill, and spawn-error branches without
+/// spawning real `gh`. Production wraps this with a closure that calls
+/// `Command::new(args[0]).args(&args[1..])`.
+pub fn run_gh_cmd_inner(
+    args: &[&str],
+    timeout: Option<Duration>,
+    child_factory: &dyn Fn(&[&str]) -> std::io::Result<std::process::Child>,
+) -> Result<String, String> {
+    let mut child = child_factory(args).map_err(|e| format!("Failed to spawn: {}", e))?;
 
     if let Some(dur) = timeout {
         let start = std::time::Instant::now();
@@ -347,6 +426,18 @@ pub fn run_gh_cmd(args: &[&str], timeout: Option<Duration>) -> Result<String, St
     }
 }
 
+/// Run a gh CLI command, returning stdout on success.
+/// Returns Err with the error message on failure or timeout.
+pub fn run_gh_cmd(args: &[&str], timeout: Option<Duration>) -> Result<String, String> {
+    run_gh_cmd_inner(args, timeout, &|args| {
+        Command::new(args[0])
+            .args(&args[1..])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+    })
+}
+
 pub fn extract_error(stderr: &str, stdout: &str) -> String {
     if !stderr.is_empty() {
         stderr.to_string()
@@ -357,79 +448,106 @@ pub fn extract_error(stderr: &str, stdout: &str) -> String {
     }
 }
 
-fn detect_repo_or_fail(root: &Path) -> String {
-    match detect_repo(Some(root)) {
-        Some(r) => r,
-        None => {
-            json_error(
-                "Could not detect repo from git remote. Use --repo owner/name.",
-                &[],
-            );
-            std::process::exit(1);
-        }
-    }
-}
-
-pub fn run(args: Args) {
-    let root = project_root();
-
-    // Code Review filing gate: load the current branch's state file
-    // (if any) and reject filing when current_phase is flow-code-review,
-    // unless --override-code-review-ban was passed. Missing / malformed
-    // state file passes through — this command is also used outside an
-    // active flow.
-    let state_json: Option<String> = resolve_branch(None, &root).and_then(|branch| {
-        let state_path = FlowPaths::new(&root, &branch).state_file();
-        fs::read_to_string(&state_path).ok()
-    });
+/// Main-arm dispatcher: compute the issue-create result and pair it with
+/// an exit code. Returns `(value, 0)` on success, `(error_value, 1)` on
+/// any failure path. All previously `process::exit`-bearing branches
+/// (Code Review filing block, repo-detect failure, body-file read
+/// failure, gh-create failure) now return the error tuple instead.
+///
+/// Closure parameters seam off the production dependencies so unit tests
+/// can drive every branch without spawning real `gh` or relying on a
+/// host git remote:
+/// - `state_reader` returns the current branch's state file content
+///   (or `None` if no flow is active). Production binds it to
+///   `resolve_branch + read_to_string`.
+/// - `repo_resolver` returns the repo from `git remote` (or `None`).
+///   Production binds it to `detect_repo(Some(root))`.
+/// - `runner` is the gh-runner closure threaded through to
+///   `create_issue_with_runner`. Production binds it to `&run_gh_cmd`.
+pub fn run_impl_main(
+    args: Args,
+    root: &Path,
+    state_reader: &dyn Fn() -> Option<String>,
+    repo_resolver: &dyn Fn() -> Option<String>,
+    runner: &GhRunner,
+) -> (serde_json::Value, i32) {
+    // Code Review filing gate.
+    let state_json = state_reader();
     if let Some(msg) =
         should_reject_for_code_review(state_json.as_deref(), args.override_code_review_ban)
     {
-        json_error(&msg, &[]);
-        std::process::exit(1);
+        return (json!({"status": "error", "message": msg}), 1);
     }
 
-    // Resolve repo: --repo > --state-file > detect_repo
+    // Resolve repo: --repo > --state-file > repo_resolver().
     let repo = if let Some(r) = args.repo {
         r
     } else if let Some(ref sf) = args.state_file {
-        resolve_repo_from_state(sf).unwrap_or_else(|| detect_repo_or_fail(&root))
+        match resolve_repo_from_state(sf).or_else(repo_resolver) {
+            Some(r) => r,
+            None => {
+                return (
+                    json!({"status": "error", "message": "Could not detect repo from git remote. Use --repo owner/name."}),
+                    1,
+                )
+            }
+        }
     } else {
-        detect_repo_or_fail(&root)
+        match repo_resolver() {
+            Some(r) => r,
+            None => {
+                return (
+                    json!({"status": "error", "message": "Could not detect repo from git remote. Use --repo owner/name."}),
+                    1,
+                )
+            }
+        }
     };
 
-    // Read body from file if provided
+    // Read body from file if provided.
     let body = if let Some(ref bf) = args.body_file {
-        match read_body_file(bf, &root) {
+        match read_body_file(bf, root) {
             Ok(b) => Some(b),
-            Err(e) => {
-                json_error(&e, &[]);
-                std::process::exit(1);
-            }
+            Err(e) => return (json!({"status": "error", "message": e}), 1),
         }
     } else {
         None
     };
 
-    match create_issue(
+    match create_issue_with_runner(
         &repo,
         &args.title,
         args.label.as_deref(),
         body.as_deref(),
         args.milestone.as_deref(),
+        runner,
     ) {
-        Ok(result) => {
-            json_ok(&[
-                ("url", json!(result.url)),
-                ("number", json!(result.number)),
-                ("id", json!(result.id)),
-            ]);
-        }
-        Err(e) => {
-            json_error(&e, &[]);
-            std::process::exit(1);
-        }
+        Ok(result) => (
+            json!({
+                "status": "ok",
+                "url": result.url,
+                "number": result.number,
+                "id": result.id,
+            }),
+            0,
+        ),
+        Err(e) => (json!({"status": "error", "message": e}), 1),
     }
+}
+
+pub fn run(args: Args) -> ! {
+    let root = project_root();
+    let root_for_state = root.clone();
+    let root_for_repo = root.clone();
+    let state_reader = move || -> Option<String> {
+        resolve_branch(None, &root_for_state).and_then(|branch| {
+            let state_path = FlowPaths::new(&root_for_state, &branch).state_file();
+            fs::read_to_string(&state_path).ok()
+        })
+    };
+    let repo_resolver = move || -> Option<String> { detect_repo(Some(&root_for_repo)) };
+    let (value, code) = run_impl_main(args, &root, &state_reader, &repo_resolver, &run_gh_cmd);
+    crate::dispatch::dispatch_json(value, code)
 }
 
 fn resolve_repo_from_state(state_file: &str) -> Option<String> {
@@ -706,10 +824,29 @@ mod tests {
 
     #[test]
     fn gate_fails_closed_when_state_has_bom() {
-        // UTF-8 BOM prefix breaks serde_json parsing.
+        // UTF-8 BOM prefix breaks serde_json parsing. The defense-in-
+        // depth raw-text scanner catches the literal current_phase key
+        // before parsing, so BOM-prefixed code-review state still
+        // blocks (with the standard Code Review message rather than
+        // the fail-closed message).
         let state = "\u{feff}{\"current_phase\":\"flow-code-review\"}";
         let msg = should_reject_for_code_review(Some(state), false);
-        assert!(msg.is_some(), "BOM prefix must fail CLOSED");
+        assert!(msg.is_some(), "BOM prefix must not bypass the gate");
+        assert!(msg.unwrap().contains("Code Review"));
+    }
+
+    #[test]
+    fn gate_fails_closed_when_state_has_bom_and_no_code_review() {
+        // BOM-prefixed state with a non-code-review phase must
+        // fail-closed: the raw scanner finds no flow-code-review key,
+        // so the parser path runs, fails on BOM, and surfaces the
+        // not-valid-JSON message.
+        let state = "\u{feff}{\"current_phase\":\"flow-learn\"}";
+        let msg = should_reject_for_code_review(Some(state), false);
+        assert!(
+            msg.is_some(),
+            "BOM-prefixed state must fail CLOSED on parse error"
+        );
         assert!(msg.unwrap().contains("not valid JSON"));
     }
 
@@ -749,6 +886,48 @@ mod tests {
         assert!(msg.unwrap().contains("Code Review"));
     }
 
+    #[test]
+    fn gate_blocks_when_current_phase_duplicate_key_serde_last_wins() {
+        // Per .claude/rules/security-gates.md "Enumerate Bypass
+        // Variants" §5: serde_json's default last-wins behavior with
+        // duplicate keys would let a crafted state file
+        // {"current_phase":"flow-code-review","current_phase":"flow-learn"}
+        // bypass the parsed-value gate. The raw-text scanner must
+        // catch any current_phase key whose value normalizes to
+        // flow-code-review regardless of position.
+        let state = r#"{"current_phase":"flow-code-review","current_phase":"flow-learn"}"#;
+        let msg = should_reject_for_code_review(Some(state), false);
+        assert!(
+            msg.is_some(),
+            "duplicate-key bypass must not defeat the gate"
+        );
+        assert!(msg.unwrap().contains("Code Review"));
+    }
+
+    #[test]
+    fn gate_blocks_when_duplicate_key_in_reverse_order() {
+        // Symmetric: even when the bypass value comes first, the
+        // raw scanner finds the flow-code-review occurrence later in
+        // the document.
+        let state = r#"{"current_phase":"flow-learn","current_phase":"flow-code-review"}"#;
+        let msg = should_reject_for_code_review(Some(state), false);
+        assert!(
+            msg.is_some(),
+            "duplicate-key bypass must not defeat the gate"
+        );
+        assert!(msg.unwrap().contains("Code Review"));
+    }
+
+    #[test]
+    fn gate_blocks_when_current_phase_value_has_padding_in_raw_text() {
+        // Whitespace-padded current_phase value must be caught by the
+        // raw-text scanner as well as the parsed-value path.
+        let state = r#"{"current_phase":" flow-code-review "}"#;
+        let msg = should_reject_for_code_review(Some(state), false);
+        assert!(msg.is_some());
+        assert!(msg.unwrap().contains("Code Review"));
+    }
+
     // --- Args override flag ---
 
     #[test]
@@ -762,5 +941,306 @@ mod tests {
     fn args_override_defaults_to_false() {
         let args = Args::try_parse_from(["issue", "--title", "Test"]).unwrap();
         assert!(!args.override_code_review_ban);
+    }
+
+    // --- _with_runner seams (create_issue, retry_with_label, fetch_database_id) ---
+
+    use std::cell::RefCell;
+    use std::collections::VecDeque;
+
+    type GhResult = Result<String, String>;
+
+    fn mock_runner(responses: Vec<GhResult>) -> impl Fn(&[&str], Option<Duration>) -> GhResult {
+        let queue = RefCell::new(VecDeque::from(responses));
+        move |_args: &[&str], _timeout: Option<Duration>| -> GhResult {
+            queue
+                .borrow_mut()
+                .pop_front()
+                .expect("no more mock responses")
+        }
+    }
+
+    #[test]
+    fn create_issue_with_runner_returns_result_on_runner_ok() {
+        let runner = mock_runner(vec![
+            Ok("https://github.com/owner/name/issues/42".to_string()),
+            Ok("12345".to_string()),
+        ]);
+        let result =
+            create_issue_with_runner("owner/name", "Title", None, None, None, &runner).unwrap();
+        assert_eq!(result.url, "https://github.com/owner/name/issues/42");
+        assert_eq!(result.number, Some(42));
+        assert_eq!(result.id, Some(12345));
+    }
+
+    #[test]
+    fn create_issue_with_runner_propagates_err_when_label_none() {
+        let runner = mock_runner(vec![Err("network down".to_string())]);
+        let err =
+            create_issue_with_runner("owner/name", "Title", None, None, None, &runner).unwrap_err();
+        assert!(err.contains("network down"));
+    }
+
+    #[test]
+    fn create_issue_with_runner_label_not_found_triggers_retry() {
+        // Sequence: create fails with "label not found" → label create OK → retry OK → fetch_database_id OK
+        let runner = mock_runner(vec![
+            Err("could not add label: label not found".to_string()),
+            Ok(String::new()),
+            Ok("https://github.com/owner/name/issues/77".to_string()),
+            Ok("9999".to_string()),
+        ]);
+        let result =
+            create_issue_with_runner("owner/name", "Title", Some("Bug"), None, None, &runner)
+                .unwrap();
+        assert_eq!(result.number, Some(77));
+        assert_eq!(result.id, Some(9999));
+    }
+
+    #[test]
+    fn create_issue_with_runner_propagates_unrelated_err() {
+        let runner = mock_runner(vec![Err("authentication failed".to_string())]);
+        let err = create_issue_with_runner("owner/name", "Title", Some("Bug"), None, None, &runner)
+            .unwrap_err();
+        assert!(err.contains("authentication failed"));
+    }
+
+    #[test]
+    fn retry_with_label_with_runner_label_created_then_retry_succeeds() {
+        let runner = mock_runner(vec![
+            Ok(String::new()),
+            Ok("https://github.com/owner/name/issues/55".to_string()),
+            Ok("5555".to_string()),
+        ]);
+        let result = retry_with_label_with_runner(
+            "owner/name",
+            "Title",
+            "Flow",
+            None,
+            None,
+            Duration::from_secs(5),
+            &runner,
+        )
+        .unwrap();
+        assert_eq!(result.number, Some(55));
+    }
+
+    #[test]
+    fn retry_with_label_with_runner_label_create_fails_retries_without_label() {
+        let runner = mock_runner(vec![
+            Err("label create permission denied".to_string()),
+            Ok("https://github.com/owner/name/issues/33".to_string()),
+            Ok("3333".to_string()),
+        ]);
+        let result = retry_with_label_with_runner(
+            "owner/name",
+            "Title",
+            "Flow",
+            None,
+            None,
+            Duration::from_secs(5),
+            &runner,
+        )
+        .unwrap();
+        assert_eq!(result.number, Some(33));
+    }
+
+    #[test]
+    fn retry_with_label_with_runner_retry_fails_propagates_err() {
+        let runner = mock_runner(vec![Ok(String::new()), Err("retry timeout".to_string())]);
+        let err = retry_with_label_with_runner(
+            "owner/name",
+            "Title",
+            "Flow",
+            None,
+            None,
+            Duration::from_secs(5),
+            &runner,
+        )
+        .unwrap_err();
+        assert!(err.contains("retry timeout"));
+    }
+
+    #[test]
+    fn fetch_database_id_with_runner_returns_id_on_ok_numeric() {
+        let runner = mock_runner(vec![Ok("42".to_string())]);
+        let (id, err) = fetch_database_id_with_runner("owner/name", 1, &runner);
+        assert_eq!(id, Some(42));
+        assert!(err.is_none());
+    }
+
+    #[test]
+    fn fetch_database_id_with_runner_returns_err_on_invalid_id() {
+        let runner = mock_runner(vec![Ok("not-a-number".to_string())]);
+        let (id, err) = fetch_database_id_with_runner("owner/name", 1, &runner);
+        assert!(id.is_none());
+        assert!(err.unwrap().contains("Invalid ID"));
+    }
+
+    #[test]
+    fn fetch_database_id_with_runner_propagates_runner_err() {
+        let runner = mock_runner(vec![Err("api down".to_string())]);
+        let (id, err) = fetch_database_id_with_runner("owner/name", 1, &runner);
+        assert!(id.is_none());
+        assert!(err.unwrap().contains("api down"));
+    }
+
+    // --- run_impl_main ---
+
+    #[test]
+    fn issue_run_impl_main_blocked_by_code_review_returns_error_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = || Some(r#"{"current_phase":"flow-code-review"}"#.to_string());
+        let repo = || Some("owner/name".to_string());
+        let runner = mock_runner(vec![]);
+        let args = Args {
+            repo: Some("owner/name".to_string()),
+            title: "Test".to_string(),
+            label: None,
+            body_file: None,
+            state_file: None,
+            milestone: None,
+            override_code_review_ban: false,
+        };
+        let (value, code) = run_impl_main(args, dir.path(), &state, &repo, &runner);
+        assert_eq!(value["status"], "error");
+        assert_eq!(code, 1);
+        assert!(value["message"].as_str().unwrap().contains("Code Review"));
+    }
+
+    #[test]
+    fn issue_run_impl_main_no_repo_returns_error_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = || None;
+        let repo = || None;
+        let runner = mock_runner(vec![]);
+        let args = Args {
+            repo: None,
+            title: "Test".to_string(),
+            label: None,
+            body_file: None,
+            state_file: None,
+            milestone: None,
+            override_code_review_ban: false,
+        };
+        let (value, code) = run_impl_main(args, dir.path(), &state, &repo, &runner);
+        assert_eq!(value["status"], "error");
+        assert_eq!(code, 1);
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Could not detect repo"));
+    }
+
+    #[test]
+    fn issue_run_impl_main_body_file_missing_returns_error_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = || None;
+        let repo = || Some("owner/name".to_string());
+        let runner = mock_runner(vec![]);
+        let args = Args {
+            repo: Some("owner/name".to_string()),
+            title: "Test".to_string(),
+            label: None,
+            body_file: Some("nonexistent-body.md".to_string()),
+            state_file: None,
+            milestone: None,
+            override_code_review_ban: false,
+        };
+        let (value, code) = run_impl_main(args, dir.path(), &state, &repo, &runner);
+        assert_eq!(value["status"], "error");
+        assert_eq!(code, 1);
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Could not read body file"));
+    }
+
+    #[test]
+    fn issue_run_impl_main_happy_path_returns_ok_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = || None;
+        let repo = || Some("owner/name".to_string());
+        let runner = mock_runner(vec![
+            Ok("https://github.com/owner/name/issues/100".to_string()),
+            Ok("777".to_string()),
+        ]);
+        let args = Args {
+            repo: Some("owner/name".to_string()),
+            title: "Test".to_string(),
+            label: None,
+            body_file: None,
+            state_file: None,
+            milestone: None,
+            override_code_review_ban: false,
+        };
+        let (value, code) = run_impl_main(args, dir.path(), &state, &repo, &runner);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["number"], 100);
+        assert_eq!(value["id"], 777);
+    }
+
+    // --- run_gh_cmd_inner ---
+
+    use std::process::{Child, Stdio};
+
+    #[test]
+    fn run_gh_cmd_inner_success_returns_stdout() {
+        let factory = |_args: &[&str]| {
+            std::process::Command::new("sh")
+                .args(["-c", "echo ok"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let out =
+            run_gh_cmd_inner(&["irrelevant"], Some(Duration::from_secs(5)), &factory).unwrap();
+        assert_eq!(out, "ok");
+    }
+
+    #[test]
+    fn run_gh_cmd_inner_nonzero_returns_extracted_error() {
+        let factory = |_args: &[&str]| {
+            std::process::Command::new("sh")
+                .args(["-c", "echo boom 1>&2; exit 1"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let err =
+            run_gh_cmd_inner(&["irrelevant"], Some(Duration::from_secs(5)), &factory).unwrap_err();
+        assert!(err.contains("boom"));
+    }
+
+    #[test]
+    fn run_gh_cmd_inner_timeout_kills_child_returns_err() {
+        let factory = |_args: &[&str]| {
+            std::process::Command::new("sleep")
+                .arg("5")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let err =
+            run_gh_cmd_inner(&["irrelevant"], Some(Duration::from_secs(1)), &factory).unwrap_err();
+        assert!(
+            err.to_lowercase().contains("timed out"),
+            "expected timeout error, got {}",
+            err
+        );
+    }
+
+    #[test]
+    fn run_gh_cmd_inner_spawn_error_returns_err() {
+        let factory = |_args: &[&str]| -> std::io::Result<Child> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no such binary",
+            ))
+        };
+        let err =
+            run_gh_cmd_inner(&["irrelevant"], Some(Duration::from_secs(5)), &factory).unwrap_err();
+        assert!(err.contains("no such binary") || err.contains("Failed to spawn"));
     }
 }

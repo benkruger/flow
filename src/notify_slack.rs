@@ -11,8 +11,8 @@
 //!
 //! # Public entry points
 //!
-//! The module exposes a two-tier layering so inline tests can drive every
-//! branch without env-var mutation or real `curl` subprocesses:
+//! The module exposes a layered architecture so inline tests can drive
+//! every branch without env-var mutation or real `curl` subprocesses:
 //!
 //! - [`notify_with_deps`] — dependency-injected core. Accepts a
 //!   `config_reader` closure returning `Option<SlackConfig>` and a
@@ -20,18 +20,24 @@
 //! - [`notify`] — production binder that wires `notify_with_deps` to
 //!   [`read_slack_config`] (env-var reader) and [`post_message_inner`]
 //!   bound to [`run_curl_with_timeout`] (real curl subprocess).
-//! - [`run_with_deps`] — CLI layer with an injected
-//!   `writer: &mut dyn Write`. Computes the notify result and writes one
-//!   JSON line. Testable via in-memory `Vec<u8>` buffers.
-//! - [`run`] — production CLI entry. Wires `run_with_deps` to
-//!   `std::io::stdout()` and the production closures above.
+//! - [`read_slack_config_with_env`] — env-var reader parameterized over
+//!   `token_reader` and `channel_reader` closures so tests can drive
+//!   present/absent/empty without process-wide env mutation.
+//! - [`run_curl_with_timeout_inner`] — curl subprocess wrapper
+//!   parameterized over a `child_factory` closure so tests can drive
+//!   spawn failure, timeout, and stderr capture without real `curl`.
+//! - [`run_impl_main`] — main-arm dispatcher accepting injected
+//!   `config_reader` and `poster` closures, returning `(Value, i32)`.
+//!   Production wraps via [`run`].
+//! - [`run`] — production CLI entry. Routes `run_impl_main` through
+//!   [`crate::dispatch::dispatch_json`] for stdout/exit-code dispatch.
 //!
 //! The inner [`post_message_inner`] closure seam (injected `curl` runner)
-//! predates this split and remains the existing test entry for the
-//! `curl` response-parsing branches (success, 4xx/5xx, invalid JSON,
-//! timeout) via the inline `mock_curl` helper.
+//! is the existing test entry for the `curl` response-parsing branches
+//! (success, 4xx/5xx, invalid JSON, timeout) via the inline `mock_curl`
+//! helper.
 
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use clap::Parser;
@@ -82,11 +88,23 @@ pub fn build_config(bot_token: &str, channel: &str) -> Option<SlackConfig> {
     })
 }
 
+/// Read slack config via injected env-readers. Production wraps this with
+/// closures that call `std::env::var(TOKEN_ENV)` and
+/// `std::env::var(CHANNEL_ENV)`. The seam exists so unit tests cover the
+/// configuration build paths without `std::env::set_var` (forbidden in
+/// parallel tests per `.claude/rules/testing-gotchas.md`).
+pub fn read_slack_config_with_env(
+    token_reader: &dyn Fn() -> String,
+    channel_reader: &dyn Fn() -> String,
+) -> Option<SlackConfig> {
+    build_config(&token_reader(), &channel_reader())
+}
+
 /// Read slack config from env vars. Returns None if not configured.
 pub fn read_slack_config() -> Option<SlackConfig> {
-    let bot_token = std::env::var(TOKEN_ENV).unwrap_or_default();
-    let channel = std::env::var(CHANNEL_ENV).unwrap_or_default();
-    build_config(&bot_token, &channel)
+    read_slack_config_with_env(&|| std::env::var(TOKEN_ENV).unwrap_or_default(), &|| {
+        std::env::var(CHANNEL_ENV).unwrap_or_default()
+    })
 }
 
 /// Format a Slack notification message.
@@ -171,17 +189,18 @@ pub fn post_message_inner(
     }
 }
 
-/// Run curl as a subprocess with timeout.
-fn run_curl_with_timeout(
+/// Run a curl-shaped subprocess with timeout via an injected child factory.
+///
+/// `child_factory` returns a spawned `Child` (with stdout/stderr piped) for
+/// the supplied args. The seam exists so unit tests cover the success,
+/// timeout-kill, and spawn-error branches without spawning real `curl`.
+/// Production wraps this with a closure that calls `Command::new("curl")`.
+pub fn run_curl_with_timeout_inner(
     args: &[&str],
     timeout_secs: u64,
+    child_factory: &dyn Fn(&[&str]) -> std::io::Result<Child>,
 ) -> Result<(i32, String, String), String> {
-    let mut child = Command::new("curl")
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn curl: {}", e))?;
+    let mut child = child_factory(args).map_err(|e| format!("Failed to spawn curl: {}", e))?;
 
     let timeout = Duration::from_secs(timeout_secs);
     let start = Instant::now();
@@ -208,6 +227,21 @@ fn run_curl_with_timeout(
             Err(e) => return Err(e.to_string()),
         }
     }
+}
+
+/// Run curl as a subprocess with timeout. Production binder over
+/// [`run_curl_with_timeout_inner`].
+fn run_curl_with_timeout(
+    args: &[&str],
+    timeout_secs: u64,
+) -> Result<(i32, String, String), String> {
+    run_curl_with_timeout_inner(args, timeout_secs, &|args| {
+        Command::new("curl")
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    })
 }
 
 /// Core notification logic with injectable config reader and poster.
@@ -250,33 +284,25 @@ pub fn notify(args: &Args) -> Value {
     })
 }
 
-/// CLI entry with injectable dependencies and writer.
-///
-/// Computes the notify result via `notify_with_deps` and writes it as JSON
-/// followed by a newline to `writer`. Production `run` binds the closures
-/// to `read_slack_config` + `post_message_inner(…, run_curl_with_timeout)`
-/// and passes `std::io::stdout()` so the CLI prints a single JSON line.
+/// Main-arm dispatcher: compute the notify result and pair it with an
+/// exit code. Always returns `(value, 0)` — failure modes surface as
+/// `status: "error"` inside the Value, never via shell exit code.
+/// `notify-slack` is best-effort by design: a failed Slack post must not
+/// fail the calling phase.
 #[allow(clippy::type_complexity)]
-pub fn run_with_deps(
+pub fn run_impl_main(
     args: Args,
     config_reader: &dyn Fn() -> Option<SlackConfig>,
     poster: &dyn Fn(&str, &str, &str, Option<&str>) -> Value,
-    writer: &mut dyn std::io::Write,
-) {
-    let result = notify_with_deps(&args, config_reader, poster);
-    let _ = writeln!(writer, "{}", result);
+) -> (Value, i32) {
+    (notify_with_deps(&args, config_reader, poster), 0)
 }
 
-pub fn run(args: Args) {
-    let mut stdout = std::io::stdout();
-    run_with_deps(
-        args,
-        &read_slack_config,
-        &|bot, channel, text, tts| {
-            post_message_inner(bot, channel, text, tts, &run_curl_with_timeout)
-        },
-        &mut stdout,
-    );
+pub fn run(args: Args) -> ! {
+    let (value, code) = run_impl_main(args, &read_slack_config, &|bot, channel, text, tts| {
+        post_message_inner(bot, channel, text, tts, &run_curl_with_timeout)
+    });
+    crate::dispatch::dispatch_json(value, code)
 }
 
 #[cfg(test)]
@@ -321,6 +347,31 @@ mod tests {
         assert!(build_config("", "").is_none());
     }
 
+    // --- read_slack_config_with_env ---
+
+    #[test]
+    fn read_slack_config_with_env_returns_config_when_both_present() {
+        let token = || "xoxb-test-token".to_string();
+        let channel = || "C12345".to_string();
+        let config = read_slack_config_with_env(&token, &channel).unwrap();
+        assert_eq!(config.bot_token, "xoxb-test-token");
+        assert_eq!(config.channel, "C12345");
+    }
+
+    #[test]
+    fn read_slack_config_with_env_returns_none_when_token_empty() {
+        let token = || String::new();
+        let channel = || "C12345".to_string();
+        assert!(read_slack_config_with_env(&token, &channel).is_none());
+    }
+
+    #[test]
+    fn read_slack_config_with_env_returns_none_when_channel_empty() {
+        let token = || "xoxb-test-token".to_string();
+        let channel = || String::new();
+        assert!(read_slack_config_with_env(&token, &channel).is_none());
+    }
+
     // --- format_message ---
 
     #[test]
@@ -346,6 +397,53 @@ mod tests {
     fn format_message_unknown_phase() {
         let result = format_message("unknown-phase", "Some message", None, None);
         assert!(result.contains("Some message"));
+    }
+
+    // --- run_curl_with_timeout_inner ---
+
+    #[test]
+    fn run_curl_with_timeout_inner_success_returns_output() {
+        let factory = |_args: &[&str]| {
+            Command::new("sh")
+                .args(["-c", "echo ok"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let (code, stdout, stderr) =
+            run_curl_with_timeout_inner(&["irrelevant"], 5, &factory).unwrap();
+        assert_eq!(code, 0);
+        assert!(stdout.contains("ok"));
+        assert!(stderr.is_empty());
+    }
+
+    #[test]
+    fn run_curl_with_timeout_inner_timeout_kills_child_returns_err() {
+        let factory = |_args: &[&str]| {
+            Command::new("sleep")
+                .arg("5")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let err = run_curl_with_timeout_inner(&["irrelevant"], 1, &factory).unwrap_err();
+        assert!(
+            err.to_lowercase().contains("timeout"),
+            "expected timeout error, got {}",
+            err
+        );
+    }
+
+    #[test]
+    fn run_curl_with_timeout_inner_spawn_error_returns_err() {
+        let factory = |_args: &[&str]| -> std::io::Result<std::process::Child> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no such binary",
+            ))
+        };
+        let err = run_curl_with_timeout_inner(&["irrelevant"], 5, &factory).unwrap_err();
+        assert!(err.contains("no such binary") || err.contains("Failed to spawn"));
     }
 
     // --- post_message_inner ---
@@ -415,6 +513,15 @@ mod tests {
 
         let result = post_message_inner("xoxb-token", "C12345", "Hello", None, &curl);
         assert_eq!(result["status"], "error");
+    }
+
+    #[test]
+    fn post_message_curl_failure_empty_stderr_returns_curl_failed() {
+        let curl = mock_curl(vec![Ok((1, String::new(), String::new()))]);
+
+        let result = post_message_inner("xoxb-token", "C12345", "Hello", None, &curl);
+        assert_eq!(result["status"], "error");
+        assert_eq!(result["message"], "curl failed");
     }
 
     #[test]
@@ -520,27 +627,23 @@ mod tests {
         assert_eq!(tts.as_deref(), Some("1234567890.123456"));
     }
 
-    // --- run_with_deps ---
+    // --- run_impl_main ---
 
     #[test]
-    fn run_with_deps_prints_notify_json() {
+    fn notify_slack_run_impl_main_writes_skipped_json_when_unconfigured() {
         let args = test_args("flow-start", "hi", None, None, None);
         let config_reader = || None;
         let poster = |_: &str, _: &str, _: &str, _: Option<&str>| -> Value {
             json!({"status": "ok", "ts": "9.9"})
         };
-        let mut buf: Vec<u8> = Vec::new();
-        run_with_deps(args, &config_reader, &poster, &mut buf);
-        let out = String::from_utf8(buf).unwrap();
-        // When config_reader returns None the result is the skipped JSON.
-        assert!(out.contains("\"status\":\"skipped\""));
-        // writeln! appends a newline; the production path needs the newline
-        // so `run` output is line-delimited for shell consumers.
-        assert!(out.ends_with('\n'));
+        let (value, code) = run_impl_main(args, &config_reader, &poster);
+        assert_eq!(value["status"], "skipped");
+        assert_eq!(value["reason"], "no slack config");
+        assert_eq!(code, 0);
     }
 
     #[test]
-    fn run_with_deps_success_writes_ok_json() {
+    fn notify_slack_run_impl_main_writes_ok_json_on_success() {
         let args = test_args("flow-start", "hi", None, None, None);
         let config_reader = || {
             Some(SlackConfig {
@@ -551,11 +654,10 @@ mod tests {
         let poster = |_: &str, _: &str, _: &str, _: Option<&str>| -> Value {
             json!({"status": "ok", "ts": "9.9"})
         };
-        let mut buf: Vec<u8> = Vec::new();
-        run_with_deps(args, &config_reader, &poster, &mut buf);
-        let out = String::from_utf8(buf).unwrap();
-        assert!(out.contains("\"status\":\"ok\""));
-        assert!(out.contains("\"ts\":\"9.9\""));
+        let (value, code) = run_impl_main(args, &config_reader, &poster);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["ts"], "9.9");
+        assert_eq!(code, 0);
     }
 
     #[test]
