@@ -31,7 +31,7 @@
 //! `curl` response-parsing branches (success, 4xx/5xx, invalid JSON,
 //! timeout) via the inline `mock_curl` helper.
 
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use clap::Parser;
@@ -183,17 +183,18 @@ pub fn post_message_inner(
     }
 }
 
-/// Run curl as a subprocess with timeout.
-fn run_curl_with_timeout(
+/// Run a curl-shaped subprocess with timeout via an injected child factory.
+///
+/// `child_factory` returns a spawned `Child` (with stdout/stderr piped) for
+/// the supplied args. The seam exists so unit tests cover the success,
+/// timeout-kill, and spawn-error branches without spawning real `curl`.
+/// Production wraps this with a closure that calls `Command::new("curl")`.
+pub fn run_curl_with_timeout_inner(
     args: &[&str],
     timeout_secs: u64,
+    child_factory: &dyn Fn(&[&str]) -> std::io::Result<Child>,
 ) -> Result<(i32, String, String), String> {
-    let mut child = Command::new("curl")
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn curl: {}", e))?;
+    let mut child = child_factory(args).map_err(|e| format!("Failed to spawn curl: {}", e))?;
 
     let timeout = Duration::from_secs(timeout_secs);
     let start = Instant::now();
@@ -220,6 +221,21 @@ fn run_curl_with_timeout(
             Err(e) => return Err(e.to_string()),
         }
     }
+}
+
+/// Run curl as a subprocess with timeout. Production binder over
+/// [`run_curl_with_timeout_inner`].
+fn run_curl_with_timeout(
+    args: &[&str],
+    timeout_secs: u64,
+) -> Result<(i32, String, String), String> {
+    run_curl_with_timeout_inner(args, timeout_secs, &|args| {
+        Command::new("curl")
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    })
 }
 
 /// Core notification logic with injectable config reader and poster.
@@ -383,6 +399,53 @@ mod tests {
     fn format_message_unknown_phase() {
         let result = format_message("unknown-phase", "Some message", None, None);
         assert!(result.contains("Some message"));
+    }
+
+    // --- run_curl_with_timeout_inner ---
+
+    #[test]
+    fn run_curl_with_timeout_inner_success_returns_output() {
+        let factory = |_args: &[&str]| {
+            Command::new("sh")
+                .args(["-c", "echo ok"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let (code, stdout, stderr) =
+            run_curl_with_timeout_inner(&["irrelevant"], 5, &factory).unwrap();
+        assert_eq!(code, 0);
+        assert!(stdout.contains("ok"));
+        assert!(stderr.is_empty());
+    }
+
+    #[test]
+    fn run_curl_with_timeout_inner_timeout_kills_child_returns_err() {
+        let factory = |_args: &[&str]| {
+            Command::new("sleep")
+                .arg("5")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let err = run_curl_with_timeout_inner(&["irrelevant"], 1, &factory).unwrap_err();
+        assert!(
+            err.to_lowercase().contains("timeout"),
+            "expected timeout error, got {}",
+            err
+        );
+    }
+
+    #[test]
+    fn run_curl_with_timeout_inner_spawn_error_returns_err() {
+        let factory = |_args: &[&str]| -> std::io::Result<std::process::Child> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no such binary",
+            ))
+        };
+        let err = run_curl_with_timeout_inner(&["irrelevant"], 5, &factory).unwrap_err();
+        assert!(err.contains("no such binary") || err.contains("Failed to spawn"));
     }
 
     // --- post_message_inner ---
