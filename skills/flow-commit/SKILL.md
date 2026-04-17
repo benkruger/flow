@@ -214,12 +214,11 @@ Display the full message under the heading **Commit Message**.
 
 Files are already staged from Round 3. No need to `git add -A` again.
 
-**Compose the commit message.** Use the Write tool to write the message
-content to `.flow-states/<branch>-commit-msg-content.md` — a
-branch-scoped temp path, not the final `.flow-commit-msg`. This avoids
-Claude Code's Write-tool preflight tripping on a pre-existing
-`.flow-commit-msg` from a prior commit retry
-(see `.claude/rules/file-tool-preflights.md`).
+Use the Write tool to write the commit message content to
+`.flow-states/<branch>-commit-msg-content.md` — a branch-scoped temp
+path, not the final `.flow-commit-msg`. This avoids Claude Code's
+Write-tool preflight tripping on a pre-existing `.flow-commit-msg`
+from a prior commit retry (see `.claude/rules/file-tool-preflights.md`).
 
 - The file is inside the project, so the Write tool has permission without prompting
 - The Write tool handles newlines and special characters safely — no shell escaping needed
@@ -227,7 +226,8 @@ Claude Code's Write-tool preflight tripping on a pre-existing
 - Never use `python3 -c` to write the message — literal `$(...)` in the body triggers command substitution warnings
 - Never use `git commit -m` with heredoc — the multi-line command fails permission pattern matching
 
-**Apply the write** to the final `.flow-commit-msg` path:
+Route the content to the final `.flow-commit-msg` path via
+`bin/flow write-rule`:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-commit-msg --content-file .flow-states/<branch>-commit-msg-content.md

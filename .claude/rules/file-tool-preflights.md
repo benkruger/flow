@@ -24,10 +24,20 @@ comes from:
 3. Context compaction during a long turn drops Read-tracking.
 4. An aborted earlier session left the file.
 
+Recovery from a preflight block requires manual workaround outside the
+normal skill workflow — the model has to invoke Read on the blocked path
+before the Write can proceed, which wastes turns and can corrupt the
+workflow if the model instead accepts whatever content is already on
+disk.
+
 ## Monitored Target Paths
 
-These paths are branch-scoped or literal persistent targets. Writes to
-them must route through `bin/flow write-rule`:
+Monitored paths are files FLOW skills write to repeatedly across
+invocations (branch-scoped or machine-level singletons) or files that
+may pre-exist from a prior session on fresh re-entry. Session-scoped
+files with a unique `-<id>` suffix are excluded because the id makes
+cross-invocation collision unlikely. Writes to the monitored set must
+route through `bin/flow write-rule`:
 
 - `.flow-states/<branch>-dag.md` — the decompose-produced DAG file
 - `.flow-states/<branch>-plan.md` — the Plan-phase implementation plan
@@ -46,15 +56,21 @@ Intermediate content files that the model Writes as input to
 are the Write-tool input, not a persistent target. The `write-rule`
 subcommand reads and deletes them unconditionally.
 
+When a new persistent path becomes a monitored target (e.g. a new skill
+writes to a shared file or a new machine-level singleton is introduced),
+add it to this list AND to `WRITE_MONITORED_PATHS` in
+`tests/skill_contracts.rs`. The contract test scans every SKILL.md for
+Write-tool instructions adjacent to any entry in that constant.
+
 ## The Write-Rule Escape Pattern
 
-The pattern flow-learn has used for `.claude/` writes for some time, now
-extended to all monitored paths:
+The pattern `flow-learn` uses for `.claude/` writes also applies to all
+monitored paths:
 
-1. Model Writes content to `.flow-states/<branch>-<purpose>-content.md`
+1. The model Writes content to `.flow-states/<branch>-<purpose>-content.md`
    using the Write tool. The content file has a unique name per write
-   so pre-existence is rare.
-2. Model invokes `bin/flow write-rule --path <final_target>
+   (branch + purpose), so pre-existence is rare.
+2. The model invokes `bin/flow write-rule --path <final_target>
    --content-file <content_file>`. The Rust code reads the content file,
    calls `std::fs::write(<final_target>, <content>)` unconditionally,
    and deletes the content file.
@@ -62,6 +78,16 @@ extended to all monitored paths:
 Because `std::fs::write` runs inside the `write-rule` subprocess and
 never goes through Claude Code's Write tool, the preflight cannot fire
 on the final target.
+
+### Intermediate Content File Naming and Lifecycle
+
+Intermediate content files follow the pattern
+`.flow-states/<branch>-<purpose>-content.<ext>` where `<purpose>`
+matches the basename of the final target (e.g. `dag`, `plan`,
+`commit-msg`, `issue-body`, `orchestrate-queue`) and `<ext>` matches the
+target's extension (`.md`, `.json`). The `write-rule` subcommand deletes
+the intermediate file after a successful routing; on error the file is
+left in place so the user can diagnose the routing failure.
 
 Reference implementation: `src/write_rule.rs`.
 
@@ -73,7 +99,7 @@ preamble ensures the Edit preflight is satisfied even when the model
 has not naturally read the file in the current turn (for example,
 re-entering the plan-check fix loop after `--continue-step`).
 
-Canonical wording, mirrored from `flow-complete/SKILL.md:233`:
+Canonical wording:
 
 > Use the Read tool on the plan file at `.flow-states/<branch>-plan.md`
 > first to satisfy Claude Code's Edit-tool preflight, then use the Edit
@@ -90,13 +116,26 @@ Two contract tests in `tests/skill_contracts.rs` enforce both sides of
 the rule:
 
 - `file_tool_preflight_write_paths_route_through_write_rule` — scans
-  every `skills/**/SKILL.md` for "using the Write tool" / "Use the
-  Write tool" instructions adjacent to a monitored path, and asserts a
-  `bin/flow write-rule --path <same-path>` call follows within 30 lines.
+  every `skills/**/SKILL.md` for Write-tool instructions (matching
+  `use`, `using`, `invoke`, `invoking`, `call`, `calling`, `run`,
+  `running` followed by `the Write tool`) adjacent to a monitored
+  path, and asserts a `bin/flow write-rule --path <same-path>` call
+  appears on a SINGLE line within the next 30 lines. Same-line
+  co-occurrence is required so a disconnected `bin/flow write-rule`
+  targeting a different path plus an unrelated mention of the
+  monitored path cannot silently satisfy the check.
 - `file_tool_preflight_edit_paths_preceded_by_read` — scans every
-  SKILL.md for "use the Edit tool" / "using the Edit tool" instructions
-  on named plan or DAG files and asserts a Read-tool instruction on the
-  same file appears within the preceding 12 lines.
+  SKILL.md for Edit-tool instructions on named plan or DAG files and
+  asserts a Read-tool instruction (matching the same verb vocabulary)
+  on the same file appears within the preceding 12 non-blank lines.
+  The backward scan stops at any `## ` or `### ` heading so a Read in
+  a prior step cannot credit an Edit in a later step — a
+  `--continue-step` resume invalidates the prior Read.
+
+Both scans use `write_path_is_bounded` to check BOTH prefix and suffix
+byte boundaries on every path match, rejecting longer paths that embed
+a monitored path as a substring (e.g. `my-orchestrate-queue.json`,
+`.flow-commit-msg.bak`).
 
 When either test fails, the violation names the file and line. The fix
 is to adopt the Write-Rule Escape Pattern or the Edit Preamble Pattern
@@ -105,10 +144,9 @@ respectively — never to add an allow-list that exempts the callsite.
 ## Why Not Skill Instructions Alone
 
 Per `.claude/rules/hook-vs-instruction.md`: when the consequence of
-non-compliance is user-visible and blocks the flow (which this bug
-does — 10+ minutes of recovery observed twice), the enforcement must
-be mechanical, not advisory. The Write-side fix is mechanical via the
-`write-rule` subprocess. The Edit-side fix is advisory prose in
+non-compliance is user-visible and blocks the flow, the enforcement
+must be mechanical, not advisory. The Write-side fix is mechanical via
+the `write-rule` subprocess. The Edit-side fix is advisory prose in
 SKILL.md, but the contract test locks the prose invariant in so drift
 fails CI.
 
@@ -118,10 +156,9 @@ fails CI.
   mechanical enforcement for this class.
 - `.claude/rules/scope-expansion.md` — the scope-boundary decision for
   combining Write and Edit fixes in one PR.
-- `.claude/rules/tests-guard-real-regressions.md` — names the Write
-  bug as a real observed regression (two incidents 2026-04-16) and the
-  Edit gap as a narrow structural risk rather than speculative scan.
+- `.claude/rules/tests-guard-real-regressions.md` — the discipline
+  requiring every test to guard a named regression and name its
+  consumer.
 - `src/write_rule.rs` — the reference Rust subcommand.
-- `skills/flow-learn/SKILL.md:307-345` — the reference SKILL.md pattern
-  that has routed through `write-rule` for CLAUDE.md and
-  `.claude/rules/` writes since before this PR.
+- `skills/flow-learn/SKILL.md` — the reference SKILL.md pattern that
+  routes through `write-rule` for CLAUDE.md and `.claude/rules/` writes.

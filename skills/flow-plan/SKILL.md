@@ -170,7 +170,7 @@ issue body with a markdown heading and route it through `bin/flow write-rule`
 so Claude Code's Write-tool preflight cannot fire on a pre-existing DAG file
 (see `.claude/rules/file-tool-preflights.md`).
 
-**Write the content** to `.flow-states/<branch>-dag-content.md` using the Write tool, wrapped with a markdown heading:
+Write the wrapped content to `.flow-states/<branch>-dag-content.md` using the Write tool:
 
 ```text
 # Pre-Decomposed Analysis: <feature description>
@@ -178,13 +178,13 @@ so Claude Code's Write-tool preflight cannot fire on a pre-existing DAG file
 <issue body>
 ```
 
-**Apply the write** to the final DAG path:
+Then route it to the final DAG path via `bin/flow write-rule`:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-states/<branch>-dag.md --content-file .flow-states/<branch>-dag-content.md
 ```
 
-**Store the path** in the state file:
+Store the path in the state file:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.dag=<dag_file_path>
@@ -225,7 +225,7 @@ node-by-node reasoning, and a synthesis.
 
 After the decompose plugin returns, save the complete decompose output. The DAG file at `.flow-states/<branch>-dag.md` may pre-exist from a prior attempt, context compaction, or `--continue-step` re-entry, which would trip Claude Code's Write-tool preflight ("if this is an existing file, you MUST use the Read tool first"). Route the write through `bin/flow write-rule` — it does `fs::write` unconditionally in Rust so the preflight cannot fire. See `.claude/rules/file-tool-preflights.md`.
 
-**Capture the content.** Build the full content to write — the XML DAG plan, all node executions with quality scores, and the synthesis block exactly as the plugin produced it. Do not summarize, condense, reorganize, or rewrite any part of the decompose output. Wrap with a markdown heading:
+Build the full content to write — the XML DAG plan, all node executions with quality scores, and the synthesis block exactly as the plugin produced it. Do not summarize, condense, reorganize, or rewrite any part of the decompose output. Wrap with a markdown heading:
 
 ```text
 # DAG Analysis: <feature description>
@@ -233,15 +233,15 @@ After the decompose plugin returns, save the complete decompose output. The DAG 
 <complete output from decompose plugin>
 ```
 
-**Write the content** to `.flow-states/<branch>-dag-content.md` using the Write tool.
+Write the content to `.flow-states/<branch>-dag-content.md` using the Write tool.
 
-**Apply the write** to the final DAG path via `bin/flow write-rule`:
+Apply the write to the final DAG path via `bin/flow write-rule`:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-states/<branch>-dag.md --content-file .flow-states/<branch>-dag-content.md
 ```
 
-**Store the path** in the state file:
+Store the path in the state file:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.dag=<dag_file_path>

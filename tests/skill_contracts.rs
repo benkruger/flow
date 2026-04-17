@@ -3486,16 +3486,33 @@ fn phase_1_hard_gate_requires_rerun_with_arguments() {
 
 // --- File-tool preflight invariants ---
 //
-// Claude Code's Write tool and Edit tool each have a Read-first-in-session
-// preflight: Write errors when the target file already exists and has not
-// been Read in the conversation, and Edit errors when any edit is attempted
-// before a prior Read on the target. FLOW skills that write to persistent
-// branch-scoped or project-root paths must route those writes through the
-// `bin/flow write-rule` Rust subcommand — it does `fs::write` unconditionally
-// so the preflight cannot fire. Skills that instruct Edits against named
-// plan files must precede the Edit with an explicit Read-tool instruction so
-// the Edit preflight is satisfied even when the model has not naturally read
-// the file in the current turn.
+// Regression the two tests below guard:
+//   A SKILL.md instruction writes to (or edits) a file whose target may
+//   already exist on disk when the skill runs. Claude Code's Write tool
+//   and Edit tool each have a Read-first-in-session preflight — Write
+//   errors when the target exists and has not been Read, Edit errors
+//   when any edit is attempted before a prior Read. When the preflight
+//   fires mid-skill the tool call surfaces a user-visible error and the
+//   flow cannot continue until the model manually works around it.
+//
+// Code path that produces the regression:
+//   - Write side: a SKILL.md instructs the model to Write to one of the
+//     persistent monitored paths (plan/DAG file, commit-msg, issue-body,
+//     orchestrate queue) without first routing through the
+//     `bin/flow write-rule` subcommand, whose `fs::write` call bypasses
+//     the preflight.
+//   - Edit side: a SKILL.md instructs the model to Edit a named plan or
+//     DAG file without a preceding explicit Read-tool instruction on
+//     the same file in the same `### Step` block.
+//
+// Consumers:
+//   - Every FLOW skill that writes to `.flow-states/` or project-root
+//     persistent files (flow-plan, flow-commit, flow-start, flow-code,
+//     flow-learn, flow-orchestrate) relies on the Write-side invariant
+//     to not block mid-phase.
+//   - `flow-plan`'s plan-check fix loop relies on the Edit-side
+//     invariant so the Edit tool can open the plan on re-entry.
+//   - `.claude/rules/file-tool-preflights.md` authorizes the scans.
 
 /// Target paths whose Write-tool invocations must route through
 /// `bin/flow write-rule`.
@@ -3515,45 +3532,88 @@ const WRITE_MONITORED_PATHS: &[&str] = &[
     "orchestrate-queue.json",
 ];
 
-/// Non-blank lines of forward scan after a "using the Write tool"
-/// instruction to locate the matching `bin/flow write-rule` call. The
-/// window spans a few prose lines, a description of the content, and a
-/// following bash block — 30 lines covers the longest pattern in the
-/// corpus today.
+/// Non-blank lines of forward scan after a Write-tool instruction to
+/// locate the matching `bin/flow write-rule` call. The window spans a
+/// few prose lines, a description of the content, and a following bash
+/// block — 30 lines covers the longest pattern in the corpus today.
 const WRITE_RULE_FORWARD_WINDOW: usize = 30;
 
-/// Check whether a monitored literal path match has a following
-/// character that would extend it into a different (unmonitored) path.
+/// Check whether a monitored literal path match is bounded on BOTH sides
+/// so it is not embedded in a longer unrelated path.
 ///
-/// For literals like `.flow-issue-body`, a trailing `-` extends the path
-/// to `.flow-issue-body-<id>` which is session-scoped and out of scope.
-/// Paths ending in extensions (`.md`, `.json`) or containing placeholders
-/// (`<branch>`) are already unambiguous.
+/// - Prefix boundary: the byte before `start` must not be a character
+///   that would make the path a suffix of a longer path (e.g.
+///   `my-orchestrate-queue.json` must not match `orchestrate-queue.json`).
+/// - Suffix boundary: the byte after the match must not extend the path
+///   (e.g. `.flow-issue-body-<id>` is session-scoped, out of scope;
+///   `.flow-commit-msg.bak` is a different file). `.md` and `.json`
+///   suffixes are themselves terminating so the check short-circuits.
 fn write_path_is_bounded(haystack: &str, path: &str, start: usize) -> bool {
-    // Paths ending in a file extension are self-terminating.
+    let bytes = haystack.as_bytes();
+    // Prefix boundary check — reject if the byte before `start` extends
+    // the path (hyphen, dot, alnum, underscore).
+    if start > 0 {
+        let prev = bytes[start - 1];
+        if prev == b'-' || prev == b'.' || prev == b'_' || prev.is_ascii_alphanumeric() {
+            return false;
+        }
+    }
+    // Suffix boundary check — file-extension suffixes are self-
+    // terminating; otherwise reject byte-extensions into another path.
     if path.ends_with(".md") || path.ends_with(".json") {
         return true;
     }
     let end = start + path.len();
-    match haystack.as_bytes().get(end) {
+    match bytes.get(end) {
         Some(b) => {
-            // Word-boundary-ish: reject if the next byte is `-` or a
-            // path/word character that would extend the match.
             let c = *b;
-            !(c == b'-' || c.is_ascii_alphanumeric() || c == b'_')
+            !(c == b'-' || c == b'.' || c == b'_' || c.is_ascii_alphanumeric())
         }
         None => true,
     }
 }
 
+/// Tool-instruction verb vocabulary matching the curated-closed style of
+/// `.claude/rules/scope-enumeration.md`. Each verb below is a realistic
+/// phrasing a skill author might use ("using the Write tool", "invoke
+/// the Write tool", "call the Write tool", "run the Write tool"). Novel
+/// phrasings slip through intentionally — the rule file is the primary
+/// instrument; future reviewers add verbs here when a new false-negative
+/// is observed.
+const TOOL_VERB_PATTERN: &str = r"(?:us(?:e|ing)|invok(?:e|ing)|call(?:s|ing)?|run(?:s|ning)?)";
+
+/// Build the phrase-detection regex for a given tool name ("Write" or
+/// "Edit"). Matches, case-insensitive and with `\s+` absorbing newlines,
+/// any of the verb forms above followed by "the <Tool> tool".
+fn tool_phrase_regex(tool: &str) -> Regex {
+    let pattern = format!(r"(?si)\b{}\s+the\s+{}\s+tool", TOOL_VERB_PATTERN, tool);
+    Regex::new(&pattern).unwrap()
+}
+
+/// Walk forward-window lines and return true when any single line
+/// contains BOTH `bin/flow write-rule` AND the monitored path. Requiring
+/// co-occurrence on the same line closes the disconnected-substring
+/// bypass (a write-rule call targeting a DIFFERENT path plus an
+/// unrelated mention of the monitored path both present in the window
+/// without being wired together).
+fn forward_has_write_rule_line(
+    lines: &[&str],
+    start_idx: usize,
+    end_idx: usize,
+    path: &str,
+) -> bool {
+    let end = end_idx.min(lines.len());
+    for line in &lines[start_idx..end] {
+        if line.contains("bin/flow write-rule") && line.contains(path) {
+            return true;
+        }
+    }
+    false
+}
+
 #[test]
 fn file_tool_preflight_write_paths_route_through_write_rule() {
-    // Match Write-tool instructions in both phrasings: "using the
-    // Write tool" (passive) and "Use the Write tool" (imperative).
-    // The `(?s)` flag makes `.` match newlines; `\s+` absorbs one-or-
-    // more whitespace (including `\n`) so the phrase matches whether
-    // authored on one line or wrapped.
-    let phrase_re = Regex::new(r"(?si)\bus(?:e|ing)\s+the\s+Write\s+tool").unwrap();
+    let phrase_re = tool_phrase_regex("Write");
 
     let skills_dir = common::skills_dir();
     let files = common::collect_md_files(&skills_dir);
@@ -3566,14 +3626,13 @@ fn file_tool_preflight_write_paths_route_through_write_rule() {
         let lines: Vec<&str> = content.lines().collect();
 
         for m in phrase_re.find_iter(content) {
-            // Line number of the match start (1-based for human output).
             let line_num = content[..m.start()].matches('\n').count() + 1;
             let idx = line_num - 1;
 
             // Identify the monitored target by looking at a small window
             // around the instruction (3 lines back, current, plus next
             // two) because the target path is typically mentioned on the
-            // line right before "using the Write tool".
+            // line right before the Write-tool instruction.
             let start_back = idx.saturating_sub(3);
             let end_ctx = (idx + 3).min(lines.len());
             let surrounding = lines[start_back..end_ctx].join("\n");
@@ -3584,16 +3643,13 @@ fn file_tool_preflight_write_paths_route_through_write_rule() {
             });
             let Some(path) = matched_path else { continue };
 
-            // Check forward N lines for a `bin/flow write-rule` call
-            // that targets the same path. Both conditions required —
-            // a bare `bin/flow write-rule` pointing at some other path
-            // does not satisfy the preflight escape for THIS target.
-            let end_fwd = (idx + WRITE_RULE_FORWARD_WINDOW).min(lines.len());
-            let forward = lines[idx..end_fwd].join("\n");
-            let has_write_rule = forward.contains("bin/flow write-rule") && forward.contains(*path);
-            if !has_write_rule {
+            // Same-line co-occurrence of `bin/flow write-rule` + the
+            // path inside the forward window. See `forward_has_write_rule_line`
+            // for the rationale.
+            let end_fwd = idx + WRITE_RULE_FORWARD_WINDOW;
+            if !forward_has_write_rule_line(&lines, idx, end_fwd, path) {
                 violations.push(format!(
-                    "{}:{} — Write-tool instruction targets monitored path `{}` but no `bin/flow write-rule --path <...{}>` call follows within {} lines",
+                    "{}:{} — Write-tool instruction targets monitored path `{}` but no `bin/flow write-rule --path <...{}>` call on a single line follows within {} lines",
                     rel,
                     line_num,
                     path,
@@ -3623,18 +3679,44 @@ const EDIT_MONITORED_PATHS: &[&str] = &[
 ];
 
 /// Non-blank lines backward from an Edit-tool instruction to look for
-/// a paired Read-tool instruction on the same path. Six lines covers a
-/// short prose preamble without reaching the previous `### Step`.
+/// a paired Read-tool instruction on the same path. Twelve lines covers
+/// a short prose preamble plus an intervening bash fence. The scan
+/// stops at any `### Step N`, `### ` subsection, or `## Section`
+/// heading encountered during the walk so a Read in a prior step does
+/// not credit an Edit in a later step (a `--continue-step` re-entry
+/// would invalidate the prior Read).
 const EDIT_READ_BACKWARD_WINDOW: usize = 12;
+
+/// Walk backward from `idx` up to `window` non-blank lines, stopping at
+/// any Markdown heading line (`## ` or `### `). Returns the slice of
+/// lines between the first encountered boundary and `idx` (inclusive)
+/// as a joined string. Callers then scan the returned slice for a
+/// Read-tool instruction co-occurring with the monitored path on the
+/// SAME line.
+fn backward_read_window(lines: &[&str], idx: usize, window: usize) -> String {
+    let mut start = idx;
+    let mut taken = 0;
+    while start > 0 && taken < window {
+        start -= 1;
+        let trimmed = lines[start].trim_start();
+        if trimmed.starts_with("## ") || trimmed.starts_with("### ") {
+            // Include the heading itself for context, then stop.
+            break;
+        }
+        taken += 1;
+    }
+    lines[start..=idx.min(lines.len().saturating_sub(1))].join("\n")
+}
 
 #[test]
 fn file_tool_preflight_edit_paths_preceded_by_read() {
-    // Match Edit-tool instructions in both phrasings: "using the Edit
-    // tool" (passive) and "use the Edit tool" (imperative).
-    let phrase_re = Regex::new(r"(?si)\bus(?:e|ing)\s+the\s+Edit\s+tool").unwrap();
-    // Read-tool reference — either "Read tool" (noun) or "Read the"
-    // (imperative verb form on the same path).
-    let read_re = Regex::new(r"(?si)\bRead\s+(?:tool|the)").unwrap();
+    let phrase_re = tool_phrase_regex("Edit");
+    // Require an explicit Read-tool instruction ("use/using/invoke/
+    // invoking/call/run the Read tool"). Prose like "Read the plan"
+    // or "Read the current state" no longer counts — the preflight
+    // requires an actual Read tool call, and the scanner must match
+    // that discipline.
+    let read_re = tool_phrase_regex("Read");
 
     let skills_dir = common::skills_dir();
     let files = common::collect_md_files(&skills_dir);
@@ -3650,24 +3732,30 @@ fn file_tool_preflight_edit_paths_preceded_by_read() {
             let line_num = content[..m.start()].matches('\n').count() + 1;
             let idx = line_num - 1;
 
-            // Window around the instruction to find a monitored path.
+            // Window around the Edit instruction to find a monitored path.
             let start_back = idx.saturating_sub(3);
             let end_ctx = (idx + 3).min(lines.len());
             let surrounding = lines[start_back..end_ctx].join("\n");
-            let matched_path = EDIT_MONITORED_PATHS
-                .iter()
-                .find(|p| surrounding.contains(**p));
+            let matched_path = EDIT_MONITORED_PATHS.iter().find(|p| {
+                surrounding
+                    .match_indices(**p)
+                    .any(|(pos, _)| write_path_is_bounded(&surrounding, p, pos))
+            });
             let Some(path) = matched_path else { continue };
 
-            // Look backward for a Read-tool instruction on the same
-            // path. The Read instruction must mention both "Read" and
-            // the path within the backward window.
-            let read_start = idx.saturating_sub(EDIT_READ_BACKWARD_WINDOW);
-            let backward = lines[read_start..=idx.min(lines.len() - 1)].join("\n");
+            // Step-scoped backward window (stops at `### Step N` /
+            // `## Section` headings) so a Read in a prior step cannot
+            // credit an Edit in a later step.
+            let backward = backward_read_window(&lines, idx, EDIT_READ_BACKWARD_WINDOW);
+
+            // Require both the Read-tool phrase and the path somewhere
+            // in the window. Perfect same-line co-occurrence is too
+            // strict for Edit (skill authors often phrase the Read on
+            // one line and identify the path on an adjacent line).
             let has_read = read_re.is_match(&backward) && backward.contains(*path);
             if !has_read {
                 violations.push(format!(
-                    "{}:{} — Edit-tool instruction on monitored path `{}` but no `Read` of the same path in the preceding {} lines",
+                    "{}:{} — Edit-tool instruction on monitored path `{}` but no `Read` tool instruction on the same path in the preceding {} lines (scan stops at `## ` / `### ` headings)",
                     rel,
                     line_num,
                     path,
