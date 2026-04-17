@@ -38,12 +38,51 @@ even conditionally. The following prose patterns violate this rule:
   even a possibility)
 - "Waiver candidates: ..."
 - "If coverage cannot be achieved ..."
+- "Record the achievable baseline"
+- "Accept the current measurement as the target"
 - Any conditional branch in plan prose where the unreachable case
   is "file a waiver"
 
 A plan that includes any of these is not "going to consider waivers
 as a last resort" — it is *already proposing waivers*. The plan
 phase rejects such plans.
+
+## Measurement-Only Task Antipattern
+
+A plan task that defines its success criterion as "measure the current
+coverage TOTAL" — instead of "confirm coverage reaches 100%" — is a
+waiver dressed up as a task shape. A session that executes such a task
+will record the measurement, declare victory, and move on with coverage
+below 100%. That is a waiver.
+
+This antipattern is forbidden even when the plan also contains explicit
+iteration language elsewhere ("if below 100%, return to the relevant
+test task"). Execution agents gravitate toward the measurement task
+body, not toward the iteration clause — so the iteration clause is
+effectively a waiver escape hatch.
+
+**The rule.** A plan that includes a "verify 100%" task must hard-gate
+phase completion on the 100% result. Measurement-only outputs are not
+acceptable completion criteria for coverage-gated tasks. The task body
+must:
+
+1. Run `bin/flow ci` to capture the TOTAL.
+2. If below 100% per-file, return to the preceding test task and add
+   coverage until the target is met.
+3. Only proceed when every targeted file reads 100% per the plan's
+   acceptance criteria.
+
+A task that writes "record the achievable baseline" or "accept the
+current measurement as the achievable target" violates this rule.
+Those phrasings are forbidden in plan prose, per the "Forbidden Plan
+Prose" list above.
+
+**Plan-phase verification.** When a plan's acceptance criteria state
+"all N files reach 100%" but the plan's tasks only verify the
+aggregate TOTAL without per-file iteration, the plan is incomplete.
+The Plan-phase reviewer must either strengthen the verification task
+to hard-gate on per-file 100% or revise the acceptance criteria to
+match what the tasks actually produce.
 
 ## Why
 
@@ -102,6 +141,9 @@ When designing a plan that touches code:
    responses fits and write THAT in the plan.
 4. After writing the plan, grep for waiver-suggestion phrases. If
    any appear, rewrite them.
+5. If the plan has a "verify 100%" task, confirm the task body
+   hard-gates on per-file 100% (not measurement-only). Measurement
+   tasks are not coverage completion tasks.
 
 ## How to Apply (Code Phase)
 
@@ -139,6 +181,6 @@ When triaging findings:
   dir.
 - `tests/main_dispatch.rs` — reference subprocess test surface for
   CLI dispatch coverage.
-- `src/dispatch.rs` and the `run_impl_main` extraction (PR #1156) —
-  reference refactor pattern for hoisting `process::exit` out of
-  the testable surface.
+- `src/dispatch.rs` and the `run_impl_main` extraction — reference
+  refactor pattern for hoisting `process::exit` out of the testable
+  surface.
