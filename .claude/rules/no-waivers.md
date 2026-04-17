@@ -59,7 +59,7 @@ trust the test suite to catch regressions across the entire surface.
 ## Enforcement
 
 This rule is the project's gate against waiver drift. It is
-enforced at three layers:
+enforced at four layers:
 
 1. **Rule prose** (this file). The first instrument is the rule
    itself — every plan author must read this file when designing
@@ -70,6 +70,25 @@ enforced at three layers:
 3. **Code Review reviewer agent**. The reviewer agent flags any
    diff that adds a `test_coverage.md` entry as a Real finding to
    be deleted in Step 4.
+4. **Coverage floor mechanism in `bin/test`**. Every `bin/flow ci`
+   full-suite run passes three threshold flags to `cargo
+   llvm-cov`: `--fail-under-lines <L>`, `--fail-under-regions <R>`,
+   and `--fail-under-functions <F>`. When the aggregate TOTAL falls
+   below any of the three thresholds, CI exits non-zero and the
+   commit is blocked. The thresholds are a ratchet: they track the
+   floor of the most recent green TOTAL. When coverage crosses
+   into a new whole-percent range, bump the matching threshold in
+   the same commit that earned the improvement. Thresholds never
+   move downward — a regression that would force a lower floor is
+   a CI-blocking failure, not a reason to relax the gate. The
+   flags live on the `cargo llvm-cov nextest` invocation inside
+   `bin/test`, so every CI run by every engineer on every branch
+   inherits the same floor. See `bin/test` in the project repo for
+   the current numeric values. `.claude/rules/tool-dispatch.md`
+   "Full-Suite `bin/test` Runs Clean First" documents the
+   complementary coverage-coherence discipline that keeps the
+   floor measurement honest across main's long-lived `target/`
+   dir.
 
 ## How to Apply (Plan Phase)
 
@@ -114,6 +133,10 @@ When triaging findings:
 - `.claude/rules/docs-with-behavior.md` — must be updated to remove
   any "Waiver Discipline" prose that authorized `test_coverage.md`
   entries. The two rules are now in conflict; this rule wins.
+- `.claude/rules/tool-dispatch.md` "Full-Suite `bin/test` Runs Clean
+  First" — the coverage-coherence discipline that makes the
+  `--fail-under-*` numbers trustworthy on main's long-lived target
+  dir.
 - `tests/main_dispatch.rs` — reference subprocess test surface for
   CLI dispatch coverage.
 - `src/dispatch.rs` and the `run_impl_main` extraction (PR #1156) —
