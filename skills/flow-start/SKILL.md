@@ -208,8 +208,16 @@ Parse the JSON output and branch on `status`:
 File a "Flaky Test" issue with reproduction data from the `first_failure_output`
 and `attempts` fields, using the `flaky_context` field for the issue body context.
 
-Write the issue body to `.flow-issue-body` in the project root using the
-Write tool, then file:
+Write the issue body to `.flow-states/<branch>-issue-body-content.md` using
+the Write tool, then route it to `.flow-issue-body` in the project root
+via `bin/flow write-rule` (avoids Claude Code's Write-tool preflight on a
+pre-existing body file — see `.claude/rules/file-tool-preflights.md`):
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-issue-body --content-file .flow-states/<branch>-issue-body-content.md
+```
+
+Then file:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Flaky Test" --title "<issue_title>" --body-file .flow-issue-body

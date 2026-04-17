@@ -519,3 +519,61 @@ fn test_backfill_non_object_state_guard() {
         "Array state root should be preserved by the guard"
     );
 }
+
+#[test]
+fn start_workspace_corrupt_state_returns_backfill_error() {
+    // Exercises the backfill error branch in src/start_workspace.rs
+    // (mutate_state fails on a corrupt JSON state file). Pre-seeds the
+    // state file with invalid JSON; the worktree + PR succeed, then
+    // backfill hits parse failure and returns status="error" with
+    // step="backfill", releasing the lock.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+
+    // Pre-seed corrupt JSON as the state file — mutate_state will fail
+    // parsing it.
+    let state_dir = flow_states_dir(&repo);
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(
+        state_dir.join("corrupt-backfill-branch.json"),
+        "not json{{{",
+    )
+    .unwrap();
+    create_lock_entry(&repo, "corrupt-backfill-branch");
+
+    let output = run_start_workspace(
+        &repo,
+        "Corrupt Backfill Feature",
+        "corrupt-backfill-branch",
+        &stub_dir,
+    );
+    let data = parse_output(&output);
+    assert_eq!(
+        data["status"],
+        "error",
+        "Corrupt state file must surface as error; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        data["step"].as_str().unwrap_or(""),
+        "backfill",
+        "step should name the failed phase"
+    );
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Failed to backfill state"),
+        "error message should mention backfill; got: {}",
+        data["message"]
+    );
+
+    // Lock must be released even on backfill error.
+    let queue_dir = flow_states_dir(&repo).join("start-queue");
+    assert!(
+        !queue_dir.join("corrupt-backfill-branch").exists(),
+        "Lock must be released on backfill error"
+    );
+}
