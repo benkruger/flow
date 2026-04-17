@@ -1,11 +1,10 @@
 use std::path::Path;
-use std::process::{self, Command};
+use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 use clap::Parser;
-use serde_json::json;
+use serde_json::{json, Value};
 
-use crate::output::{json_error, json_ok};
 use crate::utils::extract_issue_numbers;
 
 pub const LABEL: &str = "Flow In-Progress";
@@ -42,11 +41,15 @@ pub struct LabelResult {
     pub failed: Vec<i64>,
 }
 
-/// Add or remove the Flow In-Progress label on GitHub issues.
-///
-/// Reads the state file, extracts #N patterns from the prompt field,
-/// and adds or removes the label via gh CLI.
-pub fn label_issues(issue_numbers: &[i64], action: &str) -> LabelResult {
+/// Add or remove the Flow In-Progress label via an injected
+/// child_factory. Tests inject sh-based factories to drive every spawn
+/// outcome (Ok success, Ok non-success, Ok timeout, Err) without
+/// spawning real `gh`.
+pub fn label_issues_with_runner(
+    issue_numbers: &[i64],
+    action: &str,
+    child_factory: &dyn Fn(&[&str]) -> std::io::Result<Child>,
+) -> LabelResult {
     let mut labeled = Vec::new();
     let mut failed = Vec::new();
     let flag = if action == "add" {
@@ -56,11 +59,9 @@ pub fn label_issues(issue_numbers: &[i64], action: &str) -> LabelResult {
     };
 
     for &num in issue_numbers {
-        let result = Command::new("gh")
-            .args(["issue", "edit", &num.to_string(), flag, LABEL])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn();
+        let num_str = num.to_string();
+        let args = ["issue", "edit", num_str.as_str(), flag, LABEL];
+        let result = child_factory(&args);
 
         match result {
             Ok(mut child) => {
@@ -83,6 +84,20 @@ pub fn label_issues(issue_numbers: &[i64], action: &str) -> LabelResult {
     LabelResult { labeled, failed }
 }
 
+/// Add or remove the Flow In-Progress label on GitHub issues.
+///
+/// Reads the state file, extracts #N patterns from the prompt field,
+/// and adds or removes the label via gh CLI.
+pub fn label_issues(issue_numbers: &[i64], action: &str) -> LabelResult {
+    label_issues_with_runner(issue_numbers, action, &|args| {
+        Command::new("gh")
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    })
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "label-issues",
@@ -103,35 +118,48 @@ pub struct Args {
     pub remove: bool,
 }
 
-pub fn run(args: Args) {
+/// Main-arm dispatcher. Reads the state file, extracts issue numbers
+/// from the prompt, and labels them. Returns `(value, exit_code)`:
+/// `(error+message+step, 1)` on state-file read or parse failure,
+/// `(ok+labeled+failed, 0)` on success.
+pub fn run_impl_main(args: Args) -> (Value, i32) {
     let state_path = Path::new(&args.state_file);
     if !state_path.exists() {
-        json_error(
-            &format!("State file not found: {}", args.state_file),
-            &[("step", json!("read_state"))],
+        return (
+            json!({
+                "status": "error",
+                "step": "read_state",
+                "message": format!("State file not found: {}", args.state_file),
+            }),
+            1,
         );
-        process::exit(1);
     }
 
     let content = match std::fs::read_to_string(state_path) {
         Ok(c) => c,
         Err(e) => {
-            json_error(
-                &format!("Failed to read state file: {}", e),
-                &[("step", json!("read_state"))],
+            return (
+                json!({
+                    "status": "error",
+                    "step": "read_state",
+                    "message": format!("Failed to read state file: {}", e),
+                }),
+                1,
             );
-            process::exit(1);
         }
     };
 
-    let state: serde_json::Value = match serde_json::from_str(&content) {
+    let state: Value = match serde_json::from_str(&content) {
         Ok(v) => v,
         Err(e) => {
-            json_error(
-                &format!("Failed to parse state file: {}", e),
-                &[("step", json!("parse_state"))],
+            return (
+                json!({
+                    "status": "error",
+                    "step": "parse_state",
+                    "message": format!("Failed to parse state file: {}", e),
+                }),
+                1,
             );
-            process::exit(1);
         }
     };
 
@@ -140,10 +168,19 @@ pub fn run(args: Args) {
     let action = if args.add { "add" } else { "remove" };
     let result = label_issues(&issue_numbers, action);
 
-    json_ok(&[
-        ("labeled", json!(result.labeled)),
-        ("failed", json!(result.failed)),
-    ]);
+    (
+        json!({
+            "status": "ok",
+            "labeled": result.labeled,
+            "failed": result.failed,
+        }),
+        0,
+    )
+}
+
+pub fn run(args: Args) -> ! {
+    let (value, code) = run_impl_main(args);
+    crate::dispatch::dispatch_json(value, code)
 }
 
 #[cfg(test)]
@@ -239,5 +276,95 @@ mod tests {
             "--remove-label"
         };
         assert_eq!(flag, "--remove-label");
+    }
+
+    // --- label_issues_with_runner ---
+
+    #[test]
+    fn label_issues_with_runner_all_succeed() {
+        let factory = |_args: &[&str]| {
+            Command::new("sh")
+                .args(["-c", "exit 0"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let result = label_issues_with_runner(&[1, 2], "add", &factory);
+        assert_eq!(result.labeled, vec![1, 2]);
+        assert!(result.failed.is_empty());
+    }
+
+    #[test]
+    fn label_issues_with_runner_all_fail_on_nonzero_exit() {
+        let factory = |_args: &[&str]| {
+            Command::new("sh")
+                .args(["-c", "exit 1"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let result = label_issues_with_runner(&[3, 4], "remove", &factory);
+        assert!(result.labeled.is_empty());
+        assert_eq!(result.failed, vec![3, 4]);
+    }
+
+    #[test]
+    fn label_issues_with_runner_spawn_error_marks_failed() {
+        let factory = |_args: &[&str]| -> std::io::Result<Child> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no binary",
+            ))
+        };
+        let result = label_issues_with_runner(&[5], "add", &factory);
+        assert_eq!(result.failed, vec![5]);
+    }
+
+    // --- run_impl_main ---
+
+    #[test]
+    fn label_issues_run_impl_main_missing_state_returns_error_tuple() {
+        let args = Args {
+            state_file: "/nonexistent/state.json".to_string(),
+            add: true,
+            remove: false,
+        };
+        let (value, code) = run_impl_main(args);
+        assert_eq!(value["status"], "error");
+        assert_eq!(code, 1);
+        assert_eq!(value["step"], "read_state");
+    }
+
+    #[test]
+    fn label_issues_run_impl_main_corrupt_state_returns_error_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_file = dir.path().join("state.json");
+        std::fs::write(&state_file, "{not json").unwrap();
+        let args = Args {
+            state_file: state_file.to_string_lossy().to_string(),
+            add: true,
+            remove: false,
+        };
+        let (value, code) = run_impl_main(args);
+        assert_eq!(value["status"], "error");
+        assert_eq!(code, 1);
+        assert_eq!(value["step"], "parse_state");
+    }
+
+    #[test]
+    fn label_issues_run_impl_main_no_prompt_returns_ok_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_file = dir.path().join("state.json");
+        std::fs::write(&state_file, r#"{"branch":"test"}"#).unwrap();
+        let args = Args {
+            state_file: state_file.to_string_lossy().to_string(),
+            add: true,
+            remove: false,
+        };
+        let (value, code) = run_impl_main(args);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["labeled"].as_array().unwrap().len(), 0);
+        assert_eq!(value["failed"].as_array().unwrap().len(), 0);
     }
 }
