@@ -1,4 +1,9 @@
 [profile.default]
+# `result = "fail"` makes any test still leaking after the default
+# 100ms a hard CI failure (default is to mark the test "leaky" but
+# pass it). Genuine leaks now block merges.
+leak-timeout = { period = "100ms", result = "fail" }
+
 # Concurrency tests in `tests/concurrency.rs` share filesystem state
 # across threads (tempdir-scoped queues, log files, per-branch state
 # files). Running more than one concurrency test at a time inside the

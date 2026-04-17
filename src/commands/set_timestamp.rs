@@ -156,12 +156,7 @@ pub fn apply_updates(state: &mut Value, set_args: &[String]) -> Result<Vec<Updat
         if path_parts == ["code_task"] {
             let int_val = match value.as_i64() {
                 Some(n) => n,
-                None => {
-                    return Err(format!(
-                        "code_task must be an integer, got '{}'",
-                        raw_value
-                    ))
-                }
+                None => return Err(format!("code_task must be an integer, got '{}'", raw_value)),
             };
             validate_code_task(state, int_val)?;
         }

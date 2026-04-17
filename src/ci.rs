@@ -1475,7 +1475,11 @@ MARKER="{}"
 if [ -f "$MARKER" ]; then
   exit 0
 else
-  touch "$MARKER"
+  # `:` is a shell builtin (no fork). Avoids an extra subprocess
+  # (`/usr/bin/touch`) that nextest's leak detector occasionally
+  # flags when the touch process is briefly unreaped between
+  # attempts under heavy parallel load.
+  : > "$MARKER"
   echo "FIRST FAIL" >&2
   exit 1
 fi

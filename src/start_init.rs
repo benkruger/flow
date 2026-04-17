@@ -121,9 +121,7 @@ pub fn run_impl_with_deps(
     let plug_root = match plug_root_finder() {
         Some(p) => p,
         None => {
-            return Err(
-                "CLAUDE_PLUGIN_ROOT not set and could not detect plugin root".to_string(),
-            );
+            return Err("CLAUDE_PLUGIN_ROOT not set and could not detect plugin root".to_string());
         }
     };
 
