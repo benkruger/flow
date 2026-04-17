@@ -19,6 +19,8 @@ fn flow_rs_no_recursion() -> Command {
 /// the error via `json_error` and exits 1.
 #[test]
 fn cleanup_nonexistent_root_exits_1() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
     let output = flow_rs_no_recursion()
         .args([
             "cleanup",
@@ -28,6 +30,8 @@ fn cleanup_nonexistent_root_exits_1() {
             "--worktree",
             ".worktrees/test-branch",
         ])
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
         .output()
         .expect("spawn flow-rs cleanup");
     assert_eq!(
@@ -48,8 +52,12 @@ fn cleanup_nonexistent_root_exits_1() {
 /// `flow-rs cleanup --help` covers the Args clap parser and help path.
 #[test]
 fn cleanup_help_exits_0() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
     let output = flow_rs_no_recursion()
         .args(["cleanup", "--help"])
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
         .output()
         .expect("spawn flow-rs cleanup --help");
     assert_eq!(output.status.code(), Some(0));

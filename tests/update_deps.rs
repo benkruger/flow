@@ -52,4 +52,10 @@ fn update_deps_empty_tempdir_does_not_panic() {
         "update-deps must not panic outside a cargo project, got: {}",
         stderr
     );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"status\":"),
+        "update-deps must emit JSON status on stdout, got: {}",
+        stdout
+    );
 }

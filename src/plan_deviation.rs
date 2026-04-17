@@ -223,7 +223,13 @@ fn extract_plan_triples(plan_content: &str) -> Vec<(String, String, String, usiz
         let trimmed = line.trim_start();
         let one_indexed_line = rel_idx + 1;
 
-        if let Some(rest) = trimmed.strip_prefix("```") {
+        // Recognize both backtick (```) and tilde (~~~) fences per
+        // CommonMark so a plan author's tilde-fenced Rust block does
+        // not silently disable fixture extraction for that block.
+        let fence_rest = trimmed
+            .strip_prefix("```")
+            .or_else(|| trimmed.strip_prefix("~~~"));
+        if let Some(rest) = fence_rest {
             if in_block {
                 in_block = false;
                 block_lang.clear();
@@ -288,7 +294,7 @@ fn find_tasks_section_start(lines: &[&str]) -> Option<usize> {
     let mut in_fence = false;
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim_start();
-        if trimmed.starts_with("```") {
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
             in_fence = !in_fence;
             continue;
         }
@@ -304,12 +310,23 @@ fn find_tasks_section_start(lines: &[&str]) -> Option<usize> {
 
 /// Returns the 0-indexed line number of the next level-2
 /// Markdown heading after `start`, or `lines.len()` if no such
-/// heading exists before EOF. `"### "` does not start with
-/// `"## "` (byte 2 is `#` not ` `), so level-3+ headings are
-/// excluded by the `starts_with` check alone.
+/// heading exists before EOF. Tracks both backtick and tilde
+/// fences per CommonMark so a `## ` inside a fenced example
+/// block under the Tasks section does not silently truncate the
+/// scan scope. `"### "` does not start with `"## "` (byte 2 is
+/// `#` not ` `), so level-3+ headings are excluded by the
+/// `starts_with` check alone.
 fn find_next_level_2_heading(lines: &[&str], start: usize) -> usize {
+    let mut in_fence = false;
     for (i, line) in lines.iter().enumerate().skip(start) {
         let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
         if trimmed.starts_with("## ") {
             return i;
         }

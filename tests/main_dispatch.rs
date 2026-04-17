@@ -1051,12 +1051,15 @@ fn upgrade_check_run_no_version_field_exits_0_unknown() {
     );
 }
 
-/// `flow-rs upgrade-check` with `FLOW_UPGRADE_TIMEOUT=0` forces
-/// `run_gh_cmd`'s deadline to fire on the first polling iteration —
-/// exercises the timeout branch (kill + wait + join readers + return
-/// GhResult::Timeout).
+/// Reachability test: `flow-rs upgrade-check` with `FLOW_UPGRADE_TIMEOUT=0`
+/// reaches `run_gh_cmd` via the `run()` entry point. The outcome is not
+/// a deterministic timeout — on a machine without `gh` on PATH the call
+/// short-circuits to `GhResult::NotFound`, on a machine with `gh` the
+/// deadline (now + 0s) fires. Either outcome proves the `run_gh_cmd`
+/// dispatch was reached. A dedicated timeout-branch test would need to
+/// pin `gh` on PATH, which CI cannot guarantee.
 #[test]
-fn upgrade_check_run_gh_timeout_branch_exits_0_unknown() {
+fn upgrade_check_run_reaches_run_gh_cmd_dispatch() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().canonicalize().expect("canonicalize");
     let plugin_json = root.join("plugin.json");
@@ -1082,15 +1085,14 @@ fn upgrade_check_run_gh_timeout_branch_exits_0_unknown() {
     let json: serde_json::Value =
         serde_json::from_str(stdout.trim()).expect("upgrade-check stdout must be JSON");
     assert_eq!(json["status"], "unknown");
-    // The deadline (now + 0s) fires before gh completes; upgrade-check
-    // may report "timed out" OR may report "gh CLI not found" on a
-    // machine without gh on PATH. Either outcome proves run_gh_cmd was
-    // reached via the `run()` entry point.
     let reason = json["reason"].as_str().unwrap_or("");
+    // Discriminate between the two acceptable terminal outcomes so a
+    // regression that produces neither (empty reason, different JSON
+    // shape, panic) is surfaced — not just "some reason was set."
     assert!(
-        !reason.is_empty(),
-        "unknown status must always carry a reason, got: {}",
-        json
+        reason.contains("timed out") || reason.contains("not found") || reason.contains("failed"),
+        "reason must name a run_gh_cmd outcome (timed out / not found / failed), got: {}",
+        reason
     );
 }
 
