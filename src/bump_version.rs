@@ -32,43 +32,55 @@ pub fn validate_version(version: &str) -> bool {
 
 /// Read the current version from plugin.json.
 pub fn read_current_version(plugin_json: &Path) -> Result<String, String> {
-    let text = fs::read_to_string(plugin_json)
-        .map_err(|e| format!("Failed to read {}: {}", plugin_json.display(), e))?;
-    let data: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("Invalid JSON in {}: {}", plugin_json.display(), e))?;
-    data["version"]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| format!("No \"version\" field in {}", plugin_json.display()))
+    let text = match fs::read_to_string(plugin_json) {
+        Ok(t) => t,
+        Err(e) => return Err(format!("Failed to read {}: {}", plugin_json.display(), e)),
+    };
+    let data: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(e) => return Err(format!("Invalid JSON in {}: {}", plugin_json.display(), e)),
+    };
+    match data["version"].as_str() {
+        Some(s) => Ok(s.to_string()),
+        None => Err(format!("No \"version\" field in {}", plugin_json.display())),
+    }
 }
 
 /// Replace `"version": "old"` with `"version": "new"` in a JSON file.
 /// Returns true if any replacement was made.
 pub fn bump_json(path: &Path, old: &str, new: &str) -> Result<bool, String> {
-    let text = fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+    let text = match fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) => return Err(format!("Failed to read {}: {}", path.display(), e)),
+    };
     let old_pattern = format!("\"version\": \"{}\"", old);
     let new_pattern = format!("\"version\": \"{}\"", new);
     let updated = text.replace(&old_pattern, &new_pattern);
     if updated == text {
         return Ok(false);
     }
-    fs::write(path, &updated).map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    if let Err(e) = fs::write(path, &updated) {
+        return Err(format!("Failed to write {}: {}", path.display(), e));
+    }
     Ok(true)
 }
 
 /// Replace `FLOW vOLD` with `FLOW vNEW` in a skill file.
 /// Returns true if any replacement was made.
 pub fn bump_skill(path: &Path, old: &str, new: &str) -> Result<bool, String> {
-    let text = fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+    let text = match fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) => return Err(format!("Failed to read {}: {}", path.display(), e)),
+    };
     let old_pattern = format!("FLOW v{}", old);
     let new_pattern = format!("FLOW v{}", new);
     let updated = text.replace(&old_pattern, &new_pattern);
     if updated == text {
         return Ok(false);
     }
-    fs::write(path, &updated).map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    if let Err(e) = fs::write(path, &updated) {
+        return Err(format!("Failed to write {}: {}", path.display(), e));
+    }
     Ok(true)
 }
 
@@ -124,8 +136,11 @@ pub fn run_impl(args: &Args, repo_root: &Path) -> Result<String, String> {
     // 3. skills/*/SKILL.md — filter dot-prefixed entries (fnmatch convention)
     let skills_dir = repo_root.join("skills");
     if skills_dir.exists() {
-        let mut entries: Vec<_> = fs::read_dir(&skills_dir)
-            .map_err(|e| format!("Failed to read skills dir: {}", e))?
+        let read_dir = match fs::read_dir(&skills_dir) {
+            Ok(rd) => rd,
+            Err(e) => return Err(format!("Failed to read skills dir: {}", e)),
+        };
+        let mut entries: Vec<_> = read_dir
             .filter_map(|e| e.ok())
             .filter(|e| {
                 let name = e.file_name().to_string_lossy().into_owned();
@@ -383,6 +398,76 @@ mod tests {
         assert!(!output.contains(".hidden"));
         let hidden_content = fs::read_to_string(hidden.join("SKILL.md")).unwrap();
         assert!(hidden_content.contains("FLOW v1.0.0"));
+    }
+
+    #[test]
+    fn bump_json_write_failure_errors() {
+        // Write to a readonly directory so fs::write fails.
+        let dir = tempfile::tempdir().unwrap();
+        let readonly = dir.path().join("readonly");
+        fs::create_dir_all(&readonly).unwrap();
+        let path = readonly.join("plugin.json");
+        fs::write(&path, r#"{"version": "1.0.0"}"#).unwrap();
+        // Make file unwritable
+        let mut perms = fs::metadata(&path).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&path, perms).unwrap();
+
+        let err = bump_json(&path, "1.0.0", "2.0.0").unwrap_err();
+        assert!(err.contains("Failed to write"));
+
+        // Restore so tempdir can be cleaned up
+        let mut perms = fs::metadata(&path).unwrap().permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        fs::set_permissions(&path, perms).unwrap();
+    }
+
+    #[test]
+    fn bump_json_missing_file_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = bump_json(&dir.path().join("no-such.json"), "1.0.0", "2.0.0").unwrap_err();
+        assert!(err.contains("Failed to read"));
+    }
+
+    #[test]
+    fn bump_skill_write_failure_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let readonly = dir.path().join("readonly");
+        fs::create_dir_all(&readonly).unwrap();
+        let path = readonly.join("SKILL.md");
+        fs::write(&path, "FLOW v1.0.0 — Test").unwrap();
+        let mut perms = fs::metadata(&path).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&path, perms).unwrap();
+
+        let err = bump_skill(&path, "1.0.0", "2.0.0").unwrap_err();
+        assert!(err.contains("Failed to write"));
+
+        let mut perms = fs::metadata(&path).unwrap().permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        fs::set_permissions(&path, perms).unwrap();
+    }
+
+    #[test]
+    fn bump_skill_missing_file_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = bump_skill(&dir.path().join("no-such.md"), "1.0.0", "2.0.0").unwrap_err();
+        assert!(err.contains("Failed to read"));
+    }
+
+    #[test]
+    fn run_impl_skills_dir_is_file_errors() {
+        // Place a regular file at the `skills/` path → read_dir fails.
+        let (_dir, root) = setup_repo("1.0.0");
+        let skills_path = root.join("skills");
+        fs::write(&skills_path, "I am a file, not a dir").unwrap();
+        let args = Args {
+            version: Some("2.0.0".to_string()),
+        };
+        let err = run_impl(&args, &root).unwrap_err();
+        assert!(err.contains("Failed to read skills dir"));
     }
 
     #[test]

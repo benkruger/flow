@@ -466,6 +466,315 @@ mod tests {
         assert_eq!(value["milestone_closed"], false);
     }
 
+    /// Build a stub `gh` binary on PATH that always exits non-zero so
+    /// production wrappers (run_api, fetch_issue_fields, check_*,
+    /// run_impl_main) reach their best-effort failure paths without
+    /// spawning real gh. Returns the test's stub directory.
+    fn install_failing_gh_stub() -> tempfile::TempDir {
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+        let stub_dir = tempfile::tempdir().unwrap();
+        let stub = stub_dir.path().join("gh");
+        let mut f = std::fs::File::create(&stub).unwrap();
+        f.write_all(b"#!/bin/bash\nexit 1\n").unwrap();
+        let mut perms = std::fs::metadata(&stub).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&stub, perms).unwrap();
+        stub_dir
+    }
+
+    /// Run a closure with PATH temporarily set to the stub dir.
+    /// SAFETY: tests must serialize this — env vars are process-global.
+    /// Wrapped in a mutex to prevent parallel test races on PATH.
+    fn with_stub_path<F: FnOnce()>(stub_dir: &Path, f: F) {
+        use std::sync::Mutex;
+        static PATH_LOCK: Mutex<()> = Mutex::new(());
+        let _guard = PATH_LOCK.lock().unwrap();
+        let original = std::env::var("PATH").unwrap_or_default();
+        let new_path = format!("{}:{}", stub_dir.display(), original);
+        // SAFETY: serialized via PATH_LOCK; only inside this test helper.
+        unsafe {
+            std::env::set_var("PATH", new_path);
+        }
+        f();
+        unsafe {
+            std::env::set_var("PATH", original);
+        }
+    }
+
+    #[test]
+    fn check_parent_closed_with_runner_standalone_null_returns_false() {
+        // parent_number=None → standalone fetch path. Runner returns the
+        // literal "null" string → trimmed=="null" branch fires → false.
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let runner: &GhApiRunner = &|_, _| Ok("null\n".to_string());
+        assert!(!check_parent_closed_with_runner(
+            "owner/repo",
+            5,
+            None,
+            &cwd,
+            runner
+        ));
+    }
+
+    #[test]
+    fn check_parent_closed_with_runner_standalone_empty_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let runner: &GhApiRunner = &|_, _| Ok(String::new());
+        assert!(!check_parent_closed_with_runner(
+            "owner/repo",
+            5,
+            None,
+            &cwd,
+            runner
+        ));
+    }
+
+    #[test]
+    fn check_parent_closed_with_runner_standalone_unparseable_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let runner: &GhApiRunner = &|_, _| Ok("not_an_int".to_string());
+        assert!(!check_parent_closed_with_runner(
+            "owner/repo",
+            5,
+            None,
+            &cwd,
+            runner
+        ));
+    }
+
+    #[test]
+    fn check_parent_closed_with_runner_standalone_succeeds_then_closes() {
+        // Runner returns parent number "10" then sub_issues all closed
+        // then close gh succeeds → returns true.
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let queue: std::cell::RefCell<std::collections::VecDeque<String>> =
+            std::cell::RefCell::new(std::collections::VecDeque::from(vec![
+                "10\n".to_string(),
+                r#"[{"number":5,"state":"closed"}]"#.to_string(),
+                String::new(),
+            ]));
+        let runner: &GhApiRunner =
+            &move |_, _| Ok(queue.borrow_mut().pop_front().unwrap_or_default());
+        assert!(check_parent_closed_with_runner(
+            "owner/repo",
+            5,
+            None,
+            &cwd,
+            runner
+        ));
+    }
+
+    #[test]
+    fn check_milestone_closed_with_runner_standalone_null_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let runner: &GhApiRunner = &|_, _| Ok("null\n".to_string());
+        assert!(!check_milestone_closed_with_runner(
+            "owner/repo",
+            5,
+            None,
+            &cwd,
+            runner
+        ));
+    }
+
+    #[test]
+    fn check_milestone_closed_with_runner_standalone_empty_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let runner: &GhApiRunner = &|_, _| Ok(String::new());
+        assert!(!check_milestone_closed_with_runner(
+            "owner/repo",
+            5,
+            None,
+            &cwd,
+            runner
+        ));
+    }
+
+    #[test]
+    fn check_milestone_closed_with_runner_standalone_unparseable_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let runner: &GhApiRunner = &|_, _| Ok("not_an_int".to_string());
+        assert!(!check_milestone_closed_with_runner(
+            "owner/repo",
+            5,
+            None,
+            &cwd,
+            runner
+        ));
+    }
+
+    #[test]
+    fn check_milestone_closed_with_runner_standalone_succeeds_then_closes() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let queue: std::cell::RefCell<std::collections::VecDeque<String>> =
+            std::cell::RefCell::new(std::collections::VecDeque::from(vec![
+                "3\n".to_string(),
+                r#"{"open_issues":0}"#.to_string(),
+                String::new(),
+            ]));
+        let runner: &GhApiRunner =
+            &move |_, _| Ok(queue.borrow_mut().pop_front().unwrap_or_default());
+        assert!(check_milestone_closed_with_runner(
+            "owner/repo",
+            5,
+            None,
+            &cwd,
+            runner
+        ));
+    }
+
+    #[test]
+    fn check_parent_closed_with_runner_close_command_fails_returns_false() {
+        // Sub-issues all closed but the close command itself fails → false.
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let queue: std::cell::RefCell<std::collections::VecDeque<Result<String, String>>> =
+            std::cell::RefCell::new(std::collections::VecDeque::from(vec![
+                Ok(r#"[{"number":5,"state":"closed"}]"#.to_string()),
+                Err("close failed".to_string()),
+            ]));
+        let runner: &GhApiRunner = &move |_, _| {
+            queue
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or_else(|| Err("queue empty".to_string()))
+        };
+        assert!(!check_parent_closed_with_runner(
+            "owner/repo",
+            5,
+            Some(10),
+            &cwd,
+            runner
+        ));
+    }
+
+    #[test]
+    fn check_milestone_closed_with_runner_patch_command_fails_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let queue: std::cell::RefCell<std::collections::VecDeque<Result<String, String>>> =
+            std::cell::RefCell::new(std::collections::VecDeque::from(vec![
+                Ok(r#"{"open_issues":0}"#.to_string()),
+                Err("patch failed".to_string()),
+            ]));
+        let runner: &GhApiRunner = &move |_, _| {
+            queue
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or_else(|| Err("queue empty".to_string()))
+        };
+        assert!(!check_milestone_closed_with_runner(
+            "owner/repo",
+            5,
+            Some(3),
+            &cwd,
+            runner
+        ));
+    }
+
+    #[test]
+    fn check_parent_closed_with_runner_sub_issues_open_returns_false() {
+        // Sub-issues fetch returns a list with an open issue → false.
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let runner: &GhApiRunner = &|_, _| {
+            Ok(r#"[{"number":5,"state":"closed"},{"number":6,"state":"open"}]"#.to_string())
+        };
+        assert!(!check_parent_closed_with_runner(
+            "owner/repo",
+            5,
+            Some(10),
+            &cwd,
+            runner
+        ));
+    }
+
+    #[test]
+    fn check_milestone_closed_with_runner_open_issues_nonzero_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let runner: &GhApiRunner = &|_, _| Ok(r#"{"open_issues":2}"#.to_string());
+        assert!(!check_milestone_closed_with_runner(
+            "owner/repo",
+            5,
+            Some(3),
+            &cwd,
+            runner
+        ));
+    }
+
+    #[test]
+    fn run_api_with_failing_gh_returns_err() {
+        let stub_dir = install_failing_gh_stub();
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().canonicalize().unwrap();
+        with_stub_path(stub_dir.path(), || {
+            let result = run_api(&["gh", "api", "repos/x/y/issues/1"], &cwd);
+            assert!(result.is_err(), "gh stub exits 1 → run_api Err");
+        });
+    }
+
+    #[test]
+    fn fetch_issue_fields_production_with_failing_gh_returns_none_none() {
+        let stub_dir = install_failing_gh_stub();
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().canonicalize().unwrap();
+        with_stub_path(stub_dir.path(), || {
+            let (parent, milestone) = fetch_issue_fields("owner/repo", 5, &cwd);
+            assert_eq!(parent, None);
+            assert_eq!(milestone, None);
+        });
+    }
+
+    #[test]
+    fn check_parent_closed_production_with_failing_gh_returns_false() {
+        let stub_dir = install_failing_gh_stub();
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().canonicalize().unwrap();
+        with_stub_path(stub_dir.path(), || {
+            // parent_number=None → standalone fetch path; gh fails → false
+            assert!(!check_parent_closed("owner/repo", 5, None, &cwd));
+        });
+    }
+
+    #[test]
+    fn check_milestone_closed_production_with_failing_gh_returns_false() {
+        let stub_dir = install_failing_gh_stub();
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().canonicalize().unwrap();
+        with_stub_path(stub_dir.path(), || {
+            // milestone_number=None → standalone fetch path; gh fails → false
+            assert!(!check_milestone_closed("owner/repo", 5, None, &cwd));
+        });
+    }
+
+    #[test]
+    fn run_impl_main_production_with_failing_gh_returns_ok_both_false() {
+        let stub_dir = install_failing_gh_stub();
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().canonicalize().unwrap();
+        with_stub_path(stub_dir.path(), || {
+            let args = Args {
+                repo: "owner/repo".to_string(),
+                issue_number: 5,
+            };
+            let (value, code) = run_impl_main(args, &cwd);
+            assert_eq!(code, 0);
+            assert_eq!(value["status"], "ok");
+            assert_eq!(value["parent_closed"], false);
+            assert_eq!(value["milestone_closed"], false);
+        });
+    }
+
     #[test]
     fn auto_close_parent_run_impl_main_with_runner_happy_path_closes_both() {
         // Inject responses simulating: fetch_issue_fields returns

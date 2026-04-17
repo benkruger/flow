@@ -50,13 +50,16 @@ pub fn check_phase(
         ),
     };
 
-    let phase_idx = order.iter().position(|p| p == phase).ok_or_else(|| {
-        format!(
-            "Invalid phase: {}. Must be one of: {}",
-            phase,
-            order.join(", ")
-        )
-    })?;
+    let phase_idx = match order.iter().position(|p| p == phase) {
+        Some(idx) => idx,
+        None => {
+            return Err(format!(
+                "Invalid phase: {}. Must be one of: {}",
+                phase,
+                order.join(", ")
+            ));
+        }
+    };
 
     // First phase has no prerequisites
     if phase_idx == 0 {
@@ -72,20 +75,20 @@ pub fn check_phase(
         .and_then(|s| s.as_str())
         .unwrap_or("pending");
 
-    let prev_name = names
-        .get(prev.as_str())
-        .cloned()
-        .unwrap_or_else(|| prev.clone());
+    let prev_name = match names.get(prev.as_str()) {
+        Some(n) => n.clone(),
+        None => prev.clone(),
+    };
     let prev_num = numbers.get(prev.as_str()).copied().unwrap_or(0);
-    let prev_cmd = commands
-        .get(prev.as_str())
-        .cloned()
-        .unwrap_or_else(|| format!("/flow:{}", prev));
+    let prev_cmd = match commands.get(prev.as_str()) {
+        Some(c) => c.clone(),
+        None => format!("/flow:{}", prev),
+    };
 
-    let phase_name = names
-        .get(phase)
-        .cloned()
-        .unwrap_or_else(|| phase.to_string());
+    let phase_name = match names.get(phase) {
+        Some(n) => n.clone(),
+        None => phase.to_string(),
+    };
     let phase_num = numbers.get(phase).copied().unwrap_or(0);
 
     if prev_status != "complete" {
@@ -106,10 +109,10 @@ pub fn check_phase(
         .unwrap_or("pending");
 
     if this_status == "complete" {
-        let visits = this_data
-            .and_then(|d| d.get("visit_count"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        let visits = match this_data.and_then(|d| d.get("visit_count")) {
+            Some(v) => v.as_i64().unwrap_or(0),
+            None => 0,
+        };
         let msg = format!(
             "NOTE: Phase {}: {} was previously completed ({} visit(s)). Re-entering.",
             phase_num, phase_name, visits

@@ -196,3 +196,125 @@ fn analyze_issues_decomposed_filter() {
     let data = parse_full_stdout(&output);
     assert_eq!(data["status"], "ok");
 }
+
+#[test]
+fn analyze_issues_blocked_filter() {
+    // Drive the "blocked" filter closure inside filter_issues via the
+    // run() CLI path (covers the closure body in the production binary).
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let issues = vec![fake_issue(1, "Decomposed", vec!["Decomposed"])];
+    let issues_path = dir.path().join("issues.json");
+    fs::write(&issues_path, serde_json::to_string(&issues).unwrap()).unwrap();
+    let stub_dir = create_gh_stub(&repo, "#!/bin/bash\necho '{\"data\":{}}'\nexit 0\n");
+
+    let output = run_analyze(
+        &repo,
+        &["--issues-json", issues_path.to_str().unwrap(), "--blocked"],
+        &stub_dir,
+    );
+
+    assert_eq!(output.status.code(), Some(0));
+    let data = parse_full_stdout(&output);
+    assert_eq!(data["status"], "ok");
+}
+
+#[test]
+fn analyze_issues_quick_start_filter() {
+    // Drive the "quick-start" filter closure inside filter_issues via run().
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let issues = vec![fake_issue(1, "Decomposed", vec!["Decomposed"])];
+    let issues_path = dir.path().join("issues.json");
+    fs::write(&issues_path, serde_json::to_string(&issues).unwrap()).unwrap();
+    let stub_dir = create_gh_stub(&repo, "#!/bin/bash\necho '{\"data\":{}}'\nexit 0\n");
+
+    let output = run_analyze(
+        &repo,
+        &[
+            "--issues-json",
+            issues_path.to_str().unwrap(),
+            "--quick-start",
+        ],
+        &stub_dir,
+    );
+
+    assert_eq!(output.status.code(), Some(0));
+    let data = parse_full_stdout(&output);
+    assert_eq!(data["status"], "ok");
+}
+
+#[test]
+fn analyze_issues_invalid_json_content_errors() {
+    // File exists but contains invalid JSON → run() prints an error and
+    // exits 1 via the "Invalid JSON" branch of the from_str match arm.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let issues_path = dir.path().join("issues.json");
+    fs::write(&issues_path, "this is not json").unwrap();
+    let stub_dir = create_gh_stub(&repo, "#!/bin/bash\nexit 0\n");
+
+    let output = run_analyze(
+        &repo,
+        &["--issues-json", issues_path.to_str().unwrap()],
+        &stub_dir,
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_full_stdout(&output);
+    assert_eq!(data["status"], "error");
+    assert!(data["message"]
+        .as_str()
+        .unwrap_or("")
+        .contains("Invalid JSON"));
+}
+
+#[test]
+fn analyze_issues_gh_failure_errors() {
+    // No --issues-json: run() invokes `gh issue list`. Stub exits non-zero
+    // → run() prints an error and exits 1 via the gh_result_to_stdout Err
+    // branch.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let stub_dir = create_gh_stub(&repo, "#!/bin/bash\necho 'gh failed' >&2\nexit 1\n");
+
+    let output = run_analyze(&repo, &[], &stub_dir);
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_full_stdout(&output);
+    assert_eq!(data["status"], "error");
+}
+
+#[test]
+fn analyze_issues_label_and_milestone_args_forwarded_to_gh() {
+    // --label and --milestone args are pushed into the gh command. With a
+    // stub that returns a valid issue list, the run() succeeds and exit 0.
+    // Drives the `for l in &args.label` loop and the `if let Some(ref m)`
+    // milestone branch.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let stub_dir = create_gh_stub(&repo, "#!/bin/bash\necho '[]'\nexit 0\n");
+
+    let output = run_analyze(
+        &repo,
+        &[
+            "--label",
+            "Rule",
+            "--label",
+            "Tech Debt",
+            "--milestone",
+            "v1",
+        ],
+        &stub_dir,
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_full_stdout(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["total"], 0);
+}

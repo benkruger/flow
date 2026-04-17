@@ -653,21 +653,18 @@ pub fn run(args: Args) {
 
     if let Some(name) = filter_name {
         if let Some(issues_arr) = output["issues"].as_array() {
-            match filter_issues(issues_arr, name) {
-                Ok(filtered) => {
-                    let in_progress_count = output["in_progress"]
-                        .as_array()
-                        .map(|a| a.len())
-                        .unwrap_or(0);
-                    let count = in_progress_count + filtered.len();
-                    output["issues"] = Value::Array(filtered);
-                    output["total"] = serde_json::json!(count);
-                }
-                Err(e) => {
-                    crate::output::json_error(&e, &[]);
-                    std::process::exit(1);
-                }
-            }
+            // filter_name comes from the internal &'static set above, so
+            // filter_issues cannot return Err here. Using expect makes
+            // the unreachable error branch a panic instead of dead code.
+            let filtered = filter_issues(issues_arr, name)
+                .expect("internal filter name is always one of the four known values");
+            let in_progress_count = match output["in_progress"].as_array() {
+                Some(a) => a.len(),
+                None => 0,
+            };
+            let count = in_progress_count + filtered.len();
+            output["issues"] = Value::Array(filtered);
+            output["total"] = serde_json::json!(count);
         }
     }
 

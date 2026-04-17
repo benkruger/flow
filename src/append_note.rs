@@ -70,7 +70,10 @@ pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
     };
 
     let names = phase_names();
-    let phase_name = names.get(&phase).cloned().unwrap_or_else(|| phase.clone());
+    let phase_name = match names.get(&phase) {
+        Some(n) => n.clone(),
+        None => phase.clone(),
+    };
     let timestamp = now();
 
     match mutate_state(&state_path, |state| {
@@ -84,18 +87,24 @@ pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
         if state.get("notes").is_none() || !state["notes"].is_array() {
             state["notes"] = json!([]);
         }
-        if let Some(arr) = state["notes"].as_array_mut() {
-            arr.push(json!({
-                "phase": phase,
-                "phase_name": phase_name,
-                "timestamp": timestamp,
-                "type": args.note_type,
-                "note": args.note,
-            }));
-        }
+        // The block above guarantees state["notes"] is an array, so
+        // as_array_mut returns Some unconditionally.
+        let arr = state["notes"]
+            .as_array_mut()
+            .expect("notes is always an array here");
+        arr.push(json!({
+            "phase": phase,
+            "phase_name": phase_name,
+            "timestamp": timestamp,
+            "type": args.note_type,
+            "note": args.note,
+        }));
     }) {
         Ok(state) => {
-            let count = state["notes"].as_array().map(|a| a.len()).unwrap_or(0);
+            let count = match state["notes"].as_array() {
+                Some(a) => a.len(),
+                None => 0,
+            };
             (json!({"status": "ok", "note_count": count}), 0)
         }
         Err(e) => (
@@ -408,6 +417,67 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Could not read state file"));
+    }
+
+    #[test]
+    fn append_note_run_impl_main_array_root_returns_ok_zero_count() {
+        // State root is an array — closure guard fires early return,
+        // leaving notes as Value::Null. as_array() None branch returns 0.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        // read_current_phase parses the file: an array gets `current_phase`
+        // missing → defaults to "flow-start". The closure then early-
+        // returns leaving notes as Null.
+        fs::write(state_dir.join("array-root.json"), "[1, 2, 3]").unwrap();
+        let args = make_args(Some("array-root"));
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["note_count"], 0);
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn append_note_run_impl_main_unknown_phase_falls_back_to_phase_string() {
+        // State has current_phase="custom-phase" not in phase_names →
+        // unwrap_or_else fallback fires.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(
+            state_dir.join("unknown-phase.json"),
+            r#"{"current_phase":"custom-unknown-phase","notes":[]}"#,
+        )
+        .unwrap();
+        let args = make_args(Some("unknown-phase"));
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(code, 0);
+        let on_disk: Value = serde_json::from_str(
+            &fs::read_to_string(state_dir.join("unknown-phase.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(on_disk["notes"][0]["phase_name"], "custom-unknown-phase");
+    }
+
+    #[test]
+    fn append_note_run_impl_main_findings_wrong_type_resets_to_array() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(
+            state_dir.join("wrong-type.json"),
+            r#"{"current_phase":"flow-plan","notes":"not-an-array"}"#,
+        )
+        .unwrap();
+        let args = make_args(Some("wrong-type"));
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["note_count"], 1);
+        assert_eq!(code, 0);
     }
 
     #[test]

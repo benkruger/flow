@@ -297,7 +297,7 @@ pub fn run(args: Args) {
     // `git merge-base --is-ancestor origin/main HEAD` trivially succeed
     // and always return `up_to_date` regardless of the feature
     // branch's actual state.
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or(PathBuf::from("."));
     let result = check_freshness(state_file.as_deref(), &cwd);
 
     let status = result
@@ -594,12 +594,21 @@ mod tests {
     fn test_retry_max_reached() {
         let dir = tempfile::tempdir().unwrap();
         let state_file = make_state_file(dir.path(), 3);
-        // Closure should never be called — panic if it is.
+        // Track call count via RefCell instead of panicking, so the closure
+        // body always executes (panic-arm coverage is unreachable in a
+        // passing test). The assertion afterward verifies count == 0.
+        let call_count = std::cell::RefCell::new(0);
         let mut git = |_args: &[&str], _timeout: u64| -> CmdResult {
-            panic!("git_cmd should not be called at max retries");
+            *call_count.borrow_mut() += 1;
+            ok()
         };
         let result = check_freshness_impl(Some(&state_file), &mut git);
         assert_eq!(result, json!({"status": "max_retries", "retries": 3}));
+        assert_eq!(
+            *call_count.borrow(),
+            0,
+            "git_cmd must not be called at max retries"
+        );
     }
 
     #[test]
@@ -699,5 +708,84 @@ mod tests {
         let result = check_freshness_impl(Some(&path), &mut git);
         // Unparseable string falls back to 0, then increments to 1.
         assert_eq!(result, json!({"status": "merged", "retries": 1}));
+    }
+
+    // --- run_git_cmd integration: real subprocess via /usr/bin/true, /usr/bin/false, and a missing binary ---
+
+    #[test]
+    fn run_git_cmd_success_returns_returncode_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let result = run_git_cmd(&["/usr/bin/true"], 5, &cwd);
+        assert!(matches!(
+            result,
+            CmdResult::Ok { returncode: 0, .. }
+        ));
+    }
+
+    #[test]
+    fn run_git_cmd_nonzero_exit_returns_returncode() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let result = run_git_cmd(&["/usr/bin/false"], 5, &cwd);
+        assert!(matches!(
+            result,
+            CmdResult::Ok { returncode: 1, .. }
+        ));
+    }
+
+    #[test]
+    fn run_git_cmd_spawn_failure_returns_127() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let result = run_git_cmd(&["/no/such/binary/here-deadbeef"], 5, &cwd);
+        assert!(matches!(
+            result,
+            CmdResult::Ok { returncode: 127, .. }
+        ));
+    }
+
+    #[test]
+    fn run_git_cmd_timeout_returns_timeout_variant() {
+        // Use sleep to exceed the 1-second timeout. /bin/sleep verified
+        // via `which sleep` on macOS.
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let result = run_git_cmd(&["/bin/sleep", "10"], 1, &cwd);
+        assert!(matches!(result, CmdResult::Timeout));
+    }
+
+    #[test]
+    fn run_git_cmd_captures_stdout_and_stderr() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        // /bin/sh -c "echo hi; echo err >&2" produces both streams.
+        let result = run_git_cmd(&["/bin/sh", "-c", "echo hi; echo err >&2"], 5, &cwd);
+        // matches! with a guard avoids a fallback arm. We assert
+        // returncode==0 and that both streams carry the expected content.
+        assert!(
+            matches!(
+                &result,
+                CmdResult::Ok { returncode: 0, stdout, stderr }
+                    if stdout.contains("hi") && stderr.contains("err")
+            ),
+            "got: {:?}",
+            result
+        );
+    }
+
+    // --- check_freshness production wrapper ---
+
+    #[test]
+    fn check_freshness_production_wrapper_returns_json_object() {
+        // Production check_freshness wraps check_freshness_impl with a
+        // run_git_cmd closure. Verifies the wrapper produces a JSON
+        // object with a status field (specific status varies by host
+        // git availability).
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let result = check_freshness(None, &cwd);
+        assert!(result.is_object());
+        assert!(result.get("status").is_some());
     }
 }
