@@ -192,10 +192,11 @@ fn try_delete_adversarial_test_files(flow_states: &Path, branch: &str) -> String
     if any_deleted {
         "deleted".to_string()
     } else if any_matched {
-        format!(
-            "failed: {}",
-            first_error.unwrap_or_else(|| "unknown error".to_string())
-        )
+        let err_msg = match first_error {
+            Some(e) => e,
+            None => "unknown error".to_string(),
+        };
+        format!("failed: {}", err_msg)
     } else {
         "skipped".to_string()
     }

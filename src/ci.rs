@@ -515,7 +515,7 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
 /// CLI entry point for `bin/flow ci`.
 pub fn run(args: Args) {
     let flow_ci_running = std::env::var("FLOW_CI_RUNNING").is_ok();
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
     let root = crate::git::project_root();
     let (result, code) = run_impl(&args, &cwd, &root, flow_ci_running);
     println!("{}", serde_json::to_string(&result).unwrap());
@@ -941,18 +941,23 @@ mod tests {
         write_script(&script, "#!/usr/bin/env bash\nexit 0\n");
         let tools = single_tool(&script);
 
+        // Pre-create .flow-states/ with an unrelated marker so the iter+
+        // filter chain always runs against a real directory. The
+        // assertion is that NO entry ending in "-ci-passed" exists; the
+        // unrelated marker has a different suffix and must not match.
+        let flow_states = f.path.join(".flow-states");
+        fs::create_dir_all(&flow_states).unwrap();
+        fs::write(flow_states.join("unrelated-marker.txt"), "x").unwrap();
+
         let (out, code) = run_once(&f.path, &f.path, &tools, None, false, None);
         assert_eq!(code, 0);
         assert_eq!(out["skipped"], false);
-        let flow_states = f.path.join(".flow-states");
-        if flow_states.exists() {
-            let entries: Vec<_> = fs::read_dir(&flow_states)
-                .unwrap()
-                .filter_map(|e| e.ok())
-                .filter(|e| e.file_name().to_string_lossy().ends_with("-ci-passed"))
-                .collect();
-            assert!(entries.is_empty(), "no sentinel expected");
-        }
+        let entries: Vec<_> = fs::read_dir(&flow_states)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().ends_with("-ci-passed"))
+            .collect();
+        assert!(entries.is_empty(), "no sentinel expected");
     }
 
     // --- run_with_retry tests ---

@@ -107,17 +107,19 @@ fn create_state_with_tty(
     state.insert("transcript_path".into(), Value::Null);
     state.insert("notes".into(), json!([]));
     state.insert("prompt".into(), json!(prompt));
-    state.insert(
-        "phases".into(),
-        serde_json::to_value(&phases).map_err(|e| e.to_string())?,
-    );
+    let phases_value = match serde_json::to_value(&phases) {
+        Ok(v) => v,
+        Err(e) => return Err(e.to_string()),
+    };
+    state.insert("phases".into(), phases_value);
     state.insert("phase_transitions".into(), json!([]));
 
     if let Some(s) = skills {
-        state.insert(
-            "skills".into(),
-            serde_json::to_value(s).map_err(|e| e.to_string())?,
-        );
+        let skills_value = match serde_json::to_value(s) {
+            Ok(v) => v,
+            Err(e) => return Err(e.to_string()),
+        };
+        state.insert("skills".into(), skills_value);
     }
     if let Some(f) = commit_format {
         state.insert("commit_format".into(), json!(f));
@@ -131,11 +133,17 @@ fn create_state_with_tty(
 
     let paths = FlowPaths::new(project_root, branch);
     let state_dir = paths.flow_states_dir();
-    fs::create_dir_all(&state_dir).map_err(|e| format!("Cannot create .flow-states: {}", e))?;
+    if let Err(e) = fs::create_dir_all(&state_dir) {
+        return Err(format!("Cannot create .flow-states: {}", e));
+    }
     let state_path = paths.state_file();
-    let output = serde_json::to_string_pretty(&Value::Object(state))
-        .map_err(|e| format!("JSON serialize error: {}", e))?;
-    fs::write(&state_path, output).map_err(|e| format!("Cannot write state file: {}", e))?;
+    let output = match serde_json::to_string_pretty(&Value::Object(state)) {
+        Ok(o) => o,
+        Err(e) => return Err(format!("JSON serialize error: {}", e)),
+    };
+    if let Err(e) = fs::write(&state_path, output) {
+        return Err(format!("Cannot write state file: {}", e));
+    }
 
     Ok(())
 }

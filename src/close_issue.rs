@@ -190,4 +190,119 @@ mod tests {
             .unwrap()
             .contains("Could not detect repo"));
     }
+
+    #[test]
+    fn close_issue_with_runner_returns_stdout_when_stderr_empty() {
+        // Drives the `if !stdout.is_empty()` branch: subprocess exits
+        // non-zero with stdout but no stderr → returns stdout content.
+        let factory = |_args: &[&str]| {
+            Command::new("sh")
+                .args(["-c", "echo from-stdout; exit 1"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let err = close_issue_with_runner("owner/repo", 42, &factory).unwrap();
+        assert!(err.contains("from-stdout"));
+    }
+
+    #[test]
+    fn close_issue_with_runner_returns_unknown_error_when_streams_empty() {
+        // Drives the final `Some("Unknown error".to_string())` branch:
+        // exit non-zero with no stdout and no stderr.
+        let factory = |_args: &[&str]| {
+            Command::new("sh")
+                .args(["-c", "exit 1"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        };
+        let err = close_issue_with_runner("owner/repo", 42, &factory).unwrap();
+        assert_eq!(err, "Unknown error");
+    }
+
+    /// Stub `gh` on PATH that always exits 0. Used to exercise the
+    /// `close_issue_by_number` production wrapper without spawning a
+    /// real network call.
+    fn install_succeeding_gh_stub() -> tempfile::TempDir {
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+        let stub_dir = tempfile::tempdir().unwrap();
+        let stub = stub_dir.path().join("gh");
+        let mut f = std::fs::File::create(&stub).unwrap();
+        f.write_all(b"#!/bin/bash\nexit 0\n").unwrap();
+        let mut perms = std::fs::metadata(&stub).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&stub, perms).unwrap();
+        stub_dir
+    }
+
+    /// Run a closure with PATH temporarily set to include the stub dir.
+    /// Serialized via Mutex to prevent parallel test races on PATH.
+    fn with_stub_path<F: FnOnce()>(stub_dir: &std::path::Path, f: F) {
+        use std::sync::Mutex;
+        static PATH_LOCK: Mutex<()> = Mutex::new(());
+        let _guard = PATH_LOCK.lock().unwrap();
+        let original = std::env::var("PATH").unwrap_or_default();
+        let new_path = format!("{}:{}", stub_dir.display(), original);
+        unsafe {
+            std::env::set_var("PATH", new_path);
+        }
+        f();
+        unsafe {
+            std::env::set_var("PATH", original);
+        }
+    }
+
+    #[test]
+    fn close_issue_by_number_production_wrapper_succeeds_with_stub() {
+        let stub_dir = install_succeeding_gh_stub();
+        with_stub_path(stub_dir.path(), || {
+            let result = close_issue_by_number("owner/repo", 42);
+            assert!(result.is_none(), "expected success, got: {:?}", result);
+        });
+    }
+
+    #[test]
+    fn close_issue_run_impl_main_with_repo_arg_calls_close_issue_by_number() {
+        // args.repo Some path → resolver not called → close_issue_by_number
+        // → returns ok with stub gh. Counter-based check: assert resolver
+        // call count is 0 instead of panicking from inside the closure.
+        let stub_dir = install_succeeding_gh_stub();
+        with_stub_path(stub_dir.path(), || {
+            let call_count = std::cell::RefCell::new(0);
+            let args = Args {
+                repo: Some("owner/repo".to_string()),
+                number: 42,
+            };
+            let resolver = || -> Option<String> {
+                *call_count.borrow_mut() += 1;
+                None
+            };
+            let (value, code) = run_impl_main(args, &resolver);
+            assert_eq!(value["status"], "ok");
+            assert_eq!(code, 0);
+            assert_eq!(
+                *call_count.borrow(),
+                0,
+                "resolver must not be called when args.repo is Some"
+            );
+        });
+    }
+
+    #[test]
+    fn close_issue_run_impl_main_resolver_some_calls_close_issue_by_number() {
+        // args.repo None + resolver Some → close_issue_by_number
+        let stub_dir = install_succeeding_gh_stub();
+        with_stub_path(stub_dir.path(), || {
+            let args = Args {
+                repo: None,
+                number: 42,
+            };
+            let resolver = || Some("owner/repo".to_string());
+            let (value, code) = run_impl_main(args, &resolver);
+            assert_eq!(value["status"], "ok");
+            assert_eq!(code, 0);
+        });
+    }
 }

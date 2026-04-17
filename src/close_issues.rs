@@ -89,14 +89,20 @@ fn close_single_issue(
         cmd_args.push(r);
     }
 
-    let mut child = child_factory(&cmd_args).map_err(|e| format!("Failed to spawn: {}", e))?;
+    let mut child = match child_factory(&cmd_args) {
+        Ok(c) => c,
+        Err(e) => return Err(format!("Failed to spawn: {}", e)),
+    };
 
     let start = std::time::Instant::now();
     let poll_interval = Duration::from_millis(50);
     loop {
         match child.try_wait() {
             Ok(Some(_)) => {
-                let output = child.wait_with_output().map_err(|e| e.to_string())?;
+                let output = match child.wait_with_output() {
+                    Ok(o) => o,
+                    Err(e) => return Err(e.to_string()),
+                };
                 if output.status.success() {
                     return Ok(());
                 }
@@ -297,6 +303,25 @@ mod tests {
         assert_eq!(value["status"], "ok");
         assert_eq!(value["closed"].as_array().unwrap().len(), 0);
         assert_eq!(value["failed"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn close_issues_with_runner_spawn_failure_returns_failed_entry() {
+        // Drives the spawn-failure branch: factory returns Err → close_single_issue
+        // returns Err("Failed to spawn: ...") → entry lands in `failed`.
+        let factory = |_args: &[&str]| -> std::io::Result<Child> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no such binary",
+            ))
+        };
+        let (closed, failed) = close_issues_with_runner(&[42], None, &factory);
+        assert!(closed.is_empty());
+        assert_eq!(failed.len(), 1);
+        assert!(failed[0]["error"]
+            .as_str()
+            .unwrap()
+            .contains("Failed to spawn"));
     }
 
     // --- run_impl_main_with_runner (seam wired through dispatcher) ---

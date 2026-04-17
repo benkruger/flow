@@ -32,12 +32,25 @@ pub fn append_log(root: &Path, branch: &str, message: &str) -> Result<(), std::i
     Ok(())
 }
 
+/// Testable wrapper that returns an exit code instead of calling
+/// `process::exit`. Returns `(stderr_message, exit_code)` — empty
+/// stderr on success.
+pub fn run_impl_main(root: &Path, branch: &str, message: &str) -> (String, i32) {
+    match append_log(root, branch, message) {
+        Ok(()) => (String::new(), 0),
+        Err(e) => (format!("flow log: {}", e), 1),
+    }
+}
+
 /// CLI entry point — exit 1 on error, no output on success.
 pub fn run(branch: &str, message: &str) {
     let root = git::project_root();
-    if let Err(e) = append_log(&root, branch, message) {
-        eprintln!("flow log: {}", e);
-        process::exit(1);
+    let (stderr_msg, code) = run_impl_main(&root, branch, message);
+    if !stderr_msg.is_empty() {
+        eprintln!("{}", stderr_msg);
+    }
+    if code != 0 {
+        process::exit(code);
     }
 }
 
@@ -101,6 +114,24 @@ mod tests {
         assert_eq!(lines.len(), 2);
         assert!(lines[0].ends_with("first"));
         assert!(lines[1].ends_with("second"));
+    }
+
+    #[test]
+    fn run_impl_main_success_returns_empty_stderr_zero_code() {
+        let dir = tempfile::tempdir().unwrap();
+        let (msg, code) = run_impl_main(dir.path(), "branch", "message");
+        assert_eq!(msg, "");
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn run_impl_main_failure_returns_stderr_one_code() {
+        // Place a regular file at .flow-states/ so create_dir_all fails.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(".flow-states"), "I am a file, not a dir").unwrap();
+        let (msg, code) = run_impl_main(dir.path(), "branch", "message");
+        assert_eq!(code, 1);
+        assert!(msg.starts_with("flow log:"), "got: {}", msg);
     }
 
     #[test]
