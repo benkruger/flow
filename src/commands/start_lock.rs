@@ -512,16 +512,44 @@ mod tests {
 
         let stale_self = queue_dir.join("my-feature");
         fs::write(&stale_self, "").unwrap();
+        // Use a 2-hour-old mtime (7200s) to put the entry well past
+        // STALE_TIMEOUT_SECONDS (1800s) regardless of filesystem mtime
+        // precision or the delta between set_file_mtime and the
+        // acquire() call's SystemTime::now(). The 60-second margin the
+        // earlier 1860s value provided was insufficient to guarantee
+        // coverage of the `fs::File::create(&entry)` line after the
+        // stale-removal step on every run.
         set_file_mtime(
             &stale_self,
-            FileTime::from_system_time(SystemTime::now() - Duration::from_secs(1860)),
+            FileTime::from_system_time(SystemTime::now() - Duration::from_secs(7200)),
         )
         .unwrap();
+        let initial_mtime = fs::metadata(&stale_self)
+            .unwrap()
+            .modified()
+            .unwrap()
+            .duration_since(UNIX_EPOCH)
+            .unwrap();
 
         let result = acquire("my-feature", queue_dir);
         assert_eq!(result["status"], "acquired");
         // Entry must still exist (replaced with fresh mtime, not deleted)
         assert!(queue_dir.join("my-feature").exists());
+        // The entry's mtime must have advanced — proof that
+        // `fs::remove_file + fs::File::create` ran. If the stale check
+        // had been skipped, the mtime would still be ~2 hours ago.
+        let final_mtime = fs::metadata(queue_dir.join("my-feature"))
+            .unwrap()
+            .modified()
+            .unwrap()
+            .duration_since(UNIX_EPOCH)
+            .unwrap();
+        assert!(
+            final_mtime > initial_mtime,
+            "entry mtime must advance after stale-replace; initial={:?} final={:?}",
+            initial_mtime,
+            final_mtime
+        );
     }
 
     #[test]
