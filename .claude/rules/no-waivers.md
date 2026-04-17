@@ -119,7 +119,15 @@ enforced at four layers:
    into a new whole-percent range, bump the matching threshold in
    the same commit that earned the improvement. Thresholds never
    move downward — a regression that would force a lower floor is
-   a CI-blocking failure, not a reason to relax the gate.
+   a CI-blocking failure, not a reason to relax the gate. The
+   flags live on the `cargo llvm-cov nextest` invocation inside
+   `bin/test`, so every CI run by every engineer on every branch
+   inherits the same floor. See `bin/test` in the project repo for
+   the current numeric values. `.claude/rules/tool-dispatch.md`
+   "Full-Suite `bin/test` Runs Clean First" documents the
+   complementary coverage-coherence discipline that keeps the
+   floor measurement honest across main's long-lived `target/`
+   dir.
 
 ## How to Apply (Plan Phase)
 

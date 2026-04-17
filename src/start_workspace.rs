@@ -6,8 +6,7 @@
 //! closing the race condition where another flow could commit to main
 //! between lock release and worktree creation.
 
-use std::path::PathBuf;
-use std::process;
+use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use serde_json::{json, Value};
@@ -21,7 +20,6 @@ use crate::flow_paths::FlowPaths;
 use crate::git::project_root;
 use crate::github::detect_repo;
 use crate::lock::mutate_state;
-use crate::output::json_error;
 use crate::utils::{derive_feature, run_cmd, SetupError};
 
 #[derive(Parser, Debug)]
@@ -149,18 +147,28 @@ pub(crate) fn initial_commit_push_pr(
     Ok((pr_url, pr_number))
 }
 
-/// Testable entry point.
-pub fn run_impl(args: &Args) -> Result<Value, String> {
+/// Production entry point: binds [`run_impl_with_paths`] to the real
+/// [`project_root`] and `current_dir()`.
+pub fn run_impl(args: &Args) -> Value {
     let root = project_root();
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    run_impl_with_paths(args, &root, &cwd)
+}
+
+/// Testable core with injected root and cwd. Production [`run_impl`]
+/// binds them to [`project_root`] and `current_dir()`. Tests supply
+/// a `TempDir` for both. Returns a `Value` directly — every error
+/// scenario surfaces as a `status: "error"` payload with exit code 0
+/// via [`run_impl_main`]. No path returns `Err` at the Rust level.
+pub fn run_impl_with_paths(args: &Args, root: &Path, cwd: &Path) -> Value {
     let branch = &args.branch;
     let feature_title = derive_feature(branch);
 
     // Update TUI step counter
-    let state_path = FlowPaths::new(&root, branch).state_file();
+    let state_path = FlowPaths::new(root, branch).state_file();
     update_step(&state_path, 3);
 
-    let queue_dir = queue_path(&root);
+    let queue_dir = queue_path(root);
 
     // Helper: release lock and return error
     let release_lock = |feature: &str| {
@@ -176,11 +184,11 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
             }
             Err(e) => {
                 release_lock(&args.branch);
-                return Ok(json!({
+                return json!({
                     "status": "error",
                     "step": "prompt_file",
                     "message": format!("Could not read prompt file: {}", e),
-                }));
+                });
             }
         }
     } else {
@@ -188,24 +196,24 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     };
 
     // Step 1: Create worktree
-    let wt_path = match create_worktree(&root, branch) {
+    let wt_path = match create_worktree(root, branch) {
         Ok(p) => p,
         Err(e) => {
             let _ = append_log(
-                &root,
+                root,
                 branch,
                 &format!("[Phase 1] start-workspace — worktree failed: {}", e.message),
             );
             release_lock(&args.branch);
-            return Ok(json!({
+            return json!({
                 "status": "error",
                 "step": e.step,
                 "message": e.message,
-            }));
+            });
         }
     };
     let _ = append_log(
-        &root,
+        root,
         branch,
         &format!(
             "[Phase 1] start-workspace — worktree .worktrees/{} (ok)",
@@ -219,7 +227,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
             Ok(r) => r,
             Err(e) => {
                 let _ = append_log(
-                    &root,
+                    root,
                     branch,
                     &format!(
                         "[Phase 1] start-workspace — PR creation failed: {}",
@@ -227,21 +235,21 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
                     ),
                 );
                 release_lock(&args.branch);
-                return Ok(json!({
+                return json!({
                     "status": "error",
                     "step": e.step,
                     "message": e.message,
-                }));
+                });
             }
         };
     let _ = append_log(
-        &root,
+        root,
         branch,
         "[Phase 1] start-workspace — commit + push + PR create (ok)",
     );
 
     // Step 3: Backfill state file
-    let repo = detect_repo(Some(cwd.as_path()));
+    let repo = detect_repo(Some(cwd));
     let pr_url_clone = pr_url.clone();
     let prompt_clone = prompt.clone();
     let repo_clone = repo.clone();
@@ -276,20 +284,20 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
             Ok(_) => {}
             Err(e) => {
                 let _ = append_log(
-                    &root,
+                    root,
                     branch,
                     &format!("[Phase 1] start-workspace — backfill failed: {}", e),
                 );
                 release_lock(&args.branch);
-                return Ok(json!({
+                return json!({
                     "status": "error",
                     "step": "backfill",
                     "message": format!("Failed to backfill state: {}", e),
-                }));
+                });
             }
         }
         let _ = append_log(
-            &root,
+            root,
             branch,
             "[Phase 1] start-workspace — state backfill (ok)",
         );
@@ -298,7 +306,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     // Step 4: Release lock (final action)
     release_lock(&args.branch);
     let _ = append_log(
-        &root,
+        root,
         branch,
         "[Phase 1] start-workspace — lock released (ok)",
     );
@@ -317,7 +325,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     } else {
         format!("{}/{}", wt_relative, relative_cwd)
     };
-    Ok(json!({
+    json!({
         "status": "ok",
         "worktree": wt_relative,
         "worktree_cwd": worktree_cwd,
@@ -326,20 +334,18 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         "pr_number": pr_number,
         "feature": feature_title,
         "branch": branch,
-    }))
+    })
 }
 
-/// CLI entry point.
-pub fn run(args: Args) {
-    match run_impl(&args) {
-        Ok(result) => {
-            println!("{}", serde_json::to_string(&result).unwrap());
-        }
-        Err(e) => {
-            json_error(&e, &[]);
-            process::exit(1);
-        }
-    }
+/// Main-arm entry point: returns the `(Value, i32)` contract that
+/// `dispatch::dispatch_json` consumes. Takes `root: &Path` and
+/// `cwd: &Path` per `.claude/rules/rust-patterns.md` "Main-arm
+/// dispatch" so inline tests can pass a `TempDir` fixture instead of
+/// the host `project_root()`/`current_dir()`. `run_impl_with_paths`
+/// always returns `Value` — business errors appear in the
+/// `status: "error"` payload with exit code `0`.
+pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
+    (run_impl_with_paths(args, root, cwd), 0)
 }
 
 #[cfg(test)]
@@ -381,5 +387,31 @@ mod tests {
     fn extract_pr_number_pull_with_no_number() {
         // URL ends at "pull/" with nothing parseable after it
         assert_eq!(extract_pr_number("https://github.com/org/repo/pull/"), 0);
+    }
+
+    // --- run_impl_main ---
+
+    /// Drives run_impl_main against a bare TempDir that is not a git
+    /// repo — the worktree-creation subprocess fails on missing
+    /// `.git`, and `run_impl_with_paths` returns a `status:"error"`
+    /// `step:"worktree"` payload. run_impl_main wraps with exit 0
+    /// per the business-error convention.
+    #[test]
+    fn start_workspace_run_impl_main_err_path() {
+        use std::fs;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        // Seed just enough state so the function reaches the
+        // worktree-creation step. No .git, so create_worktree fails.
+        let state_dir = root.join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let args = Args {
+            description: "workspace-err-feature".to_string(),
+            branch: "workspace-err-branch".to_string(),
+            prompt_file: None,
+        };
+        let (v, code) = run_impl_main(&args, &root, &root);
+        assert_eq!(code, 0, "exit code is 0 for business errors");
+        assert_eq!(v["status"], "error");
     }
 }

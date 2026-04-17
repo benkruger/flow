@@ -55,16 +55,6 @@ pub fn post_merge_inner(
 ) -> Value {
     let state_path = Path::new(state_file);
 
-    // Best-effort logging — only log when .flow-states/ already exists.
-    // append_log creates the directory if missing, which would break test
-    // fixtures that deliberately omit it.
-    let paths = FlowPaths::new(root, branch);
-    let log = |msg: &str| {
-        if paths.flow_states_dir().is_dir() {
-            let _ = append_log(root, branch, msg);
-        }
-    };
-
     // Initialize result with default fields (preserve_order maintains this order)
     let mut result: Map<String, Value> = Map::new();
     result.insert("status".to_string(), json!("ok"));
@@ -77,6 +67,34 @@ pub fn post_merge_inner(
     result.insert("parents_closed".to_string(), json!([]));
     result.insert("slack".to_string(), json!({"status": "skipped"}));
     let mut failures: Map<String, Value> = Map::new();
+
+    // Best-effort logging — `try_new` tolerates slash-containing
+    // branches per `.claude/rules/external-input-validation.md` because
+    // `--branch` is external CLI input. When the branch is invalid for
+    // FlowPaths (contains '/' or is empty), return the initialized
+    // result with a single `invalid_branch` failure rather than
+    // panicking: post-merge's artifact paths
+    // (`.flow-states/<branch>-issues.json` etc.) cannot address a
+    // slash-containing branch in the flat `.flow-states/` layout.
+    let paths = match FlowPaths::try_new(root, branch) {
+        Some(p) => p,
+        None => {
+            failures.insert(
+                "invalid_branch".to_string(),
+                json!(format!(
+                    "Branch '{}' contains '/' or is empty; complete-post-merge artifact paths require a canonical flat branch name",
+                    branch
+                )),
+            );
+            result.insert("failures".to_string(), Value::Object(failures));
+            return Value::Object(result);
+        }
+    };
+    let log = |msg: &str| {
+        if paths.flow_states_dir().is_dir() {
+            let _ = append_log(root, branch, msg);
+        }
+    };
 
     // Read state for slack_thread_ts and repo (tolerate corrupt JSON)
     let state: Value = if state_path.exists() {
