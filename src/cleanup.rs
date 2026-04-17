@@ -288,8 +288,44 @@ pub fn cleanup(
         },
     );
 
-    // Delete state file
-    let paths = FlowPaths::new(project_root, branch);
+    // External-input audit: `branch` reaches cleanup directly from
+    // complete-finalize's `--branch` CLI arg per
+    // `.claude/rules/external-input-validation.md`. Slash-containing
+    // or empty branches cannot address flat `.flow-states/` paths —
+    // use `try_new` and skip all path-dependent cleanup steps when
+    // the branch is invalid. `--pull` still runs because it does
+    // not depend on FlowPaths.
+    let paths = match FlowPaths::try_new(project_root, branch) {
+        Some(p) => p,
+        None => {
+            for key in [
+                "state_file",
+                "plan_file",
+                "dag_file",
+                "log_file",
+                "frozen_phases",
+                "ci_sentinel",
+                "timings_file",
+                "closed_issues_file",
+                "issues_file",
+                "adversarial_test",
+            ] {
+                steps.insert(key.to_string(), "skipped: invalid branch".to_string());
+            }
+            if pull {
+                let (ok, output) = run_cmd(&["git", "pull", "origin", "main"], project_root);
+                steps.insert(
+                    "git_pull".to_string(),
+                    if ok {
+                        "pulled".to_string()
+                    } else {
+                        format!("failed: {}", output)
+                    },
+                );
+            }
+            return steps;
+        }
+    };
     let flow_states = paths.flow_states_dir();
     steps.insert(
         "state_file".to_string(),
