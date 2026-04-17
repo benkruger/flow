@@ -24,7 +24,6 @@ use crate::complete_preflight::LOCAL_TIMEOUT;
 use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::github::detect_repo;
-use crate::output::{json_error, json_ok};
 
 #[derive(Parser, Debug)]
 #[command(name = "issue", about = "Create a GitHub issue")]
@@ -405,79 +404,106 @@ pub fn extract_error(stderr: &str, stdout: &str) -> String {
     }
 }
 
-fn detect_repo_or_fail(root: &Path) -> String {
-    match detect_repo(Some(root)) {
-        Some(r) => r,
-        None => {
-            json_error(
-                "Could not detect repo from git remote. Use --repo owner/name.",
-                &[],
-            );
-            std::process::exit(1);
-        }
-    }
-}
-
-pub fn run(args: Args) {
-    let root = project_root();
-
-    // Code Review filing gate: load the current branch's state file
-    // (if any) and reject filing when current_phase is flow-code-review,
-    // unless --override-code-review-ban was passed. Missing / malformed
-    // state file passes through — this command is also used outside an
-    // active flow.
-    let state_json: Option<String> = resolve_branch(None, &root).and_then(|branch| {
-        let state_path = FlowPaths::new(&root, &branch).state_file();
-        fs::read_to_string(&state_path).ok()
-    });
+/// Main-arm dispatcher: compute the issue-create result and pair it with
+/// an exit code. Returns `(value, 0)` on success, `(error_value, 1)` on
+/// any failure path. All previously `process::exit`-bearing branches
+/// (Code Review filing block, repo-detect failure, body-file read
+/// failure, gh-create failure) now return the error tuple instead.
+///
+/// Closure parameters seam off the production dependencies so unit tests
+/// can drive every branch without spawning real `gh` or relying on a
+/// host git remote:
+/// - `state_reader` returns the current branch's state file content
+///   (or `None` if no flow is active). Production binds it to
+///   `resolve_branch + read_to_string`.
+/// - `repo_resolver` returns the repo from `git remote` (or `None`).
+///   Production binds it to `detect_repo(Some(root))`.
+/// - `runner` is the gh-runner closure threaded through to
+///   `create_issue_with_runner`. Production binds it to `&run_gh_cmd`.
+pub fn run_impl_main(
+    args: Args,
+    root: &Path,
+    state_reader: &dyn Fn() -> Option<String>,
+    repo_resolver: &dyn Fn() -> Option<String>,
+    runner: &GhRunner,
+) -> (serde_json::Value, i32) {
+    // Code Review filing gate.
+    let state_json = state_reader();
     if let Some(msg) =
         should_reject_for_code_review(state_json.as_deref(), args.override_code_review_ban)
     {
-        json_error(&msg, &[]);
-        std::process::exit(1);
+        return (json!({"status": "error", "message": msg}), 1);
     }
 
-    // Resolve repo: --repo > --state-file > detect_repo
+    // Resolve repo: --repo > --state-file > repo_resolver().
     let repo = if let Some(r) = args.repo {
         r
     } else if let Some(ref sf) = args.state_file {
-        resolve_repo_from_state(sf).unwrap_or_else(|| detect_repo_or_fail(&root))
+        match resolve_repo_from_state(sf).or_else(repo_resolver) {
+            Some(r) => r,
+            None => {
+                return (
+                    json!({"status": "error", "message": "Could not detect repo from git remote. Use --repo owner/name."}),
+                    1,
+                )
+            }
+        }
     } else {
-        detect_repo_or_fail(&root)
+        match repo_resolver() {
+            Some(r) => r,
+            None => {
+                return (
+                    json!({"status": "error", "message": "Could not detect repo from git remote. Use --repo owner/name."}),
+                    1,
+                )
+            }
+        }
     };
 
-    // Read body from file if provided
+    // Read body from file if provided.
     let body = if let Some(ref bf) = args.body_file {
-        match read_body_file(bf, &root) {
+        match read_body_file(bf, root) {
             Ok(b) => Some(b),
-            Err(e) => {
-                json_error(&e, &[]);
-                std::process::exit(1);
-            }
+            Err(e) => return (json!({"status": "error", "message": e}), 1),
         }
     } else {
         None
     };
 
-    match create_issue(
+    match create_issue_with_runner(
         &repo,
         &args.title,
         args.label.as_deref(),
         body.as_deref(),
         args.milestone.as_deref(),
+        runner,
     ) {
-        Ok(result) => {
-            json_ok(&[
-                ("url", json!(result.url)),
-                ("number", json!(result.number)),
-                ("id", json!(result.id)),
-            ]);
-        }
-        Err(e) => {
-            json_error(&e, &[]);
-            std::process::exit(1);
-        }
+        Ok(result) => (
+            json!({
+                "status": "ok",
+                "url": result.url,
+                "number": result.number,
+                "id": result.id,
+            }),
+            0,
+        ),
+        Err(e) => (json!({"status": "error", "message": e}), 1),
     }
+}
+
+pub fn run(args: Args) -> ! {
+    let root = project_root();
+    let root_for_state = root.clone();
+    let root_for_repo = root.clone();
+    let state_reader = move || -> Option<String> {
+        resolve_branch(None, &root_for_state).and_then(|branch| {
+            let state_path = FlowPaths::new(&root_for_state, &branch).state_file();
+            fs::read_to_string(&state_path).ok()
+        })
+    };
+    let repo_resolver = move || -> Option<String> { detect_repo(Some(&root_for_repo)) };
+    let (value, code) = run_impl_main(args, &root, &state_reader, &repo_resolver, &run_gh_cmd);
+    crate::dispatch::dispatch_json(value, code)
 }
 
 fn resolve_repo_from_state(state_file: &str) -> Option<String> {
@@ -952,6 +978,102 @@ mod tests {
         let (id, err) = fetch_database_id_with_runner("owner/name", 1, &runner);
         assert!(id.is_none());
         assert!(err.unwrap().contains("api down"));
+    }
+
+    // --- run_impl_main ---
+
+    #[test]
+    fn issue_run_impl_main_blocked_by_code_review_returns_error_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = || Some(r#"{"current_phase":"flow-code-review"}"#.to_string());
+        let repo = || Some("owner/name".to_string());
+        let runner = mock_runner(vec![]);
+        let args = Args {
+            repo: Some("owner/name".to_string()),
+            title: "Test".to_string(),
+            label: None,
+            body_file: None,
+            state_file: None,
+            milestone: None,
+            override_code_review_ban: false,
+        };
+        let (value, code) = run_impl_main(args, dir.path(), &state, &repo, &runner);
+        assert_eq!(value["status"], "error");
+        assert_eq!(code, 1);
+        assert!(value["message"].as_str().unwrap().contains("Code Review"));
+    }
+
+    #[test]
+    fn issue_run_impl_main_no_repo_returns_error_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = || None;
+        let repo = || None;
+        let runner = mock_runner(vec![]);
+        let args = Args {
+            repo: None,
+            title: "Test".to_string(),
+            label: None,
+            body_file: None,
+            state_file: None,
+            milestone: None,
+            override_code_review_ban: false,
+        };
+        let (value, code) = run_impl_main(args, dir.path(), &state, &repo, &runner);
+        assert_eq!(value["status"], "error");
+        assert_eq!(code, 1);
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Could not detect repo"));
+    }
+
+    #[test]
+    fn issue_run_impl_main_body_file_missing_returns_error_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = || None;
+        let repo = || Some("owner/name".to_string());
+        let runner = mock_runner(vec![]);
+        let args = Args {
+            repo: Some("owner/name".to_string()),
+            title: "Test".to_string(),
+            label: None,
+            body_file: Some("nonexistent-body.md".to_string()),
+            state_file: None,
+            milestone: None,
+            override_code_review_ban: false,
+        };
+        let (value, code) = run_impl_main(args, dir.path(), &state, &repo, &runner);
+        assert_eq!(value["status"], "error");
+        assert_eq!(code, 1);
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Could not read body file"));
+    }
+
+    #[test]
+    fn issue_run_impl_main_happy_path_returns_ok_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = || None;
+        let repo = || Some("owner/name".to_string());
+        let runner = mock_runner(vec![
+            Ok("https://github.com/owner/name/issues/100".to_string()),
+            Ok("777".to_string()),
+        ]);
+        let args = Args {
+            repo: Some("owner/name".to_string()),
+            title: "Test".to_string(),
+            label: None,
+            body_file: None,
+            state_file: None,
+            milestone: None,
+            override_code_review_ban: false,
+        };
+        let (value, code) = run_impl_main(args, dir.path(), &state, &repo, &runner);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["number"], 100);
+        assert_eq!(value["id"], 777);
     }
 
     // --- run_gh_cmd_inner ---
