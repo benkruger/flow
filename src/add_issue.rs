@@ -1,12 +1,11 @@
-use std::process;
+use std::path::Path;
 
 use clap::Parser;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
-use crate::output::{json_error, json_ok};
 use crate::phase_config::phase_names;
 use crate::utils::now;
 
@@ -34,20 +33,25 @@ pub struct Args {
     pub branch: Option<String>,
 }
 
-pub fn run(args: Args) {
-    let root = project_root();
-    let branch = match resolve_branch(args.branch.as_deref(), &root) {
+/// Main-arm dispatcher with injected root. Returns `(value, exit_code)`:
+/// `(ok+issue_count, 0)` on success, `(no_state, 0)` when the state file
+/// is missing, `(error+message, 1)` on resolve-branch failure or
+/// mutate_state failure. Tests pass tempdir paths and `--branch` args
+/// to bypass git resolution.
+pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
+    let branch = match resolve_branch(args.branch.as_deref(), root) {
         Some(b) => b,
         None => {
-            json_error("Could not determine current branch", &[]);
-            process::exit(1);
+            return (
+                json!({"status": "error", "message": "Could not determine current branch"}),
+                1,
+            );
         }
     };
-    let state_path = FlowPaths::new(&root, &branch).state_file();
+    let state_path = FlowPaths::new(root, &branch).state_file();
 
     if !state_path.exists() {
-        println!(r#"{{"status":"no_state"}}"#);
-        process::exit(0);
+        return (json!({"status": "no_state"}), 0);
     }
 
     let names = phase_names();
@@ -84,13 +88,19 @@ pub fn run(args: Args) {
                 .as_array()
                 .map(|a| a.len())
                 .unwrap_or(0);
-            json_ok(&[("issue_count", json!(count))]);
+            (json!({"status": "ok", "issue_count": count}), 0)
         }
-        Err(e) => {
-            json_error(&format!("Failed to add issue: {}", e), &[]);
-            process::exit(1);
-        }
+        Err(e) => (
+            json!({"status": "error", "message": format!("Failed to add issue: {}", e)}),
+            1,
+        ),
     }
+}
+
+pub fn run(args: Args) -> ! {
+    let root = project_root();
+    let (value, code) = run_impl_main(args, &root);
+    crate::dispatch::dispatch_json(value, code)
 }
 
 #[cfg(test)]
@@ -256,5 +266,63 @@ mod tests {
 
         let result = mutate_state(&path, |_| {});
         assert!(result.is_err());
+    }
+
+    // --- run_impl_main ---
+
+    fn make_args(branch: Option<&str>) -> Args {
+        Args {
+            label: "Rule".to_string(),
+            title: "test-title".to_string(),
+            url: "https://github.com/owner/repo/issues/1".to_string(),
+            phase: "flow-learn".to_string(),
+            branch: branch.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn add_issue_run_impl_main_no_state_returns_no_state_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let args = make_args(Some("missing-branch"));
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(value["status"], "no_state");
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn add_issue_run_impl_main_success_returns_issue_count_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(
+            state_dir.join("present-branch.json"),
+            r#"{"current_phase":"flow-learn","issues_filed":[]}"#,
+        )
+        .unwrap();
+        let args = make_args(Some("present-branch"));
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["issue_count"], 1);
+    }
+
+    #[test]
+    fn add_issue_run_impl_main_mutate_state_failure_returns_error_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        // Write malformed JSON so mutate_state's serde parse fails.
+        fs::write(state_dir.join("present-branch.json"), "{not json").unwrap();
+        let args = make_args(Some("present-branch"));
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(value["status"], "error");
+        assert_eq!(code, 1);
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Failed to add issue"));
     }
 }
