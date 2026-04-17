@@ -53,6 +53,9 @@ fi
 if [ $# -eq 0 ] && [ "${FLOW_CI_FORCE:-}" != "1" ]; then
   cargo clean --target-dir target/llvm-cov-target -p flow-rs
   /usr/bin/find target/llvm-cov-target -maxdepth 1 -name "*.profraw" -delete 2>/dev/null || true
+  # Sweep worktree-root profraw leaks — subprocess tests whose cwd lands
+  # here when cargo-llvm-cov's LLVM_PROFILE_FILE template can't resolve.
+  /usr/bin/find . -maxdepth 1 -name "default_*.profraw" -delete 2>/dev/null || true
 fi
 
 # Coverage floors. Each threshold is the floor of the current aggregate
@@ -74,9 +77,9 @@ fi
 #   produce LEAK lines during the run which pass through the awk filter in full)
 # pipefail (set above) preserves cargo llvm-cov's exit code.
 cargo llvm-cov --no-cfg-coverage --no-clean \
-  --fail-under-lines 96 \
-  --fail-under-regions 96 \
-  --fail-under-functions 94 \
+  --fail-under-lines 97 \
+  --fail-under-regions 97 \
+  --fail-under-functions 95 \
   nextest --status-level pass --final-status-level fail "$@" 2>&1 | awk '
 /^ *PASS / {
   printf "."

@@ -56,7 +56,7 @@ fn do_thing() -> Result<()> {
 ## What Counts as a Resource Requiring Cleanup
 
 - **Terminal modes** — raw mode, alternate screen, mouse capture,
-  bracketed paste. Reference: `TerminalGuard` in `src/main.rs`.
+  bracketed paste. Reference: `TerminalGuard<F>` in `src/tui_terminal.rs`.
 - **File locks** — `flock`, `fcntl` advisory locks. The lockfile
   must be released even on panic or the next process blocks
   forever (or until 30-minute stale timeout, in FLOW's case).
@@ -76,37 +76,54 @@ resources whose "released" state is not the default.
 
 ## Reference Implementation
 
-The canonical example is `TerminalGuard` in `src/main.rs`:
+The canonical example is `TerminalGuard<F>` in
+`src/tui_terminal.rs`. The guard is parameterized over a cleanup
+closure so production passes the real crossterm restore logic
+while unit tests pass a flag-setting closure that records
+whether Drop ran:
 
 ```rust
-struct TerminalGuard {
-    terminal: Rc<RefCell<Terminal<CrosstermBackend<Stdout>>>>,
+pub struct TerminalGuard<F: FnMut()> {
+    release_fn: Option<F>,
 }
 
-impl Drop for TerminalGuard {
+impl<F: FnMut()> TerminalGuard<F> {
+    pub fn new(release_fn: F) -> Self {
+        Self { release_fn: Some(release_fn) }
+    }
+}
+
+impl<F: FnMut()> Drop for TerminalGuard<F> {
     fn drop(&mut self) {
-        use crossterm::execute;
-        use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
-        let _ = disable_raw_mode();
-        let _ = execute!(
-            self.terminal.borrow_mut().backend_mut(),
-            LeaveAlternateScreen
-        );
+        if let Some(mut f) = self.release_fn.take() {
+            f();
+        }
     }
 }
 ```
 
 The guard:
 
-1. Owns whatever release operations need (here, a shared handle
-   to the same terminal the draw closure renders into)
-2. Implements `Drop` with errors swallowed (`let _ = ...`) because
-   Drop cannot return them and a panic-during-cleanup is worse
-   than a swallowed error
-3. Is placed in scope BEFORE the work that might panic, so
+1. Owns the cleanup closure (here, a closure capturing the shared
+   handle to the same terminal the draw closure renders into,
+   plus the crossterm `disable_raw_mode` and `LeaveAlternateScreen`
+   calls)
+2. Implements `Drop` with errors swallowed inside the closure
+   (`let _ = ...`) because Drop cannot return them and a
+   panic-during-cleanup is worse than a swallowed error
+3. Uses `Option::take` so the closure runs at most once even if
+   the guard is somehow dropped twice
+4. Is placed in scope BEFORE the work that might panic, so
    stack-unwinding drops it
-4. Is a named struct (not `defer!`-style scope_guard crate) so
+5. Is a named struct (not `defer!`-style scope_guard crate) so
    the responsibility is documented in the type system
+
+The closure-injection design — exposing `release_fn` as a generic
+parameter rather than hardcoding the cleanup body — also makes
+the Drop unit-testable without a real terminal. See
+`.claude/rules/rust-patterns.md` "Seam-injection variant for
+externally-coupled code" for the broader pattern this guard
+exemplifies.
 
 ## Plan-Phase Trigger
 
@@ -159,7 +176,10 @@ acquisition in production code, verify:
 
 ## Cross-References
 
-- `src/main.rs::TerminalGuard` — the reference implementation
+- `src/tui_terminal.rs::TerminalGuard<F>` — the reference implementation
+- `.claude/rules/rust-patterns.md` — Seam-injection variant for
+  externally-coupled code (the closure-injection pattern that
+  makes the Drop unit-testable)
 - `.claude/rules/concurrency-model.md` — file lock rules; the
   start lock specifically benefits from Drop-based release
 - Rust reference on RAII and Drop semantics

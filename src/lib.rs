@@ -70,6 +70,7 @@ pub mod test_runner;
 pub mod tombstone_audit;
 pub mod tui;
 pub mod tui_data;
+pub mod tui_terminal;
 pub mod update_deps;
 pub mod update_pr_body;
 pub mod upgrade_check;

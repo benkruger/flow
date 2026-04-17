@@ -154,6 +154,34 @@ worktree. Main.rs resolves those values once per arm and passes them
 in, matching the shape of the pre-existing `run_impl` seam in
 `ci.rs::run()`.
 
+**Seam-injection variant for externally-coupled code.** When a
+module's production wrapper depends on resources `cargo nextest`
+cannot supply (real TTY, raw-mode terminal, network socket), expose
+the dependencies as closure parameters in an `_impl` variant and
+keep the production wrapper a thin closure-supplier. Reference:
+`tui_terminal::run_tui_arm_impl(is_tty_fn, run_terminal_fn, root)`
+accepts `is_tty_fn: FnOnce() -> bool` and `run_terminal_fn:
+FnOnce(&mut TuiApp) -> io::Result<()>` so unit tests substitute
+mock closures and assert each branch's return tuple. The production
+wrapper `run_tui_arm` returns `!` and calls `run_tui_arm_impl` with
+real implementations (`libc::isatty`, the crossterm event loop),
+then matches the Result to `process::exit` — keeping the exit
+dispatch inside the module leaves main.rs's match arm a single
+fully-covered expression. Crossterm code that physically cannot run
+without a TTY (raw mode, alternate screen) lives in a private
+helper (`run_terminal`) whose internal coverage is the module's
+concern, not main.rs's.
+
+The same closure-injection pattern applies to RAII guards whose
+release path needs unit-test verification: parameterize the cleanup
+closure (`TerminalGuard<F: FnMut()>` with `release_fn: Option<F>`)
+so unit tests construct a guard with a flag-setting closure, panic
+inside `std::panic::catch_unwind`, and assert the flag was set on
+Drop unwind. The production caller passes the real cleanup closure
+(disable_raw_mode, LeaveAlternateScreen) and gets the same
+guarantee. Per `.claude/rules/panic-safe-cleanup.md`, the closure
+must swallow its own errors because `Drop` cannot return them.
+
 **Three-tier dispatch for subprocess-coordinating modules.** When a
 main-arm subcommand coordinates external subprocesses (git, other
 `bin/flow` subcommands, notifiers, CI runners), the pattern grows a

@@ -400,6 +400,508 @@ fn finalize_commit_empty_args_exits_1() {
     );
 }
 
+/// `flow-rs init-state ""` exercises the empty-name guard in the
+/// `InitState` arm body of `main.rs` — the `if feature_name.is_empty()`
+/// branch fires `json_error` + `process::exit(1)` before reaching the
+/// `commands::init_state::run` delegation.
+#[test]
+fn main_init_state_empty_name_exits_1() {
+    let output = flow_rs_no_recursion()
+        .args(["init-state", ""])
+        .output()
+        .expect("spawn flow-rs init-state");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Feature name required"),
+        "expected stdout to contain 'Feature name required', got: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("\"step\":\"args\""),
+        "expected stdout JSON to contain `\"step\":\"args\"`, got: {}",
+        stdout
+    );
+}
+
+/// `flow-rs init-state "valid-name"` in an isolated tempdir exits 1
+/// because no `.flow.json` exists. Covers the delegation line of the
+/// `InitState` arm body — the `commands::init_state::run` call that
+/// runs after the empty-name guard passes.
+#[test]
+fn main_init_state_valid_name_no_flow_json_exits_1() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+    let output = flow_rs_no_recursion()
+        .args(["init-state", "valid-name"])
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .output()
+        .expect("spawn flow-rs init-state");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Could not read .flow.json"),
+        "expected stdout to surface the .flow.json read failure, got: {}",
+        stdout
+    );
+}
+
+/// `flow-rs start-step --step 1 --branch <valid> echo ok` covers the
+/// `StartStep` arm's delegation to `commands::start_step::run`. The
+/// arm body is now a thin pass-through after the dead `--`-strip
+/// branch was removed (clap's `trailing_var_arg` consumes `--` as a
+/// separator and never leaves it in the trailing-args vec).
+#[test]
+fn main_start_step_no_double_dash_passes_through() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+    let output = flow_rs_no_recursion()
+        .args([
+            "start-step",
+            "--step",
+            "1",
+            "--branch",
+            "test-fixture-branch",
+            "echo",
+            "ok",
+        ])
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .output()
+        .expect("spawn flow-rs start-step");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// `flow-rs format-status` in a tempdir with no git repo exits 2
+/// because `resolve_branch(None, &root)` returns `None` (no branch
+/// override, no git repo to detect from). Covers the `Err` arm of
+/// the `FormatStatus` arm body — the `eprintln!` + `process::exit`
+/// path that fires when `format_status::run_impl_main` returns
+/// `Err(("Could not determine current branch", 2))`.
+#[test]
+fn main_format_status_branch_resolution_err_exits_nonzero() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+    let output = flow_rs_no_recursion()
+        .arg("format-status")
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .output()
+        .expect("spawn flow-rs format-status");
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "expected exit 2 from branch-resolution failure\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Could not determine current branch"),
+        "expected stderr to surface the branch-resolution failure message, got: {}",
+        stderr
+    );
+    assert!(
+        !stderr.contains("panicked at"),
+        "format-status must not panic, got: {}",
+        stderr
+    );
+}
+
+/// `flow-rs tui` invoked via subprocess (no controlling TTY on the
+/// child) exits 1. Covers the `Tui` arm body in `main.rs` and the
+/// production `tui_terminal::run_tui_arm` wrapper, which detects the
+/// non-TTY case and returns `Err(("Error: ...", 1))`.
+#[test]
+fn main_tui_non_tty_exits_1() {
+    let output = flow_rs_no_recursion()
+        .arg("tui")
+        .output()
+        .expect("spawn flow-rs tui");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("flow tui requires an interactive terminal"),
+        "expected stderr to surface the non-TTY rejection message, got: {}",
+        stderr
+    );
+}
+
+/// Parameterized sweep that invokes every thin `Some(Commands::X(args)) =>
+/// X::run(args)` arm in `src/main.rs` to drive the arm body's region
+/// instrumentation. Each entry passes the minimal args clap requires;
+/// each invocation runs in an isolated tempdir with `GIT_CEILING_DIRECTORIES`
+/// set so the spawned child cannot escape into the host repo. Exit codes
+/// vary (most subcommands exit 1 on missing state, some exit 0 cleanly,
+/// hooks exit 0 on empty stdin). The assertion is uniform: stderr must
+/// not contain `"panicked at"`. The test's job is to enter the arm
+/// body — what the underlying `X::run` does once entered is the owning
+/// module's coverage concern, out of scope for `main.rs` 100%.
+///
+/// Arms `Cleanup`, `FinalizeCommit`, `StartLock`, `CheckPhase`, `TuiData`,
+/// `InitState`, `StartStep`, `Tui`, `External`, and `None` are covered
+/// by dedicated tests above and are intentionally excluded from the
+/// sweep.
+#[test]
+fn main_arm_invocations_cover_dispatch() {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    fn run_sweep_entry(
+        subcommand: &str,
+        args: &[&str],
+        stdin_json: Option<&str>,
+    ) -> std::process::Output {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+        let mut cmd = flow_rs_no_recursion();
+        cmd.arg(subcommand);
+        cmd.args(args);
+        cmd.current_dir(&root);
+        cmd.env("GIT_CEILING_DIRECTORIES", &root);
+        // Neutralize gh CLI auth so any subcommand that shells out to
+        // `gh` (close-issue, create-sub-issue, link-blocked-by,
+        // create-milestone, auto-close-parent, label-issues, qa-reset,
+        // qa-verify, scaffold-qa) fails with an immediate auth error
+        // rather than blocking on a network timeout in CI environments
+        // without GitHub credentials. `GH_TOKEN=invalid` forces gh to
+        // fail at the auth check before issuing any HTTP request.
+        // Setting `HOME` to the tempdir prevents gh from reading a
+        // user-level config that could supply a real token.
+        cmd.env("GH_TOKEN", "invalid");
+        cmd.env("HOME", &root);
+        if let Some(input) = stdin_json {
+            cmd.stdin(Stdio::piped());
+            cmd.stdout(Stdio::piped());
+            cmd.stderr(Stdio::piped());
+            let mut child = cmd.spawn().expect("spawn flow-rs");
+            child
+                .stdin
+                .as_mut()
+                .expect("stdin")
+                .write_all(input.as_bytes())
+                .expect("write stdin");
+            child.wait_with_output().expect("wait_with_output")
+        } else {
+            cmd.output().expect("spawn flow-rs")
+        }
+    }
+
+    fn run_hook_sweep(hook_name: &str) -> std::process::Output {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+        let mut cmd = flow_rs_no_recursion();
+        cmd.args(["hook", hook_name]);
+        cmd.current_dir(&root);
+        cmd.env("GIT_CEILING_DIRECTORIES", &root);
+        // Same neutralization as run_sweep_entry — hook subcommands
+        // can also shell out to `gh` (e.g., stop-failure capturing
+        // PR context).
+        cmd.env("GH_TOKEN", "invalid");
+        cmd.env("HOME", &root);
+        cmd.stdin(Stdio::piped());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+        let mut child = cmd.spawn().expect("spawn flow-rs hook");
+        child
+            .stdin
+            .as_mut()
+            .expect("stdin")
+            .write_all(b"{}")
+            .expect("write stdin");
+        child.wait_with_output().expect("wait_with_output")
+    }
+
+    // (subcommand, args, optional stdin) — each entry hits one thin arm.
+    let invocations: &[(&str, &[&str], Option<&str>)] = &[
+        ("bump-version", &[], None),
+        ("check-freshness", &[], None),
+        ("ci", &[], None),
+        ("build", &[], None),
+        ("test", &[], None),
+        ("lint", &[], None),
+        ("format", &[], None),
+        ("update-deps", &[], None),
+        ("analyze-issues", &[], None),
+        (
+            "append-note",
+            &["--note", "x", "--branch", "test-fixture"],
+            None,
+        ),
+        (
+            "add-finding",
+            &[
+                "--finding",
+                "x",
+                "--reason",
+                "y",
+                "--outcome",
+                "fixed",
+                "--phase",
+                "flow-code",
+                "--branch",
+                "test-fixture",
+            ],
+            None,
+        ),
+        (
+            "add-issue",
+            &[
+                "--label",
+                "Tech Debt",
+                "--title",
+                "x",
+                "--url",
+                "u",
+                "--phase",
+                "flow-code",
+                "--branch",
+                "test-fixture",
+            ],
+            None,
+        ),
+        (
+            "add-notification",
+            &[
+                "--phase",
+                "flow-code",
+                "--ts",
+                "1.0",
+                "--message",
+                "m",
+                "--branch",
+                "test-fixture",
+            ],
+            None,
+        ),
+        (
+            "issue",
+            &["--title", "x", "--body-file", "/nonexistent"],
+            None,
+        ),
+        (
+            "close-issue",
+            &["--repo", "x/y", "--issue-number", "1"],
+            None,
+        ),
+        ("close-issues", &[], None),
+        (
+            "create-sub-issue",
+            &["--repo", "x/y", "--parent", "1", "--child", "2"],
+            None,
+        ),
+        (
+            "link-blocked-by",
+            &[
+                "--repo",
+                "x/y",
+                "--blocked-number",
+                "1",
+                "--blocking-number",
+                "2",
+            ],
+            None,
+        ),
+        ("create-milestone", &["--repo", "x/y", "--title", "m"], None),
+        ("extract-release-notes", &["1.0.0"], None),
+        ("prime-check", &[], None),
+        ("prime-setup", &[], None),
+        ("promote-permissions", &[], None),
+        (
+            "auto-close-parent",
+            &["--repo", "x/y", "--parent", "1"],
+            None,
+        ),
+        ("complete-fast", &["--branch", "test-fixture"], None),
+        ("complete-preflight", &["--branch", "test-fixture"], None),
+        (
+            "complete-merge",
+            &["--pr", "1", "--state-file", "/nonexistent/state.json"],
+            None,
+        ),
+        (
+            "complete-finalize",
+            &[
+                "--pr",
+                "1",
+                "--state-file",
+                "/nonexistent/state.json",
+                "--branch",
+                "test-fixture",
+                "--worktree",
+                ".worktrees/test-fixture",
+            ],
+            None,
+        ),
+        (
+            "complete-post-merge",
+            &[
+                "--pr",
+                "1",
+                "--state-file",
+                "/nonexistent/state.json",
+                "--branch",
+                "test-fixture",
+            ],
+            None,
+        ),
+        (
+            "set-timestamp",
+            &["--set", "x=1", "--branch", "test-fixture"],
+            None,
+        ),
+        ("set-blocked", &[], None),
+        ("clear-blocked", &[], None),
+        ("log", &["test-fixture", "msg"], None),
+        ("generate-id", &[], None),
+        (
+            "start-finalize",
+            &["--branch", "test-fixture", "--pr-url", "u"],
+            None,
+        ),
+        ("start-gate", &["--branch", "test-fixture"], None),
+        ("start-init", &["test-fixture"], None),
+        (
+            "start-workspace",
+            &["test-fixture", "--branch", "test-fixture"],
+            None,
+        ),
+        ("session-context", &[], None),
+        ("label-issues", &["--repo", "x/y"], None),
+        ("format-issues-summary", &["--branch", "test-fixture"], None),
+        (
+            "format-complete-summary",
+            &["--state-file", "/nonexistent/state.json"],
+            None,
+        ),
+        (
+            "format-pr-timings",
+            &[
+                "--state-file",
+                "/nonexistent/state.json",
+                "--output",
+                "/dev/null",
+            ],
+            None,
+        ),
+        ("format-status", &["--branch", "test-fixture"], None),
+        (
+            "notify-slack",
+            &["--phase", "flow-code", "--message", "m"],
+            None,
+        ),
+        (
+            "write-rule",
+            &["--path", "/nonexistent", "--content", "x"],
+            None,
+        ),
+        (
+            "phase-enter",
+            &["--phase", "flow-code", "--branch", "test-fixture"],
+            None,
+        ),
+        (
+            "phase-finalize",
+            &["--phase", "flow-code", "--branch", "test-fixture"],
+            None,
+        ),
+        ("plan-check", &[], None),
+        ("plan-extract", &[], None),
+        (
+            "render-pr-body",
+            &["--pr", "1", "--branch", "test-fixture"],
+            None,
+        ),
+        ("update-pr-body", &["--branch", "test-fixture"], None),
+        ("orchestrate-report", &[], None),
+        ("orchestrate-state", &["--init"], None),
+        ("tombstone-audit", &[], None),
+        ("upgrade-check", &[], None),
+        (
+            "qa-mode",
+            &["--start", "--local-path", "/nonexistent"],
+            None,
+        ),
+        ("qa-reset", &["--repo", "x/y"], None),
+        ("qa-verify", &["--repo", "x/y"], None),
+        (
+            "scaffold-qa",
+            &["--template", "nonexistent", "--repo", "x/y"],
+            None,
+        ),
+    ];
+
+    for (sub, args, stdin) in invocations {
+        let output = run_sweep_entry(sub, args, *stdin);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains("panicked at"),
+            "subcommand `{}` panicked unexpectedly:\nstderr: {}",
+            sub,
+            stderr
+        );
+        assert!(
+            !stderr.contains("thread 'main' panicked"),
+            "subcommand `{}` panicked on main thread:\nstderr: {}",
+            sub,
+            stderr
+        );
+    }
+
+    // Hook subcommands receive empty JSON `{}` on stdin so they early-
+    // return on missing required fields rather than blocking.
+    let hooks = [
+        "validate-pretool",
+        "validate-claude-paths",
+        "validate-worktree-paths",
+        "validate-ask-user",
+        "stop-continue",
+        "stop-failure",
+        "post-compact",
+    ];
+    for hook in hooks {
+        let output = run_hook_sweep(hook);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains("panicked at"),
+            "hook `{}` panicked unexpectedly:\nstderr: {}",
+            hook,
+            stderr
+        );
+        assert!(
+            !stderr.contains("thread 'main' panicked"),
+            "hook `{}` panicked on main thread:\nstderr: {}",
+            hook,
+            stderr
+        );
+    }
+}
+
 /// `flow-rs cleanup /nonexistent --branch test --worktree .worktrees/test`
 /// exercises the `run()` → `json_error` → `process::exit(1)` path
 /// for an invalid project root.

@@ -489,7 +489,7 @@ fn main() {
             reason,
         }) => {
             let root = project_root();
-            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
             let (out, code) = phase_transition::run_impl_main(
                 &phase,
                 &action,
@@ -586,12 +586,6 @@ fn main() {
             branch,
             subcommand,
         }) => {
-            // Strip leading "--" if present (clap trailing_var_arg includes it)
-            let subcommand: Vec<String> = if subcommand.first().map(|s| s.as_str()) == Some("--") {
-                subcommand.into_iter().skip(1).collect()
-            } else {
-                subcommand
-            };
             commands::start_step::run(step, &branch, subcommand);
         }
         Some(Commands::StartFinalize(args)) => {
@@ -676,27 +670,8 @@ fn main() {
         Some(Commands::OrchestrateState(args)) => orchestrate_state::run(args),
         Some(Commands::TombstoneAudit(args)) => tombstone_audit::run(args),
         Some(Commands::Tui) => {
-            // Check if stdout is a terminal.
-            // SAFETY: STDOUT_FILENO (1) is always a valid open file
-            // descriptor in a normal Unix process.
-            let is_tty = unsafe { libc::isatty(libc::STDOUT_FILENO) != 0 };
-            if !is_tty {
-                eprintln!("Error: flow tui requires an interactive terminal.");
-                process::exit(1);
-            }
             let root = project_root();
-            let version = flow_rs::utils::read_version();
-            let repo = flow_rs::github::detect_repo(Some(&root));
-            let mut app = flow_rs::tui::TuiApp::new(
-                root,
-                version,
-                repo,
-                flow_rs::tui::TuiAppPlatform::production(),
-            );
-            if let Err(e) = run_tui_terminal(&mut app) {
-                eprintln!("TUI error: {}", e);
-                process::exit(1);
-            }
+            flow_rs::tui_terminal::run_tui_arm(&root);
         }
         Some(Commands::TuiData {
             load_all_flows,
@@ -734,91 +709,5 @@ fn main() {
         Some(Commands::External(_)) => {
             process::exit(127);
         }
-    }
-}
-
-/// Run the TUI event loop against a real crossterm terminal.
-///
-/// Owns the crossterm setup + cleanup: enables raw mode, enters the
-/// alternate screen, constructs `Terminal<CrosstermBackend>`, builds
-/// the real `event::poll` + `event::read` closure, drives
-/// `TuiApp::run_event_loop`, and guarantees raw-mode / alternate-screen
-/// cleanup on every return path INCLUDING panic unwinds via the
-/// [`TerminalGuard`] Drop impl. Lives in `main.rs` so `src/tui.rs`
-/// can stay testable — the crossterm-specific glue has no test seam
-/// that would work in a non-tty `cargo nextest` environment.
-fn run_tui_terminal(app: &mut flow_rs::tui::TuiApp) -> std::io::Result<()> {
-    use crossterm::event;
-    use crossterm::execute;
-    use crossterm::terminal::{enable_raw_mode, EnterAlternateScreen};
-    use ratatui::backend::CrosstermBackend;
-    use ratatui::{Frame, Terminal};
-    use std::cell::RefCell;
-    use std::io;
-    use std::rc::Rc;
-    use std::time::Duration;
-
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stdout);
-    let terminal = Rc::new(RefCell::new(Terminal::new(backend)?));
-
-    // Drop guard: restores raw mode and leaves the alternate screen
-    // when this scope unwinds, including via panic from inside
-    // `app.run_event_loop`. Without this, a panic in the event loop
-    // would leave the user's terminal in raw mode + alternate screen
-    // with no way back short of `reset` or closing the tab.
-    let _guard = TerminalGuard {
-        terminal: Rc::clone(&terminal),
-    };
-
-    // Draw closure: owns a shared handle to the terminal and calls
-    // `terminal.draw(|f| render(f))` on each invocation.
-    let draw_terminal = Rc::clone(&terminal);
-    let draw: flow_rs::tui::DrawFn = Box::new(move |render_fn: &mut dyn FnMut(&mut Frame)| {
-        draw_terminal.borrow_mut().draw(|f| render_fn(f))?;
-        Ok(())
-    });
-
-    // Event source closure wrapping crossterm::event::poll + event::read.
-    let events: flow_rs::tui::EventSourceFn =
-        Box::new(|timeout: Duration| -> io::Result<Option<event::Event>> {
-            if event::poll(timeout)? {
-                Ok(Some(event::read()?))
-            } else {
-                Ok(None)
-            }
-        });
-
-    app.run_event_loop(draw, events)
-    // `_guard` drops here on Ok, on Err, AND on panic unwind — the
-    // Drop impl restores the terminal in every case.
-}
-
-/// RAII guard that restores the terminal state when dropped. Owns a
-/// shared handle to the same `Terminal` the draw closure renders
-/// into, so the LeaveAlternateScreen call targets the live backend.
-///
-/// Panic-safe by construction: Rust calls `drop` on every value in
-/// scope during stack unwind, so a panic inside the event loop still
-/// runs the cleanup. Errors from `disable_raw_mode` and `execute!`
-/// are swallowed because the Drop impl cannot return them — the
-/// terminal-restoration attempt is best-effort either way.
-struct TerminalGuard {
-    terminal: std::rc::Rc<
-        std::cell::RefCell<ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>>,
-    >,
-}
-
-impl Drop for TerminalGuard {
-    fn drop(&mut self) {
-        use crossterm::execute;
-        use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
-        let _ = disable_raw_mode();
-        let _ = execute!(
-            self.terminal.borrow_mut().backend_mut(),
-            LeaveAlternateScreen
-        );
     }
 }
