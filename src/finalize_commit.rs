@@ -449,6 +449,51 @@ mod tests {
 
     type GitResult = Result<(i32, String, String), String>;
 
+    #[test]
+    fn remove_message_file_unlinks_existing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("msg.txt");
+        fs::write(&path, "content").unwrap();
+        assert!(path.exists());
+        remove_message_file(path.to_str().unwrap());
+        assert!(!path.exists(), "expected message file to be unlinked");
+    }
+
+    #[test]
+    fn remove_message_file_ignores_missing() {
+        // Must not panic when the target does not exist.
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("never-existed.txt");
+        remove_message_file(missing.to_str().unwrap());
+        // No assertion beyond "did not panic" — the production
+        // function uses `let _ = fs::remove_file(path)` precisely
+        // so cleanup is idempotent and resilient to double-invocation.
+        assert!(!missing.exists());
+    }
+
+    #[test]
+    fn emit_deviation_stderr_emits_without_panicking() {
+        // Covers the loop-body path in emit_deviation_stderr: with
+        // two deviations the for-loops execute twice each. No stderr
+        // capture in unit tests, so the assertion is the same
+        // panic-free shape the production caller relies on.
+        let devs = vec![
+            Deviation {
+                test_name: "test_a".to_string(),
+                fixture_key: "expected".to_string(),
+                plan_value: "value_a".to_string(),
+                plan_line: 10,
+            },
+            Deviation {
+                test_name: "test_b".to_string(),
+                fixture_key: "expected".to_string(),
+                plan_value: "value_b".to_string(),
+                plan_line: 20,
+            },
+        ];
+        emit_deviation_stderr("100-coverage-plan-commit", &devs);
+    }
+
     /// Assert a git command succeeded. Panics with stderr on failure.
     fn git_assert_ok(output: &std::process::Output) {
         assert!(
