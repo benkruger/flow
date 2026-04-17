@@ -821,6 +821,79 @@ exit 1
     }
 
     #[test]
+    fn plan_extract_resume_gates_on_external_input_audit() {
+        // A plan file on disk with a panic-tightening proposal but no
+        // paired callsite source-classification table must fail the
+        // resume-path external-input-audit scanner.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let plan_content = "## Approach\n\n\
+            Tighten the existing FlowPaths::new to panic on empty branches.\n";
+        let plan_rel = ".flow-states/test-feature-plan.md";
+
+        let state = make_plan_state("build a feature", |s| {
+            s["files"]["plan"] = serde_json::json!(plan_rel);
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let plan_abs = dir.path().join(plan_rel);
+        fs::write(&plan_abs, plan_content).unwrap();
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["path"], "resumed");
+        let violations = json["violations"]
+            .as_array()
+            .expect("violations[] expected");
+        assert!(!violations.is_empty(), "expected audit violation");
+        let has_audit = violations
+            .iter()
+            .any(|v| v["rule"].as_str() == Some("external-input-audit"));
+        assert!(
+            has_audit,
+            "resume-path audit scanner should flag tighten+panic without table, got: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn plan_extract_resume_runs_to_eof_when_no_next_heading_in_promoted() {
+        // Resume-path variant covering the case where the plan file
+        // ends immediately after the promoted tasks without a trailing
+        // ## heading. Exercises the "run to end of string" branch in
+        // the extraction parsing pipeline when invoked from resume.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let plan_content = "## Context\n\n\
+            Apply the guard at the five specific sites\n\
+            (`site_a`, `site_b`, `site_c`, `site_d`, `site_e`).\n\n\
+            ## Tasks\n\n\
+            ### Task 1: Add guard at site_a\n";
+        let plan_rel = ".flow-states/test-feature-plan.md";
+
+        let state = make_plan_state("build a feature", |s| {
+            s["files"]["plan"] = serde_json::json!(plan_rel);
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let plan_abs = dir.path().join(plan_rel);
+        fs::write(&plan_abs, plan_content).unwrap();
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "resumed");
+        assert_eq!(
+            json["plan_content"].as_str().unwrap(),
+            plan_content,
+            "plan_content on resume must match the file exactly"
+        );
+    }
+
+    #[test]
     fn plan_extract_resume_passes_enumerated_plan() {
         // The resume path must allow completion when the plan has
         // been fixed to include a named enumeration. Simulates the
