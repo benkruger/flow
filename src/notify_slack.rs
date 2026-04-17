@@ -518,6 +518,15 @@ mod tests {
     }
 
     #[test]
+    fn post_message_curl_failure_empty_stderr_returns_curl_failed() {
+        let curl = mock_curl(vec![Ok((1, String::new(), String::new()))]);
+
+        let result = post_message_inner("xoxb-token", "C12345", "Hello", None, &curl);
+        assert_eq!(result["status"], "error");
+        assert_eq!(result["message"], "curl failed");
+    }
+
+    #[test]
     fn post_message_curl_timeout() {
         let curl = mock_curl(vec![Err("Timeout posting to Slack".to_string())]);
 
