@@ -74,9 +74,9 @@ fi
 #   produce LEAK lines during the run which pass through the awk filter in full)
 # pipefail (set above) preserves cargo llvm-cov's exit code.
 cargo llvm-cov --no-cfg-coverage --no-clean \
-  --fail-under-lines 96 \
-  --fail-under-regions 96 \
-  --fail-under-functions 94 \
+  --fail-under-lines 97 \
+  --fail-under-regions 97 \
+  --fail-under-functions 95 \
   nextest --status-level pass --final-status-level fail "$@" 2>&1 | awk '
 /^ *PASS / {
   printf "."
