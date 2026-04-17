@@ -489,7 +489,7 @@ fn main() {
             reason,
         }) => {
             let root = project_root();
-            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
             let (out, code) = phase_transition::run_impl_main(
                 &phase,
                 &action,
@@ -586,12 +586,6 @@ fn main() {
             branch,
             subcommand,
         }) => {
-            // Strip leading "--" if present (clap trailing_var_arg includes it)
-            let subcommand: Vec<String> = if subcommand.first().map(|s| s.as_str()) == Some("--") {
-                subcommand.into_iter().skip(1).collect()
-            } else {
-                subcommand
-            };
             commands::start_step::run(step, &branch, subcommand);
         }
         Some(Commands::StartFinalize(args)) => {
@@ -666,13 +660,7 @@ fn main() {
         Some(Commands::TombstoneAudit(args)) => tombstone_audit::run(args),
         Some(Commands::Tui) => {
             let root = project_root();
-            match flow_rs::tui_terminal::run_tui_arm(&root) {
-                Ok(()) => {}
-                Err((msg, code)) => {
-                    eprintln!("{}", msg);
-                    process::exit(code);
-                }
-            }
+            flow_rs::tui_terminal::run_tui_arm(&root);
         }
         Some(Commands::TuiData {
             load_all_flows,

@@ -25,19 +25,29 @@ use ratatui::{Frame, Terminal};
 
 use crate::tui::{DrawFn, EventSourceFn, TuiApp, TuiAppPlatform};
 
-/// Top-level dispatch for the `Tui` match arm in `main.rs`. Returns
-/// `Err((message, exit_code))` for the non-TTY case and any error
-/// surfaced by the event loop. Returns `Ok(())` on a clean exit.
+/// Top-level dispatch for the `Tui` match arm in `main.rs`. Never
+/// returns: always terminates the process via `process::exit`, either
+/// with `0` on event-loop success or with the `(msg, code)` tuple
+/// from a non-TTY rejection / event-loop failure (printed to stderr).
 ///
-/// Production wrapper that supplies real `is_tty_fn` (libc isatty) and
-/// `run_terminal_fn` (crossterm-bound [`run_terminal`]) to
-/// [`run_tui_arm_impl`].
-pub fn run_tui_arm(root: &Path) -> Result<(), (String, i32)> {
-    run_tui_arm_impl(
+/// Keeping the `exit` call inside this wrapper leaves main.rs's Tui
+/// arm as a single fully-covered expression. The seam-injected
+/// [`run_tui_arm_impl`] below is the unit-testable variant — it
+/// returns the `Result` so tests can assert on each branch without
+/// terminating the test process.
+pub fn run_tui_arm(root: &Path) -> ! {
+    let result = run_tui_arm_impl(
         || unsafe { libc::isatty(libc::STDOUT_FILENO) != 0 },
         run_terminal,
         root,
-    )
+    );
+    match result {
+        Ok(()) => std::process::exit(0),
+        Err((msg, code)) => {
+            eprintln!("{}", msg);
+            std::process::exit(code);
+        }
+    }
 }
 
 /// Seam-injected variant of [`run_tui_arm`]. Tests pass mock

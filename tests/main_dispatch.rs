@@ -459,45 +459,11 @@ fn main_init_state_valid_name_no_flow_json_exits_1() {
     );
 }
 
-/// `flow-rs start-step --step 1 --branch <valid> -- echo ok` covers the
-/// `if subcommand.first() == Some("--")` true branch in the `StartStep`
-/// arm body of `main.rs`. The arm strips `--` and delegates to
-/// `commands::start_step::run`, which exits 1 because no `bin/flow`
-/// exists relative to the spawned-binary path inside the tempdir.
-#[test]
-fn main_start_step_double_dash_strips() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
-    let output = flow_rs_no_recursion()
-        .args([
-            "start-step",
-            "--step",
-            "1",
-            "--branch",
-            "test-fixture-branch",
-            "--",
-            "echo",
-            "ok",
-        ])
-        .current_dir(&root)
-        .env("GIT_CEILING_DIRECTORIES", &root)
-        .output()
-        .expect("spawn flow-rs start-step");
-    // Arm enters, the if-branch strips the leading "--", and delegation
-    // to start_step::run exits 1 (exec to bin/flow fails — bin/flow does
-    // not exist relative to the test binary's path inside the tempdir).
-    assert_eq!(
-        output.status.code(),
-        Some(1),
-        "stdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-/// `flow-rs start-step --step 1 --branch <valid> echo ok` (no `--`)
-/// covers the `else` branch of the arm-body arg-massage block — the
-/// subcommand vec passes through unchanged.
+/// `flow-rs start-step --step 1 --branch <valid> echo ok` covers the
+/// `StartStep` arm's delegation to `commands::start_step::run`. The
+/// arm body is now a thin pass-through after the dead `--`-strip
+/// branch was removed (clap's `trailing_var_arg` consumes `--` as a
+/// separator and never leaves it in the trailing-args vec).
 #[test]
 fn main_start_step_no_double_dash_passes_through() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -522,6 +488,42 @@ fn main_start_step_no_double_dash_passes_through() {
         "stdout: {}\nstderr: {}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// `flow-rs format-status` in a tempdir with no git repo exits 2
+/// because `resolve_branch(None, &root)` returns `None` (no branch
+/// override, no git repo to detect from). Covers the `Err` arm of
+/// the `FormatStatus` arm body — the `eprintln!` + `process::exit`
+/// path that fires when `format_status::run_impl_main` returns
+/// `Err(("Could not determine current branch", 2))`.
+#[test]
+fn main_format_status_branch_resolution_err_exits_nonzero() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+    let output = flow_rs_no_recursion()
+        .arg("format-status")
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .output()
+        .expect("spawn flow-rs format-status");
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "expected exit 2 from branch-resolution failure\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Could not determine current branch"),
+        "expected stderr to surface the branch-resolution failure message, got: {}",
+        stderr
+    );
+    assert!(
+        !stderr.contains("panicked at"),
+        "format-status must not panic, got: {}",
+        stderr
     );
 }
 
@@ -721,9 +723,37 @@ fn main_arm_invocations_cover_dispatch() {
         ),
         ("complete-fast", &["--branch", "test-fixture"], None),
         ("complete-preflight", &["--branch", "test-fixture"], None),
-        ("complete-merge", &["--branch", "test-fixture"], None),
-        ("complete-finalize", &["--branch", "test-fixture"], None),
-        ("complete-post-merge", &["--branch", "test-fixture"], None),
+        (
+            "complete-merge",
+            &["--pr", "1", "--state-file", "/nonexistent/state.json"],
+            None,
+        ),
+        (
+            "complete-finalize",
+            &[
+                "--pr",
+                "1",
+                "--state-file",
+                "/nonexistent/state.json",
+                "--branch",
+                "test-fixture",
+                "--worktree",
+                ".worktrees/test-fixture",
+            ],
+            None,
+        ),
+        (
+            "complete-post-merge",
+            &[
+                "--pr",
+                "1",
+                "--state-file",
+                "/nonexistent/state.json",
+                "--branch",
+                "test-fixture",
+            ],
+            None,
+        ),
         (
             "set-timestamp",
             &["--set", "x=1", "--branch", "test-fixture"],
@@ -750,10 +780,19 @@ fn main_arm_invocations_cover_dispatch() {
         ("format-issues-summary", &["--branch", "test-fixture"], None),
         (
             "format-complete-summary",
-            &["--branch", "test-fixture"],
+            &["--state-file", "/nonexistent/state.json"],
             None,
         ),
-        ("format-pr-timings", &["--branch", "test-fixture"], None),
+        (
+            "format-pr-timings",
+            &[
+                "--state-file",
+                "/nonexistent/state.json",
+                "--output",
+                "/dev/null",
+            ],
+            None,
+        ),
         ("format-status", &["--branch", "test-fixture"], None),
         (
             "notify-slack",
@@ -787,10 +826,18 @@ fn main_arm_invocations_cover_dispatch() {
         ("orchestrate-state", &["--init"], None),
         ("tombstone-audit", &[], None),
         ("upgrade-check", &[], None),
-        ("qa-mode", &["--get"], None),
-        ("qa-reset", &["nonexistent-template"], None),
-        ("qa-verify", &["--branch", "test-fixture"], None),
-        ("scaffold-qa", &["nonexistent-template"], None),
+        (
+            "qa-mode",
+            &["--start", "--local-path", "/nonexistent"],
+            None,
+        ),
+        ("qa-reset", &["--repo", "x/y"], None),
+        ("qa-verify", &["--repo", "x/y"], None),
+        (
+            "scaffold-qa",
+            &["--template", "nonexistent", "--repo", "x/y"],
+            None,
+        ),
     ];
 
     for (sub, args, stdin) in invocations {
