@@ -17,10 +17,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use clap::Parser;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::complete_preflight::LOCAL_TIMEOUT;
-use crate::output::json_ok;
 use crate::utils::run_cmd;
 
 #[derive(Parser, Debug)]
@@ -227,30 +226,33 @@ pub fn check_milestone_closed(
     .is_ok()
 }
 
-/// CLI entry point for auto-close-parent.
-pub fn run(args: Args) {
-    let cwd = match std::env::current_dir() {
-        Ok(d) => d,
-        Err(_) => {
-            println!(
-                "{}",
-                json!({"status": "ok", "parent_closed": false, "milestone_closed": false})
-            );
-            return;
-        }
-    };
-
+/// Main-arm dispatcher with injected cwd. Always returns
+/// `(Value, 0)` — auto-close is best-effort by design and the parent /
+/// milestone close decisions surface as boolean fields in the success
+/// payload, never as an error exit.
+pub fn run_impl_main(args: Args, cwd: &Path) -> (Value, i32) {
     // Fetch both fields in one API call to avoid redundant requests
-    let (parent_number, milestone_number) = fetch_issue_fields(&args.repo, args.issue_number, &cwd);
+    let (parent_number, milestone_number) = fetch_issue_fields(&args.repo, args.issue_number, cwd);
 
-    let parent_closed = check_parent_closed(&args.repo, args.issue_number, parent_number, &cwd);
+    let parent_closed = check_parent_closed(&args.repo, args.issue_number, parent_number, cwd);
     let milestone_closed =
-        check_milestone_closed(&args.repo, args.issue_number, milestone_number, &cwd);
+        check_milestone_closed(&args.repo, args.issue_number, milestone_number, cwd);
 
-    json_ok(&[
-        ("parent_closed", json!(parent_closed)),
-        ("milestone_closed", json!(milestone_closed)),
-    ]);
+    (
+        json!({
+            "status": "ok",
+            "parent_closed": parent_closed,
+            "milestone_closed": milestone_closed,
+        }),
+        0,
+    )
+}
+
+/// CLI entry point for auto-close-parent.
+pub fn run(args: Args) -> ! {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let (value, code) = run_impl_main(args, &cwd);
+    crate::dispatch::dispatch_json(value, code)
 }
 
 #[cfg(test)]
@@ -367,5 +369,25 @@ mod tests {
         // null defaults to 1 via unwrap_or
         let json = r#"{"open_issues": null}"#;
         assert!(!should_close_milestone(json));
+    }
+
+    // --- run_impl_main ---
+
+    #[test]
+    fn auto_close_parent_run_impl_main_returns_ok_tuple() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let args = Args {
+            repo: "owner/nonexistent-repo".to_string(),
+            issue_number: 999999,
+        };
+        let (value, code) = run_impl_main(args, &cwd);
+        // gh subprocess fails (no auth or repo doesn't exist) → both close
+        // checks return false. The function returns OK either way per the
+        // best-effort contract.
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["parent_closed"], false);
+        assert_eq!(value["milestone_closed"], false);
     }
 }
