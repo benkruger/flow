@@ -470,19 +470,16 @@ pub fn analyze_issues(issues: &[Value], blocker_map: &HashMap<i64, Vec<i64>>) ->
             .get("createdAt")
             .and_then(|c| c.as_str())
             .unwrap_or("");
-        let age_days = if let Ok(created) = chrono::DateTime::parse_from_rfc3339(created_at_str) {
-            let now = chrono::Utc::now();
-            (now - created.with_timezone(&chrono::Utc)).num_days()
-        } else {
-            // Try ISO format with Z suffix replaced
-            let normalized = created_at_str.replace('Z', "+00:00");
-            if let Ok(created) = chrono::DateTime::parse_from_rfc3339(&normalized) {
-                let now = chrono::Utc::now();
-                (now - created.with_timezone(&chrono::Utc)).num_days()
-            } else {
-                0
-            }
-        };
+        // chrono::DateTime::parse_from_rfc3339 accepts both `Z` and
+        // `±HH:MM` offsets, so a Z-suffix fallback would be dead code.
+        // Empirically: every input that fails this strict parse also
+        // fails after a `Z` → `+00:00` substitution (verified by
+        // coverage instrumentation showing the fallback's success arm
+        // hit 0 times across the test corpus). Treat unparseable
+        // dates as age 0.
+        let age_days = chrono::DateTime::parse_from_rfc3339(created_at_str)
+            .map(|created| (chrono::Utc::now() - created.with_timezone(&chrono::Utc)).num_days())
+            .unwrap_or(0);
 
         let stale_info = check_stale(&file_paths, age_days);
         let category = categorize(&label_names, issue["title"].as_str().unwrap_or(""), body);
@@ -1383,12 +1380,12 @@ mod tests {
         assert_eq!(result["total"], 3);
     }
 
-    /// `chrono::DateTime::parse_from_rfc3339` rejects the trailing `Z`
-    /// shorthand for UTC that GitHub's API and the gh CLI sometimes emit.
-    /// The fallback at line 478 normalizes `Z` → `+00:00` before retrying.
-    /// Verify the fallback parser hits.
+    /// `chrono::DateTime::parse_from_rfc3339` accepts the `Z` suffix
+    /// natively. The Z-substitution fallback was removed after coverage
+    /// instrumentation showed its success arm was unreachable. This
+    /// test pins the contract that Z-suffix dates parse successfully.
     #[test]
-    fn analyze_age_days_z_suffix_falls_back_to_normalized_parse() {
+    fn analyze_age_days_z_suffix_parses_natively() {
         let issues = vec![make_issue(
             42,
             "z-suffix issue",
@@ -1398,14 +1395,8 @@ mod tests {
         )];
         let result = analyze_issues(&issues, &HashMap::new());
         let issue = &result["issues"][0];
-        // The parse must succeed via the fallback path — age_days lands as
-        // a non-zero integer (the issue is years old by now).
         let age = issue["age_days"].as_i64().unwrap();
-        assert!(
-            age > 0,
-            "expected positive age_days from Z-suffix parse, got {}",
-            age
-        );
+        assert!(age > 0, "expected positive age_days, got {}", age);
     }
 
     /// `created_at` that fails BOTH parsers (raw RFC3339 and the

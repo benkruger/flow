@@ -153,8 +153,10 @@ mod tests {
             let names = phase_names();
             let phase = "flow-learn";
             let phase_name = names.get(phase).cloned().unwrap_or_default();
-            if let Some(arr) = s["issues_filed"].as_array_mut() {
-                arr.push(json!({
+            s["issues_filed"]
+                .as_array_mut()
+                .expect("issues_filed is always an array in this fixture")
+                .push(json!({
                     "label": "Rule",
                     "title": "Add rule: use git -C",
                     "url": "https://github.com/test/test/issues/1",
@@ -162,7 +164,6 @@ mod tests {
                     "phase_name": phase_name,
                     "timestamp": now(),
                 }));
-            }
         })
         .unwrap();
 
@@ -186,9 +187,10 @@ mod tests {
         let path = write_state(dir.path(), "test-feature", &state);
 
         mutate_state(&path, |s| {
-            if let Some(arr) = s["issues_filed"].as_array_mut() {
-                arr.push(json!({"label": "Rule", "title": "new"}));
-            }
+            s["issues_filed"]
+                .as_array_mut()
+                .expect("issues_filed is always an array in this fixture")
+                .push(json!({"label": "Rule", "title": "new"}));
         })
         .unwrap();
 
@@ -236,9 +238,10 @@ mod tests {
         let path = write_state(dir.path(), "test-feature", &state);
 
         mutate_state(&path, |s| {
-            if let Some(arr) = s["issues_filed"].as_array_mut() {
-                arr.push(json!({"label": "Rule", "title": "persisted"}));
-            }
+            s["issues_filed"]
+                .as_array_mut()
+                .expect("issues_filed is always an array in this fixture")
+                .push(json!({"label": "Rule", "title": "persisted"}));
         })
         .unwrap();
 
@@ -278,17 +281,13 @@ mod tests {
         assert_eq!(parsed.as_array().unwrap().len(), 3);
     }
 
-    #[test]
-    fn corrupt_state_file_errors() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join("test.json");
-        fs::write(&path, "{corrupt").unwrap();
-
-        let result = mutate_state(&path, |_| {});
-        assert!(result.is_err());
-    }
+    // Removed: `corrupt_state_file_errors`. The mutate_state corrupt-
+    // JSON path is owned by `lock::mutate_state_corrupt_json` and
+    // `lock::mutate_state_error_wraps_invalid_json_as_json`; this
+    // wrapper test was a duplicate guard per
+    // `.claude/rules/tests-guard-real-regressions.md`. The
+    // `run_impl_main_mutate_state_failure_returns_error_tuple` test
+    // below covers the add-issue-specific error wrapping.
 
     // --- run_impl_main ---
 

@@ -226,31 +226,19 @@ fn run_subprocess_missing_version_prints_error_and_exits_one() {
     );
 }
 
-#[test]
-fn run_subprocess_no_plugin_root_prints_error_and_exits_one() {
-    // Set CLAUDE_PLUGIN_ROOT to a tempdir WITHOUT flow-phases.json so
-    // plugin_root() returns None (and the binary's current_exe walk
-    // also fails because it climbs out of llvm-cov-target — but the
-    // env var path is checked first so this test is deterministic).
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    // Intentionally NOT writing flow-phases.json.
-    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["extract-release-notes", "v0.1.0"])
-        .env("CLAUDE_PLUGIN_ROOT", &root)
-        .env_remove("FLOW_CI_RUNNING")
-        .output()
-        .expect("spawn flow-rs");
-    // The walk-up fallback may find a real flow-phases.json depending
-    // on where the test binary lives, so the deterministic assertion
-    // is "exit code is non-zero OR success message refers to 'tmp'
-    // anywhere on disk." We assert the exit code is one of the two
-    // expected production outcomes and skip if the walk-up succeeded
-    // (which would make this test environment-dependent).
-    let code = output.status.code();
-    assert!(
-        code == Some(0) || code == Some(1),
-        "unexpected exit: {:?}",
-        code
-    );
-}
+// REMOVED: `run_subprocess_no_plugin_root_prints_error_and_exits_one`.
+//
+// Same shape as the deleted bump-version equivalent: setting
+// `CLAUDE_PLUGIN_ROOT` to an empty tempdir does NOT make
+// `plugin_root()` return None — the helper falls through to a
+// `current_exe` walk-up which reaches the real flow repo's
+// `flow-phases.json` from the test binary location. The subprocess
+// then runs `extract-release-notes` against the real repo. While
+// extract-release-notes only writes to `tmp/` (gitignored) so the
+// blast radius is smaller than bump-version's, it still spawns a
+// production code path against unintended state.
+//
+// The "plugin_root None" branch is unreachable from any subprocess
+// test launched from inside the flow repo. Coverage for that arm
+// must come from inline unit tests of the helper. Do NOT re-add
+// this test shape.

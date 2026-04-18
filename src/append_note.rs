@@ -190,15 +190,16 @@ mod tests {
 
         for i in 0..3 {
             mutate_state(&path, |s| {
-                if let Some(arr) = s["notes"].as_array_mut() {
-                    arr.push(json!({
+                s["notes"]
+                    .as_array_mut()
+                    .expect("notes is always an array in this fixture")
+                    .push(json!({
                         "phase": "flow-code",
                         "phase_name": "Code",
                         "timestamp": now(),
                         "type": "correction",
                         "note": format!("note {}", i),
                     }));
-                }
             })
             .unwrap();
         }
@@ -245,9 +246,10 @@ mod tests {
         let path = write_state(dir.path(), "test-feature", &state);
 
         mutate_state(&path, |s| {
-            if let Some(arr) = s["notes"].as_array_mut() {
-                arr.push(json!({"phase": "flow-code", "note": "new"}));
-            }
+            s["notes"]
+                .as_array_mut()
+                .expect("notes is always an array in this fixture")
+                .push(json!({"phase": "flow-code", "note": "new"}));
         })
         .unwrap();
 
@@ -324,17 +326,13 @@ mod tests {
         assert_eq!(parsed.as_array().unwrap().len(), 3);
     }
 
-    #[test]
-    fn corrupt_state_file_errors() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join("test.json");
-        fs::write(&path, "{corrupt").unwrap();
-
-        let result = mutate_state(&path, |_| {});
-        assert!(result.is_err());
-    }
+    // Removed: `corrupt_state_file_errors`. The mutate_state corrupt-
+    // JSON path is owned by `lock::mutate_state_corrupt_json` and
+    // `lock::mutate_state_error_wraps_invalid_json_as_json`; this
+    // wrapper test was a duplicate guard per
+    // `.claude/rules/tests-guard-real-regressions.md`. The
+    // `run_impl_main_state_read_failure_returns_error_tuple` test
+    // below covers the append-note-specific error wrapping.
 
     #[test]
     fn note_fields_have_correct_key_order() {
@@ -343,15 +341,16 @@ mod tests {
         let path = write_state(dir.path(), "test-feature", &state);
 
         let result = mutate_state(&path, |s| {
-            if let Some(arr) = s["notes"].as_array_mut() {
-                arr.push(json!({
+            s["notes"]
+                .as_array_mut()
+                .expect("notes is always an array in this fixture")
+                .push(json!({
                     "phase": "flow-plan",
                     "phase_name": "Plan",
                     "timestamp": "2026-01-01T00:00:00-08:00",
                     "type": "correction",
                     "note": "test",
                 }));
-            }
         })
         .unwrap();
 
@@ -417,6 +416,45 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Could not read state file"));
+    }
+
+    /// Exercises lines 110-113 — the `Err(e)` arm of `mutate_state`'s
+    /// match in `run_impl_main`. Make the state file read-only so
+    /// `OpenOptions::open` (read+write) fails with EACCES inside
+    /// mutate_state, but `read_current_phase` (read-only) still
+    /// succeeds.
+    #[test]
+    fn append_note_run_impl_main_mutate_state_failure_returns_error_tuple() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let state_path = state_dir.join("present-branch.json");
+        fs::write(&state_path, r#"{"current_phase":"flow-plan","notes":[]}"#).unwrap();
+        // Make file read-only so mutate_state's read+write open fails.
+        let mut perms = fs::metadata(&state_path).unwrap().permissions();
+        perms.set_mode(0o444);
+        fs::set_permissions(&state_path, perms).unwrap();
+
+        let args = make_args(Some("present-branch"));
+        let (value, code) = run_impl_main(args, &root);
+
+        // Restore perms for cleanup.
+        let mut p = fs::metadata(&state_path).unwrap().permissions();
+        p.set_mode(0o644);
+        let _ = fs::set_permissions(&state_path, p);
+
+        assert_eq!(value["status"], "error");
+        assert_eq!(code, 1);
+        assert!(
+            value["message"]
+                .as_str()
+                .unwrap()
+                .contains("Failed to append note"),
+            "got: {}",
+            value["message"]
+        );
     }
 
     #[test]

@@ -272,23 +272,22 @@ fn run_subprocess_invalid_version_exits_one() {
     assert_eq!(output.status.code(), Some(1));
 }
 
-#[test]
-fn run_subprocess_no_plugin_root_exits_one() {
-    let dir = tempfile::tempdir().unwrap();
-    // No flow-phases.json at the env-var path. The walk-up may or may
-    // not find a real one depending on test binary location, so we
-    // accept either an error exit or success exit but assert the
-    // wrapper completed.
-    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["bump-version", "2.0.0"])
-        .env("CLAUDE_PLUGIN_ROOT", dir.path())
-        .env_remove("FLOW_CI_RUNNING")
-        .output()
-        .expect("spawn flow-rs");
-    let code = output.status.code();
-    assert!(
-        code == Some(0) || code == Some(1),
-        "unexpected exit code: {:?}",
-        code
-    );
-}
+// REMOVED: `run_subprocess_no_plugin_root_exits_one`.
+//
+// That test set `CLAUDE_PLUGIN_ROOT` to an empty tempdir expecting
+// `plugin_root()` to return None and `pub fn run` to exit 1. In
+// reality, when the env-var path lacks `flow-phases.json`,
+// `plugin_root()` falls through to a `current_exe` walk-up — which
+// from the test binary location at
+// `target/llvm-cov-target/debug/deps/<bin>` reaches the real flow
+// repo's `flow-phases.json` within 5 levels. The subprocess then
+// ran `bump-version 2.0.0` against the REAL flow repo, mutating
+// 19 tracked files (plugin.json, marketplace.json, every SKILL.md
+// banner) from the actual current version to 2.0.0 in the user's
+// working tree.
+//
+// The "plugin_root None" branch is structurally unreachable from
+// any subprocess test launched from inside the flow repo. Coverage
+// for that branch must come from inline unit tests of the helper
+// (where the env var and current_exe walk can be controlled) — not
+// from spawning the binary. Do NOT re-add this test shape.
