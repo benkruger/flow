@@ -1275,14 +1275,44 @@ mod tests {
         let result = start_issue(&state_path, 0);
         assert_eq!(result["status"], "error");
         // mutate_state's Io variant formats as "I/O error: ...".
+        let message = result["message"].as_str().unwrap().to_string();
         assert!(
-            result["message"].as_str().unwrap().contains("I/O error"),
+            message.contains("I/O error"),
             "expected I/O error, got: {}",
-            result["message"]
+            message
         );
     }
 
     // --- record_outcome edge branches ---
+
+    /// Exercises line 190 — the `Err` arm of `mutate_state` inside
+    /// `record_outcome`. Mirror of `start_issue_mutate_state_io_error`:
+    /// state path is a directory, so `OpenOptions::open` fails with EISDIR.
+    #[test]
+    fn record_outcome_mutate_state_io_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = dir.path().join("orchestrate.json");
+        fs::create_dir(&state_path).unwrap();
+
+        let result = record_outcome(&state_path, 0, "completed", None, None, None);
+        assert_eq!(result["status"], "error");
+        let msg = result["message"].as_str().unwrap().to_string();
+        assert!(msg.contains("I/O error"), "got: {}", msg);
+    }
+
+    /// Exercises line 214 — the `Err` arm of `mutate_state` inside
+    /// `complete_orchestration`. Same EISDIR trick.
+    #[test]
+    fn complete_orchestration_mutate_state_io_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = dir.path().join("orchestrate.json");
+        fs::create_dir(&state_path).unwrap();
+
+        let result = complete_orchestration(&state_path);
+        assert_eq!(result["status"], "error");
+        let msg = result["message"].as_str().unwrap().to_string();
+        assert!(msg.contains("I/O error"), "got: {}", msg);
+    }
 
     #[test]
     fn record_outcome_negative_index_returns_out_of_range() {

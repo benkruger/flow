@@ -652,14 +652,8 @@ mod tests {
         fs::create_dir(&state_path).unwrap();
         let result = generate_and_write_report(&state_path, dir.path());
         assert_eq!(result["status"], "error");
-        assert!(
-            result["message"]
-                .as_str()
-                .unwrap()
-                .contains("Failed to read state file"),
-            "got: {}",
-            result["message"]
-        );
+        let message = result["message"].as_str().unwrap().to_string();
+        assert!(message.contains("Failed to read state file"), "got: {}", message);
     }
 
     #[test]

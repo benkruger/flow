@@ -608,8 +608,7 @@ mod tests {
         assert_eq!(code, 1);
         assert!(
             output.contains("BLOCKED: Could not determine current git branch"),
-            "got: {}",
-            output
+            "got: {}", output
         );
     }
 

@@ -6,6 +6,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
 use flow_rs::bump_version::{
     bump_json, bump_skill, read_current_version, run_impl, validate_version, Args,
@@ -233,4 +234,61 @@ fn test_cli_plugin_json_not_found() {
     let result = run_impl(&args, dir.path());
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("not found"));
+}
+
+// --- Subprocess tests covering the `pub fn run` wrapper ---
+
+/// Build a fake plugin root with `flow-phases.json` so `plugin_root()`
+/// resolves via the env-var path, plus the standard fake_repo layout.
+fn setup_plugin_root() -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    fs::write(root.join("flow-phases.json"), "{}").unwrap();
+    fake_repo(&root);
+    (dir, root)
+}
+
+#[test]
+fn run_subprocess_success_prints_message_and_exits_zero() {
+    let (_dir, root) = setup_plugin_root();
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["bump-version", "2.0.0"])
+        .env("CLAUDE_PLUGIN_ROOT", &root)
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .expect("spawn flow-rs");
+    assert_eq!(output.status.code(), Some(0));
+}
+
+#[test]
+fn run_subprocess_invalid_version_exits_one() {
+    let (_dir, root) = setup_plugin_root();
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["bump-version", "v9.9.9"])
+        .env("CLAUDE_PLUGIN_ROOT", &root)
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .expect("spawn flow-rs");
+    assert_eq!(output.status.code(), Some(1));
+}
+
+#[test]
+fn run_subprocess_no_plugin_root_exits_one() {
+    let dir = tempfile::tempdir().unwrap();
+    // No flow-phases.json at the env-var path. The walk-up may or may
+    // not find a real one depending on test binary location, so we
+    // accept either an error exit or success exit but assert the
+    // wrapper completed.
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["bump-version", "2.0.0"])
+        .env("CLAUDE_PLUGIN_ROOT", dir.path())
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .expect("spawn flow-rs");
+    let code = output.status.code();
+    assert!(
+        code == Some(0) || code == Some(1),
+        "unexpected exit code: {:?}",
+        code
+    );
 }

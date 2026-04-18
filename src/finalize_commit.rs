@@ -501,11 +501,13 @@ mod tests {
 
     /// Assert a git command succeeded. Panics with stderr on failure.
     fn git_assert_ok(output: &std::process::Output) {
+        let code = output.status.code().unwrap_or(-1);
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         assert!(
             output.status.success(),
             "git failed (exit {}): {}",
-            output.status.code().unwrap_or(-1),
-            String::from_utf8_lossy(&output.stderr)
+            code,
+            stderr
         );
     }
 

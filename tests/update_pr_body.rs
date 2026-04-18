@@ -404,3 +404,40 @@ fn append_section_gh_edit_failure_reports_error() {
         .unwrap_or("")
         .contains("edit refused"));
 }
+
+/// Exercises lines 262-264 of `pub fn run` (--append-section path) —
+/// `read_to_string` Err arm. Make `--content-file` a directory: the
+/// `path.exists()` check at line 255 passes (true for directories),
+/// but `fs::read_to_string` fails with EISDIR.
+#[test]
+fn append_section_content_file_is_directory_reports_read_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let content_dir = dir.path().join("content-as-dir");
+    fs::create_dir(&content_dir).unwrap();
+    // gh stub never gets invoked because the read fails first.
+    let stub_dir = create_gh_stub(&repo, "#!/bin/bash\nexit 0\n");
+
+    let output = run_cmd(
+        &repo,
+        &[
+            "--pr",
+            "42",
+            "--append-section",
+            "--heading",
+            "Plan",
+            "--summary",
+            "S",
+            "--content-file",
+            content_dir.to_str().unwrap(),
+        ],
+        &stub_dir,
+    );
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(data["message"]
+        .as_str()
+        .unwrap_or("")
+        .contains("Failed to read file"));
+}

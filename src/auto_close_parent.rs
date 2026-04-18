@@ -305,6 +305,25 @@ pub fn run_impl_main_with_runner(args: Args, cwd: &Path, runner: &GhApiRunner) -
     )
 }
 
+/// Testable entry that accepts an injectable cwd Result so unit tests
+/// can drive the cwd-failure branch (returns a best-effort ok payload)
+/// without requiring a deleted-cwd test environment.
+pub fn run_with_cwd_result(
+    args: Args,
+    cwd_result: std::io::Result<std::path::PathBuf>,
+) -> (Value, i32) {
+    let cwd = match cwd_result {
+        Ok(c) => c,
+        Err(_) => {
+            return (
+                json!({"status": "ok", "parent_closed": false, "milestone_closed": false}),
+                0,
+            );
+        }
+    };
+    run_impl_main(args, &cwd)
+}
+
 /// CLI entry point for auto-close-parent.
 pub fn run(args: Args) -> ! {
     // current_dir() can fail in deleted-cwd environments, certain
@@ -315,20 +334,33 @@ pub fn run(args: Args) -> ! {
     // doc comment ("Best-effort throughout — any failure continues
     // silently") and is required by Phase 6 Complete cleanup, which
     // calls `auto-close-parent` as a non-critical step.
-    let cwd = match std::env::current_dir() {
-        Ok(c) => c,
-        Err(_) => crate::dispatch::dispatch_json(
-            json!({"status": "ok", "parent_closed": false, "milestone_closed": false}),
-            0,
-        ),
-    };
-    let (value, code) = run_impl_main(args, &cwd);
+    let (value, code) = run_with_cwd_result(args, std::env::current_dir());
     crate::dispatch::dispatch_json(value, code)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Exercises the cwd-Err branch of `run_with_cwd_result` — when
+    /// `current_dir()` fails, return a best-effort `status: ok` payload
+    /// with both close flags false, exit code 0.
+    #[test]
+    fn run_with_cwd_result_err_returns_safe_default_ok() {
+        let args = Args {
+            repo: "owner/repo".to_string(),
+            issue_number: 42,
+        };
+        let cwd_err = Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "deleted cwd",
+        ));
+        let (value, code) = run_with_cwd_result(args, cwd_err);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["parent_closed"], false);
+        assert_eq!(value["milestone_closed"], false);
+    }
 
     // --- parse_issue_fields() ---
 

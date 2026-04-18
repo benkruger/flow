@@ -291,6 +291,90 @@ mod tests {
         assert!(msg.contains("not found") || msg.contains("does not exist"));
     }
 
+    /// Exercises lines 113-117 — fs::write Err arm in `start_impl`.
+    /// Make `.flow.json` a directory after the read so the write step
+    /// fails. The closest deterministic trick: write `.flow.json` as a
+    /// regular file, then replace it with a directory between read and
+    /// write — but the test cannot control that interleaving. Instead,
+    /// pre-set up a valid .flow.json, then make its parent directory
+    /// read-only so fs::write fails with EACCES. Even simpler: make
+    /// the .flow.json path itself unwritable via chmod 444 so write
+    /// fails while read still succeeds.
+    #[test]
+    fn test_start_write_failure_returns_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let flow_json = dir.path().join(".flow.json");
+        let local_source = dir.path().join("flow-source");
+        fs::create_dir_all(local_source.join("bin")).unwrap();
+        fs::write(local_source.join("bin").join("flow"), "#!/bin/bash\n").unwrap();
+        write_flow_json(
+            &flow_json,
+            &json!({
+                "plugin_root": "/some/path",
+                "flow_version": "0.39.0",
+                "commit_format": "full"
+            }),
+        );
+        // Make the file read-only so fs::write fails.
+        let mut perms = fs::metadata(&flow_json).unwrap().permissions();
+        perms.set_mode(0o444);
+        fs::set_permissions(&flow_json, perms).unwrap();
+
+        let result = start_impl(&flow_json, &local_source);
+
+        // Restore permissions so tempdir cleanup works.
+        let mut p = fs::metadata(&flow_json).unwrap().permissions();
+        p.set_mode(0o644);
+        let _ = fs::set_permissions(&flow_json, p);
+
+        assert_eq!(result["status"], "error");
+        assert!(
+            result["message"]
+                .as_str()
+                .unwrap()
+                .contains("Failed to write"),
+            "got: {}",
+            result["message"]
+        );
+    }
+
+    /// Exercises lines 178-182 — fs::write Err arm in `stop_impl`.
+    /// Same chmod-444 trick as the start variant.
+    #[test]
+    fn test_stop_write_failure_returns_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let flow_json = dir.path().join(".flow.json");
+        write_flow_json(
+            &flow_json,
+            &json!({
+                "plugin_root": "/dev/source",
+                "plugin_root_backup": "/original/path",
+                "flow_version": "0.39.0"
+            }),
+        );
+        let mut perms = fs::metadata(&flow_json).unwrap().permissions();
+        perms.set_mode(0o444);
+        fs::set_permissions(&flow_json, perms).unwrap();
+
+        let result = stop_impl(&flow_json);
+
+        let mut p = fs::metadata(&flow_json).unwrap().permissions();
+        p.set_mode(0o644);
+        let _ = fs::set_permissions(&flow_json, p);
+
+        assert_eq!(result["status"], "error");
+        assert!(
+            result["message"]
+                .as_str()
+                .unwrap()
+                .contains("Failed to write"),
+            "got: {}",
+            result["message"]
+        );
+    }
+
     #[test]
     fn test_start_missing_plugin_root() {
         let dir = tempfile::tempdir().unwrap();

@@ -282,6 +282,22 @@ mod tests {
         );
     }
 
+    /// Exercises line 112 — the fs::write Err arm. Pre-occupy the
+    /// out_path as a directory so fs::write fails with EISDIR.
+    #[test]
+    fn run_impl_out_path_is_existing_directory_returns_write_error() {
+        let (_dir, root) = setup_repo_with_notes("## v0.1.0\n\nContent.");
+        // Pre-occupy the output path as a directory so write fails.
+        let tmp = root.join("tmp");
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::create_dir(tmp.join("release-notes-v0.1.0.md")).unwrap();
+        let args = Args {
+            version: Some("v0.1.0".to_string()),
+        };
+        let err = run_impl(&args, &root).unwrap_err();
+        assert!(err.contains("Error writing"), "got: {}", err);
+    }
+
     /// Exercises line 107 — the create_dir_all Err arm. When `tmp` is
     /// pre-occupied as a regular file, create_dir_all fails.
     #[test]
