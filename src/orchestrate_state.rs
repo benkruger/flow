@@ -396,15 +396,12 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     }
 }
 
-pub fn run(args: Args) {
-    match run_impl(&args) {
-        Ok(value) => {
-            println!("{}", value);
-        }
-        Err(msg) => {
-            println!("{}", json!({"status": "error", "message": msg}));
-        }
-    }
+pub fn run(args: Args) -> ! {
+    let value = match run_impl(&args) {
+        Ok(v) => v,
+        Err(msg) => json!({"status": "error", "message": msg}),
+    };
+    crate::dispatch::dispatch_json(value, 0)
 }
 
 #[cfg(test)]

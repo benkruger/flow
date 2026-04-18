@@ -447,13 +447,11 @@ mod tests {
 
         assert_eq!(value["status"], "error");
         assert_eq!(code, 1);
+        let message = value["message"].as_str().unwrap().to_string();
         assert!(
-            value["message"]
-                .as_str()
-                .unwrap()
-                .contains("Failed to append note"),
+            message.contains("Failed to append note"),
             "got: {}",
-            value["message"]
+            message
         );
     }
 

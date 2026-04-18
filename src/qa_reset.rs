@@ -6,7 +6,7 @@
 //! recreates issues from .qa/issues.json template.
 
 use std::path::Path;
-use std::process::{self, Command, Stdio};
+use std::process::{Command, Stdio};
 
 use clap::Parser;
 use serde_json::{json, Value};
@@ -313,19 +313,8 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     ))
 }
 
-pub fn run(args: Args) {
-    match run_impl(&args) {
-        Ok(result) => {
-            println!("{}", result);
-            if result.get("status").and_then(|v| v.as_str()) == Some("error") {
-                process::exit(1);
-            }
-        }
-        Err(e) => {
-            println!("{}", json!({"status": "error", "message": e}));
-            process::exit(1);
-        }
-    }
+pub fn run(args: Args) -> ! {
+    crate::dispatch::dispatch_result_json(run_impl(&args))
 }
 
 #[cfg(test)]

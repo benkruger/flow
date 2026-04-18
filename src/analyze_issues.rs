@@ -253,27 +253,32 @@ fn run_with_drain_and_timeout(
         .stderr(std::process::Stdio::piped())
         .spawn()?;
 
-    let stdout_handle = child.stdout.take();
-    let stderr_handle = child.stderr.take();
-    // Drain into Vec<u8> and lossily decode. `read_to_string` returns Err
-    // and leaves the buffer empty on invalid UTF-8, which would silently
-    // drop a subprocess's diagnostic output (e.g., a locale-misconfigured
-    // `gh` emitting Latin-1). `from_utf8_lossy` preserves the payload by
-    // substituting U+FFFD for invalid sequences.
+    // Stdio::piped() above guarantees Some after the first take(); the
+    // expects below document the structural invariant rather than
+    // silently dropping output if it ever flips. Drain into Vec<u8>
+    // and lossily decode — `from_utf8_lossy` preserves payloads with
+    // invalid UTF-8 by substituting U+FFFD instead of returning Err
+    // and leaving the buffer empty (which would silently drop a
+    // subprocess's diagnostic output, e.g. a locale-misconfigured
+    // `gh` emitting Latin-1).
+    let mut stdout_handle = child
+        .stdout
+        .take()
+        .expect("stdout piped via Stdio::piped()");
+    let mut stderr_handle = child
+        .stderr
+        .take()
+        .expect("stderr piped via Stdio::piped()");
     let stdout_reader = std::thread::spawn(move || {
         let mut buf = Vec::new();
-        if let Some(mut pipe) = stdout_handle {
-            use std::io::Read;
-            let _ = pipe.read_to_end(&mut buf);
-        }
+        use std::io::Read;
+        let _ = stdout_handle.read_to_end(&mut buf);
         String::from_utf8_lossy(&buf).into_owned()
     });
     let stderr_reader = std::thread::spawn(move || {
         let mut buf = Vec::new();
-        if let Some(mut pipe) = stderr_handle {
-            use std::io::Read;
-            let _ = pipe.read_to_end(&mut buf);
-        }
+        use std::io::Read;
+        let _ = stderr_handle.read_to_end(&mut buf);
         String::from_utf8_lossy(&buf).into_owned()
     });
 

@@ -451,9 +451,9 @@ pub fn post_merge(pr_number: i64, state_file: &str, branch: &str) -> Value {
 /// downstream failures (Slack, label cleanup, parent issue close) are
 /// surfaced inside the JSON `failures` map rather than via the exit
 /// code, so the calling skill can continue cleaning up.
-pub fn run(args: Args) {
+pub fn run(args: Args) -> ! {
     let result = post_merge(args.pr, &args.state_file, &args.branch);
-    println!("{}", result);
+    crate::dispatch::dispatch_json(result, 0)
 }
 
 #[cfg(test)]

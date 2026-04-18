@@ -32,7 +32,6 @@ use crate::duplicate_test_coverage::{self, TestCorpus};
 use crate::external_input_audit;
 use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
-use crate::output::json_error;
 use crate::scope_enumeration::scan;
 
 /// CLI arguments for the plan-check subcommand.
@@ -49,16 +48,8 @@ pub struct Args {
     pub plan_file: Option<String>,
 }
 
-pub fn run(args: Args) {
-    match run_impl(&args) {
-        Ok(result) => {
-            println!("{}", result);
-        }
-        Err(e) => {
-            json_error(&e, &[]);
-            std::process::exit(1);
-        }
-    }
+pub fn run(args: Args) -> ! {
+    crate::dispatch::dispatch_ok_result_json(run_impl(&args))
 }
 
 /// Fallible entry point for plan-check.

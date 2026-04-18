@@ -191,24 +191,31 @@ pub fn run_impl(args: &Args, repo_root: &Path) -> Result<String, String> {
     Ok(output.trim_end().to_string())
 }
 
-pub fn run(args: Args) {
-    let repo_root = match plugin_root() {
+/// Testable variant of [`run`] that accepts an injectable plugin-root
+/// resolver so unit tests can drive the `None` arm (the production
+/// `plugin_root()` walk-up always finds a real repo from inside this
+/// crate, so the None arm is unreachable from any subprocess test
+/// launched from inside flow's source tree).
+///
+/// Returns `(message, exit_code)`. The CLI wrapper prints the message
+/// to stdout and `process::exit`s on non-zero codes.
+pub fn run_with_plugin_root_fn<F: FnOnce() -> Option<std::path::PathBuf>>(
+    args: &Args,
+    plugin_root_fn: F,
+) -> (String, i32) {
+    let repo_root = match plugin_root_fn() {
         Some(r) => r,
-        None => {
-            eprintln!("Error: could not find FLOW plugin root");
-            std::process::exit(1);
-        }
+        None => return ("Error: could not find FLOW plugin root".to_string(), 1),
     };
-
-    match run_impl(&args, &repo_root) {
-        Ok(output) => {
-            println!("{}", output);
-        }
-        Err(e) => {
-            println!("{}", e);
-            std::process::exit(1);
-        }
+    match run_impl(args, &repo_root) {
+        Ok(output) => (output, 0),
+        Err(e) => (e, 1),
     }
+}
+
+pub fn run(args: Args) -> ! {
+    let (msg, code) = run_with_plugin_root_fn(&args, plugin_root);
+    crate::dispatch::dispatch_text(&msg, code)
 }
 
 #[cfg(test)]
@@ -227,6 +234,55 @@ mod tests {
         )
         .unwrap();
         (dir, root)
+    }
+
+    /// Exercises the `None` arm of `run_with_plugin_root_fn` — when
+    /// the resolver yields no plugin root, the wrapper returns the
+    /// "could not find FLOW plugin root" error tuple with exit code 1.
+    #[test]
+    fn run_with_plugin_root_fn_none_returns_error_tuple() {
+        let args = Args {
+            version: Some("2.0.0".to_string()),
+        };
+        let (msg, code) = run_with_plugin_root_fn(&args, || None);
+        assert_eq!(code, 1);
+        assert!(msg.contains("could not find FLOW plugin root"));
+    }
+
+    /// Exercises the `Some` arm with a successful inner run_impl.
+    #[test]
+    fn run_with_plugin_root_fn_success_returns_message_with_code_zero() {
+        let (_dir, root) = setup_repo("1.0.0");
+        // Add the marketplace.json the success path requires.
+        fs::write(
+            root.join(".claude-plugin").join("marketplace.json"),
+            r#"{
+  "name": "flow-marketplace",
+  "metadata": {"version": "1.0.0"},
+  "plugins": [{"name": "flow", "version": "1.0.0"}]
+}"#,
+        )
+        .unwrap();
+        let args = Args {
+            version: Some("2.0.0".to_string()),
+        };
+        let root_clone = root.clone();
+        let (_msg, code) = run_with_plugin_root_fn(&args, move || Some(root_clone));
+        assert_eq!(code, 0);
+    }
+
+    /// Exercises the `Some` arm with run_impl returning Err (invalid
+    /// version).
+    #[test]
+    fn run_with_plugin_root_fn_err_path_returns_msg_and_code_one() {
+        let (_dir, root) = setup_repo("1.0.0");
+        let args = Args {
+            version: Some("invalid_semver".to_string()),
+        };
+        let root_clone = root.clone();
+        let (msg, code) = run_with_plugin_root_fn(&args, move || Some(root_clone));
+        assert_eq!(code, 1);
+        assert!(msg.contains("invalid version format"));
     }
 
     #[test]

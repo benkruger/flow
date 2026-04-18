@@ -199,8 +199,8 @@ pub fn run_impl(args: &Args) -> Value {
 }
 
 /// CLI entry point. Always exits 0 (best-effort — matches post-merge behavior).
-pub fn run(args: Args) {
-    println!("{}", run_impl(&args));
+pub fn run(args: Args) -> ! {
+    crate::dispatch::dispatch_json(run_impl(&args), 0)
 }
 
 #[cfg(test)]

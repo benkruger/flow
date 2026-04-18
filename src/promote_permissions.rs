@@ -120,15 +120,13 @@ pub fn promote(worktree_path: &Path) -> Value {
     }
     settings_data["permissions"]["allow"] = Value::Array(existing_allow);
 
-    let serialized = match serde_json::to_string_pretty(&settings_data) {
-        Ok(s) => s,
-        Err(e) => {
-            return json!({
-                "status": "error",
-                "message": format!("Could not write settings.json: {}", e),
-            })
-        }
-    };
+    // `serde_json::to_string_pretty` over an in-memory `Value` built
+    // from the `json!()` macro cannot fail — the only error sources are
+    // I/O on a custom Writer (we use String) and types that don't
+    // implement Serialize (Value implements it). Use `expect` to drop
+    // the unreachable Err arm rather than carry a dead branch.
+    let serialized = serde_json::to_string_pretty(&settings_data)
+        .expect("serializing an in-memory JSON Value to a String cannot fail");
 
     let mut bytes = serialized.into_bytes();
     bytes.push(b'\n');

@@ -748,6 +748,114 @@ mod tests {
     }
 
     #[test]
+    fn scan_plan_reserved_key_double_quoted_skipped() {
+        // `let = "x"` is a reserved-key double-quoted assignment; the
+        // extractor must skip it so `let` does not appear as a fixture
+        // key in the collected triples.
+        let plan = concat!(
+            "## Tasks\n\n",
+            "Task 1 — test foo.\n\n",
+            "```rust\n",
+            "fn test_foo() {\n",
+            "    let = \"skipped\";\n",
+            "    key = \"expected\";\n",
+            "}\n",
+            "```\n",
+        );
+        let diff = concat!(
+            "diff --git a/tests/foo.rs b/tests/foo.rs\n",
+            "--- a/tests/foo.rs\n",
+            "+++ b/tests/foo.rs\n",
+            "@@ -0,0 +1,3 @@\n",
+            "+fn test_foo() {\n",
+            "+    key = \"expected\";\n",
+            "+}\n",
+        );
+        assert_eq!(scan(plan, diff), Vec::<Deviation>::new());
+    }
+
+    #[test]
+    fn scan_plan_single_quoted_assign_collected() {
+        // A single-quoted assignment in plan Rust block must be
+        // collected as a fixture triple. The single-quoted extractor
+        // path (`key = 'value'`) drives the regex branch used for
+        // char literals and unusual test fixtures.
+        let plan = concat!(
+            "## Tasks\n\n",
+            "Task 1 — test bar.\n\n",
+            "```rust\n",
+            "fn test_bar() {\n",
+            "    key = 'y';\n",
+            "}\n",
+            "```\n",
+        );
+        let diff = concat!(
+            "diff --git a/tests/foo.rs b/tests/foo.rs\n",
+            "--- a/tests/foo.rs\n",
+            "+++ b/tests/foo.rs\n",
+            "@@ -0,0 +1,3 @@\n",
+            "+fn test_bar() {\n",
+            "+    key = 'z';\n",
+            "+}\n",
+        );
+        let result = scan(plan, diff);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].test_name, "test_bar");
+        assert_eq!(result[0].plan_value, "y");
+    }
+
+    #[test]
+    fn scan_plan_single_quoted_reserved_key_skipped() {
+        // Reserved key with single-quoted value must be skipped,
+        // leaving only the non-reserved key in the collected triples.
+        let plan = concat!(
+            "## Tasks\n\n",
+            "Task 1 — test baz.\n\n",
+            "```rust\n",
+            "fn test_baz() {\n",
+            "    let = 'skipped';\n",
+            "    key = 'y';\n",
+            "}\n",
+            "```\n",
+        );
+        let diff = concat!(
+            "diff --git a/tests/foo.rs b/tests/foo.rs\n",
+            "--- a/tests/foo.rs\n",
+            "+++ b/tests/foo.rs\n",
+            "@@ -0,0 +1,3 @@\n",
+            "+fn test_baz() {\n",
+            "+    key = 'y';\n",
+            "+}\n",
+        );
+        assert_eq!(scan(plan, diff), Vec::<Deviation>::new());
+    }
+
+    #[test]
+    fn scan_plan_unclosed_fence_rewinds_triples() {
+        // Unclosed fence must rewind triples so stray-opener fixtures
+        // do not produce false-positive deviations against later
+        // diffs. The Tasks section ends without a closing fence.
+        let plan = concat!(
+            "## Tasks\n\n",
+            "Task 1 — unclosed fence.\n\n",
+            "```rust\n",
+            "fn test_unclosed() {\n",
+            "    let key = \"stray\";\n",
+            "}\n",
+        );
+        let diff = concat!(
+            "diff --git a/tests/foo.rs b/tests/foo.rs\n",
+            "--- a/tests/foo.rs\n",
+            "+++ b/tests/foo.rs\n",
+            "@@ -0,0 +1,3 @@\n",
+            "+fn test_unclosed() {\n",
+            "+    let key = \"different\";\n",
+            "+}\n",
+        );
+        assert_eq!(scan(plan, diff), Vec::<Deviation>::new());
+    }
+
+    #[test]
     fn is_reserved_key_matches_all_four_keywords() {
         assert!(is_reserved_key("let"));
         assert!(is_reserved_key("const"));

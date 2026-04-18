@@ -20,7 +20,7 @@
 //! [`git_pull`], [`ci::run_impl`], [`run_update_deps`], and
 //! [`commit_deps`].
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use clap::Parser;
 use serde_json::{json, Value};
@@ -29,7 +29,6 @@ use crate::ci;
 use crate::commands::log::append_log;
 use crate::commands::start_step::update_step;
 use crate::flow_paths::FlowPaths;
-use crate::git::project_root;
 use crate::update_deps::run_update_deps;
 
 const DEPS_TIMEOUT_SECS: u64 = 300;
@@ -264,23 +263,6 @@ pub fn run_impl_with_deps(
     response
 }
 
-/// Production entry point: binds [`run_impl_with_deps`] to the real
-/// git, CI, deps-update, and commit-deps subprocess runners, using
-/// [`project_root`] and `current_dir()` for the root and cwd.
-pub fn run_impl(args: &Args) -> Value {
-    let root = project_root();
-    let cwd = std::env::current_dir().unwrap_or(PathBuf::from("."));
-    run_impl_with_deps(
-        args,
-        &root,
-        &cwd,
-        &git_pull,
-        &ci::run_impl,
-        &run_update_deps,
-        &commit_deps,
-    )
-}
-
 /// Main-arm entry point: returns the `(Value, i32)` contract that
 /// `dispatch::dispatch_json` consumes. Takes `root: &Path` and
 /// `cwd: &Path` per `.claude/rules/rust-patterns.md` "Main-arm
@@ -379,6 +361,7 @@ fn git_pull(cwd: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::PathBuf;
     use std::process::Command;
 
     /// Create a git repo with a bare remote and push initial commit.

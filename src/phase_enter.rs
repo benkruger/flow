@@ -5,7 +5,6 @@
 //! parameterized by `--phase`.
 
 use std::path::PathBuf;
-use std::process;
 
 use clap::Parser;
 use serde_json::{json, Value};
@@ -14,7 +13,6 @@ use crate::commands::log::append_log;
 use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
-use crate::output::json_error;
 use crate::phase_config::PHASE_ORDER;
 use crate::phase_transition::phase_enter;
 
@@ -310,16 +308,8 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 }
 
 /// CLI entry point.
-pub fn run(args: Args) {
-    match run_impl(&args) {
-        Ok(result) => {
-            println!("{}", serde_json::to_string(&result).unwrap());
-        }
-        Err(e) => {
-            json_error(&e, &[]);
-            process::exit(1);
-        }
-    }
+pub fn run(args: Args) -> ! {
+    crate::dispatch::dispatch_ok_result_json(run_impl(&args))
 }
 
 #[cfg(test)]

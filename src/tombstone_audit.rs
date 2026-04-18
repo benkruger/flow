@@ -11,7 +11,6 @@ use regex::Regex;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::process;
 
 /// CLI arguments for the tombstone-audit subcommand.
 #[derive(Parser, Debug)]
@@ -371,18 +370,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 }
 
 /// CLI entry point.
-pub fn run(args: Args) {
-    match run_impl(&args) {
-        Ok(result) => {
-            println!("{}", serde_json::to_string(&result).unwrap());
-        }
-        Err(e) => {
-            let err = json!({
-                "status": "error",
-                "message": e,
-            });
-            println!("{}", serde_json::to_string(&err).unwrap());
-            process::exit(1);
-        }
-    }
+pub fn run(args: Args) -> ! {
+    crate::dispatch::dispatch_ok_result_json(run_impl(&args))
 }

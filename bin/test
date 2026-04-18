@@ -26,12 +26,42 @@ if [ "${1:-}" = "--file" ]; then
   exit
 fi
 
+# `bin/test --check <module>` runs lib tests for a module WITHOUT
+# coverage instrumentation. Fast iteration loop (~1-2s) for verifying
+# test correctness during development. Use `bin/test --module` to
+# verify coverage after tests pass.
+if [ "${1:-}" = "--check" ]; then
+  shift
+  module="$1"
+  shift
+  exec cargo nextest run --lib -E "test(${module})" "$@"
+fi
+
 # `bin/test --report` re-renders the cached coverage data with
 # missing-line numbers. Requires a prior full-suite run to have
 # populated target/llvm-cov-target/. Read-only; no rebuild.
 if [ "${1:-}" = "--report" ]; then
   shift
   exec cargo llvm-cov report --show-missing-lines "$@"
+fi
+
+# `bin/test --show <file>` renders annotated source with per-region
+# and per-instantiation counts for one file. Used to diagnose
+# uncovered regions that don't surface in the `--report` per-file
+# Uncovered Lines list — typically generic monomorphizations whose
+# region misses are tallied but not pinned to a source line.
+# Read-only; no rebuild. Requires a prior coverage run.
+if [ "${1:-}" = "--show" ]; then
+  shift
+  file="$1"
+  shift
+  # Restrict the annotated output to this one file via an exclusion
+  # regex over every other path. Pass `--text --show-instantiations`
+  # so each monomorphization renders on its own with `^N` per-region
+  # counts.
+  exec cargo llvm-cov report --text --show-instantiations \
+    --ignore-filename-regex "^(?!.*${file//./\\.}$).*$" \
+    "$@"
 fi
 
 # `bin/test --module <name>` runs every test whose name contains
@@ -48,8 +78,13 @@ if [ "${1:-}" = "--module" ]; then
   shift
   module="$1"
   shift
-  echo "=== Running tests matching '${module}' ==="
-  cargo llvm-cov nextest \
+  # `--lib` skips compiling/running integration test binaries (tests/*.rs),
+  # leaving only the library + its inline #[cfg(test)] modules. This drops
+  # cycle time from minutes to seconds because all 87 integration test
+  # binaries are bypassed. Coverage from subprocess integration tests is
+  # NOT included — use full `bin/flow ci` for the authoritative number.
+  echo "=== Running lib tests matching '${module}' ==="
+  cargo llvm-cov --lib nextest \
     --no-cfg-coverage \
     --no-clean \
     --status-level pass \

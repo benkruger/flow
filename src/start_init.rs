@@ -48,7 +48,6 @@ use crate::commands::log::append_log;
 use crate::commands::start_lock::{acquire, queue_path, release};
 use crate::commands::start_step::update_step;
 use crate::flow_paths::FlowStatesDir;
-use crate::git::project_root;
 use crate::label_issues::{label_issues, LABEL};
 use crate::prime_check;
 use crate::upgrade_check::{self, GhResult};
@@ -393,23 +392,6 @@ pub fn run_impl_with_deps(
     }
 
     Ok(response)
-}
-
-/// Production entry point: binds [`run_impl_with_deps`] to the real
-/// [`plugin_root`], [`prime_check::run_impl`], the default upgrade
-/// check, and the default init-state subprocess runner.
-pub fn run_impl(args: &Args) -> Result<Value, String> {
-    let root = project_root();
-    let cwd = std::env::current_dir().unwrap_or(PathBuf::from("."));
-    run_impl_with_deps(
-        args,
-        &root,
-        &cwd,
-        &plugin_root,
-        &prime_check::run_impl,
-        &default_upgrade_check,
-        &default_init_state_runner,
-    )
 }
 
 /// Testable main-arm entry point with injected dependencies.

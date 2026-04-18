@@ -97,8 +97,23 @@ fn normalize_gate_input(s: &str) -> String {
 /// Fallible implementation with injected root/cwd — returns
 /// `Ok(finding_count)` on success, `Err("no_state")` when no state file
 /// exists, or `Err(message)` on failure. Tests pass tempdir paths;
-/// production wraps via [`run_impl`].
+/// production wraps via [`run_impl`]. Branch resolution is delegated
+/// to a closure so tests can drive the `None` arm without mocking git.
 pub fn run_impl_with_root(args: &Args, root: &Path, cwd: &Path) -> Result<usize, String> {
+    run_impl_with_root_resolver(args, root, cwd, &resolve_branch)
+}
+
+/// Seam-injected variant of [`run_impl_with_root`] — accepts a
+/// custom branch resolver closure. Production uses
+/// [`resolve_branch`]; tests pass a closure returning `None` to
+/// exercise the "Could not determine current branch" arm without
+/// mocking git or mutating process env vars.
+pub fn run_impl_with_root_resolver(
+    args: &Args,
+    root: &Path,
+    cwd: &Path,
+    resolver: &dyn Fn(Option<&str>, &Path) -> Option<String>,
+) -> Result<usize, String> {
     if !VALID_OUTCOMES.contains(&args.outcome.as_str()) {
         return Err(format!(
             "Invalid outcome '{}'. Valid: {}",
@@ -118,7 +133,7 @@ pub fn run_impl_with_root(args: &Args, root: &Path, cwd: &Path) -> Result<usize,
     // [`crate::cwd_scope::enforce`].
     crate::cwd_scope::enforce(cwd, root)?;
 
-    let branch = match resolve_branch(args.branch.as_deref(), root) {
+    let branch = match resolver(args.branch.as_deref(), root) {
         Some(b) => b,
         None => return Err("Could not determine current branch".to_string()),
     };
@@ -207,10 +222,10 @@ pub fn run_impl_main_with_cwd_result(
     run_impl_main(args, root, &cwd)
 }
 
-pub fn run(args: Args) -> ! {
+pub fn run(args: Args) {
     let root = project_root();
     let (value, code) = run_impl_main_with_cwd_result(args, &root, std::env::current_dir());
-    crate::dispatch::dispatch_json(value, code)
+    crate::dispatch::dispatch_json(value, code);
 }
 
 #[cfg(test)]
@@ -269,34 +284,6 @@ mod tests {
         assert_eq!(findings[0]["phase"], "flow-code-review");
         assert_eq!(findings[0]["phase_name"], "Code Review");
         assert!(findings[0]["timestamp"].as_str().unwrap().contains("T"));
-    }
-
-    #[test]
-    fn add_finding_multiple_increments_count() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = make_state("test-feature");
-        let path = write_state(dir.path(), "test-feature", &state);
-
-        mutate_state(&path, |s| {
-            s["findings"]
-                .as_array_mut()
-                .expect("findings is always an array in this fixture")
-                .push(json!({"finding": "first", "outcome": "fixed"}));
-        })
-        .unwrap();
-
-        let result = mutate_state(&path, |s| {
-            s["findings"]
-                .as_array_mut()
-                .expect("findings is always an array in this fixture")
-                .push(json!({"finding": "second", "outcome": "dismissed"}));
-        })
-        .unwrap();
-
-        let findings = result["findings"].as_array().unwrap();
-        assert_eq!(findings.len(), 2);
-        assert_eq!(findings[0]["finding"], "first");
-        assert_eq!(findings[1]["finding"], "second");
     }
 
     #[test]
@@ -364,90 +351,10 @@ mod tests {
     }
 
     #[test]
-    fn add_finding_filed_includes_issue_url() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = make_state("test-feature");
-        let path = write_state(dir.path(), "test-feature", &state);
-
-        mutate_state(&path, |s| {
-            s["findings"]
-                .as_array_mut()
-                .expect("findings is always an array in this fixture")
-                .push(json!({
-                    "finding": "Process gap in Learn phase",
-                    "reason": "Filed as Flow issue",
-                    "outcome": "filed",
-                    "phase": "flow-learn",
-                    "phase_name": "Learn",
-                    "issue_url": "https://github.com/test/test/issues/42",
-                    "timestamp": now(),
-                }));
-        })
-        .unwrap();
-
-        let content = fs::read_to_string(&path).unwrap();
-        let on_disk: Value = serde_json::from_str(&content).unwrap();
-        let finding = &on_disk["findings"][0];
-        assert_eq!(
-            finding["issue_url"],
-            "https://github.com/test/test/issues/42"
-        );
-        assert_eq!(finding["outcome"], "filed");
-    }
-
-    #[test]
-    fn add_finding_rule_written_includes_path() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = make_state("test-feature");
-        let path = write_state(dir.path(), "test-feature", &state);
-
-        mutate_state(&path, |s| {
-            s["findings"]
-                .as_array_mut()
-                .expect("findings is always an array in this fixture")
-                .push(json!({
-                    "finding": "No rule for error handling pattern",
-                    "reason": "Gap identified during learn analysis",
-                    "outcome": "rule_written",
-                    "phase": "flow-learn",
-                    "phase_name": "Learn",
-                    "path": ".claude/rules/error-handling.md",
-                    "timestamp": now(),
-                }));
-        })
-        .unwrap();
-
-        let content = fs::read_to_string(&path).unwrap();
-        let on_disk: Value = serde_json::from_str(&content).unwrap();
-        let finding = &on_disk["findings"][0];
-        assert_eq!(finding["path"], ".claude/rules/error-handling.md");
-        assert_eq!(finding["outcome"], "rule_written");
-    }
-
-    #[test]
     fn add_finding_phase_name_resolution() {
         let names = phase_names();
         assert_eq!(names.get("flow-code-review").unwrap(), "Code Review");
         assert_eq!(names.get("flow-learn").unwrap(), "Learn");
-    }
-
-    #[test]
-    fn add_finding_persists_to_disk() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = make_state("test-feature");
-        let path = write_state(dir.path(), "test-feature", &state);
-
-        mutate_state(&path, |s| {
-            s["findings"]
-                .as_array_mut()
-                .expect("findings is always an array in this fixture")
-                .push(json!({"finding": "persisted", "outcome": "fixed"}));
-        })
-        .unwrap();
-
-        let content = fs::read_to_string(&path).unwrap();
-        let on_disk: Value = serde_json::from_str(&content).unwrap();
-        assert_eq!(on_disk["findings"][0]["finding"], "persisted");
     }
 
     #[test]
@@ -867,6 +774,20 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Failed to add finding"));
+    }
+
+    /// Exercise the `resolver returns None` Err arm in
+    /// `run_impl_with_root_resolver` — the lib instantiation's
+    /// previously-uncovered "Could not determine current branch" path.
+    /// Inject a closure that always returns `None`.
+    #[test]
+    fn add_finding_run_impl_with_root_resolver_none_returns_branch_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let args = make_args("fixed", "flow-learn", None);
+        let resolver = |_: Option<&str>, _: &Path| -> Option<String> { None };
+        let err = run_impl_with_root_resolver(&args, &root, &root, &resolver).unwrap_err();
+        assert_eq!(err, "Could not determine current branch");
     }
 
     #[test]

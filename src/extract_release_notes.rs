@@ -115,24 +115,30 @@ pub fn run_impl(args: &Args, repo_root: &Path) -> Result<String, String> {
     Ok(format!("Written to {}", out_path.display()))
 }
 
-pub fn run(args: Args) {
-    let repo_root = match plugin_root() {
+/// Testable variant of [`run`] that accepts an injectable plugin-root
+/// resolver so unit tests can drive the `None` arm. The walk-up
+/// fallback in production `plugin_root()` always finds a real repo
+/// from inside flow's source tree, making the None arm unreachable
+/// from any subprocess test launched here.
+///
+/// Returns `(message, exit_code)`.
+pub fn run_with_plugin_root_fn<F: FnOnce() -> Option<std::path::PathBuf>>(
+    args: &Args,
+    plugin_root_fn: F,
+) -> (String, i32) {
+    let repo_root = match plugin_root_fn() {
         Some(r) => r,
-        None => {
-            eprintln!("Error: could not find FLOW plugin root");
-            std::process::exit(1);
-        }
+        None => return ("Error: could not find FLOW plugin root".to_string(), 1),
     };
-
-    match run_impl(&args, &repo_root) {
-        Ok(output) => {
-            println!("{}", output);
-        }
-        Err(e) => {
-            println!("{}", e);
-            std::process::exit(1);
-        }
+    match run_impl(args, &repo_root) {
+        Ok(output) => (output, 0),
+        Err(e) => (e, 1),
     }
+}
+
+pub fn run(args: Args) -> ! {
+    let (msg, code) = run_with_plugin_root_fn(&args, plugin_root);
+    crate::dispatch::dispatch_text(&msg, code)
 }
 
 #[cfg(test)]
@@ -144,6 +150,43 @@ mod tests {
         let root = dir.path().to_path_buf();
         fs::write(root.join("RELEASE-NOTES.md"), content).unwrap();
         (dir, root)
+    }
+
+    /// Exercises `run_with_plugin_root_fn`'s None arm.
+    #[test]
+    fn run_with_plugin_root_fn_none_returns_error_tuple() {
+        let args = Args {
+            version: Some("v0.1.0".to_string()),
+        };
+        let (msg, code) = run_with_plugin_root_fn(&args, || None);
+        assert_eq!(code, 1);
+        assert!(msg.contains("could not find FLOW plugin root"));
+    }
+
+    /// Exercises `run_with_plugin_root_fn`'s success path.
+    #[test]
+    fn run_with_plugin_root_fn_success_returns_written_message() {
+        let (_dir, root) = setup_repo_with_notes("## v0.1.0\n\nFirst.");
+        let args = Args {
+            version: Some("v0.1.0".to_string()),
+        };
+        let root_clone = root.clone();
+        let (msg, code) = run_with_plugin_root_fn(&args, move || Some(root_clone));
+        assert_eq!(code, 0);
+        assert!(msg.contains("Written to"));
+    }
+
+    /// Exercises `run_with_plugin_root_fn`'s Err path (run_impl Err).
+    #[test]
+    fn run_with_plugin_root_fn_err_path_returns_no_section_found() {
+        let (_dir, root) = setup_repo_with_notes("## v0.1.0\n\nFirst.");
+        let args = Args {
+            version: Some("v9.9.9".to_string()),
+        };
+        let root_clone = root.clone();
+        let (msg, code) = run_with_plugin_root_fn(&args, move || Some(root_clone));
+        assert_eq!(code, 1);
+        assert!(msg.contains("no section found"));
     }
 
     // --- header_matches_version ---
