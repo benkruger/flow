@@ -11,6 +11,8 @@
 //! the Slack-success, Slack-error, and state-error branches against a tempdir
 //! without touching the real worktree or spawning curl.
 
+use std::process;
+
 use clap::Parser;
 use serde_json::{json, Value};
 
@@ -19,6 +21,7 @@ use crate::flow_paths::FlowPaths;
 use crate::git::project_root;
 use crate::lock::mutate_state;
 use crate::notify_slack;
+use crate::output::json_error;
 use crate::phase_config;
 use crate::phase_transition::phase_complete;
 
@@ -57,7 +60,7 @@ pub type NotifierFn = dyn Fn(&notify_slack::Args) -> Value;
 /// `run_impl_with_deps`.
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     let root = project_root();
-    let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     run_impl_with_deps(&root, &cwd, args, &notify_slack::notify)
 }
 
@@ -263,6 +266,22 @@ pub fn run_impl_with_deps(
     }
 
     Ok(response)
+}
+
+/// CLI entry point. Thin dispatcher over [`run_impl`]: prints the
+/// success JSON on `Ok`, emits a `json_error` and calls
+/// `process::exit(1)` on infrastructure failure. All Slack-path and
+/// state-file logic lives in [`run_impl_with_deps`].
+pub fn run(args: Args) {
+    match run_impl(&args) {
+        Ok(result) => {
+            println!("{}", serde_json::to_string(&result).unwrap());
+        }
+        Err(e) => {
+            json_error(&e, &[]);
+            process::exit(1);
+        }
+    }
 }
 
 #[cfg(test)]

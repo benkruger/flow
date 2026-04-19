@@ -7,95 +7,13 @@
 // Not every consumer uses every helper. Each test file imports only what it needs.
 #![allow(dead_code)]
 
-use std::collections::HashMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::sync::{Mutex, OnceLock};
 
 use flow_rs::flow_paths::FlowStatesDir;
 use serde_json::{json, Value};
-
-// --- Per-binary file-read caches ---
-//
-// Many test binaries (notably skill_contracts.rs with 200+ tests) call
-// the read_skill / read_agent / load_phases / load_settings helpers
-// concurrently. Each call previously did its own fs::read_to_string,
-// opening one FD per call. Under heavy parallel load this caused
-// nextest's leak detector to flag tests because the FD count for the
-// shared test binary spiked while concurrent tests were mid-read.
-//
-// Caching the strings at module scope means each file is opened ONCE
-// per test-binary invocation, no matter how many tests call the
-// helper. Same data, no FD pile-up, no false-positive leak warnings.
-//
-// Cache lifetime: per binary process. Each `bin/flow ci --test` run
-// spawns fresh test binaries, so the cache is fresh per CI run — no
-// staleness risk against source changes.
-
-fn string_cache() -> &'static Mutex<HashMap<PathBuf, String>> {
-    static CACHE: OnceLock<Mutex<HashMap<PathBuf, String>>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn json_cache() -> &'static Mutex<HashMap<PathBuf, Value>> {
-    static CACHE: OnceLock<Mutex<HashMap<PathBuf, Value>>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn dir_listing_cache() -> &'static Mutex<HashMap<PathBuf, Vec<String>>> {
-    static CACHE: OnceLock<Mutex<HashMap<PathBuf, Vec<String>>>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Cached `fs::read_to_string` — reads the file once per binary,
-/// returns clones of the cached String thereafter. Eliminates per-test
-/// FD pressure on shared resources. Panics on read failure (matches
-/// the `unwrap_or_else(panic!)` style of the prior helpers).
-fn cached_read(path: &Path) -> String {
-    let mut guard = string_cache().lock().unwrap();
-    if let Some(content) = guard.get(path) {
-        return content.clone();
-    }
-    let content = fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
-    guard.insert(path.to_path_buf(), content.clone());
-    content
-}
-
-/// Cached JSON parse — reads + parses the file once per binary,
-/// returns clones thereafter.
-fn cached_read_json(path: &Path) -> Value {
-    let mut guard = json_cache().lock().unwrap();
-    if let Some(value) = guard.get(path) {
-        return value.clone();
-    }
-    let content = fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
-    let parsed: Value = serde_json::from_str(&content)
-        .unwrap_or_else(|e| panic!("Failed to parse {}: {}", path.display(), e));
-    guard.insert(path.to_path_buf(), parsed.clone());
-    parsed
-}
-
-/// Cached `read_dir` returning sorted directory names. Same FD-pressure
-/// rationale as `cached_read`.
-fn cached_subdir_names(dir: &Path) -> Vec<String> {
-    let mut guard = dir_listing_cache().lock().unwrap();
-    if let Some(names) = guard.get(dir) {
-        return names.clone();
-    }
-    let mut names: Vec<String> = fs::read_dir(dir)
-        .unwrap_or_else(|e| panic!("Failed to read dir {}: {}", dir.display(), e))
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .collect();
-    names.sort();
-    guard.insert(dir.to_path_buf(), names.clone());
-    names
-}
 
 // --- Path helpers ---
 
@@ -142,24 +60,27 @@ pub fn flow_states_dir(project_root: &Path) -> std::path::PathBuf {
 // --- File reading helpers ---
 
 /// Reads and returns the content of `skills/{name}/SKILL.md`.
-/// Cached per binary — see `cached_read` rationale at top of module.
 pub fn read_skill(name: &str) -> String {
     let path = skills_dir().join(name).join("SKILL.md");
-    cached_read(&path)
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e))
 }
 
 /// Reads and parses `flow-phases.json` from the repo root.
-/// Cached per binary.
 pub fn load_phases() -> Value {
     let path = repo_root().join("flow-phases.json");
-    cached_read_json(&path)
+    let content = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
+    serde_json::from_str(&content)
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {}", path.display(), e))
 }
 
 /// Returns the plugin version from `.claude-plugin/plugin.json`.
-/// Cached per binary.
 pub fn plugin_version() -> String {
     let path = repo_root().join(".claude-plugin").join("plugin.json");
-    let parsed = cached_read_json(&path);
+    let content = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
+    let parsed: Value = serde_json::from_str(&content)
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {}", path.display(), e));
     parsed["version"]
         .as_str()
         .expect("plugin.json missing 'version' key")
@@ -175,9 +96,15 @@ pub fn current_plugin_version() -> String {
 // --- Skill/phase enumeration ---
 
 /// Returns sorted list of all skill directory names under `skills/`.
-/// Cached per binary.
 pub fn all_skill_names() -> Vec<String> {
-    cached_subdir_names(&skills_dir())
+    let mut names: Vec<String> = fs::read_dir(skills_dir())
+        .expect("Failed to read skills/ directory")
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
 }
 
 /// Returns the ordered phase keys from flow-phases.json `order` array.
@@ -214,24 +141,27 @@ pub fn utility_skills() -> Vec<String> {
 }
 
 /// Reads and returns the content of an agent file at `agents/{name}`.
-/// Cached per binary.
 pub fn read_agent(name: &str) -> String {
     let path = agents_dir().join(name);
-    cached_read(&path)
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e))
 }
 
 /// Reads and parses `hooks/hooks.json` from the repo root.
-/// Cached per binary.
 pub fn load_hooks() -> Value {
     let path = hooks_dir().join("hooks.json");
-    cached_read_json(&path)
+    let content = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
+    serde_json::from_str(&content)
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {}", path.display(), e))
 }
 
 /// Reads `.claude/settings.json` from the repo root.
-/// Cached per binary.
 pub fn load_settings() -> Value {
     let path = repo_root().join(".claude").join("settings.json");
-    cached_read_json(&path)
+    let content = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
+    serde_json::from_str(&content)
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {}", path.display(), e))
 }
 
 // --- Markdown file collection ---

@@ -19,17 +19,6 @@ pub fn project_root() -> PathBuf {
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    parse_worktree_list_first_path(&stdout)
-}
-
-/// Pure helper for [`project_root`]: parse `git worktree list --porcelain`
-/// output and return the first `worktree <path>` line as a PathBuf, or
-/// `PathBuf::from(".")` when no such line is present.
-///
-/// Extracted as a separate function so unit tests can drive both the
-/// "found a worktree line" and the "no worktree line" branches without
-/// spawning a real git subprocess.
-fn parse_worktree_list_first_path(stdout: &str) -> PathBuf {
     for line in stdout.lines() {
         if let Some(path) = line.strip_prefix("worktree ") {
             return PathBuf::from(path.trim());
@@ -161,29 +150,6 @@ mod tests {
     static SIMULATE_BRANCH_LOCK: Mutex<()> = Mutex::new(());
 
     // --- project_root() ---
-
-    /// Exercises both branches of `parse_worktree_list_first_path`: the
-    /// "first worktree line" path and the empty-stdout fallback.
-    #[test]
-    fn parse_worktree_list_first_path_extracts_first_worktree_line() {
-        let stdout = "worktree /path/to/repo\nHEAD abc123\nbranch refs/heads/main\n\nworktree /path/to/other\nHEAD def456\nbranch refs/heads/feature\n";
-        assert_eq!(
-            parse_worktree_list_first_path(stdout),
-            PathBuf::from("/path/to/repo")
-        );
-    }
-
-    #[test]
-    fn parse_worktree_list_first_path_no_worktree_line_returns_dot() {
-        // Output without any "worktree " prefix → fall through to ".".
-        let stdout = "HEAD abc123\nbranch refs/heads/main\n";
-        assert_eq!(parse_worktree_list_first_path(stdout), PathBuf::from("."));
-    }
-
-    #[test]
-    fn parse_worktree_list_first_path_empty_input_returns_dot() {
-        assert_eq!(parse_worktree_list_first_path(""), PathBuf::from("."));
-    }
 
     #[test]
     fn project_root_returns_path() {

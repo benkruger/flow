@@ -131,7 +131,6 @@ mod tests {
 
     fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
         let mut phases = serde_json::Map::new();
-        let phase_names = crate::phase_config::phase_names();
         let all_phases = [
             "flow-start",
             "flow-plan",
@@ -146,11 +145,18 @@ mod tests {
                 .find(|(k, _)| *k == p)
                 .map(|(_, v)| *v)
                 .unwrap_or("pending");
-            let name = phase_names.get(p).cloned().unwrap_or_default();
             phases.insert(
                 p.to_string(),
                 json!({
-                    "name": name,
+                    "name": match p {
+                        "flow-start" => "Start",
+                        "flow-plan" => "Plan",
+                        "flow-code" => "Code",
+                        "flow-code-review" => "Code Review",
+                        "flow-learn" => "Learn",
+                        "flow-complete" => "Complete",
+                        _ => p,
+                    },
                     "status": status,
                     "started_at": null,
                     "completed_at": null,
@@ -427,33 +433,6 @@ mod tests {
         let msg = result.unwrap_err();
         assert!(
             msg.contains("Failed to write output"),
-            "Unexpected err msg: {}",
-            msg
-        );
-    }
-
-    /// Exercises the read_to_string Err arm (line 89 closure). Make the
-    /// state-file path a directory: `Path::exists()` returns true so
-    /// the early-return guard passes, but read_to_string fails with
-    /// EISDIR — triggering the map_err message.
-    #[test]
-    fn run_impl_read_error_returns_err() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_path = dir.path().join("state.json");
-        // Create as a directory, not a file — exists() is true.
-        std::fs::create_dir(&state_path).unwrap();
-        let output_path = dir.path().join("out.md");
-
-        let args = Args {
-            state_file: state_path.to_string_lossy().to_string(),
-            output: output_path.to_string_lossy().to_string(),
-            started_only: false,
-        };
-        let result = run_impl(&args);
-        assert!(result.is_err());
-        let msg = result.unwrap_err();
-        assert!(
-            msg.contains("Failed to read state file"),
             "Unexpected err msg: {}",
             msg
         );

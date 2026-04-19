@@ -17,6 +17,7 @@ use serde_json::json;
 
 use crate::complete_preflight::LOCAL_TIMEOUT;
 use crate::issue::{fetch_database_id, run_gh_cmd};
+use crate::output::{json_error, json_ok};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -87,10 +88,15 @@ pub fn create_sub_issue(
     Ok((parent_number, child_number))
 }
 
-pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
+pub fn run(args: Args) {
     match create_sub_issue(&args.repo, args.parent_number, args.child_number) {
-        Ok((parent, child)) => (json!({"status": "ok", "parent": parent, "child": child}), 0),
-        Err(e) => (json!({"status": "error", "message": e}), 1),
+        Ok((parent, child)) => {
+            json_ok(&[("parent", json!(parent)), ("child", json!(child))]);
+        }
+        Err(e) => {
+            json_error(&e, &[]);
+            std::process::exit(1);
+        }
     }
 }
 

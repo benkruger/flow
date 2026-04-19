@@ -14,6 +14,7 @@ use serde_json::json;
 
 use crate::complete_preflight::LOCAL_TIMEOUT;
 use crate::issue::run_gh_cmd;
+use crate::output::{json_error, json_ok};
 
 #[derive(Parser, Debug)]
 #[command(name = "create-milestone", about = "Create a GitHub milestone")]
@@ -72,10 +73,15 @@ pub fn create_milestone(repo: &str, title: &str, due_date: &str) -> Result<(i64,
     Ok((number, url))
 }
 
-pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
+pub fn run(args: Args) {
     match create_milestone(&args.repo, &args.title, &args.due_date) {
-        Ok((number, url)) => (json!({"status": "ok", "number": number, "url": url}), 0),
-        Err(e) => (json!({"status": "error", "message": e}), 1),
+        Ok((number, url)) => {
+            json_ok(&[("number", json!(number)), ("url", json!(url))]);
+        }
+        Err(e) => {
+            json_error(&e, &[]);
+            std::process::exit(1);
+        }
     }
 }
 

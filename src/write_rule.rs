@@ -13,6 +13,8 @@ use std::path::Path;
 use clap::Parser;
 use serde_json::json;
 
+use crate::output::{json_error, json_ok};
+
 #[derive(Parser, Debug)]
 #[command(name = "write-rule", about = "Write content to a target file")]
 pub struct Args {
@@ -51,15 +53,21 @@ pub fn write_rule(target_path: &str, content: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
+pub fn run(args: Args) {
     let content = match read_content_file(&args.content_file) {
         Ok(c) => c,
-        Err(e) => return (json!({"status": "error", "message": e}), 1),
+        Err(e) => {
+            json_error(&e, &[]);
+            std::process::exit(1);
+        }
     };
+
     if let Err(e) = write_rule(&args.path, &content) {
-        return (json!({"status": "error", "message": e}), 1);
+        json_error(&e, &[]);
+        std::process::exit(1);
     }
-    (json!({"status": "ok", "path": &args.path}), 0)
+
+    json_ok(&[("path", json!(&args.path))]);
 }
 
 #[cfg(test)]

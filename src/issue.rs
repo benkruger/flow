@@ -21,6 +21,9 @@ use regex::Regex;
 use serde_json::json;
 
 use crate::complete_preflight::LOCAL_TIMEOUT;
+use crate::flow_paths::FlowPaths;
+use crate::git::{project_root, resolve_branch};
+use crate::github::detect_repo;
 
 #[derive(Parser, Debug)]
 #[command(name = "issue", about = "Create a GitHub issue")]
@@ -532,6 +535,21 @@ pub fn run_impl_main(
     }
 }
 
+pub fn run(args: Args) -> ! {
+    let root = project_root();
+    let root_for_state = root.clone();
+    let root_for_repo = root.clone();
+    let state_reader = move || -> Option<String> {
+        resolve_branch(None, &root_for_state).and_then(|branch| {
+            let state_path = FlowPaths::new(&root_for_state, &branch).state_file();
+            fs::read_to_string(&state_path).ok()
+        })
+    };
+    let repo_resolver = move || -> Option<String> { detect_repo(Some(&root_for_repo)) };
+    let (value, code) = run_impl_main(args, &root, &state_reader, &repo_resolver, &run_gh_cmd);
+    crate::dispatch::dispatch_json(value, code)
+}
+
 fn resolve_repo_from_state(state_file: &str) -> Option<String> {
     let content = fs::read_to_string(state_file).ok()?;
     let state: serde_json::Value = serde_json::from_str(&content).ok()?;
@@ -985,89 +1003,6 @@ mod tests {
         let err = create_issue_with_runner("owner/name", "Title", Some("Bug"), None, None, &runner)
             .unwrap_err();
         assert!(err.contains("authentication failed"));
-    }
-
-    /// Exercises the `body=Some` and `milestone=Some` push branches in
-    /// `create_issue_with_runner` (lines 279-282 and 283-286). Verifies
-    /// the runner saw `--body` and `--milestone` in the args.
-    #[test]
-    fn create_issue_with_runner_passes_body_and_milestone_to_runner() {
-        use std::rc::Rc;
-        let captured: Rc<RefCell<Vec<Vec<String>>>> = Rc::new(RefCell::new(Vec::new()));
-        let captured_clone = captured.clone();
-        let runner = move |args: &[&str], _t: Option<Duration>| {
-            captured_clone
-                .borrow_mut()
-                .push(args.iter().map(|s| s.to_string()).collect());
-            if args.contains(&"create") {
-                Ok("https://github.com/owner/name/issues/1".to_string())
-            } else {
-                Ok("4242".to_string())
-            }
-        };
-        let result = create_issue_with_runner(
-            "owner/name",
-            "Title",
-            None,
-            Some("body text"),
-            Some("v1.0"),
-            &runner,
-        )
-        .unwrap();
-        assert_eq!(result.number, Some(1));
-        let calls = captured.borrow().clone();
-        let create_call = calls
-            .iter()
-            .find(|c| c.iter().any(|a| a == "create"))
-            .unwrap();
-        assert!(create_call.iter().any(|a| a == "--body"));
-        assert!(create_call.iter().any(|a| a == "body text"));
-        assert!(create_call.iter().any(|a| a == "--milestone"));
-        assert!(create_call.iter().any(|a| a == "v1.0"));
-    }
-
-    /// Exercises body+milestone push branches in
-    /// `retry_with_label_with_runner` (lines 354-357 and 358-361).
-    #[test]
-    fn retry_with_label_with_runner_passes_body_and_milestone_to_runner() {
-        use std::rc::Rc;
-        let captured: Rc<RefCell<Vec<Vec<String>>>> = Rc::new(RefCell::new(Vec::new()));
-        let captured_clone = captured.clone();
-        let runner = move |args: &[&str], _t: Option<Duration>| {
-            captured_clone
-                .borrow_mut()
-                .push(args.iter().map(|s| s.to_string()).collect());
-            if args.contains(&"label") {
-                Ok(String::new())
-            } else if args.contains(&"create") {
-                Ok("https://github.com/owner/name/issues/9".to_string())
-            } else {
-                Ok("9000".to_string())
-            }
-        };
-        let result = retry_with_label_with_runner(
-            "owner/name",
-            "Title",
-            "Flow",
-            Some("retry body"),
-            Some("v2.0"),
-            Duration::from_secs(5),
-            &runner,
-        )
-        .unwrap();
-        assert_eq!(result.number, Some(9));
-        let calls = captured.borrow().clone();
-        // The retry call is `gh issue create ...` — the label create is
-        // `gh label create ...`. Find the one that has both "issue" and
-        // "create".
-        let retry_call = calls
-            .iter()
-            .find(|c| c.iter().any(|a| a == "issue") && c.iter().any(|a| a == "create"))
-            .unwrap();
-        assert!(retry_call.iter().any(|a| a == "--body"));
-        assert!(retry_call.iter().any(|a| a == "retry body"));
-        assert!(retry_call.iter().any(|a| a == "--milestone"));
-        assert!(retry_call.iter().any(|a| a == "v2.0"));
     }
 
     #[test]

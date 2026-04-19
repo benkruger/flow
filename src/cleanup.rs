@@ -14,13 +14,14 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use clap::Parser;
 use indexmap::IndexMap;
 
 use crate::commands::log::append_log;
 use crate::flow_paths::FlowPaths;
+use crate::output::{json_error, json_ok};
 
 const CMD_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -54,42 +55,58 @@ fn run_cmd(args: &[&str], cwd: &Path) -> (bool, String) {
 
 /// Run a command with an explicit timeout, returning (success, output_string).
 ///
-/// Spawns a worker thread running `Command::output()` and waits on a
-/// channel with `recv_timeout`. On timeout, returns `(false, "timeout")`
-/// and orphans the child (the child will exit on its own when its
-/// underlying operation finishes). On success, returns
-/// `(status.success(), stderr_or_stdout)`.
+/// Extracted from `run_cmd` so tests can inject a short timeout Duration
+/// to exercise the timeout-kill path without waiting for `CMD_TIMEOUT`
+/// (30 seconds). Production callers use `run_cmd`, which passes `CMD_TIMEOUT`.
 fn run_cmd_with_timeout(args: &[&str], cwd: &Path, timeout: Duration) -> (bool, String) {
-    let (tx, rx) = std::sync::mpsc::channel();
-    let args_owned: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
-    let cwd_owned = cwd.to_path_buf();
-    std::thread::spawn(move || {
-        let result = Command::new(&args_owned[0])
-            .args(&args_owned[1..])
-            .current_dir(&cwd_owned)
-            .output();
-        let _ = tx.send(result);
-    });
-    match rx.recv_timeout(timeout) {
-        Ok(Ok(output)) => {
-            if output.status.success() {
-                return (
-                    true,
-                    String::from_utf8_lossy(&output.stdout).trim().to_string(),
-                );
+    let result = Command::new(args[0])
+        .args(&args[1..])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .current_dir(cwd)
+        .spawn();
+
+    let mut child = match result {
+        Ok(c) => c,
+        Err(e) => return (false, e.to_string()),
+    };
+
+    let start = Instant::now();
+    let poll_interval = Duration::from_millis(50);
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                let output = match child.wait_with_output() {
+                    Ok(o) => o,
+                    Err(e) => return (false, e.to_string()),
+                };
+                if output.status.success() {
+                    return (
+                        true,
+                        String::from_utf8_lossy(&output.stdout).trim().to_string(),
+                    );
+                }
+                let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                if error.is_empty() {
+                    return (
+                        false,
+                        String::from_utf8_lossy(&output.stdout).trim().to_string(),
+                    );
+                }
+                return (false, error);
             }
-            let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            if error.is_empty() {
-                (
-                    false,
-                    String::from_utf8_lossy(&output.stdout).trim().to_string(),
-                )
-            } else {
-                (false, error)
+            Ok(None) => {
+                if start.elapsed() >= timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return (false, "timeout".to_string());
+                }
+                let remaining = timeout.saturating_sub(start.elapsed());
+                std::thread::sleep(poll_interval.min(remaining));
             }
+            Err(e) => return (false, e.to_string()),
         }
-        Ok(Err(e)) => (false, e.to_string()),
-        Err(_) => (false, "timeout".to_string()),
     }
 }
 
@@ -140,7 +157,7 @@ fn try_delete_adversarial_test_files(flow_states: &Path, branch: &str) -> String
     let prefix = format!("{}-adversarial_test.", branch);
     let mut any_matched = false;
     let mut any_deleted = false;
-    let mut first_error = String::new();
+    let mut first_error: Option<String> = None;
     for entry in entries.flatten() {
         let file_name = entry.file_name();
         let name = file_name.to_string_lossy();
@@ -165,8 +182,8 @@ fn try_delete_adversarial_test_files(flow_states: &Path, branch: &str) -> String
                 any_deleted = true;
             }
             Err(e) => {
-                if first_error.is_empty() {
-                    first_error = format!("{}", e);
+                if first_error.is_none() {
+                    first_error = Some(format!("{}", e));
                 }
             }
         }
@@ -175,7 +192,11 @@ fn try_delete_adversarial_test_files(flow_states: &Path, branch: &str) -> String
     if any_deleted {
         "deleted".to_string()
     } else if any_matched {
-        format!("failed: {}", first_error)
+        let err_msg = match first_error {
+            Some(e) => e,
+            None => "unknown error".to_string(),
+        };
+        format!("failed: {}", err_msg)
     } else {
         "skipped".to_string()
     }
@@ -392,24 +413,26 @@ pub fn cleanup(
     steps
 }
 
-/// Main-arm dispatch: validate args.project_root and run cleanup.
-/// Returns (JSON value, exit code).
-pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
+pub fn run(args: Args) {
     let root = Path::new(&args.project_root);
     if !root.is_dir() {
-        let msg = format!("Project root not found: {}", args.project_root);
-        let err_str = crate::output::json_error_string(&msg, &[]);
-        return (serde_json::from_str(&err_str).unwrap(), 1);
+        json_error(
+            &format!("Project root not found: {}", args.project_root),
+            &[],
+        );
+        std::process::exit(1);
     }
 
     let steps = cleanup(root, &args.branch, &args.worktree, args.pr, args.pull);
+
+    // Convert IndexMap<String, String> to serde_json::Value preserving order
     let steps_map: indexmap::IndexMap<String, serde_json::Value> = steps
         .into_iter()
         .map(|(k, v)| (k, serde_json::Value::String(v)))
         .collect();
     let steps_value = serde_json::to_value(steps_map).unwrap();
-    let ok_str = crate::output::json_ok_string(&[("steps", steps_value)]);
-    (serde_json::from_str(&ok_str).unwrap(), 0)
+
+    json_ok(&[("steps", steps_value)]);
 }
 
 #[cfg(test)]
@@ -1126,138 +1149,5 @@ mod tests {
             run_cmd_with_timeout(&["sleep", "10"], dir.path(), Duration::from_millis(200));
         assert!(!ok);
         assert_eq!(output, "timeout");
-    }
-
-    #[test]
-    fn run_cmd_with_timeout_nonzero_exit_with_stderr() {
-        // sh -c 'echo err >&2; exit 1' → non-zero status with stderr
-        // content; returns (false, stderr).
-        let dir = tempfile::tempdir().unwrap();
-        let (ok, output) = run_cmd_with_timeout(
-            &["sh", "-c", "echo errmsg >&2; exit 1"],
-            dir.path(),
-            Duration::from_secs(5),
-        );
-        assert!(!ok);
-        assert!(output.contains("errmsg"));
-    }
-
-    #[test]
-    fn run_cmd_with_timeout_nonzero_exit_empty_stderr() {
-        // sh -c 'echo out; exit 1' → non-zero with empty stderr; the
-        // fallback arm returns stdout as the output string.
-        let dir = tempfile::tempdir().unwrap();
-        let (ok, output) = run_cmd_with_timeout(
-            &["sh", "-c", "echo outmsg; exit 1"],
-            dir.path(),
-            Duration::from_secs(5),
-        );
-        assert!(!ok);
-        assert!(output.contains("outmsg"));
-    }
-
-    // --- try_delete_adversarial_test_files error paths ---
-
-    #[test]
-    fn try_delete_adversarial_test_files_all_fail_returns_failed() {
-        // When the only matching entry cannot be removed (e.g. parent
-        // directory is read-only), the helper reports "failed: <err>".
-        use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().unwrap();
-        let states = dir.path().join(".flow-states");
-        fs::create_dir_all(&states).unwrap();
-        let adv = states.join("test-feature-adversarial_test.rs");
-        fs::write(&adv, "x").unwrap();
-        // Lock the parent directory so unlink fails.
-        fs::set_permissions(&states, fs::Permissions::from_mode(0o500)).unwrap();
-
-        let result = try_delete_adversarial_test_files(&states, "test-feature");
-
-        // Restore before any assertion so tempdir can clean up.
-        fs::set_permissions(&states, fs::Permissions::from_mode(0o755)).unwrap();
-
-        assert!(
-            result.starts_with("failed:"),
-            "expected failed, got: {}",
-            result
-        );
-    }
-
-    // --- Invalid branch (slash) — FlowPaths::try_new returns None ---
-
-    #[test]
-    fn test_cleanup_invalid_branch_skips_path_dependent_steps() {
-        let dir = tempfile::tempdir().unwrap();
-        setup_git_repo(dir.path());
-        // Note: setup_feature with "feature/foo" may fail git ops, so
-        // skip worktree creation and call cleanup directly with a slash
-        // branch so FlowPaths::try_new returns None.
-        let steps = cleanup(
-            dir.path(),
-            "feature/foo",
-            ".worktrees/feature-foo",
-            None,
-            false,
-        );
-        for key in [
-            "state_file",
-            "plan_file",
-            "dag_file",
-            "log_file",
-            "frozen_phases",
-            "ci_sentinel",
-            "timings_file",
-            "closed_issues_file",
-            "issues_file",
-            "adversarial_test",
-        ] {
-            assert_eq!(steps[key], "skipped: invalid branch");
-        }
-    }
-
-    #[test]
-    fn test_cleanup_invalid_branch_with_pull_still_runs_pull() {
-        let dir = tempfile::tempdir().unwrap();
-        setup_git_repo(dir.path());
-        let steps = cleanup(
-            dir.path(),
-            "feature/foo",
-            ".worktrees/feature-foo",
-            None,
-            true,
-        );
-        assert!(steps.contains_key("git_pull"));
-    }
-
-    // --- run_impl_main ---
-
-    #[test]
-    fn run_impl_main_nonexistent_root_returns_error() {
-        let args = Args {
-            project_root: "/nonexistent/path/xyz".to_string(),
-            branch: "test".to_string(),
-            worktree: ".worktrees/test".to_string(),
-            pr: None,
-            pull: false,
-        };
-        let (value, code) = run_impl_main(&args);
-        assert_eq!(code, 1);
-        assert_eq!(value["status"], "error");
-    }
-
-    #[test]
-    fn run_impl_main_valid_root_returns_ok() {
-        let dir = tempfile::tempdir().unwrap();
-        setup_git_repo(dir.path());
-        let args = Args {
-            project_root: dir.path().to_string_lossy().to_string(),
-            branch: "test-branch".to_string(),
-            worktree: ".worktrees/test-branch".to_string(),
-            pr: None,
-            pull: false,
-        };
-        let (value, code) = run_impl_main(&args);
-        assert_eq!(code, 0);
-        assert_eq!(value["status"], "ok");
     }
 }

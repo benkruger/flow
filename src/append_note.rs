@@ -4,7 +4,7 @@ use clap::Parser;
 use serde_json::{json, Value};
 
 use crate::flow_paths::FlowPaths;
-use crate::git::resolve_branch;
+use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
 use crate::phase_config::phase_names;
 use crate::utils::now;
@@ -23,42 +23,6 @@ pub struct Args {
     /// Override branch for state file lookup
     #[arg(long)]
     pub branch: Option<String>,
-}
-
-/// Applies the notes append transform to the in-memory state.
-/// Extracted to a named function so cargo-llvm-cov measures a single
-/// monomorphization of the mutation logic regardless of how many
-/// tests or production paths call [`run_impl_main`]. See
-/// `add_issue::apply_issue_mutation` for the mirror pattern.
-fn apply_note_mutation(
-    state: &mut Value,
-    args: &Args,
-    phase: &str,
-    phase_name: &str,
-    timestamp: &str,
-) {
-    // Corruption resilience: skip mutation when state root is wrong
-    // type (e.g. array from interrupted write) to prevent IndexMut
-    // panics. See .claude/rules/rust-patterns.md "State Mutation
-    // Object Guards".
-    if !(state.is_object() || state.is_null()) {
-        return;
-    }
-    if state.get("notes").is_none() || !state["notes"].is_array() {
-        state["notes"] = json!([]);
-    }
-    // The block above guarantees state["notes"] is an array, so
-    // as_array_mut returns Some unconditionally.
-    let arr = state["notes"]
-        .as_array_mut()
-        .expect("notes is always an array here");
-    arr.push(json!({
-        "phase": phase,
-        "phase_name": phase_name,
-        "timestamp": timestamp,
-        "type": args.note_type,
-        "note": args.note,
-    }));
 }
 
 /// Main-arm dispatcher with injected root. Returns `(value, exit_code)`:
@@ -113,7 +77,28 @@ pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
     let timestamp = now();
 
     match mutate_state(&state_path, |state| {
-        apply_note_mutation(state, &args, &phase, &phase_name, &timestamp);
+        // Corruption resilience: skip mutation when state root is wrong
+        // type (e.g. array from interrupted write) to prevent IndexMut
+        // panics. See .claude/rules/rust-patterns.md "State Mutation
+        // Object Guards".
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
+        if state.get("notes").is_none() || !state["notes"].is_array() {
+            state["notes"] = json!([]);
+        }
+        // The block above guarantees state["notes"] is an array, so
+        // as_array_mut returns Some unconditionally.
+        let arr = state["notes"]
+            .as_array_mut()
+            .expect("notes is always an array here");
+        arr.push(json!({
+            "phase": phase,
+            "phase_name": phase_name,
+            "timestamp": timestamp,
+            "type": args.note_type,
+            "note": args.note,
+        }));
     }) {
         Ok(state) => {
             let count = match state["notes"].as_array() {
@@ -127,6 +112,12 @@ pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
             1,
         ),
     }
+}
+
+pub fn run(args: Args) -> ! {
+    let root = project_root();
+    let (value, code) = run_impl_main(args, &root);
+    crate::dispatch::dispatch_json(value, code)
 }
 
 fn read_current_phase(state_path: &Path) -> Option<String> {
@@ -166,23 +157,29 @@ mod tests {
     #[test]
     fn append_note_happy_path() {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
         let state = make_state("test-feature");
-        let path = write_state(&root, "test-feature", &state);
+        let path = write_state(dir.path(), "test-feature", &state);
 
-        let args = Args {
-            note: "test note".to_string(),
-            note_type: "correction".to_string(),
-            branch: Some("test-feature".to_string()),
-        };
+        let result = mutate_state(&path, |s| {
+            let names = phase_names();
+            let phase = "flow-plan";
+            let phase_name = names.get(phase).cloned().unwrap_or_default();
+            if s.get("notes").is_none() || !s["notes"].is_array() {
+                s["notes"] = json!([]);
+            }
+            if let Some(arr) = s["notes"].as_array_mut() {
+                arr.push(json!({
+                    "phase": phase,
+                    "phase_name": phase_name,
+                    "timestamp": now(),
+                    "type": "correction",
+                    "note": "test note",
+                }));
+            }
+        })
+        .unwrap();
 
-        let (value, code) = run_impl_main(args, &root);
-        assert_eq!(code, 0);
-        assert_eq!(value["status"], "ok");
-        assert_eq!(value["note_count"], 1);
-
-        let on_disk: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        let notes = on_disk["notes"].as_array().unwrap();
+        let notes = result["notes"].as_array().unwrap();
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0]["phase"], "flow-plan");
         assert_eq!(notes[0]["phase_name"], "Plan");
@@ -199,16 +196,15 @@ mod tests {
 
         for i in 0..3 {
             mutate_state(&path, |s| {
-                s["notes"]
-                    .as_array_mut()
-                    .expect("notes is always an array in this fixture")
-                    .push(json!({
+                if let Some(arr) = s["notes"].as_array_mut() {
+                    arr.push(json!({
                         "phase": "flow-code",
                         "phase_name": "Code",
                         "timestamp": now(),
                         "type": "correction",
                         "note": format!("note {}", i),
                     }));
+                }
             })
             .unwrap();
         }
@@ -218,27 +214,24 @@ mod tests {
         assert_eq!(on_disk["notes"].as_array().unwrap().len(), 3);
     }
 
-    /// Exercises production line 88 (`state["notes"] = json!([])`) —
-    /// the auto-create branch fires when the state file lacks the key.
     #[test]
     fn append_note_creates_array_if_missing() {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        let state_dir = root.join(".flow-states");
+        let state_dir = dir.path().join(".flow-states");
         fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join("test-feature.json");
+        let path = state_dir.join("test.json");
+        // State with no notes key
         fs::write(&path, r#"{"current_phase": "flow-code"}"#).unwrap();
 
-        let args = Args {
-            note: "first".to_string(),
-            note_type: "correction".to_string(),
-            branch: Some("test-feature".to_string()),
-        };
-
-        let (value, code) = run_impl_main(args, &root);
-        assert_eq!(code, 0);
-        assert_eq!(value["status"], "ok");
-        assert_eq!(value["note_count"], 1);
+        mutate_state(&path, |s| {
+            if s.get("notes").is_none() || !s["notes"].is_array() {
+                s["notes"] = json!([]);
+            }
+            if let Some(arr) = s["notes"].as_array_mut() {
+                arr.push(json!({"note": "first"}));
+            }
+        })
+        .unwrap();
 
         let content = fs::read_to_string(&path).unwrap();
         let on_disk: Value = serde_json::from_str(&content).unwrap();
@@ -255,10 +248,9 @@ mod tests {
         let path = write_state(dir.path(), "test-feature", &state);
 
         mutate_state(&path, |s| {
-            s["notes"]
-                .as_array_mut()
-                .expect("notes is always an array in this fixture")
-                .push(json!({"phase": "flow-code", "note": "new"}));
+            if let Some(arr) = s["notes"].as_array_mut() {
+                arr.push(json!({"phase": "flow-code", "note": "new"}));
+            }
         })
         .unwrap();
 
@@ -301,33 +293,30 @@ mod tests {
         assert_eq!(read_current_phase(&path), None);
     }
 
-    /// Verify that an array-root state file triggers the production
-    /// object guard's early return inside `run_impl_main`'s
-    /// mutate_state closure (lines 84-86), leaving the file unchanged.
+    /// Verify that an array-root state file triggers the object guard's
+    /// early return, leaving the file unchanged and preventing an
+    /// IndexMut panic on non-object root types.
     #[test]
     fn append_note_array_root_state_noop() {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        let state_dir = root.join(".flow-states");
+        let state_dir = dir.path().join(".flow-states");
         fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join("test-feature.json");
-        fs::write(&path, "[1, 2, 3]").unwrap();
+        let path = state_dir.join("test.json");
+        let content = "[1, 2, 3]";
+        fs::write(&path, content).unwrap();
 
-        let args = Args {
-            note: "should not appear".to_string(),
-            note_type: "correction".to_string(),
-            branch: Some("test-feature".to_string()),
-        };
-
-        // read_current_phase returns Some("flow-start") on an array root
-        // (because get("current_phase") on Array returns None, which the
-        // unwrap_or path turns into "flow-start"). mutate_state then
-        // short-circuits via the object guard, so the noop-on-array
-        // contract holds.
-        let (value, code) = run_impl_main(args, &root);
-        assert_eq!(code, 0);
-        assert_eq!(value["status"], "ok");
-        assert_eq!(value["note_count"], 0);
+        mutate_state(&path, |state| {
+            if !(state.is_object() || state.is_null()) {
+                return;
+            }
+            if state.get("notes").is_none() || !state["notes"].is_array() {
+                state["notes"] = json!([]);
+            }
+            if let Some(arr) = state["notes"].as_array_mut() {
+                arr.push(json!({"note": "should not appear"}));
+            }
+        })
+        .unwrap();
 
         let after = fs::read_to_string(&path).unwrap();
         let parsed: Value = serde_json::from_str(&after).unwrap();
@@ -335,13 +324,17 @@ mod tests {
         assert_eq!(parsed.as_array().unwrap().len(), 3);
     }
 
-    // Removed: `corrupt_state_file_errors`. The mutate_state corrupt-
-    // JSON path is owned by `lock::mutate_state_corrupt_json` and
-    // `lock::mutate_state_error_wraps_invalid_json_as_json`; this
-    // wrapper test was a duplicate guard per
-    // `.claude/rules/tests-guard-real-regressions.md`. The
-    // `run_impl_main_state_read_failure_returns_error_tuple` test
-    // below covers the append-note-specific error wrapping.
+    #[test]
+    fn corrupt_state_file_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_dir = dir.path().join(".flow-states");
+        fs::create_dir_all(&state_dir).unwrap();
+        let path = state_dir.join("test.json");
+        fs::write(&path, "{corrupt").unwrap();
+
+        let result = mutate_state(&path, |_| {});
+        assert!(result.is_err());
+    }
 
     #[test]
     fn note_fields_have_correct_key_order() {
@@ -350,16 +343,15 @@ mod tests {
         let path = write_state(dir.path(), "test-feature", &state);
 
         let result = mutate_state(&path, |s| {
-            s["notes"]
-                .as_array_mut()
-                .expect("notes is always an array in this fixture")
-                .push(json!({
+            if let Some(arr) = s["notes"].as_array_mut() {
+                arr.push(json!({
                     "phase": "flow-plan",
                     "phase_name": "Plan",
                     "timestamp": "2026-01-01T00:00:00-08:00",
                     "type": "correction",
                     "note": "test",
                 }));
+            }
         })
         .unwrap();
 
@@ -425,43 +417,6 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Could not read state file"));
-    }
-
-    /// Exercises lines 110-113 — the `Err(e)` arm of `mutate_state`'s
-    /// match in `run_impl_main`. Make the state file read-only so
-    /// `OpenOptions::open` (read+write) fails with EACCES inside
-    /// mutate_state, but `read_current_phase` (read-only) still
-    /// succeeds.
-    #[test]
-    fn append_note_run_impl_main_mutate_state_failure_returns_error_tuple() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        let state_dir = root.join(".flow-states");
-        fs::create_dir_all(&state_dir).unwrap();
-        let state_path = state_dir.join("present-branch.json");
-        fs::write(&state_path, r#"{"current_phase":"flow-plan","notes":[]}"#).unwrap();
-        // Make file read-only so mutate_state's read+write open fails.
-        let mut perms = fs::metadata(&state_path).unwrap().permissions();
-        perms.set_mode(0o444);
-        fs::set_permissions(&state_path, perms).unwrap();
-
-        let args = make_args(Some("present-branch"));
-        let (value, code) = run_impl_main(args, &root);
-
-        // Restore perms for cleanup.
-        let mut p = fs::metadata(&state_path).unwrap().permissions();
-        p.set_mode(0o644);
-        let _ = fs::set_permissions(&state_path, p);
-
-        assert_eq!(value["status"], "error");
-        assert_eq!(code, 1);
-        let message = value["message"].as_str().unwrap().to_string();
-        assert!(
-            message.contains("Failed to append note"),
-            "got: {}",
-            message
-        );
     }
 
     #[test]

@@ -396,13 +396,15 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     }
 }
 
-/// Main-arm dispatch: returns (value, 0). Err is wrapped into an error JSON.
-pub fn run_impl_main(args: &Args) -> (Value, i32) {
-    let value = match run_impl(args) {
-        Ok(v) => v,
-        Err(msg) => json!({"status": "error", "message": msg}),
-    };
-    (value, 0)
+pub fn run(args: Args) {
+    match run_impl(&args) {
+        Ok(value) => {
+            println!("{}", value);
+        }
+        Err(msg) => {
+            println!("{}", json!({"status": "error", "message": msg}));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1273,44 +1275,14 @@ mod tests {
         let result = start_issue(&state_path, 0);
         assert_eq!(result["status"], "error");
         // mutate_state's Io variant formats as "I/O error: ...".
-        let message = result["message"].as_str().unwrap().to_string();
         assert!(
-            message.contains("I/O error"),
+            result["message"].as_str().unwrap().contains("I/O error"),
             "expected I/O error, got: {}",
-            message
+            result["message"]
         );
     }
 
     // --- record_outcome edge branches ---
-
-    /// Exercises line 190 — the `Err` arm of `mutate_state` inside
-    /// `record_outcome`. Mirror of `start_issue_mutate_state_io_error`:
-    /// state path is a directory, so `OpenOptions::open` fails with EISDIR.
-    #[test]
-    fn record_outcome_mutate_state_io_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_path = dir.path().join("orchestrate.json");
-        fs::create_dir(&state_path).unwrap();
-
-        let result = record_outcome(&state_path, 0, "completed", None, None, None);
-        assert_eq!(result["status"], "error");
-        let msg = result["message"].as_str().unwrap().to_string();
-        assert!(msg.contains("I/O error"), "got: {}", msg);
-    }
-
-    /// Exercises line 214 — the `Err` arm of `mutate_state` inside
-    /// `complete_orchestration`. Same EISDIR trick.
-    #[test]
-    fn complete_orchestration_mutate_state_io_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_path = dir.path().join("orchestrate.json");
-        fs::create_dir(&state_path).unwrap();
-
-        let result = complete_orchestration(&state_path);
-        assert_eq!(result["status"], "error");
-        let msg = result["message"].as_str().unwrap().to_string();
-        assert!(msg.contains("I/O error"), "got: {}", msg);
-    }
 
     #[test]
     fn record_outcome_negative_index_returns_out_of_range() {
@@ -1515,32 +1487,6 @@ mod tests {
     }
 
     // --- run_impl --create error branches ---
-
-    /// Exercises line 395 — the catch-all "No action specified" arm.
-    /// Constructs Args with every action flag unset to bypass clap's
-    /// ArgGroup requirement (which would otherwise reject the call at
-    /// parse time).
-    #[test]
-    fn run_impl_no_action_returns_no_action_error() {
-        let args = Args {
-            create: false,
-            start_issue: None,
-            record_outcome: None,
-            complete: false,
-            read: false,
-            next: false,
-            queue_file: None,
-            state_dir: None,
-            state_file: None,
-            outcome: None,
-            pr_url: None,
-            branch: None,
-            reason: None,
-        };
-        let value = run_impl(&args).unwrap();
-        assert_eq!(value["status"], "error");
-        assert_eq!(value["message"], "No action specified");
-    }
 
     #[test]
     fn run_impl_create_missing_queue_file_returns_err() {

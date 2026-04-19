@@ -22,6 +22,7 @@ use serde_json::{json, Value};
 use crate::commands::log::append_log;
 use crate::commands::start_step::update_step;
 use crate::flow_paths::FlowPaths;
+use crate::git::project_root;
 use crate::lock::mutate_state;
 use crate::notify_slack;
 use crate::phase_config;
@@ -190,6 +191,12 @@ pub fn run_impl_with_deps(
     }
 
     response
+}
+
+/// Production entry point: binds [`run_impl_with_deps`] to the real
+/// [`project_root`] and [`notify_slack::notify`].
+pub fn run_impl(args: &Args) -> Value {
+    run_impl_with_deps(args, &project_root(), &notify_slack::notify)
 }
 
 /// Main-arm entry point: returns the `(Value, i32)` contract that

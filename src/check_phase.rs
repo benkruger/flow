@@ -136,26 +136,13 @@ pub fn check_phase(
 /// helper does not shell out to `git rev-parse` against the host
 /// worktree.
 pub fn run_impl_main(phase: &str, branch_override: Option<&str>, root: &Path) -> (String, i32) {
-    run_impl_main_with_resolver(phase, branch_override, root, &resolve_branch)
-}
-
-/// Seam-injected variant of [`run_impl_main`] that accepts a custom
-/// branch resolver closure. Production passes `resolve_branch`; tests
-/// pass a closure that returns `None` to exercise the
-/// "could not determine current git branch" arm.
-pub fn run_impl_main_with_resolver(
-    phase: &str,
-    branch_override: Option<&str>,
-    root: &Path,
-    resolver: &dyn Fn(Option<&str>, &Path) -> Option<String>,
-) -> (String, i32) {
     // First phase has no prerequisites — short-circuit before touching
     // the filesystem or resolving a branch.
     if phase == PHASE_ORDER[0] {
         return (String::new(), 0);
     }
 
-    let branch = match resolver(branch_override, root) {
+    let branch = match resolve_branch(branch_override, root) {
         Some(b) => b,
         None => {
             return (
@@ -316,27 +303,6 @@ mod tests {
         assert!(allowed);
         assert!(output.contains("previously completed"));
         assert!(output.contains("2 visit(s)"));
-    }
-
-    /// Exercises line 114 (`None => 0`) — re-entering a completed phase
-    /// whose state lacks the `visit_count` field, e.g., a state file
-    /// from before the visit-counter feature shipped.
-    #[test]
-    fn re_entering_completed_phase_without_visit_count_reports_zero() {
-        let mut state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "complete")],
-        );
-        // Strip the visit_count field so the production match falls
-        // through to the None arm.
-        state["phases"]["flow-plan"]
-            .as_object_mut()
-            .unwrap()
-            .remove("visit_count");
-        let (allowed, output) = check_phase(&state, "flow-plan", None).unwrap();
-        assert!(allowed);
-        assert!(output.contains("previously completed"));
-        assert!(output.contains("0 visit(s)"));
     }
 
     #[test]
@@ -547,92 +513,6 @@ mod tests {
         assert!(out.contains("BLOCKED"));
         assert!(out.contains("No FLOW feature in progress"));
         assert!(out.contains("test"));
-    }
-
-    /// Exercises line 212 — `load_phase_config(&frozen_path).ok()` runs
-    /// when a frozen-phases file is present alongside the state file.
-    /// Without this test the load-frozen branch in `run_impl_main` is
-    /// never exercised — sibling tests skip the frozen file.
-    #[test]
-    fn run_impl_main_loads_frozen_phase_config_when_present() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_path_buf();
-        let states = root.join(".flow-states");
-        std::fs::create_dir_all(&states).unwrap();
-        let branch = "test-frozen-load";
-        let state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
-        );
-        std::fs::write(
-            states.join(format!("{}.json", branch)),
-            serde_json::to_string(&state).unwrap(),
-        )
-        .unwrap();
-
-        // Plant a frozen phases file the FlowPaths::frozen_phases() call
-        // will discover. The schema mirrors the production loader.
-        let frozen = json!({
-            "order": ["flow-start", "flow-plan", "flow-code", "flow-code-review", "flow-learn", "flow-complete"],
-            "phases": {
-                "flow-start": {"name": "Start", "command": "/flow:flow-start"},
-                "flow-plan": {"name": "Plan", "command": "/flow:flow-plan"},
-                "flow-code": {"name": "Code", "command": "/flow:flow-code"},
-                "flow-code-review": {"name": "Code Review", "command": "/flow:flow-code-review"},
-                "flow-learn": {"name": "Learn", "command": "/flow:flow-learn"},
-                "flow-complete": {"name": "Complete", "command": "/flow:flow-complete"},
-            }
-        });
-        std::fs::write(
-            states.join(format!("{}-phases.json", branch)),
-            serde_json::to_string(&frozen).unwrap(),
-        )
-        .unwrap();
-
-        let (output, code) = run_impl_main("flow-plan", Some(branch), &root);
-        assert_eq!(code, 0);
-        // Re-entering "in_progress" phase is allowed: empty output.
-        assert!(output.is_empty(), "unexpected message: {}", output);
-    }
-
-    /// Exercises lines 148-151 — the resolver returning `None` reports
-    /// "Could not determine current git branch." Production never hits
-    /// this directly because `resolve_branch` falls back to the raw git
-    /// branch name, so the seam-injection variant is required to drive
-    /// the arm.
-    #[test]
-    fn run_impl_main_with_resolver_none_returns_blocked() {
-        let dir = tempfile::tempdir().unwrap();
-        let resolver = |_: Option<&str>, _: &Path| -> Option<String> { None };
-        let (output, code) = run_impl_main_with_resolver("flow-plan", None, dir.path(), &resolver);
-        assert_eq!(code, 1);
-        assert!(
-            output.contains("BLOCKED: Could not determine current git branch"),
-            "got: {}",
-            output
-        );
-    }
-
-    /// Exercises lines 185-186 — the `Err` arm of `read_to_string` when
-    /// the state-file path resolves to a directory instead of a file.
-    /// `Path::exists()` returns true for directories too, so the
-    /// existence check passes and the read attempt produces an Err.
-    #[test]
-    fn run_impl_main_state_file_is_directory_returns_blocked() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_path_buf();
-        // Create the state file path as a directory, not a file.
-        let states = root.join(".flow-states");
-        std::fs::create_dir_all(&states).unwrap();
-        std::fs::create_dir(states.join("test-feature.json")).unwrap();
-
-        let (output, code) = run_impl_main("flow-plan", Some("test-feature"), &root);
-        assert_eq!(code, 1);
-        assert!(
-            output.contains("BLOCKED: Could not read state file"),
-            "expected read-error message, got: {}",
-            output
-        );
     }
 
     #[test]

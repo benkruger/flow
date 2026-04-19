@@ -4,6 +4,8 @@ use clap::{ArgGroup, Parser};
 use regex::Regex;
 use serde_json::json;
 
+use crate::output::{json_error, json_ok};
+
 /// Build a markdown artifact line: - **Label**: `value`.
 pub fn build_artifact_line(label: &str, value: &str) -> String {
     format!("- **{}**: `{}`", label, value)
@@ -206,19 +208,26 @@ pub struct Args {
     pub no_collapse: bool,
 }
 
-pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
+pub fn run(args: Args) {
     if args.add_artifact {
         if args.label.len() != args.value.len() {
-            return error_tuple(&format!(
-                "Mismatched --label/--value count: {} labels, {} values",
-                args.label.len(),
-                args.value.len()
-            ));
+            json_error(
+                &format!(
+                    "Mismatched --label/--value count: {} labels, {} values",
+                    args.label.len(),
+                    args.value.len()
+                ),
+                &[],
+            );
+            return;
         }
 
         let body = match gh_get_body(args.pr) {
             Ok(b) => b,
-            Err(e) => return error_tuple(&e),
+            Err(e) => {
+                json_error(&e, &[]);
+                return;
+            }
         };
 
         let mut body = body;
@@ -227,29 +236,41 @@ pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
         }
 
         if let Err(e) = gh_set_body(args.pr, &body) {
-            return error_tuple(&e);
+            json_error(&e, &[]);
+            return;
         }
 
-        (json!({"status": "ok", "action": "add_artifact"}), 0)
+        json_ok(&[("action", json!("add_artifact"))]);
     } else {
+        // --append-section
         let content_file = match &args.content_file {
             Some(f) => f,
-            None => return error_tuple("Missing --content-file"),
+            None => {
+                json_error("Missing --content-file", &[]);
+                return;
+            }
         };
 
         let path = Path::new(content_file);
         if !path.exists() {
-            return error_tuple(&format!("File not found: {}", content_file));
+            json_error(&format!("File not found: {}", content_file), &[]);
+            return;
         }
 
         let content = match std::fs::read_to_string(path) {
             Ok(c) => c,
-            Err(e) => return error_tuple(&format!("Failed to read file: {}", e)),
+            Err(e) => {
+                json_error(&format!("Failed to read file: {}", e), &[]);
+                return;
+            }
         };
 
         let body = match gh_get_body(args.pr) {
             Ok(b) => b,
-            Err(e) => return error_tuple(&e),
+            Err(e) => {
+                json_error(&e, &[]);
+                return;
+            }
         };
 
         let heading = args.heading.as_deref().unwrap_or("");
@@ -262,17 +283,12 @@ pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
         };
 
         if let Err(e) = gh_set_body(args.pr, &new_body) {
-            return error_tuple(&e);
+            json_error(&e, &[]);
+            return;
         }
 
-        (json!({"status": "ok", "action": "append_section"}), 0)
+        json_ok(&[("action", json!("append_section"))]);
     }
-}
-
-fn error_tuple(message: &str) -> (serde_json::Value, i32) {
-    // Match historic `json_error` behavior: prints error JSON but exit 0
-    // so callers can parse the payload rather than abort.
-    (json!({"status": "error", "message": message}), 0)
 }
 
 #[cfg(test)]

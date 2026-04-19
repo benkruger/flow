@@ -1,14 +1,4 @@
 [profile.default]
-# TEMPORARY: timeout raised to 2s while the 100% coverage quest
-# finishes. The 100ms window was too tight for subprocess-spawning
-# lib tests running under cargo-llvm-cov — the `.profraw` flush on
-# subprocess exit exceeds 100ms under parallel load, producing
-# flaky LEAK-FAIL results that move between tests. Revisit after
-# the coverage quest: either restore 100ms after refactoring
-# subprocess-spawning tests to call `run_impl` directly, or pin
-# the offending binaries to a serial test-group.
-leak-timeout = { period = "2s", result = "fail" }
-
 # Concurrency tests in `tests/concurrency.rs` share filesystem state
 # across threads (tempdir-scoped queues, log files, per-branch state
 # files). Running more than one concurrency test at a time inside the

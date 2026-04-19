@@ -198,6 +198,11 @@ pub fn run_impl(args: &Args) -> Value {
     )
 }
 
+/// CLI entry point. Always exits 0 (best-effort — matches post-merge behavior).
+pub fn run(args: Args) {
+    println!("{}", run_impl(&args));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

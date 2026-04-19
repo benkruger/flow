@@ -32,6 +32,7 @@ use crate::duplicate_test_coverage::{self, TestCorpus};
 use crate::external_input_audit;
 use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
+use crate::output::json_error;
 use crate::scope_enumeration::scan;
 
 /// CLI arguments for the plan-check subcommand.
@@ -46,6 +47,18 @@ pub struct Args {
     /// in the state file). Accepts absolute or worktree-relative paths.
     #[arg(long)]
     pub plan_file: Option<String>,
+}
+
+pub fn run(args: Args) {
+    match run_impl(&args) {
+        Ok(result) => {
+            println!("{}", result);
+        }
+        Err(e) => {
+            json_error(&e, &[]);
+            std::process::exit(1);
+        }
+    }
 }
 
 /// Fallible entry point for plan-check.
@@ -486,11 +499,13 @@ mod tests {
             "expected at least one external-input-audit violation, got rules: {:?}",
             rules
         );
-        let message = result["message"].as_str().unwrap_or("").to_string();
         assert!(
-            message.contains("plan-check violation"),
+            result["message"]
+                .as_str()
+                .unwrap_or("")
+                .contains("plan-check violation"),
             "message must summarize total: {:?}",
-            message
+            result["message"]
         );
     }
 

@@ -358,7 +358,7 @@ pub fn run_impl(cwd: &Path, plugin_root: &Path) -> Result<Value, String> {
 }
 
 pub fn run(_args: Args) {
-    let cwd = std::env::current_dir().unwrap_or(PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let root = match plugin_root() {
         Some(p) => p,
         None => {

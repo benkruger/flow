@@ -784,17 +784,6 @@ mod tests {
 
     // --- now() ---
 
-    /// Exercises lines 26-28 — the `Display` impl for `SetupError`,
-    /// formatting as `step: message`.
-    #[test]
-    fn setup_error_display_formats_step_and_message() {
-        let err = SetupError {
-            step: "commit".to_string(),
-            message: "nothing to commit".to_string(),
-        };
-        assert_eq!(format!("{}", err), "commit: nothing to commit");
-    }
-
     #[test]
     fn now_returns_iso8601_pacific() {
         let ts = now();

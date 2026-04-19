@@ -1,11 +1,9 @@
 //! Tests for `src/extract_release_notes.rs`.
 //!
 //! Pure-function tests call extract() directly. CLI tests call run_impl
-//! with a fake repo fixture. Subprocess tests at the bottom drive the
-//! `pub fn run` wrapper end-to-end via the compiled binary.
+//! with a fake repo fixture.
 
 use std::fs;
-use std::process::Command;
 
 use flow_rs::extract_release_notes::{extract, run_impl, Args};
 
@@ -173,72 +171,3 @@ fn test_cli_file_not_found() {
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("not found"));
 }
-
-// --- Subprocess tests covering the `pub fn run` wrapper ---
-
-/// Set up a fake plugin root: a directory with a `flow-phases.json`
-/// file (so `plugin_root()` resolves) and a `RELEASE-NOTES.md` so
-/// `run_impl` can read content. Returns the tempdir + its path.
-fn setup_plugin_root_with_notes(notes: &str) -> (tempfile::TempDir, std::path::PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    fs::write(root.join("flow-phases.json"), "{}").unwrap();
-    fs::write(root.join("RELEASE-NOTES.md"), notes).unwrap();
-    (dir, root)
-}
-
-#[test]
-fn run_subprocess_success_prints_written_to_and_exits_zero() {
-    let (_dir, root) = setup_plugin_root_with_notes(SAMPLE_NOTES);
-    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["extract-release-notes", "v0.2.0"])
-        .env("CLAUDE_PLUGIN_ROOT", &root)
-        .env_remove("FLOW_CI_RUNNING")
-        .output()
-        .expect("spawn flow-rs");
-    assert_eq!(output.status.code(), Some(0));
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("Written to"),
-        "expected success message, stdout: {}",
-        stdout
-    );
-    // Verify the file was actually written.
-    let written = root.join("tmp").join("release-notes-v0.2.0.md");
-    assert!(written.exists(), "expected output file at {:?}", written);
-}
-
-#[test]
-fn run_subprocess_missing_version_prints_error_and_exits_one() {
-    let (_dir, root) = setup_plugin_root_with_notes(SAMPLE_NOTES);
-    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["extract-release-notes", "v9.9.9"])
-        .env("CLAUDE_PLUGIN_ROOT", &root)
-        .env_remove("FLOW_CI_RUNNING")
-        .output()
-        .expect("spawn flow-rs");
-    assert_eq!(output.status.code(), Some(1));
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("no section found"),
-        "expected error message, stdout: {}",
-        stdout
-    );
-}
-
-// REMOVED: `run_subprocess_no_plugin_root_prints_error_and_exits_one`.
-//
-// Same shape as the deleted bump-version equivalent: setting
-// `CLAUDE_PLUGIN_ROOT` to an empty tempdir does NOT make
-// `plugin_root()` return None — the helper falls through to a
-// `current_exe` walk-up which reaches the real flow repo's
-// `flow-phases.json` from the test binary location. The subprocess
-// then runs `extract-release-notes` against the real repo. While
-// extract-release-notes only writes to `tmp/` (gitignored) so the
-// blast radius is smaller than bump-version's, it still spawns a
-// production code path against unintended state.
-//
-// The "plugin_root None" branch is unreachable from any subprocess
-// test launched from inside the flow repo. Coverage for that arm
-// must come from inline unit tests of the helper. Do NOT re-add
-// this test shape.

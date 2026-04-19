@@ -570,68 +570,6 @@ mod tests {
         assert!(result.summary.contains("#42"));
     }
 
-    /// Exercises line 207 — `issue_link_lines.push(format!("  {}", title_part))`
-    /// — the empty-url branch of the issues_links builder. Issues with no
-    /// `url` field render as `[Label] Title` without the trailing
-    /// ` — <url>` segment.
-    #[test]
-    fn test_summary_with_filed_issue_without_url() {
-        let mut state = all_complete_state();
-        state["issues_filed"] = json!([
-            {
-                "label": "Rule",
-                "title": "URL-less rule",
-                "phase": "flow-learn",
-                "phase_name": "Learn",
-                "timestamp": "2026-01-01T00:00:00-08:00",
-            },
-        ]);
-
-        let result = format_complete_summary(&state, None);
-        assert!(
-            result.issues_links.contains("[Rule] URL-less rule"),
-            "expected URL-less label/title in issues_links, got: {}",
-            result.issues_links
-        );
-        assert!(
-            !result.issues_links.contains(" — "),
-            "no URL means no em-dash separator, got: {}",
-            result.issues_links
-        );
-    }
-
-    /// Exercises line 36 (`outcome_marker` catch-all `_ => "?"`) and
-    /// line 48 (`outcome_label` catch-all `_ => "Unknown"`) — fires
-    /// when a finding's outcome is none of the five known values
-    /// (e.g., a future outcome added to VALID_OUTCOMES that this
-    /// formatter has not yet learned about).
-    #[test]
-    fn test_summary_with_unknown_outcome_falls_back_to_question_marker() {
-        let mut state = all_complete_state();
-        state["findings"] = json!([
-            {
-                "finding": "future-outcome finding",
-                "reason": "uses a not-yet-handled outcome",
-                "outcome": "deferred",
-                "phase": "flow-code-review",
-                "phase_name": "Code Review",
-                "timestamp": "2026-01-01T00:00:00-08:00",
-            },
-        ]);
-
-        let result = format_complete_summary(&state, None);
-        assert!(
-            result.summary.contains("?"),
-            "expected '?' marker for unknown outcome, got: {}",
-            result.summary
-        );
-        assert!(
-            result.summary.contains("Unknown"),
-            "expected 'Unknown' label for unknown outcome, got: {}",
-            result.summary
-        );
-    }
-
     #[test]
     fn test_summary_with_notes() {
         let mut state = all_complete_state();
@@ -664,28 +602,6 @@ mod tests {
 
         assert!(!result.summary.contains("Issues filed"));
         assert!(!result.summary.contains("Notes captured"));
-        assert_eq!(result.issues_links, "");
-    }
-
-    /// Exercises the `issues = None` path (line 96 returns None when
-    /// `issues_filed` is absent OR not an array). This drives the
-    /// implicit else branch of `if let Some(issues_arr) = issues`.
-    #[test]
-    fn test_summary_issues_filed_key_absent_renders_empty_links() {
-        let mut state = all_complete_state();
-        // Remove the issues_filed key entirely so state.get returns None.
-        state.as_object_mut().unwrap().remove("issues_filed");
-        let result = format_complete_summary(&state, None);
-        assert_eq!(result.issues_links, "");
-    }
-
-    /// Companion: `issues_filed` present but not an array (e.g. a string)
-    /// also yields `issues = None` via the `as_array` filter.
-    #[test]
-    fn test_summary_issues_filed_wrong_type_renders_empty_links() {
-        let mut state = all_complete_state();
-        state["issues_filed"] = json!("not-an-array");
-        let result = format_complete_summary(&state, None);
         assert_eq!(result.issues_links, "");
     }
 

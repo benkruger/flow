@@ -5,6 +5,7 @@
 //! parameterized by `--phase`.
 
 use std::path::PathBuf;
+use std::process;
 
 use clap::Parser;
 use serde_json::{json, Value};
@@ -13,6 +14,7 @@ use crate::commands::log::append_log;
 use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
+use crate::output::json_error;
 use crate::phase_config::PHASE_ORDER;
 use crate::phase_transition::phase_enter;
 
@@ -174,7 +176,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     // Drift guard: phase entry is a state mutation, so it must run
     // from inside the subdirectory the flow was started in. See
     // [`crate::cwd_scope::enforce`].
-    let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     if let Err(msg) = crate::cwd_scope::enforce(&cwd, &root) {
         return Ok(json!({"status": "error", "message": msg}));
     }
@@ -305,6 +307,19 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     }
 
     Ok(response)
+}
+
+/// CLI entry point.
+pub fn run(args: Args) {
+    match run_impl(&args) {
+        Ok(result) => {
+            println!("{}", serde_json::to_string(&result).unwrap());
+        }
+        Err(e) => {
+            json_error(&e, &[]);
+            process::exit(1);
+        }
+    }
 }
 
 #[cfg(test)]

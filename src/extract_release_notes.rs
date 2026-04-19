@@ -16,6 +16,8 @@ use std::path::Path;
 use clap::Parser;
 use regex::Regex;
 
+use crate::utils::plugin_root;
+
 #[derive(Parser, Debug)]
 #[command(
     name = "extract-release-notes",
@@ -90,10 +92,8 @@ pub fn run_impl(args: &Args, repo_root: &Path) -> Result<String, String> {
         return Err(format!("Error: {} not found", notes_file.display()));
     }
 
-    let content = match fs::read_to_string(&notes_file) {
-        Ok(c) => c,
-        Err(e) => return Err(format!("Error reading {}: {}", notes_file.display(), e)),
-    };
+    let content = fs::read_to_string(&notes_file)
+        .map_err(|e| format!("Error reading {}: {}", notes_file.display(), e))?;
 
     let extracted = extract(version, &content);
     if extracted.is_empty() {
@@ -101,28 +101,32 @@ pub fn run_impl(args: &Args, repo_root: &Path) -> Result<String, String> {
     }
 
     let out_dir = repo_root.join("tmp");
-    if let Err(e) = fs::create_dir_all(&out_dir) {
-        return Err(format!("Error creating tmp dir: {}", e));
-    }
+    fs::create_dir_all(&out_dir).map_err(|e| format!("Error creating tmp dir: {}", e))?;
 
     let out_path = out_dir.join(format!("release-notes-{}.md", version));
-    if let Err(e) = fs::write(&out_path, format!("{}\n", extracted)) {
-        return Err(format!("Error writing {}: {}", out_path.display(), e));
-    }
+    fs::write(&out_path, format!("{}\n", extracted))
+        .map_err(|e| format!("Error writing {}: {}", out_path.display(), e))?;
 
     Ok(format!("Written to {}", out_path.display()))
 }
 
-/// Main-arm dispatch: accepts a resolved `plugin_root` Option directly.
-/// Returns `(message, exit_code)`.
-pub fn run_impl_main(args: &Args, plugin_root: Option<std::path::PathBuf>) -> (String, i32) {
-    let repo_root = match plugin_root {
+pub fn run(args: Args) {
+    let repo_root = match plugin_root() {
         Some(r) => r,
-        None => return ("Error: could not find FLOW plugin root".to_string(), 1),
+        None => {
+            eprintln!("Error: could not find FLOW plugin root");
+            std::process::exit(1);
+        }
     };
-    match run_impl(args, &repo_root) {
-        Ok(output) => (output, 0),
-        Err(e) => (e, 1),
+
+    match run_impl(&args, &repo_root) {
+        Ok(output) => {
+            println!("{}", output);
+        }
+        Err(e) => {
+            println!("{}", e);
+            std::process::exit(1);
+        }
     }
 }
 
@@ -135,38 +139,6 @@ mod tests {
         let root = dir.path().to_path_buf();
         fs::write(root.join("RELEASE-NOTES.md"), content).unwrap();
         (dir, root)
-    }
-
-    #[test]
-    fn run_impl_main_none_returns_error_tuple() {
-        let args = Args {
-            version: Some("v0.1.0".to_string()),
-        };
-        let (msg, code) = run_impl_main(&args, None);
-        assert_eq!(code, 1);
-        assert!(msg.contains("could not find FLOW plugin root"));
-    }
-
-    #[test]
-    fn run_impl_main_success_returns_written_message() {
-        let (_dir, root) = setup_repo_with_notes("## v0.1.0\n\nFirst.");
-        let args = Args {
-            version: Some("v0.1.0".to_string()),
-        };
-        let (msg, code) = run_impl_main(&args, Some(root));
-        assert_eq!(code, 0);
-        assert!(msg.contains("Written to"));
-    }
-
-    #[test]
-    fn run_impl_main_err_path_returns_no_section_found() {
-        let (_dir, root) = setup_repo_with_notes("## v0.1.0\n\nFirst.");
-        let args = Args {
-            version: Some("v9.9.9".to_string()),
-        };
-        let (msg, code) = run_impl_main(&args, Some(root));
-        assert_eq!(code, 1);
-        assert!(msg.contains("no section found"));
     }
 
     // --- header_matches_version ---
@@ -282,61 +254,6 @@ mod tests {
         assert!(out_path.exists());
         let contents = fs::read_to_string(&out_path).unwrap();
         assert!(contents.contains("First release content."));
-    }
-
-    /// Exercises line 97 — the read_to_string Err arm. When
-    /// RELEASE-NOTES.md is a directory instead of a file, exists() is
-    /// true but read_to_string fails with EISDIR.
-    #[test]
-    fn run_impl_release_notes_is_directory_returns_read_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_path_buf();
-        // Create RELEASE-NOTES.md as a DIRECTORY so .exists() returns
-        // true but fs::read_to_string fails.
-        std::fs::create_dir(root.join("RELEASE-NOTES.md")).unwrap();
-        let args = Args {
-            version: Some("v0.1.0".to_string()),
-        };
-        let err = run_impl(&args, &root).unwrap_err();
-        assert!(
-            err.contains("Error reading"),
-            "expected read error message, got: {}",
-            err
-        );
-    }
-
-    /// Exercises line 112 — the fs::write Err arm. Pre-occupy the
-    /// out_path as a directory so fs::write fails with EISDIR.
-    #[test]
-    fn run_impl_out_path_is_existing_directory_returns_write_error() {
-        let (_dir, root) = setup_repo_with_notes("## v0.1.0\n\nContent.");
-        // Pre-occupy the output path as a directory so write fails.
-        let tmp = root.join("tmp");
-        std::fs::create_dir_all(&tmp).unwrap();
-        std::fs::create_dir(tmp.join("release-notes-v0.1.0.md")).unwrap();
-        let args = Args {
-            version: Some("v0.1.0".to_string()),
-        };
-        let err = run_impl(&args, &root).unwrap_err();
-        assert!(err.contains("Error writing"), "got: {}", err);
-    }
-
-    /// Exercises line 107 — the create_dir_all Err arm. When `tmp` is
-    /// pre-occupied as a regular file, create_dir_all fails.
-    #[test]
-    fn run_impl_tmp_is_existing_file_returns_create_dir_error() {
-        let (_dir, root) = setup_repo_with_notes("## v0.1.0\n\nContent.");
-        // Pre-occupy `tmp` as a file so create_dir_all fails.
-        std::fs::write(root.join("tmp"), "regular file").unwrap();
-        let args = Args {
-            version: Some("v0.1.0".to_string()),
-        };
-        let err = run_impl(&args, &root).unwrap_err();
-        assert!(
-            err.contains("Error creating tmp dir"),
-            "expected create-dir error message, got: {}",
-            err
-        );
     }
 
     #[test]

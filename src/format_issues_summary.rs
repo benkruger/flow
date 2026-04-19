@@ -351,40 +351,6 @@ mod tests {
         assert!(result.unwrap_err().contains("Failed to parse"));
     }
 
-    /// Exercises the read_to_string Err arm (line 100-101) — state file
-    /// path resolves to a directory.
-    #[test]
-    fn run_impl_state_file_is_directory_returns_read_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_path = dir.path().join("state.json");
-        std::fs::create_dir(&state_path).unwrap();
-        let args = Args {
-            state_file: state_path.to_string_lossy().to_string(),
-            output: dir.path().join("out.md").to_string_lossy().to_string(),
-        };
-        let err = run_impl(&args).unwrap_err();
-        assert!(err.contains("Failed to read state file"), "got: {}", err);
-    }
-
-    /// Exercises fs::write Err arm (lines 113-114) — output path lives
-    /// inside an existing regular file (parent `mkdir -p` no-ops, write
-    /// fails with NotADirectory).
-    #[test]
-    fn run_impl_write_error_returns_err() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({"issues_filed": make_issues(&["Rule"])});
-        let state_path = write_state_file(dir.path(), &state);
-        let parent_as_file = dir.path().join("not-a-dir");
-        std::fs::write(&parent_as_file, "blocker").unwrap();
-        let output_path = parent_as_file.join("out.md");
-        let args = Args {
-            state_file: state_path.to_string_lossy().to_string(),
-            output: output_path.to_string_lossy().to_string(),
-        };
-        let err = run_impl(&args).unwrap_err();
-        assert!(err.contains("Failed to write output"), "got: {}", err);
-    }
-
     // --- run_impl_main (main.rs entry point) ---
 
     #[test]

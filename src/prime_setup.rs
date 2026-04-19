@@ -17,6 +17,7 @@ use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::process;
 
 use clap::Args as ClapArgs;
 use regex::Regex;
@@ -538,9 +539,14 @@ pub fn install_bin_stubs(project_root: &Path, plugin_root: &Path) -> Vec<String>
     installed
 }
 
-pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
-    match run_impl(args) {
-        Ok(value) => (value, 0),
-        Err(value) => (value, 1),
+pub fn run(args: Args) {
+    match run_impl(&args) {
+        Ok(value) => {
+            println!("{}", serde_json::to_string(&value).unwrap());
+        }
+        Err(value) => {
+            println!("{}", serde_json::to_string(&value).unwrap());
+            process::exit(1);
+        }
     }
 }

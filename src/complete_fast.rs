@@ -647,7 +647,7 @@ pub fn run_impl_inner(
     }
 
     // --- CI dirty check (no simulate-branch) ---
-    let cwd = std::env::current_dir().unwrap_or(PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let (ci_skipped, ci_failed_output) = ci_decider(root, &cwd, &branch, tree_changed);
 
     // --- GitHub CI check ---
@@ -684,6 +684,22 @@ pub fn run_impl_inner(
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     let root = project_root();
     run_impl_inner(args, &root, &run_cmd_with_timeout, &production_ci_decider)
+}
+
+/// CLI entry point.
+pub fn run(args: Args) {
+    match run_impl(&args) {
+        Ok(result) => {
+            println!("{}", result);
+            if result.get("status").and_then(|v| v.as_str()) == Some("error") {
+                std::process::exit(1);
+            }
+        }
+        Err(e) => {
+            println!("{}", json!({"status": "error", "message": e}));
+            std::process::exit(1);
+        }
+    }
 }
 
 #[cfg(test)]

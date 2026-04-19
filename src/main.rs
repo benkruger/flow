@@ -73,17 +73,11 @@ struct Cli {
 enum Commands {
     /// Bump the FLOW plugin version across all files.
     #[command(name = "bump-version")]
-    BumpVersion {
-        /// New version (semver: X.Y.Z)
-        version: Option<String>,
-    },
+    BumpVersion(bump_version::Args),
 
     /// Pre-merge freshness check: fetch main, verify branch is up-to-date.
     #[command(name = "check-freshness")]
-    CheckFreshness {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true, num_args = 0..)]
-        raw_args: Vec<String>,
-    },
+    CheckFreshness(check_freshness::Args),
 
     /// Verify prerequisite phase is complete before entry.
     #[command(name = "check-phase")]
@@ -465,16 +459,8 @@ fn main() {
             eprintln!("flow-rs: no command specified. Use --help for usage.");
             process::exit(1);
         }
-        Some(Commands::BumpVersion { version }) => {
-            let (msg, code) =
-                bump_version::run_impl_main(version.as_deref(), flow_rs::utils::plugin_root());
-            flow_rs::dispatch::dispatch_text(&msg, code);
-        }
-        Some(Commands::CheckFreshness { raw_args }) => {
-            let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
-            let (value, code) = check_freshness::run_impl_main(&raw_args, &cwd);
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
+        Some(Commands::BumpVersion(args)) => bump_version::run(args),
+        Some(Commands::CheckFreshness(args)) => check_freshness::run(args),
         Some(Commands::CheckPhase { required, branch }) => {
             let root = project_root();
             let (out, code) = check_phase::run_impl_main(&required, branch.as_deref(), &root);
@@ -500,132 +486,30 @@ fn main() {
             );
             flow_rs::dispatch::dispatch_json(out, code);
         }
-        Some(Commands::Ci(args)) => {
-            let flow_ci_running = std::env::var("FLOW_CI_RUNNING").is_ok();
-            let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
-            let root = flow_rs::git::project_root();
-            let (value, code) = ci::run_impl(&args, &cwd, &root, flow_ci_running);
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::UpdateDeps) => {
-            let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
-            let env_timeout = std::env::var("FLOW_UPDATE_DEPS_TIMEOUT").ok();
-            let (value, code) = update_deps::run_impl(&cwd, env_timeout.as_deref());
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::AnalyzeIssues(args)) => {
-            let (value, code) = analyze_issues::run_impl_main(args);
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::AppendNote(args)) => {
-            let root = project_root();
-            let (value, code) = append_note::run_impl_main(args, &root);
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::Cleanup(args)) => {
-            let (value, code) = cleanup::run_impl_main(&args);
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::AddFinding(args)) => {
-            let root = flow_rs::git::project_root();
-            let (value, code) =
-                add_finding::run_impl_main_with_cwd_result(args, &root, std::env::current_dir());
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::AddIssue(args)) => {
-            let root = project_root();
-            let (value, code) = add_issue::run_impl_main(args, &root);
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::AddNotification(args)) => {
-            let root = project_root();
-            let (value, code) = add_notification::run_impl_main(args, &root);
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::Issue(args)) => {
-            let root = flow_rs::git::project_root();
-            let root_for_state = root.clone();
-            let root_for_repo = root.clone();
-            let state_reader = move || -> Option<String> {
-                flow_rs::git::resolve_branch(None, &root_for_state).and_then(|branch| {
-                    let state_path =
-                        flow_rs::flow_paths::FlowPaths::new(&root_for_state, &branch).state_file();
-                    std::fs::read_to_string(&state_path).ok()
-                })
-            };
-            let repo_resolver =
-                move || -> Option<String> { flow_rs::github::detect_repo(Some(&root_for_repo)) };
-            let (value, code) = issue::run_impl_main(
-                args,
-                &root,
-                &state_reader,
-                &repo_resolver,
-                &issue::run_gh_cmd,
-            );
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::CloseIssue(args)) => {
-            let (value, code) =
-                close_issue::run_impl_main(args, &|| flow_rs::github::detect_repo(None));
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::CloseIssues(args)) => {
-            let (value, code) = close_issues::run_impl_main(args);
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::CreateSubIssue(args)) => {
-            let (value, code) = create_sub_issue::run_impl_main(&args);
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::LinkBlockedBy(args)) => {
-            let (value, code) = link_blocked_by::run_impl_main(&args);
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::CreateMilestone(args)) => {
-            let (value, code) = create_milestone::run_impl_main(&args);
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::ExtractReleaseNotes(args)) => {
-            let (msg, code) =
-                extract_release_notes::run_impl_main(&args, flow_rs::utils::plugin_root());
-            flow_rs::dispatch::dispatch_text(&msg, code);
-        }
+        Some(Commands::Ci(args)) => ci::run(args),
+        Some(Commands::UpdateDeps) => update_deps::run(),
+        Some(Commands::AnalyzeIssues(args)) => analyze_issues::run(args),
+        Some(Commands::AppendNote(args)) => append_note::run(args),
+        Some(Commands::Cleanup(args)) => cleanup::run(args),
+        Some(Commands::AddFinding(args)) => add_finding::run(args),
+        Some(Commands::AddIssue(args)) => add_issue::run(args),
+        Some(Commands::AddNotification(args)) => add_notification::run(args),
+        Some(Commands::Issue(args)) => issue::run(args),
+        Some(Commands::CloseIssue(args)) => close_issue::run(args),
+        Some(Commands::CloseIssues(args)) => close_issues::run(args),
+        Some(Commands::CreateSubIssue(args)) => create_sub_issue::run(args),
+        Some(Commands::LinkBlockedBy(args)) => link_blocked_by::run(args),
+        Some(Commands::CreateMilestone(args)) => create_milestone::run(args),
+        Some(Commands::ExtractReleaseNotes(args)) => extract_release_notes::run(args),
         Some(Commands::PrimeCheck(args)) => prime_check::run(args),
-        Some(Commands::PrimeSetup(args)) => {
-            let (value, code) = prime_setup::run_impl_main(&args);
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::PromotePermissions(args)) => {
-            let (value, code) = promote_permissions::run_impl_main(&args);
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::AutoCloseParent(args)) => {
-            let (value, code) = match std::env::current_dir() {
-                Ok(cwd) => {
-                    auto_close_parent::run_impl_main(args, &cwd, &auto_close_parent::run_api)
-                }
-                Err(_) => auto_close_parent::safe_default_ok(),
-            };
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::CompleteFast(args)) => {
-            flow_rs::dispatch::dispatch_result_json(complete_fast::run_impl(&args));
-        }
-        Some(Commands::CompletePreflight(args)) => {
-            let (value, code) = complete_preflight::run_impl_main(&args);
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::CompleteMerge(args)) => {
-            let (value, code) = complete_merge::run_impl_main(&args);
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::CompleteFinalize(args)) => {
-            flow_rs::dispatch::dispatch_json(complete_finalize::run_impl(&args), 0);
-        }
-        Some(Commands::CompletePostMerge(args)) => {
-            let (value, code) = complete_post_merge::run_impl_main(&args);
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
+        Some(Commands::PrimeSetup(args)) => prime_setup::run(args),
+        Some(Commands::PromotePermissions(args)) => promote_permissions::run(args),
+        Some(Commands::AutoCloseParent(args)) => auto_close_parent::run(args),
+        Some(Commands::CompleteFast(args)) => complete_fast::run(args),
+        Some(Commands::CompletePreflight(args)) => complete_preflight::run(args),
+        Some(Commands::CompleteMerge(args)) => complete_merge::run(args),
+        Some(Commands::CompleteFinalize(args)) => complete_finalize::run(args),
+        Some(Commands::CompletePostMerge(args)) => complete_post_merge::run(args),
         Some(Commands::SetTimestamp { set_args, branch }) => {
             commands::set_timestamp::run(set_args, branch);
         }
@@ -692,19 +576,19 @@ fn main() {
         }
         Some(Commands::StartGate(args)) => {
             let root = project_root();
-            let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
+            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
             let (v, code) = start_gate::run_impl_main(&args, &root, &cwd);
             flow_rs::dispatch::dispatch_json(v, code);
         }
         Some(Commands::StartInit(args)) => {
             let root = project_root();
-            let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
+            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
             let (v, code) = start_init::run_impl_main(&args, &root, &cwd);
             flow_rs::dispatch::dispatch_json(v, code);
         }
         Some(Commands::StartWorkspace(args)) => {
             let root = project_root();
-            let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
+            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
             let (v, code) = start_workspace::run_impl_main(&args, &root, &cwd);
             flow_rs::dispatch::dispatch_json(v, code);
         }
@@ -722,8 +606,7 @@ fn main() {
             commands::session_context::run();
         }
         Some(Commands::LabelIssues(args)) => {
-            let (value, code) = label_issues::run_impl_main(args);
-            flow_rs::dispatch::dispatch_json(value, code);
+            label_issues::run(args);
         }
         Some(Commands::FormatIssuesSummary(args)) => {
             let (value, code) = format_issues_summary::run_impl_main(&args);
@@ -738,59 +621,35 @@ fn main() {
             flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::FinalizeCommit(args)) => {
-            let (value, code) = finalize_commit::run_impl_main(&args);
-            flow_rs::dispatch::dispatch_json(value, code);
+            finalize_commit::run(args);
         }
         Some(Commands::NotifySlack(args)) => {
-            let (value, code) = notify_slack::run_impl_main(
-                args,
-                &notify_slack::read_slack_config,
-                &|bot, channel, text, tts| {
-                    notify_slack::post_message_inner(
-                        bot,
-                        channel,
-                        text,
-                        tts,
-                        &notify_slack::run_curl_with_timeout,
-                    )
-                },
-            );
-            flow_rs::dispatch::dispatch_json(value, code);
+            notify_slack::run(args);
         }
         Some(Commands::WriteRule(args)) => {
-            let (value, code) = write_rule::run_impl_main(&args);
-            flow_rs::dispatch::dispatch_json(value, code);
+            write_rule::run(args);
         }
         Some(Commands::PhaseEnter(args)) => {
-            flow_rs::dispatch::dispatch_ok_result_json(phase_enter::run_impl(&args));
+            phase_enter::run(args);
         }
         Some(Commands::PhaseFinalize(args)) => {
-            flow_rs::dispatch::dispatch_ok_result_json(phase_finalize::run_impl(&args));
+            phase_finalize::run(args);
         }
         Some(Commands::PlanCheck(args)) => {
-            flow_rs::dispatch::dispatch_ok_result_json(plan_check::run_impl(&args));
+            plan_check::run(args);
         }
         Some(Commands::PlanExtract(args)) => {
-            flow_rs::dispatch::dispatch_ok_result_json(plan_extract::run_impl(&args));
+            plan_extract::run(args);
         }
         Some(Commands::RenderPrBody(args)) => {
-            let (value, code) = render_pr_body::run_impl_main(&args);
-            flow_rs::dispatch::dispatch_json(value, code);
+            render_pr_body::run(args);
         }
         Some(Commands::UpdatePrBody(args)) => {
-            let (value, code) = update_pr_body::run_impl_main(&args);
-            flow_rs::dispatch::dispatch_json(value, code);
+            update_pr_body::run(args);
         }
-        Some(Commands::OrchestrateReport(args)) => {
-            flow_rs::dispatch::dispatch_json(orchestrate_report::run_impl(&args), 0);
-        }
-        Some(Commands::OrchestrateState(args)) => {
-            let (value, code) = orchestrate_state::run_impl_main(&args);
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::TombstoneAudit(args)) => {
-            flow_rs::dispatch::dispatch_ok_result_json(tombstone_audit::run_impl(&args));
-        }
+        Some(Commands::OrchestrateReport(args)) => orchestrate_report::run(args),
+        Some(Commands::OrchestrateState(args)) => orchestrate_state::run(args),
+        Some(Commands::TombstoneAudit(args)) => tombstone_audit::run(args),
         Some(Commands::Tui) => {
             let root = project_root();
             flow_rs::tui_terminal::run_tui_arm(&root);
@@ -815,18 +674,10 @@ fn main() {
             }
         }
         Some(Commands::UpgradeCheck(args)) => upgrade_check::run(args),
-        Some(Commands::QaMode(args)) => {
-            flow_rs::dispatch::dispatch_result_json(qa_mode::run_impl(&args));
-        }
-        Some(Commands::QaReset(args)) => {
-            flow_rs::dispatch::dispatch_result_json(qa_reset::run_impl(&args));
-        }
-        Some(Commands::QaVerify(args)) => {
-            flow_rs::dispatch::dispatch_ok_result_json(qa_verify::run_impl(&args));
-        }
-        Some(Commands::ScaffoldQa(args)) => {
-            flow_rs::dispatch::dispatch_result_json(scaffold_qa::run_impl(&args));
-        }
+        Some(Commands::QaMode(args)) => qa_mode::run(args),
+        Some(Commands::QaReset(args)) => qa_reset::run(args),
+        Some(Commands::QaVerify(args)) => qa_verify::run(args),
+        Some(Commands::ScaffoldQa(args)) => scaffold_qa::run(args),
         Some(Commands::Hook { hook }) => match hook {
             HookCommands::ValidatePretool => hooks::validate_pretool::run(),
             HookCommands::ValidateClaudePaths => hooks::validate_claude_paths::run(),
