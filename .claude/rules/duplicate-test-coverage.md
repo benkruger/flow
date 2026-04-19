@@ -31,8 +31,10 @@ The scanner normalizes every candidate test name via
 `normalize(name)` — lowercase first, then strip a leading `test_`
 prefix — so matching is symmetric across case and prefix. It then
 looks up the normalized form in the committed test corpus
-(`tests/**/*.rs` integration tests plus `src/**/*.rs` inline
-`#[test]`-annotated functions). Any match is a violation.
+(`tests/**/*.rs`). Any match is a violation. Inline `#[cfg(test)]`
+blocks in `src/*.rs` are prohibited by
+`.claude/rules/test-placement.md`, so the corpus scope is
+`tests/**/*.rs` only.
 
 The corpus regex recognizes `#[test]` attributes followed by a
 function declaration regardless of:

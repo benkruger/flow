@@ -148,11 +148,11 @@ Return type choices:
 
 `run_impl_main` functions take `root: &Path` (and `cwd: &Path` where
 the arm enforces cwd drift) as parameters rather than calling
-`project_root()` / `current_dir()` internally, so inline unit tests
-can pass a `TempDir` fixture without colliding with the host
-worktree. Main.rs resolves those values once per arm and passes them
-in, matching the shape of the pre-existing `run_impl` seam in
-`ci.rs::run()`.
+`project_root()` / `current_dir()` internally, so integration tests
+in `tests/<name>.rs` can pass a `TempDir` fixture without colliding
+with the host worktree. Main.rs resolves those values once per arm
+and passes them in, matching the shape of the pre-existing
+`run_impl` seam in `ci.rs::run()`.
 
 **Seam-injection variant for externally-coupled code.** When a
 module's production wrapper depends on resources `cargo nextest`
@@ -509,22 +509,28 @@ site summarizing why it exists in one sentence.
 
 ## Test Module Section Markers
 
-Group related tests inside a `#[cfg(test)] mod tests` block using
-single-topic section markers: `// --- primary_name ---` where
-`primary_name` is the core function or feature being tested. When a
-test group covers multiple related functions (e.g. a helper and its
-wrapper), use the top-level abstraction name, not a slash-separated
-list or a parenthesized signature.
+Group related tests inside a `tests/<name>.rs` integration test
+file using single-topic section markers: `// --- primary_name ---`
+where `primary_name` is the core function or feature being tested.
+When a test group covers multiple related functions (e.g. a helper
+and its wrapper), use the top-level abstraction name, not a
+slash-separated list or a parenthesized signature.
+
+Tests live in `tests/<name>.rs` parallel to `src/<name>.rs` and
+drive through the public interface per
+`.claude/rules/test-placement.md`. Inline `#[cfg(test)]` blocks in
+`src/*.rs` are prohibited; section markers therefore live in the
+integration test file, not in the source file.
 
 - Correct: `// --- tolerant_i64 ---` (covers `tolerant_i64` and
   `tolerant_i64_opt`)
 - Wrong: `// --- tolerant_i64_opt() / tolerant_i64() ---`
 - Wrong: `// --- tolerant_i64(v: &Value) ---`
 
-Before adding a new marker, grep the file for existing `// --- ` lines
-and match their style. A marker that deviates from the file's
-convention is a maintainability regression — the pattern is
-discoverable only by reading the file, so consistency matters.
+Before adding a new marker, grep the test file for existing
+`// --- ` lines and match their style. A marker that deviates from
+the file's convention is a maintainability regression — the pattern
+is discoverable only by reading the file, so consistency matters.
 
 ## Session Log Message Format
 

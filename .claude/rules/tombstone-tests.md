@@ -213,16 +213,18 @@ against the weak assertion; the cheaper catch is at Plan time.
 
 ## Consolidation
 
-When removing a feature tested inline in a `src/*.rs` file, put
-the tombstone in `tests/tombstones.rs` rather than adding an
-inline `#[cfg(test)]` tombstone to the source file. This keeps
-source files focused on production code and makes the tombstone
-inventory discoverable.
+Tombstones live in `tests/` — standalone file-existence and
+source-content assertions go in `tests/tombstones.rs`, topical
+tombstones integral to a test domain stay in their domain's
+`tests/<name>.rs` file. All tests live under `tests/` per
+`.claude/rules/test-placement.md`; an inline tombstone inside a
+`src/*.rs` file is prohibited.
 
-If the tombstone needs to call crate-internal functions, convert
-it to a source-content assertion instead — read the source file
-at runtime with `std::fs::read_to_string` and assert the removed
-pattern does not appear.
+If a tombstone needs to call a crate-internal function, convert it
+to a source-content assertion — read the source file at runtime
+with `std::fs::read_to_string` and assert the removed pattern does
+not appear. Source-content assertions run from `tests/` and need
+no privileged access to the crate's internals.
 
 ## Lifecycle
 

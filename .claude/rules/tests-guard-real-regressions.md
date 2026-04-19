@@ -146,21 +146,33 @@ branch keeps the regression path unambiguous when the test fails.
 
 ### Placement
 
-Coverage-required tests live alongside the code they exercise.
-Two placements are canonical, matching the broader Rust-test
-patterns the project already uses:
+Every test lives in `tests/<name>.rs` parallel to `src/<name>.rs`
+and drives through the public interface per
+`.claude/rules/test-placement.md`. Coverage-required tests follow
+the same placement rule — no inline `#[cfg(test)]` blocks in
+`src/*.rs`.
 
-- **Inline unit tests in a `#[cfg(test)] mod tests` block inside
-  the source file** — when the test exercises a private function,
-  an internal helper, or a pure branch that does not need a real
-  filesystem or subprocess fixture. Reference pattern:
-  `src/complete_fast.rs::production_ci_decider_tree_changed_returns_not_skipped`
-  sits inside `src/complete_fast.rs` because it exercises a pure
-  helper defined in the same module.
-- **Integration tests in `tests/<module>.rs`** — when the test
-  needs subprocess spawning (`CARGO_BIN_EXE_flow-rs`), a real
-  `TempDir`, or the CLI surface. Reference pattern: subprocess
-  tests in `tests/main_dispatch.rs` and `tests/concurrency.rs`.
+Two execution modes within `tests/<name>.rs` cover the breadth of
+the coverage surface:
+
+- **Library-level tests** — call `pub` items from the `flow_rs`
+  crate directly (`run_impl_main` seams, public helpers, injected
+  closure variants). Used when the branch under test is reachable
+  through the public surface of the subject module. Reference
+  pattern: `tests/complete_fast.rs` exercises
+  `run_impl_with_deps` through the public seam.
+- **Subprocess tests** — spawn the compiled binary via
+  `CARGO_BIN_EXE_flow-rs` to exercise CLI dispatch, real
+  filesystem interactions, or behavior that requires a fresh
+  process. Reference pattern: subprocess tests in
+  `tests/main_dispatch.rs` and `tests/concurrency.rs`.
+
+If a coverage-required branch resists both modes, the fix is one
+of the three default responses in `.claude/rules/no-waivers.md`:
+add a subprocess test, refactor the code to make the branch
+testable through the public surface (seam injection), or delete
+the branch as unreachable dead code. Never make a private item
+`pub` solely to enable the test.
 
 Group related coverage-required tests under a section-marker
 comment naming the branch family the tests cover (see

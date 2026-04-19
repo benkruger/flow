@@ -2,11 +2,15 @@
 //!
 //! When a Plan-phase plan proposes a new test function whose name
 //! normalizes to the same identifier as an existing test in the
-//! committed test corpus (`tests/**/*.rs` integration tests plus
-//! `src/**/*.rs` inline `#[test]`-annotated functions), the
-//! Plan-phase gate (`bin/flow plan-check`) flags the proposal. See
+//! committed test corpus (`tests/**/*.rs`), the Plan-phase gate
+//! (`bin/flow plan-check`) flags the proposal. See
 //! `.claude/rules/duplicate-test-coverage.md` for the rule, the
 //! opt-out grammar, and the motivating PR #1173 incident.
+//!
+//! The corpus scope is `tests/**/*.rs` only. Inline `#[cfg(test)]`
+//! blocks in `src/*.rs` are prohibited by
+//! `.claude/rules/test-placement.md` and enforced by
+//! `tests/test_placement.rs`, so the scanner does not walk `src/`.
 //!
 //! This module is the shared scanner used by three callers:
 //!
@@ -86,8 +90,8 @@ pub struct Violation {
 
 /// Index of existing test functions by normalized name.
 ///
-/// Built once per `plan-check` invocation by walking `tests/` and
-/// `src/` under the repo root. Indexed functions are those directly
+/// Built once per `plan-check` invocation by walking `tests/`
+/// under the repo root. Indexed functions are those directly
 /// annotated `#[test]`. Collisions across multiple files are
 /// preserved (a normalized key maps to every `(full_name, path,
 /// line)` triple).
@@ -96,20 +100,19 @@ pub struct TestCorpus {
 }
 
 impl TestCorpus {
-    /// Walk `root/tests` and `root/src`, indexing every
-    /// `#[test]`-annotated function by normalized name.
+    /// Walk `root/tests`, indexing every `#[test]`-annotated
+    /// function by normalized name.
     ///
     /// The walk is scoped to the passed `root` — never the host
-    /// repo. Missing directories (e.g. a fresh repo with no
-    /// `tests/`) are silently skipped so the function never fails
-    /// on a valid-but-empty worktree layout.
+    /// repo. A missing `tests/` directory (e.g. a fresh repo) is
+    /// silently skipped so the function never fails on a
+    /// valid-but-empty worktree layout. `src/` is intentionally
+    /// not scanned — see `.claude/rules/test-placement.md`.
     pub fn from_repo(root: &Path) -> TestCorpus {
         let mut index: HashMap<String, Vec<(String, PathBuf, usize)>> = HashMap::new();
-        for subdir in &["tests", "src"] {
-            let dir = root.join(subdir);
-            if dir.is_dir() {
-                index_dir(&dir, root, &mut index);
-            }
+        let dir = root.join("tests");
+        if dir.is_dir() {
+            index_dir(&dir, root, &mut index);
         }
         TestCorpus { index }
     }
@@ -520,7 +523,7 @@ mod tests {
     }
 
     #[test]
-    fn test_corpus_indexes_tests_dir_and_src_inline_tests() {
+    fn test_corpus_indexes_tests_dir_only() {
         let dir = tempdir().expect("tempdir");
         let root = dir.path().canonicalize().expect("canonicalize");
         fs::create_dir_all(root.join("tests")).expect("tests dir");
@@ -530,27 +533,37 @@ mod tests {
             "#[test]\nfn test_integration_path() {}\n",
         )
         .expect("write tests file");
-        fs::write(
-            root.join("src/lib.rs"),
-            "#[cfg(test)]\nmod tests {\n    #[test]\n    fn test_inline_case() {}\n}\n",
-        )
-        .expect("write src file");
+        // Write a src file with an inline test attribute. The
+        // scanner must NOT index it — `src/` is excluded per
+        // `.claude/rules/test-placement.md`. Tests live in
+        // `tests/<name>.rs`.
+        let src_fixture = format!(
+            "{attr}\nmod tests {{\n    #[test]\n    fn test_inline_case() {{}}\n}}\n",
+            attr = concat!("#[cfg", "(test)]"),
+        );
+        fs::write(root.join("src/lib.rs"), src_fixture).expect("write src file");
 
         let corpus = TestCorpus::from_repo(&root);
-        assert!(corpus.lookup("integration_path").is_some());
-        assert!(corpus.lookup("inline_case").is_some());
+        assert!(
+            corpus.lookup("integration_path").is_some(),
+            "tests/ must be indexed"
+        );
+        assert!(
+            corpus.lookup("inline_case").is_none(),
+            "src/ must NOT be indexed — inline tests are banned by test-placement.md"
+        );
     }
 
     #[test]
     fn test_corpus_skips_functions_without_test_attribute() {
         let dir = tempdir().expect("tempdir");
         let root = dir.path().canonicalize().expect("canonicalize");
-        fs::create_dir_all(root.join("src")).expect("src dir");
+        fs::create_dir_all(root.join("tests")).expect("tests dir");
         fs::write(
-            root.join("src/lib.rs"),
+            root.join("tests/integration.rs"),
             "fn plain_function_not_a_test() {}\n",
         )
-        .expect("write src file");
+        .expect("write test file");
 
         let corpus = TestCorpus::from_repo(&root);
         assert!(corpus.lookup("plain_function_not_a_test").is_none());

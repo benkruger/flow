@@ -349,9 +349,9 @@ time per CI run, compounding across the test corpus.
 **Patterns by domain:**
 
 - **Filesystem mtime** — use `filetime::set_file_mtime` to
-  backdate or forward-date entries. Reference:
-  `src/commands/start_lock.rs` inline tests use `FileTime` to
-  simulate stale queue entries without sleeping.
+  backdate or forward-date entries. Reference: the `start_lock`
+  tests in `tests/start_lock.rs` use `FileTime` to simulate stale
+  queue entries without sleeping.
 - **Wall-clock functions** — accept an injectable `now_fn`
   closure parameter so tests can return a controlled timestamp.
 - **Retry/timeout loops** — accept an injectable `sleep_fn`

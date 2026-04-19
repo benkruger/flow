@@ -222,8 +222,7 @@ caller to control `cwd` — but the prototype had no `cwd` parameter.
 The Code phase discovered the contradiction during implementation
 and extended the prototype to
 `run_impl_with_deps(root, cwd, args, notifier)`. The extension was
-architecturally sound and every inline test passed on the first
-compile. But no state log entry recorded the deviation — the only
+architecturally sound and every test passed on the first compile. But no state log entry recorded the deviation — the only
 trace was the commit message, which Learn had to read to confirm
 the pivot was intentional. The Learn-analyst audit surfaced this as
 a rule-compliance gap because the discipline for logging plan
@@ -286,12 +285,15 @@ scanned.
 **Structural context.** The scanner follows the peer pattern
 established by `src/scope_enumeration.rs` and
 `src/external_input_audit.rs` — a pure `scan` function returning
-a structured violation vector, a thin `run_impl` orchestrator
-that reads files from disk, and an inline `#[cfg(test)] mod tests`
-block for unit tests. Integration coverage comes from
-`tests/plan_deviation_integration.rs`, which spawns the compiled
-`flow-rs` binary against fixture repos to drive the five branches
-the gate adds to `finalize_commit::run_impl`.
+a structured violation vector and a thin `run_impl` orchestrator
+that reads files from disk. Unit and integration coverage lives
+in `tests/plan_deviation.rs` and
+`tests/plan_deviation_integration.rs`, which drive the public
+scanner surface directly and spawn the compiled `flow-rs` binary
+against fixture repos to drive the five branches the gate adds
+to `finalize_commit::run_impl`. Test placement follows
+`.claude/rules/test-placement.md` — no inline `#[cfg(test)]`
+blocks in `src/*.rs`.
 
 ## Motivating Incident (Atomic Group Split)
 
