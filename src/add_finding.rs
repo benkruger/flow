@@ -4,7 +4,7 @@ use clap::Parser;
 use serde_json::{json, Value};
 
 use crate::flow_paths::FlowPaths;
-use crate::git::{project_root, resolve_branch};
+use crate::git::resolve_branch;
 use crate::lock::mutate_state;
 use crate::phase_config::phase_names;
 use crate::utils::now;
@@ -222,11 +222,6 @@ pub fn run_impl_main_with_cwd_result(
     run_impl_main(args, root, &cwd)
 }
 
-pub fn run(args: Args) {
-    let root = project_root();
-    let (value, code) = run_impl_main_with_cwd_result(args, &root, std::env::current_dir());
-    crate::dispatch::dispatch_json(value, code);
-}
 
 #[cfg(test)]
 mod tests {

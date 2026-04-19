@@ -15,7 +15,7 @@
 //!   FLOW_UPDATE_DEPS_TIMEOUT — timeout in seconds (default: 300)
 
 use std::os::unix::process::CommandExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -171,14 +171,6 @@ pub fn run_impl(cwd: &Path, env_timeout: Option<&str>) -> (Value, i32) {
     run_update_deps(cwd, timeout)
 }
 
-/// CLI entry point for `bin/flow update-deps`.
-pub fn run() {
-    let cwd = std::env::current_dir().unwrap_or(PathBuf::from("."));
-    let env_timeout = std::env::var("FLOW_UPDATE_DEPS_TIMEOUT").ok();
-    let (result, code) = run_impl(&cwd, env_timeout.as_deref());
-    println!("{}", serde_json::to_string(&result).unwrap());
-    std::process::exit(code);
-}
 
 #[cfg(test)]
 mod tests {

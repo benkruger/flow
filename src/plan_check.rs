@@ -48,9 +48,6 @@ pub struct Args {
     pub plan_file: Option<String>,
 }
 
-pub fn run(args: Args) -> ! {
-    crate::dispatch::dispatch_ok_result_json(run_impl(&args))
-}
 
 /// Fallible entry point for plan-check.
 ///

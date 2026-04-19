@@ -47,9 +47,6 @@ pub struct Args {
     pub pr: Option<i64>,
 }
 
-pub fn run(args: Args) -> ! {
-    crate::dispatch::dispatch_ok_result_json(run_impl(&args))
-}
 
 /// Resolve the project root and state file path for the given branch.
 ///

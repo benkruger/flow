@@ -396,12 +396,13 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     }
 }
 
-pub fn run(args: Args) -> ! {
-    let value = match run_impl(&args) {
+/// Main-arm dispatch: returns (value, 0). Err is wrapped into an error JSON.
+pub fn run_impl_main(args: &Args) -> (Value, i32) {
+    let value = match run_impl(args) {
         Ok(v) => v,
         Err(msg) => json!({"status": "error", "message": msg}),
     };
-    crate::dispatch::dispatch_json(value, 0)
+    (value, 0)
 }
 
 #[cfg(test)]

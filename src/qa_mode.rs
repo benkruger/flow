@@ -215,9 +215,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     }
 }
 
-pub fn run(args: Args) -> ! {
-    crate::dispatch::dispatch_result_json(run_impl(&args))
-}
 
 #[cfg(test)]
 mod tests {

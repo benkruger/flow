@@ -164,15 +164,20 @@ pub fn complete_merge(pr_number: i64, state_file: &str) -> Value {
     )
 }
 
-/// CLI entry point. Exits 1 when the merge attempt did not reach the
-/// `merged` status — the calling skill treats a non-zero exit as a
-/// signal to halt the Complete phase before post-merge cleanup runs.
-pub fn run(args: Args) {
-    let result = complete_merge(args.pr, &args.state_file);
-    println!("{}", result);
-    if result["status"] != "merged" {
-        std::process::exit(1);
+/// Map a `complete_merge` result to an exit code: merged → 0, else → 1.
+fn exit_code_for_status(result: &Value) -> i32 {
+    if result["status"] == "merged" {
+        0
+    } else {
+        1
     }
+}
+
+/// Main-arm dispatch: runs complete_merge and returns (value, exit code).
+pub fn run_impl_main(args: &Args) -> (Value, i32) {
+    let result = complete_merge(args.pr, &args.state_file);
+    let code = exit_code_for_status(&result);
+    (result, code)
 }
 
 #[cfg(test)]
@@ -524,6 +529,39 @@ mod tests {
             complete_merge_inner(42, state_path.to_str().unwrap(), "/fake/bin/flow", &runner);
 
         assert_eq!(result["status"], "error");
+    }
+
+    #[test]
+    fn exit_code_for_status_merged_returns_zero() {
+        assert_eq!(
+            exit_code_for_status(&json!({"status": "merged"})),
+            0
+        );
+    }
+
+    #[test]
+    fn exit_code_for_status_non_merged_returns_one() {
+        assert_eq!(
+            exit_code_for_status(&json!({"status": "error"})),
+            1
+        );
+        assert_eq!(
+            exit_code_for_status(&json!({"status": "ci_pending"})),
+            1
+        );
+    }
+
+    #[test]
+    fn run_impl_main_with_empty_state_file_returns_error_code_one() {
+        // complete_merge() uses the real runner (real bin/flow). In a
+        // tempdir the `check-freshness` subprocess will fail (not a git
+        // repo), so result["status"] != "merged" and exit code is 1.
+        let args = Args {
+            pr: 42,
+            state_file: "/nonexistent/state.json".to_string(),
+        };
+        let (_value, code) = run_impl_main(&args);
+        assert_eq!(code, 1);
     }
 
     #[test]

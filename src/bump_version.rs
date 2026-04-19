@@ -12,22 +12,23 @@
 use std::fs;
 use std::path::Path;
 
-use clap::Parser;
-use regex::Regex;
-
-use crate::utils::plugin_root;
-
-#[derive(Parser, Debug)]
-#[command(name = "bump-version", about = "Bump FLOW plugin version")]
-pub struct Args {
-    /// New version (semver: X.Y.Z)
-    pub version: Option<String>,
-}
-
-/// Validate that a version string matches `X.Y.Z` format.
+/// Validate that a version string matches `X.Y.Z` semver format.
 pub fn validate_version(version: &str) -> bool {
-    let re = Regex::new(r"^\d+\.\d+\.\d+$").unwrap();
-    re.is_match(version)
+    let parts: Vec<&str> = version.split('.').collect();
+    if parts.len() != 3 {
+        return false;
+    }
+    for p in &parts {
+        if p.is_empty() {
+            return false;
+        }
+        for c in p.chars() {
+            if !c.is_ascii_digit() {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// Read the current version from plugin.json.
@@ -88,8 +89,8 @@ pub fn bump_skill(path: &Path, old: &str, new: &str) -> Result<bool, String> {
 ///
 /// Returns Ok(summary_text) on success, Err(error_text) on failure.
 /// The caller (run) prints the result and exits accordingly.
-pub fn run_impl(args: &Args, repo_root: &Path) -> Result<String, String> {
-    let new_version = match &args.version {
+pub fn run_impl(version: Option<&str>, repo_root: &Path) -> Result<String, String> {
+    let new_version = match version {
         Some(v) => v,
         None => return Err("Usage: bin/flow bump-version <new_version>".to_string()),
     };
@@ -110,27 +111,14 @@ pub fn run_impl(args: &Args, repo_root: &Path) -> Result<String, String> {
 
     let mut changed: Vec<String> = Vec::new();
 
-    // 1. plugin.json
-    if bump_json(&plugin_json, &old_version, new_version)? {
-        changed.push(
-            plugin_json
-                .strip_prefix(repo_root)
-                .unwrap_or(&plugin_json)
-                .to_string_lossy()
-                .to_string(),
-        );
-    }
+    // 1. plugin.json — always bumps (old_version was just read from it).
+    bump_json(&plugin_json, &old_version, new_version)?;
+    changed.push(".claude-plugin/plugin.json".to_string());
 
     // 2. marketplace.json
     let marketplace_json = repo_root.join(".claude-plugin").join("marketplace.json");
     if marketplace_json.exists() && bump_json(&marketplace_json, &old_version, new_version)? {
-        changed.push(
-            marketplace_json
-                .strip_prefix(repo_root)
-                .unwrap_or(&marketplace_json)
-                .to_string_lossy()
-                .to_string(),
-        );
+        changed.push(".claude-plugin/marketplace.json".to_string());
     }
 
     // 3. skills/*/SKILL.md — filter dot-prefixed entries (fnmatch convention)
@@ -155,13 +143,8 @@ pub fn run_impl(args: &Args, repo_root: &Path) -> Result<String, String> {
         for entry in entries {
             let skill_file = entry.path().join("SKILL.md");
             if bump_skill(&skill_file, &old_version, new_version)? {
-                changed.push(
-                    skill_file
-                        .strip_prefix(repo_root)
-                        .unwrap_or(&skill_file)
-                        .to_string_lossy()
-                        .to_string(),
-                );
+                let name = entry.file_name();
+                changed.push(format!("skills/{}/SKILL.md", name.to_string_lossy()));
             }
         }
     }
@@ -173,13 +156,7 @@ pub fn run_impl(args: &Args, repo_root: &Path) -> Result<String, String> {
         .join("flow-release")
         .join("SKILL.md");
     if release_skill.exists() && bump_skill(&release_skill, &old_version, new_version)? {
-        changed.push(
-            release_skill
-                .strip_prefix(repo_root)
-                .unwrap_or(&release_skill)
-                .to_string_lossy()
-                .to_string(),
-        );
+        changed.push(".claude/skills/flow-release/SKILL.md".to_string());
     }
 
     let mut output = format!("Bumped {} -> {}\n", old_version, new_version);
@@ -191,31 +168,22 @@ pub fn run_impl(args: &Args, repo_root: &Path) -> Result<String, String> {
     Ok(output.trim_end().to_string())
 }
 
-/// Testable variant of [`run`] that accepts an injectable plugin-root
-/// resolver so unit tests can drive the `None` arm (the production
-/// `plugin_root()` walk-up always finds a real repo from inside this
-/// crate, so the None arm is unreachable from any subprocess test
-/// launched from inside flow's source tree).
-///
-/// Returns `(message, exit_code)`. The CLI wrapper prints the message
-/// to stdout and `process::exit`s on non-zero codes.
-pub fn run_with_plugin_root_fn<F: FnOnce() -> Option<std::path::PathBuf>>(
-    args: &Args,
-    plugin_root_fn: F,
+/// Dispatch from a resolved `plugin_root` option to `(message, code)`.
+/// Main-arm calls this with `plugin_root()` and dispatches the text.
+/// Tests call it with `Some(tempdir)` or `None` directly — no separate
+/// closure seam.
+pub fn run_impl_main(
+    version: Option<&str>,
+    plugin_root: Option<std::path::PathBuf>,
 ) -> (String, i32) {
-    let repo_root = match plugin_root_fn() {
+    let repo_root = match plugin_root {
         Some(r) => r,
         None => return ("Error: could not find FLOW plugin root".to_string(), 1),
     };
-    match run_impl(args, &repo_root) {
+    match run_impl(version, &repo_root) {
         Ok(output) => (output, 0),
         Err(e) => (e, 1),
     }
-}
-
-pub fn run(args: Args) -> ! {
-    let (msg, code) = run_with_plugin_root_fn(&args, plugin_root);
-    crate::dispatch::dispatch_text(&msg, code)
 }
 
 #[cfg(test)]
@@ -236,24 +204,16 @@ mod tests {
         (dir, root)
     }
 
-    /// Exercises the `None` arm of `run_with_plugin_root_fn` — when
-    /// the resolver yields no plugin root, the wrapper returns the
-    /// "could not find FLOW plugin root" error tuple with exit code 1.
     #[test]
-    fn run_with_plugin_root_fn_none_returns_error_tuple() {
-        let args = Args {
-            version: Some("2.0.0".to_string()),
-        };
-        let (msg, code) = run_with_plugin_root_fn(&args, || None);
+    fn run_impl_main_none_returns_error_tuple() {
+        let (msg, code) = run_impl_main(Some("2.0.0"), None);
         assert_eq!(code, 1);
         assert!(msg.contains("could not find FLOW plugin root"));
     }
 
-    /// Exercises the `Some` arm with a successful inner run_impl.
     #[test]
-    fn run_with_plugin_root_fn_success_returns_message_with_code_zero() {
+    fn run_impl_main_success_returns_message_with_code_zero() {
         let (_dir, root) = setup_repo("1.0.0");
-        // Add the marketplace.json the success path requires.
         fs::write(
             root.join(".claude-plugin").join("marketplace.json"),
             r#"{
@@ -263,24 +223,14 @@ mod tests {
 }"#,
         )
         .unwrap();
-        let args = Args {
-            version: Some("2.0.0".to_string()),
-        };
-        let root_clone = root.clone();
-        let (_msg, code) = run_with_plugin_root_fn(&args, move || Some(root_clone));
+        let (_msg, code) = run_impl_main(Some("2.0.0"), Some(root));
         assert_eq!(code, 0);
     }
 
-    /// Exercises the `Some` arm with run_impl returning Err (invalid
-    /// version).
     #[test]
-    fn run_with_plugin_root_fn_err_path_returns_msg_and_code_one() {
+    fn run_impl_main_err_path_returns_msg_and_code_one() {
         let (_dir, root) = setup_repo("1.0.0");
-        let args = Args {
-            version: Some("invalid_semver".to_string()),
-        };
-        let root_clone = root.clone();
-        let (msg, code) = run_with_plugin_root_fn(&args, move || Some(root_clone));
+        let (msg, code) = run_impl_main(Some("invalid_semver"), Some(root));
         assert_eq!(code, 1);
         assert!(msg.contains("invalid version format"));
     }
@@ -293,6 +243,12 @@ mod tests {
         assert!(!validate_version("1.0.0-rc1"));
         assert!(!validate_version("v1.0.0"));
         assert!(!validate_version(""));
+        // Empty part triggers the short-circuit arm of !p.is_empty()
+        // inside the .all() closure.
+        assert!(!validate_version(".0.0"));
+        assert!(!validate_version("1..0"));
+        assert!(!validate_version("1.0."));
+        assert!(!validate_version(".."));
     }
 
     #[test]
@@ -371,28 +327,21 @@ mod tests {
     #[test]
     fn run_impl_missing_version_arg_errors() {
         let (_dir, root) = setup_repo("1.0.0");
-        let args = Args { version: None };
-        let err = run_impl(&args, &root).unwrap_err();
+        let err = run_impl(None, &root).unwrap_err();
         assert!(err.contains("Usage:"));
     }
 
     #[test]
     fn run_impl_invalid_version_format_errors() {
         let (_dir, root) = setup_repo("1.0.0");
-        let args = Args {
-            version: Some("not-a-version".to_string()),
-        };
-        let err = run_impl(&args, &root).unwrap_err();
+        let err = run_impl(Some("not-a-version"), &root).unwrap_err();
         assert!(err.contains("invalid version format"));
     }
 
     #[test]
     fn run_impl_missing_plugin_json_errors() {
         let dir = tempfile::tempdir().unwrap();
-        let args = Args {
-            version: Some("2.0.0".to_string()),
-        };
-        let err = run_impl(&args, dir.path()).unwrap_err();
+        let err = run_impl(Some("2.0.0"), dir.path()).unwrap_err();
         assert!(err.contains("plugin.json"));
         assert!(err.contains("not found"));
     }
@@ -400,20 +349,14 @@ mod tests {
     #[test]
     fn run_impl_same_version_errors() {
         let (_dir, root) = setup_repo("1.0.0");
-        let args = Args {
-            version: Some("1.0.0".to_string()),
-        };
-        let err = run_impl(&args, &root).unwrap_err();
+        let err = run_impl(Some("1.0.0"), &root).unwrap_err();
         assert!(err.contains("already 1.0.0"));
     }
 
     #[test]
     fn run_impl_bumps_plugin_json_and_reports() {
         let (_dir, root) = setup_repo("1.0.0");
-        let args = Args {
-            version: Some("2.0.0".to_string()),
-        };
-        let output = run_impl(&args, &root).unwrap();
+        let output = run_impl(Some("2.0.0"), &root).unwrap();
         assert!(output.contains("Bumped 1.0.0 -> 2.0.0"));
         assert!(output.contains("plugin.json"));
         let contents = fs::read_to_string(root.join(".claude-plugin").join("plugin.json")).unwrap();
@@ -425,10 +368,7 @@ mod tests {
         let (_dir, root) = setup_repo("1.0.0");
         let marketplace = root.join(".claude-plugin").join("marketplace.json");
         fs::write(&marketplace, r#"{"version": "1.0.0"}"#).unwrap();
-        let args = Args {
-            version: Some("2.0.0".to_string()),
-        };
-        let output = run_impl(&args, &root).unwrap();
+        let output = run_impl(Some("2.0.0"), &root).unwrap();
         assert!(output.contains("marketplace.json"));
     }
 
@@ -444,14 +384,15 @@ mod tests {
         let hidden = skills_dir.join(".hidden");
         fs::create_dir_all(&hidden).unwrap();
         fs::write(hidden.join("SKILL.md"), "FLOW v1.0.0 — Hidden\n").unwrap();
+        // Directory without SKILL.md — exercises the `SKILL.md does not
+        // exist` filter branch.
+        fs::create_dir_all(skills_dir.join("empty-skill")).unwrap();
 
-        let args = Args {
-            version: Some("2.0.0".to_string()),
-        };
-        let output = run_impl(&args, &root).unwrap();
+        let output = run_impl(Some("2.0.0"), &root).unwrap();
         assert!(output.contains("a-skill"));
         assert!(output.contains("z-skill"));
         assert!(!output.contains(".hidden"));
+        assert!(!output.contains("empty-skill"));
         let hidden_content = fs::read_to_string(hidden.join("SKILL.md")).unwrap();
         assert!(hidden_content.contains("FLOW v1.0.0"));
     }
@@ -519,10 +460,7 @@ mod tests {
         let (_dir, root) = setup_repo("1.0.0");
         let skills_path = root.join("skills");
         fs::write(&skills_path, "I am a file, not a dir").unwrap();
-        let args = Args {
-            version: Some("2.0.0".to_string()),
-        };
-        let err = run_impl(&args, &root).unwrap_err();
+        let err = run_impl(Some("2.0.0"), &root).unwrap_err();
         assert!(err.contains("Failed to read skills dir"));
     }
 
@@ -532,10 +470,123 @@ mod tests {
         let release_dir = root.join(".claude").join("skills").join("flow-release");
         fs::create_dir_all(&release_dir).unwrap();
         fs::write(release_dir.join("SKILL.md"), "FLOW v1.0.0 — Release\n").unwrap();
-        let args = Args {
-            version: Some("2.0.0".to_string()),
-        };
-        let output = run_impl(&args, &root).unwrap();
+        let output = run_impl(Some("2.0.0"), &root).unwrap();
         assert!(output.contains("flow-release"));
+    }
+
+    #[test]
+    fn run_impl_marketplace_json_no_match_skips_push() {
+        let (_dir, root) = setup_repo("1.0.0");
+        fs::write(
+            root.join(".claude-plugin").join("marketplace.json"),
+            r#"{"version": "9.9.9"}"#,
+        )
+        .unwrap();
+        let output = run_impl(Some("2.0.0"), &root).unwrap();
+        assert!(!output.contains("marketplace.json"));
+    }
+
+    #[test]
+    fn run_impl_skill_file_no_match_skips_push() {
+        let (_dir, root) = setup_repo("1.0.0");
+        // Skill file exists but has no matching banner — bump_skill
+        // returns Ok(false) for the for-loop's inner branch.
+        let skill_dir = root.join("skills").join("no-banner-skill");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(skill_dir.join("SKILL.md"), "No banner here\n").unwrap();
+        let output = run_impl(Some("2.0.0"), &root).unwrap();
+        assert!(!output.contains("no-banner-skill"));
+    }
+
+    #[test]
+    fn run_impl_release_skill_no_match_skips_push() {
+        let (_dir, root) = setup_repo("1.0.0");
+        let release_dir = root.join(".claude").join("skills").join("flow-release");
+        fs::create_dir_all(&release_dir).unwrap();
+        fs::write(release_dir.join("SKILL.md"), "No banner here\n").unwrap();
+        let output = run_impl(Some("2.0.0"), &root).unwrap();
+        assert!(!output.contains("flow-release"));
+    }
+
+    #[test]
+    fn run_impl_propagates_read_current_version_err() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        let plugin_dir = root.join(".claude-plugin");
+        fs::create_dir_all(&plugin_dir).unwrap();
+        fs::write(plugin_dir.join("plugin.json"), r#"{"name": "flow"}"#).unwrap();
+        let err = run_impl(Some("2.0.0"), &root).unwrap_err();
+        assert!(err.contains("No \"version\" field"));
+    }
+
+    #[test]
+    fn run_impl_propagates_bump_json_err_on_plugin_json() {
+        let (_dir, root) = setup_repo("1.0.0");
+        let plugin_json = root.join(".claude-plugin").join("plugin.json");
+        let mut perms = fs::metadata(&plugin_json).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&plugin_json, perms).unwrap();
+        let err = run_impl(Some("2.0.0"), &root).unwrap_err();
+        assert!(err.contains("Failed to write"));
+
+        let mut perms = fs::metadata(&plugin_json).unwrap().permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        fs::set_permissions(&plugin_json, perms).unwrap();
+    }
+
+    #[test]
+    fn run_impl_propagates_bump_json_err_on_marketplace_json() {
+        let (_dir, root) = setup_repo("1.0.0");
+        let marketplace = root.join(".claude-plugin").join("marketplace.json");
+        fs::write(&marketplace, r#"{"version": "1.0.0"}"#).unwrap();
+        let mut perms = fs::metadata(&marketplace).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&marketplace, perms).unwrap();
+        let err = run_impl(Some("2.0.0"), &root).unwrap_err();
+        assert!(err.contains("Failed to write"));
+
+        let mut perms = fs::metadata(&marketplace).unwrap().permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        fs::set_permissions(&marketplace, perms).unwrap();
+    }
+
+    #[test]
+    fn run_impl_propagates_bump_skill_err_on_skill_file() {
+        let (_dir, root) = setup_repo("1.0.0");
+        let skill_dir = root.join("skills").join("a-skill");
+        fs::create_dir_all(&skill_dir).unwrap();
+        let skill_file = skill_dir.join("SKILL.md");
+        fs::write(&skill_file, "FLOW v1.0.0 — Test\n").unwrap();
+        let mut perms = fs::metadata(&skill_file).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&skill_file, perms).unwrap();
+        let err = run_impl(Some("2.0.0"), &root).unwrap_err();
+        assert!(err.contains("Failed to write"));
+
+        let mut perms = fs::metadata(&skill_file).unwrap().permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        fs::set_permissions(&skill_file, perms).unwrap();
+    }
+
+    #[test]
+    fn run_impl_propagates_bump_skill_err_on_release_skill() {
+        let (_dir, root) = setup_repo("1.0.0");
+        let release_dir = root.join(".claude").join("skills").join("flow-release");
+        fs::create_dir_all(&release_dir).unwrap();
+        let release_skill = release_dir.join("SKILL.md");
+        fs::write(&release_skill, "FLOW v1.0.0 — Release\n").unwrap();
+        let mut perms = fs::metadata(&release_skill).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&release_skill, perms).unwrap();
+        let err = run_impl(Some("2.0.0"), &root).unwrap_err();
+        assert!(err.contains("Failed to write"));
+
+        let mut perms = fs::metadata(&release_skill).unwrap().permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        fs::set_permissions(&release_skill, perms).unwrap();
     }
 }

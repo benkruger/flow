@@ -17,7 +17,6 @@ use serde_json::json;
 
 use crate::complete_preflight::LOCAL_TIMEOUT;
 use crate::issue::{fetch_database_id, run_gh_cmd};
-use crate::output::{json_error, json_ok};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -94,15 +93,13 @@ pub fn link_blocked_by(
     Ok((blocked_number, blocking_number))
 }
 
-pub fn run(args: Args) {
+pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
     match link_blocked_by(&args.repo, args.blocked_number, args.blocking_number) {
-        Ok((blocked, blocking)) => {
-            json_ok(&[("blocked", json!(blocked)), ("blocking", json!(blocking))]);
-        }
-        Err(e) => {
-            json_error(&e, &[]);
-            std::process::exit(1);
-        }
+        Ok((blocked, blocking)) => (
+            json!({"status": "ok", "blocked": blocked, "blocking": blocking}),
+            0,
+        ),
+        Err(e) => (json!({"status": "error", "message": e}), 1),
     }
 }
 

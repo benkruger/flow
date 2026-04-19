@@ -686,10 +686,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     run_impl_inner(args, &root, &run_cmd_with_timeout, &production_ci_decider)
 }
 
-/// CLI entry point.
-pub fn run(args: Args) -> ! {
-    crate::dispatch::dispatch_result_json(run_impl(&args))
-}
 
 #[cfg(test)]
 mod tests {

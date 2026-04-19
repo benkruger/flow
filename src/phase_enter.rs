@@ -307,10 +307,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     Ok(response)
 }
 
-/// CLI entry point.
-pub fn run(args: Args) -> ! {
-    crate::dispatch::dispatch_ok_result_json(run_impl(&args))
-}
 
 #[cfg(test)]
 mod tests {

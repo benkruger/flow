@@ -21,9 +21,6 @@ use regex::Regex;
 use serde_json::json;
 
 use crate::complete_preflight::LOCAL_TIMEOUT;
-use crate::flow_paths::FlowPaths;
-use crate::git::{project_root, resolve_branch};
-use crate::github::detect_repo;
 
 #[derive(Parser, Debug)]
 #[command(name = "issue", about = "Create a GitHub issue")]
@@ -535,20 +532,6 @@ pub fn run_impl_main(
     }
 }
 
-pub fn run(args: Args) -> ! {
-    let root = project_root();
-    let root_for_state = root.clone();
-    let root_for_repo = root.clone();
-    let state_reader = move || -> Option<String> {
-        resolve_branch(None, &root_for_state).and_then(|branch| {
-            let state_path = FlowPaths::new(&root_for_state, &branch).state_file();
-            fs::read_to_string(&state_path).ok()
-        })
-    };
-    let repo_resolver = move || -> Option<String> { detect_repo(Some(&root_for_repo)) };
-    let (value, code) = run_impl_main(args, &root, &state_reader, &repo_resolver, &run_gh_cmd);
-    crate::dispatch::dispatch_json(value, code)
-}
 
 fn resolve_repo_from_state(state_file: &str) -> Option<String> {
     let content = fs::read_to_string(state_file).ok()?;

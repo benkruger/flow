@@ -1,109 +1,23 @@
-//! Tests for `src/bump_version.rs`.
+//! Subprocess tests for `bin/flow bump-version` — exercise the real CLI
+//! surface through `main.rs` so `run_impl_main` coverage lands for the
+//! production path.
 //!
-//! Pure-function tests call the library directly. CLI tests call run_impl
-//! with a fake repo fixture. All subprocess calls use Command::output()
-//! to avoid leaking child output to the test harness.
+//! Library-function tests (validate_version, bump_json, bump_skill,
+//! read_current_version, run_impl) live inline in `src/bump_version.rs`
+//! to avoid per-binary monomorphization that would split coverage
+//! across instantiations.
 
 use std::fs;
-use std::path::Path;
 use std::process::Command;
 
-use flow_rs::bump_version::{
-    bump_json, bump_skill, read_current_version, run_impl, validate_version, Args,
-};
-
-// --- validate_version ---
-
-#[test]
-fn test_validate_version_valid() {
-    assert!(validate_version("1.2.3"));
-    assert!(validate_version("0.0.0"));
-    assert!(validate_version("10.20.30"));
-}
-
-#[test]
-fn test_validate_version_invalid() {
-    assert!(!validate_version("v1.2.3"));
-    assert!(!validate_version("1.2"));
-    assert!(!validate_version("abc"));
-    assert!(!validate_version("../../etc/passwd"));
-}
-
-// --- read_current_version ---
-
-#[test]
-fn test_read_current_version() {
+/// Build a fake plugin root with `flow-phases.json` so `plugin_root()`
+/// resolves via the env-var path, plus the standard fake_repo layout.
+fn setup_plugin_root() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("plugin.json");
-    fs::write(&p, r#"{"version": "2.5.0"}"#).unwrap();
-    assert_eq!(read_current_version(&p).unwrap(), "2.5.0");
-}
+    let root = dir.path().to_path_buf();
+    fs::write(root.join("flow-phases.json"), "{}").unwrap();
 
-// --- bump_json ---
-
-#[test]
-fn test_bump_json_updates_version() {
-    let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("test.json");
-    fs::write(&p, "{\n  \"version\": \"1.0.0\"\n}").unwrap();
-    assert!(bump_json(&p, "1.0.0", "2.0.0").unwrap());
-    let data: serde_json::Value = serde_json::from_str(&fs::read_to_string(&p).unwrap()).unwrap();
-    assert_eq!(data["version"], "2.0.0");
-}
-
-#[test]
-fn test_bump_json_no_match() {
-    let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("test.json");
-    fs::write(&p, "{\n  \"version\": \"3.0.0\"\n}").unwrap();
-    assert!(!bump_json(&p, "1.0.0", "2.0.0").unwrap());
-}
-
-#[test]
-fn test_bump_json_multiple_version_fields() {
-    let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("marketplace.json");
-    fs::write(
-        &p,
-        r#"{
-  "name": "flow-marketplace",
-  "metadata": {"version": "1.0.0"},
-  "plugins": [{"name": "flow", "version": "1.0.0"}]
-}"#,
-    )
-    .unwrap();
-    assert!(bump_json(&p, "1.0.0", "2.0.0").unwrap());
-    let data: serde_json::Value = serde_json::from_str(&fs::read_to_string(&p).unwrap()).unwrap();
-    assert_eq!(data["metadata"]["version"], "2.0.0");
-    assert_eq!(data["plugins"][0]["version"], "2.0.0");
-}
-
-// --- bump_skill ---
-
-#[test]
-fn test_bump_skill_replaces_banners() {
-    let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("SKILL.md");
-    fs::write(&p, "  FLOW v1.0.0 — Start\n  FLOW v1.0.0 — End\n").unwrap();
-    assert!(bump_skill(&p, "1.0.0", "2.0.0").unwrap());
-    let text = fs::read_to_string(&p).unwrap();
-    assert!(text.contains("FLOW v2.0.0"));
-    assert!(!text.contains("FLOW v1.0.0"));
-}
-
-#[test]
-fn test_bump_skill_no_match() {
-    let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("SKILL.md");
-    fs::write(&p, "No version here\n").unwrap();
-    assert!(!bump_skill(&p, "1.0.0", "2.0.0").unwrap());
-}
-
-// --- CLI integration tests via run_impl ---
-
-/// Helper: create a minimal fake repo structure for bump_version tests.
-fn fake_repo(dir: &Path) {
-    let plugin_dir = dir.join(".claude-plugin");
+    let plugin_dir = root.join(".claude-plugin");
     fs::create_dir_all(&plugin_dir).unwrap();
     fs::write(
         plugin_dir.join("plugin.json"),
@@ -120,131 +34,25 @@ fn fake_repo(dir: &Path) {
     )
     .unwrap();
 
-    let skills_dir = dir.join("skills");
+    let skills_dir = root.join("skills");
     for name in &["flow-start", "flow-code"] {
         let skill_dir = skills_dir.join(name);
         fs::create_dir_all(&skill_dir).unwrap();
         fs::write(
             skill_dir.join("SKILL.md"),
-            "# Skill\n\n```\n  FLOW v1.0.0 — Phase — STARTING\n```\n\n```\n  FLOW v1.0.0 — Phase — COMPLETE\n```\n",
+            "# Skill\n\nFLOW v1.0.0 — Phase\n",
         )
         .unwrap();
     }
 
-    let release_dir = dir.join(".claude").join("skills").join("flow-release");
+    let release_dir = root.join(".claude").join("skills").join("flow-release");
     fs::create_dir_all(&release_dir).unwrap();
     fs::write(
         release_dir.join("SKILL.md"),
-        "# Release\n\n```\n  FLOW v1.0.0 — release — STARTING\n```\n",
+        "# Release\n\nFLOW v1.0.0 — release\n",
     )
     .unwrap();
-}
 
-#[test]
-fn test_cli_successful_bump() {
-    let dir = tempfile::tempdir().unwrap();
-    fake_repo(dir.path());
-
-    let args = Args {
-        version: Some("2.0.0".to_string()),
-    };
-    let result = run_impl(&args, dir.path());
-    assert!(result.is_ok(), "run_impl failed: {:?}", result.err());
-
-    // Check plugin.json
-    let data: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(dir.path().join(".claude-plugin/plugin.json")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(data["version"], "2.0.0");
-
-    // Check marketplace.json
-    let data: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(dir.path().join(".claude-plugin/marketplace.json")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(data["metadata"]["version"], "2.0.0");
-    assert_eq!(data["plugins"][0]["version"], "2.0.0");
-
-    // Check skill banners
-    for entry in fs::read_dir(dir.path().join("skills")).unwrap() {
-        let skill_file = entry.unwrap().path().join("SKILL.md");
-        let text = fs::read_to_string(&skill_file).unwrap();
-        assert!(
-            text.contains("FLOW v2.0.0"),
-            "Missing v2.0.0 in {:?}",
-            skill_file
-        );
-        assert!(
-            !text.contains("FLOW v1.0.0"),
-            "Stale v1.0.0 in {:?}",
-            skill_file
-        );
-    }
-
-    // Check release skill
-    let text = fs::read_to_string(dir.path().join(".claude/skills/flow-release/SKILL.md")).unwrap();
-    assert!(text.contains("FLOW v2.0.0"));
-    assert!(!text.contains("FLOW v1.0.0"));
-}
-
-#[test]
-fn test_cli_invalid_version() {
-    let dir = tempfile::tempdir().unwrap();
-    fake_repo(dir.path());
-
-    let args = Args {
-        version: Some("v1.0.0".to_string()),
-    };
-    let result = run_impl(&args, dir.path());
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("invalid version format"));
-}
-
-#[test]
-fn test_cli_same_version() {
-    let dir = tempfile::tempdir().unwrap();
-    fake_repo(dir.path());
-
-    let args = Args {
-        version: Some("1.0.0".to_string()),
-    };
-    let result = run_impl(&args, dir.path());
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("already"));
-}
-
-#[test]
-fn test_cli_no_arguments() {
-    let dir = tempfile::tempdir().unwrap();
-    let args = Args { version: None };
-    let result = run_impl(&args, dir.path());
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Usage"));
-}
-
-#[test]
-fn test_cli_plugin_json_not_found() {
-    let dir = tempfile::tempdir().unwrap();
-    // No fake_repo setup — empty directory
-
-    let args = Args {
-        version: Some("2.0.0".to_string()),
-    };
-    let result = run_impl(&args, dir.path());
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("not found"));
-}
-
-// --- Subprocess tests covering the `pub fn run` wrapper ---
-
-/// Build a fake plugin root with `flow-phases.json` so `plugin_root()`
-/// resolves via the env-var path, plus the standard fake_repo layout.
-fn setup_plugin_root() -> (tempfile::TempDir, std::path::PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    fs::write(root.join("flow-phases.json"), "{}").unwrap();
-    fake_repo(&root);
     (dir, root)
 }
 
@@ -271,23 +79,3 @@ fn run_subprocess_invalid_version_exits_one() {
         .expect("spawn flow-rs");
     assert_eq!(output.status.code(), Some(1));
 }
-
-// REMOVED: `run_subprocess_no_plugin_root_exits_one`.
-//
-// That test set `CLAUDE_PLUGIN_ROOT` to an empty tempdir expecting
-// `plugin_root()` to return None and `pub fn run` to exit 1. In
-// reality, when the env-var path lacks `flow-phases.json`,
-// `plugin_root()` falls through to a `current_exe` walk-up — which
-// from the test binary location at
-// `target/llvm-cov-target/debug/deps/<bin>` reaches the real flow
-// repo's `flow-phases.json` within 5 levels. The subprocess then
-// ran `bump-version 2.0.0` against the REAL flow repo, mutating
-// 19 tracked files (plugin.json, marketplace.json, every SKILL.md
-// banner) from the actual current version to 2.0.0 in the user's
-// working tree.
-//
-// The "plugin_root None" branch is structurally unreachable from
-// any subprocess test launched from inside the flow repo. Coverage
-// for that branch must come from inline unit tests of the helper
-// (where the env var and current_exe walk can be controlled) — not
-// from spawning the binary. Do NOT re-add this test shape.

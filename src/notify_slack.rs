@@ -231,7 +231,7 @@ pub fn run_curl_with_timeout_inner(
 
 /// Run curl as a subprocess with timeout. Production binder over
 /// [`run_curl_with_timeout_inner`].
-fn run_curl_with_timeout(
+pub fn run_curl_with_timeout(
     args: &[&str],
     timeout_secs: u64,
 ) -> Result<(i32, String, String), String> {
@@ -298,12 +298,6 @@ pub fn run_impl_main(
     (notify_with_deps(&args, config_reader, poster), 0)
 }
 
-pub fn run(args: Args) -> ! {
-    let (value, code) = run_impl_main(args, &read_slack_config, &|bot, channel, text, tts| {
-        post_message_inner(bot, channel, text, tts, &run_curl_with_timeout)
-    });
-    crate::dispatch::dispatch_json(value, code)
-}
 
 #[cfg(test)]
 mod tests {

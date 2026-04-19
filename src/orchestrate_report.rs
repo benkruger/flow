@@ -230,9 +230,6 @@ pub fn run_impl(args: &Args) -> Value {
     generate_and_write_report(Path::new(&args.state_file), Path::new(&args.output_dir))
 }
 
-pub fn run(args: Args) {
-    println!("{}", run_impl(&args));
-}
 
 #[cfg(test)]
 mod tests {

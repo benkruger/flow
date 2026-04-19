@@ -4,7 +4,7 @@ use clap::Parser;
 use serde_json::{json, Value};
 
 use crate::flow_paths::FlowPaths;
-use crate::git::{project_root, resolve_branch};
+use crate::git::resolve_branch;
 use crate::lock::mutate_state;
 use crate::phase_config::phase_names;
 use crate::utils::now;
@@ -36,6 +36,43 @@ pub struct Args {
     /// Override branch for state file lookup
     #[arg(long)]
     pub branch: Option<String>,
+}
+
+/// Applies the slack_notifications append transform to the in-memory
+/// state. Extracted to a named function so cargo-llvm-cov measures a
+/// single monomorphization of the mutation logic regardless of how
+/// many tests or production paths call [`run_impl_main`]. See
+/// `add_issue::apply_issue_mutation` for the mirror pattern.
+fn apply_notification_mutation(
+    state: &mut Value,
+    args: &Args,
+    phase_name: &str,
+    preview: &str,
+    timestamp: &str,
+) {
+    // Corruption resilience: skip mutation when state root is wrong
+    // type (e.g. array from interrupted write) to prevent IndexMut
+    // panics. See .claude/rules/rust-patterns.md "State Mutation
+    // Object Guards".
+    if !(state.is_object() || state.is_null()) {
+        return;
+    }
+    if state.get("slack_notifications").is_none() || !state["slack_notifications"].is_array() {
+        state["slack_notifications"] = json!([]);
+    }
+    // The block above guarantees state["slack_notifications"] is an
+    // array, so as_array_mut returns Some unconditionally.
+    let arr = state["slack_notifications"]
+        .as_array_mut()
+        .expect("slack_notifications is always an array here");
+    arr.push(json!({
+        "phase": args.phase,
+        "phase_name": phase_name,
+        "ts": args.ts,
+        "thread_ts": args.thread_ts,
+        "message_preview": preview,
+        "timestamp": timestamp,
+    }));
 }
 
 /// Main-arm dispatcher with injected root. Returns `(value, exit_code)`:
@@ -80,29 +117,7 @@ pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
     let timestamp = now();
 
     match mutate_state(&state_path, |state| {
-        // Corruption resilience: skip mutation when state root is wrong
-        // type (e.g. array from interrupted write) to prevent IndexMut
-        // panics. See .claude/rules/rust-patterns.md "State Mutation
-        // Object Guards".
-        if !(state.is_object() || state.is_null()) {
-            return;
-        }
-        if state.get("slack_notifications").is_none() || !state["slack_notifications"].is_array() {
-            state["slack_notifications"] = json!([]);
-        }
-        // The block above guarantees state["slack_notifications"] is an
-        // array, so as_array_mut returns Some unconditionally.
-        let arr = state["slack_notifications"]
-            .as_array_mut()
-            .expect("slack_notifications is always an array here");
-        arr.push(json!({
-            "phase": args.phase,
-            "phase_name": phase_name,
-            "ts": args.ts,
-            "thread_ts": args.thread_ts,
-            "message_preview": preview,
-            "timestamp": timestamp,
-        }));
+        apply_notification_mutation(state, &args, &phase_name, &preview, &timestamp);
     }) {
         Ok(state) => {
             let count = match state["slack_notifications"].as_array() {
@@ -116,12 +131,6 @@ pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
             1,
         ),
     }
-}
-
-pub fn run(args: Args) -> ! {
-    let root = project_root();
-    let (value, code) = run_impl_main(args, &root);
-    crate::dispatch::dispatch_json(value, code)
 }
 
 fn truncate_preview(message: &str) -> String {

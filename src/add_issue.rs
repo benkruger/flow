@@ -4,7 +4,7 @@ use clap::Parser;
 use serde_json::{json, Value};
 
 use crate::flow_paths::FlowPaths;
-use crate::git::{project_root, resolve_branch};
+use crate::git::resolve_branch;
 use crate::lock::mutate_state;
 use crate::phase_config::phase_names;
 use crate::utils::now;
@@ -31,6 +31,41 @@ pub struct Args {
     /// Override branch for state file lookup
     #[arg(long)]
     pub branch: Option<String>,
+}
+
+/// Applies the issues_filed append transform to the in-memory state.
+///
+/// Extracted to a named function so cargo-llvm-cov measures a single
+/// monomorphization of the mutation logic regardless of how many
+/// tests or production paths call [`run_impl_main`]. The closure
+/// passed to [`mutate_state`] becomes a thin delegator, while every
+/// region inside `apply_issue_mutation` (object-guard early return,
+/// missing-array auto-create, array push) reaches 100% merged
+/// coverage under the test suite.
+fn apply_issue_mutation(state: &mut Value, args: &Args, phase_name: &str, timestamp: &str) {
+    // Corruption resilience: skip mutation when state root is wrong
+    // type (e.g. array from interrupted write) to prevent IndexMut
+    // panics. See .claude/rules/rust-patterns.md "State Mutation
+    // Object Guards".
+    if !(state.is_object() || state.is_null()) {
+        return;
+    }
+    if state.get("issues_filed").is_none() || !state["issues_filed"].is_array() {
+        state["issues_filed"] = json!([]);
+    }
+    // The block above guarantees state["issues_filed"] is an array,
+    // so as_array_mut returns Some unconditionally.
+    let arr = state["issues_filed"]
+        .as_array_mut()
+        .expect("issues_filed is always an array here");
+    arr.push(json!({
+        "label": args.label,
+        "title": args.title,
+        "url": args.url,
+        "phase": args.phase,
+        "phase_name": phase_name,
+        "timestamp": timestamp,
+    }));
 }
 
 /// Main-arm dispatcher with injected root. Returns `(value, exit_code)`:
@@ -75,29 +110,7 @@ pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
     let timestamp = now();
 
     match mutate_state(&state_path, |state| {
-        // Corruption resilience: skip mutation when state root is wrong
-        // type (e.g. array from interrupted write) to prevent IndexMut
-        // panics. See .claude/rules/rust-patterns.md "State Mutation
-        // Object Guards".
-        if !(state.is_object() || state.is_null()) {
-            return;
-        }
-        if state.get("issues_filed").is_none() || !state["issues_filed"].is_array() {
-            state["issues_filed"] = json!([]);
-        }
-        // The block above guarantees state["issues_filed"] is an array,
-        // so as_array_mut returns Some unconditionally.
-        let arr = state["issues_filed"]
-            .as_array_mut()
-            .expect("issues_filed is always an array here");
-        arr.push(json!({
-            "label": args.label,
-            "title": args.title,
-            "url": args.url,
-            "phase": args.phase,
-            "phase_name": phase_name,
-            "timestamp": timestamp,
-        }));
+        apply_issue_mutation(state, &args, &phase_name, &timestamp);
     }) {
         Ok(state) => {
             let count = match state["issues_filed"].as_array() {
@@ -111,12 +124,6 @@ pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
             1,
         ),
     }
-}
-
-pub fn run(args: Args) -> ! {
-    let root = project_root();
-    let (value, code) = run_impl_main(args, &root);
-    crate::dispatch::dispatch_json(value, code)
 }
 
 #[cfg(test)]

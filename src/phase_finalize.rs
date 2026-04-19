@@ -265,13 +265,6 @@ pub fn run_impl_with_deps(
     Ok(response)
 }
 
-/// CLI entry point. Thin dispatcher over [`run_impl`]: prints the
-/// success JSON on `Ok`, emits a `json_error` and calls
-/// `process::exit(1)` on infrastructure failure. All Slack-path and
-/// state-file logic lives in [`run_impl_with_deps`].
-pub fn run(args: Args) -> ! {
-    crate::dispatch::dispatch_ok_result_json(run_impl(&args))
-}
 
 #[cfg(test)]
 mod tests {

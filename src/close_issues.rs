@@ -109,28 +109,22 @@ fn close_single_issue(
     let start = std::time::Instant::now();
     let poll_interval = Duration::from_millis(50);
     loop {
-        match child.try_wait() {
-            Ok(Some(_)) => {
-                let output = match child.wait_with_output() {
-                    Ok(o) => o,
-                    Err(e) => return Err(e.to_string()),
-                };
-                if output.status.success() {
-                    return Ok(());
-                }
-                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                return Err(stderr);
+        if let Ok(Some(_)) = child.try_wait() {
+            let (success, stderr_bytes) = child
+                .wait_with_output()
+                .map(|o| (o.status.success(), o.stderr))
+                .unwrap_or((false, Vec::new()));
+            if success {
+                return Ok(());
             }
-            Ok(None) => {
-                if start.elapsed() >= timeout {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err("timeout".to_string());
-                }
-                std::thread::sleep(poll_interval.min(timeout - start.elapsed()));
-            }
-            Err(e) => return Err(e.to_string()),
+            return Err(String::from_utf8_lossy(&stderr_bytes).trim().to_string());
         }
+        if start.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("timeout".to_string());
+        }
+        std::thread::sleep(poll_interval.min(timeout - start.elapsed()));
     }
 }
 
@@ -193,10 +187,6 @@ pub fn run_impl_main(args: Args) -> (Value, i32) {
     })
 }
 
-pub fn run(args: Args) -> ! {
-    let (value, code) = run_impl_main(args);
-    crate::dispatch::dispatch_json(value, code)
-}
 
 #[cfg(test)]
 mod tests {

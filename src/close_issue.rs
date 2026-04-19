@@ -14,7 +14,6 @@ use clap::Parser;
 use serde_json::{json, Value};
 
 use crate::complete_preflight::LOCAL_TIMEOUT;
-use crate::github::detect_repo;
 
 #[derive(Parser, Debug)]
 #[command(name = "close-issue", about = "Close a GitHub issue")]
@@ -68,35 +67,31 @@ pub fn close_issue_with_runner_and_timeout(
     let start = std::time::Instant::now();
     let poll_interval = Duration::from_millis(50);
     loop {
-        match child.try_wait() {
-            Ok(Some(_)) => {
-                let output = match child.wait_with_output() {
-                    Ok(o) => o,
-                    Err(e) => return Some(e.to_string()),
-                };
-                if output.status.success() {
-                    return None;
-                }
-                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !stderr.is_empty() {
-                    return Some(stderr);
-                }
-                if !stdout.is_empty() {
-                    return Some(stdout);
-                }
-                return Some("Unknown error".to_string());
+        if let Ok(Some(_)) = child.try_wait() {
+            let bytes_output = child
+                .wait_with_output()
+                .map(|o| (o.status.success(), o.stdout, o.stderr))
+                .unwrap_or((false, Vec::new(), Vec::new()));
+            let (success, stdout_bytes, stderr_bytes) = bytes_output;
+            if success {
+                return None;
             }
-            Ok(None) => {
-                if start.elapsed() >= timeout {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Some(format!("Command timed out after {} seconds", timeout_secs));
-                }
-                std::thread::sleep(poll_interval.min(timeout - start.elapsed()));
+            let stderr = String::from_utf8_lossy(&stderr_bytes).trim().to_string();
+            let stdout = String::from_utf8_lossy(&stdout_bytes).trim().to_string();
+            if !stderr.is_empty() {
+                return Some(stderr);
             }
-            Err(e) => return Some(e.to_string()),
+            if !stdout.is_empty() {
+                return Some(stdout);
+            }
+            return Some("Unknown error".to_string());
         }
+        if start.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Some(format!("Command timed out after {} seconds", timeout_secs));
+        }
+        std::thread::sleep(poll_interval.min(timeout - start.elapsed()));
     }
 }
 
@@ -136,10 +131,6 @@ pub fn run_impl_main(args: Args, repo_resolver: &dyn Fn() -> Option<String>) -> 
     (json!({"status": "ok"}), 0)
 }
 
-pub fn run(args: Args) -> ! {
-    let (value, code) = run_impl_main(args, &|| detect_repo(None));
-    crate::dispatch::dispatch_json(value, code)
-}
 
 #[cfg(test)]
 mod tests {

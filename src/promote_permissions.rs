@@ -15,7 +15,6 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process;
 
 use clap::Args as ClapArgs;
 use serde_json::{json, Value};
@@ -172,15 +171,11 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
     }
 }
 
-pub fn run(args: Args) {
-    match run_impl(&args) {
-        Ok(value) => {
-            println!("{}", serde_json::to_string(&value).unwrap());
-        }
-        Err(value) => {
-            println!("{}", serde_json::to_string(&value).unwrap());
-            process::exit(1);
-        }
+/// Main-arm dispatch: returns (value, exit code).
+pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
+    match run_impl(args) {
+        Ok(value) => (value, 0),
+        Err(value) => (value, 1),
     }
 }
 

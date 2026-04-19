@@ -7,7 +7,6 @@ use crate::flow_paths::FlowPaths;
 use crate::format_issues_summary::format_issues_summary;
 use crate::format_pr_timings::format_timings_table;
 use crate::git::{current_branch, project_root};
-use crate::output::{json_error, json_ok};
 use crate::update_pr_body::{build_details_block, build_plain_section, gh_set_body};
 use crate::utils::extract_issue_numbers;
 
@@ -240,7 +239,7 @@ pub struct Args {
     pub dry_run: bool,
 }
 
-pub fn run(args: Args) {
+pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
     let state_path = if let Some(ref sf) = args.state_file {
         PathBuf::from(sf)
     } else {
@@ -250,27 +249,17 @@ pub fn run(args: Args) {
     };
 
     if !state_path.exists() {
-        json_error(
-            &format!("State file not found: {}", state_path.display()),
-            &[],
-        );
-        return;
+        return json_error_tuple(&format!("State file not found: {}", state_path.display()));
     }
 
     let content = match std::fs::read_to_string(&state_path) {
         Ok(c) => c,
-        Err(e) => {
-            json_error(&e.to_string(), &[]);
-            return;
-        }
+        Err(e) => return json_error_tuple(&e.to_string()),
     };
 
     let state: serde_json::Value = match serde_json::from_str(&content) {
         Ok(v) => v,
-        Err(e) => {
-            json_error(&e.to_string(), &[]);
-            return;
-        }
+        Err(e) => return json_error_tuple(&e.to_string()),
     };
 
     let project_dir = state_path
@@ -280,16 +269,12 @@ pub fn run(args: Args) {
 
     let body = match render_body(&state, project_dir) {
         Ok(b) => b,
-        Err(e) => {
-            json_error(&e, &[]);
-            return;
-        }
+        Err(e) => return json_error_tuple(&e),
     };
 
     if !args.dry_run {
         if let Err(e) = gh_set_body(args.pr, &body) {
-            json_error(&e, &[]);
-            return;
+            return json_error_tuple(&e);
         }
     }
 
@@ -299,7 +284,26 @@ pub fn run(args: Args) {
         .map(|line| &line[3..])
         .collect();
 
-    json_ok(&[("sections", json!(section_names))]);
+    (
+        json!({
+            "status": "ok",
+            "sections": section_names,
+        }),
+        0,
+    )
+}
+
+fn json_error_tuple(message: &str) -> (serde_json::Value, i32) {
+    // Matches the historic `json_error` behavior in this module: prints
+    // a structured error but exits 0 so the calling skill can parse the
+    // payload rather than abort.
+    (
+        json!({
+            "status": "error",
+            "message": message,
+        }),
+        0,
+    )
 }
 
 #[cfg(test)]
