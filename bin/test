@@ -135,15 +135,36 @@ fi
 # from-zero. Filtered runs (`bin/flow ci --test -- <filter>`) skip this
 # branch entirely and keep the full incremental cache.
 #
-# The profraw sweep following the clean removes accumulated coverage
-# samples from prior binaries so `llvm-profdata merge` does not stall
-# chewing through stale data carried forward by `--no-clean`.
+# UNCONDITIONAL profraw sweep. Fires on every bin/test invocation
+# (full-suite, filtered, and forced) to keep the profraw set bounded
+# to at-most-one-run. A run killed mid-merge (Ctrl-C, SIGKILL, OOM)
+# orphans every profraw it wrote; prior behavior only swept these on
+# the full-suite branch, so filtered/forced runs allowed unbounded
+# accumulation. A single interrupted full run can leave 90+ GB of
+# orphan profraws that the next merge has to grind through. Sweeping
+# on every invocation prevents that regardless of how prior runs
+# ended.
+/usr/bin/find target/llvm-cov-target -maxdepth 1 -name "*.profraw" -delete 2>/dev/null || true
+# Sweep worktree-root profraw leaks — subprocess tests whose cwd lands
+# here when cargo-llvm-cov's LLVM_PROFILE_FILE template can't resolve.
+/usr/bin/find . -maxdepth 1 -name "default_*.profraw" -delete 2>/dev/null || true
+
+# Full-suite (no filter args): sweep stale artifacts. Runs on every
+# full-suite invocation including --force, because stale flow-rs
+# binaries from prior source generations slow `llvm-cov` merge/report
+# regardless of whether the sentinel is being bypassed. `cargo sweep
+# --installed` removes any artifact not part of the current cargo
+# build output (old dep hashes, test-binary hashes from filtered
+# runs). If cargo-sweep is not installed, the call silently no-ops
+# (install via `bin/dependencies`).
+if [ $# -eq 0 ]; then
+  cargo sweep --installed --target-dir target/llvm-cov-target >/dev/null 2>&1 || true
+fi
+
+# Full-suite + not forced: clean flow-rs package for covmap coherence.
+# Skipped on --force so rapid re-runs keep flow-rs artifacts warm.
 if [ $# -eq 0 ] && [ "${FLOW_CI_FORCE:-}" != "1" ]; then
   cargo clean --target-dir target/llvm-cov-target -p flow-rs
-  /usr/bin/find target/llvm-cov-target -maxdepth 1 -name "*.profraw" -delete 2>/dev/null || true
-  # Sweep worktree-root profraw leaks — subprocess tests whose cwd lands
-  # here when cargo-llvm-cov's LLVM_PROFILE_FILE template can't resolve.
-  /usr/bin/find . -maxdepth 1 -name "default_*.profraw" -delete 2>/dev/null || true
 fi
 
 # Coverage gate. Pinned at 100/100/100 — any uncovered region,

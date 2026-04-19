@@ -2,4 +2,13 @@
 # FLOW dependency updater for Rust
 # Created by /flow:flow-prime — edit to match your project
 set -euo pipefail
+
+# Cargo-sweep: removes stale build artifacts (old dep hashes, stale
+# test-binary hashes from filtered runs) from the llvm-cov target dir
+# so it doesn't grow unboundedly across many merged source generations
+# on main. Used by `bin/test`. `--locked` installs the version pinned
+# by cargo-sweep's own Cargo.lock for deterministic behavior across
+# engineer machines and CI.
+cargo install cargo-sweep --locked
+
 cargo update
