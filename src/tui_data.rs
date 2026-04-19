@@ -2885,16 +2885,12 @@ mod tests {
     #[test]
     fn run_impl_main_no_flag_returns_err_exit_1() {
         let dir = tempfile::tempdir().unwrap();
-        let result = run_impl_main(false, false, false, dir.path());
-        match result {
-            Err((msg, code)) => {
-                assert_eq!(code, 1);
-                assert!(msg.contains("--load-all-flows"));
-                assert!(msg.contains("--load-orchestration"));
-                assert!(msg.contains("--load-account-metrics"));
-            }
-            Ok(_) => panic!("expected Err for no-flag branch"),
-        }
+        let (msg, code) = run_impl_main(false, false, false, dir.path())
+            .expect_err("no-flag invocation must return Err");
+        assert_eq!(code, 1);
+        assert!(msg.contains("--load-all-flows"));
+        assert!(msg.contains("--load-orchestration"));
+        assert!(msg.contains("--load-account-metrics"));
     }
 
     #[test]

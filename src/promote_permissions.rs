@@ -15,7 +15,6 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process;
 
 use clap::Args as ClapArgs;
 use serde_json::{json, Value};
@@ -120,15 +119,13 @@ pub fn promote(worktree_path: &Path) -> Value {
     }
     settings_data["permissions"]["allow"] = Value::Array(existing_allow);
 
-    let serialized = match serde_json::to_string_pretty(&settings_data) {
-        Ok(s) => s,
-        Err(e) => {
-            return json!({
-                "status": "error",
-                "message": format!("Could not write settings.json: {}", e),
-            })
-        }
-    };
+    // `serde_json::to_string_pretty` over an in-memory `Value` built
+    // from the `json!()` macro cannot fail — the only error sources are
+    // I/O on a custom Writer (we use String) and types that don't
+    // implement Serialize (Value implements it). Use `expect` to drop
+    // the unreachable Err arm rather than carry a dead branch.
+    let serialized = serde_json::to_string_pretty(&settings_data)
+        .expect("serializing an in-memory JSON Value to a String cannot fail");
 
     let mut bytes = serialized.into_bytes();
     bytes.push(b'\n');
@@ -174,15 +171,11 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
     }
 }
 
-pub fn run(args: Args) {
-    match run_impl(&args) {
-        Ok(value) => {
-            println!("{}", serde_json::to_string(&value).unwrap());
-        }
-        Err(value) => {
-            println!("{}", serde_json::to_string(&value).unwrap());
-            process::exit(1);
-        }
+/// Main-arm dispatch: returns (value, exit code).
+pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
+    match run_impl(args) {
+        Ok(value) => (value, 0),
+        Err(value) => (value, 1),
     }
 }
 

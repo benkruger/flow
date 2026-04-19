@@ -558,13 +558,11 @@ pub fn preflight(branch: Option<&str>, auto: bool, manual: bool, root: Option<&P
     )
 }
 
-/// CLI entry point.
-pub fn run(args: Args) {
+/// Main-arm dispatch: returns (value, exit code).
+pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
     let result = preflight(args.branch.as_deref(), args.auto, args.manual, None);
-    println!("{}", result);
-    if result["status"] != "ok" {
-        std::process::exit(1);
-    }
+    let code = if result["status"] == "ok" { 0 } else { 1 };
+    (result, code)
 }
 
 #[cfg(test)]

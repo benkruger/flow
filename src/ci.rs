@@ -26,9 +26,8 @@
 //!   Retry fail:    {"status": "error", "attempts": 3, "consistent": true, "output": "..."}
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::time::Instant;
 
 use clap::Parser;
@@ -201,14 +200,33 @@ fn eprint_summary(phases: &[(String, u64)], total_ms: u64) {
     );
 }
 
-/// Run a git command in `cwd`, returning its stdout as a lossy UTF-8 string.
-fn git_stdout(cwd: &Path, args: &[&str]) -> String {
-    Command::new("git")
+/// Run `program args` in `cwd`, returning its stdout as a lossy UTF-8
+/// string. Spawn/IO errors produce an empty string — the snapshot hash
+/// stays stable even when the program is missing.
+fn program_stdout(cwd: &Path, program: &str, args: &[&str]) -> String {
+    let bytes = Command::new(program)
         .args(args)
         .current_dir(cwd)
         .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-        .unwrap_or_default()
+        .map(|o| o.stdout)
+        .unwrap_or_default();
+    String::from_utf8_lossy(&bytes).to_string()
+}
+
+/// Run `git args` in `cwd`, returning its stdout as a lossy UTF-8 string.
+fn git_stdout(cwd: &Path, args: &[&str]) -> String {
+    program_stdout(cwd, "git", args)
+}
+
+/// Hash each path in `paths` (newline-separated) via `git hash-object`
+/// and join the resulting object IDs with newlines. Missing paths
+/// contribute empty lines.
+fn git_hash_object_stdin_paths(cwd: &Path, paths: &str) -> String {
+    let hashes: Vec<String> = paths
+        .lines()
+        .map(|p| git_stdout(cwd, &["hash-object", p]).trim().to_string())
+        .collect();
+    hashes.join("\n")
 }
 
 /// Compute the tree-state snapshot hash.
@@ -233,27 +251,10 @@ pub fn tree_snapshot(cwd: &Path, simulate_branch: Option<&str>) -> String {
         .collect::<Vec<_>>()
         .join("\n");
 
-    let untracked_hash = if !untracked_files.is_empty() {
-        match Command::new("git")
-            .args(["hash-object", "--stdin-paths"])
-            .current_dir(cwd)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-        {
-            Ok(mut child) => {
-                if let Some(stdin) = child.stdin.as_mut() {
-                    let _ = stdin.write_all(untracked_files.as_bytes());
-                }
-                match child.wait_with_output() {
-                    Ok(out) => String::from_utf8_lossy(&out.stdout).to_string(),
-                    Err(_) => String::new(),
-                }
-            }
-            Err(_) => String::new(),
-        }
-    } else {
+    let untracked_hash = if untracked_files.is_empty() {
         String::new()
+    } else {
+        git_hash_object_stdin_paths(cwd, &untracked_files)
     };
 
     let mut combined = format!(
@@ -404,18 +405,7 @@ pub fn run_once(
     eprint_summary(&phases, total_ms);
 
     if let Some(ref path) = sentinel {
-        if any_stub {
-            // Unconfigured stubs just echoed a reminder — do not lock
-            // in a sentinel that would hide the reminder on the next
-            // run. Remove any previous sentinel so the next `bin/flow
-            // ci` run the scripts again.
-            let _ = fs::remove_file(path);
-        } else {
-            if let Some(parent) = path.parent() {
-                let _ = fs::create_dir_all(parent);
-            }
-            let _ = fs::write(path, &snapshot);
-        }
+        write_or_remove_sentinel(path, &snapshot, any_stub);
     }
     let mut response = json!({
         "status": "ok",
@@ -427,6 +417,21 @@ pub fn run_once(
         response["stubs_detected"] = json!(true);
     }
     (response, 0)
+}
+
+/// If `any_stub`, delete the sentinel (stubs must never lock in a
+/// passing sentinel). Otherwise create the parent directory and write
+/// the snapshot. Errors are intentionally swallowed — sentinel is a
+/// best-effort optimization.
+fn write_or_remove_sentinel(path: &Path, snapshot: &str, any_stub: bool) {
+    if any_stub {
+        let _ = fs::remove_file(path);
+        return;
+    }
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::write(path, snapshot);
 }
 
 /// Convert `[(name, elapsed_ms)]` into the JSON array shape emitted in
@@ -472,7 +477,7 @@ pub fn run_with_retry(
 
     let any_stub = any_tool_is_stub(tools);
     let sentinel = branch.map(|b| sentinel_path(root, b));
-    let mut first_failure_output: Option<String> = None;
+    let mut first_failure_output = String::new();
     let start = Instant::now();
     let mut phases: Vec<(String, u64)> = Vec::new();
 
@@ -536,16 +541,7 @@ pub fn run_with_retry(
         if !attempt_failed {
             let snapshot = tree_snapshot(cwd, simulate_branch);
             if let Some(ref path) = sentinel {
-                if any_stub {
-                    // See [`run_once`] for rationale: stub "passes"
-                    // should never lock in a sentinel.
-                    let _ = fs::remove_file(path);
-                } else {
-                    if let Some(parent) = path.parent() {
-                        let _ = fs::create_dir_all(parent);
-                    }
-                    let _ = fs::write(path, &snapshot);
-                }
+                write_or_remove_sentinel(path, &snapshot, any_stub);
             }
             let total_ms = start.elapsed().as_millis() as u64;
             eprint_summary(&phases, total_ms);
@@ -557,15 +553,15 @@ pub fn run_with_retry(
             });
             if attempt > 1 {
                 result["flaky"] = json!(true);
-                result["first_failure_output"] = json!(first_failure_output.unwrap_or_default());
+                result["first_failure_output"] = json!(first_failure_output);
             }
             if any_stub {
                 result["stubs_detected"] = json!(true);
             }
             return (result, 0);
         } else {
-            if first_failure_output.is_none() {
-                first_failure_output = Some(attempt_output.trim().to_string());
+            if first_failure_output.is_empty() {
+                first_failure_output = attempt_output.trim().to_string();
             }
             if let Some(ref path) = sentinel {
                 if path.exists() {
@@ -582,7 +578,7 @@ pub fn run_with_retry(
             "status": "error",
             "attempts": max_attempts,
             "consistent": true,
-            "output": first_failure_output.unwrap_or_default(),
+            "output": first_failure_output,
             "elapsed_ms": total_ms,
             "phases": phases_to_json(&phases),
         }),
@@ -704,16 +700,6 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
     }
 }
 
-/// CLI entry point for `bin/flow ci`.
-pub fn run(args: Args) {
-    let flow_ci_running = std::env::var("FLOW_CI_RUNNING").is_ok();
-    let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
-    let root = crate::git::project_root();
-    let (result, code) = run_impl(&args, &cwd, &root, flow_ci_running);
-    println!("{}", serde_json::to_string(&result).unwrap());
-    std::process::exit(code);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -736,6 +722,41 @@ mod tests {
     }
 
     // --- tree_snapshot tests ---
+
+    /// Exercises lines 175-184 of `format_elapsed` — three formatting
+    /// branches: sub-1s ms, sub-1m fractional seconds, ≥1m
+    /// minutes-and-seconds. The minutes branch is the regression-prone
+    /// one (only fires on long CI runs).
+    #[test]
+    fn format_elapsed_under_one_second_uses_ms() {
+        assert_eq!(format_elapsed(0), "0ms");
+        assert_eq!(format_elapsed(999), "999ms");
+    }
+
+    #[test]
+    fn format_elapsed_under_one_minute_uses_fractional_seconds() {
+        assert_eq!(format_elapsed(1_000), "1.0s");
+        assert_eq!(format_elapsed(38_600), "38.6s");
+        assert_eq!(format_elapsed(59_999), "60.0s");
+    }
+
+    #[test]
+    fn format_elapsed_one_minute_and_above_uses_minutes_seconds() {
+        assert_eq!(format_elapsed(60_000), "1m0s");
+        assert_eq!(format_elapsed(125_000), "2m5s");
+        assert_eq!(format_elapsed(3_605_000), "60m5s");
+    }
+
+    /// Exercises line 191 — early return when the phase list is empty.
+    /// `eprint_summary` writes to stderr so the test asserts no panic
+    /// and trusts the early-return contract via `eprint_summary` being
+    /// a noop for the empty input.
+    #[test]
+    fn eprint_summary_empty_phases_is_noop() {
+        // No assertion target other than "does not panic" — the function
+        // returns `()` and writes nothing.
+        eprint_summary(&[], 0);
+    }
 
     #[test]
     fn tree_snapshot_empty_repo_returns_64_char_hex() {
@@ -807,6 +828,41 @@ mod tests {
         fs::rename(dir.path().join("old.txt"), dir.path().join("new.txt")).unwrap();
         let second = tree_snapshot(dir.path(), None);
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn write_or_remove_sentinel_removes_on_any_stub() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sentinel");
+        fs::write(&path, "old").unwrap();
+        write_or_remove_sentinel(&path, "new", true);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn write_or_remove_sentinel_writes_on_not_stub() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("subdir").join("sentinel");
+        write_or_remove_sentinel(&path, "snapshot", false);
+        assert_eq!(fs::read_to_string(&path).unwrap(), "snapshot");
+    }
+
+    #[test]
+    fn write_or_remove_sentinel_handles_parentless_path() {
+        // `Path::new("").parent()` returns None — exercises the None
+        // arm of the `if let Some(parent)` guard. fs::write on "" is
+        // expected to fail; errors are swallowed by design.
+        let empty = Path::new("");
+        write_or_remove_sentinel(empty, "snap", false);
+    }
+
+    #[test]
+    fn program_stdout_missing_binary_returns_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            program_stdout(dir.path(), "/no/such/program-deadbeef", &[]),
+            ""
+        );
     }
 
     #[test]
@@ -974,6 +1030,50 @@ mod tests {
         assert!(fixture_sentinel(&f).exists());
     }
 
+    /// Exercises lines 354 and 357 — `run_once` propagates
+    /// `FLOW_CI_REBUILD=1` and `FLOW_SIMULATE_BRANCH=<sim>` to the
+    /// spawned tool when `rebuild=true` and `simulate_branch=Some`.
+    /// The script writes its env-var visibility to a marker file the
+    /// test then reads back to confirm propagation.
+    #[test]
+    fn run_once_propagates_rebuild_and_simulate_branch_env() {
+        let f = make_ci_fixture();
+        let marker = f.path.join("env-marker");
+        let script = f.path.join("env-probe.sh");
+        write_script(
+            &script,
+            &format!(
+                "#!/usr/bin/env bash\nprintf 'rebuild=%s sim=%s\\n' \"${{FLOW_CI_REBUILD:-}}\" \"${{FLOW_SIMULATE_BRANCH:-}}\" > {}\nexit 0\n",
+                marker.display()
+            ),
+        );
+        let tools = single_tool(&script);
+
+        let (out, code) = run_once(
+            &f.path,
+            &f.path,
+            &tools,
+            Some(&f.branch),
+            true,
+            Some("simulated-feature"),
+            true,
+        );
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+
+        let env_dump = std::fs::read_to_string(&marker).unwrap();
+        assert!(
+            env_dump.contains("rebuild=1"),
+            "FLOW_CI_REBUILD not propagated; got: {}",
+            env_dump
+        );
+        assert!(
+            env_dump.contains("sim=simulated-feature"),
+            "FLOW_SIMULATE_BRANCH not propagated; got: {}",
+            env_dump
+        );
+    }
+
     #[test]
     fn run_once_skips_when_sentinel_and_clean() {
         let f = make_ci_fixture();
@@ -1003,6 +1103,65 @@ mod tests {
         );
         assert_eq!(code, 0);
         assert_eq!(second["skipped"], true);
+    }
+
+    #[test]
+    fn run_once_sentinel_different_content_falls_through() {
+        // Sentinel exists with content that does not match the current
+        // snapshot → run_once proceeds rather than skipping.
+        let f = make_ci_fixture();
+        let script = f.path.join("pass.sh");
+        write_script(&script, "#!/usr/bin/env bash\nexit 0\n");
+        let tools = single_tool(&script);
+
+        // Pre-write a stale sentinel.
+        let sentinel = fixture_sentinel(&f);
+        fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+        fs::write(&sentinel, "stale-content-that-wont-match").unwrap();
+
+        let (out, code) = run_once(
+            &f.path,
+            &f.path,
+            &tools,
+            Some(&f.branch),
+            false,
+            None,
+            false,
+        );
+        assert_eq!(code, 0);
+        assert_eq!(
+            out["skipped"], false,
+            "stale sentinel must not short-circuit"
+        );
+    }
+
+    #[test]
+    fn run_once_sentinel_unreadable_falls_through() {
+        // Sentinel file with no read permissions → fs::read_to_string
+        // returns Err → run_once proceeds rather than skipping.
+        use std::os::unix::fs::PermissionsExt;
+        let f = make_ci_fixture();
+        let script = f.path.join("pass.sh");
+        write_script(&script, "#!/usr/bin/env bash\nexit 0\n");
+        let tools = single_tool(&script);
+
+        let sentinel = fixture_sentinel(&f);
+        fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+        fs::write(&sentinel, "anything").unwrap();
+        fs::set_permissions(&sentinel, fs::Permissions::from_mode(0o000)).unwrap();
+
+        let (out, code) = run_once(
+            &f.path,
+            &f.path,
+            &tools,
+            Some(&f.branch),
+            false,
+            None,
+            false,
+        );
+        fs::set_permissions(&sentinel, fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(code, 0);
+        assert_eq!(out["skipped"], false);
     }
 
     #[test]
@@ -1459,6 +1618,49 @@ exit 0
         assert!(out["output"].as_str().unwrap().contains("TOOL2 FAILED"));
     }
 
+    /// Exercises lines 497 and 500 — `run_with_retry` propagates
+    /// `FLOW_CI_REBUILD=1` and `FLOW_SIMULATE_BRANCH=<sim>` to the
+    /// spawned tool when `rebuild=true` and `simulate_branch=Some`.
+    /// Mirror of `run_once_propagates_rebuild_and_simulate_branch_env`.
+    #[test]
+    fn run_with_retry_propagates_rebuild_and_simulate_branch_env() {
+        let f = make_ci_fixture();
+        let marker = f.path.join("retry-env-marker");
+        let script = f.path.join("retry-env-probe.sh");
+        write_script(
+            &script,
+            &format!(
+                "#!/usr/bin/env bash\nprintf 'rebuild=%s sim=%s\\n' \"${{FLOW_CI_REBUILD:-}}\" \"${{FLOW_SIMULATE_BRANCH:-}}\" > {}\nexit 0\n",
+                marker.display()
+            ),
+        );
+        let tools = single_tool(&script);
+
+        let (out, code) = run_with_retry(
+            &f.path,
+            &f.path,
+            &tools,
+            Some(&f.branch),
+            1,
+            Some("retry-feature"),
+            true,
+        );
+        assert_eq!(code, 0);
+        assert_eq!(out["status"], "ok");
+
+        let env_dump = std::fs::read_to_string(&marker).unwrap();
+        assert!(
+            env_dump.contains("rebuild=1"),
+            "FLOW_CI_REBUILD not propagated; got: {}",
+            env_dump
+        );
+        assert!(
+            env_dump.contains("sim=retry-feature"),
+            "FLOW_SIMULATE_BRANCH not propagated; got: {}",
+            env_dump
+        );
+    }
+
     #[test]
     fn retry_flaky_via_marker_file() {
         // A tool that fails on the first invocation (no marker file)
@@ -1475,7 +1677,11 @@ MARKER="{}"
 if [ -f "$MARKER" ]; then
   exit 0
 else
-  touch "$MARKER"
+  # `:` is a shell builtin (no fork). Avoids an extra subprocess
+  # (`/usr/bin/touch`) that nextest's leak detector occasionally
+  # flags when the touch process is briefly unreaped between
+  # attempts under heavy parallel load.
+  : > "$MARKER"
   echo "FIRST FAIL" >&2
   exit 1
 fi
@@ -1764,6 +1970,96 @@ fi
         let (out, code) = run_impl(&args, &f.path, &f.path, false);
         assert_eq!(code, 0);
         assert_eq!(out["skipped"], false);
+    }
+
+    #[test]
+    fn run_impl_build_flag_sets_rebuild_env() {
+        // --build selects the build phase and also flips `rebuild=true`
+        // in run_impl, which propagates to FLOW_CI_REBUILD=1 in the
+        // child env. Without this test, the `matches!(selected,
+        // Some("build"))` true arm is never executed.
+        let f = make_ci_fixture();
+        let marker = f.path.join("build-rebuild-marker");
+        let build_script = f.path.join("bin").join("build");
+        write_script(
+            &build_script,
+            &format!(
+                "#!/usr/bin/env bash\nif [ -n \"${{FLOW_CI_REBUILD:-}}\" ]; then echo rebuilt > {}; fi\nexit 0\n",
+                marker.display()
+            ),
+        );
+        let args = Args {
+            branch: Some(f.branch.clone()),
+            build: true,
+            ..default_args()
+        };
+        let (out, code) = run_impl(&args, &f.path, &f.path, false);
+        assert_eq!(code, 0, "out={}", out);
+        assert!(
+            marker.exists(),
+            "--build must set FLOW_CI_REBUILD=1 in the child env"
+        );
+    }
+
+    #[test]
+    fn run_impl_sentinel_unreadable_falls_through_and_runs() {
+        // A sentinel file that exists but cannot be read (e.g. perms)
+        // must not short-circuit; the run proceeds normally.
+        use std::os::unix::fs::PermissionsExt;
+        let f = make_ci_fixture();
+        write_script(
+            &f.path.join("bin").join("format"),
+            "#!/usr/bin/env bash\nexit 0\n",
+        );
+        // Pre-create sentinel with content that would match if readable,
+        // then make it unreadable so fs::read_to_string returns Err.
+        let sentinel = fixture_sentinel(&f);
+        fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+        fs::write(&sentinel, "unreadable").unwrap();
+        fs::set_permissions(&sentinel, fs::Permissions::from_mode(0o000)).unwrap();
+
+        let args = Args {
+            branch: Some(f.branch.clone()),
+            ..default_args()
+        };
+        let (out, code) = run_impl(&args, &f.path, &f.path, false);
+        // Restore before any assertion so tempdir cleans up.
+        fs::set_permissions(&sentinel, fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(code, 0, "out={}", out);
+        assert_eq!(
+            out["skipped"], false,
+            "unreadable sentinel must not short-circuit"
+        );
+    }
+
+    #[test]
+    fn run_impl_trailing_args_forwarded_to_single_phase_tool() {
+        // `--test -- arg1 arg2` passes ["arg1","arg2"] as tool args.
+        // The script echoes its $@ into a marker file so the test can
+        // confirm they were propagated.
+        let f = make_ci_fixture();
+        let marker = f.path.join("trailing-marker");
+        write_script(
+            &f.path.join("bin").join("test"),
+            &format!(
+                "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" > {}\nexit 0\n",
+                marker.display()
+            ),
+        );
+        let args = Args {
+            branch: Some(f.branch.clone()),
+            test: true,
+            trailing: vec!["--".to_string(), "arg1".to_string()],
+            ..default_args()
+        };
+        let (out, code) = run_impl(&args, &f.path, &f.path, false);
+        assert_eq!(code, 0, "out={}", out);
+        let dump = fs::read_to_string(&marker).unwrap();
+        assert!(
+            dump.contains("arg1"),
+            "trailing args must reach tool: {}",
+            dump
+        );
     }
 
     #[test]

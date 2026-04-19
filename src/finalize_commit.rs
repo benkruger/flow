@@ -30,7 +30,6 @@ use crate::commands::log::append_log;
 use crate::complete_preflight::{LOCAL_TIMEOUT, NETWORK_TIMEOUT};
 use crate::flow_paths::FlowPaths;
 use crate::lock::mutate_state;
-use crate::output::json_error;
 use crate::phase_config::phase_number;
 use crate::plan_deviation::Deviation;
 use crate::utils::parse_conflict_files;
@@ -429,19 +428,18 @@ pub fn run_impl(
     Ok(result)
 }
 
-pub fn run(args: Args) {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+/// Main-arm dispatch: returns (value, exit code). Err wraps into JSON.
+pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
+    let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
     let root = crate::git::project_root();
-    match run_impl(&args, &cwd, &root) {
-        Err(msg) => {
-            json_error(&msg, &[("step", json!("args"))]);
-            std::process::exit(1);
-        }
+    match run_impl(args, &cwd, &root) {
+        Err(msg) => (
+            json!({"status": "error", "message": msg, "step": "args"}),
+            1,
+        ),
         Ok(result) => {
-            println!("{}", result);
-            if result["status"] != "ok" {
-                std::process::exit(1);
-            }
+            let code = if result["status"] == "ok" { 0 } else { 1 };
+            (result, code)
         }
     }
 }
@@ -501,11 +499,13 @@ mod tests {
 
     /// Assert a git command succeeded. Panics with stderr on failure.
     fn git_assert_ok(output: &std::process::Output) {
+        let code = output.status.code().unwrap_or(-1);
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         assert!(
             output.status.success(),
             "git failed (exit {}): {}",
-            output.status.code().unwrap_or(-1),
-            String::from_utf8_lossy(&output.stderr)
+            code,
+            stderr
         );
     }
 

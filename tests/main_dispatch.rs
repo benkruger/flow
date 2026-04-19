@@ -487,6 +487,387 @@ fn main_start_step_no_double_dash_passes_through() {
     );
 }
 
+/// `flow-rs add-issue --branch feature/foo` exercises the
+/// `FlowPaths::try_new` None branch in the main binary's
+/// instantiation of `add_issue::run_impl_main`. Slash-containing
+/// branches are rejected with a structured error (per
+/// `.claude/rules/external-input-validation.md`). Paired with the
+/// valid-branch invocation in the main dispatch sweep so both
+/// branches of `FlowPaths::try_new` are covered in the binary
+/// monomorphization — required for the 100% coverage gate per
+/// `.claude/rules/no-waivers.md`.
+#[test]
+fn main_add_issue_slash_branch_exits_1_with_invalid_branch_error() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+    let output = flow_rs_no_recursion()
+        .args([
+            "add-issue",
+            "--label",
+            "Rule",
+            "--title",
+            "x",
+            "--url",
+            "u",
+            "--phase",
+            "flow-code",
+            "--branch",
+            "feature/foo",
+        ])
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs add-issue");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Invalid branch 'feature/foo'"),
+        "expected Invalid branch error in stdout, got: {}",
+        stdout
+    );
+}
+
+/// `flow-rs add-issue` with a state file whose root is an array
+/// exercises the `None => 0` arm of the `as_array()` match inside
+/// the main binary's `run_impl_main` — the fallback issue_count
+/// when the state file's `issues_filed` key is absent after the
+/// object guard's early return. Paired with the valid state file
+/// invocation in the main dispatch sweep so both arms of the
+/// `as_array()` match are covered in the binary monomorphization.
+#[test]
+fn main_add_issue_array_root_state_exits_0_with_zero_count() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+    let state_dir = root.join(".flow-states");
+    std::fs::create_dir_all(&state_dir).expect("create state dir");
+    std::fs::write(state_dir.join("array-root.json"), "[1, 2, 3]").expect("write array-root state");
+    let output = flow_rs_no_recursion()
+        .args([
+            "add-issue",
+            "--label",
+            "Rule",
+            "--title",
+            "x",
+            "--url",
+            "u",
+            "--phase",
+            "flow-code",
+            "--branch",
+            "array-root",
+        ])
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs add-issue");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"issue_count\":0"),
+        "expected issue_count 0, got: {}",
+        stdout
+    );
+}
+
+/// `flow-rs add-notification --branch feature/foo` exercises the
+/// `FlowPaths::try_new` None branch in the main binary's
+/// instantiation of `add_notification::run_impl_main`. Paired with
+/// the valid-branch invocation in the main dispatch sweep.
+#[test]
+fn main_add_notification_slash_branch_exits_1_with_invalid_branch_error() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+    let output = flow_rs_no_recursion()
+        .args([
+            "add-notification",
+            "--phase",
+            "flow-code",
+            "--ts",
+            "1.0",
+            "--thread-ts",
+            "1.0",
+            "--message",
+            "m",
+            "--branch",
+            "feature/foo",
+        ])
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs add-notification");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Invalid branch 'feature/foo'"),
+        "expected Invalid branch error in stdout, got: {}",
+        stdout
+    );
+}
+
+/// `flow-rs add-notification --phase custom-unknown-phase` exercises
+/// the `None => args.phase.clone()` fallback arm in the main binary's
+/// instantiation of `add_notification::run_impl_main`, hit when the
+/// phase name is not in the canonical `phase_names()` map.
+#[test]
+fn main_add_notification_unknown_phase_exits_0_with_ok_status() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+    let state_dir = root.join(".flow-states");
+    std::fs::create_dir_all(&state_dir).expect("create state dir");
+    std::fs::write(
+        state_dir.join("unknown-phase.json"),
+        r#"{"current_phase":"flow-code","slack_notifications":[]}"#,
+    )
+    .expect("write state");
+    let output = flow_rs_no_recursion()
+        .args([
+            "add-notification",
+            "--phase",
+            "custom-unknown-phase",
+            "--ts",
+            "1.0",
+            "--thread-ts",
+            "1.0",
+            "--message",
+            "m",
+            "--branch",
+            "unknown-phase",
+        ])
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs add-notification");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"status\":\"ok\""),
+        "expected ok status, got: {}",
+        stdout
+    );
+}
+
+/// `flow-rs add-notification` against an array-root state file
+/// exercises the `as_array() None` arm in the main binary's
+/// instantiation of `add_notification::run_impl_main`.
+#[test]
+fn main_add_notification_array_root_state_exits_0_with_zero_count() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+    let state_dir = root.join(".flow-states");
+    std::fs::create_dir_all(&state_dir).expect("create state dir");
+    std::fs::write(state_dir.join("array-root.json"), "[1, 2, 3]").expect("write array-root state");
+    let output = flow_rs_no_recursion()
+        .args([
+            "add-notification",
+            "--phase",
+            "flow-code",
+            "--ts",
+            "1.0",
+            "--thread-ts",
+            "1.0",
+            "--message",
+            "m",
+            "--branch",
+            "array-root",
+        ])
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs add-notification");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"notification_count\":0"),
+        "expected notification_count 0, got: {}",
+        stdout
+    );
+}
+
+/// `flow-rs append-note --branch feature/foo` exercises the
+/// `FlowPaths::try_new` None branch in the main binary's
+/// instantiation of `append_note::run_impl_main`.
+#[test]
+fn main_append_note_slash_branch_exits_1_with_invalid_branch_error() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+    let output = flow_rs_no_recursion()
+        .args(["append-note", "--note", "x", "--branch", "feature/foo"])
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs append-note");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Invalid branch 'feature/foo'"),
+        "expected Invalid branch error, got: {}",
+        stdout
+    );
+}
+
+/// `flow-rs append-note` against an array-root state file exercises
+/// the `as_array() None` arm in the main binary's instantiation of
+/// `append_note::run_impl_main`.
+#[test]
+fn main_append_note_array_root_state_exits_0_with_zero_count() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+    let state_dir = root.join(".flow-states");
+    std::fs::create_dir_all(&state_dir).expect("create state dir");
+    std::fs::write(state_dir.join("array-root.json"), "[1, 2, 3]").expect("write array-root state");
+    let output = flow_rs_no_recursion()
+        .args(["append-note", "--note", "x", "--branch", "array-root"])
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs append-note");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"note_count\":0"),
+        "expected note_count 0, got: {}",
+        stdout
+    );
+}
+
+/// `flow-rs append-note` with a read-only state file forces
+/// `mutate_state` to return Err inside the main binary's
+/// instantiation of `append_note::run_impl_main`. Covers the
+/// `Err(e) => ("error", ...)` arm that the lib test exercises for
+/// its own instance; this test covers the bin instance.
+#[test]
+fn main_append_note_readonly_state_exits_1_with_failed_to_append_note() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+    let state_dir = root.join(".flow-states");
+    std::fs::create_dir_all(&state_dir).expect("create state dir");
+    let state_path = state_dir.join("readonly.json");
+    std::fs::write(&state_path, r#"{"current_phase":"flow-plan","notes":[]}"#)
+        .expect("write state");
+    let mut perms = std::fs::metadata(&state_path)
+        .expect("metadata")
+        .permissions();
+    perms.set_mode(0o444);
+    std::fs::set_permissions(&state_path, perms).expect("set readonly");
+
+    let output = flow_rs_no_recursion()
+        .args(["append-note", "--note", "x", "--branch", "readonly"])
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs append-note");
+
+    // Restore perms for tempdir cleanup.
+    if let Ok(m) = std::fs::metadata(&state_path) {
+        let mut p = m.permissions();
+        p.set_mode(0o644);
+        let _ = std::fs::set_permissions(&state_path, p);
+    }
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Failed to append note"),
+        "expected mutate_state err message, got: {}",
+        stdout
+    );
+}
+
+/// `flow-rs append-note` with a state file carrying an unknown
+/// current_phase exercises the `None => phase.clone()` fallback arm
+/// in the main binary's instantiation of `append_note::run_impl_main`.
+#[test]
+fn main_append_note_unknown_phase_exits_0_with_ok_status() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+    let state_dir = root.join(".flow-states");
+    std::fs::create_dir_all(&state_dir).expect("create state dir");
+    std::fs::write(
+        state_dir.join("unknown-phase.json"),
+        r#"{"current_phase":"custom-unknown-phase","notes":[]}"#,
+    )
+    .expect("write state");
+    let output = flow_rs_no_recursion()
+        .args(["append-note", "--note", "x", "--branch", "unknown-phase"])
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs append-note");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// `flow-rs format-status` in a tempdir with no git repo exits 2
 /// because `resolve_branch(None, &root)` returns `None` (no branch
 /// override, no git repo to detect from). Covers the `Err` arm of

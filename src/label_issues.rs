@@ -195,11 +195,6 @@ pub fn run_impl_main(args: Args) -> (Value, i32) {
     })
 }
 
-pub fn run(args: Args) -> ! {
-    let (value, code) = run_impl_main(args);
-    crate::dispatch::dispatch_json(value, code)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

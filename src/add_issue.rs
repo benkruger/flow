@@ -4,7 +4,7 @@ use clap::Parser;
 use serde_json::{json, Value};
 
 use crate::flow_paths::FlowPaths;
-use crate::git::{project_root, resolve_branch};
+use crate::git::resolve_branch;
 use crate::lock::mutate_state;
 use crate::phase_config::phase_names;
 use crate::utils::now;
@@ -31,6 +31,41 @@ pub struct Args {
     /// Override branch for state file lookup
     #[arg(long)]
     pub branch: Option<String>,
+}
+
+/// Applies the issues_filed append transform to the in-memory state.
+///
+/// Extracted to a named function so cargo-llvm-cov measures a single
+/// monomorphization of the mutation logic regardless of how many
+/// tests or production paths call [`run_impl_main`]. The closure
+/// passed to [`mutate_state`] becomes a thin delegator, while every
+/// region inside `apply_issue_mutation` (object-guard early return,
+/// missing-array auto-create, array push) reaches 100% merged
+/// coverage under the test suite.
+fn apply_issue_mutation(state: &mut Value, args: &Args, phase_name: &str, timestamp: &str) {
+    // Corruption resilience: skip mutation when state root is wrong
+    // type (e.g. array from interrupted write) to prevent IndexMut
+    // panics. See .claude/rules/rust-patterns.md "State Mutation
+    // Object Guards".
+    if !(state.is_object() || state.is_null()) {
+        return;
+    }
+    if state.get("issues_filed").is_none() || !state["issues_filed"].is_array() {
+        state["issues_filed"] = json!([]);
+    }
+    // The block above guarantees state["issues_filed"] is an array,
+    // so as_array_mut returns Some unconditionally.
+    let arr = state["issues_filed"]
+        .as_array_mut()
+        .expect("issues_filed is always an array here");
+    arr.push(json!({
+        "label": args.label,
+        "title": args.title,
+        "url": args.url,
+        "phase": args.phase,
+        "phase_name": phase_name,
+        "timestamp": timestamp,
+    }));
 }
 
 /// Main-arm dispatcher with injected root. Returns `(value, exit_code)`:
@@ -75,29 +110,7 @@ pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
     let timestamp = now();
 
     match mutate_state(&state_path, |state| {
-        // Corruption resilience: skip mutation when state root is wrong
-        // type (e.g. array from interrupted write) to prevent IndexMut
-        // panics. See .claude/rules/rust-patterns.md "State Mutation
-        // Object Guards".
-        if !(state.is_object() || state.is_null()) {
-            return;
-        }
-        if state.get("issues_filed").is_none() || !state["issues_filed"].is_array() {
-            state["issues_filed"] = json!([]);
-        }
-        // The block above guarantees state["issues_filed"] is an array,
-        // so as_array_mut returns Some unconditionally.
-        let arr = state["issues_filed"]
-            .as_array_mut()
-            .expect("issues_filed is always an array here");
-        arr.push(json!({
-            "label": args.label,
-            "title": args.title,
-            "url": args.url,
-            "phase": args.phase,
-            "phase_name": phase_name,
-            "timestamp": timestamp,
-        }));
+        apply_issue_mutation(state, &args, &phase_name, &timestamp);
     }) {
         Ok(state) => {
             let count = match state["issues_filed"].as_array() {
@@ -111,12 +124,6 @@ pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
             1,
         ),
     }
-}
-
-pub fn run(args: Args) -> ! {
-    let root = project_root();
-    let (value, code) = run_impl_main(args, &root);
-    crate::dispatch::dispatch_json(value, code)
 }
 
 #[cfg(test)]
@@ -153,8 +160,10 @@ mod tests {
             let names = phase_names();
             let phase = "flow-learn";
             let phase_name = names.get(phase).cloned().unwrap_or_default();
-            if let Some(arr) = s["issues_filed"].as_array_mut() {
-                arr.push(json!({
+            s["issues_filed"]
+                .as_array_mut()
+                .expect("issues_filed is always an array in this fixture")
+                .push(json!({
                     "label": "Rule",
                     "title": "Add rule: use git -C",
                     "url": "https://github.com/test/test/issues/1",
@@ -162,7 +171,6 @@ mod tests {
                     "phase_name": phase_name,
                     "timestamp": now(),
                 }));
-            }
         })
         .unwrap();
 
@@ -186,9 +194,10 @@ mod tests {
         let path = write_state(dir.path(), "test-feature", &state);
 
         mutate_state(&path, |s| {
-            if let Some(arr) = s["issues_filed"].as_array_mut() {
-                arr.push(json!({"label": "Rule", "title": "new"}));
-            }
+            s["issues_filed"]
+                .as_array_mut()
+                .expect("issues_filed is always an array in this fixture")
+                .push(json!({"label": "Rule", "title": "new"}));
         })
         .unwrap();
 
@@ -200,23 +209,29 @@ mod tests {
         assert_eq!(issues[1]["title"], "new");
     }
 
+    /// Exercises production line 86 (`state["issues_filed"] = json!([])`)
+    /// — the auto-create branch fires when the state file lacks the key.
     #[test]
     fn add_issue_creates_array_if_missing() {
         let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
         fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join("test.json");
-        fs::write(&path, r#"{"current_phase": "flow-code"}"#).unwrap();
+        let path = state_dir.join("test-feature.json");
+        fs::write(&path, r#"{"current_phase": "flow-learn"}"#).unwrap();
 
-        mutate_state(&path, |s| {
-            if s.get("issues_filed").is_none() || !s["issues_filed"].is_array() {
-                s["issues_filed"] = json!([]);
-            }
-            if let Some(arr) = s["issues_filed"].as_array_mut() {
-                arr.push(json!({"label": "Flaky Test", "title": "test"}));
-            }
-        })
-        .unwrap();
+        let args = Args {
+            label: "Flaky Test".to_string(),
+            title: "test".to_string(),
+            url: "https://example.com/1".to_string(),
+            phase: "flow-learn".to_string(),
+            branch: Some("test-feature".to_string()),
+        };
+
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["issue_count"], 1);
 
         let content = fs::read_to_string(&path).unwrap();
         let on_disk: Value = serde_json::from_str(&content).unwrap();
@@ -230,9 +245,10 @@ mod tests {
         let path = write_state(dir.path(), "test-feature", &state);
 
         mutate_state(&path, |s| {
-            if let Some(arr) = s["issues_filed"].as_array_mut() {
-                arr.push(json!({"label": "Rule", "title": "persisted"}));
-            }
+            s["issues_filed"]
+                .as_array_mut()
+                .expect("issues_filed is always an array in this fixture")
+                .push(json!({"label": "Rule", "title": "persisted"}));
         })
         .unwrap();
 
@@ -241,30 +257,30 @@ mod tests {
         assert_eq!(on_disk["issues_filed"][0]["title"], "persisted");
     }
 
-    /// Verify that an array-root state file triggers the object guard's
-    /// early return, leaving the file unchanged and preventing an
-    /// IndexMut panic on non-object root types.
+    /// Verify that an array-root state file triggers the production
+    /// object guard's early return inside `run_impl_main`'s
+    /// mutate_state closure (lines 82-84), leaving the file unchanged.
     #[test]
     fn add_issue_array_root_state_noop() {
         let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
         fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join("test.json");
-        let content = "[1, 2, 3]";
-        fs::write(&path, content).unwrap();
+        let path = state_dir.join("test-feature.json");
+        fs::write(&path, "[1, 2, 3]").unwrap();
 
-        mutate_state(&path, |state| {
-            if !(state.is_object() || state.is_null()) {
-                return;
-            }
-            if state.get("issues_filed").is_none() || !state["issues_filed"].is_array() {
-                state["issues_filed"] = json!([]);
-            }
-            if let Some(arr) = state["issues_filed"].as_array_mut() {
-                arr.push(json!({"label": "Rule", "title": "should not appear"}));
-            }
-        })
-        .unwrap();
+        let args = Args {
+            label: "Rule".to_string(),
+            title: "should not appear".to_string(),
+            url: "https://example.com/1".to_string(),
+            phase: "flow-learn".to_string(),
+            branch: Some("test-feature".to_string()),
+        };
+
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["issue_count"], 0);
 
         let after = fs::read_to_string(&path).unwrap();
         let parsed: Value = serde_json::from_str(&after).unwrap();
@@ -272,17 +288,13 @@ mod tests {
         assert_eq!(parsed.as_array().unwrap().len(), 3);
     }
 
-    #[test]
-    fn corrupt_state_file_errors() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join("test.json");
-        fs::write(&path, "{corrupt").unwrap();
-
-        let result = mutate_state(&path, |_| {});
-        assert!(result.is_err());
-    }
+    // Removed: `corrupt_state_file_errors`. The mutate_state corrupt-
+    // JSON path is owned by `lock::mutate_state_corrupt_json` and
+    // `lock::mutate_state_error_wraps_invalid_json_as_json`; this
+    // wrapper test was a duplicate guard per
+    // `.claude/rules/tests-guard-real-regressions.md`. The
+    // `run_impl_main_mutate_state_failure_returns_error_tuple` test
+    // below covers the add-issue-specific error wrapping.
 
     // --- run_impl_main ---
 

@@ -96,8 +96,14 @@ pub fn enforce(cwd: &Path, project_root: &Path) -> Result<(), String> {
         worktree_root.join(relative_cwd)
     };
 
-    let cwd_canon = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
-    let expected_canon = expected.canonicalize().unwrap_or_else(|_| expected.clone());
+    let cwd_canon = match cwd.canonicalize() {
+        Ok(p) => p,
+        Err(_) => cwd.to_path_buf(),
+    };
+    let expected_canon = match expected.canonicalize() {
+        Ok(p) => p,
+        Err(_) => expected.clone(),
+    };
 
     if !cwd_canon.starts_with(&expected_canon) {
         return Err(format!(

@@ -17,7 +17,6 @@ use crate::commands::log::append_log;
 use crate::commands::start_lock::{queue_path, release};
 use crate::commands::start_step::update_step;
 use crate::flow_paths::FlowPaths;
-use crate::git::project_root;
 use crate::github::detect_repo;
 use crate::lock::mutate_state;
 use crate::utils::{derive_feature, run_cmd, SetupError};
@@ -147,15 +146,7 @@ pub(crate) fn initial_commit_push_pr(
     Ok((pr_url, pr_number))
 }
 
-/// Production entry point: binds [`run_impl_with_paths`] to the real
-/// [`project_root`] and `current_dir()`.
-pub fn run_impl(args: &Args) -> Value {
-    let root = project_root();
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    run_impl_with_paths(args, &root, &cwd)
-}
-
-/// Testable core with injected root and cwd. Production [`run_impl`]
+/// Testable core with injected root and cwd. Production callers
 /// binds them to [`project_root`] and `current_dir()`. Tests supply
 /// a `TempDir` for both. Returns a `Value` directly — every error
 /// scenario surfaces as a `status: "error"` payload with exit code 0

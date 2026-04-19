@@ -27,7 +27,6 @@ use crate::external_input_audit::{scan as audit_scan, Violation as AuditViolatio
 use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::lock::mutate_state;
-use crate::output::json_error;
 use crate::phase_config::load_phase_config;
 use crate::phase_transition::{phase_complete, phase_enter};
 use crate::render_pr_body::render_body;
@@ -46,18 +45,6 @@ pub struct Args {
     /// PR number (read from state file if omitted)
     #[arg(long)]
     pub pr: Option<i64>,
-}
-
-pub fn run(args: Args) {
-    match run_impl(&args) {
-        Ok(result) => {
-            println!("{}", result);
-        }
-        Err(e) => {
-            json_error(&e, &[]);
-            std::process::exit(1);
-        }
-    }
 }
 
 /// Resolve the project root and state file path for the given branch.

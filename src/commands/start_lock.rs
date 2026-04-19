@@ -28,7 +28,10 @@ fn mtime_secs(path: &Path) -> Option<f64> {
 
 /// Create the queue directory if needed, return its path.
 pub fn queue_path(root: &Path) -> PathBuf {
-    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let root = match root.canonicalize() {
+        Ok(p) => p,
+        Err(_) => root.to_path_buf(),
+    };
     // The queue lives under `.flow-states/` and is shared across every
     // branch on this machine, so FlowStatesDir (branch-free) is the
     // right address for it.

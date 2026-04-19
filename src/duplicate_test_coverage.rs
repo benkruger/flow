@@ -581,6 +581,79 @@ mod tests {
         // No tests/ or src/ dirs created — corpus must still build.
         let corpus = TestCorpus::from_repo(&root);
         assert_eq!(corpus.len(), 0);
+        assert!(corpus.is_empty(), "empty corpus must report is_empty()");
+    }
+
+    /// Exercises `compute_fenced_mask`'s mixed-fence-kind branch (the
+    /// `Some(_)` arm when the opener kind differs from the active
+    /// block's kind, lines 429-433). The tilde fence inside a backtick
+    /// block must be treated as content so the candidate inside the
+    /// outer block is still scanned as a fenced fn-declaration.
+    #[test]
+    fn scan_handles_mixed_fence_kinds_within_outer_block() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonicalize");
+        let tests = root.join("tests");
+        fs::create_dir_all(&tests).expect("create tests dir");
+        // Index an existing test so the candidate inside the fenced block
+        // collides.
+        fs::write(
+            tests.join("existing.rs"),
+            "#[test]\nfn test_mixed_fence_collide() {}\n",
+        )
+        .expect("write");
+        let corpus = TestCorpus::from_repo(&root);
+
+        // Plan content opens a backtick fence, then has a tilde line
+        // that the parser must NOT treat as a closer.
+        let content = "```rust\n~~~yaml\nfn test_mixed_fence_collide() {}\n```\n";
+        let plan_path = root.join(".flow-states").join("test-plan.md");
+        let violations = scan(content, &plan_path, &corpus);
+        // The candidate inside the still-open backtick block collides
+        // with the indexed test.
+        assert!(
+            !violations.is_empty(),
+            "candidate inside the backtick block must still be scanned"
+        );
+    }
+
+    /// Exercises line 188 — the self-match guard skips a violation when
+    /// the candidate name maps to an indexed entry that points back at
+    /// the scanned file itself. Used defensively when the corpus indexes
+    /// the plan/scan source itself (rare but possible in tooling).
+    #[test]
+    fn scan_skips_self_match_when_corpus_indexes_scanned_file() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonicalize");
+        let tests = root.join("tests");
+        fs::create_dir_all(&tests).expect("create tests dir");
+        // The scanned file IS the same file the corpus indexes.
+        let path = tests.join("self.rs");
+        fs::write(&path, "#[test]\nfn test_self_match() {}\n").expect("write");
+        let corpus = TestCorpus::from_repo(&root);
+        let rel_path = path.strip_prefix(&root).unwrap().to_path_buf();
+        // Pass the relative path as `source` so the self-match guard
+        // can compare against the corpus entry's stored relative path.
+        let content = "```rust\nfn test_self_match() {}\n```\n";
+        let violations = scan(content, &rel_path, &corpus);
+        assert!(
+            violations.is_empty(),
+            "self-match must be suppressed, got: {:?}",
+            violations
+        );
+    }
+
+    /// Direct unit test for `TestCorpus::is_empty()` — covers both the
+    /// true and false branches via a populated corpus and an empty one.
+    #[test]
+    fn test_corpus_is_empty_returns_false_when_populated() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonicalize");
+        let tests = root.join("tests");
+        fs::create_dir_all(&tests).expect("create tests dir");
+        fs::write(tests.join("a.rs"), "#[test]\nfn test_present() {}\n").expect("write");
+        let corpus = TestCorpus::from_repo(&root);
+        assert!(!corpus.is_empty());
     }
 
     // --- scan ---

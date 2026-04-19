@@ -4,7 +4,7 @@ use clap::Parser;
 use serde_json::{json, Value};
 
 use crate::flow_paths::FlowPaths;
-use crate::git::{project_root, resolve_branch};
+use crate::git::resolve_branch;
 use crate::lock::mutate_state;
 use crate::phase_config::phase_names;
 use crate::utils::now;
@@ -36,6 +36,43 @@ pub struct Args {
     /// Override branch for state file lookup
     #[arg(long)]
     pub branch: Option<String>,
+}
+
+/// Applies the slack_notifications append transform to the in-memory
+/// state. Extracted to a named function so cargo-llvm-cov measures a
+/// single monomorphization of the mutation logic regardless of how
+/// many tests or production paths call [`run_impl_main`]. See
+/// `add_issue::apply_issue_mutation` for the mirror pattern.
+fn apply_notification_mutation(
+    state: &mut Value,
+    args: &Args,
+    phase_name: &str,
+    preview: &str,
+    timestamp: &str,
+) {
+    // Corruption resilience: skip mutation when state root is wrong
+    // type (e.g. array from interrupted write) to prevent IndexMut
+    // panics. See .claude/rules/rust-patterns.md "State Mutation
+    // Object Guards".
+    if !(state.is_object() || state.is_null()) {
+        return;
+    }
+    if state.get("slack_notifications").is_none() || !state["slack_notifications"].is_array() {
+        state["slack_notifications"] = json!([]);
+    }
+    // The block above guarantees state["slack_notifications"] is an
+    // array, so as_array_mut returns Some unconditionally.
+    let arr = state["slack_notifications"]
+        .as_array_mut()
+        .expect("slack_notifications is always an array here");
+    arr.push(json!({
+        "phase": args.phase,
+        "phase_name": phase_name,
+        "ts": args.ts,
+        "thread_ts": args.thread_ts,
+        "message_preview": preview,
+        "timestamp": timestamp,
+    }));
 }
 
 /// Main-arm dispatcher with injected root. Returns `(value, exit_code)`:
@@ -80,29 +117,7 @@ pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
     let timestamp = now();
 
     match mutate_state(&state_path, |state| {
-        // Corruption resilience: skip mutation when state root is wrong
-        // type (e.g. array from interrupted write) to prevent IndexMut
-        // panics. See .claude/rules/rust-patterns.md "State Mutation
-        // Object Guards".
-        if !(state.is_object() || state.is_null()) {
-            return;
-        }
-        if state.get("slack_notifications").is_none() || !state["slack_notifications"].is_array() {
-            state["slack_notifications"] = json!([]);
-        }
-        // The block above guarantees state["slack_notifications"] is an
-        // array, so as_array_mut returns Some unconditionally.
-        let arr = state["slack_notifications"]
-            .as_array_mut()
-            .expect("slack_notifications is always an array here");
-        arr.push(json!({
-            "phase": args.phase,
-            "phase_name": phase_name,
-            "ts": args.ts,
-            "thread_ts": args.thread_ts,
-            "message_preview": preview,
-            "timestamp": timestamp,
-        }));
+        apply_notification_mutation(state, &args, &phase_name, &preview, &timestamp);
     }) {
         Ok(state) => {
             let count = match state["slack_notifications"].as_array() {
@@ -116,12 +131,6 @@ pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
             1,
         ),
     }
-}
-
-pub fn run(args: Args) -> ! {
-    let root = project_root();
-    let (value, code) = run_impl_main(args, &root);
-    crate::dispatch::dispatch_json(value, code)
 }
 
 fn truncate_preview(message: &str) -> String {
@@ -167,8 +176,10 @@ mod tests {
             let names = phase_names();
             let phase = "flow-code";
             let phase_name = names.get(phase).cloned().unwrap_or_default();
-            if let Some(arr) = s["slack_notifications"].as_array_mut() {
-                arr.push(json!({
+            s["slack_notifications"]
+                .as_array_mut()
+                .expect("slack_notifications is always an array in this fixture")
+                .push(json!({
                     "phase": phase,
                     "phase_name": phase_name,
                     "ts": "5555555555.555555",
@@ -176,7 +187,6 @@ mod tests {
                     "message_preview": "short msg",
                     "timestamp": now(),
                 }));
-            }
         })
         .unwrap();
 
@@ -200,9 +210,10 @@ mod tests {
         let path = write_state(dir.path(), "test-feature", &state);
 
         mutate_state(&path, |s| {
-            if let Some(arr) = s["slack_notifications"].as_array_mut() {
-                arr.push(json!({"phase": "flow-code", "message_preview": "new"}));
-            }
+            s["slack_notifications"]
+                .as_array_mut()
+                .expect("slack_notifications is always an array in this fixture")
+                .push(json!({"phase": "flow-code", "message_preview": "new"}));
         })
         .unwrap();
 
@@ -214,23 +225,30 @@ mod tests {
         assert_eq!(notifs[1]["message_preview"], "new");
     }
 
+    /// Exercises production line 91 (`state["slack_notifications"] =
+    /// json!([])`) — the auto-create branch fires when the state file
+    /// lacks the key.
     #[test]
     fn add_notification_creates_array_if_missing() {
         let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
         fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join("test.json");
+        let path = state_dir.join("test-feature.json");
         fs::write(&path, r#"{"current_phase": "flow-code"}"#).unwrap();
 
-        mutate_state(&path, |s| {
-            if s.get("slack_notifications").is_none() || !s["slack_notifications"].is_array() {
-                s["slack_notifications"] = json!([]);
-            }
-            if let Some(arr) = s["slack_notifications"].as_array_mut() {
-                arr.push(json!({"phase": "flow-code", "message_preview": "test"}));
-            }
-        })
-        .unwrap();
+        let args = Args {
+            phase: "flow-code".to_string(),
+            ts: "1234.5678".to_string(),
+            thread_ts: "1234.0000".to_string(),
+            message: "test".to_string(),
+            branch: Some("test-feature".to_string()),
+        };
+
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["notification_count"], 1);
 
         let content = fs::read_to_string(&path).unwrap();
         let on_disk: Value = serde_json::from_str(&content).unwrap();
@@ -272,9 +290,10 @@ mod tests {
         let path = write_state(dir.path(), "test-feature", &state);
 
         mutate_state(&path, |s| {
-            if let Some(arr) = s["slack_notifications"].as_array_mut() {
-                arr.push(json!({"phase": "flow-code", "message_preview": "persisted"}));
-            }
+            s["slack_notifications"]
+                .as_array_mut()
+                .expect("slack_notifications is always an array in this fixture")
+                .push(json!({"phase": "flow-code", "message_preview": "persisted"}));
         })
         .unwrap();
 
@@ -286,32 +305,30 @@ mod tests {
         );
     }
 
-    /// Verify that an array-root state file triggers the object guard's
-    /// early return, leaving the file unchanged and preventing an
-    /// IndexMut panic on non-object root types.
+    /// Verify that an array-root state file triggers the production
+    /// object guard's early return inside `run_impl_main`'s
+    /// mutate_state closure (lines 87-89), leaving the file unchanged.
     #[test]
     fn add_notification_array_root_state_noop() {
         let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
+        let root = dir.path().canonicalize().unwrap();
+        let state_dir = root.join(".flow-states");
         fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join("test.json");
-        let content = "[1, 2, 3]";
-        fs::write(&path, content).unwrap();
+        let path = state_dir.join("test-feature.json");
+        fs::write(&path, "[1, 2, 3]").unwrap();
 
-        mutate_state(&path, |state| {
-            if !(state.is_object() || state.is_null()) {
-                return;
-            }
-            if state.get("slack_notifications").is_none()
-                || !state["slack_notifications"].is_array()
-            {
-                state["slack_notifications"] = json!([]);
-            }
-            if let Some(arr) = state["slack_notifications"].as_array_mut() {
-                arr.push(json!({"phase": "flow-code", "message_preview": "should not appear"}));
-            }
-        })
-        .unwrap();
+        let args = Args {
+            phase: "flow-code".to_string(),
+            ts: "1234.5678".to_string(),
+            thread_ts: "1234.0000".to_string(),
+            message: "should not appear".to_string(),
+            branch: Some("test-feature".to_string()),
+        };
+
+        let (value, code) = run_impl_main(args, &root);
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["notification_count"], 0);
 
         let after = fs::read_to_string(&path).unwrap();
         let parsed: Value = serde_json::from_str(&after).unwrap();
@@ -319,17 +336,13 @@ mod tests {
         assert_eq!(parsed.as_array().unwrap().len(), 3);
     }
 
-    #[test]
-    fn corrupt_state_file_errors() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join("test.json");
-        fs::write(&path, "{corrupt").unwrap();
-
-        let result = mutate_state(&path, |_| {});
-        assert!(result.is_err());
-    }
+    // Removed: `corrupt_state_file_errors`. The mutate_state corrupt-
+    // JSON path is owned by `lock::mutate_state_corrupt_json` and
+    // `lock::mutate_state_error_wraps_invalid_json_as_json`; this
+    // wrapper test was a duplicate guard per
+    // `.claude/rules/tests-guard-real-regressions.md`. The
+    // `run_impl_main_mutate_state_failure_returns_error_tuple` test
+    // below covers the add-notification-specific error wrapping.
 
     // --- run_impl_main ---
 

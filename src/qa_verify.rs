@@ -11,7 +11,7 @@
 //! programmatic and pretty-printing would just bloat the log.
 
 use std::path::{Path, PathBuf};
-use std::process::{self, Command};
+use std::process::Command;
 
 use crate::flow_paths::FlowStatesDir;
 
@@ -159,18 +159,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     };
 
     Ok(verify_impl(&args.repo, project_root, &runner))
-}
-
-pub fn run(args: Args) {
-    match run_impl(&args) {
-        Ok(result) => {
-            println!("{}", result);
-        }
-        Err(e) => {
-            println!("{}", json!({"status": "error", "message": e}));
-            process::exit(1);
-        }
-    }
 }
 
 #[cfg(test)]

@@ -78,16 +78,12 @@ pub fn parse_issue_fields(json_str: &str) -> (Option<i64>, Option<i64>) {
 
 /// Fetch parent_issue.number and milestone.number in one API call.
 ///
-/// Returns (parent_number_or_None, milestone_number_or_None).
-/// Best-effort: returns (None, None) on any failure.
-pub fn fetch_issue_fields(repo: &str, issue_number: i64, cwd: &Path) -> (Option<i64>, Option<i64>) {
-    fetch_issue_fields_with_runner(repo, issue_number, cwd, &run_api)
-}
-
-/// Seam-injected variant of [`fetch_issue_fields`]. Tests pass a mock
-/// runner returning canned responses or simulated failures so they
-/// never spawn `gh`.
-pub fn fetch_issue_fields_with_runner(
+/// Tests pass a mock `runner` so they never spawn `gh`; production
+/// callers pass `&run_api`. Per `.claude/rules/testability-means-simplicity.md`
+/// the runner is the only seam — no separate thin wrapper that binds
+/// `&run_api` exists, because it added an unused-in-tests monomorphization
+/// with no behavior of its own.
+pub fn fetch_issue_fields(
     repo: &str,
     issue_number: i64,
     cwd: &Path,
@@ -141,18 +137,9 @@ pub fn should_close_milestone(json_str: &str) -> bool {
 ///
 /// If parent_number is provided, uses it directly (skips the lookup).
 /// Returns true if the parent was closed, false otherwise.
-/// Best-effort: any failure returns false.
+/// Best-effort: any failure returns false. Tests pass a mock runner;
+/// production passes `&run_api`.
 pub fn check_parent_closed(
-    repo: &str,
-    issue_number: i64,
-    parent_number: Option<i64>,
-    cwd: &Path,
-) -> bool {
-    check_parent_closed_with_runner(repo, issue_number, parent_number, cwd, &run_api)
-}
-
-/// Seam-injected variant of [`check_parent_closed`].
-pub fn check_parent_closed_with_runner(
     repo: &str,
     issue_number: i64,
     parent_number: Option<i64>,
@@ -202,18 +189,9 @@ pub fn check_parent_closed_with_runner(
 ///
 /// If milestone_number is provided, uses it directly (skips the lookup).
 /// Returns true if the milestone was closed, false otherwise.
-/// Best-effort: any failure returns false.
+/// Best-effort: any failure returns false. Tests pass a mock runner;
+/// production passes `&run_api`.
 pub fn check_milestone_closed(
-    repo: &str,
-    issue_number: i64,
-    milestone_number: Option<i64>,
-    cwd: &Path,
-) -> bool {
-    check_milestone_closed_with_runner(repo, issue_number, milestone_number, cwd, &run_api)
-}
-
-/// Seam-injected variant of [`check_milestone_closed`].
-pub fn check_milestone_closed_with_runner(
     repo: &str,
     issue_number: i64,
     milestone_number: Option<i64>,
@@ -267,33 +245,20 @@ pub fn check_milestone_closed_with_runner(
     .is_ok()
 }
 
-/// Main-arm dispatcher with injected cwd. Always returns
+/// Main-arm dispatcher with injected cwd and runner. Always returns
 /// `(Value, 0)` — auto-close is best-effort by design and the parent /
 /// milestone close decisions surface as boolean fields in the success
-/// payload, never as an error exit.
-pub fn run_impl_main(args: Args, cwd: &Path) -> (Value, i32) {
-    run_impl_main_with_runner(args, cwd, &run_api)
-}
-
-/// Seam-injected variant of [`run_impl_main`]. Tests pass a mock
-/// runner so they exercise the dispatch shape without spawning real
-/// `gh`. Per `.claude/rules/subprocess-test-hygiene.md`, this avoids
-/// network calls in unit tests that would otherwise inherit
-/// `GH_TOKEN` from the developer's environment.
-pub fn run_impl_main_with_runner(args: Args, cwd: &Path, runner: &GhApiRunner) -> (Value, i32) {
+/// payload, never as an error exit. Tests pass a mock runner;
+/// production passes `&run_api`.
+pub fn run_impl_main(args: Args, cwd: &Path, runner: &GhApiRunner) -> (Value, i32) {
     // Fetch both fields in one API call to avoid redundant requests
     let (parent_number, milestone_number) =
-        fetch_issue_fields_with_runner(&args.repo, args.issue_number, cwd, runner);
+        fetch_issue_fields(&args.repo, args.issue_number, cwd, runner);
 
     let parent_closed =
-        check_parent_closed_with_runner(&args.repo, args.issue_number, parent_number, cwd, runner);
-    let milestone_closed = check_milestone_closed_with_runner(
-        &args.repo,
-        args.issue_number,
-        milestone_number,
-        cwd,
-        runner,
-    );
+        check_parent_closed(&args.repo, args.issue_number, parent_number, cwd, runner);
+    let milestone_closed =
+        check_milestone_closed(&args.repo, args.issue_number, milestone_number, cwd, runner);
 
     (
         json!({
@@ -305,30 +270,33 @@ pub fn run_impl_main_with_runner(args: Args, cwd: &Path, runner: &GhApiRunner) -
     )
 }
 
-/// CLI entry point for auto-close-parent.
-pub fn run(args: Args) -> ! {
-    // current_dir() can fail in deleted-cwd environments, certain
-    // container runtimes, and chroot jails. The historical contract
-    // is to short-circuit with a best-effort safe-default response
-    // rather than spawn `gh` against an undefined cwd. This best-
-    // effort behavior is documented as a hard contract by the module
-    // doc comment ("Best-effort throughout — any failure continues
-    // silently") and is required by Phase 6 Complete cleanup, which
-    // calls `auto-close-parent` as a non-critical step.
-    let cwd = match std::env::current_dir() {
-        Ok(c) => c,
-        Err(_) => crate::dispatch::dispatch_json(
-            json!({"status": "ok", "parent_closed": false, "milestone_closed": false}),
-            0,
-        ),
-    };
-    let (value, code) = run_impl_main(args, &cwd);
-    crate::dispatch::dispatch_json(value, code)
+/// Best-effort safe-default payload when we can't determine cwd —
+/// auto-close-parent never fails the caller, so we return ok with
+/// both close flags false. Extracted as a constant so the cwd-Err
+/// branch in main.rs is a single `match` arm that any reader can
+/// see at a glance.
+pub fn safe_default_ok() -> (Value, i32) {
+    (
+        json!({"status": "ok", "parent_closed": false, "milestone_closed": false}),
+        0,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `safe_default_ok` is the cwd-Err fallback payload that main.rs
+    /// returns when `current_dir()` fails. Locks in the best-effort
+    /// contract so a regression can't change the payload shape.
+    #[test]
+    fn safe_default_ok_returns_ok_with_both_flags_false() {
+        let (value, code) = safe_default_ok();
+        assert_eq!(code, 0);
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["parent_closed"], false);
+        assert_eq!(value["milestone_closed"], false);
+    }
 
     // --- parse_issue_fields() ---
 
@@ -442,10 +410,10 @@ mod tests {
         assert!(!should_close_milestone(json));
     }
 
-    // --- run_impl_main / run_impl_main_with_runner ---
+    // --- run_impl_main / run_impl_main ---
 
     #[test]
-    fn auto_close_parent_run_impl_main_with_runner_all_runner_failures_returns_ok() {
+    fn auto_close_parent_run_impl_main_all_runner_failures_returns_ok() {
         // Inject a runner that fails every call. Per the best-effort
         // contract, fetch_issue_fields returns (None, None), the
         // standalone fetches in check_parent_closed and
@@ -459,7 +427,7 @@ mod tests {
             issue_number: 999,
         };
         let runner: &GhApiRunner = &|_, _| Err("simulated".to_string());
-        let (value, code) = run_impl_main_with_runner(args, &cwd, runner);
+        let (value, code) = run_impl_main(args, &cwd, runner);
         assert_eq!(code, 0);
         assert_eq!(value["status"], "ok");
         assert_eq!(value["parent_closed"], false);
@@ -503,51 +471,33 @@ mod tests {
     }
 
     #[test]
-    fn check_parent_closed_with_runner_standalone_null_returns_false() {
+    fn check_parent_closed_standalone_null_returns_false() {
         // parent_number=None → standalone fetch path. Runner returns the
         // literal "null" string → trimmed=="null" branch fires → false.
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().canonicalize().unwrap();
         let runner: &GhApiRunner = &|_, _| Ok("null\n".to_string());
-        assert!(!check_parent_closed_with_runner(
-            "owner/repo",
-            5,
-            None,
-            &cwd,
-            runner
-        ));
+        assert!(!check_parent_closed("owner/repo", 5, None, &cwd, runner));
     }
 
     #[test]
-    fn check_parent_closed_with_runner_standalone_empty_returns_false() {
+    fn check_parent_closed_standalone_empty_returns_false() {
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().canonicalize().unwrap();
         let runner: &GhApiRunner = &|_, _| Ok(String::new());
-        assert!(!check_parent_closed_with_runner(
-            "owner/repo",
-            5,
-            None,
-            &cwd,
-            runner
-        ));
+        assert!(!check_parent_closed("owner/repo", 5, None, &cwd, runner));
     }
 
     #[test]
-    fn check_parent_closed_with_runner_standalone_unparseable_returns_false() {
+    fn check_parent_closed_standalone_unparseable_returns_false() {
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().canonicalize().unwrap();
         let runner: &GhApiRunner = &|_, _| Ok("not_an_int".to_string());
-        assert!(!check_parent_closed_with_runner(
-            "owner/repo",
-            5,
-            None,
-            &cwd,
-            runner
-        ));
+        assert!(!check_parent_closed("owner/repo", 5, None, &cwd, runner));
     }
 
     #[test]
-    fn check_parent_closed_with_runner_standalone_succeeds_then_closes() {
+    fn check_parent_closed_standalone_succeeds_then_closes() {
         // Runner returns parent number "10" then sub_issues all closed
         // then close gh succeeds → returns true.
         let dir = tempfile::tempdir().unwrap();
@@ -560,59 +510,35 @@ mod tests {
             ]));
         let runner: &GhApiRunner =
             &move |_, _| Ok(queue.borrow_mut().pop_front().unwrap_or_default());
-        assert!(check_parent_closed_with_runner(
-            "owner/repo",
-            5,
-            None,
-            &cwd,
-            runner
-        ));
+        assert!(check_parent_closed("owner/repo", 5, None, &cwd, runner));
     }
 
     #[test]
-    fn check_milestone_closed_with_runner_standalone_null_returns_false() {
+    fn check_milestone_closed_standalone_null_returns_false() {
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().canonicalize().unwrap();
         let runner: &GhApiRunner = &|_, _| Ok("null\n".to_string());
-        assert!(!check_milestone_closed_with_runner(
-            "owner/repo",
-            5,
-            None,
-            &cwd,
-            runner
-        ));
+        assert!(!check_milestone_closed("owner/repo", 5, None, &cwd, runner));
     }
 
     #[test]
-    fn check_milestone_closed_with_runner_standalone_empty_returns_false() {
+    fn check_milestone_closed_standalone_empty_returns_false() {
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().canonicalize().unwrap();
         let runner: &GhApiRunner = &|_, _| Ok(String::new());
-        assert!(!check_milestone_closed_with_runner(
-            "owner/repo",
-            5,
-            None,
-            &cwd,
-            runner
-        ));
+        assert!(!check_milestone_closed("owner/repo", 5, None, &cwd, runner));
     }
 
     #[test]
-    fn check_milestone_closed_with_runner_standalone_unparseable_returns_false() {
+    fn check_milestone_closed_standalone_unparseable_returns_false() {
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().canonicalize().unwrap();
         let runner: &GhApiRunner = &|_, _| Ok("not_an_int".to_string());
-        assert!(!check_milestone_closed_with_runner(
-            "owner/repo",
-            5,
-            None,
-            &cwd,
-            runner
-        ));
+        assert!(!check_milestone_closed("owner/repo", 5, None, &cwd, runner));
     }
 
     #[test]
-    fn check_milestone_closed_with_runner_standalone_succeeds_then_closes() {
+    fn check_milestone_closed_standalone_succeeds_then_closes() {
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().canonicalize().unwrap();
         let queue: std::cell::RefCell<std::collections::VecDeque<String>> =
@@ -623,17 +549,11 @@ mod tests {
             ]));
         let runner: &GhApiRunner =
             &move |_, _| Ok(queue.borrow_mut().pop_front().unwrap_or_default());
-        assert!(check_milestone_closed_with_runner(
-            "owner/repo",
-            5,
-            None,
-            &cwd,
-            runner
-        ));
+        assert!(check_milestone_closed("owner/repo", 5, None, &cwd, runner));
     }
 
     #[test]
-    fn check_parent_closed_with_runner_close_command_fails_returns_false() {
+    fn check_parent_closed_close_command_fails_returns_false() {
         // Sub-issues all closed but the close command itself fails → false.
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().canonicalize().unwrap();
@@ -646,9 +566,9 @@ mod tests {
             queue
                 .borrow_mut()
                 .pop_front()
-                .unwrap_or_else(|| Err("queue empty".to_string()))
+                .expect("test runner queue exhausted")
         };
-        assert!(!check_parent_closed_with_runner(
+        assert!(!check_parent_closed(
             "owner/repo",
             5,
             Some(10),
@@ -658,7 +578,7 @@ mod tests {
     }
 
     #[test]
-    fn check_milestone_closed_with_runner_patch_command_fails_returns_false() {
+    fn check_milestone_closed_patch_command_fails_returns_false() {
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().canonicalize().unwrap();
         let queue: std::cell::RefCell<std::collections::VecDeque<Result<String, String>>> =
@@ -670,9 +590,9 @@ mod tests {
             queue
                 .borrow_mut()
                 .pop_front()
-                .unwrap_or_else(|| Err("queue empty".to_string()))
+                .expect("test runner queue exhausted")
         };
-        assert!(!check_milestone_closed_with_runner(
+        assert!(!check_milestone_closed(
             "owner/repo",
             5,
             Some(3),
@@ -682,14 +602,14 @@ mod tests {
     }
 
     #[test]
-    fn check_parent_closed_with_runner_sub_issues_open_returns_false() {
+    fn check_parent_closed_sub_issues_open_returns_false() {
         // Sub-issues fetch returns a list with an open issue → false.
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().canonicalize().unwrap();
         let runner: &GhApiRunner = &|_, _| {
             Ok(r#"[{"number":5,"state":"closed"},{"number":6,"state":"open"}]"#.to_string())
         };
-        assert!(!check_parent_closed_with_runner(
+        assert!(!check_parent_closed(
             "owner/repo",
             5,
             Some(10),
@@ -698,12 +618,45 @@ mod tests {
         ));
     }
 
+    /// Exercises production line 186 — sub-issues fetch fails when the
+    /// parent number is provided directly. The parent-fetch branch is
+    /// skipped, so the runner's first call is the sub_issues lookup.
     #[test]
-    fn check_milestone_closed_with_runner_open_issues_nonzero_returns_false() {
+    fn check_parent_closed_sub_issues_fetch_error_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let runner: &GhApiRunner = &|_, _| Err("network error".to_string());
+        assert!(!check_parent_closed(
+            "owner/repo",
+            5,
+            Some(10),
+            &cwd,
+            runner
+        ));
+    }
+
+    /// Exercises production line 247 — milestone fetch fails when the
+    /// milestone number is provided directly. Mirrors the parent variant.
+    #[test]
+    fn check_milestone_closed_milestone_fetch_error_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path().canonicalize().unwrap();
+        let runner: &GhApiRunner = &|_, _| Err("network error".to_string());
+        assert!(!check_milestone_closed(
+            "owner/repo",
+            5,
+            Some(3),
+            &cwd,
+            runner
+        ));
+    }
+
+    #[test]
+    fn check_milestone_closed_open_issues_nonzero_returns_false() {
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().canonicalize().unwrap();
         let runner: &GhApiRunner = &|_, _| Ok(r#"{"open_issues":2}"#.to_string());
-        assert!(!check_milestone_closed_with_runner(
+        assert!(!check_milestone_closed(
             "owner/repo",
             5,
             Some(3),
@@ -729,7 +682,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let cwd = tmp.path().canonicalize().unwrap();
         with_stub_path(stub_dir.path(), || {
-            let (parent, milestone) = fetch_issue_fields("owner/repo", 5, &cwd);
+            let (parent, milestone) = fetch_issue_fields("owner/repo", 5, &cwd, &run_api);
             assert_eq!(parent, None);
             assert_eq!(milestone, None);
         });
@@ -742,7 +695,7 @@ mod tests {
         let cwd = tmp.path().canonicalize().unwrap();
         with_stub_path(stub_dir.path(), || {
             // parent_number=None → standalone fetch path; gh fails → false
-            assert!(!check_parent_closed("owner/repo", 5, None, &cwd));
+            assert!(!check_parent_closed("owner/repo", 5, None, &cwd, &run_api));
         });
     }
 
@@ -753,7 +706,13 @@ mod tests {
         let cwd = tmp.path().canonicalize().unwrap();
         with_stub_path(stub_dir.path(), || {
             // milestone_number=None → standalone fetch path; gh fails → false
-            assert!(!check_milestone_closed("owner/repo", 5, None, &cwd));
+            assert!(!check_milestone_closed(
+                "owner/repo",
+                5,
+                None,
+                &cwd,
+                &run_api
+            ));
         });
     }
 
@@ -767,7 +726,7 @@ mod tests {
                 repo: "owner/repo".to_string(),
                 issue_number: 5,
             };
-            let (value, code) = run_impl_main(args, &cwd);
+            let (value, code) = run_impl_main(args, &cwd, &run_api);
             assert_eq!(code, 0);
             assert_eq!(value["status"], "ok");
             assert_eq!(value["parent_closed"], false);
@@ -776,7 +735,7 @@ mod tests {
     }
 
     #[test]
-    fn auto_close_parent_run_impl_main_with_runner_happy_path_closes_both() {
+    fn auto_close_parent_run_impl_main_happy_path_closes_both() {
         // Inject responses simulating: fetch_issue_fields returns
         // parent_number=10, milestone_number=3; sub_issues all closed;
         // milestone open_issues=0; close calls succeed.
@@ -801,7 +760,7 @@ mod tests {
             ]));
         let runner: &GhApiRunner =
             &move |_, _| Ok(queue.borrow_mut().pop_front().unwrap_or_default());
-        let (value, code) = run_impl_main_with_runner(args, &cwd, runner);
+        let (value, code) = run_impl_main(args, &cwd, runner);
         assert_eq!(code, 0);
         assert_eq!(value["status"], "ok");
         assert_eq!(value["parent_closed"], true);
