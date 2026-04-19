@@ -1192,7 +1192,13 @@ mod tests {
         // Note: setup_feature with "feature/foo" may fail git ops, so
         // skip worktree creation and call cleanup directly with a slash
         // branch so FlowPaths::try_new returns None.
-        let steps = cleanup(dir.path(), "feature/foo", ".worktrees/feature-foo", None, false);
+        let steps = cleanup(
+            dir.path(),
+            "feature/foo",
+            ".worktrees/feature-foo",
+            None,
+            false,
+        );
         for key in [
             "state_file",
             "plan_file",
@@ -1213,7 +1219,13 @@ mod tests {
     fn test_cleanup_invalid_branch_with_pull_still_runs_pull() {
         let dir = tempfile::tempdir().unwrap();
         setup_git_repo(dir.path());
-        let steps = cleanup(dir.path(), "feature/foo", ".worktrees/feature-foo", None, true);
+        let steps = cleanup(
+            dir.path(),
+            "feature/foo",
+            ".worktrees/feature-foo",
+            None,
+            true,
+        );
         assert!(steps.contains_key("git_pull"));
     }
 

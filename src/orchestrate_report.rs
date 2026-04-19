@@ -230,7 +230,6 @@ pub fn run_impl(args: &Args) -> Value {
     generate_and_write_report(Path::new(&args.state_file), Path::new(&args.output_dir))
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

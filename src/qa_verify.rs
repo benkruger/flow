@@ -161,7 +161,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     Ok(verify_impl(&args.repo, project_root, &runner))
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

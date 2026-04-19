@@ -307,7 +307,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     Ok(response)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

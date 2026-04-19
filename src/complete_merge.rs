@@ -533,22 +533,13 @@ mod tests {
 
     #[test]
     fn exit_code_for_status_merged_returns_zero() {
-        assert_eq!(
-            exit_code_for_status(&json!({"status": "merged"})),
-            0
-        );
+        assert_eq!(exit_code_for_status(&json!({"status": "merged"})), 0);
     }
 
     #[test]
     fn exit_code_for_status_non_merged_returns_one() {
-        assert_eq!(
-            exit_code_for_status(&json!({"status": "error"})),
-            1
-        );
-        assert_eq!(
-            exit_code_for_status(&json!({"status": "ci_pending"})),
-            1
-        );
+        assert_eq!(exit_code_for_status(&json!({"status": "error"})), 1);
+        assert_eq!(exit_code_for_status(&json!({"status": "ci_pending"})), 1);
     }
 
     #[test]

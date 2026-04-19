@@ -198,7 +198,6 @@ pub fn run_impl(args: &Args) -> Value {
     )
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -298,7 +298,6 @@ pub fn run_impl_main(
     (notify_with_deps(&args, config_reader, poster), 0)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

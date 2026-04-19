@@ -532,7 +532,6 @@ pub fn run_impl_main(
     }
 }
 
-
 fn resolve_repo_from_state(state_file: &str) -> Option<String> {
     let content = fs::read_to_string(state_file).ok()?;
     let state: serde_json::Value = serde_json::from_str(&content).ok()?;

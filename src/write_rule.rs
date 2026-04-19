@@ -13,7 +13,6 @@ use std::path::Path;
 use clap::Parser;
 use serde_json::json;
 
-
 #[derive(Parser, Debug)]
 #[command(name = "write-rule", about = "Write content to a target file")]
 pub struct Args {

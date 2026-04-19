@@ -131,7 +131,6 @@ pub fn run_impl_main(args: Args, repo_resolver: &dyn Fn() -> Option<String>) -> 
     (json!({"status": "ok"}), 0)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

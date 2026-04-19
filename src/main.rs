@@ -528,11 +528,8 @@ fn main() {
         }
         Some(Commands::AddFinding(args)) => {
             let root = flow_rs::git::project_root();
-            let (value, code) = add_finding::run_impl_main_with_cwd_result(
-                args,
-                &root,
-                std::env::current_dir(),
-            );
+            let (value, code) =
+                add_finding::run_impl_main_with_cwd_result(args, &root, std::env::current_dir());
             flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::AddIssue(args)) => {

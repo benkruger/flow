@@ -74,10 +74,7 @@ pub fn create_milestone(repo: &str, title: &str, due_date: &str) -> Result<(i64,
 
 pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
     match create_milestone(&args.repo, &args.title, &args.due_date) {
-        Ok((number, url)) => (
-            json!({"status": "ok", "number": number, "url": url}),
-            0,
-        ),
+        Ok((number, url)) => (json!({"status": "ok", "number": number, "url": url}), 0),
         Err(e) => (json!({"status": "error", "message": e}), 1),
     }
 }

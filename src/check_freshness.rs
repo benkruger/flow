@@ -710,11 +710,7 @@ mod tests {
     fn run_git_cmd_spawn_failure_returns_127() {
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().canonicalize().unwrap();
-        let (code, _, _) = expect_ok(run_git_cmd(
-            &["/no/such/binary/here-deadbeef"],
-            5,
-            &cwd,
-        ));
+        let (code, _, _) = expect_ok(run_git_cmd(&["/no/such/binary/here-deadbeef"], 5, &cwd));
         assert_eq!(code, 127);
     }
 
@@ -731,11 +727,7 @@ mod tests {
         // None, which the `unwrap_or(-1)` fallback arm converts to -1.
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().canonicalize().unwrap();
-        let (code, _, _) = expect_ok(run_git_cmd(
-            &["/bin/sh", "-c", "kill -9 $$"],
-            5,
-            &cwd,
-        ));
+        let (code, _, _) = expect_ok(run_git_cmd(&["/bin/sh", "-c", "kill -9 $$"], 5, &cwd));
         assert_eq!(code, -1);
     }
 

@@ -368,4 +368,3 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         "threshold": threshold,
     }))
 }
-

@@ -171,7 +171,6 @@ pub fn run_impl(cwd: &Path, env_timeout: Option<&str>) -> (Value, i32) {
     run_update_deps(cwd, timeout)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -222,7 +222,6 @@ pub fn run_impl_main_with_cwd_result(
     run_impl_main(args, root, &cwd)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

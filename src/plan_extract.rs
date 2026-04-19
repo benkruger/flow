@@ -47,7 +47,6 @@ pub struct Args {
     pub pr: Option<i64>,
 }
 
-
 /// Resolve the project root and state file path for the given branch.
 ///
 /// Returns (root, branch_name, state_path). Returns Err if branch cannot

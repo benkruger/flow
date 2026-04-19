@@ -700,7 +700,6 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2056,7 +2055,11 @@ fi
         let (out, code) = run_impl(&args, &f.path, &f.path, false);
         assert_eq!(code, 0, "out={}", out);
         let dump = fs::read_to_string(&marker).unwrap();
-        assert!(dump.contains("arg1"), "trailing args must reach tool: {}", dump);
+        assert!(
+            dump.contains("arg1"),
+            "trailing args must reach tool: {}",
+            dump
+        );
     }
 
     #[test]
@@ -2089,5 +2092,4 @@ fi
         assert_eq!(code, 0);
         assert_eq!(forced_out["skipped"], false);
     }
-
 }

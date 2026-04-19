@@ -48,7 +48,6 @@ pub struct Args {
     pub plan_file: Option<String>,
 }
 
-
 /// Fallible entry point for plan-check.
 ///
 /// ## Return value and exit code convention

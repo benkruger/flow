@@ -16,7 +16,6 @@ use std::path::Path;
 use clap::Parser;
 use regex::Regex;
 
-
 #[derive(Parser, Debug)]
 #[command(
     name = "extract-release-notes",

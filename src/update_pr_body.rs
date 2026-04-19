@@ -4,7 +4,6 @@ use clap::{ArgGroup, Parser};
 use regex::Regex;
 use serde_json::json;
 
-
 /// Build a markdown artifact line: - **Label**: `value`.
 pub fn build_artifact_line(label: &str, value: &str) -> String {
     format!("- **{}**: `{}`", label, value)

@@ -686,7 +686,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     run_impl_inner(args, &root, &run_cmd_with_timeout, &production_ci_decider)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

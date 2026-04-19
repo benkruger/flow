@@ -89,10 +89,7 @@ pub fn create_sub_issue(
 
 pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
     match create_sub_issue(&args.repo, args.parent_number, args.child_number) {
-        Ok((parent, child)) => (
-            json!({"status": "ok", "parent": parent, "child": child}),
-            0,
-        ),
+        Ok((parent, child)) => (json!({"status": "ok", "parent": parent, "child": child}), 0),
         Err(e) => (json!({"status": "error", "message": e}), 1),
     }
 }
