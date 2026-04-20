@@ -23,7 +23,7 @@ pub fn update_step(state_path: &Path, step: i64) -> bool {
     if !state_path.exists() {
         return false;
     }
-    mutate_state(state_path, |state| {
+    mutate_state(state_path, &mut |state| {
         if !(state.is_object() || state.is_null()) {
             return;
         }

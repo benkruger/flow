@@ -164,7 +164,7 @@ pub fn run_impl_with_root_resolver(
     };
     let timestamp = now();
 
-    let state = mutate_state(&state_path, |state| {
+    let state = mutate_state(&state_path, &mut |state| {
         if !(state.is_object() || state.is_null()) {
             return;
         }

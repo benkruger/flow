@@ -386,7 +386,7 @@ fn complete_plan_phase(state_path: &Path, root: &Path, branch: &str) -> Result<V
     let (frozen_order, frozen_commands) = load_frozen_config(root, branch);
     let result_holder = std::cell::RefCell::new(Value::Null);
 
-    mutate_state(state_path, |state| {
+    mutate_state(state_path, &mut |state| {
         let result = phase_complete(
             state,
             "flow-plan",
@@ -472,7 +472,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         let task_count_on_resume = count_tasks_any_level(&plan_content);
 
         // Enter the phase (safe to call if already in_progress — updates timestamps and visit_count)
-        mutate_state(&state_path, |state| {
+        mutate_state(&state_path, &mut |state| {
             if !(state.is_object() || state.is_null()) {
                 return;
             }
@@ -511,7 +511,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     // The skill's Resume Check handles the DAG-only case after plan-extract returns.
 
     // --- Phase enter ---
-    mutate_state(&state_path, |state| {
+    mutate_state(&state_path, &mut |state| {
         if !(state.is_object() || state.is_null()) {
             return;
         }
@@ -610,7 +610,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         .map_err(|e| format!("Failed to write DAG file: {}", e))?;
 
     // Update files.dag in state
-    mutate_state(&state_path, |state| {
+    mutate_state(&state_path, &mut |state| {
         if !(state.is_object() || state.is_null()) {
             return;
         }
@@ -664,7 +664,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     // re-scans). Without this ordering, a violation would unset the
     // plan path and the next run would re-extract from the issue
     // body, clobbering the user's edits.
-    mutate_state(&state_path, |state| {
+    mutate_state(&state_path, &mut |state| {
         if !(state.is_object() || state.is_null()) {
             return;
         }
@@ -741,7 +741,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     );
 
     // --- Update plan_step to 4 before PR render ---
-    mutate_state(&state_path, |state| {
+    mutate_state(&state_path, &mut |state| {
         if !(state.is_object() || state.is_null()) {
             return;
         }

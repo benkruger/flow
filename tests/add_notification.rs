@@ -306,7 +306,7 @@ fn add_notification_to_empty_array_lib() {
     let state = make_state_lib("test-feature");
     let path = write_state_lib(dir.path(), "test-feature", &state);
 
-    let result = mutate_state(&path, |s| {
+    let result = mutate_state(&path, &mut |s| {
         let names = phase_names();
         let phase = "flow-code";
         let phase_name = names.get(phase).cloned().unwrap_or_default();
@@ -338,7 +338,7 @@ fn add_notification_preserves_existing_lib() {
     state["slack_notifications"] = json!([{"phase": "flow-start", "message_preview": "existing"}]);
     let path = write_state_lib(dir.path(), "test-feature", &state);
 
-    mutate_state(&path, |s| {
+    mutate_state(&path, &mut |s| {
         s["slack_notifications"]
             .as_array_mut()
             .expect("array in fixture")

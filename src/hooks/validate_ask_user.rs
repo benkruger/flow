@@ -42,7 +42,7 @@ pub fn set_blocked(state_path: &Path) {
     if std::fs::symlink_metadata(state_path).is_err() {
         return;
     }
-    let _ = mutate_state(state_path, |state| {
+    let _ = mutate_state(state_path, &mut |state| {
         // Guard: Value::IndexMut panics on non-object types (arrays, bools, etc.)
         if !(state.is_object() || state.is_null()) {
             return;

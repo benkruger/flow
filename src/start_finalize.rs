@@ -84,7 +84,7 @@ pub fn run_impl_with_deps(
     // Step 1: Phase transition complete
     let result_holder = std::cell::RefCell::new(Value::Null);
 
-    let mutate_result = mutate_state(&state_path, |state| {
+    let mutate_result = mutate_state(&state_path, &mut |state| {
         let result = phase_complete(
             state,
             "flow-start",
@@ -143,11 +143,11 @@ pub fn run_impl_with_deps(
             let msg_clone = message.clone();
             let ts_clone = ts.clone();
 
-            let _ = mutate_state(&state_path, move |state| {
+            let _ = mutate_state(&state_path, &mut |state| {
                 if !(state.is_object() || state.is_null()) {
                     return;
                 }
-                state["slack_thread_ts"] = json!(ts_clone);
+                state["slack_thread_ts"] = json!(&ts_clone);
 
                 // Append to notifications array
                 if !state
@@ -160,9 +160,9 @@ pub fn run_impl_with_deps(
                 if let Some(arr) = state["notifications"].as_array_mut() {
                     arr.push(json!({
                         "phase": "flow-start",
-                        "ts": ts_clone,
-                        "thread_ts": ts_clone,
-                        "message": msg_clone,
+                        "ts": &ts_clone,
+                        "thread_ts": &ts_clone,
+                        "message": &msg_clone,
                     }));
                 }
             });

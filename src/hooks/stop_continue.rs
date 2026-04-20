@@ -87,7 +87,7 @@ pub fn capture_session_id(hook_input: &Value, state_path: &Path) {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    if let Err(e) = mutate_state(state_path, |state| {
+    if let Err(e) = mutate_state(state_path, &mut |state| {
         // Guard: state must be an object (or Null, which auto-converts)
         // for string-key mutations. Fail-open on other shapes.
         if !(state.is_object() || state.is_null()) {
@@ -141,7 +141,7 @@ pub fn check_continue(hook_input: &Value, state_path: &Path) -> ContinueResult {
     let mut context: Option<String> = None;
     let mut decision: Option<String> = None;
 
-    let _ = mutate_state(state_path, |state| {
+    let _ = mutate_state(state_path, &mut |state| {
         // Guard: state must be an object (or Null, which auto-converts)
         // for string-key mutations to succeed without panicking.
         if !(state.is_object() || state.is_null()) {
@@ -324,7 +324,7 @@ pub fn check_discussion_mode(state_path: &Path) -> ContinueResult {
 
     let mut should_block = false;
 
-    let _ = mutate_state(state_path, |state| {
+    let _ = mutate_state(state_path, &mut |state| {
         if !(state.is_object() || state.is_null()) {
             return;
         }
@@ -399,7 +399,7 @@ pub fn check_first_stop(hook_input: &Value, state_path: &Path) -> ContinueResult
     let mut context: Option<String> = None;
     let mut decision: Option<String> = None;
 
-    let _ = mutate_state(state_path, |state| {
+    let _ = mutate_state(state_path, &mut |state| {
         if !(state.is_object() || state.is_null()) {
             return;
         }

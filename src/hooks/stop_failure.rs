@@ -35,7 +35,7 @@ pub fn capture_failure_data(hook_input: &Value, state_path: &Path) {
         .to_string();
     let timestamp = now();
 
-    let _ = mutate_state(state_path, |state| {
+    let _ = mutate_state(state_path, &mut |state| {
         // Guard: state must be an object (or Null, which auto-converts)
         // for string-key mutations. Arrays/bools/numbers/strings would
         // panic on `state["_last_failure"] = v`. Fail-open.

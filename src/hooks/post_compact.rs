@@ -23,7 +23,7 @@ pub fn capture_compact_data(hook_input: &Value, state_path: &Path) {
         return;
     }
 
-    let _ = mutate_state(state_path, |state| {
+    let _ = mutate_state(state_path, &mut |state| {
         // Guard: state must be an object (or Null, which serde_json's
         // IndexMut auto-converts to an empty object) for string-key
         // mutations to succeed. Arrays, bools, numbers, and top-level

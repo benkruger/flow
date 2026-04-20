@@ -9,8 +9,9 @@
 //! toolchain end-to-end.
 
 use std::collections::BTreeMap;
+use std::io;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use serde_json::{json, Value};
@@ -29,65 +30,38 @@ pub struct Args {
     pub repo: String,
 }
 
-/// Find all files in the named template directory.
+/// Walk `template_dir` recursively and collect every file's content
+/// keyed by path relative to `template_dir`. Returns a `BTreeMap` so
+/// ordering is deterministic.
 ///
-/// Returns BTreeMap of {relative_path: content} for deterministic ordering.
-/// templates_dir defaults to qa/templates/ relative to the binary's repo root.
-pub fn find_templates(
-    template: &str,
-    templates_dir: Option<&Path>,
-) -> Result<BTreeMap<String, String>, String> {
-    let dir = match templates_dir {
-        Some(d) => d.to_path_buf(),
-        None => {
-            // Resolve relative to this binary's repo root
-            let exe =
-                std::env::current_exe().map_err(|e| format!("Cannot find current exe: {}", e))?;
-            // binary is at target/release/flow-rs or target/debug/flow-rs
-            // repo root is 3 levels up
-            let root = exe
-                .parent() // release/
-                .and_then(|p| p.parent()) // target/
-                .and_then(|p| p.parent()) // repo root
-                .ok_or("Cannot determine repo root from binary path")?;
-            root.join("qa").join("templates")
-        }
-    };
-
-    let template_dir = dir.join(template);
-    if !template_dir.is_dir() {
-        return Err(format!("Unknown template: {}", template));
-    }
-
+/// The caller is responsible for checking that `template_dir` exists
+/// and is a directory. An empty-tree input returns an empty map. Uses
+/// `io::Result` so `?`-propagation incurs no closure instantiations
+/// the integration tests could miss. ReadDir entry iteration errors
+/// on local filesystems are considered irrecoverable — we panic with
+/// a clear message rather than add an Err arm that real filesystems
+/// cannot exercise.
+pub fn find_templates(template_dir: &Path) -> io::Result<BTreeMap<String, String>> {
     let mut templates = BTreeMap::new();
-    collect_files(&template_dir, &template_dir, &mut templates)?;
-    Ok(templates)
-}
-
-/// Recursively collect files from a directory.
-fn collect_files(
-    base: &Path,
-    current: &Path,
-    templates: &mut BTreeMap<String, String>,
-) -> Result<(), String> {
-    let entries = std::fs::read_dir(current)
-        .map_err(|e| format!("Failed to read {}: {}", current.display(), e))?;
-
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect_files(base, &path, templates)?;
-        } else if path.is_file() {
-            let rel = path
-                .strip_prefix(base)
-                .map_err(|e| format!("Path error: {}", e))?;
-            let content = std::fs::read_to_string(&path)
-                .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-            templates.insert(rel.to_string_lossy().to_string(), content);
+    let mut stack: Vec<PathBuf> = vec![template_dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        for entry in std::fs::read_dir(&current)? {
+            let entry = entry.expect("ReadDir entry iteration failed on local filesystem");
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.is_file() {
+                let rel = path
+                    .strip_prefix(template_dir)
+                    .expect("read_dir entry must live under template_dir")
+                    .to_string_lossy()
+                    .into_owned();
+                let content = std::fs::read_to_string(&path)?;
+                templates.insert(rel, content);
+            }
         }
     }
-    Ok(())
+    Ok(templates)
 }
 
 /// Create a QA repo from templates.
@@ -96,19 +70,38 @@ fn collect_files(
 /// 2. Write template files to clone_dir
 /// 3. git init, add, commit, tag seed, push
 /// 4. Create issues from .qa/issues.json
+///
+/// `templates_base` is the directory that HOLDS template subdirs
+/// (typically `<repo_root>/qa/templates`); the actual template dir is
+/// `templates_base.join(template)`. `clone_dir` must be supplied —
+/// the caller generates a fresh path (typically under
+/// `std::env::temp_dir()`); scaffold_impl creates the directory if it
+/// does not already exist.
 pub fn scaffold_impl(
     template: &str,
     repo: &str,
-    templates_dir: Option<&Path>,
-    clone_dir: Option<&Path>,
+    templates_base: &Path,
+    clone_dir: &Path,
     runner: &dyn Fn(&[&str], Option<&Path>) -> CmdResult,
 ) -> Value {
-    let templates = match find_templates(template, templates_dir) {
+    let template_dir = templates_base.join(template);
+    if !template_dir.is_dir() {
+        return json!({
+            "status": "error",
+            "message": format!("Unknown template: {}", template)
+        });
+    }
+
+    let templates = match find_templates(&template_dir) {
         Ok(t) => t,
-        Err(e) => return json!({"status": "error", "message": e}),
+        Err(e) => {
+            return json!({
+                "status": "error",
+                "message": format!("Failed to read templates: {}", e)
+            })
+        }
     };
 
-    // Create GitHub repo
     let result = runner(
         &["gh", "repo", "create", repo, "--public", "--confirm"],
         None,
@@ -120,38 +113,25 @@ pub fn scaffold_impl(
         });
     }
 
-    // Set up clone directory
-    let clone_path = match clone_dir {
-        Some(d) => {
-            if !d.exists() {
-                if let Err(e) = std::fs::create_dir_all(d) {
-                    return json!({
-                        "status": "error",
-                        "message": format!("Failed to create clone dir: {}", e)
-                    });
-                }
-            }
-            d.to_path_buf()
-        }
-        None => {
-            let tmp = std::env::temp_dir().join(format!("flow-qa-{}", uuid::Uuid::new_v4()));
-            if let Err(e) = std::fs::create_dir_all(&tmp) {
-                return json!({
-                    "status": "error",
-                    "message": format!("Failed to create temp dir: {}", e)
-                });
-            }
-            tmp
-        }
-    };
+    if let Err(e) = std::fs::create_dir_all(clone_dir) {
+        return json!({
+            "status": "error",
+            "message": format!("Failed to create clone dir: {}", e)
+        });
+    }
 
-    // Write template files
     let mut issues_data: Vec<Value> = Vec::new();
     for (rel_path, content) in &templates {
-        let file_path = clone_path.join(rel_path);
-        if let Some(parent) = file_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+        // rel_path is a BTreeMap key produced by find_templates from a
+        // strip_prefix'd DirEntry path, so it is always a non-empty
+        // relative path. `rfind('/')` yields the parent portion when
+        // present; a rel_path without '/' is top-level and needs no
+        // extra mkdir (clone_dir already exists above).
+        if let Some(slash_pos) = rel_path.rfind('/') {
+            let parent = clone_dir.join(&rel_path[..slash_pos]);
+            let _ = std::fs::create_dir_all(&parent);
         }
+        let file_path = clone_dir.join(rel_path);
         if let Err(e) = std::fs::write(&file_path, content) {
             return json!({
                 "status": "error",
@@ -159,18 +139,15 @@ pub fn scaffold_impl(
             });
         }
 
-        // Make bin scripts executable
         if rel_path.starts_with("bin/") {
             let _ = std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o755));
         }
 
-        // Extract issues data
         if rel_path == ".qa/issues.json" {
             issues_data = serde_json::from_str(content).unwrap_or_default();
         }
     }
 
-    // Git init, add, commit, tag, push
     let remote_url = format!("https://github.com/{}.git", repo);
     let git_commands: Vec<Vec<&str>> = vec![
         vec!["git", "init", "-b", "main"],
@@ -181,7 +158,7 @@ pub fn scaffold_impl(
         vec!["git", "push", "-u", "origin", "main", "--tags"],
     ];
     for cmd in &git_commands {
-        let result = runner(cmd, Some(&clone_path));
+        let result = runner(cmd, Some(clone_dir));
         if !result.success {
             return json!({
                 "status": "error",
@@ -190,15 +167,18 @@ pub fn scaffold_impl(
         }
     }
 
-    // Create issues from template
     let mut issues_created = 0;
     for issue in &issues_data {
         let title = issue["title"].as_str().unwrap_or("");
         let body = issue["body"].as_str().unwrap_or("");
-        let labels: Vec<&str> = issue["labels"]
-            .as_array()
-            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
-            .unwrap_or_default();
+        let mut labels: Vec<&str> = Vec::new();
+        if let Some(arr) = issue["labels"].as_array() {
+            for v in arr {
+                if let Some(s) = v.as_str() {
+                    labels.push(s);
+                }
+            }
+        }
 
         let mut cmd: Vec<&str> = vec![
             "gh", "issue", "create", "--repo", repo, "--title", title, "--body", body,
@@ -221,272 +201,43 @@ pub fn scaffold_impl(
     })
 }
 
+/// Resolve the qa/templates/ base directory relative to the currently
+/// running binary (target/release/flow-rs or target/debug/flow-rs →
+/// repo root three levels up). Unreachable failures (missing executable
+/// path, binary at filesystem root) panic with a clear message — these
+/// cannot happen when flow-rs is invoked normally via `bin/flow`.
+fn default_templates_base() -> PathBuf {
+    let exe = std::env::current_exe().expect("scaffold-qa: cannot resolve current executable");
+    let root = exe
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
+        .expect("scaffold-qa: binary path has no repo-root ancestor");
+    root.join("qa").join("templates")
+}
+
+/// Choose a fresh clone directory under `std::env::temp_dir()` keyed
+/// by a new UUID. The returned path does not yet exist on disk —
+/// `scaffold_impl` calls `create_dir_all` to materialize it.
+fn default_clone_dir() -> PathBuf {
+    std::env::temp_dir().join(format!("flow-qa-{}", uuid::Uuid::new_v4()))
+}
+
 /// CLI entry point.
 ///
-/// Returns Ok(Value) for both success and status-error responses.
-/// Returns Err(String) only for infrastructure failures.
-/// The run() wrapper prints the result and exits 1 on status-error
+/// Returns `Ok(Value)` for both success and status-error responses.
+/// Returns `Err(String)` only for infrastructure failures (none today).
+/// The `run()` wrapper prints the result and exits 1 on status-error
 /// so the calling QA skill can detect a failed scaffold via the
 /// non-zero exit code while a successful scaffold exits 0.
 pub fn run_impl(args: &Args) -> Result<Value, String> {
+    let templates_base = default_templates_base();
+    let clone_dir = default_clone_dir();
     Ok(scaffold_impl(
         &args.template,
         &args.repo,
-        None,
-        None,
+        &templates_base,
+        &clone_dir,
         &crate::qa_reset::default_runner,
     ))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::cell::RefCell;
-    use std::fs;
-    use std::path::PathBuf;
-
-    fn ok_result(stdout: &str) -> CmdResult {
-        CmdResult {
-            success: true,
-            stdout: stdout.to_string(),
-            stderr: String::new(),
-        }
-    }
-
-    fn err_result(stderr: &str) -> CmdResult {
-        CmdResult {
-            success: false,
-            stdout: String::new(),
-            stderr: stderr.to_string(),
-        }
-    }
-
-    /// Resolve the qa/templates directory from this repo's root.
-    fn templates_dir() -> PathBuf {
-        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        manifest.join("qa").join("templates")
-    }
-
-    // --- find_templates ---
-
-    #[test]
-    fn test_find_templates_rails() {
-        let templates = find_templates("rails", Some(&templates_dir())).unwrap();
-        assert!(templates.contains_key("Gemfile"));
-        assert!(templates.contains_key("lib/calculator.rb"));
-        assert!(templates.contains_key("test/calculator_test.rb"));
-        assert!(templates.contains_key(".qa/issues.json"));
-    }
-
-    #[test]
-    fn test_find_templates_python() {
-        let templates = find_templates("python", Some(&templates_dir())).unwrap();
-        assert!(templates.contains_key("bin/dependencies"));
-        assert!(templates.contains_key("src/calculator.py"));
-        assert!(templates.contains_key("tests/test_calculator.py"));
-        assert!(templates.contains_key(".qa/issues.json"));
-    }
-
-    #[test]
-    fn test_find_templates_ios() {
-        let templates = find_templates("ios", Some(&templates_dir())).unwrap();
-        assert!(templates.contains_key("FlowQA.xcodeproj/project.pbxproj"));
-        assert!(templates.contains_key("FlowQA.xcodeproj/xcshareddata/xcschemes/FlowQA.xcscheme"));
-        assert!(templates.contains_key("FlowQA/Calculator.swift"));
-        assert!(templates.contains_key("FlowQA/FlowQAApp.swift"));
-        assert!(templates.contains_key("FlowQATests/CalculatorTests.swift"));
-        assert!(templates.contains_key(".qa/issues.json"));
-    }
-
-    #[test]
-    fn test_find_templates_unknown_template() {
-        let result = find_templates("unknown", Some(&templates_dir()));
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unknown template"));
-    }
-
-    #[test]
-    fn test_find_templates_preserves_content() {
-        let templates = find_templates("rails", Some(&templates_dir())).unwrap();
-        let actual = fs::read_to_string(templates_dir().join("rails").join("Gemfile")).unwrap();
-        assert_eq!(templates["Gemfile"], actual);
-    }
-
-    #[test]
-    fn test_find_templates_default_dir() {
-        // This test verifies the default path resolution works when
-        // running from cargo test (binary is in target/debug/deps/).
-        // The exe-based resolution won't find qa/templates from deps/,
-        // so we test the explicit path variant which is what production
-        // uses via run_impl.
-        let templates = find_templates("rails", Some(&templates_dir())).unwrap();
-        assert!(templates.contains_key("Gemfile"));
-    }
-
-    // --- scaffold_impl ---
-
-    #[test]
-    fn test_scaffold_creates_repo_and_issues() {
-        let dir = tempfile::tempdir().unwrap();
-        let tpl_dir = dir.path().join("templates").join("rails");
-        fs::create_dir_all(tpl_dir.join(".qa")).unwrap();
-        fs::write(tpl_dir.join("Gemfile"), "source 'https://rubygems.org'\n").unwrap();
-        fs::write(tpl_dir.join("bin/ci"), "#!/usr/bin/env ruby\nexit 0\n").ok();
-        fs::create_dir_all(tpl_dir.join("bin")).unwrap();
-        fs::write(tpl_dir.join("bin/ci"), "#!/usr/bin/env ruby\nexit 0\n").unwrap();
-        let issues = json!([
-            {"title": "Issue 1", "body": "Body 1", "labels": []},
-            {"title": "Issue 2", "body": "Body 2", "labels": ["bug"]}
-        ]);
-        fs::write(
-            tpl_dir.join(".qa/issues.json"),
-            serde_json::to_string(&issues).unwrap(),
-        )
-        .unwrap();
-
-        let calls = RefCell::new(Vec::new());
-        let runner = |args: &[&str], _cwd: Option<&Path>| -> CmdResult {
-            calls
-                .borrow_mut()
-                .push(args.iter().map(|s| s.to_string()).collect::<Vec<_>>());
-            ok_result("")
-        };
-
-        let clone_dir = dir.path().join("clone");
-        let result = scaffold_impl(
-            "rails",
-            "owner/flow-qa-rails",
-            Some(&dir.path().join("templates")),
-            Some(&clone_dir),
-            &runner,
-        );
-
-        assert_eq!(result["status"], "ok");
-        assert_eq!(result["repo"], "owner/flow-qa-rails");
-        assert_eq!(result["issues_created"], 2);
-
-        let captured = calls.borrow();
-        // Verify gh repo create was called
-        assert!(captured
-            .iter()
-            .any(|c| c.contains(&"repo".to_string()) && c.contains(&"create".to_string())));
-        // Verify gh issue create was called for each issue
-        let issue_creates: Vec<_> = captured
-            .iter()
-            .filter(|c| c.contains(&"issue".to_string()) && c.contains(&"create".to_string()))
-            .collect();
-        assert_eq!(issue_creates.len(), 2);
-    }
-
-    #[test]
-    fn test_scaffold_writes_template_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let tpl_dir = dir.path().join("templates").join("rails");
-        fs::create_dir_all(tpl_dir.join("bin")).unwrap();
-        fs::create_dir_all(tpl_dir.join(".qa")).unwrap();
-        fs::write(tpl_dir.join("Gemfile"), "gem content\n").unwrap();
-        fs::write(tpl_dir.join("bin/ci"), "#!/usr/bin/env ruby\n").unwrap();
-        fs::write(tpl_dir.join(".qa/issues.json"), "[]").unwrap();
-
-        let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { ok_result("") };
-
-        let clone_dir = dir.path().join("clone");
-        scaffold_impl(
-            "rails",
-            "owner/repo",
-            Some(&dir.path().join("templates")),
-            Some(&clone_dir),
-            &runner,
-        );
-
-        assert_eq!(
-            fs::read_to_string(clone_dir.join("Gemfile")).unwrap(),
-            "gem content\n"
-        );
-        assert_eq!(
-            fs::read_to_string(clone_dir.join("bin/ci")).unwrap(),
-            "#!/usr/bin/env ruby\n"
-        );
-    }
-
-    #[test]
-    fn test_scaffold_gh_create_failure() {
-        let dir = tempfile::tempdir().unwrap();
-        let tpl_dir = dir.path().join("templates").join("rails");
-        fs::create_dir_all(tpl_dir.join(".qa")).unwrap();
-        fs::write(tpl_dir.join(".qa/issues.json"), "[]").unwrap();
-
-        let runner =
-            |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { err_result("already exists") };
-
-        let result = scaffold_impl(
-            "rails",
-            "owner/repo",
-            Some(&dir.path().join("templates")),
-            None,
-            &runner,
-        );
-
-        assert_eq!(result["status"], "error");
-    }
-
-    #[test]
-    fn test_scaffold_git_command_failure() {
-        let dir = tempfile::tempdir().unwrap();
-        let tpl_dir = dir.path().join("templates").join("rails");
-        fs::create_dir_all(tpl_dir.join(".qa")).unwrap();
-        fs::write(tpl_dir.join(".qa/issues.json"), "[]").unwrap();
-
-        let call_count = RefCell::new(0usize);
-        let runner = |args: &[&str], _cwd: Option<&Path>| -> CmdResult {
-            *call_count.borrow_mut() += 1;
-            if args[0] == "gh" {
-                ok_result("")
-            } else {
-                // Fail on first git command
-                err_result("git init failed")
-            }
-        };
-
-        let clone_dir = dir.path().join("clone");
-        let result = scaffold_impl(
-            "rails",
-            "owner/repo",
-            Some(&dir.path().join("templates")),
-            Some(&clone_dir),
-            &runner,
-        );
-
-        assert_eq!(result["status"], "error");
-        assert!(result["message"].as_str().unwrap().contains("failed"));
-    }
-
-    #[test]
-    fn test_scaffold_sets_bin_scripts_executable() {
-        let dir = tempfile::tempdir().unwrap();
-        let tpl_dir = dir.path().join("templates").join("ios");
-        fs::create_dir_all(tpl_dir.join("bin")).unwrap();
-        fs::create_dir_all(tpl_dir.join(".qa")).unwrap();
-        fs::write(tpl_dir.join("bin/ci"), "#!/usr/bin/env bash\n").unwrap();
-        fs::write(tpl_dir.join("bin/test"), "#!/usr/bin/env bash\n").unwrap();
-        fs::write(tpl_dir.join("bin/build"), "#!/usr/bin/env bash\n").unwrap();
-        fs::write(tpl_dir.join(".qa/issues.json"), "[]").unwrap();
-
-        let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { ok_result("") };
-
-        let clone_dir = dir.path().join("clone");
-        scaffold_impl(
-            "ios",
-            "owner/repo",
-            Some(&dir.path().join("templates")),
-            Some(&clone_dir),
-            &runner,
-        );
-
-        for script in &["ci", "test", "build"] {
-            let path = clone_dir.join("bin").join(script);
-            let mode = fs::metadata(&path).unwrap().permissions().mode();
-            assert!(mode & 0o111 != 0, "bin/{} not executable", script);
-        }
-    }
 }

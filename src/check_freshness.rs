@@ -144,7 +144,7 @@ pub fn check_freshness_impl(
 /// or the state file is unreadable.
 pub fn read_retries(state_path: &Path) -> i64 {
     let cell = std::cell::Cell::new(0i64);
-    let _ = mutate_state(state_path, |state| {
+    let _ = mutate_state(state_path, &mut |state| {
         // State Mutation Object Guard — prevents panic on non-object values
         if !(state.is_object() || state.is_null()) {
             return;
@@ -159,7 +159,7 @@ pub fn read_retries(state_path: &Path) -> i64 {
 /// treating them as 0 before incrementing.
 pub fn increment_retries(state_path: &Path) -> i64 {
     let cell = std::cell::Cell::new(0i64);
-    let _ = mutate_state(state_path, |state| {
+    let _ = mutate_state(state_path, &mut |state| {
         if !(state.is_object() || state.is_null()) {
             return;
         }

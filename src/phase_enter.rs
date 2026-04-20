@@ -221,7 +221,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let enter_result_holder = std::cell::RefCell::new(Value::Null);
     let phase_name = args.phase.clone();
 
-    let mutate_result = mutate_state(&state_path, |state| {
+    let mutate_result = mutate_state(&state_path, &mut |state| {
         if !(state.is_object() || state.is_null()) {
             return;
         }
@@ -262,7 +262,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         let steps_total_field = format!("{}_steps_total", prefix);
         let step_field = format!("{}_step", prefix);
 
-        let _ = mutate_state(&state_path, move |state| {
+        let _ = mutate_state(&state_path, &mut move |state| {
             if !(state.is_object() || state.is_null()) {
                 return;
             }

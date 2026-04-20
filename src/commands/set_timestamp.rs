@@ -228,7 +228,7 @@ pub fn run_impl_main(
     // testable extraction returns errors instead of exiting, so we
     // restore the snapshot here to preserve "no partial mutation on
     // error" semantics.
-    let result = mutate_state(&state_path, |state| {
+    let result = mutate_state(&state_path, &mut |state| {
         let backup = state.clone();
         match apply_updates(state, set_args) {
             Ok(updates) => {

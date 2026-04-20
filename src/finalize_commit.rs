@@ -402,7 +402,7 @@ pub fn run_impl(
     if result["status"] == "error" {
         let state_path = FlowPaths::new(root, &args.branch).state_file();
         if state_path.exists() {
-            let _ = mutate_state(&state_path, |state| {
+            let _ = mutate_state(&state_path, &mut |state| {
                 if !(state.is_object() || state.is_null()) {
                     return;
                 }

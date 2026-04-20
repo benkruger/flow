@@ -122,7 +122,7 @@ pub fn run_impl_main(args: Args, root: &Path) -> (Value, i32) {
     };
     let timestamp = now();
 
-    match mutate_state(&state_path, |state| {
+    match mutate_state(&state_path, &mut |state| {
         apply_notification_mutation(state, &args, &phase_name, &preview, &timestamp);
     }) {
         Ok(state) => {

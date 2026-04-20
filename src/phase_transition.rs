@@ -375,7 +375,7 @@ pub fn run_impl_main(
     let next_phase_owned = next_phase.map(|s| s.to_string());
     let reason_owned = reason.map(|s| s.to_string());
 
-    let mutate_result = mutate_state(&state_path, |state| {
+    let mutate_result = mutate_state(&state_path, &mut |state| {
         let result = if action_owned == "enter" {
             phase_enter(state, &phase_owned, reason_owned.as_deref())
         } else {

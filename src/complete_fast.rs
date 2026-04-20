@@ -374,7 +374,7 @@ pub fn fast_inner(
                 Ok((code, _, stderr)) => {
                     if code == 0 {
                         // Update step counter
-                        let _ = mutate_state(state_path, |s| {
+                        let _ = mutate_state(state_path, &mut |s| {
                             if !(s.is_object() || s.is_null()) {
                                 return;
                             }
@@ -573,7 +573,7 @@ pub fn run_impl_inner(
     }
 
     // Phase enter + set step counters
-    mutate_state(&state_path, |s| {
+    mutate_state(&state_path, &mut |s| {
         if !(s.is_object() || s.is_null()) {
             return;
         }

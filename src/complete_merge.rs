@@ -52,7 +52,7 @@ pub fn complete_merge_inner(
     // Set step counter if state file exists
     let state_path = Path::new(state_file);
     if state_path.exists() {
-        let _ = mutate_state(state_path, |s| {
+        let _ = mutate_state(state_path, &mut |s| {
             if !(s.is_object() || s.is_null()) {
                 return;
             }

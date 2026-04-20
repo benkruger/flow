@@ -530,7 +530,7 @@ fn mutate_state_api_under_contention() {
             let barrier = Arc::clone(&barrier);
             thread::spawn(move || {
                 barrier.wait();
-                mutate_state(&path, |state| {
+                mutate_state(&path, &mut |state| {
                     let count = state["count"].as_i64().unwrap_or(0);
                     state["count"] = json!(count + 1);
                 })

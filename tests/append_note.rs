@@ -295,7 +295,7 @@ fn append_note_multiple_accumulate_lib() {
     let path = write_state_lib(dir.path(), "test-feature", &state);
 
     for i in 0..3 {
-        mutate_state(&path, |s| {
+        mutate_state(&path, &mut |s| {
             s["notes"]
                 .as_array_mut()
                 .expect("array in fixture")
@@ -342,7 +342,7 @@ fn append_note_preserves_existing_lib() {
     state["notes"] = json!([{"phase": "flow-start", "note": "existing"}]);
     let path = write_state_lib(dir.path(), "test-feature", &state);
 
-    mutate_state(&path, |s| {
+    mutate_state(&path, &mut |s| {
         s["notes"]
             .as_array_mut()
             .expect("array in fixture")

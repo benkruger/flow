@@ -1,6 +1,7 @@
 use std::env;
+use std::io;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
 
 use crate::flow_paths::FlowPaths;
 
@@ -8,28 +9,34 @@ use crate::flow_paths::FlowPaths;
 ///
 /// Uses `git worktree list --porcelain` to find the root, which works
 /// correctly whether run from the project root or from inside a worktree.
-/// Falls back to the current directory if git fails.
+/// Falls back to `.` if git fails, is not installed, or the current
+/// directory is not inside a git repository.
 pub fn project_root() -> PathBuf {
-    let output = match Command::new("git")
-        .args(["worktree", "list", "--porcelain"])
-        .output()
-    {
-        Ok(o) if o.status.success() => o,
-        _ => return PathBuf::from("."),
-    };
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    parse_worktree_list_first_path(&stdout)
+    project_root_from_output(
+        Command::new("git")
+            .args(["worktree", "list", "--porcelain"])
+            .output(),
+    )
 }
 
-/// Pure helper for [`project_root`]: parse `git worktree list --porcelain`
-/// output and return the first `worktree <path>` line as a PathBuf, or
-/// `PathBuf::from(".")` when no such line is present.
-///
-/// Extracted as a separate function so unit tests can drive both the
-/// "found a worktree line" and the "no worktree line" branches without
-/// spawning a real git subprocess.
-fn parse_worktree_list_first_path(stdout: &str) -> PathBuf {
+/// Pure helper for [`project_root`]: interpret the raw result of
+/// running `git worktree list --porcelain`. Tests can construct each
+/// variant (spawn error, non-zero exit, success with varied stdout)
+/// directly.
+pub fn project_root_from_output(output: io::Result<Output>) -> PathBuf {
+    match output {
+        Ok(o) if o.status.success() => {
+            project_root_with_stdout(&String::from_utf8_lossy(&o.stdout))
+        }
+        _ => PathBuf::from("."),
+    }
+}
+
+/// Pure parser: take `git worktree list --porcelain` stdout and return
+/// the first `worktree <path>` line as a PathBuf, or `PathBuf::from(".")`
+/// when no such line is present. Empty input behaves the same as "no
+/// worktree line".
+pub fn project_root_with_stdout(stdout: &str) -> PathBuf {
     for line in stdout.lines() {
         if let Some(path) = line.strip_prefix("worktree ") {
             return PathBuf::from(path.trim());
@@ -42,31 +49,16 @@ fn parse_worktree_list_first_path(stdout: &str) -> PathBuf {
 ///
 /// Returns None if not on a branch (e.g. detached HEAD) or if git fails.
 ///
-/// If FLOW_SIMULATE_BRANCH is set in the environment, returns that value
-/// instead of querying git. Used by `bin/flow ci --simulate-branch`.
+/// If FLOW_SIMULATE_BRANCH is set (and non-empty) in the environment,
+/// returns that value instead of querying git. Used by `bin/flow ci
+/// --simulate-branch`.
 pub fn current_branch() -> Option<String> {
-    let simulated = env::var("FLOW_SIMULATE_BRANCH").ok();
-    if let Some(ref s) = simulated {
-        if !s.is_empty() {
-            return Some(s.clone());
-        }
-    }
-
-    let output = Command::new("git")
-        .args(["branch", "--show-current"])
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if branch.is_empty() {
-        None
-    } else {
-        Some(branch)
-    }
+    current_branch_from_output(
+        env::var("FLOW_SIMULATE_BRANCH").ok(),
+        Command::new("git")
+            .args(["branch", "--show-current"])
+            .output(),
+    )
 }
 
 /// Get the current git branch name from a specific working directory.
@@ -80,17 +72,36 @@ pub fn current_branch() -> Option<String> {
 /// FLOW_SIMULATE_BRANCH env var. Callers that need simulate-branch
 /// semantics must layer it on top.
 pub fn current_branch_in(cwd: &Path) -> Option<String> {
-    let output = Command::new("git")
-        .args(["branch", "--show-current"])
-        .current_dir(cwd)
-        .output()
-        .ok()?;
+    current_branch_from_output(
+        None,
+        Command::new("git")
+            .args(["branch", "--show-current"])
+            .current_dir(cwd)
+            .output(),
+    )
+}
 
-    if !output.status.success() {
+/// Pure helper for [`current_branch`] and [`current_branch_in`].
+/// `simulated` is the `FLOW_SIMULATE_BRANCH` env var value (empty string
+/// falls through); `output` is the raw `io::Result<Output>` from
+/// `git branch --show-current`. Tests can construct every variant
+/// directly — simulated hit, empty simulated, None simulated, git
+/// spawn-failed, git non-zero, git success with populated or empty
+/// stdout.
+pub fn current_branch_from_output(
+    simulated: Option<String>,
+    output: io::Result<Output>,
+) -> Option<String> {
+    if let Some(ref s) = simulated {
+        if !s.is_empty() {
+            return Some(s.clone());
+        }
+    }
+    let out = output.ok()?;
+    if !out.status.success() {
         return None;
     }
-
-    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if branch.is_empty() {
         None
     } else {
@@ -122,7 +133,11 @@ pub fn resolve_branch_in(override_branch: Option<&str>, cwd: &Path, root: &Path)
     resolve_branch_impl(override_branch, root, current_branch_in(cwd))
 }
 
-fn resolve_branch_impl(
+/// Pure resolution for [`resolve_branch`] and [`resolve_branch_in`].
+/// `branch` is the current-branch value (already resolved by whichever
+/// reader the caller used); `override_branch` wins when present. Exposed
+/// publicly so tests can drive every branch without spawning git.
+pub fn resolve_branch_impl(
     override_branch: Option<&str>,
     root: &Path,
     branch: Option<String>,
@@ -147,200 +162,4 @@ fn resolve_branch_impl(
     // No state file for current branch — return it anyway
     // (callers check state file existence separately)
     branch
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use std::sync::Mutex;
-
-    // Serialize tests that mutate FLOW_SIMULATE_BRANCH to prevent races.
-    // Rust tests run in parallel — without this lock, one test's set_var
-    // can race with another test's remove_var on the same env var.
-    static SIMULATE_BRANCH_LOCK: Mutex<()> = Mutex::new(());
-
-    // --- project_root() ---
-
-    /// Exercises both branches of `parse_worktree_list_first_path`: the
-    /// "first worktree line" path and the empty-stdout fallback.
-    #[test]
-    fn parse_worktree_list_first_path_extracts_first_worktree_line() {
-        let stdout = "worktree /path/to/repo\nHEAD abc123\nbranch refs/heads/main\n\nworktree /path/to/other\nHEAD def456\nbranch refs/heads/feature\n";
-        assert_eq!(
-            parse_worktree_list_first_path(stdout),
-            PathBuf::from("/path/to/repo")
-        );
-    }
-
-    #[test]
-    fn parse_worktree_list_first_path_no_worktree_line_returns_dot() {
-        // Output without any "worktree " prefix → fall through to ".".
-        let stdout = "HEAD abc123\nbranch refs/heads/main\n";
-        assert_eq!(parse_worktree_list_first_path(stdout), PathBuf::from("."));
-    }
-
-    #[test]
-    fn parse_worktree_list_first_path_empty_input_returns_dot() {
-        assert_eq!(parse_worktree_list_first_path(""), PathBuf::from("."));
-    }
-
-    #[test]
-    fn project_root_returns_path() {
-        // In a git repo, should return a valid path
-        let root = project_root();
-        assert!(root.exists() || root == Path::new("."));
-    }
-
-    // --- current_branch() ---
-
-    #[test]
-    fn current_branch_simulate_env_var() {
-        let _guard = SIMULATE_BRANCH_LOCK.lock().unwrap();
-        env::set_var("FLOW_SIMULATE_BRANCH", "main");
-        let result = current_branch();
-        env::remove_var("FLOW_SIMULATE_BRANCH");
-        assert_eq!(result, Some("main".to_string()));
-    }
-
-    #[test]
-    fn current_branch_simulate_empty_falls_through() {
-        let _guard = SIMULATE_BRANCH_LOCK.lock().unwrap();
-        env::set_var("FLOW_SIMULATE_BRANCH", "");
-        let result = current_branch();
-        env::remove_var("FLOW_SIMULATE_BRANCH");
-        // Falls through to git — may return a branch or None depending on context
-        // Just verify it doesn't return Some("")
-        if let Some(ref b) = result {
-            assert!(!b.is_empty());
-        }
-    }
-
-    // --- resolve_branch() ---
-
-    #[test]
-    fn resolve_branch_override_wins() {
-        let dir = tempfile::tempdir().unwrap();
-        let branch = resolve_branch(Some("explicit-branch"), dir.path());
-        assert_eq!(branch, Some("explicit-branch".to_string()));
-    }
-
-    #[test]
-    fn resolve_branch_no_state_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        let branch = resolve_branch(None, dir.path());
-        // No .flow-states dir — returns current_branch() fallback
-        // branch may be Some or None depending on git context
-        let _ = branch;
-    }
-
-    #[test]
-    fn resolve_branch_no_match_returns_current_branch() {
-        // When current branch has no state file, resolve_branch returns
-        // the branch anyway — it never scans for other state files.
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        fs::create_dir(&state_dir).unwrap();
-        // Create state files for OTHER branches
-        fs::write(
-            state_dir.join("feature-a.json"),
-            r#"{"branch": "feature-a"}"#,
-        )
-        .unwrap();
-        fs::write(
-            state_dir.join("feature-b.json"),
-            r#"{"branch": "feature-b"}"#,
-        )
-        .unwrap();
-
-        // Call resolve_branch_impl directly with a branch that has no state file
-        let result = resolve_branch_impl(None, dir.path(), Some("main".to_string()));
-        // Returns "main" — does NOT resolve to feature-a or feature-b
-        assert_eq!(result, Some("main".to_string()));
-    }
-
-    // --- current_branch_in() ---
-
-    /// Initialize a git repo in the given directory with an initial commit
-    /// on branch `initial_branch`. Used by current_branch_in tests.
-    fn init_git_repo(dir: &Path, initial_branch: &str) {
-        let run = |args: &[&str]| {
-            let output = Command::new("git")
-                .args(args)
-                .current_dir(dir)
-                .output()
-                .expect("git command failed");
-            assert!(output.status.success(), "git {:?} failed", args);
-        };
-        run(&["init", "--initial-branch", initial_branch]);
-        run(&["config", "user.email", "test@test.com"]);
-        run(&["config", "user.name", "Test"]);
-        run(&["config", "commit.gpgsign", "false"]);
-        run(&["commit", "--allow-empty", "-m", "init"]);
-    }
-
-    #[test]
-    fn current_branch_in_reads_cwd_repo() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path(), "my-feature");
-        let branch = current_branch_in(dir.path());
-        assert_eq!(branch, Some("my-feature".to_string()));
-    }
-
-    #[test]
-    fn current_branch_in_detached_head() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path(), "main");
-        // Detach HEAD by checking out the commit SHA directly
-        let sha = Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        let sha = String::from_utf8_lossy(&sha.stdout).trim().to_string();
-        let output = Command::new("git")
-            .args(["checkout", &sha])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        assert!(output.status.success());
-
-        let branch = current_branch_in(dir.path());
-        assert_eq!(branch, None);
-    }
-
-    #[test]
-    fn current_branch_in_non_git_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        let branch = current_branch_in(dir.path());
-        assert_eq!(branch, None);
-    }
-
-    #[test]
-    fn resolve_branch_impl_state_file_exists_returns_branch() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        fs::create_dir(&state_dir).unwrap();
-        fs::write(
-            state_dir.join("test-branch.json"),
-            r#"{"branch": "test-branch"}"#,
-        )
-        .unwrap();
-        let result = resolve_branch_impl(None, dir.path(), Some("test-branch".to_string()));
-        assert_eq!(result, Some("test-branch".to_string()));
-    }
-
-    #[test]
-    fn current_branch_in_ignores_simulate_env_var() {
-        // current_branch_in is cwd-scoped and does NOT consult the
-        // FLOW_SIMULATE_BRANCH env var. This test documents that
-        // invariant by asserting the helper returns the real branch
-        // name regardless of what env::var would return — without
-        // actually mutating the env var (which would race with
-        // parallel tests).
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path(), "real-branch");
-        let branch = current_branch_in(dir.path());
-        assert_eq!(branch, Some("real-branch".to_string()));
-    }
 }

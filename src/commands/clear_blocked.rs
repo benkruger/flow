@@ -15,7 +15,7 @@ pub fn clear_blocked(state_path: &Path) {
     if !state_path.exists() {
         return;
     }
-    let _ = mutate_state(state_path, |state| {
+    let _ = mutate_state(state_path, &mut |state| {
         if let Some(obj) = state.as_object_mut() {
             obj.remove("_blocked");
         }

@@ -312,7 +312,7 @@ fn add_issue_to_empty_array_lib() {
     let state = make_state_lib("test-feature");
     let path = write_state_lib(dir.path(), "test-feature", &state);
 
-    let result = mutate_state(&path, |s| {
+    let result = mutate_state(&path, &mut |s| {
         let names = phase_names();
         let phase = "flow-learn";
         let phase_name = names.get(phase).cloned().unwrap_or_default();
@@ -344,7 +344,7 @@ fn add_issue_preserves_existing_lib() {
     state["issues_filed"] = json!([{"label": "Flow", "title": "existing"}]);
     let path = write_state_lib(dir.path(), "test-feature", &state);
 
-    mutate_state(&path, |s| {
+    mutate_state(&path, &mut |s| {
         s["issues_filed"]
             .as_array_mut()
             .expect("array in fixture")

@@ -96,7 +96,7 @@ pub fn start_issue(state_path: &Path, index: i64) -> Value {
 
     let mut error_result: Option<Value> = None;
 
-    match mutate_state(state_path, |state| {
+    match mutate_state(state_path, &mut |state| {
         if !(state.is_object() || state.is_null()) {
             error_result =
                 Some(json!({"status": "error", "message": "State file is not a JSON object"}));
@@ -150,7 +150,7 @@ pub fn record_outcome(
 
     let mut error_result: Option<Value> = None;
 
-    match mutate_state(state_path, |state| {
+    match mutate_state(state_path, &mut |state| {
         if !(state.is_object() || state.is_null()) {
             error_result =
                 Some(json!({"status": "error", "message": "State file is not a JSON object"}));
@@ -202,7 +202,7 @@ pub fn complete_orchestration(state_path: &Path) -> Value {
 
     let mut error_result: Option<Value> = None;
 
-    match mutate_state(state_path, |state| {
+    match mutate_state(state_path, &mut |state| {
         if !(state.is_object() || state.is_null()) {
             error_result =
                 Some(json!({"status": "error", "message": "State file is not a JSON object"}));

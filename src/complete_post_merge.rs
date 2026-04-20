@@ -119,7 +119,7 @@ pub fn post_merge_inner(
 
     // Set step counter
     if state_path.exists() {
-        match mutate_state(state_path, |s| {
+        match mutate_state(state_path, &mut |s| {
             if !(s.is_object() || s.is_null()) {
                 return;
             }

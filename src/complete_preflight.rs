@@ -435,7 +435,7 @@ pub fn preflight_inner(
         }
 
         // Set step counters
-        let _ = mutate_state(&state_path, |s| {
+        let _ = mutate_state(&state_path, &mut |s| {
             if !(s.is_object() || s.is_null()) {
                 return;
             }

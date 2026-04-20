@@ -260,17 +260,17 @@ pub fn run_impl_with_paths(args: &Args, root: &Path, cwd: &Path) -> Value {
         .unwrap_or_default();
 
     if state_path.exists() {
-        match mutate_state(&state_path, move |state| {
+        match mutate_state(&state_path, &mut |state| {
             if !(state.is_object() || state.is_null()) {
                 return;
             }
             state["pr_number"] = json!(pr_number);
-            state["pr_url"] = json!(pr_url_clone);
+            state["pr_url"] = json!(&pr_url_clone);
             state["repo"] = match &repo_clone {
                 Some(r) => json!(r),
                 None => json!(null),
             };
-            state["prompt"] = json!(prompt_clone);
+            state["prompt"] = json!(&prompt_clone);
         }) {
             Ok(_) => {}
             Err(e) => {

@@ -122,7 +122,7 @@ pub fn run_impl_with_deps(
     let result_holder = std::cell::RefCell::new(Value::Null);
     let phase_name = args.phase.clone();
 
-    let mutate_result = mutate_state(&state_path, |state| {
+    let mutate_result = mutate_state(&state_path, &mut |state| {
         if !(state.is_object() || state.is_null()) {
             return;
         }
@@ -212,14 +212,14 @@ pub fn run_impl_with_deps(
                 ts.clone()
             };
 
-            let _ = mutate_state(&state_path, move |state| {
+            let _ = mutate_state(&state_path, &mut |state| {
                 if !(state.is_object() || state.is_null()) {
                     return;
                 }
 
                 // If creating a new thread (no --thread-ts), store thread_ts
                 if thread_ts_for_state == ts_clone {
-                    state["slack_thread_ts"] = json!(ts_clone);
+                    state["slack_thread_ts"] = json!(&ts_clone);
                 }
 
                 // Append to slack_notifications array
@@ -232,10 +232,10 @@ pub fn run_impl_with_deps(
                 }
                 if let Some(arr) = state["slack_notifications"].as_array_mut() {
                     arr.push(json!({
-                        "phase": phase_name,
-                        "ts": ts_clone,
-                        "thread_ts": thread_ts_for_state,
-                        "message": msg_clone,
+                        "phase": &phase_name,
+                        "ts": &ts_clone,
+                        "thread_ts": &thread_ts_for_state,
+                        "message": &msg_clone,
                     }));
                 }
             });
