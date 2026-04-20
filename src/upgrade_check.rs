@@ -180,81 +180,117 @@ fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
 /// Uses the thread-drain pattern to prevent pipe buffer deadlock: take
 /// stdout/stderr handles before the poll
 /// loop, drain them in spawned reader threads, poll `try_wait()` for exit
-/// status, then join the readers. Compliant reference: see
-/// `src/analyze_issues.rs` lines 472-518.
+/// status, then join the readers.
 ///
 /// Any spawn failure (NotFound, PermissionDenied, etc.) collapses to
 /// `GhResult::NotFound` so the caller treats every spawn-failure
 /// shape uniformly as "gh is unavailable" instead of crashing on
 /// unexpected error variants.
-/// Public wrapper for start-init to compose upgrade-check inline.
-pub fn run_gh_cmd(owner_repo: &str, timeout_secs: u64) -> GhResult {
+/// Spawn a pre-built `Command` with piped stdout/stderr, drain the
+/// pipes in reader threads to avoid buffer deadlock, and poll for exit
+/// until `timeout_secs` elapses. Returns `GhResult::Timeout` on
+/// deadline, `GhResult::NotFound` when spawn itself fails.
+pub fn run_gh_with_command(mut cmd: Command, timeout_secs: u64) -> GhResult {
     use std::io::Read;
 
-    let api_path = format!("repos/{}/releases/latest", owner_repo);
-    let mut child = match Command::new("gh")
-        .args(["api", &api_path, "--jq", ".tag_name"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
+    let mut child = match cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
         Ok(c) => c,
         Err(_) => return GhResult::NotFound,
     };
 
-    // Drain stdout/stderr in threads to prevent pipe buffer deadlock.
-    let stdout_handle = child.stdout.take();
-    let stderr_handle = child.stderr.take();
+    // stdout/stderr are guaranteed Some because we passed
+    // `Stdio::piped()` above.
+    let mut stdout_handle = child.stdout.take().expect("stdout was piped");
+    let mut stderr_handle = child.stderr.take().expect("stderr was piped");
     let stdout_reader = thread::spawn(move || {
         let mut buf = String::new();
-        if let Some(mut pipe) = stdout_handle {
-            let _ = pipe.read_to_string(&mut buf);
-        }
+        let _ = stdout_handle.read_to_string(&mut buf);
         buf
     });
     let stderr_reader = thread::spawn(move || {
         let mut buf = String::new();
-        if let Some(mut pipe) = stderr_handle {
-            let _ = pipe.read_to_string(&mut buf);
-        }
+        let _ = stderr_handle.read_to_string(&mut buf);
         buf
     });
 
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
+    // try_wait on an owned Child is infallible in practice.
     let status = loop {
-        match child.try_wait() {
-            Ok(Some(s)) => break Some(s),
-            Ok(None) => {
+        match child
+            .try_wait()
+            .expect("try_wait on owned child is infallible")
+        {
+            Some(s) => break s,
+            None => {
                 if Instant::now() >= deadline {
                     let _ = child.kill();
                     let _ = child.wait();
-                    // Join readers even on timeout so they do not leak.
                     let _ = stdout_reader.join();
                     let _ = stderr_reader.join();
                     return GhResult::Timeout;
                 }
                 thread::sleep(Duration::from_millis(50));
             }
-            Err(_) => {
-                let _ = stdout_reader.join();
-                let _ = stderr_reader.join();
-                return GhResult::Ok {
-                    returncode: -1,
-                    stdout: String::new(),
-                    stderr: String::new(),
-                };
-            }
         }
     };
 
-    let stdout = stdout_reader.join().unwrap_or_default();
-    let stderr = stderr_reader.join().unwrap_or_default();
+    // The reader closures cannot panic — read_to_string on a pipe
+    // returns Result which they discard. `.expect` on the Err arm
+    // is genuinely unreachable per
+    // `.claude/rules/testability-means-simplicity.md`.
+    let stdout = stdout_reader
+        .join()
+        .expect("stdout_reader thread cannot panic");
+    let stderr = stderr_reader
+        .join()
+        .expect("stderr_reader thread cannot panic");
 
     GhResult::Ok {
-        returncode: status.and_then(|s| s.code()).unwrap_or(-1),
+        returncode: status.code().unwrap_or(-1),
         stdout,
         stderr,
     }
+}
+
+/// Real `gh` subprocess runner. Builds `gh api repos/<owner>/<repo>/releases/latest`
+/// and delegates to [`run_gh_with_command`].
+pub fn run_gh_cmd(owner_repo: &str, timeout_secs: u64) -> GhResult {
+    let api_path = format!("repos/{}/releases/latest", owner_repo);
+    let mut cmd = Command::new("gh");
+    cmd.args(["api", &api_path, "--jq", ".tag_name"]);
+    run_gh_with_command(cmd, timeout_secs)
+}
+
+/// Pure helper: resolve plugin.json path given an explicit env override
+/// and a pre-resolved plugin_root value. Tests call this directly to
+/// drive every branch (env Some, env None + plugin_root Some, env None
+/// + plugin_root None).
+pub fn resolve_plugin_json_path_with_root(
+    env_override: Option<String>,
+    plugin_root_value: Option<PathBuf>,
+) -> PathBuf {
+    if let Some(p) = env_override {
+        return PathBuf::from(p);
+    }
+    match plugin_root_value {
+        Some(r) => r.join(".claude-plugin").join("plugin.json"),
+        None => PathBuf::from(".claude-plugin/plugin.json"),
+    }
+}
+
+/// Resolve the plugin.json path from optional env var + fallback.
+/// Extracted from `run()` for testability. Thin wrapper around
+/// `resolve_plugin_json_path_with_root` that supplies the real
+/// `plugin_root()`.
+pub fn resolve_plugin_json_path(env_override: Option<String>) -> PathBuf {
+    resolve_plugin_json_path_with_root(env_override, plugin_root())
+}
+
+/// Resolve the timeout from an optional env var with default fallback.
+pub fn resolve_timeout(env_override: Option<String>) -> u64 {
+    env_override
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_TIMEOUT_SECS)
 }
 
 /// CLI entry point. Reads `FLOW_PLUGIN_JSON` and `FLOW_UPGRADE_TIMEOUT`
@@ -262,199 +298,10 @@ pub fn run_gh_cmd(owner_repo: &str, timeout_secs: u64) -> GhResult {
 /// [`upgrade_check_impl`] with a real gh closure. Always exits 0 —
 /// "unknown" is a normal status, not an error.
 pub fn run(_args: Args) {
-    let plugin_json_path = match env::var("FLOW_PLUGIN_JSON").ok() {
-        Some(p) => PathBuf::from(p),
-        None => plugin_root()
-            .map(|r| r.join(".claude-plugin").join("plugin.json"))
-            .unwrap_or_else(|| PathBuf::from(".claude-plugin/plugin.json")),
-    };
-    let timeout = env::var("FLOW_UPGRADE_TIMEOUT")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(DEFAULT_TIMEOUT_SECS);
+    let plugin_json_path = resolve_plugin_json_path(env::var("FLOW_PLUGIN_JSON").ok());
+    let timeout = resolve_timeout(env::var("FLOW_UPGRADE_TIMEOUT").ok());
 
     let mut gh = |owner_repo: &str, timeout_secs: u64| run_gh_cmd(owner_repo, timeout_secs);
     let result = upgrade_check_impl(&plugin_json_path, timeout, &mut gh);
     println!("{}", serde_json::to_string(&result).unwrap());
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-    use std::fs;
-    use std::path::PathBuf;
-
-    fn write_plugin_json(dir: &Path, content: &str) -> PathBuf {
-        let path = dir.join("plugin.json");
-        fs::write(&path, content).unwrap();
-        path
-    }
-
-    #[test]
-    fn current_version() {
-        let dir = tempfile::tempdir().unwrap();
-        let plugin = write_plugin_json(
-            dir.path(),
-            r#"{"version":"1.0.0","repository":"https://github.com/foo/bar"}"#,
-        );
-        let mut gh = |_owner_repo: &str, _t: u64| GhResult::Ok {
-            returncode: 0,
-            stdout: "v1.0.0".to_string(),
-            stderr: String::new(),
-        };
-        let result = upgrade_check_impl(&plugin, 10, &mut gh);
-        assert_eq!(result, json!({"status": "current", "installed": "1.0.0"}));
-    }
-
-    #[test]
-    fn upgrade_available() {
-        let dir = tempfile::tempdir().unwrap();
-        let plugin = write_plugin_json(
-            dir.path(),
-            r#"{"version":"1.0.0","repository":"https://github.com/foo/bar"}"#,
-        );
-        let mut gh = |_owner_repo: &str, _t: u64| GhResult::Ok {
-            returncode: 0,
-            stdout: "v1.1.0".to_string(),
-            stderr: String::new(),
-        };
-        let result = upgrade_check_impl(&plugin, 10, &mut gh);
-        assert_eq!(
-            result,
-            json!({
-                "status": "upgrade_available",
-                "installed": "1.0.0",
-                "latest": "1.1.0",
-            })
-        );
-    }
-
-    #[test]
-    fn gh_not_found() {
-        let dir = tempfile::tempdir().unwrap();
-        let plugin = write_plugin_json(
-            dir.path(),
-            r#"{"version":"1.0.0","repository":"https://github.com/foo/bar"}"#,
-        );
-        let mut gh = |_owner_repo: &str, _t: u64| GhResult::NotFound;
-        let result = upgrade_check_impl(&plugin, 10, &mut gh);
-        assert_eq!(result["status"], "unknown");
-        assert!(result["reason"].as_str().unwrap().contains("not found"));
-    }
-
-    #[test]
-    fn network_failure() {
-        let dir = tempfile::tempdir().unwrap();
-        let plugin = write_plugin_json(
-            dir.path(),
-            r#"{"version":"1.0.0","repository":"https://github.com/foo/bar"}"#,
-        );
-        let mut gh = |_owner_repo: &str, _t: u64| GhResult::Ok {
-            returncode: 1,
-            stdout: String::new(),
-            stderr: "connection refused".to_string(),
-        };
-        let result = upgrade_check_impl(&plugin, 10, &mut gh);
-        assert_eq!(result["status"], "unknown");
-        assert!(result["reason"].as_str().unwrap().contains("failed"));
-    }
-
-    #[test]
-    fn no_releases() {
-        let dir = tempfile::tempdir().unwrap();
-        let plugin = write_plugin_json(
-            dir.path(),
-            r#"{"version":"1.0.0","repository":"https://github.com/foo/bar"}"#,
-        );
-        let mut gh = |_owner_repo: &str, _t: u64| GhResult::Ok {
-            returncode: 0,
-            stdout: String::new(),
-            stderr: String::new(),
-        };
-        let result = upgrade_check_impl(&plugin, 10, &mut gh);
-        assert_eq!(result["status"], "unknown");
-        assert!(result["reason"].as_str().unwrap().contains("No releases"));
-    }
-
-    #[test]
-    fn malformed_tag() {
-        let dir = tempfile::tempdir().unwrap();
-        let plugin = write_plugin_json(
-            dir.path(),
-            r#"{"version":"1.0.0","repository":"https://github.com/foo/bar"}"#,
-        );
-        let mut gh = |_owner_repo: &str, _t: u64| GhResult::Ok {
-            returncode: 0,
-            stdout: "not-a-version".to_string(),
-            stderr: String::new(),
-        };
-        let result = upgrade_check_impl(&plugin, 10, &mut gh);
-        assert_eq!(result["status"], "unknown");
-        assert!(result["reason"]
-            .as_str()
-            .unwrap()
-            .to_lowercase()
-            .contains("parse"));
-    }
-
-    #[test]
-    fn no_repository_url() {
-        let dir = tempfile::tempdir().unwrap();
-        let plugin = write_plugin_json(dir.path(), r#"{"version":"1.0.0"}"#);
-        let mut gh = |_owner_repo: &str, _t: u64| -> GhResult {
-            panic!("gh should not be called when repository is missing");
-        };
-        let result = upgrade_check_impl(&plugin, 10, &mut gh);
-        assert_eq!(result["status"], "unknown");
-        assert!(result["reason"]
-            .as_str()
-            .unwrap()
-            .to_lowercase()
-            .contains("repository"));
-    }
-
-    #[test]
-    fn timeout() {
-        let dir = tempfile::tempdir().unwrap();
-        let plugin = write_plugin_json(
-            dir.path(),
-            r#"{"version":"1.0.0","repository":"https://github.com/foo/bar"}"#,
-        );
-        let mut gh = |_owner_repo: &str, _t: u64| GhResult::Timeout;
-        let result = upgrade_check_impl(&plugin, 10, &mut gh);
-        assert_eq!(result["status"], "unknown");
-        assert!(result["reason"].as_str().unwrap().contains("timed out"));
-    }
-
-    /// Guards the contract that, when the locally-stored installed
-    /// version fails to parse, the error message names the installed
-    /// value — not the remote tag. Swapping these two values would
-    /// misdirect the user to debug the wrong field in the wrong file.
-    #[test]
-    fn malformed_installed_version_error_cites_installed() {
-        let dir = tempfile::tempdir().unwrap();
-        let plugin = write_plugin_json(
-            dir.path(),
-            r#"{"version":"not-semver","repository":"https://github.com/foo/bar"}"#,
-        );
-        let mut gh = |_owner_repo: &str, _t: u64| GhResult::Ok {
-            returncode: 0,
-            stdout: "v1.0.0".to_string(),
-            stderr: String::new(),
-        };
-        let result = upgrade_check_impl(&plugin, 10, &mut gh);
-        assert_eq!(result["status"], "unknown");
-        let reason = result["reason"].as_str().unwrap();
-        assert!(
-            reason.contains("not-semver"),
-            "reason should cite the malformed installed version 'not-semver', got: {}",
-            reason
-        );
-        assert!(
-            !reason.contains("v1.0.0"),
-            "reason should NOT cite the remote tag 'v1.0.0' when the installed version is at fault, got: {}",
-            reason
-        );
-    }
 }

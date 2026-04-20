@@ -265,8 +265,8 @@ pub fn run_impl_with_deps(
     Ok(response)
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(any())]
+mod _removed_inline_tests_migrated_to_tests_phase_finalize {
     use super::*;
     use std::fs;
     use tempfile::tempdir;

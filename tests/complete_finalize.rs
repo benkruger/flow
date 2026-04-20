@@ -17,7 +17,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use serde_json::Value;
+use flow_rs::complete_finalize::{finalize_inner, run_impl_with_deps, Args};
+use indexmap::IndexMap;
+use serde_json::{json, Value};
 
 mod common;
 
@@ -397,4 +399,211 @@ fn finalize_slash_branch_does_not_panic() {
         "slash branch triggered a Rust panic: stderr={}",
         stderr
     );
+}
+
+// --- finalize_inner (library-level unit tests) ---
+
+fn mock_post_merge_ok() -> Value {
+    json!({
+        "status": "ok",
+        "formatted_time": "2m",
+        "cumulative_seconds": 120,
+        "summary": "Feature complete",
+        "issues_links": "https://github.com/test/test/issues/42",
+        "banner_line": "Issues filed: 1",
+        "failures": {},
+    })
+}
+
+fn mock_cleanup_ok() -> IndexMap<String, String> {
+    let mut steps = IndexMap::new();
+    steps.insert("worktree".to_string(), "removed".to_string());
+    steps.insert("state_file".to_string(), "deleted".to_string());
+    steps.insert("log_file".to_string(), "deleted".to_string());
+    steps
+}
+
+#[test]
+fn test_happy_path() {
+    let result = finalize_inner(&mock_post_merge_ok, &mock_cleanup_ok);
+
+    assert_eq!(result["status"], "ok");
+    assert_eq!(result["formatted_time"], "2m");
+    assert_eq!(result["cumulative_seconds"], 120);
+    assert_eq!(result["summary"], "Feature complete");
+    assert_eq!(
+        result["issues_links"],
+        "https://github.com/test/test/issues/42"
+    );
+    assert_eq!(result["cleanup"]["worktree"], "removed");
+    assert_eq!(result["cleanup"]["state_file"], "deleted");
+    assert!(result.get("post_merge_error").is_none());
+    assert!(result.get("post_merge_failures").is_none());
+}
+
+#[test]
+fn test_post_merge_failure_still_cleans_up() {
+    let panicking_pm = || -> Value {
+        panic!("simulated post-merge crash");
+    };
+
+    let result = finalize_inner(&panicking_pm, &mock_cleanup_ok);
+
+    // Overall status is still ok — cleanup succeeded
+    assert_eq!(result["status"], "ok");
+    // Post-merge error captured
+    assert_eq!(result["post_merge_error"], "post-merge panicked");
+    // Cleanup still ran
+    assert_eq!(result["cleanup"]["worktree"], "removed");
+    assert_eq!(result["cleanup"]["state_file"], "deleted");
+    // Post-merge fields default to empty
+    assert_eq!(result["formatted_time"], "");
+    assert_eq!(result["cumulative_seconds"], 0);
+}
+
+#[test]
+fn test_post_merge_with_failures_propagated() {
+    let pm_with_failures = || -> Value {
+        json!({
+            "status": "ok",
+            "formatted_time": "<1m",
+            "cumulative_seconds": 30,
+            "summary": "done",
+            "issues_links": "",
+            "banner_line": "",
+            "failures": {
+                "render_pr_body": "gh API error",
+                "label_issues": "timeout",
+            },
+        })
+    };
+
+    let result = finalize_inner(&pm_with_failures, &mock_cleanup_ok);
+
+    assert_eq!(result["status"], "ok");
+    let failures = result["post_merge_failures"].as_object().unwrap();
+    assert!(failures.contains_key("render_pr_body"));
+    assert!(failures.contains_key("label_issues"));
+}
+
+#[test]
+fn test_cleanup_results_included() {
+    let cleanup_with_pull = || -> IndexMap<String, String> {
+        let mut steps = mock_cleanup_ok();
+        steps.insert("git_pull".to_string(), "pulled".to_string());
+        steps
+    };
+
+    let result = finalize_inner(&mock_post_merge_ok, &cleanup_with_pull);
+
+    assert_eq!(result["cleanup"]["git_pull"], "pulled");
+    assert_eq!(result["cleanup"]["worktree"], "removed");
+}
+
+#[test]
+fn test_cleanup_panic_captured_and_reported() {
+    let panicking_cleanup = || -> IndexMap<String, String> {
+        panic!("simulated cleanup crash");
+    };
+
+    let result = finalize_inner(&mock_post_merge_ok, &panicking_cleanup);
+
+    assert_eq!(result["status"], "ok");
+    assert_eq!(result["cleanup_error"], "cleanup panicked");
+    assert!(result["cleanup"].as_object().unwrap().is_empty());
+    assert_eq!(result["formatted_time"], "2m");
+}
+
+#[test]
+fn test_both_post_merge_and_cleanup_panic() {
+    let panic_pm = || -> Value { panic!("pm boom") };
+    let panic_cleanup = || -> IndexMap<String, String> { panic!("cleanup boom") };
+
+    let result = finalize_inner(&panic_pm, &panic_cleanup);
+
+    assert_eq!(result["status"], "ok");
+    assert_eq!(result["post_merge_error"], "post-merge panicked");
+    assert_eq!(result["cleanup_error"], "cleanup panicked");
+}
+
+#[test]
+fn test_empty_failures_object_not_included() {
+    let pm_empty_failures = || -> Value {
+        json!({
+            "status": "ok",
+            "formatted_time": "1m",
+            "cumulative_seconds": 60,
+            "summary": "done",
+            "issues_links": "",
+            "banner_line": "",
+            "failures": {},
+        })
+    };
+
+    let result = finalize_inner(&pm_empty_failures, &mock_cleanup_ok);
+    assert!(result.get("post_merge_failures").is_none());
+}
+
+#[test]
+fn test_missing_post_merge_fields_default_to_empty() {
+    let pm_minimal = || -> Value { json!({"status": "ok"}) };
+
+    let result = finalize_inner(&pm_minimal, &mock_cleanup_ok);
+
+    assert_eq!(result["formatted_time"], "");
+    assert_eq!(result["cumulative_seconds"], 0);
+    assert_eq!(result["summary"], "");
+    assert_eq!(result["issues_links"], "");
+    assert_eq!(result["banner_line"], "");
+}
+
+// --- run_impl_with_deps ---
+
+fn fake_args(branch: &str, state_file: &str, worktree: &str) -> Args {
+    Args {
+        pr: 42,
+        state_file: state_file.to_string(),
+        branch: branch.to_string(),
+        worktree: worktree.to_string(),
+        pull: false,
+    }
+}
+
+#[test]
+fn run_impl_returns_ok_status_value_for_clean_inputs() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join(".flow-states/test.json");
+    let args = fake_args(
+        "test-feature",
+        state_path.to_string_lossy().as_ref(),
+        ".worktrees/test-feature",
+    );
+
+    let result: Value =
+        run_impl_with_deps(&args, dir.path(), &mock_post_merge_ok, &mock_cleanup_ok);
+
+    assert_eq!(result["status"], "ok");
+    assert_eq!(result["formatted_time"], "2m");
+    assert_eq!(result["cumulative_seconds"], 120);
+    assert_eq!(result["summary"], "Feature complete");
+    assert!(result.get("post_merge_error").is_none());
+    assert!(result.get("post_merge_failures").is_none());
+}
+
+#[test]
+fn run_impl_returns_post_merge_error_in_result_when_post_merge_panics() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join(".flow-states/test.json");
+    let args = fake_args(
+        "test-feature",
+        state_path.to_string_lossy().as_ref(),
+        ".worktrees/test-feature",
+    );
+    let panic_pm = || -> Value { panic!("simulated post-merge crash") };
+
+    let result: Value = run_impl_with_deps(&args, dir.path(), &panic_pm, &mock_cleanup_ok);
+
+    assert_eq!(result["status"], "ok");
+    assert_eq!(result["post_merge_error"], "post-merge panicked");
+    assert_eq!(result["cleanup"]["worktree"], "removed");
 }

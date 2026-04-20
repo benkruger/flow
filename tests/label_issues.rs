@@ -9,9 +9,14 @@ mod common;
 
 use std::fs;
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::{Child, Command, Output, Stdio};
+use std::time::Duration;
 
 use common::{create_gh_stub, create_git_repo_with_remote, parse_output};
+use flow_rs::label_issues::{
+    default_timeout, gh_child_factory, label_issues_with_runner, run_impl_main,
+    run_impl_main_with_runner, Args, LabelResult, LABEL,
+};
 use serde_json::json;
 
 fn run_cmd(repo: &Path, args: &[&str], stub_dir: &Path) -> Output {
@@ -246,4 +251,262 @@ fn requires_add_or_remove_flag() {
         Some(0),
         "Expected non-zero exit without --add or --remove"
     );
+}
+
+// --- library-level tests ---
+
+#[test]
+fn empty_issue_list_returns_empty_result() {
+    // Empty list short-circuits the for loop — no factory invocations.
+    let factory = |_args: &[&str]| -> std::io::Result<Child> {
+        panic!("factory must not be called for empty issue list");
+    };
+    let result = label_issues_with_runner(&[], "add", default_timeout(), &factory);
+    assert_eq!(
+        result,
+        LabelResult {
+            labeled: vec![],
+            failed: vec![],
+        }
+    );
+}
+
+#[test]
+fn empty_issue_list_remove_returns_empty_result() {
+    let factory = |_args: &[&str]| -> std::io::Result<Child> {
+        panic!("factory must not be called for empty issue list");
+    };
+    let result = label_issues_with_runner(&[], "remove", default_timeout(), &factory);
+    assert_eq!(
+        result,
+        LabelResult {
+            labeled: vec![],
+            failed: vec![],
+        }
+    );
+}
+
+#[test]
+fn default_timeout_is_30_seconds() {
+    assert_eq!(default_timeout(), Duration::from_secs(30));
+}
+
+/// Drives `gh_child_factory` end-to-end. If `gh` is in PATH, spawn
+/// succeeds and returns `Ok(Child)`. If not, it returns `Err`. Either
+/// outcome exercises the closure body.
+#[test]
+fn gh_child_factory_produces_result() {
+    // Use an arg that gh supports structurally — the actual output is
+    // ignored; we only care that spawn() either succeeds or fails
+    // cleanly without panicking.
+    let result = gh_child_factory(&["--version"]);
+    match result {
+        Ok(mut child) => {
+            let _ = child.wait();
+        }
+        Err(_) => {
+            // gh not in PATH — factory returned Err. Also covers the
+            // spawn-fail branch of callers.
+        }
+    }
+}
+
+#[test]
+fn label_constant_is_flow_in_progress() {
+    assert_eq!(LABEL, "Flow In-Progress");
+}
+
+// --- label_issues_with_runner ---
+
+const TEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+#[test]
+fn label_issues_with_runner_all_succeed() {
+    let factory = |_args: &[&str]| {
+        Command::new("sh")
+            .args(["-c", "exit 0"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    };
+    let result = label_issues_with_runner(&[1, 2], "add", TEST_TIMEOUT, &factory);
+    assert_eq!(result.labeled, vec![1, 2]);
+    assert!(result.failed.is_empty());
+}
+
+#[test]
+fn label_issues_with_runner_all_fail_on_nonzero_exit() {
+    let factory = |_args: &[&str]| {
+        Command::new("sh")
+            .args(["-c", "exit 1"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    };
+    let result = label_issues_with_runner(&[3, 4], "remove", TEST_TIMEOUT, &factory);
+    assert!(result.labeled.is_empty());
+    assert_eq!(result.failed, vec![3, 4]);
+}
+
+#[test]
+fn label_issues_with_runner_spawn_error_marks_failed() {
+    let factory = |_args: &[&str]| -> std::io::Result<Child> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no binary",
+        ))
+    };
+    let result = label_issues_with_runner(&[5], "add", TEST_TIMEOUT, &factory);
+    assert_eq!(result.failed, vec![5]);
+}
+
+/// Drives the `wait_timeout` → `Ok(None)` branch (child still running
+/// after the timeout). The child sleeps for 10s but the test passes
+/// a 50ms timeout — `wait_timeout` returns `Ok(None)`, and
+/// `label_issues_with_runner` kills the child and records the issue
+/// as failed.
+#[test]
+fn label_issues_with_runner_timeout_kills_child_and_marks_failed() {
+    let factory = |_args: &[&str]| {
+        Command::new("sh")
+            .args(["-c", "sleep 10"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    };
+    let result = label_issues_with_runner(&[7], "add", Duration::from_millis(50), &factory);
+    assert!(result.labeled.is_empty());
+    assert_eq!(result.failed, vec![7]);
+}
+
+// --- run_impl_main ---
+
+#[test]
+fn label_issues_run_impl_main_missing_state_returns_error_tuple() {
+    let args = Args {
+        state_file: "/nonexistent/state.json".to_string(),
+        add: true,
+        remove: false,
+    };
+    let (value, code) = run_impl_main(args);
+    assert_eq!(value["status"], "error");
+    assert_eq!(code, 1);
+    assert_eq!(value["step"], "read_state");
+}
+
+#[test]
+fn label_issues_run_impl_main_corrupt_state_returns_error_tuple() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_file = dir.path().join("state.json");
+    std::fs::write(&state_file, "{not json").unwrap();
+    let args = Args {
+        state_file: state_file.to_string_lossy().to_string(),
+        add: true,
+        remove: false,
+    };
+    let (value, code) = run_impl_main(args);
+    assert_eq!(value["status"], "error");
+    assert_eq!(code, 1);
+    assert_eq!(value["step"], "parse_state");
+}
+
+#[test]
+fn label_issues_run_impl_main_no_prompt_returns_ok_tuple() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_file = dir.path().join("state.json");
+    std::fs::write(&state_file, r#"{"branch":"test"}"#).unwrap();
+    let args = Args {
+        state_file: state_file.to_string_lossy().to_string(),
+        add: true,
+        remove: false,
+    };
+    let (value, code) = run_impl_main(args);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["labeled"].as_array().unwrap().len(), 0);
+    assert_eq!(value["failed"].as_array().unwrap().len(), 0);
+}
+
+// --- run_impl_main_with_runner ---
+
+#[test]
+fn label_issues_run_impl_main_with_runner_dispatches_to_seam() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_file = dir.path().join("state.json");
+    std::fs::write(
+        &state_file,
+        r#"{"prompt":"work on #42 and #43","branch":"test"}"#,
+    )
+    .unwrap();
+    let args = Args {
+        state_file: state_file.to_string_lossy().to_string(),
+        add: true,
+        remove: false,
+    };
+    let factory = |_args: &[&str]| {
+        Command::new("sh")
+            .args(["-c", "exit 0"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    };
+    let (value, code) = run_impl_main_with_runner(args, &factory);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["labeled"].as_array().unwrap().len(), 2);
+    assert_eq!(value["failed"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn label_issues_run_impl_main_with_runner_mixed_outcomes_partitions_correctly() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_file = dir.path().join("state.json");
+    std::fs::write(
+        &state_file,
+        r#"{"prompt":"work on #1 and #2","branch":"test"}"#,
+    )
+    .unwrap();
+    let args = Args {
+        state_file: state_file.to_string_lossy().to_string(),
+        add: true,
+        remove: false,
+    };
+    let factory = |args: &[&str]| {
+        let num = args[2];
+        let cmd = if num == "1" { "exit 0" } else { "exit 1" };
+        Command::new("sh")
+            .args(["-c", cmd])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    };
+    let (value, code) = run_impl_main_with_runner(args, &factory);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["labeled"], serde_json::json!([1]));
+    assert_eq!(value["failed"], serde_json::json!([2]));
+}
+
+/// Covers the read_to_string Err arm — state-file path resolves to a
+/// directory, so `exists()` passes but `read_to_string` fails with
+/// EISDIR. Drives the `read_state` error step via the failure of the
+/// actual `std::fs::read_to_string` call rather than via exists=false.
+#[test]
+fn label_issues_run_impl_main_state_is_dir_returns_read_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_file = dir.path().join("state.json");
+    std::fs::create_dir(&state_file).unwrap();
+    let args = Args {
+        state_file: state_file.to_string_lossy().to_string(),
+        add: true,
+        remove: false,
+    };
+    let (value, code) = run_impl_main(args);
+    assert_eq!(value["status"], "error");
+    assert_eq!(code, 1);
+    assert_eq!(value["step"], "read_state");
+    assert!(value["message"]
+        .as_str()
+        .unwrap()
+        .contains("Failed to read state file"));
 }

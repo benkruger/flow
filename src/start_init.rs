@@ -48,7 +48,7 @@ use crate::commands::log::append_log;
 use crate::commands::start_lock::{acquire, queue_path, release};
 use crate::commands::start_step::update_step;
 use crate::flow_paths::FlowStatesDir;
-use crate::label_issues::{label_issues, LABEL};
+use crate::label_issues::{default_timeout, gh_child_factory, label_issues_with_runner, LABEL};
 use crate::prime_check;
 use crate::upgrade_check::{self, GhResult};
 use crate::utils::{
@@ -351,7 +351,8 @@ pub fn run_impl_with_deps(
     // issue_numbers already derived in the pre-lock section
     let mut labels_result = json!({});
     if !issue_numbers.is_empty() {
-        let result = label_issues(&issue_numbers, "add");
+        let result =
+            label_issues_with_runner(&issue_numbers, "add", default_timeout(), &gh_child_factory);
         labels_result = json!({
             "labeled": result.labeled,
             "failed": result.failed,

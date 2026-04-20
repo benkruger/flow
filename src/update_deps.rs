@@ -65,9 +65,17 @@ pub fn run_update_deps(cwd: &Path, timeout_secs: u64) -> (Value, i32) {
     let pid = child.id() as i32;
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
     let exit_status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) => {
+        // try_wait on a freshly spawned owned Child is infallible in
+        // practice — the kernel returns ECHILD only when another party
+        // already reaped the process, which cannot happen for a Child
+        // we still own. Treat the Err arm as a genuine unreachable
+        // panic per `.claude/rules/testability-means-simplicity.md`.
+        match child
+            .try_wait()
+            .expect("try_wait on owned child is infallible")
+        {
+            Some(status) => break status,
+            None => {
                 if Instant::now() >= deadline {
                     // SIGKILL the entire process group. `-pid` targets the
                     // process group leader (the child, since process_group(0)
@@ -89,46 +97,33 @@ pub fn run_update_deps(cwd: &Path, timeout_secs: u64) -> (Value, i32) {
                 }
                 thread::sleep(POLL_INTERVAL);
             }
-            Err(e) => {
-                return (
-                    json!({
-                        "status": "error",
-                        "message": format!("bin/dependencies wait failed: {}", e),
-                    }),
-                    1,
-                );
-            }
         }
     };
 
     if !exit_status.success() {
-        let code = exit_status.code().unwrap_or(1);
+        // `code()` returns `None` only when the process was killed by a
+        // signal; the tests exercise this via a self-SIGTERM fixture.
+        let code_display = exit_status
+            .code()
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "signal".to_string());
         return (
             json!({
                 "status": "error",
-                "message": format!("bin/dependencies failed with exit code {}", code),
+                "message": format!("bin/dependencies failed with exit code {}", code_display),
             }),
             1,
         );
     }
 
-    // Check git status --porcelain for file changes
-    let status_output = match Command::new("git")
+    // Check git status --porcelain for file changes. `git` is a hard
+    // dependency of the FLOW toolchain — if spawn fails, the install is
+    // broken in a way the caller cannot usefully recover from.
+    let status_output = Command::new("git")
         .args(["status", "--porcelain"])
         .current_dir(cwd)
         .output()
-    {
-        Ok(o) => o,
-        Err(_) => {
-            return (
-                json!({
-                    "status": "error",
-                    "message": "git status failed",
-                }),
-                1,
-            );
-        }
-    };
+        .expect("git binary must be available in PATH");
 
     if !status_output.status.success() {
         return (
@@ -169,274 +164,4 @@ pub fn run_impl(cwd: &Path, env_timeout: Option<&str>) -> (Value, i32) {
         },
     };
     run_update_deps(cwd, timeout)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use std::os::unix::fs::PermissionsExt;
-
-    /// Initialize a git repo in the given directory with an initial commit.
-    fn init_git_repo(dir: &Path) {
-        let run = |args: &[&str]| {
-            let output = Command::new("git")
-                .args(args)
-                .current_dir(dir)
-                .output()
-                .expect("git command failed");
-            assert!(output.status.success(), "git {:?} failed", args);
-        };
-        run(&["init", "--initial-branch", "main"]);
-        run(&["config", "user.email", "test@test.com"]);
-        run(&["config", "user.name", "Test"]);
-        run(&["config", "commit.gpgsign", "false"]);
-        run(&["commit", "--allow-empty", "-m", "init"]);
-    }
-
-    /// Write bin/dependencies with the given script body (executable).
-    fn write_deps_script(dir: &Path, body: &str) {
-        let bin_dir = dir.join("bin");
-        fs::create_dir_all(&bin_dir).unwrap();
-        let deps = bin_dir.join("dependencies");
-        fs::write(&deps, format!("#!/usr/bin/env bash\n{}\n", body)).unwrap();
-        fs::set_permissions(&deps, fs::Permissions::from_mode(0o755)).unwrap();
-    }
-
-    /// Commit whatever is staged/untracked so git status is clean.
-    fn commit_all(dir: &Path, msg: &str) {
-        Command::new("git")
-            .args(["add", "-A"])
-            .current_dir(dir)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", msg])
-            .current_dir(dir)
-            .output()
-            .unwrap();
-    }
-
-    // --- run_update_deps() tests ---
-
-    #[test]
-    fn skipped_when_no_bin_dependencies() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path());
-        assert!(!dir.path().join("bin").join("dependencies").exists());
-        let (out, code) = run_update_deps(dir.path(), 300);
-        assert_eq!(code, 0);
-        assert_eq!(out["status"], "skipped");
-        assert!(out["reason"].as_str().unwrap().contains("not found"));
-    }
-
-    #[test]
-    fn no_changes_after_run() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path());
-        write_deps_script(dir.path(), "# no-op");
-        commit_all(dir.path(), "add deps");
-
-        let (out, code) = run_update_deps(dir.path(), 300);
-        assert_eq!(code, 0);
-        assert_eq!(out["status"], "ok");
-        assert_eq!(out["changes"], false);
-    }
-
-    #[test]
-    fn changes_after_run() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path());
-        write_deps_script(dir.path(), "echo updated > deps.lock");
-        commit_all(dir.path(), "add deps");
-
-        let (out, code) = run_update_deps(dir.path(), 300);
-        assert_eq!(code, 0);
-        assert_eq!(out["status"], "ok");
-        assert_eq!(out["changes"], true);
-    }
-
-    #[test]
-    fn error_when_deps_fails() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path());
-        write_deps_script(dir.path(), "exit 1");
-        commit_all(dir.path(), "add deps");
-
-        let (out, code) = run_update_deps(dir.path(), 300);
-        assert_eq!(code, 1);
-        assert_eq!(out["status"], "error");
-        let msg = out["message"].as_str().unwrap().to_lowercase();
-        assert!(msg.contains("failed") || msg.contains("exit"));
-    }
-
-    #[test]
-    fn timeout_reports_error() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path());
-        write_deps_script(dir.path(), "sleep 300");
-        commit_all(dir.path(), "add deps");
-
-        // 1 second timeout — sleep 300 will be killed
-        let start = Instant::now();
-        let (out, code) = run_update_deps(dir.path(), 1);
-        let elapsed = start.elapsed();
-
-        assert_eq!(code, 1);
-        assert_eq!(out["status"], "error");
-        assert!(out["message"].as_str().unwrap().contains("timed out"));
-        // Must actually kill the process, not block for 300s
-        assert!(
-            elapsed < Duration::from_secs(10),
-            "timeout took too long: {:?}",
-            elapsed
-        );
-    }
-
-    #[test]
-    fn non_bash_deps_script() {
-        // Python shebang — confirms we don't force bash
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path());
-        let bin_dir = dir.path().join("bin");
-        fs::create_dir_all(&bin_dir).unwrap();
-        let deps = bin_dir.join("dependencies");
-        fs::write(
-            &deps,
-            "#!/usr/bin/env python3\nfrom pathlib import Path\nPath('py-deps.lock').write_text('v1')\n",
-        )
-        .unwrap();
-        fs::set_permissions(&deps, fs::Permissions::from_mode(0o755)).unwrap();
-        commit_all(dir.path(), "add deps");
-
-        let (out, code) = run_update_deps(dir.path(), 300);
-        assert_eq!(code, 0);
-        assert_eq!(out["status"], "ok");
-        assert_eq!(out["changes"], true);
-    }
-
-    #[test]
-    fn non_executable_deps_reports_error() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path());
-        let bin_dir = dir.path().join("bin");
-        fs::create_dir_all(&bin_dir).unwrap();
-        let deps = bin_dir.join("dependencies");
-        fs::write(&deps, "#!/usr/bin/env bash\necho ok\n").unwrap();
-        fs::set_permissions(&deps, fs::Permissions::from_mode(0o644)).unwrap();
-        commit_all(dir.path(), "add deps");
-
-        let (out, code) = run_update_deps(dir.path(), 300);
-        assert_eq!(code, 1);
-        assert_eq!(out["status"], "error");
-        assert!(out["message"]
-            .as_str()
-            .unwrap()
-            .to_lowercase()
-            .contains("executed"));
-    }
-
-    #[test]
-    fn directory_instead_of_file_reports_skipped() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path());
-        let deps_dir = dir.path().join("bin").join("dependencies");
-        fs::create_dir_all(&deps_dir).unwrap();
-
-        let (out, code) = run_update_deps(dir.path(), 300);
-        assert_eq!(code, 0);
-        assert_eq!(out["status"], "skipped");
-    }
-
-    #[test]
-    fn git_status_failure_reports_error() {
-        // Non-git directory — deps exists but git status fails
-        let dir = tempfile::tempdir().unwrap();
-        write_deps_script(dir.path(), "# no-op");
-        let (out, code) = run_update_deps(dir.path(), 300);
-        assert_eq!(code, 1);
-        assert_eq!(out["status"], "error");
-        assert!(out["message"]
-            .as_str()
-            .unwrap()
-            .to_lowercase()
-            .contains("git status"));
-    }
-
-    #[test]
-    fn deps_stdout_does_not_corrupt_return_value() {
-        // Verifies that run_update_deps returns a well-formed Value on
-        // the happy path: bin/dependencies exits 0, the repo is clean
-        // after the script runs, and the Value contains
-        // status="ok"/changes=false exactly. The production Value is
-        // assembled from json!(...) literals that use only the exit
-        // code and the `git status` output — child stdout is not part
-        // of the Value assembly, so there is no code path where a
-        // child's inherited writes can corrupt the return structure.
-        // That structural guarantee lives in run_update_deps itself,
-        // not in this test; this test only exercises the happy-path
-        // JSON shape.
-        //
-        // The echo is redirected to /dev/null inside the bash script
-        // so no bytes reach the inherited terminal (cargo test does
-        // not capture inherited child fds, unlike pytest). The echo
-        // still runs inside the child, exercising the full
-        // process_group + try_wait + timeout + exit status + git
-        // status + Value assembly path.
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path());
-        write_deps_script(
-            dir.path(),
-            "echo 'Installing dependencies...' > /dev/null 2>&1",
-        );
-        commit_all(dir.path(), "add deps");
-
-        let (out, code) = run_update_deps(dir.path(), 300);
-        assert_eq!(code, 0);
-        assert_eq!(out["status"], "ok");
-        assert_eq!(out["changes"], false);
-    }
-
-    // --- run_impl() tests ---
-
-    #[test]
-    fn cli_default_timeout_when_env_absent() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path());
-        write_deps_script(dir.path(), "# no-op");
-        commit_all(dir.path(), "add deps");
-
-        let (out, code) = run_impl(dir.path(), None);
-        assert_eq!(code, 0);
-        assert_eq!(out["status"], "ok");
-    }
-
-    #[test]
-    fn cli_env_timeout_override() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path());
-        write_deps_script(dir.path(), "sleep 300");
-        commit_all(dir.path(), "add deps");
-
-        let (out, code) = run_impl(dir.path(), Some("1"));
-        assert_eq!(code, 1);
-        assert_eq!(out["status"], "error");
-        assert!(out["message"].as_str().unwrap().contains("timed out"));
-    }
-
-    #[test]
-    fn cli_invalid_env_timeout_reports_error() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path());
-        write_deps_script(dir.path(), "# no-op");
-        commit_all(dir.path(), "add deps");
-
-        let (out, code) = run_impl(dir.path(), Some("notanumber"));
-        assert_eq!(code, 1);
-        assert_eq!(out["status"], "error");
-        assert!(out["message"]
-            .as_str()
-            .unwrap()
-            .contains("FLOW_UPDATE_DEPS_TIMEOUT"));
-    }
 }

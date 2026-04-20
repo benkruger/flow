@@ -145,516 +145,80 @@ pub fn validate(state_path: Option<&Path>) -> (bool, String, Option<Value>) {
     )
 }
 
-/// Run the validate-ask-user hook (entry point from CLI).
-pub fn run() {
-    // Consume stdin (hook sends JSON but we don't need it)
-    if read_hook_input().is_none() {
-        std::process::exit(0);
+/// Decision produced by `run_impl_main` — translates to exit code +
+/// side effect in `run()`.
+#[derive(Debug)]
+pub enum HookAction {
+    /// Exit 0, no side effects. Used when the hook cannot resolve a
+    /// state file (no stdin input, no branch, slash branch).
+    Allow,
+    /// Exit 2, stderr message. Autonomous-phase block.
+    Block(String),
+    /// Exit 0, stdout JSON answer. `_auto_continue` auto-answer.
+    AutoAnswer(Value),
+    /// Exit 0, call `set_blocked` on the given state path.
+    AllowWithMark(std::path::PathBuf),
+}
+
+/// Pure decision core for the validate-ask-user hook. Accepts the
+/// parsed stdin payload, current git branch, and project root as
+/// injected dependencies so every branch is reachable from unit
+/// tests.
+pub fn run_impl_main(
+    hook_input: Option<Value>,
+    branch: Option<String>,
+    project_root: &Path,
+) -> HookAction {
+    // No stdin input — nothing to gate on.
+    if hook_input.is_none() {
+        return HookAction::Allow;
     }
 
-    let branch = match current_branch() {
+    let branch = match branch {
         Some(b) => b,
-        None => std::process::exit(0),
+        None => return HookAction::Allow,
     };
 
     // Slash-containing git branches are not valid FLOW branches —
     // treat as "no active flow" and exit 0 rather than panicking.
-    let state_path = match FlowPaths::try_new(project_root(), &branch) {
+    let state_path = match FlowPaths::try_new(project_root, &branch) {
         Some(p) => p.state_file(),
-        None => std::process::exit(0),
+        None => return HookAction::Allow,
     };
 
     let (allowed, message, hook_response) = validate(Some(&state_path));
-    // Block path: exit 2 with stderr message so Claude Code feeds it
-    // back to the model as a blocked tool call (matches the
-    // `validate_pretool::run()` pattern). `set_blocked` is intentionally
-    // not called on this path — the hook refused the tool call at the
-    // gate, so there is no "blocked-while-executing" timestamp to
-    // record. `_blocked` is only written when an AskUserQuestion was
-    // actually delivered to the user.
+    // Block path: `set_blocked` is intentionally not called — the
+    // hook refused the tool call at the gate, so there is no
+    // "blocked-while-executing" timestamp to record. `_blocked` is
+    // only written when an AskUserQuestion was actually delivered.
     if !allowed {
-        eprintln!("{}", message);
-        std::process::exit(2);
+        return HookAction::Block(message);
     }
     if let Some(response) = hook_response {
-        println!("{}", serde_json::to_string(&response).unwrap());
-        std::process::exit(0);
+        return HookAction::AutoAnswer(response);
     }
-
-    set_blocked(&state_path);
-    std::process::exit(0);
+    HookAction::AllowWithMark(state_path)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-    use std::fs;
-
-    fn write_state(dir: &Path, branch: &str, state: &Value) -> std::path::PathBuf {
-        let state_dir = dir.join(".flow-states");
-        fs::create_dir_all(&state_dir).unwrap();
-        let path = state_dir.join(format!("{}.json", branch));
-        fs::write(&path, serde_json::to_string_pretty(state).unwrap()).unwrap();
-        path
-    }
-
-    // --- validate tests ---
-
-    #[test]
-    fn test_validate_allows_no_state_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("nonexistent.json");
-        let (allowed, msg, resp) = validate(Some(&path));
-        assert!(allowed);
-        assert!(msg.is_empty());
-        assert!(resp.is_none());
-    }
-
-    #[test]
-    fn test_validate_allows_none_state_path() {
-        let (allowed, msg, resp) = validate(None);
-        assert!(allowed);
-        assert!(msg.is_empty());
-        assert!(resp.is_none());
-    }
-
-    #[test]
-    fn test_validate_allows_invalid_json() {
-        let dir = tempfile::tempdir().unwrap();
-        let bad_file = dir.path().join("bad.json");
-        fs::write(&bad_file, "not json at all").unwrap();
-        let (allowed, msg, resp) = validate(Some(&bad_file));
-        assert!(allowed);
-        assert!(msg.is_empty());
-        assert!(resp.is_none());
-    }
-
-    /// RAII guard that restores file permissions on Drop. Protects
-    /// chmod-000 tests from leaking a mode-000 file when an assertion
-    /// inside the test body panics before the inline restore runs.
-    /// Per `.claude/rules/panic-safe-cleanup.md`, any resource whose
-    /// released state is not the default must be wrapped in a Drop
-    /// impl to guarantee cleanup on panic unwind.
-    struct PermissionGuard {
-        path: std::path::PathBuf,
-        restore_mode: u32,
-    }
-    impl Drop for PermissionGuard {
-        fn drop(&mut self) {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(&self.path, fs::Permissions::from_mode(self.restore_mode));
+/// Run the validate-ask-user hook (entry point from CLI). Translates
+/// `run_impl_main` decisions into exit codes and stdio side effects.
+pub fn run() {
+    let hook_input = read_hook_input();
+    let branch = current_branch();
+    let root = project_root();
+    match run_impl_main(hook_input, branch, &root) {
+        HookAction::Allow => std::process::exit(0),
+        HookAction::Block(msg) => {
+            eprintln!("{}", msg);
+            std::process::exit(2);
         }
-    }
-
-    /// Covers the `Err(_) => return (true, String::new(), None)` arm on
-    /// line 67 of `validate`: `state_path.exists()` succeeds but
-    /// `read_to_string` fails. A file mode of `0o000` on macOS passes
-    /// the `exists()` metadata check but the read returns EACCES.
-    #[test]
-    fn test_validate_allows_unreadable_state_file() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().unwrap();
-        let unreadable = dir.path().join("unreadable.json");
-        fs::write(&unreadable, "{}").unwrap();
-        fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000)).unwrap();
-        let _guard = PermissionGuard {
-            path: unreadable.clone(),
-            restore_mode: 0o644,
-        };
-        let (allowed, msg, resp) = validate(Some(&unreadable));
-        assert!(allowed);
-        assert!(msg.is_empty());
-        assert!(resp.is_none());
-    }
-
-    #[test]
-    fn test_validate_allows_no_auto_continue() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({"current_phase": "flow-start", "branch": "test"});
-        let path = write_state(dir.path(), "test", &state);
-        let (allowed, msg, resp) = validate(Some(&path));
-        assert!(allowed);
-        assert!(msg.is_empty());
-        assert!(resp.is_none());
-    }
-
-    #[test]
-    fn test_validate_allows_empty_auto_continue() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({
-            "current_phase": "flow-start",
-            "branch": "test",
-            "_auto_continue": "",
-        });
-        let path = write_state(dir.path(), "test", &state);
-        let (allowed, msg, resp) = validate(Some(&path));
-        assert!(allowed);
-        assert!(msg.is_empty());
-        assert!(resp.is_none());
-    }
-
-    #[test]
-    fn test_validate_auto_continue_returns_hook_response() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({
-            "current_phase": "flow-start",
-            "branch": "test",
-            "_auto_continue": "/flow:flow-plan",
-        });
-        let path = write_state(dir.path(), "test", &state);
-        let (allowed, _msg, resp) = validate(Some(&path));
-        assert!(allowed);
-        assert!(resp.is_some());
-        let resp = resp.unwrap();
-        assert_eq!(resp["permissionDecision"], "allow");
-        assert!(resp["updatedInput"]
-            .as_str()
-            .unwrap()
-            .contains("/flow:flow-plan"));
-    }
-
-    #[test]
-    fn test_validate_auto_continue_includes_command() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({
-            "current_phase": "flow-code",
-            "branch": "test",
-            "_auto_continue": "/flow:flow-code-review",
-        });
-        let path = write_state(dir.path(), "test", &state);
-        let (allowed, _msg, resp) = validate(Some(&path));
-        assert!(allowed);
-        assert!(resp.is_some());
-        let resp = resp.unwrap();
-        assert_eq!(resp["permissionDecision"], "allow");
-        assert!(resp["updatedInput"]
-            .as_str()
-            .unwrap()
-            .contains("/flow:flow-code-review"));
-    }
-
-    // --- validate BLOCK path tests ---
-
-    #[test]
-    fn test_validate_blocks_when_skills_continue_auto_detailed() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({
-            "current_phase": "flow-code",
-            "branch": "test",
-            "skills": {"flow-code": {"continue": "auto", "commit": "auto"}},
-            "phases": {"flow-code": {"status": "in_progress"}},
-        });
-        let path = write_state(dir.path(), "test", &state);
-        let (allowed, msg, resp) = validate(Some(&path));
-        assert!(!allowed, "Detailed skills.continue=auto must block");
-        assert!(
-            msg.contains("flow-code"),
-            "block message must name the phase: {}",
-            msg
-        );
-        assert!(resp.is_none(), "block path must not return hook_response");
-    }
-
-    #[test]
-    fn test_validate_blocks_when_skills_continue_auto_simple() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({
-            "current_phase": "flow-code",
-            "branch": "test",
-            "skills": {"flow-code": "auto"},
-            "phases": {"flow-code": {"status": "in_progress"}},
-        });
-        let path = write_state(dir.path(), "test", &state);
-        let (allowed, msg, resp) = validate(Some(&path));
-        assert!(!allowed, "Simple skills=auto must block");
-        assert!(msg.contains("flow-code"));
-        assert!(resp.is_none());
-    }
-
-    #[test]
-    fn test_validate_allows_when_skills_continue_manual() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({
-            "current_phase": "flow-code",
-            "branch": "test",
-            "skills": {"flow-code": {"continue": "manual"}},
-            "phases": {"flow-code": {"status": "in_progress"}},
-        });
-        let path = write_state(dir.path(), "test", &state);
-        let (allowed, msg, resp) = validate(Some(&path));
-        assert!(allowed);
-        assert!(msg.is_empty());
-        assert!(resp.is_none());
-    }
-
-    #[test]
-    fn test_validate_allows_when_skills_key_missing() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({
-            "current_phase": "flow-code",
-            "branch": "test",
-            "phases": {"flow-code": {"status": "in_progress"}},
-        });
-        let path = write_state(dir.path(), "test", &state);
-        let (allowed, msg, resp) = validate(Some(&path));
-        assert!(allowed, "missing skills key must fail-open (legacy state)");
-        assert!(msg.is_empty());
-        assert!(resp.is_none());
-    }
-
-    #[test]
-    fn test_validate_allows_when_current_phase_not_in_skills() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({
-            "current_phase": "flow-code",
-            "branch": "test",
-            "skills": {"flow-start": {"continue": "auto"}},
-            "phases": {"flow-code": {"status": "in_progress"}},
-        });
-        let path = write_state(dir.path(), "test", &state);
-        let (allowed, _msg, resp) = validate(Some(&path));
-        assert!(allowed, "current_phase missing from skills must allow");
-        assert!(resp.is_none());
-    }
-
-    #[test]
-    fn test_validate_block_precedes_auto_continue() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({
-            "current_phase": "flow-code",
-            "branch": "test",
-            "skills": {"flow-code": {"continue": "auto"}},
-            "phases": {"flow-code": {"status": "in_progress"}},
-            "_auto_continue": "/flow:flow-code-review",
-        });
-        let path = write_state(dir.path(), "test", &state);
-        let (allowed, msg, resp) = validate(Some(&path));
-        assert!(
-            !allowed,
-            "block must take precedence over _auto_continue auto-answer \
-             when the current phase is in_progress+auto"
-        );
-        assert!(msg.contains("flow-code"));
-        assert!(resp.is_none(), "block path must not auto-answer");
-    }
-
-    #[test]
-    fn test_validate_auto_continue_without_skills_auto() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({
-            "current_phase": "flow-code",
-            "branch": "test",
-            "skills": {"flow-code": {"continue": "manual"}},
-            "phases": {"flow-code": {"status": "in_progress"}},
-            "_auto_continue": "/flow:flow-code-review",
-        });
-        let path = write_state(dir.path(), "test", &state);
-        let (allowed, _msg, resp) = validate(Some(&path));
-        assert!(
-            allowed,
-            "_auto_continue without skills-auto must auto-answer"
-        );
-        assert!(
-            resp.is_some(),
-            "manual skills + _auto_continue must auto-answer"
-        );
-        let resp = resp.unwrap();
-        assert_eq!(resp["permissionDecision"], "allow");
-    }
-
-    #[test]
-    fn test_validate_block_message_names_phase() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({
-            "current_phase": "flow-learn",
-            "branch": "test",
-            "skills": {"flow-learn": {"continue": "auto"}},
-            "phases": {"flow-learn": {"status": "in_progress"}},
-        });
-        let path = write_state(dir.path(), "test", &state);
-        let (_allowed, msg, _resp) = validate(Some(&path));
-        assert!(
-            msg.contains("flow-learn"),
-            "message must name the configured phase for diagnosis: {}",
-            msg
-        );
-    }
-
-    #[test]
-    fn test_validate_allows_no_current_phase() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({
-            "branch": "test",
-            "skills": {"flow-code": {"continue": "auto"}},
-            "phases": {"flow-code": {"status": "in_progress"}},
-        });
-        let path = write_state(dir.path(), "test", &state);
-        let (allowed, _msg, resp) = validate(Some(&path));
-        assert!(
-            allowed,
-            "missing current_phase must fail-open — no phase to gate on"
-        );
-        assert!(resp.is_none());
-    }
-
-    #[test]
-    fn test_validate_corrupt_skills_value() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({
-            "current_phase": "flow-code",
-            "branch": "test",
-            "skills": [1, 2, 3],
-            "phases": {"flow-code": {"status": "in_progress"}},
-        });
-        let path = write_state(dir.path(), "test", &state);
-        let (allowed, _msg, resp) = validate(Some(&path));
-        assert!(allowed, "corrupt skills value must fail-open");
-        assert!(resp.is_none());
-    }
-
-    // Regression guard for the pre-mortem critical finding: manual→auto
-    // transitions (Code=manual with Code Review=auto in the Recommended
-    // preset) would deadlock if the hook blocked the skill's HARD-GATE
-    // AskUserQuestion fired after `phase_complete()` advanced
-    // `current_phase` to the next phase. At that moment the next phase's
-    // `phases.<phase>.status` is still `"pending"` — `phase_enter()` has
-    // not yet run. The hook must allow AskUserQuestion in that window.
-    #[test]
-    fn test_validate_allows_at_transition_boundary_pending_phase() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({
-            "current_phase": "flow-code-review",
-            "branch": "test",
-            "skills": {"flow-code-review": {"continue": "auto"}},
-            "phases": {
-                "flow-code": {"status": "complete"},
-                "flow-code-review": {"status": "pending"},
-            },
-        });
-        let path = write_state(dir.path(), "test", &state);
-        let (allowed, msg, resp) = validate(Some(&path));
-        assert!(
-            allowed,
-            "transition boundary (next phase pending) must allow — \
-             prevents the manual→auto deadlock on the Recommended preset"
-        );
-        assert!(msg.is_empty());
-        assert!(resp.is_none());
-    }
-
-    #[test]
-    fn test_validate_allows_when_phase_status_missing() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({
-            "current_phase": "flow-code",
-            "branch": "test",
-            "skills": {"flow-code": {"continue": "auto"}},
-            // no `phases` key at all — legacy state before phase-status
-            // tracking was added
-        });
-        let path = write_state(dir.path(), "test", &state);
-        let (allowed, _msg, resp) = validate(Some(&path));
-        assert!(
-            allowed,
-            "missing phases key must fail-open — legacy state tolerance"
-        );
-        assert!(resp.is_none());
-    }
-
-    #[test]
-    fn test_validate_allows_when_phase_status_complete() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({
-            "current_phase": "flow-code",
-            "branch": "test",
-            "skills": {"flow-code": {"continue": "auto"}},
-            "phases": {"flow-code": {"status": "complete"}},
-        });
-        let path = write_state(dir.path(), "test", &state);
-        let (allowed, _msg, resp) = validate(Some(&path));
-        assert!(
-            allowed,
-            "completed phase must allow — not currently executing"
-        );
-        assert!(resp.is_none());
-    }
-
-    #[test]
-    fn test_validate_corrupt_phases_value() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({
-            "current_phase": "flow-code",
-            "branch": "test",
-            "skills": {"flow-code": {"continue": "auto"}},
-            "phases": "not-an-object",
-        });
-        let path = write_state(dir.path(), "test", &state);
-        let (allowed, _msg, resp) = validate(Some(&path));
-        assert!(allowed, "corrupt phases value must fail-open");
-        assert!(resp.is_none());
-    }
-
-    // --- set_blocked tests ---
-
-    #[test]
-    fn test_set_blocked_sets_timestamp() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({"current_phase": "flow-code", "branch": "test"});
-        let path = write_state(dir.path(), "test", &state);
-        set_blocked(&path);
-        let updated: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert!(updated.get("_blocked").is_some());
-        assert!(!updated["_blocked"].as_str().unwrap().is_empty());
-    }
-
-    #[test]
-    fn test_set_blocked_no_state_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("nonexistent.json");
-        // Should not panic
-        set_blocked(&path);
-    }
-
-    #[test]
-    fn test_set_blocked_corrupt_state() {
-        let dir = tempfile::tempdir().unwrap();
-        let bad_file = dir.path().join("bad.json");
-        fs::write(&bad_file, "{bad json").unwrap();
-        // Should not panic
-        set_blocked(&bad_file);
-    }
-
-    #[test]
-    fn test_set_blocked_non_object_state() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("array.json");
-        fs::write(&path, "[1, 2, 3]").unwrap();
-        // Should not panic — object guard skips the mutation
-        set_blocked(&path);
-        let content = fs::read_to_string(&path).unwrap();
-        let parsed: Value = serde_json::from_str(&content).unwrap();
-        assert_eq!(
-            parsed,
-            json!([1, 2, 3]),
-            "non-object state must be unchanged"
-        );
-    }
-
-    #[test]
-    fn test_set_blocked_preserves_other_fields() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = json!({
-            "current_phase": "flow-code",
-            "branch": "test",
-            "session_id": "existing-session",
-            "notes": [{"note": "a correction"}],
-        });
-        let path = write_state(dir.path(), "test", &state);
-        set_blocked(&path);
-        let updated: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(updated["session_id"], "existing-session");
-        assert_eq!(updated["notes"][0]["note"], "a correction");
-        assert!(updated.get("_blocked").is_some());
+        HookAction::AutoAnswer(resp) => {
+            println!("{}", serde_json::to_string(&resp).unwrap());
+            std::process::exit(0);
+        }
+        HookAction::AllowWithMark(state_path) => {
+            set_blocked(&state_path);
+            std::process::exit(0);
+        }
     }
 }

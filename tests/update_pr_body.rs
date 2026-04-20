@@ -12,6 +12,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use common::{create_gh_stub, create_git_repo_with_remote, parse_output};
+use flow_rs::update_pr_body::{
+    add_artifact_to_body, append_plain_section_to_body, append_section_to_body,
+    build_artifact_line, build_details_block, build_plain_section, ensure_artifacts_section,
+    fence_for_content,
+};
 
 fn run_cmd(repo: &Path, args: &[&str], stub_dir: &Path) -> Output {
     let path_env = format!(
@@ -440,4 +445,193 @@ fn append_section_content_file_is_directory_reports_read_error() {
         .as_str()
         .unwrap_or("")
         .contains("Failed to read file"));
+}
+
+// --- library-level tests (migrated from inline) ---
+
+#[test]
+fn build_artifact_line_returns_formatted_markdown() {
+    let result = build_artifact_line("Plan file", "/path/to/plan.md");
+    assert_eq!(result, "- **Plan file**: `/path/to/plan.md`");
+}
+
+#[test]
+fn ensure_artifacts_section_inserts_after_what() {
+    let body = "## What\n\nFeature Title.";
+    let result = ensure_artifacts_section(body);
+    assert!(result.contains("## Artifacts"));
+    assert!(result.find("## What").unwrap() < result.find("## Artifacts").unwrap());
+}
+
+#[test]
+fn ensure_artifacts_section_no_what_heading() {
+    let body = "Some other content.";
+    let result = ensure_artifacts_section(body);
+    assert!(result.contains("## Artifacts"));
+    assert!(result.starts_with("Some other content."));
+}
+
+#[test]
+fn ensure_artifacts_section_idempotent() {
+    let body = "## What\n\nFeature Title.\n\n## Artifacts\n\n- **Session log**: `/path`";
+    let result = ensure_artifacts_section(body);
+    assert_eq!(result.matches("## Artifacts").count(), 1);
+}
+
+#[test]
+fn add_artifact_to_body_adds_new_line() {
+    let body = "## What\n\nFeature Title.\n\n## Artifacts\n";
+    let result = add_artifact_to_body(body, "Plan file", "/plans/x.md");
+    assert!(result.contains("- **Plan file**: `/plans/x.md`"));
+}
+
+#[test]
+fn add_artifact_to_body_replaces_existing_same_label() {
+    let body = "## What\n\nFeature Title.\n\n## Artifacts\n\n- **Plan file**: `/old/path.md`";
+    let result = add_artifact_to_body(body, "Plan file", "/new/path.md");
+    assert!(result.contains("- **Plan file**: `/new/path.md`"));
+    assert!(!result.contains("/old/path.md"));
+    assert_eq!(result.matches("Plan file").count(), 1);
+}
+
+#[test]
+fn add_artifact_to_body_creates_section_if_missing() {
+    let body = "## What\n\nFeature Title.";
+    let result = add_artifact_to_body(body, "Session log", "/path/log.jsonl");
+    assert!(result.contains("## Artifacts"));
+    assert!(result.contains("- **Session log**: `/path/log.jsonl`"));
+}
+
+#[test]
+fn add_artifact_multiple_pairs() {
+    let body = "## What\n\nFeature Title.\n\n## Artifacts\n";
+    let body = add_artifact_to_body(body, "Plan file", "/plans/x.md");
+    let body = add_artifact_to_body(&body, "Session log", "/logs/y.jsonl");
+    assert!(body.contains("- **Plan file**: `/plans/x.md`"));
+    assert!(body.contains("- **Session log**: `/logs/y.jsonl`"));
+}
+
+#[test]
+fn build_details_block_returns_collapsible_html() {
+    let result = build_details_block(
+        "State File",
+        ".flow-states/b.json",
+        r#"{"key": "value"}"#,
+        "json",
+    );
+    assert!(result.contains("## State File"));
+    assert!(result.contains("<details>"));
+    assert!(result.contains("<summary>.flow-states/b.json</summary>"));
+    assert!(result.contains("```json"));
+    assert!(result.contains(r#"{"key": "value"}"#));
+    assert!(result.contains("</details>"));
+}
+
+#[test]
+fn build_details_block_text_format() {
+    let result = build_details_block(
+        "Session Log",
+        ".flow-states/b.log",
+        "line 1\nline 2",
+        "text",
+    );
+    assert!(result.contains("```text"));
+    assert!(result.contains("line 1\nline 2"));
+}
+
+#[test]
+fn fence_for_content_no_backticks() {
+    let result = fence_for_content("plain text without any fences");
+    assert_eq!(result, "```");
+}
+
+#[test]
+fn fence_for_content_triple_backticks() {
+    let result = fence_for_content("before\n```python\ncode\n```\nafter");
+    assert_eq!(result, "````");
+}
+
+#[test]
+fn fence_for_content_quad_backticks() {
+    let result = fence_for_content("before\n````text\ncontent\n````\nafter");
+    assert_eq!(result, "`````");
+}
+
+#[test]
+fn fence_for_content_mixed_lengths() {
+    let result = fence_for_content("```python\ncode\n```\n\n````xml\ndata\n````");
+    assert_eq!(result, "`````");
+}
+
+#[test]
+fn build_details_block_nested_fences() {
+    let content = "# DAG\n\n```xml\n<dag/>\n```\n\n```python\nprint('hi')\n```";
+    let result = build_details_block("DAG Analysis", "dag.md", content, "text");
+    let lines: Vec<&str> = result.split('\n').collect();
+    let fence_lines: Vec<&&str> = lines.iter().filter(|l| l.starts_with("````")).collect();
+    assert_eq!(fence_lines.len(), 2);
+    assert!(result.contains("```xml"));
+    assert!(result.contains("```python"));
+    assert!(result.starts_with("## DAG Analysis"));
+    assert!(result.ends_with("</details>"));
+}
+
+#[test]
+fn build_plain_section_returns_heading_and_content() {
+    let result = build_plain_section("Phase Timings", "| Phase | Duration |");
+    assert!(result.contains("## Phase Timings"));
+    assert!(result.contains("| Phase | Duration |"));
+    assert!(result.contains("<!-- end:Phase Timings -->"));
+    assert!(!result.contains("<details>"));
+}
+
+#[test]
+fn append_section_to_body_appends() {
+    let body = "## What\n\nFeature Title.";
+    let result = append_section_to_body(
+        body,
+        "State File",
+        ".flow-states/b.json",
+        r#"{"k": "v"}"#,
+        "json",
+    );
+    assert!(result.contains(body));
+    assert!(result.contains("## State File"));
+    assert!(result.contains("<details>"));
+}
+
+#[test]
+fn append_section_replaces_if_heading_exists() {
+    let body = "## What\n\nFeature Title.\n\n## State File\n\n<details>\n<summary>old</summary>\n\n```json\nold content\n```\n\n</details>";
+    let result = append_section_to_body(body, "State File", "new-summary", "new content", "json");
+    assert!(!result.contains("old content"));
+    assert!(result.contains("new content"));
+    assert_eq!(result.matches("## State File").count(), 1);
+}
+
+#[test]
+fn append_plain_section_appends_to_body() {
+    let body = "## What\n\nFeature Title.";
+    let result = append_plain_section_to_body(body, "Phase Timings", "| Phase | Duration |");
+    assert!(result.contains(body));
+    assert!(result.contains("## Phase Timings"));
+    assert!(result.contains("<!-- end:Phase Timings -->"));
+}
+
+#[test]
+fn append_plain_section_replaces_existing() {
+    let body = "## What\n\nFeature Title.\n\n## Phase Timings\n\nold content\n\n<!-- end:Phase Timings -->";
+    let result = append_plain_section_to_body(body, "Phase Timings", "new content");
+    assert!(!result.contains("old content"));
+    assert!(result.contains("new content"));
+    assert_eq!(result.matches("## Phase Timings").count(), 1);
+}
+
+#[test]
+fn append_plain_section_idempotent() {
+    let body = "## What\n\nFeature Title.";
+    let first = append_plain_section_to_body(body, "Phase Timings", "| Phase | Duration |");
+    let second = append_plain_section_to_body(&first, "Phase Timings", "| Phase | Duration |");
+    assert_eq!(first, second);
+    assert_eq!(second.matches("## Phase Timings").count(), 1);
 }

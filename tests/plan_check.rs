@@ -18,6 +18,13 @@
 //! branches on the JSON, not the shell exit code.
 
 use std::fs;
+use std::path::{Path, PathBuf};
+
+use flow_rs::duplicate_test_coverage;
+use flow_rs::plan_check::{
+    build_violation_message, duplicate_violation_to_tagged_json, resolve_plan_file_from_state,
+    resolve_plan_file_override, run_impl, violation_to_tagged_json, Args,
+};
 use std::process::Command;
 
 mod common;
@@ -481,4 +488,248 @@ fn plan_check_invalid_json_state_exits_with_code_1() {
         "stdout should mention JSON parse failure, got: {}",
         stdout
     );
+}
+
+// --- library-level tests (migrated from inline) ---
+
+#[test]
+fn absolute_override_passes_through() {
+    let root = Path::new("/tmp/fake-root");
+    let resolved = resolve_plan_file_override(root, "/tmp/other/plan.md");
+    assert_eq!(resolved, PathBuf::from("/tmp/other/plan.md"));
+}
+
+#[test]
+fn relative_override_joins_project_root() {
+    let root = Path::new("/tmp/fake-root");
+    let resolved = resolve_plan_file_override(root, "custom/plan.md");
+    assert_eq!(resolved, PathBuf::from("/tmp/fake-root/custom/plan.md"));
+}
+
+#[test]
+fn violation_serializes_all_fields_with_rule_tag() {
+    let path = PathBuf::from("/tmp/plan.md");
+    let json = violation_to_tagged_json(
+        &path,
+        42,
+        "every subcommand",
+        "Add guard to every subcommand.",
+        "scope-enumeration",
+    );
+    assert_eq!(json["file"], "/tmp/plan.md");
+    assert_eq!(json["line"], 42);
+    assert_eq!(json["phrase"], "every subcommand");
+    assert_eq!(json["context"], "Add guard to every subcommand.");
+    assert_eq!(json["rule"], "scope-enumeration");
+}
+
+#[test]
+fn violation_to_tagged_json_carries_audit_rule_label() {
+    let path = PathBuf::from("/tmp/plan.md");
+    let json = violation_to_tagged_json(
+        &path,
+        10,
+        "panic on empty",
+        "tighten to panic on empty",
+        "external-input-audit",
+    );
+    assert_eq!(json["rule"], "external-input-audit");
+}
+
+#[test]
+fn message_names_only_scope_when_audit_count_is_zero() {
+    let m = build_violation_message(2, 0, 0, 2);
+    assert!(m.contains("2 universal-coverage"));
+    assert!(m.contains("scope-enumeration.md"));
+    assert!(!m.contains("panic/assert"));
+    assert!(!m.contains("duplicate-test-coverage"));
+}
+
+#[test]
+fn message_names_only_audit_when_scope_count_is_zero() {
+    let m = build_violation_message(0, 3, 0, 3);
+    assert!(m.contains("3 panic/assert"));
+    assert!(m.contains("external-input-audit-gate.md"));
+    assert!(!m.contains("universal-coverage"));
+}
+
+#[test]
+fn message_names_only_duplicate_when_others_are_zero() {
+    let m = build_violation_message(0, 0, 2, 2);
+    assert!(m.contains("2 duplicate-test-coverage"));
+    assert!(m.contains("duplicate-test-coverage.md"));
+    assert!(!m.contains("universal-coverage"));
+    assert!(!m.contains("panic/assert"));
+}
+
+#[test]
+fn message_names_all_three_rules_when_all_have_violations() {
+    let m = build_violation_message(2, 1, 3, 6);
+    assert!(m.contains("2 universal-coverage"));
+    assert!(m.contains("1 panic/assert"));
+    assert!(m.contains("3 duplicate-test-coverage"));
+    assert!(m.contains("scope-enumeration.md"));
+    assert!(m.contains("external-input-audit-gate.md"));
+    assert!(m.contains("duplicate-test-coverage.md"));
+    assert!(m.contains("6 plan-check violation"));
+}
+
+#[test]
+fn run_impl_aggregates_violations_from_both_scanners() {
+    let tmp = std::env::temp_dir().join(format!("plan-check-lib-dual-{}.md", std::process::id()));
+    let plan_content = "## Approach\n\n\
+        Add the drift guard to every state mutator.\n\n\
+        tighten FlowPaths::new to panic on empty branches.\n";
+    std::fs::write(&tmp, plan_content).expect("write fixture plan");
+
+    let args = Args {
+        branch: None,
+        plan_file: Some(tmp.to_string_lossy().to_string()),
+    };
+    let result = run_impl(&args).expect("run_impl returns business response");
+    let _ = std::fs::remove_file(&tmp);
+
+    assert_eq!(result["status"], "error");
+    let violations = result["violations"]
+        .as_array()
+        .expect("violations is an array");
+    let rules: Vec<String> = violations
+        .iter()
+        .map(|v| v["rule"].as_str().unwrap_or("").to_string())
+        .collect();
+    assert!(rules.iter().any(|r| r == "scope-enumeration"));
+    assert!(rules.iter().any(|r| r == "external-input-audit"));
+}
+
+#[test]
+fn duplicate_violation_json_shape_has_all_required_fields() {
+    let v = duplicate_test_coverage::Violation {
+        file: PathBuf::from("/tmp/plan.md"),
+        line: 42,
+        phrase: "foo_bar_baz_quux".to_string(),
+        context: "Plan names `foo_bar_baz_quux` as a new test.".to_string(),
+        existing_test: "test_foo_bar_baz_quux".to_string(),
+        existing_file: "tests/hooks.rs:1499".to_string(),
+    };
+    let json = duplicate_violation_to_tagged_json(&v);
+    assert_eq!(json["file"], "/tmp/plan.md");
+    assert_eq!(json["line"], 42);
+    assert_eq!(json["phrase"], "foo_bar_baz_quux");
+    assert_eq!(json["rule"], "duplicate-test-coverage");
+    assert_eq!(json["existing_test"], "test_foo_bar_baz_quux");
+    assert_eq!(json["existing_file"], "tests/hooks.rs:1499");
+}
+
+#[test]
+fn run_impl_does_not_panic_on_slash_branch() {
+    let args = Args {
+        branch: Some("feature/foo".to_string()),
+        plan_file: None,
+    };
+    let result = run_impl(&args).expect("run_impl returns business response");
+    assert_eq!(result["status"], "error");
+}
+
+#[test]
+fn run_impl_plan_file_is_directory_returns_err() {
+    let dir = tempfile::tempdir().unwrap();
+    let args = Args {
+        branch: None,
+        plan_file: Some(dir.path().to_string_lossy().to_string()),
+    };
+    let err = run_impl(&args).unwrap_err();
+    assert!(err.contains("Could not read plan file"));
+}
+
+#[test]
+fn run_impl_triggers_dup_violations() {
+    let tmp = std::env::temp_dir().join(format!("plan-check-lib-dup-{}.md", std::process::id()));
+    let plan_content =
+        "## Tasks\n\n```rust\nfn claude_md_has_no_unenumerated_universal_claims() {\n}\n```\n";
+    std::fs::write(&tmp, plan_content).expect("write fixture plan");
+
+    let args = Args {
+        branch: None,
+        plan_file: Some(tmp.to_string_lossy().to_string()),
+    };
+    let result = run_impl(&args).expect("run_impl returns business response");
+    let _ = std::fs::remove_file(&tmp);
+
+    assert_eq!(result["status"], "error");
+    let violations = result["violations"]
+        .as_array()
+        .expect("violations is an array");
+    let rules: Vec<String> = violations
+        .iter()
+        .map(|v| v["rule"].as_str().unwrap_or("").to_string())
+        .collect();
+    assert!(rules.iter().any(|r| r == "duplicate-test-coverage"));
+}
+
+#[test]
+fn resolve_plan_file_from_state_legacy_plan_file_fallback() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let branch = "test-legacy-fallback-lib";
+    let flow_states = root.join(".flow-states");
+    std::fs::create_dir_all(&flow_states).unwrap();
+    let state_path = flow_states.join(format!("{}.json", branch));
+    std::fs::write(&state_path, r#"{"plan_file": "legacy-plan.md"}"#).unwrap();
+
+    let result = resolve_plan_file_from_state(root, Some(branch));
+    let path = result
+        .expect("outer Result should be Ok")
+        .expect("inner Result should be Ok");
+    assert_eq!(path, root.join("legacy-plan.md"));
+}
+
+#[test]
+fn resolve_plan_file_from_state_invalid_json() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let branch = "test-invalid-json-lib";
+    let flow_states = root.join(".flow-states");
+    std::fs::create_dir_all(&flow_states).unwrap();
+    let state_path = flow_states.join(format!("{}.json", branch));
+    std::fs::write(&state_path, "{not valid json").unwrap();
+
+    let result = resolve_plan_file_from_state(root, Some(branch));
+    let err = result.unwrap_err();
+    assert!(err.contains("Invalid JSON in state file"));
+}
+
+#[test]
+fn resolve_plan_file_from_state_unreadable() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let branch = "test-unreadable-lib";
+    let flow_states = root.join(".flow-states");
+    std::fs::create_dir_all(&flow_states).unwrap();
+    let state_path = flow_states.join(format!("{}.json", branch));
+    std::fs::write(&state_path, r#"{"valid": true}"#).unwrap();
+
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&state_path, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+    let result = resolve_plan_file_from_state(root, Some(branch));
+    let _ = std::fs::set_permissions(&state_path, std::fs::Permissions::from_mode(0o644));
+
+    let err = result.unwrap_err();
+    assert!(err.contains("Could not read state file"));
+}
+
+#[test]
+fn run_impl_returns_ok_when_both_scanners_clean() {
+    let tmp = std::env::temp_dir().join(format!("plan-check-lib-clean-{}.md", std::process::id()));
+    std::fs::write(&tmp, "## Approach\n\nA plain plan with no triggers.\n")
+        .expect("write fixture plan");
+
+    let args = Args {
+        branch: None,
+        plan_file: Some(tmp.to_string_lossy().to_string()),
+    };
+    let result = run_impl(&args).expect("run_impl returns business response");
+    let _ = std::fs::remove_file(&tmp);
+
+    assert_eq!(result["status"], "ok");
 }

@@ -275,8 +275,8 @@ fn error_tuple(message: &str) -> (serde_json::Value, i32) {
     (json!({"status": "error", "message": message}), 0)
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(any())]
+mod _removed {
     use super::*;
 
     // --- build_artifact_line ---

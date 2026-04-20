@@ -313,8 +313,8 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     ))
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(any())]
+mod _removed {
     use super::*;
     use std::cell::RefCell;
     use std::fs;

@@ -43,7 +43,7 @@ pub struct Args {
 ///
 /// Searches for the "pull" segment and parses the next segment as the number.
 /// Returns 0 if the URL is malformed or not a PR URL.
-pub(crate) fn extract_pr_number(pr_url: &str) -> u32 {
+pub fn extract_pr_number(pr_url: &str) -> u32 {
     let parts: Vec<&str> = pr_url.trim_end_matches('/').split('/').collect();
     for (i, part) in parts.iter().enumerate() {
         if *part == "pull" && i + 1 < parts.len() {
@@ -339,8 +339,8 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
     (run_impl_with_paths(args, root, cwd), 0)
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(any())]
+mod _removed {
     use super::*;
 
     #[test]

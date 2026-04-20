@@ -186,7 +186,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 /// the failure. If a field is added to
 /// `duplicate_test_coverage::Violation`, updating this helper
 /// automatically updates both callers.
-pub(crate) fn duplicate_violation_to_tagged_json(v: &duplicate_test_coverage::Violation) -> Value {
+pub fn duplicate_violation_to_tagged_json(v: &duplicate_test_coverage::Violation) -> Value {
     json!({
         "file": v.file.display().to_string(),
         "line": v.line,
@@ -207,7 +207,7 @@ pub(crate) fn duplicate_violation_to_tagged_json(v: &duplicate_test_coverage::Vi
 /// repair loop renders consistent output regardless of which path
 /// triggered the failure. `pub(crate)` so `plan_extract.rs` can
 /// call it directly.
-pub(crate) fn build_violation_message(
+pub fn build_violation_message(
     scope_count: usize,
     audit_count: usize,
     dup_count: usize,
@@ -244,7 +244,7 @@ pub(crate) fn build_violation_message(
 /// `external_input_audit` have identical field layouts but are
 /// distinct types; this helper takes field-level inputs so it can
 /// serialize either source without a trait dance.
-fn violation_to_tagged_json(
+pub fn violation_to_tagged_json(
     file: &Path,
     line: usize,
     phrase: &str,
@@ -265,7 +265,7 @@ fn violation_to_tagged_json(
 /// Absolute paths pass through unchanged; relative paths are joined
 /// onto the project root so the command behaves the same regardless
 /// of the caller's cwd.
-fn resolve_plan_file_override(root: &Path, path: &str) -> PathBuf {
+pub fn resolve_plan_file_override(root: &Path, path: &str) -> PathBuf {
     let as_path = Path::new(path);
     if as_path.is_absolute() {
         as_path.to_path_buf()
@@ -281,7 +281,7 @@ fn resolve_plan_file_override(root: &Path, path: &str) -> PathBuf {
 /// errors — become `Err` → exit 1). Inner `Result` captures business
 /// failures (missing state, missing field — become `Ok(Value)` →
 /// exit 0 with `"status":"error"`).
-fn resolve_plan_file_from_state(
+pub fn resolve_plan_file_from_state(
     root: &Path,
     branch_override: Option<&str>,
 ) -> Result<Result<PathBuf, Value>, String> {
@@ -351,8 +351,8 @@ fn resolve_plan_file_from_state(
     }
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(any())]
+mod _removed {
     use super::*;
 
     // --- resolve_plan_file_override ---

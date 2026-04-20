@@ -9,6 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use flow_rs::start_workspace::{extract_pr_number, run_impl_main, Args};
 use serde_json::{json, Value};
 
 use common::{
@@ -576,4 +577,58 @@ fn start_workspace_corrupt_state_returns_backfill_error() {
         !queue_dir.join("corrupt-backfill-branch").exists(),
         "Lock must be released on backfill error"
     );
+}
+
+// --- library-level tests (migrated from inline) ---
+
+#[test]
+fn extract_pr_number_standard_url() {
+    assert_eq!(
+        extract_pr_number("https://github.com/org/repo/pull/123"),
+        123
+    );
+}
+
+#[test]
+fn extract_pr_number_trailing_slash() {
+    assert_eq!(
+        extract_pr_number("https://github.com/org/repo/pull/42/"),
+        42
+    );
+}
+
+#[test]
+fn extract_pr_number_malformed() {
+    assert_eq!(extract_pr_number("not-a-url"), 0);
+}
+
+#[test]
+fn extract_pr_number_non_numeric() {
+    assert_eq!(extract_pr_number("https://github.com/org/repo/pull/abc"), 0);
+}
+
+#[test]
+fn extract_pr_number_empty_string() {
+    assert_eq!(extract_pr_number(""), 0);
+}
+
+#[test]
+fn extract_pr_number_pull_with_no_number() {
+    assert_eq!(extract_pr_number("https://github.com/org/repo/pull/"), 0);
+}
+
+#[test]
+fn start_workspace_run_impl_main_err_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    let state_dir = root.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    let args = Args {
+        description: "workspace-err-feature".to_string(),
+        branch: "workspace-err-branch".to_string(),
+        prompt_file: None,
+    };
+    let (v, code) = run_impl_main(&args, &root, &root);
+    assert_eq!(code, 0);
+    assert_eq!(v["status"], "error");
 }

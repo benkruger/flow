@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use common::flow_states_dir;
+use flow_rs::phase_enter::{gate_check, phase_field_prefix, resolve_mode};
 use serde_json::{json, Value};
 
 // --- Test helpers ---
@@ -609,4 +610,166 @@ fn test_reenter_complete_phase_returns_gate_error() {
         "expected 'no predecessor' gate error, got: {}",
         message
     );
+}
+
+// --- phase_field_prefix (migrated from inline) ---
+
+#[test]
+fn phase_field_prefix_strips_flow_dash() {
+    assert_eq!(phase_field_prefix("flow-code-review"), "code_review");
+    assert_eq!(phase_field_prefix("flow-start"), "start");
+    assert_eq!(phase_field_prefix("flow-learn"), "learn");
+}
+
+#[test]
+fn phase_field_prefix_no_flow_prefix() {
+    assert_eq!(phase_field_prefix("custom-phase"), "custom_phase");
+    assert_eq!(phase_field_prefix("plain"), "plain");
+}
+
+// --- gate_check (migrated from inline) ---
+
+#[test]
+fn gate_check_predecessor_complete_succeeds() {
+    let state = json!({
+        "phases": {
+            "flow-start": {"status": "complete"},
+            "flow-plan": {"status": "pending"}
+        }
+    });
+    assert!(gate_check(&state, "flow-plan").is_ok());
+}
+
+#[test]
+fn gate_check_predecessor_not_complete() {
+    let state = json!({
+        "phases": {
+            "flow-start": {"status": "in_progress"},
+            "flow-plan": {"status": "pending"}
+        }
+    });
+    let err = gate_check(&state, "flow-plan").unwrap_err();
+    assert_eq!(err["status"], "error");
+    let msg = err["message"].as_str().unwrap();
+    assert!(msg.contains("flow-start"));
+    assert!(msg.contains("complete"));
+}
+
+#[test]
+fn gate_check_first_phase_returns_error() {
+    let state = json!({"phases": {}});
+    let err = gate_check(&state, "flow-start").unwrap_err();
+    assert_eq!(err["status"], "error");
+    assert!(err["message"].as_str().unwrap().contains("no predecessor"));
+}
+
+#[test]
+fn gate_check_unknown_phase_returns_error() {
+    let state = json!({"phases": {}});
+    let err = gate_check(&state, "nonexistent").unwrap_err();
+    assert_eq!(err["status"], "error");
+    assert!(err["message"]
+        .as_str()
+        .unwrap()
+        .contains("not found in phase order"));
+}
+
+#[test]
+fn gate_check_missing_phases_key() {
+    let state = json!({"branch": "test"});
+    let err = gate_check(&state, "flow-plan").unwrap_err();
+    assert_eq!(err["status"], "error");
+    assert!(err["message"].as_str().unwrap().contains("complete"));
+}
+
+#[test]
+fn gate_check_predecessor_missing_status_field() {
+    let state = json!({
+        "phases": {
+            "flow-start": {"name": "Start"},
+            "flow-plan": {"status": "pending"}
+        }
+    });
+    let err = gate_check(&state, "flow-plan").unwrap_err();
+    assert_eq!(err["status"], "error");
+}
+
+// --- resolve_mode (migrated from inline) ---
+
+#[test]
+fn resolve_mode_object_config() {
+    let state = json!({
+        "skills": {
+            "flow-code": {"commit": "auto", "continue": "manual"}
+        }
+    });
+    let (commit, cont) = resolve_mode(&state, "flow-code");
+    assert_eq!(commit, "auto");
+    assert_eq!(cont, "manual");
+}
+
+#[test]
+fn resolve_mode_string_config() {
+    let state = json!({"skills": {"flow-code": "auto"}});
+    let (commit, cont) = resolve_mode(&state, "flow-code");
+    assert_eq!(commit, "auto");
+    assert_eq!(cont, "auto");
+}
+
+#[test]
+fn resolve_mode_empty_string_falls_to_defaults() {
+    let state = json!({"skills": {"flow-code": ""}});
+    let (commit, cont) = resolve_mode(&state, "flow-code");
+    assert_eq!(commit, "manual");
+    assert_eq!(cont, "manual");
+}
+
+#[test]
+fn resolve_mode_no_skills_key() {
+    let state = json!({"branch": "test"});
+    let (commit, cont) = resolve_mode(&state, "flow-code");
+    assert_eq!(commit, "manual");
+    assert_eq!(cont, "manual");
+}
+
+#[test]
+fn resolve_mode_flow_learn_defaults() {
+    let state = json!({"skills": {}});
+    let (commit, cont) = resolve_mode(&state, "flow-learn");
+    assert_eq!(commit, "auto");
+    assert_eq!(cont, "auto");
+}
+
+#[test]
+fn resolve_mode_unexpected_type() {
+    let state = json!({"skills": {"flow-code": 42}});
+    let (commit, cont) = resolve_mode(&state, "flow-code");
+    assert_eq!(commit, "manual");
+    assert_eq!(cont, "manual");
+}
+
+#[test]
+fn resolve_mode_phase_not_in_skills() {
+    let state = json!({"skills": {"flow-start": {"continue": "auto"}}});
+    let (commit, cont) = resolve_mode(&state, "flow-code");
+    assert_eq!(commit, "manual");
+    assert_eq!(cont, "manual");
+}
+
+#[test]
+fn resolve_mode_object_config_partial_keys() {
+    let state = json!({"skills": {"flow-code": {"commit": "auto"}}});
+    let (commit, cont) = resolve_mode(&state, "flow-code");
+    assert_eq!(commit, "auto");
+    assert_eq!(cont, "manual");
+}
+
+#[test]
+fn resolve_mode_flow_learn_object_override() {
+    let state = json!({
+        "skills": {"flow-learn": {"commit": "manual", "continue": "manual"}}
+    });
+    let (commit, cont) = resolve_mode(&state, "flow-learn");
+    assert_eq!(commit, "manual");
+    assert_eq!(cont, "manual");
 }

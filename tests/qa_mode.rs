@@ -12,10 +12,11 @@
 //! tests cannot exercise in-process.
 
 use std::fs;
+use std::path::Path;
 use std::process::Command;
 
-use flow_rs::qa_mode;
-use serde_json::json;
+use flow_rs::qa_mode::{self, run_impl, start_impl, stop_impl, Args};
+use serde_json::{json, Value};
 
 /// Subprocess: `bin/flow qa-mode --start` without `--local-path`.
 /// Exercises `run()`'s `Ok(result)` arm when `run_impl` emits a
@@ -304,4 +305,411 @@ fn qa_mode_stop_impl_invalid_json_returns_parse_error() {
         "expected parse-error in message, got: {}",
         message
     );
+}
+
+// --- library-level tests migrated from inline mod ---
+
+fn write_flow_json(path: &Path, data: &Value) {
+    fs::write(path, serde_json::to_string(data).unwrap() + "\n").unwrap();
+}
+
+fn read_flow_json(path: &Path) -> Value {
+    let content = fs::read_to_string(path).unwrap();
+    serde_json::from_str(&content).unwrap()
+}
+
+// --- start_impl ---
+
+#[test]
+fn test_start_happy_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let flow_json = dir.path().join(".flow.json");
+    let local_source = dir.path().join("flow-source");
+    fs::create_dir_all(local_source.join("bin")).unwrap();
+    fs::write(local_source.join("bin").join("flow"), "#!/bin/bash\n").unwrap();
+
+    write_flow_json(
+        &flow_json,
+        &json!({
+            "flow_version": "0.39.0",
+            "commit_format": "full",
+            "plugin_root": "/original/cache/path"
+        }),
+    );
+
+    let result = start_impl(&flow_json, &local_source);
+
+    assert_eq!(result["status"], "ok");
+    assert_eq!(
+        result["plugin_root"],
+        local_source.to_string_lossy().as_ref()
+    );
+    assert_eq!(result["backup"], "/original/cache/path");
+
+    let data = read_flow_json(&flow_json);
+    assert_eq!(data["plugin_root"], local_source.to_string_lossy().as_ref());
+    assert_eq!(data["plugin_root_backup"], "/original/cache/path");
+}
+
+#[test]
+fn test_start_missing_flow_json() {
+    let dir = tempfile::tempdir().unwrap();
+    let flow_json = dir.path().join(".flow.json");
+    let local_source = dir.path().join("flow-source");
+
+    let result = start_impl(&flow_json, &local_source);
+
+    assert_eq!(result["status"], "error");
+    let msg = result["message"].as_str().unwrap().to_lowercase();
+    assert!(msg.contains("not found") || msg.contains("does not exist"));
+}
+
+#[test]
+fn test_start_write_failure_returns_error() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let flow_json = dir.path().join(".flow.json");
+    let local_source = dir.path().join("flow-source");
+    fs::create_dir_all(local_source.join("bin")).unwrap();
+    fs::write(local_source.join("bin").join("flow"), "#!/bin/bash\n").unwrap();
+    write_flow_json(
+        &flow_json,
+        &json!({
+            "plugin_root": "/some/path",
+            "flow_version": "0.39.0",
+            "commit_format": "full"
+        }),
+    );
+    let mut perms = fs::metadata(&flow_json).unwrap().permissions();
+    perms.set_mode(0o444);
+    fs::set_permissions(&flow_json, perms).unwrap();
+
+    let result = start_impl(&flow_json, &local_source);
+
+    let mut p = fs::metadata(&flow_json).unwrap().permissions();
+    p.set_mode(0o644);
+    let _ = fs::set_permissions(&flow_json, p);
+
+    assert_eq!(result["status"], "error");
+    assert!(result["message"]
+        .as_str()
+        .unwrap()
+        .contains("Failed to write"));
+}
+
+#[test]
+fn test_stop_write_failure_returns_error() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let flow_json = dir.path().join(".flow.json");
+    write_flow_json(
+        &flow_json,
+        &json!({
+            "plugin_root": "/dev/source",
+            "plugin_root_backup": "/original/path",
+            "flow_version": "0.39.0"
+        }),
+    );
+    let mut perms = fs::metadata(&flow_json).unwrap().permissions();
+    perms.set_mode(0o444);
+    fs::set_permissions(&flow_json, perms).unwrap();
+
+    let result = stop_impl(&flow_json);
+
+    let mut p = fs::metadata(&flow_json).unwrap().permissions();
+    p.set_mode(0o644);
+    let _ = fs::set_permissions(&flow_json, p);
+
+    assert_eq!(result["status"], "error");
+    assert!(result["message"]
+        .as_str()
+        .unwrap()
+        .contains("Failed to write"));
+}
+
+#[test]
+fn test_start_missing_plugin_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let flow_json = dir.path().join(".flow.json");
+    let local_source = dir.path().join("flow-source");
+    fs::create_dir_all(local_source.join("bin")).unwrap();
+    fs::write(local_source.join("bin").join("flow"), "#!/bin/bash\n").unwrap();
+
+    write_flow_json(
+        &flow_json,
+        &json!({"flow_version": "0.39.0", "commit_format": "full"}),
+    );
+
+    let result = start_impl(&flow_json, &local_source);
+    assert_eq!(result["status"], "error");
+    assert!(result["message"].as_str().unwrap().contains("plugin_root"));
+}
+
+#[test]
+fn test_start_already_in_dev_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let flow_json = dir.path().join(".flow.json");
+    let local_source = dir.path().join("flow-source");
+    fs::create_dir_all(local_source.join("bin")).unwrap();
+    fs::write(local_source.join("bin").join("flow"), "#!/bin/bash\n").unwrap();
+
+    write_flow_json(
+        &flow_json,
+        &json!({
+            "flow_version": "0.39.0",
+            "plugin_root": "/some/path",
+            "plugin_root_backup": "/original/path"
+        }),
+    );
+
+    let result = start_impl(&flow_json, &local_source);
+    assert_eq!(result["status"], "error");
+    let msg = result["message"].as_str().unwrap().to_lowercase();
+    assert!(msg.contains("already") || msg.contains("dev mode"));
+}
+
+#[test]
+fn test_start_invalid_local_path_not_exists() {
+    let dir = tempfile::tempdir().unwrap();
+    let flow_json = dir.path().join(".flow.json");
+
+    write_flow_json(
+        &flow_json,
+        &json!({"flow_version": "0.39.0", "plugin_root": "/original/path"}),
+    );
+
+    let result = start_impl(&flow_json, &dir.path().join("nonexistent"));
+    assert_eq!(result["status"], "error");
+    let msg = result["message"].as_str().unwrap().to_lowercase();
+    assert!(msg.contains("not found") || msg.contains("does not exist"));
+}
+
+#[test]
+fn test_start_invalid_local_path_no_bin_flow() {
+    let dir = tempfile::tempdir().unwrap();
+    let flow_json = dir.path().join(".flow.json");
+    let local_source = dir.path().join("flow-source");
+    fs::create_dir(&local_source).unwrap();
+
+    write_flow_json(
+        &flow_json,
+        &json!({"flow_version": "0.39.0", "plugin_root": "/original/path"}),
+    );
+
+    let result = start_impl(&flow_json, &local_source);
+    assert_eq!(result["status"], "error");
+    assert!(result["message"].as_str().unwrap().contains("bin/flow"));
+}
+
+#[test]
+fn test_start_preserves_other_keys() {
+    let dir = tempfile::tempdir().unwrap();
+    let flow_json = dir.path().join(".flow.json");
+    let local_source = dir.path().join("flow-source");
+    fs::create_dir_all(local_source.join("bin")).unwrap();
+    fs::write(local_source.join("bin").join("flow"), "#!/bin/bash\n").unwrap();
+
+    write_flow_json(
+        &flow_json,
+        &json!({
+            "flow_version": "0.39.0",
+            "extra_unknown_field": "preserve me",
+            "config_hash": "abc123",
+            "setup_hash": "def456",
+            "commit_format": "conventional",
+            "plugin_root": "/original/cache/path",
+            "skills": {"flow-start": {"continue": "auto"}}
+        }),
+    );
+
+    start_impl(&flow_json, &local_source);
+
+    let data = read_flow_json(&flow_json);
+    assert_eq!(data["flow_version"], "0.39.0");
+    assert_eq!(data["extra_unknown_field"], "preserve me");
+    assert_eq!(data["config_hash"], "abc123");
+    assert_eq!(data["setup_hash"], "def456");
+    assert_eq!(data["commit_format"], "conventional");
+    assert_eq!(data["skills"]["flow-start"]["continue"], "auto");
+    assert_eq!(data["plugin_root"], local_source.to_string_lossy().as_ref());
+    assert_eq!(data["plugin_root_backup"], "/original/cache/path");
+}
+
+// --- stop_impl ---
+
+#[test]
+fn test_stop_happy_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let flow_json = dir.path().join(".flow.json");
+
+    write_flow_json(
+        &flow_json,
+        &json!({
+            "flow_version": "0.39.0",
+            "plugin_root": "/local/dev/path",
+            "plugin_root_backup": "/original/cache/path"
+        }),
+    );
+
+    let result = stop_impl(&flow_json);
+    assert_eq!(result["status"], "ok");
+    assert_eq!(result["restored"], "/original/cache/path");
+
+    let data = read_flow_json(&flow_json);
+    assert_eq!(data["plugin_root"], "/original/cache/path");
+    assert!(data.get("plugin_root_backup").is_none());
+}
+
+#[test]
+fn test_stop_not_in_dev_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let flow_json = dir.path().join(".flow.json");
+
+    write_flow_json(
+        &flow_json,
+        &json!({"flow_version": "0.39.0", "plugin_root": "/some/path"}),
+    );
+
+    let result = stop_impl(&flow_json);
+    assert_eq!(result["status"], "error");
+    let msg = result["message"].as_str().unwrap().to_lowercase();
+    assert!(msg.contains("not in dev mode") || msg.contains("backup"));
+}
+
+#[test]
+fn test_stop_missing_flow_json() {
+    let dir = tempfile::tempdir().unwrap();
+    let flow_json = dir.path().join(".flow.json");
+
+    let result = stop_impl(&flow_json);
+    assert_eq!(result["status"], "error");
+    let msg = result["message"].as_str().unwrap().to_lowercase();
+    assert!(msg.contains("not found") || msg.contains("does not exist"));
+}
+
+#[test]
+fn test_stop_preserves_other_keys() {
+    let dir = tempfile::tempdir().unwrap();
+    let flow_json = dir.path().join(".flow.json");
+
+    write_flow_json(
+        &flow_json,
+        &json!({
+            "flow_version": "0.39.0",
+            "commit_format": "full",
+            "config_hash": "abc123",
+            "plugin_root": "/local/dev/path",
+            "plugin_root_backup": "/original/cache/path",
+            "skills": {"flow-code": {"commit": "auto"}}
+        }),
+    );
+
+    stop_impl(&flow_json);
+
+    let data = read_flow_json(&flow_json);
+    assert_eq!(data["flow_version"], "0.39.0");
+    assert_eq!(data["commit_format"], "full");
+    assert_eq!(data["config_hash"], "abc123");
+    assert_eq!(data["skills"]["flow-code"]["commit"], "auto");
+    assert_eq!(data["plugin_root"], "/original/cache/path");
+    assert!(data.get("plugin_root_backup").is_none());
+}
+
+// --- run_impl ---
+
+#[test]
+fn test_cli_start_missing_local_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let flow_json = dir.path().join(".flow.json");
+    write_flow_json(
+        &flow_json,
+        &json!({"flow_version": "0.39.0", "plugin_root": "/p"}),
+    );
+
+    let args = Args {
+        start: true,
+        stop: false,
+        local_path: None,
+        flow_json: Some(flow_json.to_string_lossy().to_string()),
+    };
+
+    let result = run_impl(&args).unwrap();
+    assert_eq!(result["status"], "error");
+    assert!(result["message"].as_str().unwrap().contains("--local-path"));
+}
+
+#[test]
+fn test_cli_start_happy_path_lib() {
+    let dir = tempfile::tempdir().unwrap();
+    let flow_json = dir.path().join(".flow.json");
+    write_flow_json(
+        &flow_json,
+        &json!({"flow_version": "0.39.0", "plugin_root": "/original/path"}),
+    );
+    let local_source = dir.path().join("local-flow");
+    fs::create_dir_all(local_source.join("bin")).unwrap();
+    fs::write(local_source.join("bin").join("flow"), "").unwrap();
+
+    let args = Args {
+        start: true,
+        stop: false,
+        local_path: Some(local_source.to_string_lossy().to_string()),
+        flow_json: Some(flow_json.to_string_lossy().to_string()),
+    };
+
+    let result = run_impl(&args).unwrap();
+    assert_eq!(result["status"], "ok");
+    let disk = read_flow_json(&flow_json);
+    assert_eq!(disk["plugin_root_backup"], "/original/path");
+}
+
+#[test]
+fn test_cli_stop_happy_path_lib() {
+    let dir = tempfile::tempdir().unwrap();
+    let flow_json = dir.path().join(".flow.json");
+    write_flow_json(
+        &flow_json,
+        &json!({
+            "flow_version": "0.39.0",
+            "plugin_root": "/local/dev",
+            "plugin_root_backup": "/original"
+        }),
+    );
+
+    let args = Args {
+        start: false,
+        stop: true,
+        local_path: None,
+        flow_json: Some(flow_json.to_string_lossy().to_string()),
+    };
+
+    let result = run_impl(&args).unwrap();
+    assert_eq!(result["status"], "ok");
+    let disk = read_flow_json(&flow_json);
+    assert_eq!(disk["plugin_root"], "/original");
+    assert!(disk.get("plugin_root_backup").is_none());
+}
+
+#[test]
+fn test_cli_stop_when_not_in_dev_mode_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let flow_json = dir.path().join(".flow.json");
+    write_flow_json(
+        &flow_json,
+        &json!({"flow_version": "0.39.0", "plugin_root": "/original"}),
+    );
+
+    let args = Args {
+        start: false,
+        stop: true,
+        local_path: None,
+        flow_json: Some(flow_json.to_string_lossy().to_string()),
+    };
+
+    let result = run_impl(&args).unwrap();
+    assert_eq!(result["status"], "error");
+    assert!(result["message"]
+        .as_str()
+        .unwrap()
+        .contains("Not in dev mode"));
 }

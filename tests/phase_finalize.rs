@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use common::flow_states_dir;
+use flow_rs::notify_slack;
+use flow_rs::phase_finalize::{run_impl_with_deps, Args};
 use serde_json::{json, Value};
 
 // --- Test helpers ---
@@ -552,4 +554,219 @@ fn test_thread_ts_without_slack_credentials_omits_slack_key() {
         "expected no slack key when status=skipped, got: {:?}",
         data.get("slack")
     );
+}
+
+// --- run_impl_with_deps library-level tests (migrated from inline) ---
+
+fn phase_finalize_test_args(
+    phase: &str,
+    branch: &str,
+    thread_ts: Option<&str>,
+    pr_url: Option<&str>,
+) -> Args {
+    Args {
+        phase: phase.to_string(),
+        branch: branch.to_string(),
+        thread_ts: thread_ts.map(|s| s.to_string()),
+        pr_url: pr_url.map(|s| s.to_string()),
+    }
+}
+
+fn phase_finalize_write_state(root: &std::path::Path, branch: &str, current_phase: &str) {
+    let state_dir = root.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+
+    let phase_order = [
+        "flow-start",
+        "flow-plan",
+        "flow-code",
+        "flow-code-review",
+        "flow-learn",
+        "flow-complete",
+    ];
+    let cur_idx = phase_order
+        .iter()
+        .position(|p| *p == current_phase)
+        .expect("current_phase must be a known phase");
+
+    let mut phases = serde_json::Map::new();
+    for (idx, p) in phase_order.iter().enumerate() {
+        let status = match idx.cmp(&cur_idx) {
+            std::cmp::Ordering::Less => "complete",
+            std::cmp::Ordering::Equal => "in_progress",
+            std::cmp::Ordering::Greater => "pending",
+        };
+        phases.insert(
+            p.to_string(),
+            json!({
+                "name": p,
+                "status": status,
+                "started_at": if status != "pending" { Some("2026-01-01T00:00:00-08:00") } else { None },
+                "completed_at": if status == "complete" { Some("2026-01-01T00:01:00-08:00") } else { None },
+                "session_started_at": if status == "in_progress" { Some("2026-01-01T00:00:00-08:00") } else { None },
+                "cumulative_seconds": if status == "complete" { 60 } else { 0 },
+                "visit_count": if status == "pending" { 0 } else { 1 }
+            }),
+        );
+    }
+
+    let state = json!({
+        "schema_version": 1,
+        "branch": branch,
+        "current_phase": current_phase,
+        "started_at": "2026-01-01T00:00:00-08:00",
+        "phases": Value::Object(phases),
+        "phase_transitions": [],
+        "prompt": "test feature",
+        "notes": [],
+    });
+
+    fs::write(
+        state_dir.join(format!("{}.json", branch)),
+        serde_json::to_string_pretty(&state).unwrap(),
+    )
+    .unwrap();
+}
+
+fn phase_finalize_read_state(root: &std::path::Path, branch: &str) -> Value {
+    let path = root.join(".flow-states").join(format!("{}.json", branch));
+    let content = fs::read_to_string(&path).unwrap();
+    serde_json::from_str(&content).unwrap()
+}
+
+#[test]
+fn finalize_with_notifier_slack_thread_reply_success() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    phase_finalize_write_state(root, "branch-a", "flow-code");
+
+    let notifier = |_: &notify_slack::Args| -> Value { json!({"status": "ok", "ts": "5555.6666"}) };
+    let args = phase_finalize_test_args("flow-code", "branch-a", Some("1111.2222"), None);
+
+    let result = run_impl_with_deps(root, root, &args, &notifier).unwrap();
+    assert_eq!(result["status"], "ok");
+    assert_eq!(result["slack"]["status"], "ok");
+
+    let state = phase_finalize_read_state(root, "branch-a");
+    assert!(state.get("slack_thread_ts").is_none() || state["slack_thread_ts"].is_null());
+    let notifs = state["slack_notifications"].as_array().unwrap();
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0]["ts"], "5555.6666");
+    assert_eq!(notifs[0]["thread_ts"], "1111.2222");
+    assert_eq!(notifs[0]["phase"], "flow-code");
+}
+
+#[test]
+fn finalize_with_notifier_slack_thread_create_success() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    phase_finalize_write_state(root, "branch-b", "flow-start");
+
+    let notifier = |_: &notify_slack::Args| -> Value { json!({"status": "ok", "ts": "7777.8888"}) };
+    let args = phase_finalize_test_args(
+        "flow-start",
+        "branch-b",
+        None,
+        Some("https://github.com/org/repo/pull/42"),
+    );
+
+    let result = run_impl_with_deps(root, root, &args, &notifier).unwrap();
+    assert_eq!(result["status"], "ok");
+
+    let state = phase_finalize_read_state(root, "branch-b");
+    assert_eq!(state["slack_thread_ts"], "7777.8888");
+    let notifs = state["slack_notifications"].as_array().unwrap();
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0]["thread_ts"], "7777.8888");
+}
+
+#[test]
+fn finalize_with_notifier_slack_error_skips_state_record() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    phase_finalize_write_state(root, "branch-c", "flow-code");
+
+    let notifier =
+        |_: &notify_slack::Args| -> Value { json!({"status": "error", "message": "boom"}) };
+    let args = phase_finalize_test_args("flow-code", "branch-c", Some("1111.2222"), None);
+
+    let result = run_impl_with_deps(root, root, &args, &notifier).unwrap();
+    assert_eq!(result["status"], "ok");
+    assert_eq!(result["slack"]["status"], "error");
+
+    let state = phase_finalize_read_state(root, "branch-c");
+    let notifs_empty = state
+        .get("slack_notifications")
+        .map(|v| v.as_array().map(|a| a.is_empty()).unwrap_or(true))
+        .unwrap_or(true);
+    assert!(notifs_empty);
+}
+
+#[test]
+fn finalize_with_notifier_slash_branch_returns_structured_error_no_panic() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let notifier = |_: &notify_slack::Args| -> Value { json!({"status": "skipped"}) };
+    let args = phase_finalize_test_args("flow-code", "feature/foo", None, None);
+
+    let result = run_impl_with_deps(root, root, &args, &notifier).unwrap();
+    assert_eq!(result["status"], "error");
+    assert!(result["message"]
+        .as_str()
+        .unwrap()
+        .contains("Invalid branch name"));
+}
+
+#[test]
+fn finalize_with_notifier_empty_branch_returns_structured_error_no_panic() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let notifier = |_: &notify_slack::Args| -> Value { json!({"status": "skipped"}) };
+    let args = phase_finalize_test_args("flow-code", "", None, None);
+
+    let result = run_impl_with_deps(root, root, &args, &notifier).unwrap();
+    assert_eq!(result["status"], "error");
+    assert!(result["message"]
+        .as_str()
+        .unwrap()
+        .contains("Invalid branch name"));
+}
+
+#[test]
+fn finalize_with_notifier_state_file_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let notifier = |_: &notify_slack::Args| -> Value { json!({"status": "skipped"}) };
+    let args = phase_finalize_test_args("flow-code", "branch-missing", None, None);
+
+    let result = run_impl_with_deps(root, root, &args, &notifier).unwrap();
+    assert_eq!(result["status"], "error");
+    assert!(result["message"]
+        .as_str()
+        .unwrap()
+        .contains("No state file found"));
+}
+
+#[test]
+fn finalize_with_notifier_no_slack_args_response_omits_slack_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    phase_finalize_write_state(root, "branch-d", "flow-code");
+
+    let notifier = |_: &notify_slack::Args| -> Value {
+        panic!("notifier must not be called when neither thread_ts nor pr_url is set");
+    };
+    let args = phase_finalize_test_args("flow-code", "branch-d", None, None);
+
+    let result = run_impl_with_deps(root, root, &args, &notifier).unwrap();
+    assert_eq!(result["status"], "ok");
+    assert!(result.get("slack").is_none());
+
+    let state = phase_finalize_read_state(root, "branch-d");
+    assert!(state.get("slack_thread_ts").is_none() || state["slack_thread_ts"].is_null());
+    let notifs_empty = state
+        .get("slack_notifications")
+        .map(|v| v.as_array().map(|a| a.is_empty()).unwrap_or(true))
+        .unwrap_or(true);
+    assert!(notifs_empty);
 }

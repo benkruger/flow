@@ -8,11 +8,16 @@
 //! This file covers `run()`'s process-exit paths and drives
 //! `default_runner` against a real subprocess.
 
+use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use flow_rs::qa_reset::{self, CmdResult};
+use flow_rs::qa_reset::{
+    self, clean_local, close_prs, delete_remote_branches, load_issue_template, reset_git,
+    reset_impl, reset_issues, CmdResult,
+};
+use serde_json::json;
 
 /// Subprocess: `bin/flow qa-reset --repo owner/repo --local-path
 /// <nonexistent>` exercises `run()`'s `Ok(result)` arm when the
@@ -124,4 +129,304 @@ fn qa_reset_default_runner_with_cwd_runs_in_target_directory() {
         "expected marker file in ls output, got: {}",
         result.stdout
     );
+}
+
+// --- library-level tests (migrated from inline) ---
+
+fn ok_result(stdout: &str) -> CmdResult {
+    CmdResult {
+        success: true,
+        stdout: stdout.to_string(),
+        stderr: String::new(),
+    }
+}
+
+fn err_result(stderr: &str) -> CmdResult {
+    CmdResult {
+        success: false,
+        stdout: String::new(),
+        stderr: stderr.to_string(),
+    }
+}
+
+/// Simple base64 encoder for test use only.
+fn simple_base64_encode(input: &[u8]) -> String {
+    let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = String::new();
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        result.push(alphabet[(n >> 18 & 63) as usize] as char);
+        result.push(alphabet[(n >> 12 & 63) as usize] as char);
+        if chunk.len() > 1 {
+            result.push(alphabet[(n >> 6 & 63) as usize] as char);
+        } else {
+            result.push('=');
+        }
+        if chunk.len() > 2 {
+            result.push(alphabet[(n & 63) as usize] as char);
+        } else {
+            result.push('=');
+        }
+    }
+    result
+}
+
+// --- reset_git ---
+
+#[test]
+fn test_reset_git_runs_correct_commands() {
+    let cmds = RefCell::new(Vec::new());
+    let runner = |args: &[&str], _cwd: Option<&Path>| -> CmdResult {
+        cmds.borrow_mut()
+            .push(args.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        ok_result("")
+    };
+
+    let result = reset_git(Path::new("/tmp/repo"), &runner);
+    assert_eq!(result["status"], "ok");
+    let captured = cmds.borrow();
+    assert!(captured.iter().any(|c| c.contains(&"reset".to_string())));
+    assert!(captured.iter().any(|c| c.contains(&"push".to_string())));
+}
+
+#[test]
+fn test_reset_git_failure() {
+    let runner =
+        |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { err_result("fatal: not a repo") };
+    let result = reset_git(Path::new("/tmp/repo"), &runner);
+    assert_eq!(result["status"], "error");
+}
+
+// --- close_prs ---
+
+#[test]
+fn test_close_prs_closes_all_open() {
+    let pr_list = serde_json::to_string(&json!([{"number": 1}, {"number": 2}])).unwrap();
+    let runner = |args: &[&str], _cwd: Option<&Path>| -> CmdResult {
+        if args.contains(&"list") {
+            ok_result(&pr_list)
+        } else {
+            ok_result("")
+        }
+    };
+    let result = close_prs("owner/repo", &runner);
+    assert_eq!(result, 2);
+}
+
+#[test]
+fn test_close_prs_no_open() {
+    let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { ok_result("[]") };
+    let result = close_prs("owner/repo", &runner);
+    assert_eq!(result, 0);
+}
+
+#[test]
+fn test_close_prs_gh_failure() {
+    let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { err_result("error") };
+    let result = close_prs("owner/repo", &runner);
+    assert_eq!(result, 0);
+}
+
+// --- delete_remote_branches ---
+
+#[test]
+fn test_delete_remote_branches() {
+    let branch_output = "  origin/main\n  origin/feature-1\n  origin/feature-2\n";
+    let runner = |args: &[&str], _cwd: Option<&Path>| -> CmdResult {
+        if args.contains(&"-r") {
+            ok_result(branch_output)
+        } else {
+            ok_result("")
+        }
+    };
+    let result = delete_remote_branches("owner/repo", Path::new("/tmp/repo"), &runner);
+    assert_eq!(result, 2);
+}
+
+#[test]
+fn test_delete_remote_branches_only_main() {
+    let runner =
+        |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { ok_result("  origin/main\n") };
+    let result = delete_remote_branches("owner/repo", Path::new("/tmp/repo"), &runner);
+    assert_eq!(result, 0);
+}
+
+#[test]
+fn test_delete_remote_branches_git_failure() {
+    let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { err_result("error") };
+    let result = delete_remote_branches("owner/repo", Path::new("/tmp/repo"), &runner);
+    assert_eq!(result, 0);
+}
+
+#[test]
+fn test_delete_remote_branches_empty_line() {
+    let branch_output = "  origin/main\n\n  origin/feature-1\n";
+    let runner = |args: &[&str], _cwd: Option<&Path>| -> CmdResult {
+        if args.contains(&"-r") {
+            ok_result(branch_output)
+        } else {
+            ok_result("")
+        }
+    };
+    let result = delete_remote_branches("owner/repo", Path::new("/tmp/repo"), &runner);
+    assert_eq!(result, 1);
+}
+
+// --- load_issue_template ---
+
+#[test]
+fn test_load_issue_template_success() {
+    let content =
+        serde_json::to_string(&json!([{"title": "Test", "body": "Body", "labels": []}])).unwrap();
+    let encoded = simple_base64_encode(content.as_bytes());
+    let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { ok_result(&encoded) };
+    let result = load_issue_template("owner/repo", &runner);
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0]["title"], "Test");
+}
+
+#[test]
+fn test_load_issue_template_failure() {
+    let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { err_result("not found") };
+    let result = load_issue_template("owner/repo", &runner);
+    assert!(result.is_empty());
+}
+
+#[test]
+fn test_load_issue_template_corrupt() {
+    let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { ok_result("not-base64!!!") };
+    let result = load_issue_template("owner/repo", &runner);
+    assert!(result.is_empty());
+}
+
+// --- reset_issues ---
+
+#[test]
+fn test_reset_issues_closes_and_recreates() {
+    let issue_list = serde_json::to_string(&json!([{"number": 1}, {"number": 2}])).unwrap();
+    let close_count = RefCell::new(0usize);
+    let create_count = RefCell::new(0usize);
+
+    let runner = |args: &[&str], _cwd: Option<&Path>| -> CmdResult {
+        if args.contains(&"list") {
+            ok_result(&issue_list)
+        } else if args.contains(&"close") {
+            *close_count.borrow_mut() += 1;
+            ok_result("")
+        } else if args.contains(&"create") {
+            *create_count.borrow_mut() += 1;
+            ok_result("")
+        } else {
+            ok_result("")
+        }
+    };
+
+    let template = vec![json!({"title": "New issue", "body": "Body", "labels": []})];
+    let result = reset_issues("owner/repo", &template, &runner);
+    assert_eq!(result, 1);
+    assert_eq!(*close_count.borrow(), 2);
+    assert_eq!(*create_count.borrow(), 1);
+}
+
+#[test]
+fn test_reset_issues_with_labels() {
+    let calls = RefCell::new(Vec::new());
+    let runner = |args: &[&str], _cwd: Option<&Path>| -> CmdResult {
+        calls
+            .borrow_mut()
+            .push(args.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        if args.contains(&"list") {
+            ok_result("[]")
+        } else {
+            ok_result("")
+        }
+    };
+
+    let template = vec![json!({"title": "Bug", "body": "Fix it", "labels": ["bug", "urgent"]})];
+    let result = reset_issues("owner/repo", &template, &runner);
+    assert_eq!(result, 1);
+    let captured = calls.borrow();
+    let create_call = captured
+        .iter()
+        .find(|c| c.contains(&"create".to_string()))
+        .unwrap();
+    assert!(create_call.contains(&"--label".to_string()));
+    assert!(create_call.contains(&"bug".to_string()));
+    assert!(create_call.contains(&"urgent".to_string()));
+}
+
+// --- clean_local ---
+
+#[test]
+fn test_clean_local_removes_flow_artifacts() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir(dir.path().join(".flow-states")).unwrap();
+    fs::write(dir.path().join(".flow-states").join("test.json"), "{}").unwrap();
+    fs::write(dir.path().join(".flow.json"), "{}").unwrap();
+    fs::create_dir(dir.path().join(".claude")).unwrap();
+    fs::write(dir.path().join(".claude").join("settings.json"), "{}").unwrap();
+
+    clean_local(dir.path());
+
+    assert!(!dir.path().join(".flow-states").exists());
+    assert!(!dir.path().join(".flow.json").exists());
+    assert!(!dir.path().join(".claude").exists());
+}
+
+#[test]
+fn test_clean_local_missing_artifacts() {
+    let dir = tempfile::tempdir().unwrap();
+    clean_local(dir.path());
+}
+
+// --- reset_impl ---
+
+#[test]
+fn test_reset_full_workflow() {
+    let runner = |args: &[&str], _cwd: Option<&Path>| -> CmdResult {
+        if args.contains(&"list") && args.contains(&"--state") && args.contains(&"open") {
+            ok_result(&serde_json::to_string(&json!([{"number": 1}, {"number": 2}])).unwrap())
+        } else if args.contains(&"list") && args.contains(&"--state") && args.contains(&"all") {
+            ok_result("[]")
+        } else if args.contains(&"-r") {
+            ok_result("  origin/main\n  origin/feature-1\n  origin/feature-2\n  origin/feature-3\n")
+        } else if args.contains(&"api") {
+            let content =
+                serde_json::to_string(&json!([{"title": "T", "body": "B", "labels": []}])).unwrap();
+            ok_result(&simple_base64_encode(content.as_bytes()))
+        } else {
+            ok_result("")
+        }
+    };
+
+    let dir = tempfile::tempdir().unwrap();
+    let result = reset_impl("owner/repo", Some(dir.path().to_str().unwrap()), &runner);
+    assert_eq!(result["status"], "ok");
+    assert_eq!(result["prs_closed"], 2);
+    assert_eq!(result["branches_deleted"], 3);
+    assert_eq!(result["issues_reset"], 1);
+}
+
+#[test]
+fn test_reset_without_local_path() {
+    let runner = |args: &[&str], _cwd: Option<&Path>| -> CmdResult {
+        if args.contains(&"list") {
+            ok_result("[]")
+        } else {
+            ok_result("")
+        }
+    };
+    let result = reset_impl("owner/repo", None, &runner);
+    assert_eq!(result["status"], "ok");
+    assert_eq!(result["branches_deleted"], 0);
+}
+
+#[test]
+fn test_reset_git_failure_stops_early() {
+    let runner = |_args: &[&str], _cwd: Option<&Path>| -> CmdResult { err_result("not a repo") };
+    let result = reset_impl("owner/repo", Some("/tmp/repo"), &runner);
+    assert_eq!(result["status"], "error");
 }

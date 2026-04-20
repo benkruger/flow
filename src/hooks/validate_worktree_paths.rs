@@ -194,11 +194,14 @@ pub fn validate(file_path: &str, cwd: &str) -> (bool, String) {
     )
 }
 
-/// Run the validate-worktree-paths hook (entry point from CLI).
-pub fn run() {
-    let hook_input = match read_hook_input() {
-        Some(input) => input,
-        None => std::process::exit(0),
+/// Decision core for the validate-worktree-paths hook. Returns
+/// `(exit_code, Option<stderr_message>)` so `run()` can translate to
+/// `process::exit` + `eprintln!` side effects. Tests drive every
+/// branch with injected hook_input/cwd.
+pub fn run_impl_main(hook_input: Option<Value>, cwd: Option<String>) -> (i32, Option<String>) {
+    let hook_input = match hook_input {
+        Some(v) => v,
+        None => return (0, None),
     };
 
     let tool_input = hook_input
@@ -208,18 +211,17 @@ pub fn run() {
 
     let file_path = get_file_path(&tool_input);
     if file_path.is_empty() {
-        std::process::exit(0);
+        return (0, None);
     }
 
-    let cwd = match std::env::current_dir() {
-        Ok(p) => p.to_string_lossy().to_string(),
-        Err(_) => std::process::exit(0),
+    let cwd = match cwd {
+        Some(p) => p,
+        None => return (0, None),
     };
 
     let (allowed, message) = validate(&file_path, &cwd);
     if !allowed {
-        eprintln!("{}", message);
-        std::process::exit(2);
+        return (2, Some(message));
     }
 
     let tool_name = hook_input
@@ -229,305 +231,23 @@ pub fn run() {
 
     let (sc_allowed, sc_message) = validate_shared_config(&file_path, &cwd, tool_name);
     if !sc_allowed {
-        eprintln!("{}", sc_message);
-        std::process::exit(2);
+        return (2, Some(sc_message));
     }
 
-    std::process::exit(0);
+    (0, None)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    // --- validate tests ---
-
-    #[test]
-    fn test_allows_when_not_in_worktree() {
-        let (allowed, msg) = validate("/Users/ben/code/flow/lib/foo.py", "/Users/ben/code/flow");
-        assert!(allowed);
-        assert!(msg.is_empty());
+/// Run the validate-worktree-paths hook (entry point from CLI). Thin
+/// wrapper around `run_impl_main` that translates decisions into
+/// stderr + exit code side effects.
+pub fn run() {
+    let hook_input = read_hook_input();
+    let cwd = std::env::current_dir()
+        .ok()
+        .map(|p| p.to_string_lossy().to_string());
+    let (code, message) = run_impl_main(hook_input, cwd);
+    if let Some(msg) = message {
+        eprintln!("{}", msg);
     }
-
-    #[test]
-    fn test_allows_file_inside_worktree() {
-        let (allowed, msg) = validate(
-            "/Users/ben/code/flow/.worktrees/my-feature/lib/foo.py",
-            "/Users/ben/code/flow/.worktrees/my-feature",
-        );
-        assert!(allowed);
-        assert!(msg.is_empty());
-    }
-
-    #[test]
-    fn test_blocks_main_repo_path_from_worktree() {
-        let cwd = "/Users/ben/code/flow/.worktrees/my-feature";
-        let (allowed, msg) = validate("/Users/ben/code/flow/lib/foo.py", cwd);
-        assert!(!allowed);
-        assert!(msg.contains("BLOCKED"));
-        assert!(msg.contains(cwd));
-    }
-
-    #[test]
-    fn test_allows_flow_states_path() {
-        let (allowed, msg) = validate(
-            "/Users/ben/code/flow/.flow-states/my-feature.json",
-            "/Users/ben/code/flow/.worktrees/my-feature",
-        );
-        assert!(allowed);
-        assert!(msg.is_empty());
-    }
-
-    #[test]
-    fn test_allows_home_directory_paths() {
-        let (allowed, msg) = validate(
-            "/Users/ben/.claude/plans/some-plan.md",
-            "/Users/ben/code/flow/.worktrees/my-feature",
-        );
-        assert!(allowed);
-        assert!(msg.is_empty());
-    }
-
-    #[test]
-    fn test_allows_plugin_cache_paths() {
-        let (allowed, msg) = validate(
-            "/Users/ben/.claude/plugins/cache/flow/0.28.5/skills/flow-code/SKILL.md",
-            "/Users/ben/code/flow/.worktrees/my-feature",
-        );
-        assert!(allowed);
-        assert!(msg.is_empty());
-    }
-
-    #[test]
-    fn test_error_message_includes_corrected_path() {
-        let cwd = "/Users/ben/code/flow/.worktrees/my-feature";
-        let file_path = "/Users/ben/code/flow/skills/flow-prime/SKILL.md";
-        let (allowed, msg) = validate(file_path, cwd);
-        assert!(!allowed);
-        let corrected = "/Users/ben/code/flow/.worktrees/my-feature/skills/flow-prime/SKILL.md";
-        assert!(msg.contains(corrected));
-        assert!(msg.contains(file_path));
-    }
-
-    #[test]
-    fn test_allows_empty_file_path() {
-        let (allowed, _) = validate("", "/Users/ben/code/flow/.worktrees/my-feature");
-        assert!(allowed);
-    }
-
-    #[test]
-    fn test_allows_worktree_root_path_exactly() {
-        let cwd = "/Users/ben/code/flow/.worktrees/my-feature";
-        let (allowed, _) = validate(cwd, cwd);
-        assert!(allowed);
-    }
-
-    // --- get_file_path tests ---
-
-    #[test]
-    fn test_get_file_path_prefers_file_path() {
-        let tool_input = json!({"file_path": "/some/path.py", "path": "/other/path"});
-        assert_eq!(get_file_path(&tool_input), "/some/path.py");
-    }
-
-    #[test]
-    fn test_get_file_path_falls_back_to_path() {
-        let tool_input = json!({"path": "/some/dir"});
-        assert_eq!(get_file_path(&tool_input), "/some/dir");
-    }
-
-    #[test]
-    fn test_get_file_path_returns_empty_for_neither() {
-        let tool_input = json!({"command": "something"});
-        assert_eq!(get_file_path(&tool_input), "");
-    }
-
-    // --- is_shared_config tests ---
-
-    #[test]
-    fn test_shared_config_gitignore() {
-        assert!(is_shared_config("/project/.worktrees/feat/.gitignore"));
-    }
-
-    #[test]
-    fn test_shared_config_gitattributes() {
-        assert!(is_shared_config("/project/.worktrees/feat/.gitattributes"));
-    }
-
-    #[test]
-    fn test_shared_config_makefile() {
-        assert!(is_shared_config("/project/.worktrees/feat/Makefile"));
-    }
-
-    #[test]
-    fn test_shared_config_rakefile() {
-        assert!(is_shared_config("/project/.worktrees/feat/Rakefile"));
-    }
-
-    #[test]
-    fn test_shared_config_justfile() {
-        assert!(is_shared_config("/project/.worktrees/feat/justfile"));
-    }
-
-    #[test]
-    fn test_shared_config_package_json() {
-        assert!(is_shared_config("/project/.worktrees/feat/package.json"));
-    }
-
-    #[test]
-    fn test_shared_config_requirements_txt() {
-        assert!(is_shared_config(
-            "/project/.worktrees/feat/requirements.txt"
-        ));
-    }
-
-    #[test]
-    fn test_shared_config_go_mod() {
-        assert!(is_shared_config("/project/.worktrees/feat/go.mod"));
-    }
-
-    #[test]
-    fn test_shared_config_cargo_toml() {
-        assert!(is_shared_config("/project/.worktrees/feat/Cargo.toml"));
-    }
-
-    #[test]
-    fn test_shared_config_github_directory() {
-        assert!(is_shared_config(
-            "/project/.worktrees/feat/.github/workflows/ci.yml"
-        ));
-    }
-
-    #[test]
-    fn test_shared_config_github_codeowners() {
-        assert!(is_shared_config(
-            "/project/.worktrees/feat/.github/CODEOWNERS"
-        ));
-    }
-
-    #[test]
-    fn test_shared_config_not_regular_file() {
-        assert!(!is_shared_config("/project/.worktrees/feat/src/lib.rs"));
-    }
-
-    #[test]
-    fn test_shared_config_not_readme() {
-        assert!(!is_shared_config("/project/.worktrees/feat/README.md"));
-    }
-
-    #[test]
-    fn test_shared_config_empty_path() {
-        assert!(!is_shared_config(""));
-    }
-
-    #[test]
-    fn test_shared_config_case_sensitive_makefile() {
-        // lowercase `makefile` is NOT in the canonical list
-        assert!(!is_shared_config("/project/.worktrees/feat/makefile"));
-    }
-
-    #[test]
-    fn test_shared_config_github_directory_itself() {
-        // `.github` alone (no child) is a directory, not a file target
-        assert!(!is_shared_config("/project/.worktrees/feat/.github"));
-    }
-
-    // --- validate_shared_config tests ---
-
-    #[test]
-    fn test_shared_config_edit_gitignore_blocked() {
-        let cwd = "/project/.worktrees/feat";
-        let file_path = "/project/.worktrees/feat/.gitignore";
-        let (allowed, msg) = validate_shared_config(file_path, cwd, "Edit");
-        assert!(!allowed);
-        assert!(msg.contains("shared configuration"));
-        assert!(msg.contains("permissions.md"));
-    }
-
-    #[test]
-    fn test_shared_config_write_cargo_toml_blocked() {
-        let cwd = "/project/.worktrees/feat";
-        let file_path = "/project/.worktrees/feat/Cargo.toml";
-        let (allowed, msg) = validate_shared_config(file_path, cwd, "Write");
-        assert!(!allowed);
-        assert!(msg.contains("shared configuration"));
-    }
-
-    #[test]
-    fn test_shared_config_read_gitignore_allowed() {
-        let cwd = "/project/.worktrees/feat";
-        let file_path = "/project/.worktrees/feat/.gitignore";
-        let (allowed, msg) = validate_shared_config(file_path, cwd, "Read");
-        assert!(allowed);
-        assert!(msg.is_empty());
-    }
-
-    #[test]
-    fn test_shared_config_grep_github_allowed() {
-        let cwd = "/project/.worktrees/feat";
-        let file_path = "/project/.worktrees/feat/.github/workflows/ci.yml";
-        let (allowed, msg) = validate_shared_config(file_path, cwd, "Grep");
-        assert!(allowed);
-        assert!(msg.is_empty());
-    }
-
-    #[test]
-    fn test_shared_config_edit_outside_worktree_allowed() {
-        let cwd = "/project";
-        let file_path = "/project/.gitignore";
-        let (allowed, msg) = validate_shared_config(file_path, cwd, "Edit");
-        assert!(allowed);
-        assert!(msg.is_empty());
-    }
-
-    #[test]
-    fn test_shared_config_edit_regular_file_allowed() {
-        let cwd = "/project/.worktrees/feat";
-        let file_path = "/project/.worktrees/feat/src/lib.rs";
-        let (allowed, msg) = validate_shared_config(file_path, cwd, "Edit");
-        assert!(allowed);
-        assert!(msg.is_empty());
-    }
-
-    #[test]
-    fn test_shared_config_empty_path_allowed() {
-        let cwd = "/project/.worktrees/feat";
-        let (allowed, msg) = validate_shared_config("", cwd, "Edit");
-        assert!(allowed);
-        assert!(msg.is_empty());
-    }
-
-    #[test]
-    fn test_shared_config_edit_main_repo_shared_allowed() {
-        // When a shared-config file lives at the main repo level (outside
-        // the worktree), the CWD-scope check allows it because the gate
-        // only applies to edits inside `.worktrees/`. The existing
-        // validate() already blocks main-repo paths via a separate check;
-        // validate_shared_config only fires for worktree-internal paths.
-        let cwd = "/project/.worktrees/feat";
-        let file_path = "/project/.gitignore";
-        let (allowed, msg) = validate_shared_config(file_path, cwd, "Edit");
-        assert!(allowed);
-        assert!(msg.is_empty());
-    }
-
-    #[test]
-    fn test_shared_config_edit_github_workflow_blocked() {
-        let cwd = "/project/.worktrees/feat";
-        let file_path = "/project/.worktrees/feat/.github/workflows/ci.yml";
-        let (allowed, msg) = validate_shared_config(file_path, cwd, "Edit");
-        assert!(!allowed);
-        assert!(msg.contains("shared configuration"));
-    }
-
-    #[test]
-    fn test_shared_config_empty_tool_name_allowed() {
-        // Missing tool_name is treated as non-Edit/Write
-        let cwd = "/project/.worktrees/feat";
-        let file_path = "/project/.worktrees/feat/.gitignore";
-        let (allowed, msg) = validate_shared_config(file_path, cwd, "");
-        assert!(allowed);
-        assert!(msg.is_empty());
-    }
+    std::process::exit(code);
 }
