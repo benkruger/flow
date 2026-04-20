@@ -7,6 +7,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use common::{create_git_repo_with_remote, parse_output};
+use flow_rs::commands::start_step::{resolve_flow_bin, update_step};
 use serde_json::{json, Value};
 
 fn write_state(repo: &Path, branch: &str, state: &Value) -> std::path::PathBuf {
@@ -153,4 +154,146 @@ fn start_step_exec_wrapping_enters_exec_path() {
         "stderr should contain the exec error message, got: {}",
         stderr
     );
+}
+
+// --- Library-level tests (migrated from src/commands/start_step.rs) ---
+
+fn make_state_lib() -> Value {
+    json!({
+        "schema_version": 1,
+        "branch": "test-feature",
+        "current_phase": "flow-start",
+        "files": {
+            "plan": null,
+            "dag": null,
+            "log": ".flow-states/test-feature.log",
+            "state": ".flow-states/test-feature.json"
+        },
+        "phases": {}
+    })
+}
+
+#[test]
+fn test_update_step_success() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(&make_state_lib()).unwrap(),
+    )
+    .unwrap();
+
+    let result = update_step(&path, 5);
+    assert!(result);
+
+    let content = fs::read_to_string(&path).unwrap();
+    let state: Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(state["start_step"], 5);
+}
+
+#[test]
+fn test_update_step_missing_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("nonexistent.json");
+    let result = update_step(&path, 5);
+    assert!(!result);
+}
+
+#[test]
+fn test_update_step_corrupt_json() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    fs::write(&path, "not valid json{{{").unwrap();
+    let result = update_step(&path, 5);
+    assert!(!result);
+}
+
+#[test]
+fn update_step_array_state_returns_true_but_preserves_array() {
+    // Exercises the non-object guard. When the state root is an array,
+    // the guard fires and returns without writing start_step.
+    // mutate_state itself succeeds (no IO error) so update_step returns
+    // true — but the array root is preserved.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    fs::write(&path, "[]").unwrap();
+    let result = update_step(&path, 5);
+    assert!(result);
+    let content = fs::read_to_string(&path).unwrap();
+    let val: Value = serde_json::from_str(&content).unwrap();
+    assert!(val.is_array(), "array root must be preserved");
+}
+
+#[test]
+fn update_step_string_state_returns_true_but_preserves_string() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    fs::write(&path, "\"hello\"").unwrap();
+    let result = update_step(&path, 5);
+    assert!(result);
+    let content = fs::read_to_string(&path).unwrap();
+    let val: Value = serde_json::from_str(&content).unwrap();
+    assert!(val.is_string(), "string root must be preserved");
+}
+
+#[test]
+fn test_update_step_preserves_other_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    let mut state = make_state_lib();
+    state["code_task"] = json!(3);
+    fs::write(&path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
+
+    update_step(&path, 7);
+
+    let content = fs::read_to_string(&path).unwrap();
+    let updated: Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(updated["start_step"], 7);
+    assert_eq!(updated["code_task"], 3);
+    assert_eq!(updated["branch"], "test-feature");
+}
+
+#[test]
+fn resolve_flow_bin_uses_three_parents_up_when_exe_ok() {
+    let root = std::path::Path::new("/fallback");
+    let exe = Ok(std::path::PathBuf::from("/repo/target/debug/flow-rs"));
+    let resolved = resolve_flow_bin(exe, root);
+    assert_eq!(resolved, std::path::PathBuf::from("/repo/bin/flow"));
+}
+
+#[test]
+fn resolve_flow_bin_falls_back_to_project_root_when_exe_err() {
+    let root = std::path::Path::new("/fallback");
+    let exe = Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "simulated",
+    ));
+    let resolved = resolve_flow_bin(exe, root);
+    assert_eq!(resolved, std::path::PathBuf::from("/fallback/bin/flow"));
+}
+
+#[test]
+fn resolve_flow_bin_falls_back_to_project_root_when_exe_too_shallow() {
+    // `ancestors().nth(3)` on a 2-component path returns None —
+    // exercise the inner if-let fallback.
+    let root = std::path::Path::new("/fallback");
+    let exe = Ok(std::path::PathBuf::from("/flow-rs"));
+    let resolved = resolve_flow_bin(exe, root);
+    assert_eq!(resolved, std::path::PathBuf::from("/fallback/bin/flow"));
+}
+
+#[test]
+fn test_update_step_overwrites_previous() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    let mut state = make_state_lib();
+    state["start_step"] = json!(3);
+    fs::write(&path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
+
+    let result = update_step(&path, 8);
+    assert!(result);
+
+    let content = fs::read_to_string(&path).unwrap();
+    let updated: Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(updated["start_step"], 8);
 }

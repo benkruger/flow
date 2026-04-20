@@ -78,6 +78,14 @@ pub struct Args {
     /// Mutually exclusive with the other phase filters.
     #[arg(long, group = "phase_filter")]
     pub audit: bool,
+    /// Branch-scoped full clean: remove this branch's CI sentinel,
+    /// every `*.profraw` under `target/llvm-cov-target/`, and the
+    /// `debug/deps/` and `debug/incremental/` subdirectories under
+    /// `target/llvm-cov-target/`. Leaves `target/debug/flow-rs`
+    /// intact so the `bin/flow` dispatcher doesn't trigger a rebuild.
+    /// Short-circuits CI — no format/lint/build/test runs after.
+    #[arg(long)]
+    pub clean: bool,
     /// Trailing args forwarded to the spawned `./bin/<tool>`.
     /// Only meaningful with a single-phase flag (`--format`/`--lint`/
     /// `--build`/`--test`); ignored otherwise. Use `--` to separate:
@@ -600,6 +608,123 @@ pub fn run_with_retry(
     )
 }
 
+/// Recursively delete every `*.profraw` file under `dir`. Returns
+/// `(count, bytes)` where `count` is the number of files successfully
+/// removed and `bytes` is the sum of their sizes. A missing or
+/// unreadable `dir` contributes zero. Errors on individual files are
+/// swallowed — a partial sweep is strictly better than aborting on
+/// the first failure.
+///
+/// Used by [`run_clean`] to eliminate the profraw pile-up that
+/// accumulates across `bin/test` invocations (especially subprocess
+/// tests that write profraws after `bin/test`'s start-of-run sweep).
+pub fn delete_profraws_recursive(dir: &Path) -> (u64, u64) {
+    let mut count: u64 = 0;
+    let mut bytes: u64 = 0;
+    let mut stack: Vec<PathBuf> = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let entries = match fs::read_dir(&current) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let ft = match entry.file_type() {
+                Ok(ft) => ft,
+                Err(_) => continue,
+            };
+            if ft.is_dir() {
+                stack.push(path);
+            } else if ft.is_file() && path.extension().map(|e| e == "profraw").unwrap_or(false) {
+                if let Ok(meta) = fs::metadata(&path) {
+                    bytes = bytes.saturating_add(meta.len());
+                }
+                if fs::remove_file(&path).is_ok() {
+                    count = count.saturating_add(1);
+                }
+            }
+        }
+    }
+    (count, bytes)
+}
+
+/// Branch-scoped full clean. Used by `bin/flow ci --clean` and
+/// directly testable.
+///
+/// Removes:
+/// - `<root>/.flow-states/<branch>-ci-passed` — this branch's sentinel
+/// - every `*.profraw` under `<cwd>/target/llvm-cov-target/` (recursive)
+/// - `<cwd>/target/llvm-cov-target/debug/deps/`
+/// - `<cwd>/target/llvm-cov-target/debug/incremental/`
+///
+/// Does NOT touch `<cwd>/target/debug/flow-rs` or
+/// `<cwd>/target/release/flow-rs` — the dispatcher needs those to
+/// avoid rebuilding itself on the next `bin/flow` invocation.
+///
+/// When `branch` is None and no branch can be resolved (detached HEAD,
+/// bare clone), the sentinel step is a no-op. The remaining work still
+/// runs because the profraws and compile artifacts are branch-free.
+pub fn run_clean(cwd: &Path, root: &Path, branch: Option<&str>) -> (Value, i32) {
+    let start = Instant::now();
+
+    // Branch sentinel — strict-fallible: we never panic on invalid
+    // branches; instead we treat "no valid branch" as "nothing to do
+    // for the sentinel" and continue with the rest of the clean.
+    let resolved = branch
+        .map(|s| s.to_string())
+        .or_else(|| crate::git::resolve_branch_in(None, cwd, root));
+    let mut sentinel_removed = false;
+    if let Some(ref b) = resolved {
+        if let Some(paths) = FlowPaths::try_new(root, b) {
+            let p = paths.ci_sentinel();
+            if p.exists() && fs::remove_file(&p).is_ok() {
+                sentinel_removed = true;
+            }
+        }
+    }
+
+    // Profraws — recursive under target/llvm-cov-target/. Safe even
+    // when deps/ and incremental/ get nuked below (those dirs are
+    // handled separately; this sweep catches anything elsewhere).
+    let llvm_target = cwd.join("target").join("llvm-cov-target");
+    let (profraw_count, profraw_bytes) = delete_profraws_recursive(&llvm_target);
+
+    // Compile cache subdirs. `fs::remove_dir_all` on a missing path
+    // returns Err, so we gate on existence to keep the boolean clean.
+    let deps = llvm_target.join("debug").join("deps");
+    let deps_removed = deps.exists() && fs::remove_dir_all(&deps).is_ok();
+
+    let incremental = llvm_target.join("debug").join("incremental");
+    let incremental_removed = incremental.exists() && fs::remove_dir_all(&incremental).is_ok();
+
+    let elapsed_ms = start.elapsed().as_millis() as u64;
+    eprintln!(
+        "--- clean: sentinel={} profraws={} ({} bytes) deps={} incremental={} ({}) ---",
+        sentinel_removed,
+        profraw_count,
+        profraw_bytes,
+        deps_removed,
+        incremental_removed,
+        format_elapsed(elapsed_ms),
+    );
+
+    (
+        json!({
+            "status": "ok",
+            "cleaned": {
+                "branch": resolved,
+                "sentinel_removed": sentinel_removed,
+                "profraw_count": profraw_count,
+                "profraw_bytes": profraw_bytes,
+                "deps_removed": deps_removed,
+                "incremental_removed": incremental_removed,
+            },
+            "elapsed_ms": elapsed_ms,
+        }),
+        0,
+    )
+}
+
 /// Testable CLI entry point.
 ///
 /// Checks the sentinel BEFORE building the tool sequence so callers like
@@ -607,6 +732,10 @@ pub fn run_with_retry(
 /// the sentinel does not match (or force/retry mode), scans `cwd/bin/`
 /// for tool scripts and dispatches to [`run_once`] or [`run_with_retry`].
 pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> (Value, i32) {
+    if args.clean {
+        return run_clean(cwd, root, args.branch.as_deref());
+    }
+
     if flow_ci_running {
         return (
             json!({
@@ -709,13 +838,29 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
             rebuild,
         )
     } else {
-        // Force=true since we already checked the sentinel above.
+        // Pass args.force through — not a literal `true`. run_once's
+        // `force` parameter is overloaded: it controls (a) bypassing the
+        // sentinel skip-if-matches check inside run_once, and (b) setting
+        // FLOW_CI_FORCE=1 on the spawned child's environment. bin/test
+        // reads FLOW_CI_FORCE and skips `cargo clean -p flow-rs` when
+        // set, so that stale instrumented artifacts can reuse the cache
+        // across incremental rebuilds. Hard-coding `true` here propagated
+        // the env unconditionally, defeating the clean on every invocation
+        // and letting fingerprint-stale flow-rs codegen units accumulate
+        // in target/llvm-cov-target/debug/deps/ — the same class of bloat
+        // the clean was introduced to prevent (see CLAUDE.md "Start-Gate
+        // CI on Main as Serialization Point"). Passing args.force means
+        // the env only propagates when the user explicitly asked for
+        // incremental via --force; the sentinel-skip bypass becomes a
+        // redundant-but-idempotent re-check when args.force is false
+        // (the upstream check above already returned early on match, so
+        // run_once's own check sees the same mismatch and proceeds).
         run_once(
             cwd,
             root,
             &tools,
             sentinel_branch,
-            true,
+            args.force,
             args.simulate_branch.as_deref(),
             rebuild,
         )

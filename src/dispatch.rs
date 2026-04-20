@@ -5,6 +5,9 @@
 //! Centralizing the print-then-exit pair keeps match arms short and
 //! ensures a uniform output contract: JSON for structured commands,
 //! plain text for human-readable output.
+//!
+//! Tests live at tests/dispatch.rs per .claude/rules/test-placement.md —
+//! no inline #[cfg(test)] in this file.
 
 use serde_json::Value;
 
@@ -68,62 +71,4 @@ pub fn ok_result_to_value_code(result: Result<Value, String>) -> (Value, i32) {
 pub fn dispatch_ok_result_json(result: Result<Value, String>) -> ! {
     let (value, code) = ok_result_to_value_code(result);
     dispatch_json(value, code)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn result_to_value_code_ok_non_error_returns_code_zero() {
-        let (v, code) = result_to_value_code(Ok(json!({"status": "ok", "data": 42})));
-        assert_eq!(code, 0);
-        assert_eq!(v["status"], "ok");
-        assert_eq!(v["data"], 42);
-    }
-
-    #[test]
-    fn result_to_value_code_ok_error_status_returns_code_one() {
-        let (v, code) = result_to_value_code(Ok(json!({"status": "error", "message": "bad"})));
-        assert_eq!(code, 1);
-        assert_eq!(v["status"], "error");
-    }
-
-    #[test]
-    fn result_to_value_code_err_wraps_message_with_code_one() {
-        let (v, code) = result_to_value_code(Err("infra failure".to_string()));
-        assert_eq!(code, 1);
-        assert_eq!(v["status"], "error");
-        assert_eq!(v["message"], "infra failure");
-    }
-
-    #[test]
-    fn result_to_value_code_ok_without_status_field_is_success() {
-        let (v, code) = result_to_value_code(Ok(json!({"data": 1})));
-        assert_eq!(code, 0);
-        assert_eq!(v["data"], 1);
-    }
-
-    #[test]
-    fn ok_result_to_value_code_ok_error_status_still_exits_zero() {
-        let (v, code) = ok_result_to_value_code(Ok(json!({"status": "error", "message": "gate"})));
-        assert_eq!(code, 0);
-        assert_eq!(v["status"], "error");
-    }
-
-    #[test]
-    fn ok_result_to_value_code_err_wraps_message_with_code_one() {
-        let (v, code) = ok_result_to_value_code(Err("infra".to_string()));
-        assert_eq!(code, 1);
-        assert_eq!(v["status"], "error");
-        assert_eq!(v["message"], "infra");
-    }
-
-    #[test]
-    fn ok_result_to_value_code_ok_without_error_status_exits_zero() {
-        let (v, code) = ok_result_to_value_code(Ok(json!({"status": "ok"})));
-        assert_eq!(code, 0);
-        assert_eq!(v["status"], "ok");
-    }
 }

@@ -8,6 +8,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use flow_rs::promote_permissions::{promote, read_json, run_impl, Args};
 use serde_json::{json, Value};
 
 fn flow_rs() -> Command {
@@ -461,4 +462,79 @@ fn settings_permissions_as_string_does_not_panic() {
     assert_ne!(output.status.code(), Some(101));
     let data = parse_stdout(&output.stdout);
     assert!(data.get("status").is_some());
+}
+
+// --- Library-level tests (migrated from src/promote_permissions.rs) ---
+
+fn setup_dir_lib() -> tempfile::TempDir {
+    tempfile::tempdir().unwrap()
+}
+
+fn write_local_lib(dir: &Path, content: &str) {
+    let claude_dir = dir.join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    fs::write(claude_dir.join("settings.local.json"), content).unwrap();
+}
+
+fn write_settings_lib(dir: &Path, content: &str) {
+    let claude_dir = dir.join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    fs::write(claude_dir.join("settings.json"), content).unwrap();
+}
+
+#[test]
+fn promote_non_object_settings_returns_error() {
+    // settings.json containing a JSON array is rejected before
+    // the IndexMut assignment that would otherwise panic.
+    let dir = setup_dir_lib();
+    write_local_lib(
+        dir.path(),
+        r#"{"permissions": {"allow": ["Bash(echo *)"]}}"#,
+    );
+    write_settings_lib(dir.path(), "[1, 2, 3]");
+    let result = promote(dir.path());
+    assert_eq!(result["status"], "error");
+    assert!(result["message"]
+        .as_str()
+        .unwrap()
+        .contains("not a JSON object"));
+}
+
+#[test]
+fn run_impl_skipped_is_ok() {
+    let dir = setup_dir_lib();
+    let args = Args {
+        worktree_path: dir.path().to_string_lossy().to_string(),
+    };
+    let result = run_impl(&args).unwrap();
+    assert_eq!(result["status"], "skipped");
+}
+
+#[test]
+fn run_impl_error_is_err() {
+    let dir = setup_dir_lib();
+    write_local_lib(
+        dir.path(),
+        r#"{"permissions": {"allow": ["Bash(echo *)"]}}"#,
+    );
+    // No settings.json → error
+    let args = Args {
+        worktree_path: dir.path().to_string_lossy().to_string(),
+    };
+    let result = run_impl(&args);
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err()["status"], "error");
+}
+
+#[test]
+fn read_json_fs_read_error_returns_io_message() {
+    // Reading a path that does not exist drives `fs::read` to Err,
+    // exercising the `map_err(|e| e.to_string())?` propagation on
+    // line 158 — the only uncovered region in this module when the
+    // happy path is the sole exerciser.
+    let missing = std::path::Path::new("/nonexistent/path/does/not/exist.json");
+    let result = read_json(missing);
+    assert!(result.is_err());
+    let msg = result.unwrap_err();
+    assert!(!msg.is_empty(), "expected non-empty io error message");
 }

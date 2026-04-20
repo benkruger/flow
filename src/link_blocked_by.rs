@@ -9,6 +9,9 @@
 //! Output (JSON to stdout):
 //!   Success: {"status": "ok", "blocked": N, "blocking": N}
 //!   Error:   {"status": "error", "message": "..."}
+//!
+//! Tests live at tests/link_blocked_by.rs per .claude/rules/test-placement.md —
+//! no inline #[cfg(test)] in this file.
 
 use std::time::Duration;
 
@@ -100,85 +103,5 @@ pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
             0,
         ),
         Err(e) => (json!({"status": "error", "message": e}), 1),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn args_parse_all_required() {
-        let args = Args::try_parse_from([
-            "link-blocked-by",
-            "--repo",
-            "owner/repo",
-            "--blocked-number",
-            "10",
-            "--blocking-number",
-            "20",
-        ]);
-        assert!(args.is_ok());
-        let args = args.unwrap();
-        assert_eq!(args.repo, "owner/repo");
-        assert_eq!(args.blocked_number, 10);
-        assert_eq!(args.blocking_number, 20);
-    }
-
-    #[test]
-    fn args_missing_repo_fails() {
-        let args = Args::try_parse_from([
-            "link-blocked-by",
-            "--blocked-number",
-            "10",
-            "--blocking-number",
-            "20",
-        ]);
-        assert!(args.is_err());
-    }
-
-    #[test]
-    fn args_missing_blocked_fails() {
-        let args = Args::try_parse_from([
-            "link-blocked-by",
-            "--repo",
-            "owner/repo",
-            "--blocking-number",
-            "20",
-        ]);
-        assert!(args.is_err());
-    }
-
-    #[test]
-    fn args_missing_blocking_fails() {
-        let args = Args::try_parse_from([
-            "link-blocked-by",
-            "--repo",
-            "owner/repo",
-            "--blocked-number",
-            "10",
-        ]);
-        assert!(args.is_err());
-    }
-
-    #[test]
-    fn self_reference_rejected() {
-        // blocked == blocking should be rejected before any API call
-        let result = link_blocked_by("owner/repo", 42, 42);
-        assert!(result.is_err());
-        let msg = result.unwrap_err();
-        assert!(
-            msg.contains("self-reference"),
-            "Error should mention self-reference, got: {}",
-            msg
-        );
-    }
-
-    #[test]
-    fn uses_integer_flag_for_issue_id() {
-        // Verify the API call uses -F (integer) not -f (string).
-        // The -F flag is hardcoded in link_blocked_by(), verified by code inspection.
-        let api_path = format!("repos/{}/issues/{}/dependencies/blocked_by", "o/r", 10);
-        assert!(api_path.contains("/dependencies/blocked_by"));
     }
 }

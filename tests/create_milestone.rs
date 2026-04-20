@@ -9,7 +9,9 @@ mod common;
 use std::path::Path;
 use std::process::{Command, Output};
 
+use clap::Parser;
 use common::{create_gh_stub, create_git_repo_with_remote, parse_output};
+use flow_rs::create_milestone::Args;
 
 fn run_cmd(repo: &Path, args: &[&str], stub_dir: &Path) -> Output {
     let path_env = format!(
@@ -175,4 +177,60 @@ fn create_milestone_missing_url_defaults_to_empty_string() {
     assert_eq!(data["status"], "ok");
     assert_eq!(data["number"], 7);
     assert_eq!(data["url"], "");
+}
+
+// --- Library-level tests (migrated from src/create_milestone.rs) ---
+
+#[test]
+fn args_parse_all_required() {
+    let args = Args::try_parse_from([
+        "create-milestone",
+        "--repo",
+        "owner/repo",
+        "--title",
+        "v1.0 Release",
+        "--due-date",
+        "2026-06-01",
+    ]);
+    assert!(args.is_ok());
+    let args = args.unwrap();
+    assert_eq!(args.repo, "owner/repo");
+    assert_eq!(args.title, "v1.0 Release");
+    assert_eq!(args.due_date, "2026-06-01");
+}
+
+#[test]
+fn args_missing_repo_fails() {
+    let args = Args::try_parse_from([
+        "create-milestone",
+        "--title",
+        "v1.0",
+        "--due-date",
+        "2026-06-01",
+    ]);
+    assert!(args.is_err());
+}
+
+#[test]
+fn args_missing_title_fails() {
+    let args = Args::try_parse_from([
+        "create-milestone",
+        "--repo",
+        "owner/repo",
+        "--due-date",
+        "2026-06-01",
+    ]);
+    assert!(args.is_err());
+}
+
+#[test]
+fn args_missing_due_date_fails() {
+    let args = Args::try_parse_from([
+        "create-milestone",
+        "--repo",
+        "owner/repo",
+        "--title",
+        "v1.0",
+    ]);
+    assert!(args.is_err());
 }

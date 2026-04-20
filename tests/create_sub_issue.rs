@@ -9,7 +9,9 @@ mod common;
 use std::path::Path;
 use std::process::{Command, Output};
 
+use clap::Parser;
 use common::{create_gh_stub, create_git_repo_with_remote, parse_output};
+use flow_rs::create_sub_issue::{create_sub_issue, Args};
 
 fn run_cmd(repo: &Path, args: &[&str], stub_dir: &Path) -> Output {
     let path_env = format!(
@@ -230,5 +232,75 @@ fn create_sub_issue_fails_when_post_fails() {
             .contains("refused"),
         "Expected POST failure in message, got: {}",
         data["message"]
+    );
+}
+
+// --- Library-level tests (migrated from src/create_sub_issue.rs) ---
+
+#[test]
+fn args_parse_all_required() {
+    let args = Args::try_parse_from([
+        "create-sub-issue",
+        "--repo",
+        "owner/repo",
+        "--parent-number",
+        "1",
+        "--child-number",
+        "2",
+    ]);
+    assert!(args.is_ok());
+    let args = args.unwrap();
+    assert_eq!(args.repo, "owner/repo");
+    assert_eq!(args.parent_number, 1);
+    assert_eq!(args.child_number, 2);
+}
+
+#[test]
+fn args_missing_repo_fails() {
+    let args = Args::try_parse_from([
+        "create-sub-issue",
+        "--parent-number",
+        "1",
+        "--child-number",
+        "2",
+    ]);
+    assert!(args.is_err());
+}
+
+#[test]
+fn args_missing_parent_fails() {
+    let args = Args::try_parse_from([
+        "create-sub-issue",
+        "--repo",
+        "owner/repo",
+        "--child-number",
+        "2",
+    ]);
+    assert!(args.is_err());
+}
+
+#[test]
+fn args_missing_child_fails() {
+    let args = Args::try_parse_from([
+        "create-sub-issue",
+        "--repo",
+        "owner/repo",
+        "--parent-number",
+        "1",
+    ]);
+    assert!(args.is_err());
+}
+
+#[test]
+fn self_reference_rejected_before_api_call() {
+    // parent == child is rejected locally — no gh invocation occurs,
+    // so the library test can run without network or stub setup.
+    let result = create_sub_issue("owner/repo", 42, 42);
+    assert!(result.is_err());
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("self-reference"),
+        "Error should mention self-reference, got: {}",
+        msg
     );
 }

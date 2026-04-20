@@ -10,6 +10,8 @@ use std::fs;
 use std::process::Command;
 
 use flow_rs::qa_verify;
+use flow_rs::qa_verify::verify_impl;
+use serde_json::{json, Value};
 
 /// Subprocess: `bin/flow qa-verify --repo owner/nonexistent
 /// --project-root <tempdir>` drives `run()` through `run_impl` which
@@ -112,4 +114,188 @@ fn qa_verify_run_impl_real_runner_none_branch_reports_fetch_failure() {
     // passed=false, which is what we're verifying as the "real
     // runner was invoked and returned a structured response" path.
     assert_eq!(pr_check["passed"], false);
+}
+
+// --- Library-level unit tests (migrated from src/qa_verify.rs) ---
+
+fn mock_ok_pr() -> Option<String> {
+    Some(serde_json::to_string(&json!([{"number": 1}])).unwrap())
+}
+
+fn mock_empty_list() -> Option<String> {
+    Some("[]".to_string())
+}
+
+#[test]
+fn test_verify_all_pass() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
+
+    assert_eq!(result["status"], "ok");
+    let checks = result["checks"].as_array().unwrap();
+    assert!(checks.iter().all(|c| c["passed"] == true));
+}
+
+#[test]
+fn test_verify_leftover_state_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+    fs::write(state_dir.join("leftover.json"), r#"{"branch":"leftover"}"#).unwrap();
+
+    let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
+
+    let checks = result["checks"].as_array().unwrap();
+    let state_check: Vec<&Value> = checks
+        .iter()
+        .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
+        .collect();
+    assert!(!state_check.is_empty());
+    assert_eq!(state_check[0]["passed"], false);
+}
+
+#[test]
+fn test_verify_leftover_worktree() {
+    let dir = tempfile::tempdir().unwrap();
+    let wt_dir = dir.path().join(".worktrees").join("some-feature");
+    fs::create_dir_all(&wt_dir).unwrap();
+
+    let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
+
+    let checks = result["checks"].as_array().unwrap();
+    let wt_check: Vec<&Value> = checks
+        .iter()
+        .filter(|c| {
+            c["name"]
+                .as_str()
+                .unwrap()
+                .to_lowercase()
+                .contains("worktree")
+        })
+        .collect();
+    assert!(!wt_check.is_empty());
+    assert_eq!(wt_check[0]["passed"], false);
+}
+
+#[test]
+fn test_verify_no_merged_pr() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let result = verify_impl("owner/repo", dir.path(), &|_| mock_empty_list());
+
+    let checks = result["checks"].as_array().unwrap();
+    let pr_check: Vec<&Value> = checks
+        .iter()
+        .filter(|c| c["name"].as_str().unwrap().contains("PR"))
+        .collect();
+    assert!(!pr_check.is_empty());
+    assert_eq!(pr_check[0]["passed"], false);
+}
+
+#[test]
+fn test_verify_pr_fetch_failure() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let result = verify_impl("owner/repo", dir.path(), &|_| None);
+
+    let checks = result["checks"].as_array().unwrap();
+    let pr_check: Vec<&Value> = checks
+        .iter()
+        .filter(|c| c["name"].as_str().unwrap().contains("PR"))
+        .collect();
+    assert!(!pr_check.is_empty());
+    assert_eq!(pr_check[0]["passed"], false);
+}
+
+#[test]
+fn test_verify_no_flow_states_dir() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
+
+    let checks = result["checks"].as_array().unwrap();
+    let state_check: Vec<&Value> = checks
+        .iter()
+        .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
+        .collect();
+    assert!(!state_check.is_empty());
+    assert_eq!(state_check[0]["passed"], true);
+}
+
+#[test]
+fn test_verify_excludes_orchestrate_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+    fs::write(state_dir.join("orchestrate-queue.json"), "{}").unwrap();
+
+    let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
+
+    let checks = result["checks"].as_array().unwrap();
+    let state_check: Vec<&Value> = checks
+        .iter()
+        .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
+        .collect();
+    assert_eq!(state_check[0]["passed"], true);
+}
+
+#[test]
+fn test_verify_excludes_phases_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+    fs::write(state_dir.join("feature-phases.json"), "{}").unwrap();
+
+    let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
+
+    let checks = result["checks"].as_array().unwrap();
+    let state_check: Vec<&Value> = checks
+        .iter()
+        .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
+        .collect();
+    assert_eq!(state_check[0]["passed"], true);
+}
+
+/// Drives `subprocess_runner` Err path: nonexistent binary returns None.
+#[test]
+fn subprocess_runner_nonexistent_binary_returns_none() {
+    let result = flow_rs::qa_verify::subprocess_runner(&[
+        "/nonexistent/binary/path/does-not-exist-deadbeef",
+    ]);
+    assert!(result.is_none());
+}
+
+/// Drives `subprocess_runner` success branch via `/bin/echo` (always
+/// present on POSIX systems). Exits 0, returns captured stdout.
+#[test]
+fn subprocess_runner_success_branch_returns_stdout() {
+    let result = flow_rs::qa_verify::subprocess_runner(&["/bin/echo", "hello"]);
+    assert_eq!(result.as_deref(), Some("hello\n"));
+}
+
+/// Drives `subprocess_runner` non-zero exit: `/usr/bin/false` always
+/// exits 1. Returns None regardless of stdout.
+#[test]
+fn subprocess_runner_nonzero_exit_returns_none() {
+    // /usr/bin/false is present on all POSIX test environments.
+    let result = flow_rs::qa_verify::subprocess_runner(&["/usr/bin/false"]);
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_verify_excludes_dot_prefixed_json() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+    fs::write(state_dir.join(".hidden-state.json"), "{}").unwrap();
+
+    let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
+
+    let checks = result["checks"].as_array().unwrap();
+    let state_check: Vec<&Value> = checks
+        .iter()
+        .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
+        .collect();
+    assert_eq!(state_check[0]["passed"], true);
 }

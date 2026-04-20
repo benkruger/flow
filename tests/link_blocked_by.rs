@@ -10,7 +10,9 @@ mod common;
 use std::path::Path;
 use std::process::{Command, Output};
 
+use clap::Parser;
 use common::{create_gh_stub, create_git_repo_with_remote, parse_output};
+use flow_rs::link_blocked_by::{link_blocked_by, Args};
 
 fn run_link(repo: &Path, args: &[&str], stub_dir: &Path) -> Output {
     let path_env = format!(
@@ -246,5 +248,75 @@ fn link_blocked_by_fails_when_dependency_post_fails() {
                 .contains("refused"),
         "Expected POST failure in message, got: {}",
         data["message"]
+    );
+}
+
+// --- Library-level tests (migrated from src/link_blocked_by.rs) ---
+
+#[test]
+fn args_parse_all_required() {
+    let args = Args::try_parse_from([
+        "link-blocked-by",
+        "--repo",
+        "owner/repo",
+        "--blocked-number",
+        "10",
+        "--blocking-number",
+        "20",
+    ]);
+    assert!(args.is_ok());
+    let args = args.unwrap();
+    assert_eq!(args.repo, "owner/repo");
+    assert_eq!(args.blocked_number, 10);
+    assert_eq!(args.blocking_number, 20);
+}
+
+#[test]
+fn args_missing_repo_fails() {
+    let args = Args::try_parse_from([
+        "link-blocked-by",
+        "--blocked-number",
+        "10",
+        "--blocking-number",
+        "20",
+    ]);
+    assert!(args.is_err());
+}
+
+#[test]
+fn args_missing_blocked_fails() {
+    let args = Args::try_parse_from([
+        "link-blocked-by",
+        "--repo",
+        "owner/repo",
+        "--blocking-number",
+        "20",
+    ]);
+    assert!(args.is_err());
+}
+
+#[test]
+fn args_missing_blocking_fails() {
+    let args = Args::try_parse_from([
+        "link-blocked-by",
+        "--repo",
+        "owner/repo",
+        "--blocked-number",
+        "10",
+    ]);
+    assert!(args.is_err());
+}
+
+#[test]
+fn self_reference_rejected_before_api_call() {
+    // blocked == blocking is rejected locally — no gh invocation
+    // occurs, so no stub setup is required.
+    let result = link_blocked_by("owner/repo", 42, 42);
+    assert!(result.is_err());
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("self-reference"),
+        "Error should mention self-reference, got: {}",
+        msg
     );
 }

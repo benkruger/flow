@@ -114,7 +114,14 @@ if [ "${1:-}" = "--module" ]; then
 fi
 
 # --- Unconditional profraw sweep ---
-/usr/bin/find target/llvm-cov-target -maxdepth 1 -name "*.profraw" -delete 2>/dev/null || true
+# Recursive under target/llvm-cov-target so subprocess tests that
+# write profraws under nested subdirs (or profraws left behind by
+# killed runs) cannot poison the next `cargo llvm-cov report` with
+# stale profdata — that merge was the root cause of the multi-minute
+# CI pile-up (693M of accumulated profraws). Sweep runs only at the
+# start (bin/flow ci --clean is the user-facing reset for when a
+# full clear is wanted).
+/usr/bin/find target/llvm-cov-target -name "*.profraw" -delete 2>/dev/null || true
 /usr/bin/find . -maxdepth 1 -name "default_*.profraw" -delete 2>/dev/null || true
 
 # --- Resolve the audit log path (branch-scoped). ---
@@ -147,7 +154,7 @@ if [ "$PER_FILE" = "1" ]; then
   src_file="${test_file/#tests\//src/}"
   bin_name="$(basename "$test_file" .rs)"
 
-  NEXTEST_ARGS=(--status-level pass --final-status-level fail -E "binary(${bin_name})")
+  NEXTEST_ARGS=(--status-level none --final-status-level fail -E "binary(${bin_name})")
   COV_ARGS=(--no-cfg-coverage --no-clean)
 
   if [ "$AUDIT_MODE" = "1" ]; then
@@ -199,7 +206,7 @@ if [ "$PER_FILE" = "1" ]; then
     # threshold gate yet — we extract the per-file number in
     # step 2 below).
     set +e
-    cargo llvm-cov --no-cfg-coverage --no-clean nextest \
+    cargo llvm-cov "${COV_ARGS[@]}" nextest \
       "${NEXTEST_ARGS[@]}" "$@"
     rc=$?
     set -e
@@ -256,17 +263,10 @@ if [ "$PER_FILE" = "1" ]; then
 
   # Meta-test (no mirrored src) — no coverage gate.
   echo "=== ${bin_name} (meta-test, no mirrored src) ==="
-  temp_log="$(mktemp -t flow-test-log.XXXXXX)"
-  trap 'rm -f "$temp_log"' EXIT
   time_start=$SECONDS
   set +e
-  cargo llvm-cov "${COV_ARGS[@]}" nextest "${NEXTEST_ARGS[@]}" "$@" 2>&1 \
-    | tee "$temp_log" \
-    | awk '
-/^ *PASS / { printf "."; c++; fflush(); next }
-{ if (c > 0) { printf "\n"; c = 0 } print; fflush() }
-END { if (c > 0) printf "\n" }'
-  rc="${PIPESTATUS[0]}"
+  cargo llvm-cov "${COV_ARGS[@]}" nextest "${NEXTEST_ARGS[@]}" "$@"
+  rc=$?
   set -e
   if [ "$rc" -ne 0 ]; then
     exit "$rc"
@@ -278,15 +278,18 @@ END { if (c > 0) printf "\n" }'
 fi
 
 # --- Full-suite mode ---
+#
+# We no longer run `cargo sweep --installed` or `cargo clean -p flow-rs`
+# on every full-suite invocation. The Frankenstein-coverage concern
+# (stale instrumented binaries from prior source generations merging
+# their covmaps into today's report) is addressed by the unconditional
+# recursive profraw sweep above — llvm-cov's report only includes
+# coverage from the profraws produced by THIS run, so stale instrumented
+# binaries in target/llvm-cov-target/debug/deps/ contribute nothing
+# when there is no matching profdata for them. `bin/flow ci --clean`
+# is the user-facing reset for a true fresh-clone experience.
 
-if [ $# -eq 0 ]; then
-  cargo sweep --installed --target-dir target/llvm-cov-target >/dev/null 2>&1 || true
-fi
-if [ $# -eq 0 ] && [ "${FLOW_CI_FORCE:-}" != "1" ]; then
-  cargo clean --target-dir target/llvm-cov-target -p flow-rs
-fi
-
-NEXTEST_ARGS=(--status-level pass --final-status-level fail)
+NEXTEST_ARGS=(--status-level none --final-status-level fail)
 COV_ARGS=(--no-cfg-coverage --no-clean)
 
 if [ "$AUDIT_MODE" = "1" ]; then
@@ -333,24 +336,11 @@ fi
 if [ $# -eq 0 ]; then
   COV_ARGS+=(--fail-under-lines 100 --fail-under-regions 100 --fail-under-functions 100)
 fi
-temp_log="$(mktemp -t flow-test-log.XXXXXX)"
-trap 'rm -f "$temp_log"' EXIT
+echo "=== nextest: cargo llvm-cov nextest ==="
 time_start=$SECONDS
 set +e
-cargo llvm-cov "${COV_ARGS[@]}" nextest "${NEXTEST_ARGS[@]}" "$@" 2>&1 \
-  | tee "$temp_log" \
-  | awk '
-/^ *PASS / { printf "."; c++; fflush(); next }
-{
-  if (c > 0) { printf "\n"; c = 0 }
-  s = $0
-  n = gsub(/100\.00%/, "&", s)
-  if (n >= 3) next
-  print
-  fflush()
-}
-END { if (c > 0) printf "\n" }'
-rc="${PIPESTATUS[0]}"
+cargo llvm-cov "${COV_ARGS[@]}" nextest "${NEXTEST_ARGS[@]}" "$@"
+rc=$?
 set -e
 
 if [ "$rc" -ne 0 ]; then

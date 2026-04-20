@@ -488,6 +488,7 @@ fn production_ci_decider_inner(
         build: false,
         test: false,
         audit: false,
+        clean: false,
         trailing: Vec::new(),
     };
     let (ci_result, ci_code) = ci_runner(&ci_args, cwd, root, false);

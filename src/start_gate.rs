@@ -90,6 +90,7 @@ pub fn run_impl_with_deps(
         build: false,
         test: false,
         audit: false,
+        clean: false,
         trailing: Vec::new(),
     };
     let (ci_result, _ci_code) = ci_runner(&ci_args, cwd, root, false);
@@ -189,6 +190,7 @@ pub fn run_impl_with_deps(
         build: false,
         test: false,
         audit: false,
+        clean: false,
         trailing: Vec::new(),
     };
     let (post_ci_result, _post_ci_code) = ci_runner(&post_ci_args, cwd, root, false);

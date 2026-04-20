@@ -6,6 +6,7 @@ use std::fs;
 use std::process::{Command, Stdio};
 
 use common::flow_states_dir;
+use flow_rs::commands::set_blocked::set_blocked;
 use regex::Regex;
 use serde_json::{json, Value};
 
@@ -127,4 +128,81 @@ fn test_hook_malformed_stdin_exits_zero() {
     let output = child.wait_with_output().unwrap();
 
     assert_eq!(output.status.code().unwrap(), 0);
+}
+
+// --- Library-level unit tests (migrated from src/commands/set_blocked.rs) ---
+
+#[test]
+fn test_set_blocked_sets_timestamp() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    fs::write(&path, r#"{"branch": "test", "current_phase": "flow-code"}"#).unwrap();
+
+    set_blocked(&path);
+
+    let content = fs::read_to_string(&path).unwrap();
+    let state: Value = serde_json::from_str(&content).unwrap();
+    assert!(state.get("_blocked").is_some());
+    assert!(iso_pattern().is_match(state["_blocked"].as_str().unwrap()));
+}
+
+#[test]
+fn test_set_blocked_preserves_other_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    let initial = json!({
+        "branch": "test",
+        "session_id": "existing-session",
+        "notes": [{"note": "a correction"}]
+    });
+    fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+    set_blocked(&path);
+
+    let content = fs::read_to_string(&path).unwrap();
+    let state: Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(state["session_id"], "existing-session");
+    assert_eq!(state["notes"][0]["note"], "a correction");
+    assert!(state.get("_blocked").is_some());
+}
+
+#[test]
+fn test_set_blocked_overwrites_existing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    let initial = json!({"_blocked": "2026-01-01T10:00:00-08:00"});
+    fs::write(&path, serde_json::to_string(&initial).unwrap()).unwrap();
+
+    set_blocked(&path);
+
+    let content = fs::read_to_string(&path).unwrap();
+    let state: Value = serde_json::from_str(&content).unwrap();
+    assert_ne!(state["_blocked"], "2026-01-01T10:00:00-08:00");
+}
+
+#[test]
+fn test_set_blocked_no_state_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("nonexistent.json");
+    // Should not panic
+    set_blocked(&path);
+}
+
+#[test]
+fn test_set_blocked_corrupt_json() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    fs::write(&path, "{bad json").unwrap();
+    // Should not panic
+    set_blocked(&path);
+}
+
+#[test]
+fn test_set_blocked_array_root_skips_mutation() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    fs::write(&path, "[1, 2, 3]").unwrap();
+    set_blocked(&path);
+    let after: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert!(after.is_array());
 }

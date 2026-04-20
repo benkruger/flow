@@ -5,10 +5,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use clap::Parser;
 use flow_rs::ci::{
-    any_tool_is_stub, bin_tool_sequence, eprint_summary, format_elapsed, program_stdout, run_impl,
-    run_once, run_with_retry, sentinel_path, tree_snapshot, write_or_remove_sentinel, Args, CiTool,
-    STUB_MARKER,
+    any_tool_is_stub, bin_tool_sequence, delete_profraws_recursive, eprint_summary, format_elapsed,
+    program_stdout, run_clean, run_impl, run_once, run_with_retry, sentinel_path, tree_snapshot,
+    write_or_remove_sentinel, Args, CiTool, STUB_MARKER,
 };
 
 fn init_git_repo(dir: &Path, initial_branch: &str) {
@@ -692,6 +693,7 @@ fn default_args() -> Args {
         build: false,
         test: false,
         audit: false,
+        clean: false,
         trailing: Vec::new(),
     }
 }
@@ -1344,4 +1346,191 @@ fn run_impl_force_bypasses_sentinel_skip() {
     let (forced_out, code) = run_impl(&forced, &f.path, &f.path, false);
     assert_eq!(code, 0);
     assert_eq!(forced_out["skipped"], false);
+}
+
+// --- delete_profraws_recursive ---
+
+#[test]
+fn delete_profraws_recursive_missing_dir_returns_zero() {
+    let tmp = tempfile::tempdir().unwrap();
+    let missing = tmp.path().join("does-not-exist");
+    let (count, bytes) = delete_profraws_recursive(&missing);
+    assert_eq!(count, 0);
+    assert_eq!(bytes, 0);
+}
+
+#[test]
+fn delete_profraws_recursive_removes_top_and_nested() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    // Top-level profraw.
+    fs::write(root.join("a.profraw"), b"x".repeat(100)).unwrap();
+    // Nested profraw.
+    let nested = root.join("debug").join("deps");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join("b.profraw"), b"y".repeat(50)).unwrap();
+    // Non-profraw — must survive.
+    fs::write(root.join("keepme.txt"), b"keep").unwrap();
+
+    let (count, bytes) = delete_profraws_recursive(root);
+    assert_eq!(count, 2);
+    assert_eq!(bytes, 150);
+    assert!(!root.join("a.profraw").exists());
+    assert!(!nested.join("b.profraw").exists());
+    assert!(root.join("keepme.txt").exists());
+}
+
+// --- run_clean ---
+
+#[test]
+fn run_clean_removes_sentinel_profraws_and_cache_dirs() {
+    let f = make_ci_fixture();
+
+    // Seed: sentinel for this branch
+    let sentinel = fixture_sentinel(&f);
+    fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+    fs::write(&sentinel, "doesntmatter").unwrap();
+
+    // Seed: profraws in target/llvm-cov-target (top and nested)
+    let llvm = f.path.join("target").join("llvm-cov-target");
+    fs::create_dir_all(&llvm).unwrap();
+    fs::write(llvm.join("top.profraw"), b"aaaa").unwrap();
+    let nested = llvm.join("debug").join("deps");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join("nested.profraw"), b"bbb").unwrap();
+
+    // Seed: incremental dir with a marker file
+    let inc = llvm.join("debug").join("incremental");
+    fs::create_dir_all(&inc).unwrap();
+    fs::write(inc.join("marker"), b"i").unwrap();
+
+    // Seed: target/debug/flow-rs — must NOT be removed.
+    let flow_rs = f.path.join("target").join("debug").join("flow-rs");
+    fs::create_dir_all(flow_rs.parent().unwrap()).unwrap();
+    fs::write(&flow_rs, b"binary").unwrap();
+
+    let (out, code) = run_clean(&f.path, &f.path, Some(&f.branch));
+    assert_eq!(code, 0);
+    assert_eq!(out["status"], "ok");
+    assert_eq!(out["cleaned"]["sentinel_removed"], true);
+    assert_eq!(out["cleaned"]["profraw_count"], 2);
+    assert_eq!(out["cleaned"]["profraw_bytes"], 7);
+    assert_eq!(out["cleaned"]["deps_removed"], true);
+    assert_eq!(out["cleaned"]["incremental_removed"], true);
+
+    // Disk state
+    assert!(!sentinel.exists(), "sentinel should be gone");
+    assert!(!nested.exists(), "deps dir should be gone");
+    assert!(!inc.exists(), "incremental dir should be gone");
+    assert!(!llvm.join("top.profraw").exists());
+    // flow-rs binary preserved
+    assert!(flow_rs.exists(), "target/debug/flow-rs must survive clean");
+}
+
+#[test]
+fn run_clean_nothing_to_clean_is_noop() {
+    let f = make_ci_fixture();
+    // No sentinel, no target dir. Clean should still succeed with
+    // everything false/zero.
+    let (out, code) = run_clean(&f.path, &f.path, Some(&f.branch));
+    assert_eq!(code, 0);
+    assert_eq!(out["status"], "ok");
+    assert_eq!(out["cleaned"]["sentinel_removed"], false);
+    assert_eq!(out["cleaned"]["profraw_count"], 0);
+    assert_eq!(out["cleaned"]["profraw_bytes"], 0);
+    assert_eq!(out["cleaned"]["deps_removed"], false);
+    assert_eq!(out["cleaned"]["incremental_removed"], false);
+}
+
+#[test]
+fn run_clean_no_branch_skips_sentinel_only() {
+    // Non-git cwd: resolve_branch_in returns None, sentinel step
+    // is a no-op, but profraws/deps/incremental still get cleaned.
+    let tmp = tempfile::tempdir().unwrap();
+    let llvm = tmp.path().join("target").join("llvm-cov-target");
+    fs::create_dir_all(&llvm).unwrap();
+    fs::write(llvm.join("x.profraw"), b"z").unwrap();
+
+    let (out, code) = run_clean(tmp.path(), tmp.path(), None);
+    assert_eq!(code, 0);
+    assert_eq!(out["cleaned"]["branch"], serde_json::Value::Null);
+    assert_eq!(out["cleaned"]["sentinel_removed"], false);
+    assert_eq!(out["cleaned"]["profraw_count"], 1);
+}
+
+#[test]
+fn run_clean_slash_branch_skips_sentinel_without_panic() {
+    // External-input guard: a `--branch feature/foo` override must
+    // not panic. FlowPaths::try_new returns None; sentinel step
+    // becomes a no-op.
+    let tmp = tempfile::tempdir().unwrap();
+    let (out, code) = run_clean(tmp.path(), tmp.path(), Some("feature/foo"));
+    assert_eq!(code, 0);
+    assert_eq!(out["cleaned"]["sentinel_removed"], false);
+}
+
+// --- run_impl --clean dispatch ---
+
+#[test]
+fn run_impl_clean_short_circuits_before_tools() {
+    // Even with no bin/* scripts (which normally fails), clean
+    // returns ok because it short-circuits before bin_tool_sequence.
+    let f = make_ci_fixture();
+    let sentinel = fixture_sentinel(&f);
+    fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+    fs::write(&sentinel, "snapshot").unwrap();
+
+    let args = Args {
+        branch: Some(f.branch.clone()),
+        clean: true,
+        ..default_args()
+    };
+    let (out, code) = run_impl(&args, &f.path, &f.path, false);
+    assert_eq!(code, 0);
+    assert_eq!(out["status"], "ok");
+    assert_eq!(out["cleaned"]["sentinel_removed"], true);
+    assert!(!sentinel.exists());
+}
+
+#[test]
+fn run_impl_clean_dominates_recursion_guard() {
+    // --clean must run even inside FLOW_CI_RUNNING=1 so a user
+    // manually invoking it during CI gets the expected behavior
+    // rather than a silent "recursion guard skip".
+    let f = make_ci_fixture();
+    let sentinel = fixture_sentinel(&f);
+    fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+    fs::write(&sentinel, "snapshot").unwrap();
+
+    let args = Args {
+        branch: Some(f.branch.clone()),
+        clean: true,
+        ..default_args()
+    };
+    let (out, code) = run_impl(&args, &f.path, &f.path, true);
+    assert_eq!(code, 0);
+    assert_eq!(out["status"], "ok");
+    assert_ne!(out["reason"], "recursion guard");
+    assert!(!sentinel.exists());
+}
+
+// --- clap parsing for `bin/flow ci --test tests/<file>.rs` ---
+
+#[test]
+fn args_parse_test_with_test_file_routes_to_trailing() {
+    // Regression guard for the per-file CI path: the user invocation
+    // `bin/flow ci --test tests/foo.rs` must produce Args {test:true,
+    // trailing:["tests/foo.rs"]} so run_impl forwards the filename to
+    // bin/test as a per-file argument.
+    let args = Args::parse_from(["ci", "--test", "tests/foo.rs"]);
+    assert!(args.test);
+    assert_eq!(args.trailing, vec!["tests/foo.rs".to_string()]);
+}
+
+#[test]
+fn args_parse_clean_flag() {
+    let args = Args::parse_from(["ci", "--clean"]);
+    assert!(args.clean);
+    assert!(!args.force);
+    assert!(!args.test);
 }

@@ -9,6 +9,9 @@
 //! subdirectory, the subcommand hard-errors with a message naming the
 //! expected directory.
 //!
+//! Tests live at tests/cwd_scope.rs per .claude/rules/test-placement.md —
+//! no inline #[cfg(test)] in this file.
+//!
 //! # Why this matters
 //!
 //! Without the guard, a user who cds out of `api/` into `ios/` and runs
@@ -60,7 +63,25 @@ use crate::flow_paths::FlowPaths;
 /// `project_root` is the main repo root (where `.flow-states/` lives).
 /// `cwd` is the subcommand's current working directory.
 pub fn enforce(cwd: &Path, project_root: &Path) -> Result<(), String> {
-    let branch = match crate::git::current_branch_in(cwd) {
+    enforce_with_deps(
+        cwd,
+        project_root,
+        &crate::git::current_branch_in,
+        &worktree_root_for,
+    )
+}
+
+/// Seam-injected variant of [`enforce`] that accepts custom resolvers
+/// for the branch-from-cwd and worktree-root-from-cwd lookups.
+/// Production passes `current_branch_in` and `worktree_root_for`;
+/// tests substitute closures to exercise each fail-open branch.
+pub fn enforce_with_deps(
+    cwd: &Path,
+    project_root: &Path,
+    branch_resolver: &dyn Fn(&Path) -> Option<String>,
+    worktree_root_resolver: &dyn Fn(&Path) -> Option<PathBuf>,
+) -> Result<(), String> {
+    let branch = match branch_resolver(cwd) {
         Some(b) => b,
         None => return Ok(()),
     };
@@ -85,7 +106,12 @@ pub fn enforce(cwd: &Path, project_root: &Path) -> Result<(), String> {
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
-    let worktree_root = match worktree_root_for(cwd) {
+    // current_branch_in(cwd) succeeded, so cwd is a git-managed
+    // directory: `git rev-parse --show-toplevel` is expected to succeed
+    // too. If it doesn't (transient git failure, network filesystem
+    // hiccup), treat it the same as "no active flow" and skip
+    // enforcement — consistent with the fail-open posture above.
+    let worktree_root = match worktree_root_resolver(cwd) {
         Some(r) => r,
         None => return Ok(()),
     };
@@ -96,6 +122,11 @@ pub fn enforce(cwd: &Path, project_root: &Path) -> Result<(), String> {
         worktree_root.join(relative_cwd)
     };
 
+    // Canonicalize both paths with `unwrap_or` fallback: cwd.canonicalize()
+    // always succeeds in practice (current_branch_in succeeded so cwd is
+    // a live git directory), while expected.canonicalize() may fail when
+    // relative_cwd names a subdirectory that does not yet exist on disk.
+    // Both fall-back branches preserve the prefix-check invariant.
     let cwd_canon = match cwd.canonicalize() {
         Ok(p) => p,
         Err(_) => cwd.to_path_buf(),
@@ -121,12 +152,21 @@ pub fn enforce(cwd: &Path, project_root: &Path) -> Result<(), String> {
 /// Returns `None` for non-git directories or when git fails. The result
 /// is the worktree's root directory (e.g. `.worktrees/<branch>`), not
 /// the main repo root.
-fn worktree_root_for(cwd: &Path) -> Option<PathBuf> {
+pub fn worktree_root_for(cwd: &Path) -> Option<PathBuf> {
     let output = Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .current_dir(cwd)
-        .output()
-        .ok()?;
+        .output();
+    parse_worktree_root(output)
+}
+
+/// Parse the `git rev-parse --show-toplevel` subprocess output into
+/// a worktree root PathBuf. Exposed for tests: each of the three
+/// fail paths (spawn error, non-zero exit, empty stdout) is driven
+/// by a constructed `std::io::Result<Output>` without needing git
+/// subprocess control.
+pub fn parse_worktree_root(output: std::io::Result<std::process::Output>) -> Option<PathBuf> {
+    let output = output.ok()?;
     if !output.status.success() {
         return None;
     }
@@ -135,218 +175,5 @@ fn worktree_root_for(cwd: &Path) -> Option<PathBuf> {
         None
     } else {
         Some(PathBuf::from(path))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    fn init_git_repo(dir: &Path, branch: &str) {
-        let run = |args: &[&str]| {
-            let output = Command::new("git")
-                .args(args)
-                .current_dir(dir)
-                .output()
-                .expect("git command failed");
-            assert!(output.status.success(), "git {:?} failed", args);
-        };
-        run(&["init", "--initial-branch", branch]);
-        run(&["config", "user.email", "test@test.com"]);
-        run(&["config", "user.name", "Test"]);
-        run(&["config", "commit.gpgsign", "false"]);
-        run(&["commit", "--allow-empty", "-m", "init"]);
-    }
-
-    fn write_state(root: &Path, branch: &str, relative_cwd: &str) {
-        let state_dir = root.join(".flow-states");
-        fs::create_dir_all(&state_dir).unwrap();
-        let state = serde_json::json!({
-            "branch": branch,
-            "relative_cwd": relative_cwd,
-        });
-        fs::write(
-            state_dir.join(format!("{}.json", branch)),
-            state.to_string(),
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn enforce_no_state_file_returns_ok() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path(), "main");
-        // No state file
-        let result = enforce(dir.path(), dir.path());
-        assert!(result.is_ok(), "expected ok, got: {:?}", result);
-    }
-
-    #[test]
-    fn enforce_non_git_dir_returns_ok() {
-        let dir = tempfile::tempdir().unwrap();
-        // No git init
-        let result = enforce(dir.path(), dir.path());
-        assert!(result.is_ok(), "expected ok, got: {:?}", result);
-    }
-
-    #[test]
-    fn enforce_empty_relative_cwd_at_worktree_root_returns_ok() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path(), "feature-x");
-        write_state(dir.path(), "feature-x", "");
-        // cwd is the worktree root, relative_cwd is empty → ok
-        let result = enforce(dir.path(), dir.path());
-        assert!(result.is_ok(), "expected ok, got: {:?}", result);
-    }
-
-    #[test]
-    fn enforce_empty_relative_cwd_in_subdir_returns_ok() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path(), "feature-x");
-        write_state(dir.path(), "feature-x", "");
-        let subdir = dir.path().join("api");
-        fs::create_dir(&subdir).unwrap();
-        // cwd is api/, relative_cwd is empty → ok because api/ is a
-        // descendant of the worktree root (prefix match).
-        let result = enforce(&subdir, dir.path());
-        assert!(result.is_ok(), "expected ok, got: {:?}", result);
-    }
-
-    #[test]
-    fn enforce_relative_cwd_descendant_returns_ok() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path(), "feature-x");
-        write_state(dir.path(), "feature-x", "api");
-        let nested = dir.path().join("api").join("src");
-        fs::create_dir_all(&nested).unwrap();
-        // cwd is api/src/, relative_cwd is "api" → ok (descendant)
-        let result = enforce(&nested, dir.path());
-        assert!(result.is_ok(), "expected ok, got: {:?}", result);
-    }
-
-    #[test]
-    fn enforce_relative_cwd_matches_subdir_returns_ok() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path(), "feature-x");
-        write_state(dir.path(), "feature-x", "api");
-        let subdir = dir.path().join("api");
-        fs::create_dir(&subdir).unwrap();
-        // cwd is api/, relative_cwd is "api" → ok
-        let result = enforce(&subdir, dir.path());
-        assert!(result.is_ok(), "expected ok, got: {:?}", result);
-    }
-
-    #[test]
-    fn enforce_relative_cwd_mismatch_errors() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path(), "feature-x");
-        write_state(dir.path(), "feature-x", "api");
-        let ios = dir.path().join("ios");
-        fs::create_dir(&ios).unwrap();
-        // cwd is ios/, relative_cwd is "api" → error naming "api"
-        let result = enforce(&ios, dir.path());
-        assert!(result.is_err(), "expected error, got: {:?}", result);
-        let msg = result.unwrap_err();
-        assert!(
-            msg.contains("api"),
-            "error should name expected directory: {}",
-            msg
-        );
-    }
-
-    #[test]
-    fn enforce_nested_relative_cwd_returns_ok() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path(), "feature-x");
-        write_state(dir.path(), "feature-x", "packages/api");
-        let nested = dir.path().join("packages").join("api");
-        fs::create_dir_all(&nested).unwrap();
-        let result = enforce(&nested, dir.path());
-        assert!(result.is_ok(), "expected ok, got: {:?}", result);
-    }
-
-    #[test]
-    fn enforce_relative_cwd_at_worktree_root_errors() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path(), "feature-x");
-        write_state(dir.path(), "feature-x", "api");
-        // cwd is the worktree root but relative_cwd says "api" → error
-        let result = enforce(dir.path(), dir.path());
-        assert!(result.is_err(), "expected error, got: {:?}", result);
-    }
-
-    #[test]
-    fn enforce_corrupt_state_file_returns_ok() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path(), "feature-x");
-        let state_dir = dir.path().join(".flow-states");
-        fs::create_dir_all(&state_dir).unwrap();
-        fs::write(state_dir.join("feature-x.json"), "not json").unwrap();
-        // Corrupt state file → no enforcement (don't block)
-        let result = enforce(dir.path(), dir.path());
-        assert!(result.is_ok(), "expected ok, got: {:?}", result);
-    }
-
-    #[test]
-    fn enforce_missing_relative_cwd_field_treats_as_empty() {
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path(), "feature-x");
-        let state_dir = dir.path().join(".flow-states");
-        fs::create_dir_all(&state_dir).unwrap();
-        // Pre-existing state file from before relative_cwd was added
-        fs::write(
-            state_dir.join("feature-x.json"),
-            r#"{"branch": "feature-x"}"#,
-        )
-        .unwrap();
-        // No relative_cwd field → treat as empty → cwd at root is ok
-        let result = enforce(dir.path(), dir.path());
-        assert!(result.is_ok(), "expected ok, got: {:?}", result);
-    }
-
-    #[test]
-    fn enforce_state_path_is_directory_returns_ok() {
-        // When the state path exists but is a directory (corruption or
-        // manual test setup), `fs::read_to_string` fails. `enforce`
-        // treats the read failure the same as "no active flow" and
-        // returns Ok(()) rather than surfacing the error.
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path(), "feature-x");
-        let state_dir = dir.path().join(".flow-states");
-        fs::create_dir_all(&state_dir).unwrap();
-        // Create a DIRECTORY where the state file would be — read fails
-        // with EISDIR while `state_path.exists()` still returns true.
-        fs::create_dir(state_dir.join("feature-x.json")).unwrap();
-        let result = enforce(dir.path(), dir.path());
-        assert!(result.is_ok(), "expected ok, got: {:?}", result);
-    }
-
-    #[test]
-    fn worktree_root_for_non_git_returns_none() {
-        // `git rev-parse --show-toplevel` in a non-git directory exits
-        // nonzero, so the helper must return None rather than panic.
-        let dir = tempfile::tempdir().unwrap();
-        // No `git init` — not a git directory.
-        assert!(worktree_root_for(dir.path()).is_none());
-    }
-
-    #[test]
-    fn enforce_canonicalize_fallback_nonexistent_relative_cwd() {
-        // When relative_cwd names a subdirectory that does not exist,
-        // expected.canonicalize() fails and the unwrap_or_else fallback
-        // fires. The cwd (repo root) is not inside the nonexistent
-        // expected path, so enforce returns Err.
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path(), "feature-x");
-        write_state(dir.path(), "feature-x", "nonexistent-subdir");
-        let result = enforce(dir.path(), dir.path());
-        assert!(result.is_err(), "expected error, got: {:?}", result);
-        let msg = result.unwrap_err();
-        assert!(
-            msg.contains("nonexistent-subdir"),
-            "error should name expected directory: {}",
-            msg
-        );
     }
 }

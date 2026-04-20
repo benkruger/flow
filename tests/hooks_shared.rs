@@ -248,3 +248,121 @@ fn test_build_permission_regexes_missing_key() {
     let regexes = hooks::build_permission_regexes(&settings, "allow");
     assert!(regexes.is_empty());
 }
+
+// --- Library-level tests (migrated from src/hooks/mod.rs) ---
+
+use flow_rs::flow_paths::FlowPaths;
+use flow_rs::hooks::{
+    detect_branch_from_path, find_settings_and_root_from, is_flow_active, resolve_main_root,
+};
+
+/// Covers the `Err(_) => return (None, None)` arm on line 39 of
+/// `find_settings_and_root_from`: `is_file()` returns true but
+/// `fs::read_to_string` fails via `chmod 000`.
+#[test]
+fn find_settings_read_failure_returns_none_none() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir(&claude).unwrap();
+    let settings = claude.join("settings.json");
+    fs::write(&settings, "{}").unwrap();
+    // Strip all permission bits so the read fails while
+    // `is_file()` still sees a regular file.
+    fs::set_permissions(&settings, fs::Permissions::from_mode(0o000)).unwrap();
+
+    let (val, root) = find_settings_and_root_from(dir.path());
+    // Restore permissions for tempdir cleanup on drop.
+    let _ = fs::set_permissions(&settings, fs::Permissions::from_mode(0o644));
+    assert!(val.is_none());
+    assert!(root.is_none());
+}
+
+/// Covers the git fallback None arm when `git branch --show-current`
+/// returns empty stdout (detached HEAD).
+#[test]
+fn detect_branch_from_path_detached_head_returns_none() {
+    use std::process::Command;
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    let run = |args: &[&str]| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(repo)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {:?}: {:?}", args, out);
+    };
+    run(&["init", "--initial-branch", "main"]);
+    run(&["config", "user.email", "t@t.com"]);
+    run(&["config", "user.name", "T"]);
+    run(&["config", "commit.gpgsign", "false"]);
+    run(&["commit", "--allow-empty", "-m", "init"]);
+    // Detach HEAD so `git branch --show-current` returns empty.
+    run(&["checkout", "--detach", "HEAD"]);
+
+    assert_eq!(detect_branch_from_path(repo), None);
+}
+
+#[test]
+fn is_flow_active_empty_branch_returns_false() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(!is_flow_active("", dir.path()));
+}
+
+#[test]
+fn is_flow_active_slash_branch_returns_false() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(!is_flow_active("feature/foo", dir.path()));
+}
+
+#[test]
+fn is_flow_active_backslash_branch_returns_false() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(!is_flow_active("a\\b", dir.path()));
+}
+
+#[test]
+fn is_flow_active_valid_branch_no_state_file_returns_false() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(!is_flow_active("feat-branch", dir.path()));
+}
+
+#[test]
+fn is_flow_active_valid_branch_with_state_file_returns_true() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = FlowPaths::new(dir.path(), "feat-branch");
+    fs::create_dir_all(paths.state_file().parent().unwrap()).unwrap();
+    fs::write(paths.state_file(), "{}").unwrap();
+    assert!(is_flow_active("feat-branch", dir.path()));
+}
+
+#[test]
+fn find_settings_invalid_json_returns_none_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir(&claude).unwrap();
+    fs::write(claude.join("settings.json"), "{not valid json").unwrap();
+
+    let (val, root) = find_settings_and_root_from(dir.path());
+    assert!(val.is_none());
+    assert!(root.is_none());
+}
+
+#[test]
+fn resolve_main_root_strips_worktree_suffix() {
+    let worktree = Path::new("/project/.worktrees/feat");
+    assert_eq!(
+        resolve_main_root(worktree),
+        std::path::PathBuf::from("/project")
+    );
+}
+
+#[test]
+fn resolve_main_root_passthrough_without_marker() {
+    let plain = Path::new("/project");
+    assert_eq!(
+        resolve_main_root(plain),
+        std::path::PathBuf::from("/project")
+    );
+}

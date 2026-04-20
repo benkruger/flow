@@ -6,6 +6,9 @@
 //! Output (JSON to stdout):
 //!   Success: {"status": "ok", "number": N, "url": "..."}
 //!   Error:   {"status": "error", "message": "..."}
+//!
+//! Tests live at tests/create_milestone.rs per .claude/rules/test-placement.md —
+//! no inline #[cfg(test)] in this file.
 
 use std::time::Duration;
 
@@ -76,110 +79,5 @@ pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
     match create_milestone(&args.repo, &args.title, &args.due_date) {
         Ok((number, url)) => (json!({"status": "ok", "number": number, "url": url}), 0),
         Err(e) => (json!({"status": "error", "message": e}), 1),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn args_parse_all_required() {
-        let args = Args::try_parse_from([
-            "create-milestone",
-            "--repo",
-            "owner/repo",
-            "--title",
-            "v1.0 Release",
-            "--due-date",
-            "2026-06-01",
-        ]);
-        assert!(args.is_ok());
-        let args = args.unwrap();
-        assert_eq!(args.repo, "owner/repo");
-        assert_eq!(args.title, "v1.0 Release");
-        assert_eq!(args.due_date, "2026-06-01");
-    }
-
-    #[test]
-    fn args_missing_repo_fails() {
-        let args = Args::try_parse_from([
-            "create-milestone",
-            "--title",
-            "v1.0",
-            "--due-date",
-            "2026-06-01",
-        ]);
-        assert!(args.is_err());
-    }
-
-    #[test]
-    fn args_missing_title_fails() {
-        let args = Args::try_parse_from([
-            "create-milestone",
-            "--repo",
-            "owner/repo",
-            "--due-date",
-            "2026-06-01",
-        ]);
-        assert!(args.is_err());
-    }
-
-    #[test]
-    fn args_missing_due_date_fails() {
-        let args = Args::try_parse_from([
-            "create-milestone",
-            "--repo",
-            "owner/repo",
-            "--title",
-            "v1.0",
-        ]);
-        assert!(args.is_err());
-    }
-
-    #[test]
-    fn parse_valid_milestone_response() {
-        let json_str = r#"{"number": 5, "html_url": "https://github.com/owner/repo/milestone/5"}"#;
-        let data: serde_json::Value = serde_json::from_str(json_str).unwrap();
-        let number = data.get("number").and_then(|v| v.as_i64());
-        let url = data.get("html_url").and_then(|v| v.as_str()).unwrap_or("");
-        assert_eq!(number, Some(5));
-        assert_eq!(url, "https://github.com/owner/repo/milestone/5");
-    }
-
-    #[test]
-    fn parse_response_missing_number() {
-        let json_str = r#"{"html_url": "https://github.com/owner/repo/milestone/1"}"#;
-        let data: serde_json::Value = serde_json::from_str(json_str).unwrap();
-        // The production code uses `.and_then(|v| v.as_i64())`; when the
-        // key is missing `data.get` returns None and the closure never
-        // runs. Assert directly on `get` so this test does not declare
-        // an uncovered closure.
-        assert!(data.get("number").is_none());
-    }
-
-    #[test]
-    fn parse_response_missing_url_defaults_empty() {
-        let json_str = r#"{"number": 3}"#;
-        let data: serde_json::Value = serde_json::from_str(json_str).unwrap();
-        // Same rationale as `parse_response_missing_number`: skip the
-        // `.and_then` closure that would otherwise be a dead function
-        // region in this negative test.
-        assert!(data.get("html_url").is_none());
-    }
-
-    #[test]
-    fn invalid_json_detected() {
-        let result: Result<serde_json::Value, _> = serde_json::from_str("not json");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn uses_string_flag_for_fields() {
-        // Verify the API call uses -f (string) not -F (integer).
-        // The -f flag is hardcoded in create_milestone(), verified by code inspection.
-        // Title and due_on are string fields, not integer IDs.
-        let title_field = format!("title={}", "v1.0");
-        assert!(title_field.starts_with("title="));
     }
 }

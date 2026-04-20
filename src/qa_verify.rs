@@ -9,6 +9,9 @@
 //! its assertions as JSON for the flow-qa skill to parse and decide
 //! pass/fail. Output is emitted compactly because the consumer is
 //! programmatic and pretty-printing would just bloat the log.
+//!
+//! Tests live at tests/qa_verify.rs per .claude/rules/test-placement.md —
+//! no inline #[cfg(test)] in this file.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -37,27 +40,24 @@ pub struct Args {
 /// (orchestrate* and *-phases.json).
 pub fn find_state_files(project_root: &Path) -> Vec<PathBuf> {
     let state_dir = FlowStatesDir::new(project_root).path().to_path_buf();
-    if !state_dir.is_dir() {
-        return Vec::new();
-    }
-
     let mut results = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&state_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                // Skip dot-prefixed entries — `*.json` follows the
-                // fnmatch convention where `*` does not match a
-                // leading dot, so a stray `.local.json` from another
-                // tool does not get treated as a flow state file.
-                if name.ends_with(".json")
-                    && !name.starts_with('.')
-                    && !name.starts_with("orchestrate")
-                    && !name.ends_with("-phases.json")
-                {
-                    results.push(path);
-                }
-            }
+    let entries = match std::fs::read_dir(&state_dir) {
+        Ok(e) => e,
+        Err(_) => return results,
+    };
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        // Skip dot-prefixed entries — `*.json` follows the fnmatch
+        // convention where `*` does not match a leading dot, so a
+        // stray `.local.json` from another tool does not get treated
+        // as a flow state file.
+        let name = file_name.to_string_lossy();
+        if name.ends_with(".json")
+            && !name.starts_with('.')
+            && !name.starts_with("orchestrate")
+            && !name.ends_with("-phases.json")
+        {
+            results.push(entry.path());
         }
     }
     results
@@ -88,12 +88,9 @@ pub fn verify_impl(
 
     // Worktrees should be cleaned up after Complete
     let worktrees_dir = project_root.join(".worktrees");
-    let worktree_count = if worktrees_dir.is_dir() {
-        std::fs::read_dir(&worktrees_dir)
-            .map(|entries| entries.count())
-            .unwrap_or(0)
-    } else {
-        0
+    let worktree_count = match std::fs::read_dir(&worktrees_dir) {
+        Ok(entries) => entries.count(),
+        Err(_) => 0,
     };
     checks.push(json!({
         "name": "Worktrees cleaned up",
@@ -139,187 +136,27 @@ pub fn verify_impl(
     })
 }
 
+/// Default subprocess runner: spawn `cmd_args[0]` with remaining args,
+/// return Some(stdout) on exit 0, None otherwise. Extracted into a
+/// `pub fn` so tests can drive it directly without env-var manipulation
+/// to satisfy the closure's code paths.
+pub fn subprocess_runner(cmd_args: &[&str]) -> Option<String> {
+    let output = Command::new(cmd_args[0])
+        .args(&cmd_args[1..])
+        .output()
+        .ok()?;
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        None
+    }
+}
+
 /// CLI entry point.
 ///
 /// Returns Ok(Value) always — qa-verify has no error exit path.
 /// Returns Err(String) only for infrastructure failures.
 pub fn run_impl(args: &Args) -> Result<Value, String> {
     let project_root = Path::new(&args.project_root);
-
-    let runner = |cmd_args: &[&str]| -> Option<String> {
-        let output = Command::new(cmd_args[0])
-            .args(&cmd_args[1..])
-            .output()
-            .ok()?;
-        if output.status.success() {
-            Some(String::from_utf8_lossy(&output.stdout).to_string())
-        } else {
-            None
-        }
-    };
-
-    Ok(verify_impl(&args.repo, project_root, &runner))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    fn mock_ok_pr() -> Option<String> {
-        Some(serde_json::to_string(&json!([{"number": 1}])).unwrap())
-    }
-
-    fn mock_empty_list() -> Option<String> {
-        Some("[]".to_string())
-    }
-
-    #[test]
-    fn test_verify_all_pass() {
-        let dir = tempfile::tempdir().unwrap();
-
-        let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
-
-        assert_eq!(result["status"], "ok");
-        let checks = result["checks"].as_array().unwrap();
-        assert!(checks.iter().all(|c| c["passed"] == true));
-    }
-
-    #[test]
-    fn test_verify_leftover_state_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        fs::create_dir(&state_dir).unwrap();
-        fs::write(state_dir.join("leftover.json"), r#"{"branch":"leftover"}"#).unwrap();
-
-        let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
-
-        let checks = result["checks"].as_array().unwrap();
-        let state_check: Vec<&Value> = checks
-            .iter()
-            .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
-            .collect();
-        assert!(!state_check.is_empty());
-        assert_eq!(state_check[0]["passed"], false);
-    }
-
-    #[test]
-    fn test_verify_leftover_worktree() {
-        let dir = tempfile::tempdir().unwrap();
-        let wt_dir = dir.path().join(".worktrees").join("some-feature");
-        fs::create_dir_all(&wt_dir).unwrap();
-
-        let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
-
-        let checks = result["checks"].as_array().unwrap();
-        let wt_check: Vec<&Value> = checks
-            .iter()
-            .filter(|c| {
-                c["name"]
-                    .as_str()
-                    .unwrap()
-                    .to_lowercase()
-                    .contains("worktree")
-            })
-            .collect();
-        assert!(!wt_check.is_empty());
-        assert_eq!(wt_check[0]["passed"], false);
-    }
-
-    #[test]
-    fn test_verify_no_merged_pr() {
-        let dir = tempfile::tempdir().unwrap();
-
-        let result = verify_impl("owner/repo", dir.path(), &|_| mock_empty_list());
-
-        let checks = result["checks"].as_array().unwrap();
-        let pr_check: Vec<&Value> = checks
-            .iter()
-            .filter(|c| c["name"].as_str().unwrap().contains("PR"))
-            .collect();
-        assert!(!pr_check.is_empty());
-        assert_eq!(pr_check[0]["passed"], false);
-    }
-
-    #[test]
-    fn test_verify_pr_fetch_failure() {
-        let dir = tempfile::tempdir().unwrap();
-
-        let result = verify_impl("owner/repo", dir.path(), &|_| None);
-
-        let checks = result["checks"].as_array().unwrap();
-        let pr_check: Vec<&Value> = checks
-            .iter()
-            .filter(|c| c["name"].as_str().unwrap().contains("PR"))
-            .collect();
-        assert!(!pr_check.is_empty());
-        assert_eq!(pr_check[0]["passed"], false);
-    }
-
-    #[test]
-    fn test_verify_no_flow_states_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        // No .flow-states dir created
-
-        let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
-
-        let checks = result["checks"].as_array().unwrap();
-        let state_check: Vec<&Value> = checks
-            .iter()
-            .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
-            .collect();
-        assert!(!state_check.is_empty());
-        assert_eq!(state_check[0]["passed"], true);
-    }
-
-    #[test]
-    fn test_verify_excludes_orchestrate_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        fs::create_dir(&state_dir).unwrap();
-        fs::write(state_dir.join("orchestrate-queue.json"), "{}").unwrap();
-
-        let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
-
-        let checks = result["checks"].as_array().unwrap();
-        let state_check: Vec<&Value> = checks
-            .iter()
-            .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
-            .collect();
-        assert_eq!(state_check[0]["passed"], true);
-    }
-
-    #[test]
-    fn test_verify_excludes_phases_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        fs::create_dir(&state_dir).unwrap();
-        fs::write(state_dir.join("feature-phases.json"), "{}").unwrap();
-
-        let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
-
-        let checks = result["checks"].as_array().unwrap();
-        let state_check: Vec<&Value> = checks
-            .iter()
-            .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
-            .collect();
-        assert_eq!(state_check[0]["passed"], true);
-    }
-
-    #[test]
-    fn test_verify_excludes_dot_prefixed_json() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        fs::create_dir(&state_dir).unwrap();
-        fs::write(state_dir.join(".hidden-state.json"), "{}").unwrap();
-
-        let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
-
-        let checks = result["checks"].as_array().unwrap();
-        let state_check: Vec<&Value> = checks
-            .iter()
-            .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
-            .collect();
-        assert_eq!(state_check[0]["passed"], true);
-    }
+    Ok(verify_impl(&args.repo, project_root, &subprocess_runner))
 }
