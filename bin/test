@@ -226,22 +226,27 @@ if [ "$PER_FILE" = "1" ]; then
       # or equals "<basename>" exactly.
       $1 == f || $1 ~ "/" f "$" { print; exit }
     ')"
-    if [ -z "$cov_line" ]; then
-      echo "FAIL: ${src_file} not found in coverage report" >&2
-      exit 1
-    fi
     echo ""
     echo "=== Coverage gate for ${src_file} ==="
-    echo "$cov_line"
-    # The report layout lists Regions cover in col 4, Functions
-    # cover (labeled "Executed") in col 7, Lines cover in col 10.
-    # All three must read 100.00%.
-    if ! printf '%s\n' "$cov_line" | awk '
-      { exit ($4 == "100.00%" && $7 == "100.00%" && $10 == "100.00%") ? 0 : 1 }
-    '; then
-      echo "" >&2
-      echo "FAIL: ${src_file} is not at 100/100/100" >&2
-      exit 1
+    if [ -z "$cov_line" ]; then
+      # cargo-llvm-cov omits files with zero instrumented regions
+      # (e.g., a file that only contains derive macros or type
+      # declarations — no executable code to cover). A file with
+      # zero regions is trivially at 100% because there is nothing
+      # to miss. Treat this as PASS.
+      echo "${src_file}: no instrumented regions (trivially 100/100/100)"
+    else
+      echo "$cov_line"
+      # Report layout: Regions cover in col 4, Functions cover
+      # (labeled "Executed") in col 7, Lines cover in col 10. All
+      # three must read 100.00%.
+      if ! printf '%s\n' "$cov_line" | awk '
+        { exit ($4 == "100.00%" && $7 == "100.00%" && $10 == "100.00%") ? 0 : 1 }
+      '; then
+        echo "" >&2
+        echo "FAIL: ${src_file} is not at 100/100/100" >&2
+        exit 1
+      fi
     fi
     elapsed=$((SECONDS - time_start))
     echo ""

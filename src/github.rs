@@ -1,7 +1,23 @@
+//! GitHub remote URL helpers.
+//!
+//! Tests live at `tests/github.rs` per
+//! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]` in
+//! this file.
+
 use std::path::Path;
 use std::process::Command;
 
 use regex::Regex;
+
+/// Extract `owner/repo` from a GitHub remote URL (SSH or HTTPS).
+///
+/// Returns `None` for non-GitHub URLs or unparseable input.
+/// Exposed as a pure function so both production (`detect_repo`)
+/// and tests share one parser — no regex duplication.
+pub fn parse_github_url(url: &str) -> Option<String> {
+    let re = Regex::new(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$").unwrap();
+    re.captures(url).map(|cap| cap[1].to_string())
+}
 
 /// Auto-detect GitHub repo from git remote origin URL.
 ///
@@ -24,88 +40,5 @@ pub fn detect_repo(cwd: Option<&Path>) -> Option<String> {
         return None;
     }
 
-    let re = Regex::new(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$").unwrap();
-    re.captures(&url).map(|cap| cap[1].to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Helper to extract repo from a URL string using the same regex logic.
-    fn extract_repo(url: &str) -> Option<String> {
-        let re = Regex::new(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$").unwrap();
-        re.captures(url).map(|cap| cap[1].to_string())
-    }
-
-    #[test]
-    fn ssh_url() {
-        assert_eq!(
-            extract_repo("git@github.com:owner/repo.git"),
-            Some("owner/repo".to_string())
-        );
-    }
-
-    #[test]
-    fn https_url() {
-        assert_eq!(
-            extract_repo("https://github.com/owner/repo"),
-            Some("owner/repo".to_string())
-        );
-    }
-
-    #[test]
-    fn https_url_with_git_suffix() {
-        assert_eq!(
-            extract_repo("https://github.com/owner/repo.git"),
-            Some("owner/repo".to_string())
-        );
-    }
-
-    #[test]
-    fn non_github_url() {
-        assert_eq!(extract_repo("https://gitlab.com/owner/repo"), None);
-    }
-
-    #[test]
-    fn empty_url() {
-        assert_eq!(extract_repo(""), None);
-    }
-
-    #[test]
-    fn detect_repo_in_current_dir() {
-        // Running in this repo should detect benkruger/flow
-        let result = detect_repo(None);
-        // May or may not work depending on test context, just verify it returns Option
-        let _ = result;
-    }
-
-    #[test]
-    fn detect_repo_with_cwd_outside_git_returns_none() {
-        // /tmp is not a git repo, so detect_repo should return None.
-        let tmp = tempfile::tempdir().unwrap();
-        assert_eq!(detect_repo(Some(tmp.path())), None);
-    }
-
-    #[test]
-    fn detect_repo_with_nonexistent_cwd_returns_none() {
-        // A missing directory → git fails → None.
-        let nonexistent = std::path::Path::new("/definitely/not/a/real/path");
-        assert_eq!(detect_repo(Some(nonexistent)), None);
-    }
-
-    #[test]
-    fn extract_repo_with_trailing_slash() {
-        // github.com/owner/repo/ — trailing slash should still parse.
-        // Current regex doesn't match this — documents the limitation.
-        assert_eq!(extract_repo("https://github.com/owner/repo/"), None);
-    }
-
-    #[test]
-    fn extract_repo_http_not_https() {
-        assert_eq!(
-            extract_repo("http://github.com/owner/repo"),
-            Some("owner/repo".to_string())
-        );
-    }
+    parse_github_url(&url)
 }

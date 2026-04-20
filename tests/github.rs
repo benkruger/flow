@@ -1,13 +1,99 @@
-//! Integration tests for `crate::github::detect_repo`.
+//! Tests for `flow_rs::github`. Migrated from inline
+//! `#[cfg(test)]` in `src/github.rs` per
+//! `.claude/rules/test-placement.md`, combined with the pre-existing
+//! subprocess-environment tests below.
 //!
-//! The inline unit tests in `src/github.rs` cover the happy paths; these
-//! tests drive the remaining edge cases that require controlling the
-//! process environment: `Command::output()` returning `Err` when `git` is
-//! absent from PATH, and the empty-stdout branch.
+//! The URL-parsing tests drive the public `parse_github_url` function
+//! (the same one `detect_repo` uses internally, so no regex
+//! duplication). The `detect_repo` edge cases that require process-
+//! environment control (missing git, empty stdout) run via
+//! subprocess-spawned `session-context` so they don't race with
+//! parallel tests reading PATH.
 
 mod common;
 
 use std::process::Command;
+
+use flow_rs::github::{detect_repo, parse_github_url};
+
+// --- parse_github_url ---
+
+#[test]
+fn ssh_url() {
+    assert_eq!(
+        parse_github_url("git@github.com:owner/repo.git"),
+        Some("owner/repo".to_string())
+    );
+}
+
+#[test]
+fn https_url() {
+    assert_eq!(
+        parse_github_url("https://github.com/owner/repo"),
+        Some("owner/repo".to_string())
+    );
+}
+
+#[test]
+fn https_url_with_git_suffix() {
+    assert_eq!(
+        parse_github_url("https://github.com/owner/repo.git"),
+        Some("owner/repo".to_string())
+    );
+}
+
+#[test]
+fn non_github_url() {
+    assert_eq!(parse_github_url("https://gitlab.com/owner/repo"), None);
+}
+
+#[test]
+fn empty_url() {
+    assert_eq!(parse_github_url(""), None);
+}
+
+#[test]
+fn extract_repo_with_trailing_slash() {
+    // github.com/owner/repo/ — trailing slash does not parse.
+    // Current regex contract — documents the limitation.
+    assert_eq!(parse_github_url("https://github.com/owner/repo/"), None);
+}
+
+#[test]
+fn extract_repo_http_not_https() {
+    assert_eq!(
+        parse_github_url("http://github.com/owner/repo"),
+        Some("owner/repo".to_string())
+    );
+}
+
+// --- detect_repo (in-process) ---
+
+#[test]
+fn detect_repo_in_current_dir() {
+    // Running in this repo should return Some or None depending on
+    // whether the test binary is running inside a git checkout.
+    // We don't assert the content — only that the call completes
+    // without panicking. Coverage comes from exercising the code
+    // path.
+    let _ = detect_repo(None);
+}
+
+#[test]
+fn detect_repo_with_cwd_outside_git_returns_none() {
+    // A fresh tempdir is not a git repo, so detect_repo → None.
+    let tmp = tempfile::tempdir().unwrap();
+    assert_eq!(detect_repo(Some(tmp.path())), None);
+}
+
+#[test]
+fn detect_repo_with_nonexistent_cwd_returns_none() {
+    // A missing directory → git fails → None.
+    let nonexistent = std::path::Path::new("/definitely/not/a/real/path");
+    assert_eq!(detect_repo(Some(nonexistent)), None);
+}
+
+// --- detect_repo (subprocess — environment control) ---
 
 /// When `git` is not findable in PATH, `Command::new("git").output()`
 /// returns `Err(io::Error)`, which `detect_repo` converts to `None` via
