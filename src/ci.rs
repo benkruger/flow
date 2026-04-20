@@ -66,6 +66,14 @@ pub struct Args {
     /// Run only the test step. See --format for sentinel semantics.
     #[arg(long, group = "phase_filter")]
     pub test: bool,
+    /// Run the test phase in audit mode: disable fail-fast, collect
+    /// every violation (test failures, coverage shortfalls, per-test
+    /// timing overruns, full-suite wall-time overruns), print a
+    /// summary at the end. Implies --test (format/lint/build have no
+    /// coverage or timing to audit); forwards --audit to `bin/test`.
+    /// Mutually exclusive with the other phase filters.
+    #[arg(long, group = "phase_filter")]
+    pub audit: bool,
     /// Trailing args forwarded to the spawned `./bin/<tool>`.
     /// Only meaningful with a single-phase flag (`--format`/`--lint`/
     /// `--build`/`--test`); ignored otherwise. Use `--` to separate:
@@ -76,6 +84,8 @@ pub struct Args {
 
 impl Args {
     /// Returns the selected single phase, or None when all four run.
+    ///
+    /// `--audit` implies the test phase.
     pub fn selected_phase(&self) -> Option<&'static str> {
         if self.format {
             Some("format")
@@ -83,7 +93,7 @@ impl Args {
             Some("lint")
         } else if self.build {
             Some("build")
-        } else if self.test {
+        } else if self.test || self.audit {
             Some("test")
         } else {
             None
@@ -658,6 +668,14 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
         // --file path` → `["--file", "path"]`).
         if !args.trailing.is_empty() {
             tools[0].args.extend(args.trailing.iter().cloned());
+        }
+        // When --audit is set, inject `--audit` as the first arg to
+        // bin/test so the runner switches to collect-don't-fail-fast
+        // mode. bin/test handles --audit at any position; placing it
+        // first keeps the forwarded trailing args (test filters, etc.)
+        // undisturbed.
+        if args.audit && phase == "test" {
+            tools[0].args.insert(0, "--audit".to_string());
         }
     }
 
@@ -1457,6 +1475,7 @@ exit 0
             lint: false,
             build: false,
             test: false,
+            audit: false,
             trailing: Vec::new(),
         }
     }

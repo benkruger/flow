@@ -9,6 +9,39 @@
 # the offending binaries to a serial test-group.
 leak-timeout = { period = "2s", result = "fail" }
 
+# Slow-test gate. Any test exceeding the period is marked SLOW and
+# immediately terminated (`terminate-after = 1` = kill after one
+# period of slow-timeout). The termination surfaces as a test
+# failure, and nextest's default fail-fast halts the entire run on
+# that failure — so `bin/flow ci` stops at the first slow test
+# rather than running the full suite to completion.
+#
+# The test's FAIL line carries its actual wall-clock duration,
+# which is the information the user needs to triage.
+#
+# Complementary to the full-suite wall-time gate (3 min) that
+# `bin/test` enforces separately. No per-file gate — per-test
+# discipline at this granularity subsumes a file-level limit.
+#
+# TEMPORARY: period set to 45s while the existing slow-test
+# backlog is worked down. The slowest current test runs at ~37s
+# (`prime_setup settings_has_all_universal_allow_entries`), with a
+# cluster at ~16s; 45s leaves ~20% headroom above today's worst
+# case. The target is 1s — tighten as the backlog clears.
+slow-timeout = { period = "45s", terminate-after = 1 }
+
+# Diagnostic profile used by `bin/test --audit`. No termination —
+# tests run to completion so their actual wall-clock durations
+# surface in the PASS/FAIL lines nextest emits at the end of each
+# test. Period is set high enough that SLOW warnings during the
+# run stay rare; any test exceeding 60s is a different class of
+# problem that warrants its own investigation.
+#
+# This profile is NOT selectable for regular CI — only `bin/test
+# --audit` passes `--profile audit` to nextest.
+[profile.audit]
+slow-timeout = { period = "60s" }
+
 # Concurrency tests in `tests/concurrency.rs` share filesystem state
 # across threads (tempdir-scoped queues, log files, per-branch state
 # files). Running more than one concurrency test at a time inside the

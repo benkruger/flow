@@ -1,8 +1,9 @@
 # Test Placement
 
-Every test lives in `tests/<name>.rs`, parallel to `src/<name>.rs`,
-and drives the subject code through its public interface. No inline
-`#[cfg(test)]` blocks or test-only items in `src/*.rs`.
+Every test lives at `tests/<path>/<name>.rs`, mirroring
+`src/<path>/<name>.rs`, and drives the subject code through its
+public interface. No inline `#[cfg(test)]` blocks or test-only
+items in `src/*.rs`.
 
 ## Why
 
@@ -22,14 +23,15 @@ entry point every time; tests do the same.
 
 Three secondary wins fall out of the placement rule:
 
-- **Parallel naming** — `tests/foo.rs` matches `src/foo.rs` (or
-  `src/commands/foo.rs`, `src/hooks/foo.rs`) so the test surface for
-  any source file is discoverable by name alone. Every src file with
-  tests has exactly one mirror in `tests/`.
-- **Fast per-file green loop** — `bin/test tests/<name>.rs` drives
-  the parallel src file to 100/100/100 in isolation. Edit the src
-  file, run the one test file, see red or green. No need to reason
-  about which inline `mod tests` block covers which branch.
+- **Mirrored paths** — `tests/<path>/<name>.rs` matches
+  `src/<path>/<name>.rs` by pure string substitution. No lookups,
+  no ambiguity. Every src file with tests has exactly one mirror
+  in `tests/` at the same relative path.
+- **Fast per-file green loop** — `bin/test tests/<path>/<name>.rs`
+  drives the mirrored src file to 100/100/100 in isolation. Edit
+  the src file, run the one test file, see red or green. No need
+  to reason about which inline `mod tests` block covers which
+  branch.
 - **Clean diffs** — production edits and test edits land in
   separate files. A source-file diff shows only behavior change; a
   test-file diff shows only coverage change. Review is easier to
@@ -40,20 +42,46 @@ Three secondary wins fall out of the placement rule:
 
 - Every test lives under `tests/`. No `#[cfg(test)]` attributes or
   blocks appear in `src/**/*.rs`.
-- The test file for `src/<path>/<name>.rs` is `tests/<name>.rs`. The
-  `tests/` directory is flat — subpaths in `src/` collapse to a bare
-  filename in `tests/` (e.g. `src/commands/set_timestamp.rs` →
-  `tests/set_timestamp.rs`, `src/hooks/stop_continue.rs` →
-  `tests/stop_continue.rs`).
+- `tests/` mirrors `src/` structurally. The test file for
+  `src/<path>/<name>.rs` is `tests/<path>/<name>.rs` — pure
+  `s/^src/tests/` substitution, no lookups. Examples:
+  - `src/tui.rs` → `tests/tui.rs`
+  - `src/commands/set_timestamp.rs` →
+    `tests/commands/set_timestamp.rs`
+  - `src/hooks/stop_continue.rs` → `tests/hooks/stop_continue.rs`
+- Each test file under a `tests/` subdirectory requires a
+  `[[test]]` stanza in `Cargo.toml` naming the test and pointing
+  at its path. Top-level `tests/*.rs` files do not need a stanza
+  (Cargo auto-registers them). A contract test keeps the stanzas
+  in sync with the `tests/**/*.rs` tree so additions and removals
+  cannot drift.
+- Shared test helpers live in `tests/common/mod.rs`. Top-level
+  tests use `mod common;`. Subdirectory tests import via
+  `#[path = "../common/mod.rs"] mod common;` (adjust the
+  `../` depth for deeper subdirs).
 - Tests drive the subject through `pub` items exposed by the crate
   (library `pub` functions, `pub` types, `run_impl_main` seams, the
   compiled binary via `CARGO_BIN_EXE_flow-rs`). A test that cannot
   be written against the public surface is a signal that the public
   surface is incomplete — add the seam, do not expose the private
   helper.
-- Test helpers and fixtures used across test files live in
-  `tests/common/mod.rs` or in a dedicated helper module declared
-  within a `tests/` file. They never live in `src/`.
+
+### Meta-tests without a src counterpart
+
+A small number of tests have no matching src file because they
+assert project-wide conventions rather than a single module's
+behavior. These live at `tests/` root as explicit exceptions to
+the mirror rule:
+
+- `tests/test_placement.rs` — this contract test
+- `tests/tombstones.rs` — consolidated tombstone assertions
+- `tests/skill_contracts.rs` — SKILL.md content contracts
+- `tests/structural.rs` — config invariants
+- `tests/permissions.rs` — permission allow/deny simulation
+- `tests/docs_sync.rs` — docs completeness
+
+Adding a new meta-test without a src counterpart requires amending
+this list. Every other test under `tests/` must mirror a src file.
 
 ### Test-only items in `src/`
 
@@ -93,7 +121,8 @@ to avoid tripping the `no_skipped_or_excluded` contract test.
 No other escapes exist. If a src file is flagged:
 
 1. If the line contains an actual `#[cfg(test)]` attribute or block,
-   move the test to `tests/<name>.rs` per this rule.
+   move the test to `tests/<path>/<name>.rs` (mirroring the src
+   file) per this rule.
 2. If the line contains the substring inside a string literal,
    rewrite using `concat!` as above.
 3. If the line contains the substring inside a block comment,
@@ -102,14 +131,17 @@ No other escapes exist. If a src file is flagged:
 
 ## How to Apply
 
-**New code.** Write the test file under `tests/<name>.rs` first. If
-the subject src file doesn't exist yet, its public surface is what
-the test exercises — design the public API from the test side.
+**New code.** Write the test file at the mirrored path under
+`tests/` first. If the subject src file doesn't exist yet, its
+public surface is what the test exercises — design the public API
+from the test side. Add a `[[test]]` stanza to `Cargo.toml` if the
+test is under a subdirectory.
 
-**Migrating an existing file.** Open `src/<path>/<name>.rs` and its
-peer `tests/<name>.rs` (create it if absent). Move every
-`#[cfg(test)] mod tests` block from the src file to the tests file.
-For each moved test:
+**Migrating inline tests out of src.** Open `src/<path>/<name>.rs`
+and create its mirror at `tests/<path>/<name>.rs` (or open the
+existing mirror if one exists). Move every `#[cfg(test)] mod
+tests` block from the src file to the tests file. For each moved
+test:
 
 1. Replace `use super::*;` with `use flow_rs::<module>::*;` (or a
    more specific path through the library crate) — the test now
@@ -132,14 +164,40 @@ For each moved test:
    the public surface without a production consumer, and every
    future maintainer must treat the exposed item as part of the
    crate's contract.
-4. Run `bin/test tests/<name>.rs` and iterate until the parallel
-   src file reads 100/100/100.
+4. If the new test file sits under a `tests/` subdirectory, add a
+   `[[test]]` stanza to `Cargo.toml`:
+
+   ```toml
+   [[test]]
+   name = "<name>"
+   path = "tests/<path>/<name>.rs"
+   ```
+
+   Use `#[path = "../common/mod.rs"] mod common;` at the top of
+   the subdirectory test file to access shared helpers (adjust the
+   `../` depth for deeper subdirs).
+5. Run `bin/test tests/<path>/<name>.rs` and iterate until the
+   mirrored src file reads 100/100/100.
+
+**Relocating a legacy flat test file.** When a legacy test lives
+at `tests/<name>.rs` but mirrors a src file under a subdirectory
+(e.g., `tests/set_timestamp.rs` mirrors
+`src/commands/set_timestamp.rs`), move it to the mirrored path:
+
+1. `git mv tests/<name>.rs tests/<path>/<name>.rs`.
+2. Add the `[[test]]` stanza in `Cargo.toml`.
+3. Replace `mod common;` with
+   `#[path = "../common/mod.rs"] mod common;` (adjust depth).
+4. Verify `bin/test tests/<path>/<name>.rs` still runs the tests.
+
+No test logic changes in the relocation — just file position and
+the two mechanical follow-ups.
 
 **Migrating section markers.** The `// --- <primary_name> ---`
 grouping convention from `.claude/rules/rust-patterns.md` still
 applies inside the integration test file — the home of the markers
-moves from `src/<name>.rs` to `tests/<name>.rs`, the convention
-itself is unchanged.
+moves from `src/<path>/<name>.rs` to `tests/<path>/<name>.rs`, the
+convention itself is unchanged.
 
 ## Cross-References
 

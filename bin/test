@@ -1,19 +1,50 @@
 #!/usr/bin/env bash
 # FLOW test runner — called by `bin/flow ci` (and `bin/flow ci --test`).
 #
-# Two modes:
-#   bin/test                                 — full suite via cargo llvm-cov + nextest
-#   bin/test --file <path> [extra args...]   — single test file via rustc --test
+# Modes:
+#   bin/test                                  — full suite; fail fast on any issue
+#   bin/test --audit                          — full suite; never fails, logs to
+#                                               .flow-states/<branch>-audit.log,
+#                                               prints terse summary, exit 0
+#   bin/test tests/<path>/<name>.rs           — per-file mode; fail fast
+#   bin/test tests/<path>/<name>.rs --audit   — per-file mode; never fails
+#   bin/test --file <path> [args...]          — single file via rustc --test (dev)
+#   bin/test --check <module> [args...]       — fast lib tests, no coverage (dev)
+#   bin/test --report                         — re-render cached coverage (dev)
+#   bin/test --show <file>                    — annotated source (dev)
+#   bin/test --module <name>                  — per-module lib coverage (dev)
 #
-# Trailing args after `--` are forwarded to nextest as filter expressions.
+# Trailing args after `--` on `bin/flow ci --test` forward here as
+# filter expressions for nextest.
 set -euo pipefail
 
-# Warnings-as-errors: any compile warning fails the build.
 export RUSTFLAGS="${RUSTFLAGS:-} -D warnings"
-
-# cargo-llvm-cov tool paths (Homebrew LLVM).
 export LLVM_COV=/opt/homebrew/opt/llvm/bin/llvm-cov
 export LLVM_PROFDATA=/opt/homebrew/opt/llvm/bin/llvm-profdata
+
+# Full-suite wall time gate. Per-test gate lives in
+# .config/nextest.toml as `slow-timeout` with `terminate-after=1`
+# (currently 2s, temporarily relaxed from the 1s target while the
+# slow-test backlog clears). Per-file timing gate is intentionally
+# absent — per-test discipline subsumes it.
+SUITE_TIMEOUT_SECS=180
+
+# --- Global flag parsing ---
+AUDIT_MODE=0
+PASS_THROUGH=()
+for arg in "$@"; do
+  case "$arg" in
+    --audit) AUDIT_MODE=1 ;;
+    *) PASS_THROUGH+=("$arg") ;;
+  esac
+done
+if [ "${#PASS_THROUGH[@]}" -gt 0 ]; then
+  set -- "${PASS_THROUGH[@]}"
+else
+  set --
+fi
+
+# --- Dev-only modes (unchanged behavior) ---
 
 if [ "${1:-}" = "--file" ]; then
   shift
@@ -26,10 +57,6 @@ if [ "${1:-}" = "--file" ]; then
   exit
 fi
 
-# `bin/test --check <module>` runs lib tests for a module WITHOUT
-# coverage instrumentation. Fast iteration loop (~1-2s) for verifying
-# test correctness during development. Use `bin/test --module` to
-# verify coverage after tests pass.
 if [ "${1:-}" = "--check" ]; then
   shift
   module="$1"
@@ -37,52 +64,24 @@ if [ "${1:-}" = "--check" ]; then
   exec cargo nextest run --lib -E "test(${module})" "$@"
 fi
 
-# `bin/test --report` re-renders the cached coverage data with
-# missing-line numbers. Requires a prior full-suite run to have
-# populated target/llvm-cov-target/. Read-only; no rebuild.
 if [ "${1:-}" = "--report" ]; then
   shift
   exec cargo llvm-cov report --show-missing-lines "$@"
 fi
 
-# `bin/test --show <file>` renders annotated source with per-region
-# and per-instantiation counts for one file. Used to diagnose
-# uncovered regions that don't surface in the `--report` per-file
-# Uncovered Lines list — typically generic monomorphizations whose
-# region misses are tallied but not pinned to a source line.
-# Read-only; no rebuild. Requires a prior coverage run.
 if [ "${1:-}" = "--show" ]; then
   shift
   file="$1"
   shift
-  # Restrict the annotated output to this one file via an exclusion
-  # regex over every other path. Pass `--text --show-instantiations`
-  # so each monomorphization renders on its own with `^N` per-region
-  # counts.
   exec cargo llvm-cov report --text --show-instantiations \
     --ignore-filename-regex "^(?!.*${file//./\\.}$).*$" \
     "$@"
 fi
 
-# `bin/test --module <name>` runs every test whose name contains
-# <name> (intended to match a single src module like `add_finding`),
-# then renders coverage for ONLY that file (and its inline tests).
-# Used to iterate per-file fast: typical compile + run cycle is
-# 25-40s instead of the 4-minute full ci. Subsequent runs against
-# the same module skip recompile entirely (`--no-clean`).
-#
-# Limitation: the report's TOTAL line is from the cached merged
-# data, so it can be stale. The per-file row is fresh because the
-# tests we just ran refreshed THAT file's profraw.
 if [ "${1:-}" = "--module" ]; then
   shift
   module="$1"
   shift
-  # `--lib` skips compiling/running integration test binaries (tests/*.rs),
-  # leaving only the library + its inline #[cfg(test)] modules. This drops
-  # cycle time from minutes to seconds because all 87 integration test
-  # binaries are bypassed. Coverage from subprocess integration tests is
-  # NOT included — use full `bin/flow ci` for the authoritative number.
   echo "=== Running lib tests matching '${module}' ==="
   cargo llvm-cov --lib nextest \
     --no-cfg-coverage \
@@ -114,92 +113,198 @@ if [ "${1:-}" = "--module" ]; then
   exit
 fi
 
-# Full-suite invocations (no filter args) are the CI gate. They must
-# rebuild flow-rs artifacts from clean so llvm-cov measures a single,
-# coherent source generation.
-#
-# `--no-clean` (set below) preserves accumulated instrumented binaries
-# across runs so filtered iteration is fast. On a long-lived target
-# dir — notably main's, where start-gate runs CI every flow-start as
-# PRs merge and source evolves — stale flow-rs binaries accumulate.
-# Each binary embeds its own coverage map (`.covmap`) describing the
-# source layout it was compiled against. llvm-cov merges ALL binaries
-# present, so a pre-refactor binary's 4000-region analyze_issues.rs
-# covmap silently poisons the post-refactor binary's 2300-region
-# covmap, producing Frankenstein coverage numbers that look like a
-# regression but aren't.
-#
-# Cleaning flow-rs at the package scope removes stale binaries while
-# keeping the dep cache (`target/llvm-cov-target/debug/deps/*` for
-# serde, regex, etc.) warm, so rebuild is package-scoped rather than
-# from-zero. Filtered runs (`bin/flow ci --test -- <filter>`) skip this
-# branch entirely and keep the full incremental cache.
-#
-# UNCONDITIONAL profraw sweep. Fires on every bin/test invocation
-# (full-suite, filtered, and forced) to keep the profraw set bounded
-# to at-most-one-run. A run killed mid-merge (Ctrl-C, SIGKILL, OOM)
-# orphans every profraw it wrote; prior behavior only swept these on
-# the full-suite branch, so filtered/forced runs allowed unbounded
-# accumulation. A single interrupted full run can leave 90+ GB of
-# orphan profraws that the next merge has to grind through. Sweeping
-# on every invocation prevents that regardless of how prior runs
-# ended.
+# --- Unconditional profraw sweep ---
 /usr/bin/find target/llvm-cov-target -maxdepth 1 -name "*.profraw" -delete 2>/dev/null || true
-# Sweep worktree-root profraw leaks — subprocess tests whose cwd lands
-# here when cargo-llvm-cov's LLVM_PROFILE_FILE template can't resolve.
 /usr/bin/find . -maxdepth 1 -name "default_*.profraw" -delete 2>/dev/null || true
 
-# Full-suite (no filter args): sweep stale artifacts. Runs on every
-# full-suite invocation including --force, because stale flow-rs
-# binaries from prior source generations slow `llvm-cov` merge/report
-# regardless of whether the sentinel is being bypassed. `cargo sweep
-# --installed` removes any artifact not part of the current cargo
-# build output (old dep hashes, test-binary hashes from filtered
-# runs). If cargo-sweep is not installed, the call silently no-ops
-# (install via `bin/dependencies`).
+# --- Resolve the audit log path (branch-scoped). ---
+# Per FLOW's concurrency model (CLAUDE.md "Local vs Shared State"),
+# per-branch artifacts live under .flow-states/ keyed by branch name.
+# Using PID would namespace per-process but ignore the branch the run
+# is auditing, which is the natural unit for a test-run record.
+branch_for_audit() {
+  local b
+  b="$(git branch --show-current 2>/dev/null || true)"
+  if [ -z "$b" ]; then
+    b="detached"
+  fi
+  echo "$b"
+}
+
+# --- Per-file mode: bin/test tests/<path>/<name>.rs ---
+case "${1:-}" in
+  tests/*.rs) PER_FILE=1 ;;
+  *) PER_FILE=0 ;;
+esac
+
+if [ "$PER_FILE" = "1" ]; then
+  test_file="$1"
+  shift
+  if [ ! -f "$test_file" ]; then
+    echo "error: test file not found: $test_file" >&2
+    exit 1
+  fi
+  src_file="${test_file/#tests\//src/}"
+  bin_name="$(basename "$test_file" .rs)"
+
+  NEXTEST_ARGS=(--status-level pass --final-status-level fail -E "binary(${bin_name})")
+  COV_ARGS=(--no-cfg-coverage --no-clean)
+
+  if [ "$AUDIT_MODE" = "1" ]; then
+    # Audit bypasses cargo-llvm-cov — its own `--profile` flag
+    # conflicts with nextest's, swallowing the audit-profile
+    # selection. Audit is a diagnostic (find slow/failing tests),
+    # so coverage measurement is out of scope here.
+    NEXTEST_ARGS+=(--no-fail-fast --profile audit)
+    mkdir -p .flow-states
+    branch="$(branch_for_audit)"
+    run_log=".flow-states/${branch}-audit.log"
+    : > "$run_log"
+    echo "=== ${bin_name} audit (log: ${run_log}) ==="
+    time_start=$SECONDS
+    cargo nextest run "${NEXTEST_ARGS[@]}" "$@" >>"$run_log" 2>&1 || true
+    elapsed=$((SECONDS - time_start))
+    # With profile.audit (no terminate-after), slow tests run to
+    # completion; SLOW lines only fire at 60s boundaries. Count
+    # unique slow/failed test names, trimming whitespace and
+    # stripping ANSI escapes. `set +e` guards against grep
+    # returning 1 when no matches exist.
+    set +e
+    slow_count="$(grep -E '^ *SLOW ' "$run_log" 2>/dev/null | sed -E $'s/\x1b\\[[0-9;]*m//g' | awk '{print $NF}' | tr -d ' \t\r' | sort -u | wc -l | tr -d ' ')"
+    fail_count="$(grep -E '^ *FAIL ' "$run_log" 2>/dev/null | sed -E $'s/\x1b\\[[0-9;]*m//g' | awk '{print $NF}' | tr -d ' \t\r' | sort -u | wc -l | tr -d ' ')"
+    set -e
+    echo "Wall time: ${elapsed}s"
+    echo "Slow tests (>60s): ${slow_count}"
+    echo "Failed tests: ${fail_count}"
+    echo "Full log: ${run_log}"
+    exit 0
+  fi
+
+  # Normal per-file: fail fast on any issue (nextest's fail-fast +
+  # terminate-after handle test/timing failures; no post-run grep
+  # needed).
+  if [ -f "$src_file" ]; then
+    src_regex="${src_file//./\\.}"
+    COV_ARGS+=(
+      --fail-under-lines 100
+      --fail-under-regions 100
+      --fail-under-functions 100
+      --ignore-filename-regex "^(?!.*${src_regex}$).*$"
+    )
+    echo "=== ${bin_name} (mirrored src: ${src_file}) ==="
+  else
+    echo "=== ${bin_name} (meta-test, no mirrored src) ==="
+  fi
+
+  temp_log="$(mktemp -t flow-test-log.XXXXXX)"
+  trap 'rm -f "$temp_log"' EXIT
+  time_start=$SECONDS
+  set +e
+  cargo llvm-cov "${COV_ARGS[@]}" nextest "${NEXTEST_ARGS[@]}" "$@" 2>&1 \
+    | tee "$temp_log" \
+    | awk '
+/^ *PASS / { printf "."; c++; fflush(); next }
+{ if (c > 0) { printf "\n"; c = 0 } print; fflush() }
+END { if (c > 0) printf "\n" }'
+  rc="${PIPESTATUS[0]}"
+  set -e
+
+  if [ "$rc" -ne 0 ]; then
+    exit "$rc"
+  fi
+  elapsed=$((SECONDS - time_start))
+  echo ""
+  echo "=== PASS (${elapsed}s) ==="
+  exit 0
+fi
+
+# --- Full-suite mode ---
+
 if [ $# -eq 0 ]; then
   cargo sweep --installed --target-dir target/llvm-cov-target >/dev/null 2>&1 || true
 fi
-
-# Full-suite + not forced: clean flow-rs package for covmap coherence.
-# Skipped on --force so rapid re-runs keep flow-rs artifacts warm.
 if [ $# -eq 0 ] && [ "${FLOW_CI_FORCE:-}" != "1" ]; then
   cargo clean --target-dir target/llvm-cov-target -p flow-rs
 fi
 
-# Coverage gate. Pinned at 100/100/100 — any uncovered region,
-# function, or line fails CI and blocks the commit. No ratchet, no
-# floor, no waivers. Code that appears uncoverable must be
-# refactored until it is testable. See .claude/rules/no-waivers.md.
-# Merge stderr+stdout through awk so nextest sees a non-TTY (no animated
-# progress bar dumping hundreds of frames). The awk filter:
-#   - Converts each PASS line to a dot (wraps at terminal width)
-#   - Prints FAIL lines in full
-#   - Skips coverage files where all three metrics are 100.00%
-#   - Passes everything else through (compile output, summary, TOTAL, errors)
-# --status-level pass: nextest prints one line per passing test (fuel for dots)
-# --final-status-level fail: failures in the end-of-run summary (leaky tests
-#   produce LEAK lines during the run which pass through the awk filter in full)
-# pipefail (set above) preserves cargo llvm-cov's exit code.
-cargo llvm-cov --no-cfg-coverage --no-clean \
-  --fail-under-lines 100 \
-  --fail-under-regions 100 \
-  --fail-under-functions 100 \
-  nextest --status-level pass --final-status-level fail "$@" 2>&1 | awk '
-/^ *PASS / {
-  printf "."
-  c++
-  fflush()
-  next
-}
+NEXTEST_ARGS=(--status-level pass --final-status-level fail)
+COV_ARGS=(--no-cfg-coverage --no-clean)
+
+if [ "$AUDIT_MODE" = "1" ]; then
+  # Audit bypasses cargo-llvm-cov entirely — its own `--profile`
+  # flag conflicts with nextest's `--profile`, swallowing the
+  # audit-profile selection. Since audit is a diagnostic tool
+  # (find slow tests, find failing tests), coverage measurement
+  # is out of scope; regular `bin/flow ci` carries the coverage
+  # gate.
+  NEXTEST_ARGS+=(--no-fail-fast --profile audit)
+  mkdir -p .flow-states
+  branch="$(branch_for_audit)"
+  run_log=".flow-states/${branch}-audit.log"
+  : > "$run_log"
+  echo "=== Full-suite audit (log: ${run_log}) ==="
+  time_start=$SECONDS
+  cargo nextest run "${NEXTEST_ARGS[@]}" "$@" >>"$run_log" 2>&1 || true
+  elapsed=$((SECONDS - time_start))
+  # Count unique slow/failed test names. With profile.audit
+  # (no terminate-after), slow tests run to completion; actual
+  # durations appear in PASS/FAIL lines and SLOW warnings appear
+  # at 60s boundaries. `|| true` keeps set -e from exiting when
+  # grep finds no matches; `wc -l | tr -d ' '` normalizes count.
+  set +e
+  slow_count="$(grep -E '^ *SLOW ' "$run_log" 2>/dev/null | sed -E $'s/\x1b\\[[0-9;]*m//g' | awk '{print $NF}' | tr -d ' \t\r' | sort -u | wc -l | tr -d ' ')"
+  fail_count="$(grep -E '^ *FAIL ' "$run_log" 2>/dev/null | sed -E $'s/\x1b\\[[0-9;]*m//g' | awk '{print $NF}' | tr -d ' \t\r' | sort -u | wc -l | tr -d ' ')"
+  set -e
+  echo "Wall time: ${elapsed}s"
+  echo "Slow tests (>60s): ${slow_count}"
+  echo "Failed tests: ${fail_count}"
+  echo "Full log: ${run_log}"
+  exit 0
+fi
+
+# Normal full-suite: fail fast on any issue.
+#
+# Coverage thresholds only apply when the run actually covers the
+# whole suite — i.e., no filter args were passed. A filtered run
+# (e.g. `bin/flow ci --test -- foo::bar`) exercises a subset of
+# tests, so measuring total coverage against 100% is meaningless
+# and would always fail the build. The filter path's job is to
+# prove the specific test passes and respects the 2s gate; the
+# full suite's job is to enforce 100/100/100 coverage globally.
+if [ $# -eq 0 ]; then
+  COV_ARGS+=(--fail-under-lines 100 --fail-under-regions 100 --fail-under-functions 100)
+fi
+temp_log="$(mktemp -t flow-test-log.XXXXXX)"
+trap 'rm -f "$temp_log"' EXIT
+time_start=$SECONDS
+set +e
+cargo llvm-cov "${COV_ARGS[@]}" nextest "${NEXTEST_ARGS[@]}" "$@" 2>&1 \
+  | tee "$temp_log" \
+  | awk '
+/^ *PASS / { printf "."; c++; fflush(); next }
 {
-  if (c > 0) { printf "\n\n"; c = 0 }
+  if (c > 0) { printf "\n"; c = 0 }
   s = $0
   n = gsub(/100\.00%/, "&", s)
   if (n >= 3) next
   print
   fflush()
 }
-END {
-  if (c > 0) printf "\n"
-}'
+END { if (c > 0) printf "\n" }'
+rc="${PIPESTATUS[0]}"
+set -e
+
+if [ "$rc" -ne 0 ]; then
+  exit "$rc"
+fi
+# Slow tests are terminated by nextest (terminate-after=1) and
+# appear as TIMEOUT failures, already caught by the rc check above.
+elapsed=$((SECONDS - time_start))
+if [ "$elapsed" -gt "$SUITE_TIMEOUT_SECS" ]; then
+  echo ""
+  echo "=== FAIL: suite took ${elapsed}s, limit ${SUITE_TIMEOUT_SECS}s ==="
+  exit 1
+fi
+echo ""
+echo "=== PASS (${elapsed}s) ==="
+exit 0

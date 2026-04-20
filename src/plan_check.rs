@@ -582,7 +582,13 @@ mod tests {
     #[test]
     fn run_impl_triggers_dup_violations() {
         let tmp = std::env::temp_dir().join(format!("plan-check-dup-{}.md", std::process::id()));
-        let plan_content = "## Tasks\n\n```rust\nfn absolute_override_passes_through() {\n}\n```\n";
+        // The scanner now walks tests/**/*.rs only (see
+        // .claude/rules/test-placement.md). Pick a stable integration
+        // test name — `claude_md_has_no_unenumerated_universal_claims`
+        // lives in tests/scope_enumeration.rs and is unlikely to be
+        // renamed.
+        let plan_content =
+            "## Tasks\n\n```rust\nfn claude_md_has_no_unenumerated_universal_claims() {\n}\n```\n";
         std::fs::write(&tmp, plan_content).expect("write fixture plan");
 
         let args = Args {
