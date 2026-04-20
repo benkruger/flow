@@ -60,55 +60,46 @@ When adding a new stub template or a new auto-installed script:
    sibling metadata file). The marker must live with the script so
    it is preserved through manual edits and file moves.
 
-## Full-Suite `bin/test` Runs Clean First
+## `bin/test` Sweeps Profraws Before Every Run
 
-`bin/test` is invoked in two modes: full-suite (no filter args) and
-filtered (`bin/flow ci --test -- <filter>`). Full-suite runs are the CI
-gate used by `start-gate`, `finalize-commit`, and manual `bin/flow ci`
-invocations. Filtered runs are for iterative development.
-
-The full-suite mode MUST run `cargo clean -p flow-rs --target-dir
-target/llvm-cov-target` before invoking `cargo llvm-cov nextest`.
-Filtered mode MUST NOT — it depends on cargo-llvm-cov's `--no-clean`
-flag preserving accumulated instrumented binaries for speed.
+`bin/test` sweeps every `*.profraw` recursively under
+`target/llvm-cov-target/` at the start of every invocation —
+full-suite, filtered, and forced. This is the coherence mechanism
+that keeps coverage measurements bounded to a single source
+generation on long-lived target directories (notably main's).
 
 ### Why
 
-cargo-llvm-cov embeds each compiled binary's coverage map (`.covmap`
-section) describing the source layout the binary was compiled against.
-When `--no-clean` preserves stale binaries across source changes —
-which happens routinely on main's long-lived `target/` as PRs merge
-— llvm-cov discovers ALL matching binaries and merges their covmaps.
-A pre-refactor binary describing a larger source layout silently
-poisons the current binary's measurement, producing Frankenstein
-coverage numbers that look like a regression but aren't. The failure
-mode is invisible (no warning, no error — just wrong numbers) and
-manifests most sharply on main, where `start-gate` runs CI under the
-start lock (see `.claude/rules/concurrency-model.md` and CLAUDE.md
-"Start-Gate CI on Main as Serialization Point").
+cargo-llvm-cov's `--no-clean` flag preserves accumulated
+instrumented binaries across runs for incremental speed. On main's
+long-lived `target/`, stale `flow_rs-*` binaries accumulate as PRs
+merge and source evolves. Without a profraw sweep, old profraws
+from prior runs match the stale binaries' function hashes and
+contribute execution counts against old source layouts, producing
+Frankenstein coverage numbers.
 
-Cleaning at the `flow-rs` package scope removes the stale binaries
-while preserving the dep cache (serde, regex, chrono, etc.) under
-`target/llvm-cov-target/debug/deps/`. Rebuild is package-scoped,
-not from-zero.
+By sweeping all `*.profraw` at the top of every `bin/test`
+invocation, llvm-cov's report is scoped to profdata produced by
+THIS run only. Stale binaries remain on disk (kept warm for
+incremental rebuilds) but they contribute no execution counts
+without matching fresh profdata.
 
 ### Invariant
 
-- The clean invocation appears in the `if [ $# -eq 0 ]` branch of
-  `bin/test`, before the existing `*.profraw` sweep.
-- The clean is scoped to the `flow-rs` package (`-p flow-rs`) and
-  the `llvm-cov-target` dir (`--target-dir target/llvm-cov-target`).
-  A workspace-wide clean would nuke the dep cache and slow every
-  full-suite run by ~30s.
-- A contract test in `tests/bin_test.rs` asserts the clean precedes
-  the nextest invocation and uses the correct flags. If that test
-  is deleted or its assertions loosened, the invariant loses its
-  mechanical guard.
+- The recursive profraw sweep (`find target/llvm-cov-target -name
+  "*.profraw" -delete`) runs unconditionally at the top of
+  `bin/test`, before any mode dispatch.
+- A separate sweep deletes `default_*.profraw` at the worktree
+  root to catch subprocess tests whose `LLVM_PROFILE_FILE`
+  template resolved outside `target/llvm-cov-target/`.
+- `bin/flow ci --clean` is the user-facing deep-reset that wipes
+  the sentinel, all profraws, and `target/llvm-cov-target/debug/`
+  when a full fresh-clone experience is wanted.
 
 When adding a new tool that writes coverage-like artifacts under
 `target/llvm-cov-target/` on a long-lived target dir (main's), the
-same coherence discipline applies: either the tool must clean its
-stale artifacts before measuring, or it must not be invoked on main.
+same discipline applies: either the tool must sweep its stale
+artifacts before measuring, or it must not be invoked on main.
 
 ## Stub Lifecycle Integration Tests
 

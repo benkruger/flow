@@ -118,7 +118,7 @@ enforced at four layers:
    gate. The flags live on the `cargo llvm-cov nextest` invocation
    inside `bin/test`, so every CI run by every engineer on every
    branch inherits the same gate. `.claude/rules/tool-dispatch.md`
-   "Full-Suite `bin/test` Runs Clean First" documents the
+   "`bin/test` Sweeps Profraws Before Every Run" documents the
    complementary coverage-coherence discipline that keeps the
    measurement honest across main's long-lived `target/` dir.
 

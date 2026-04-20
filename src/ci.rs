@@ -370,9 +370,6 @@ pub fn run_once(
         cmd.args(&tool.args)
             .current_dir(cwd)
             .env("FLOW_CI_RUNNING", "1");
-        if force {
-            cmd.env("FLOW_CI_FORCE", "1");
-        }
         if rebuild {
             cmd.env("FLOW_CI_REBUILD", "1");
         }
@@ -838,23 +835,11 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
             rebuild,
         )
     } else {
-        // Pass args.force through — not a literal `true`. run_once's
-        // `force` parameter is overloaded: it controls (a) bypassing the
-        // sentinel skip-if-matches check inside run_once, and (b) setting
-        // FLOW_CI_FORCE=1 on the spawned child's environment. bin/test
-        // reads FLOW_CI_FORCE and skips `cargo clean -p flow-rs` when
-        // set, so that stale instrumented artifacts can reuse the cache
-        // across incremental rebuilds. Hard-coding `true` here propagated
-        // the env unconditionally, defeating the clean on every invocation
-        // and letting fingerprint-stale flow-rs codegen units accumulate
-        // in target/llvm-cov-target/debug/deps/ — the same class of bloat
-        // the clean was introduced to prevent (see CLAUDE.md "Start-Gate
-        // CI on Main as Serialization Point"). Passing args.force means
-        // the env only propagates when the user explicitly asked for
-        // incremental via --force; the sentinel-skip bypass becomes a
-        // redundant-but-idempotent re-check when args.force is false
-        // (the upstream check above already returned early on match, so
-        // run_once's own check sees the same mismatch and proceeds).
+        // `run_once`'s `force` parameter gates the sentinel skip-if-
+        // matches check inside the function. The outer check at the top
+        // of `run_impl` already returned early on match, so when
+        // `args.force` is false the inner check is a redundant-but-
+        // idempotent re-check that sees the same mismatch and proceeds.
         run_once(
             cwd,
             root,
