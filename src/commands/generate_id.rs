@@ -1,3 +1,8 @@
+//! Generate a short UUID-derived identifier.
+//!
+//! Tests live at tests/generate_id.rs per .claude/rules/test-placement.md —
+//! no inline #[cfg(test)] in this file.
+
 use uuid::Uuid;
 
 /// Generate an 8-character lowercase hex string from UUID4.
@@ -8,34 +13,4 @@ pub fn generate_id() -> String {
 /// CLI entry point — prints the ID to stdout.
 pub fn run() {
     println!("{}", generate_id());
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn returns_8_chars() {
-        let result = generate_id();
-        assert_eq!(result.len(), 8);
-    }
-
-    #[test]
-    fn is_lowercase_hex() {
-        let result = generate_id();
-        assert!(
-            result
-                .chars()
-                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
-            "Not valid lowercase hex: {}",
-            result
-        );
-    }
-
-    #[test]
-    fn two_calls_produce_different_values() {
-        let a = generate_id();
-        let b = generate_id();
-        assert_ne!(a, b);
-    }
 }

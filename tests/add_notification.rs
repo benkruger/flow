@@ -1,6 +1,7 @@
-//! Integration tests for `bin/flow add-notification`.
+//! Integration tests for `bin/flow add-notification` and its library surface.
 //!
-//! Records a Slack notification in the branch's state file.
+//! Migrated from inline `#[cfg(test)]` per
+//! `.claude/rules/test-placement.md`.
 
 mod common;
 
@@ -9,6 +10,10 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use common::{create_git_repo_with_remote, parse_output};
+use flow_rs::add_notification::{run_impl_main, truncate_preview, Args};
+use flow_rs::lock::mutate_state;
+use flow_rs::phase_config::phase_names;
+use flow_rs::utils::now;
 use serde_json::{json, Value};
 
 fn write_state(repo: &Path, branch: &str, state: &Value) -> std::path::PathBuf {
@@ -264,4 +269,262 @@ fn add_notification_corrupt_state_returns_error() {
             .contains("Failed to add notification"),
         "Error should mention the operation that failed"
     );
+}
+
+// --- Library-level tests (migrated from inline `#[cfg(test)]`) ---
+
+fn make_state_lib(branch: &str) -> Value {
+    json!({
+        "schema_version": 1,
+        "branch": branch,
+        "current_phase": "flow-code",
+        "slack_notifications": []
+    })
+}
+
+fn write_state_lib(dir: &Path, branch: &str, state: &Value) -> std::path::PathBuf {
+    let state_dir = dir.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    let path = state_dir.join(format!("{}.json", branch));
+    fs::write(&path, serde_json::to_string_pretty(state).unwrap()).unwrap();
+    path
+}
+
+fn make_args(branch: Option<&str>) -> Args {
+    Args {
+        phase: "flow-code".to_string(),
+        ts: "5555555555.555555".to_string(),
+        thread_ts: "1111111111.111111".to_string(),
+        message: "test message".to_string(),
+        branch: branch.map(|s| s.to_string()),
+    }
+}
+
+#[test]
+fn add_notification_to_empty_array_lib() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = make_state_lib("test-feature");
+    let path = write_state_lib(dir.path(), "test-feature", &state);
+
+    let result = mutate_state(&path, |s| {
+        let names = phase_names();
+        let phase = "flow-code";
+        let phase_name = names.get(phase).cloned().unwrap_or_default();
+        s["slack_notifications"]
+            .as_array_mut()
+            .expect("array in fixture")
+            .push(json!({
+                "phase": phase,
+                "phase_name": phase_name,
+                "ts": "5555555555.555555",
+                "thread_ts": "1111111111.111111",
+                "message_preview": "short msg",
+                "timestamp": now(),
+            }));
+    })
+    .unwrap();
+
+    let notifs = result["slack_notifications"].as_array().unwrap();
+    assert_eq!(notifs.len(), 1);
+    assert_eq!(notifs[0]["phase"], "flow-code");
+    assert_eq!(notifs[0]["phase_name"], "Code");
+    assert!(notifs[0]["timestamp"].as_str().unwrap().contains("T"));
+}
+
+#[test]
+fn add_notification_preserves_existing_lib() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = make_state_lib("test-feature");
+    state["slack_notifications"] = json!([{"phase": "flow-start", "message_preview": "existing"}]);
+    let path = write_state_lib(dir.path(), "test-feature", &state);
+
+    mutate_state(&path, |s| {
+        s["slack_notifications"]
+            .as_array_mut()
+            .expect("array in fixture")
+            .push(json!({"phase": "flow-code", "message_preview": "new"}));
+    })
+    .unwrap();
+
+    let on_disk: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let notifs = on_disk["slack_notifications"].as_array().unwrap();
+    assert_eq!(notifs.len(), 2);
+    assert_eq!(notifs[0]["message_preview"], "existing");
+    assert_eq!(notifs[1]["message_preview"], "new");
+}
+
+#[test]
+fn truncate_preview_short_message_lib() {
+    assert_eq!(truncate_preview("hello"), "hello");
+}
+
+#[test]
+fn truncate_preview_exactly_100_chars_lib() {
+    let msg = "a".repeat(100);
+    assert_eq!(truncate_preview(&msg), msg);
+}
+
+#[test]
+fn truncate_preview_over_100_chars_lib() {
+    let msg = "a".repeat(150);
+    let result = truncate_preview(&msg);
+    assert_eq!(result.len(), 103);
+    assert!(result.ends_with("..."));
+    assert_eq!(&result[..100], &msg[..100]);
+}
+
+#[test]
+fn truncate_preview_101_chars_lib() {
+    let msg = "a".repeat(101);
+    let result = truncate_preview(&msg);
+    assert_eq!(result.len(), 103);
+    assert!(result.ends_with("..."));
+}
+
+#[test]
+fn add_notification_creates_array_if_missing_lib() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let state_dir = root.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    let path = state_dir.join("test-feature.json");
+    fs::write(&path, r#"{"current_phase": "flow-code"}"#).unwrap();
+
+    let args = Args {
+        phase: "flow-code".to_string(),
+        ts: "1234.5678".to_string(),
+        thread_ts: "1234.0000".to_string(),
+        message: "test".to_string(),
+        branch: Some("test-feature".to_string()),
+    };
+
+    let (value, code) = run_impl_main(args, &root);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["notification_count"], 1);
+}
+
+#[test]
+fn add_notification_array_root_state_noop_lib() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let state_dir = root.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    let path = state_dir.join("test-feature.json");
+    fs::write(&path, "[1, 2, 3]").unwrap();
+
+    let args = Args {
+        phase: "flow-code".to_string(),
+        ts: "1234.5678".to_string(),
+        thread_ts: "1234.0000".to_string(),
+        message: "should not appear".to_string(),
+        branch: Some("test-feature".to_string()),
+    };
+
+    let (value, code) = run_impl_main(args, &root);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["notification_count"], 0);
+}
+
+#[test]
+fn add_notification_run_impl_main_no_state_returns_no_state_tuple_lib() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let args = make_args(Some("missing-branch"));
+    let (value, code) = run_impl_main(args, &root);
+    assert_eq!(value["status"], "no_state");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn add_notification_run_impl_main_success_returns_count_tuple_lib() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let state_dir = root.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(
+        state_dir.join("present-branch.json"),
+        r#"{"current_phase":"flow-code","slack_notifications":[]}"#,
+    )
+    .unwrap();
+    let args = make_args(Some("present-branch"));
+    let (value, code) = run_impl_main(args, &root);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["notification_count"], 1);
+}
+
+#[test]
+fn add_notification_run_impl_main_mutate_state_failure_returns_error_tuple_lib() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let state_dir = root.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(state_dir.join("present-branch.json"), "{not json").unwrap();
+    let args = make_args(Some("present-branch"));
+    let (value, code) = run_impl_main(args, &root);
+    assert_eq!(value["status"], "error");
+    assert_eq!(code, 1);
+    assert!(value["message"]
+        .as_str()
+        .unwrap()
+        .contains("Failed to add notification"));
+}
+
+#[test]
+fn add_notification_run_impl_main_unknown_phase_falls_back_to_phase_string_lib() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let state_dir = root.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(
+        state_dir.join("unknown-phase.json"),
+        r#"{"current_phase":"flow-code","slack_notifications":[]}"#,
+    )
+    .unwrap();
+    let mut args = make_args(Some("unknown-phase"));
+    args.phase = "custom-unknown-phase".to_string();
+    let (value, code) = run_impl_main(args, &root);
+    assert_eq!(value["status"], "ok");
+    assert_eq!(code, 0);
+    let on_disk: Value =
+        serde_json::from_str(&fs::read_to_string(state_dir.join("unknown-phase.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        on_disk["slack_notifications"][0]["phase_name"],
+        "custom-unknown-phase"
+    );
+}
+
+#[test]
+fn add_notification_run_impl_main_wrong_type_resets_to_array_lib() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let state_dir = root.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(
+        state_dir.join("wrong-type.json"),
+        r#"{"current_phase":"flow-code","slack_notifications":"not-an-array"}"#,
+    )
+    .unwrap();
+    let args = make_args(Some("wrong-type"));
+    let (value, code) = run_impl_main(args, &root);
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["notification_count"], 1);
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn add_notification_run_impl_main_slash_branch_returns_structured_error_no_panic() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let args = make_args(Some("feature/foo"));
+    let (value, code) = run_impl_main(args, &root);
+    assert_eq!(code, 1);
+    assert_eq!(value["status"], "error");
+    assert!(value["message"]
+        .as_str()
+        .unwrap()
+        .contains("Invalid branch 'feature/foo'"));
 }

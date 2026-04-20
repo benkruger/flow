@@ -1,4 +1,9 @@
 //! Tests for `bin/build` — the FLOW dogfood build script.
+//!
+//! In this repo `bin/build` is a no-op: compilation happens inside
+//! `bin/test` via `cargo-llvm-cov nextest`. A real cargo build here
+//! would duplicate that work. See CLAUDE.md "Development Environment"
+//! and `.claude/rules/tool-dispatch.md`.
 
 mod common;
 
@@ -34,82 +39,59 @@ fn script_is_valid_bash() {
     );
 }
 
-/// bin/build invokes `cargo build`.
+/// bin/build is a no-op: exits 0 and does not shell out to cargo.
+/// Asserted structurally by scanning the script source for the
+/// cargo-invocation patterns that would reintroduce the compile step.
+/// The explanatory `echo` message can mention "cargo-llvm-cov" as
+/// prose; what we guard against is an executable `cargo <subcmd>`.
 #[test]
-fn invokes_cargo_build() {
-    let dir = tempfile::tempdir().unwrap();
-    let bin_dir = dir.path().join("bin");
-    fs::create_dir_all(&bin_dir).unwrap();
+fn script_does_not_invoke_cargo() {
+    let script = common::bin_dir().join("build");
+    let content = fs::read_to_string(&script).unwrap();
+    const FORBIDDEN: &[&str] = &[
+        "exec cargo",
+        "cargo build",
+        "cargo check",
+        "cargo test",
+        "cargo nextest",
+        "cargo llvm-cov",
+    ];
+    for pattern in FORBIDDEN {
+        assert!(
+            !content.contains(pattern),
+            "bin/build must not contain `{}` — no-op by design",
+            pattern
+        );
+    }
+}
 
-    let real_script = common::bin_dir().join("build");
-    let script_content = fs::read_to_string(&real_script).unwrap();
-    let target = bin_dir.join("build");
-    fs::write(&target, &script_content).unwrap();
-    let mut perms = fs::metadata(&target).unwrap().permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(&target, perms).unwrap();
-
-    let mock_bin = dir.path().join("mock_bin");
-    fs::create_dir_all(&mock_bin).unwrap();
-    let log_file = dir.path().join("cargo_log");
-    fs::write(
-        mock_bin.join("cargo"),
-        format!(
-            "#!/usr/bin/env bash\necho \"$*\" > \"{}\"\nexit 0\n",
-            log_file.display()
-        ),
-    )
-    .unwrap();
-    let mut perms = fs::metadata(mock_bin.join("cargo")).unwrap().permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(mock_bin.join("cargo"), perms).unwrap();
-
-    let path = format!("{}:{}", mock_bin.display(), std::env::var("PATH").unwrap());
-    let output = Command::new(&target)
-        .current_dir(dir.path())
-        .env("PATH", &path)
-        .output()
-        .unwrap();
+#[test]
+fn no_op_exits_0() {
+    let script = common::bin_dir().join("build");
+    let output = Command::new(&script).output().unwrap();
     assert!(
         output.status.success(),
-        "stderr: {}",
+        "bin/build must exit 0, got: {}\nstderr: {}",
+        output.status,
         String::from_utf8_lossy(&output.stderr)
-    );
-    let logged = fs::read_to_string(&log_file).unwrap();
-    assert!(
-        logged.contains("build"),
-        "expected cargo build, got: {}",
-        logged
     );
 }
 
-/// bin/build propagates a nonzero exit code from cargo.
+/// bin/build surfaces a message on stderr directing the reader to
+/// `bin/test`, so anyone invoking it habitually sees the redirection.
 #[test]
-fn propagates_failure_exit() {
-    let dir = tempfile::tempdir().unwrap();
-    let bin_dir = dir.path().join("bin");
-    fs::create_dir_all(&bin_dir).unwrap();
-
-    let real_script = common::bin_dir().join("build");
-    let script_content = fs::read_to_string(&real_script).unwrap();
-    let target = bin_dir.join("build");
-    fs::write(&target, &script_content).unwrap();
-    let mut perms = fs::metadata(&target).unwrap().permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(&target, perms).unwrap();
-
-    let mock_bin = dir.path().join("mock_bin");
-    fs::create_dir_all(&mock_bin).unwrap();
-    fs::write(mock_bin.join("cargo"), "#!/usr/bin/env bash\nexit 1\n").unwrap();
-    let mut perms = fs::metadata(mock_bin.join("cargo")).unwrap().permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(mock_bin.join("cargo"), perms).unwrap();
-
-    let path = format!("{}:{}", mock_bin.display(), std::env::var("PATH").unwrap());
-    let output = Command::new(&target)
-        .current_dir(dir.path())
-        .env("PATH", &path)
-        .output()
-        .unwrap();
-    assert!(!output.status.success(), "should propagate cargo failure");
+fn prints_redirect_message_on_stderr() {
+    let script = common::bin_dir().join("build");
+    let output = Command::new(&script).output().unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("bin/test"),
+        "expected stderr to mention bin/test, got: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("no-op"),
+        "expected stderr to say no-op, got: {}",
+        stderr
+    );
 }

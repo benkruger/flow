@@ -1,5 +1,14 @@
+//! Shared utilities — timestamps, branch-name normalization, GitHub
+//! helpers, permission-glob regex conversion, tab color, and
+//! tolerant JSON integer reading.
+//!
+//! Tests live at `tests/utils.rs` per
+//! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]` in
+//! this file.
+
 use std::fs;
 use std::io;
+use std::io::Read;
 use std::path::Path;
 use std::time::Duration;
 
@@ -28,102 +37,96 @@ impl std::fmt::Display for SetupError {
     }
 }
 
-/// Polling-based wait_timeout for child processes.
-trait WaitTimeout {
-    fn wait_timeout(&mut self, dur: Duration) -> std::io::Result<Option<std::process::ExitStatus>>;
-}
-
-impl WaitTimeout for std::process::Child {
-    fn wait_timeout(&mut self, dur: Duration) -> std::io::Result<Option<std::process::ExitStatus>> {
-        use std::thread;
-
-        let start = std::time::Instant::now();
-        let poll_interval = Duration::from_millis(50);
-        loop {
-            match self.try_wait()? {
-                Some(status) => {
-                    return Ok(Some(status));
-                }
-                None => {
-                    if start.elapsed() >= dur {
-                        return Ok(None);
-                    }
-                    thread::sleep(poll_interval.min(dur - start.elapsed()));
-                }
-            }
-        }
+/// Given a completed child's exit status plus captured stdout/stderr,
+/// produce the run_cmd result contract: Ok tuple on success, Err
+/// with the best-available error message on failure.
+///
+/// Empty stderr falls back to stdout so commands that report failures
+/// on stdout (rare) still surface a meaningful message.
+pub fn classify_output(
+    status: std::process::ExitStatus,
+    stdout_bytes: &[u8],
+    stderr_bytes: &[u8],
+    step_name: &str,
+) -> Result<(String, String), SetupError> {
+    let stdout = String::from_utf8_lossy(stdout_bytes).trim().to_string();
+    let stderr = String::from_utf8_lossy(stderr_bytes).trim().to_string();
+    if status.success() {
+        Ok((stdout, stderr))
+    } else {
+        Err(SetupError {
+            step: step_name.to_string(),
+            message: if stderr.is_empty() { stdout } else { stderr },
+        })
     }
 }
 
 /// Run a shell command with optional timeout, returning (stdout, stderr).
 /// Used by start-workspace (worktree/PR creation) and auto-close-parent.
+///
+/// The no-timeout path uses `Command::output()` — a single call that
+/// spawns, waits, and captures both streams. The timeout path polls
+/// `try_wait()` with a 50ms interval; on timeout the child is killed
+/// and reaped.
 pub fn run_cmd(
     args: &[&str],
     cwd: &Path,
     step_name: &str,
     timeout: Option<Duration>,
 ) -> Result<(String, String), SetupError> {
-    let mut child = std::process::Command::new(args[0])
-        .args(&args[1..])
-        .current_dir(cwd)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| SetupError {
-            step: step_name.to_string(),
-            message: format!("Failed to spawn: {}", e),
-        })?;
-
     if let Some(dur) = timeout {
-        match child.wait_timeout(dur) {
-            Ok(Some(status)) => {
-                let output = child.wait_with_output().map_err(|e| SetupError {
-                    step: step_name.to_string(),
-                    message: e.to_string(),
-                })?;
-                if !status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    return Err(SetupError {
-                        step: step_name.to_string(),
-                        message: if stderr.is_empty() { stdout } else { stderr },
-                    });
-                }
-                Ok((
-                    String::from_utf8_lossy(&output.stdout).trim().to_string(),
-                    String::from_utf8_lossy(&output.stderr).trim().to_string(),
-                ))
+        let mut child = std::process::Command::new(args[0])
+            .args(&args[1..])
+            .current_dir(cwd)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| SetupError {
+                step: step_name.to_string(),
+                message: format!("Failed to spawn: {}", e),
+            })?;
+        let start = std::time::Instant::now();
+        let poll_interval = Duration::from_millis(50);
+        let status = loop {
+            // try_wait can only fail for genuinely pathological reasons
+            // (child adopted by another process, OS inconsistency).
+            // Treat any non-Ok(Some) result as "still running" so the
+            // timeout deadline ultimately decides the outcome.
+            if let Ok(Some(s)) = child.try_wait() {
+                break s;
             }
-            Ok(None) => {
+            if start.elapsed() >= dur {
                 let _ = child.kill();
                 let _ = child.wait();
-                Err(SetupError {
+                return Err(SetupError {
                     step: step_name.to_string(),
                     message: format!("Timed out after {}s", dur.as_secs()),
-                })
+                });
             }
-            Err(e) => Err(SetupError {
-                step: step_name.to_string(),
-                message: e.to_string(),
-            }),
-        }
+            std::thread::sleep(poll_interval.min(dur - start.elapsed()));
+        };
+        // Child already exited — drain the piped stdout/stderr.
+        // Both streams were set to `Stdio::piped()` above, so `take()`
+        // is guaranteed to return `Some`. Any read error is a truly
+        // pathological OS state; discard it and surface whatever
+        // bytes were buffered.
+        let mut stdout_pipe = child.stdout.take().expect("stdout piped");
+        let mut stderr_pipe = child.stderr.take().expect("stderr piped");
+        let mut stdout_buf = Vec::new();
+        let mut stderr_buf = Vec::new();
+        let _ = stdout_pipe.read_to_end(&mut stdout_buf);
+        let _ = stderr_pipe.read_to_end(&mut stderr_buf);
+        classify_output(status, &stdout_buf, &stderr_buf, step_name)
     } else {
-        let output = child.wait_with_output().map_err(|e| SetupError {
-            step: step_name.to_string(),
-            message: e.to_string(),
-        })?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            return Err(SetupError {
+        let output = std::process::Command::new(args[0])
+            .args(&args[1..])
+            .current_dir(cwd)
+            .output()
+            .map_err(|e| SetupError {
                 step: step_name.to_string(),
-                message: if stderr.is_empty() { stdout } else { stderr },
-            });
-        }
-        Ok((
-            String::from_utf8_lossy(&output.stdout).trim().to_string(),
-            String::from_utf8_lossy(&output.stderr).trim().to_string(),
-        ))
+                message: format!("Failed to spawn: {}", e),
+            })?;
+        classify_output(output.status, &output.stdout, &output.stderr, step_name)
     }
 }
 
@@ -162,7 +165,17 @@ pub fn read_version_from(path: &Path) -> String {
 /// When the env var is not set, production behavior is unchanged: the
 /// original 3-level walk.
 pub fn read_version() -> String {
-    if let Ok(root) = std::env::var("CLAUDE_PLUGIN_ROOT") {
+    read_version_with(
+        std::env::var("CLAUDE_PLUGIN_ROOT").ok().as_deref(),
+        std::env::current_exe().ok().as_deref(),
+    )
+}
+
+/// Testable seam for `read_version`. Accepts the env var value and the
+/// current-exe path as parameters so every branch is reachable from
+/// unit tests without mutating process env.
+pub fn read_version_with(claude_plugin_root: Option<&str>, current_exe: Option<&Path>) -> String {
+    if let Some(root) = claude_plugin_root {
         let path = std::path::PathBuf::from(root)
             .join(".claude-plugin")
             .join("plugin.json");
@@ -170,9 +183,9 @@ pub fn read_version() -> String {
             return read_version_from(&path);
         }
     }
-    let exe = match std::env::current_exe() {
-        Ok(p) => p,
-        Err(_) => return "?".to_string(),
+    let exe = match current_exe {
+        Some(p) => p,
+        None => return "?".to_string(),
     };
     let plugin_root = match exe
         .parent()
@@ -193,13 +206,25 @@ pub fn read_version() -> String {
 /// Checks CLAUDE_PLUGIN_ROOT env var first, then walks up from the
 /// current executable's location.
 pub fn plugin_root() -> Option<std::path::PathBuf> {
-    if let Ok(root) = std::env::var("CLAUDE_PLUGIN_ROOT") {
-        let path = std::path::PathBuf::from(&root);
+    plugin_root_with(
+        std::env::var("CLAUDE_PLUGIN_ROOT").ok().as_deref(),
+        std::env::current_exe().ok().as_deref(),
+    )
+}
+
+/// Testable seam for `plugin_root`. Accepts the env var value and the
+/// current-exe path as parameters so tests can drive every branch.
+pub fn plugin_root_with(
+    claude_plugin_root: Option<&str>,
+    current_exe: Option<&Path>,
+) -> Option<std::path::PathBuf> {
+    if let Some(root) = claude_plugin_root {
+        let path = std::path::PathBuf::from(root);
         if path.join("flow-phases.json").exists() {
             return Some(path);
         }
     }
-    let exe = std::env::current_exe().ok()?;
+    let exe = current_exe?;
     let mut dir = exe.parent()?;
     for _ in 0..5 {
         if dir.join("flow-phases.json").exists() {
@@ -217,16 +242,25 @@ pub fn plugin_root() -> Option<std::path::PathBuf> {
 /// copies to eliminate duplication. Shared by complete_preflight,
 /// complete_merge, complete_post_merge, and complete_fast.
 pub fn bin_flow_path() -> String {
+    bin_flow_path_with(
+        std::env::var("FLOW_BIN_PATH").ok().as_deref(),
+        std::env::current_exe().ok().as_deref(),
+    )
+}
+
+/// Testable seam for `bin_flow_path`. Accepts the env override and the
+/// current-exe path as parameters so every branch is reachable from
+/// unit tests without mutating process env.
+pub fn bin_flow_path_with(flow_bin_path: Option<&str>, current_exe: Option<&Path>) -> String {
     // Env-var override for subprocess tests that need to stub
     // `bin/flow` at a test-isolated path. Production callers never
     // set this variable; it is read only when present.
-    if let Ok(override_path) = std::env::var("FLOW_BIN_PATH") {
+    if let Some(override_path) = flow_bin_path {
         if !override_path.is_empty() {
-            return override_path;
+            return override_path.to_string();
         }
     }
-    std::env::current_exe()
-        .ok()
+    current_exe
         .and_then(|p| p.parent()?.parent()?.parent().map(|d| d.to_path_buf()))
         .map(|d: std::path::PathBuf| d.join("bin").join("flow"))
         .and_then(|p| p.to_str().map(String::from))
@@ -302,13 +336,7 @@ pub fn elapsed_since(started_at: Option<&str>, now_override: Option<DateTime<Fix
 
     let start = match DateTime::parse_from_rfc3339(started) {
         Ok(dt) => dt,
-        Err(_) => {
-            // Try parsing ISO 8601 with chrono's flexible parser
-            match started.parse::<DateTime<FixedOffset>>() {
-                Ok(dt) => dt,
-                Err(_) => return 0,
-            }
-        }
+        Err(_) => return 0,
     };
 
     let now_dt = match now_override {
@@ -452,10 +480,17 @@ where
 /// does not block flow-start indefinitely, long enough to tolerate
 /// normal API jitter.
 pub fn fetch_issue_info(issue_number: i64) -> Option<IssueInfo> {
-    let dir = std::env::current_dir().ok()?;
+    fetch_issue_info_with_cmd("gh", issue_number)
+}
+
+/// Testable seam for `fetch_issue_info` that makes the command binary
+/// injectable. Tests drive the success path by passing a command
+/// known to exit 0 (like `echo`) and the failure path by passing a
+/// nonexistent binary.
+pub fn fetch_issue_info_with_cmd(cmd: &str, issue_number: i64) -> Option<IssueInfo> {
     let (stdout, _) = run_cmd(
         &[
-            "gh",
+            cmd,
             "issue",
             "view",
             &issue_number.to_string(),
@@ -464,12 +499,20 @@ pub fn fetch_issue_info(issue_number: i64) -> Option<IssueInfo> {
             "--jq",
             "{title, labels: [.labels[].name]}",
         ],
-        &dir,
+        std::path::Path::new("."),
         "fetch_issue_info",
         Some(Duration::from_secs(10)),
     )
     .ok()?;
+    parse_issue_info(&stdout)
+}
 
+/// Parse the `gh issue view` JSON stdout into an `IssueInfo`.
+///
+/// Returns `None` when the JSON is malformed OR when the title is
+/// empty. Extracted as a pub seam so tests can cover both arms
+/// without spawning a `gh` subprocess.
+pub fn parse_issue_info(stdout: &str) -> Option<IssueInfo> {
     let info: IssueInfo = serde_json::from_str(stdout.trim()).ok()?;
     if info.title.is_empty() {
         None
@@ -634,30 +677,51 @@ pub fn permission_to_regex(perm: &str) -> Option<Regex> {
 /// parent has no controlling terminal (tty shows '??'). Walking up the
 /// process tree finds the first ancestor with a real tty.
 pub fn detect_tty() -> Option<String> {
+    detect_tty_with(&mut |pid| run_ps_for_pid("ps", pid))
+}
+
+/// Testable seam for the `ps`-spawning half of `detect_tty`. Accepts
+/// the command name so tests can drive the spawn-failure branch by
+/// passing a nonexistent binary.
+pub fn run_ps_for_pid(cmd: &str, pid: u32) -> Option<String> {
+    let output = std::process::Command::new(cmd)
+        .args(["-o", "tty=,ppid=", "-p", &pid.to_string()])
+        .output()
+        .ok()?;
+    check_ps_output(&output)
+}
+
+/// Interpret a completed `ps` subprocess result. Returns the stdout
+/// string on success, `None` when the process exited non-zero.
+/// Extracted as a pub seam so tests can cover the non-success branch
+/// by passing an `Output` from a command known to exit non-zero.
+pub fn check_ps_output(output: &std::process::Output) -> Option<String> {
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Testable seam for `detect_tty`. Accepts a closure that returns the
+/// `ps -o tty=,ppid=` stdout for a given pid, or `None` when the
+/// subprocess cannot be used. Tests drive each loop branch by supplying
+/// a mock closure.
+pub fn detect_tty_with(ps: &mut dyn FnMut(u32) -> Option<String>) -> Option<String> {
     let mut pid = std::process::id();
     for _ in 0..20 {
-        let output = std::process::Command::new("ps")
-            .args(["-o", "tty=,ppid=", "-p", &pid.to_string()])
-            .output()
-            .ok()?;
-
-        if !output.status.success() {
-            break;
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stdout = match ps(pid) {
+            Some(s) => s,
+            None => break,
+        };
         let parts: Vec<&str> = stdout.split_whitespace().collect();
         if parts.len() < 2 {
             break;
         }
-
         let tty = parts[0];
         let ppid = parts[1];
-
         if tty != "??" && tty != "?" {
             return Some(format!("/dev/{}", tty));
         }
-
         pid = ppid.parse().ok()?;
         if pid <= 1 {
             break;
@@ -775,966 +839,4 @@ pub fn tolerant_i64_opt(v: &serde_json::Value) -> Option<i64> {
 /// not available".
 pub fn tolerant_i64(v: &serde_json::Value) -> i64 {
     tolerant_i64_opt(v).unwrap_or(0)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use chrono::TimeZone;
-
-    // --- now() ---
-
-    /// Exercises lines 26-28 — the `Display` impl for `SetupError`,
-    /// formatting as `step: message`.
-    #[test]
-    fn setup_error_display_formats_step_and_message() {
-        let err = SetupError {
-            step: "commit".to_string(),
-            message: "nothing to commit".to_string(),
-        };
-        assert_eq!(format!("{}", err), "commit: nothing to commit");
-    }
-
-    #[test]
-    fn now_returns_iso8601_pacific() {
-        let ts = now();
-        // Should parse as a valid datetime
-        assert!(DateTime::parse_from_rfc3339(&ts).is_ok() || ts.contains('T'));
-        // Should contain timezone offset (not Z for UTC)
-        assert!(ts.contains('-') || ts.contains('+'));
-        // Should not end with Z
-        assert!(!ts.ends_with('Z'));
-    }
-
-    // --- format_time() ---
-
-    #[test]
-    fn format_time_under_60_seconds() {
-        assert_eq!(format_time(0), "<1m");
-        assert_eq!(format_time(30), "<1m");
-        assert_eq!(format_time(59), "<1m");
-    }
-
-    #[test]
-    fn format_time_exactly_60_seconds() {
-        assert_eq!(format_time(60), "1m");
-    }
-
-    #[test]
-    fn format_time_minutes_only() {
-        assert_eq!(format_time(120), "2m");
-        assert_eq!(format_time(3599), "59m");
-    }
-
-    #[test]
-    fn format_time_hours_and_minutes() {
-        assert_eq!(format_time(3600), "1h 0m");
-        assert_eq!(format_time(3660), "1h 1m");
-        assert_eq!(format_time(7200), "2h 0m");
-        assert_eq!(format_time(7380), "2h 3m");
-    }
-
-    #[test]
-    fn format_time_large_values() {
-        assert_eq!(format_time(36000), "10h 0m");
-    }
-
-    #[test]
-    fn format_time_negative() {
-        assert_eq!(format_time(-1), "?");
-    }
-
-    // --- elapsed_since() ---
-
-    #[test]
-    fn elapsed_since_none() {
-        assert_eq!(elapsed_since(None, None), 0);
-    }
-
-    #[test]
-    fn elapsed_since_empty_string() {
-        assert_eq!(elapsed_since(Some(""), None), 0);
-    }
-
-    #[test]
-    fn elapsed_since_with_explicit_now() {
-        let started = "2026-01-01T00:00:00-08:00";
-        let now_dt = FixedOffset::west_opt(8 * 3600)
-            .unwrap()
-            .with_ymd_and_hms(2026, 1, 1, 0, 10, 0)
-            .unwrap();
-        assert_eq!(elapsed_since(Some(started), Some(now_dt)), 600);
-    }
-
-    #[test]
-    fn elapsed_since_default_now() {
-        let result = elapsed_since(Some("2026-01-01T00:00:00-08:00"), None);
-        assert!(result >= 0);
-    }
-
-    #[test]
-    fn elapsed_since_utc_timestamp() {
-        let started = "2026-01-01T00:00:00+00:00";
-        let now_dt = FixedOffset::east_opt(0)
-            .unwrap()
-            .with_ymd_and_hms(2026, 1, 1, 0, 5, 0)
-            .unwrap();
-        assert_eq!(elapsed_since(Some(started), Some(now_dt)), 300);
-    }
-
-    #[test]
-    fn elapsed_since_never_negative() {
-        let started = "2026-01-01T01:00:00-08:00";
-        let now_dt = FixedOffset::west_opt(8 * 3600)
-            .unwrap()
-            .with_ymd_and_hms(2026, 1, 1, 0, 0, 0)
-            .unwrap();
-        assert_eq!(elapsed_since(Some(started), Some(now_dt)), 0);
-    }
-
-    // --- branch_name() ---
-
-    #[test]
-    fn branch_name_basic() {
-        assert_eq!(branch_name("invoice pdf export"), "invoice-pdf-export");
-    }
-
-    #[test]
-    fn branch_name_special_chars() {
-        assert_eq!(branch_name("fix login timeout!"), "fix-login-timeout");
-    }
-
-    #[test]
-    fn branch_name_max_32_chars() {
-        let long = "fix login timeout when session expires after thirty minutes";
-        let result = branch_name(long);
-        assert!(result.len() <= 32, "Got: {} ({})", result, result.len());
-        // Should truncate on hyphen boundary
-        assert!(!result.ends_with('-'));
-    }
-
-    #[test]
-    fn branch_name_preserves_hyphens() {
-        assert_eq!(branch_name("my-feature"), "my-feature");
-    }
-
-    #[test]
-    fn branch_name_strips_non_alphanumeric() {
-        assert_eq!(branch_name("hello @world #123"), "hello-world-123");
-    }
-
-    #[test]
-    fn branch_name_multibyte_no_panic() {
-        // Multi-byte chars are stripped by the regex, so the result is ASCII.
-        // This test verifies no panic from byte-offset slicing on multi-byte input.
-        let input = "fix 日本語 login timeout when session expires after thirty minutes";
-        let result = branch_name(input);
-        assert!(result.len() <= 32, "Got: {} ({})", result, result.len());
-        assert!(result.is_ascii());
-        assert!(!result.ends_with('-'));
-    }
-
-    #[test]
-    fn branch_name_empty_string() {
-        let result = branch_name("");
-        assert_eq!(result, "unnamed");
-    }
-
-    #[test]
-    fn branch_name_all_special_chars() {
-        let result = branch_name("!@#$%");
-        assert_eq!(result, "unnamed");
-    }
-
-    #[test]
-    fn branch_name_reserved_words_pass_through() {
-        // Reserved words like HEAD and main are valid branch components
-        // when used as feature descriptions
-        assert_eq!(branch_name("HEAD"), "head");
-        assert_eq!(branch_name("main"), "main");
-    }
-
-    // --- derive_feature() ---
-
-    #[test]
-    fn derive_feature_basic() {
-        assert_eq!(derive_feature("invoice-pdf-export"), "Invoice Pdf Export");
-    }
-
-    #[test]
-    fn derive_feature_single_word() {
-        assert_eq!(derive_feature("fix"), "Fix");
-    }
-
-    // --- derive_worktree() ---
-
-    #[test]
-    fn derive_worktree_basic() {
-        assert_eq!(derive_worktree("my-feature"), ".worktrees/my-feature");
-    }
-
-    // --- extract_issue_numbers() ---
-
-    #[test]
-    fn extract_issue_numbers_hash_pattern() {
-        assert_eq!(extract_issue_numbers("fix #42 and #99"), vec![42, 99]);
-    }
-
-    #[test]
-    fn extract_issue_numbers_url_pattern() {
-        assert_eq!(
-            extract_issue_numbers("see https://github.com/org/repo/issues/123"),
-            vec![123]
-        );
-    }
-
-    #[test]
-    fn extract_issue_numbers_mixed() {
-        assert_eq!(
-            extract_issue_numbers("fix #42 see /issues/99"),
-            vec![42, 99]
-        );
-    }
-
-    #[test]
-    fn extract_issue_numbers_dedup() {
-        assert_eq!(extract_issue_numbers("#42 and #42"), vec![42]);
-    }
-
-    #[test]
-    fn extract_issue_numbers_none() {
-        assert_eq!(extract_issue_numbers("no issues here"), Vec::<i64>::new());
-    }
-
-    // --- short_issue_ref() ---
-
-    #[test]
-    fn short_issue_ref_github_url() {
-        assert_eq!(
-            short_issue_ref("https://github.com/org/repo/issues/42"),
-            "#42"
-        );
-    }
-
-    #[test]
-    fn short_issue_ref_non_github() {
-        assert_eq!(
-            short_issue_ref("https://example.com/other"),
-            "https://example.com/other"
-        );
-    }
-
-    // --- read_prompt_file() ---
-
-    #[test]
-    fn read_prompt_file_success() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("prompt.txt");
-        fs::write(&path, "hello world").unwrap();
-        let result = read_prompt_file(&path).unwrap();
-        assert_eq!(result, "hello world");
-        assert!(!path.exists(), "File should be deleted after read");
-    }
-
-    #[test]
-    fn read_prompt_file_missing() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("nonexistent.txt");
-        assert!(read_prompt_file(&path).is_err());
-    }
-
-    // --- parse_conflict_files() ---
-
-    #[test]
-    fn parse_conflict_uu() {
-        assert_eq!(
-            parse_conflict_files("UU src/main.rs\n"),
-            vec!["src/main.rs"]
-        );
-    }
-
-    #[test]
-    fn parse_conflict_aa_dd() {
-        let output = "AA src/new.rs\nDD src/old.rs\n";
-        let result = parse_conflict_files(output);
-        assert_eq!(result, vec!["src/new.rs", "src/old.rs"]);
-    }
-
-    #[test]
-    fn parse_conflict_u_in_status() {
-        // DU means deleted on one side, unmerged on other
-        assert_eq!(
-            parse_conflict_files("DU src/file.rs\n"),
-            vec!["src/file.rs"]
-        );
-    }
-
-    #[test]
-    fn parse_conflict_no_conflicts() {
-        assert_eq!(
-            parse_conflict_files("M  src/lib.rs\nA  src/new.rs\n"),
-            Vec::<String>::new()
-        );
-    }
-
-    #[test]
-    fn parse_conflict_empty() {
-        assert_eq!(parse_conflict_files(""), Vec::<String>::new());
-    }
-
-    // --- permission_to_regex() ---
-
-    #[test]
-    fn permission_to_regex_basic() {
-        let re = permission_to_regex("Bash(git push)").unwrap();
-        assert!(re.is_match("git push"));
-        assert!(!re.is_match("git pull"));
-    }
-
-    #[test]
-    fn permission_to_regex_wildcard() {
-        let re = permission_to_regex("Bash(git push *)").unwrap();
-        assert!(re.is_match("git push origin main"));
-        assert!(!re.is_match("git pull"));
-    }
-
-    #[test]
-    fn permission_to_regex_semicolon_wildcard() {
-        let re = permission_to_regex("Bash(bin/ci;*)").unwrap();
-        assert!(re.is_match("bin/ci; echo done"));
-        assert!(!re.is_match("bin/test"));
-    }
-
-    #[test]
-    fn permission_to_regex_non_bash() {
-        let re = permission_to_regex("Read(file.txt)").unwrap();
-        assert!(re.is_match("file.txt"));
-        assert!(!re.is_match("other.txt"));
-    }
-
-    #[test]
-    fn permission_to_regex_read_wildcard() {
-        let re = permission_to_regex("Read(~/.claude/rules/*)").unwrap();
-        assert!(re.is_match("~/.claude/rules/foo.md"));
-        assert!(!re.is_match("~/.claude/other/bar.md"));
-    }
-
-    #[test]
-    fn permission_to_regex_agent() {
-        let re = permission_to_regex("Agent(*)").unwrap();
-        assert!(re.is_match("flow:ci-fixer"));
-        assert!(re.is_match("anything"));
-    }
-
-    #[test]
-    fn permission_to_regex_skill() {
-        let re = permission_to_regex("Skill(decompose:decompose)").unwrap();
-        assert!(re.is_match("decompose:decompose"));
-        assert!(!re.is_match("decompose:other"));
-    }
-
-    #[test]
-    fn permission_to_regex_double_star() {
-        let re = permission_to_regex("Read(~/.claude/projects/**/tool-results/*)").unwrap();
-        assert!(re.is_match("~/.claude/projects/foo/bar/tool-results/abc"));
-        assert!(!re.is_match("~/.claude/other/tool-results/abc"));
-    }
-
-    #[test]
-    fn permission_to_regex_exact_match_only() {
-        let re = permission_to_regex("Bash(git push)").unwrap();
-        assert!(!re.is_match("git push origin"));
-    }
-
-    // --- format_tab_color() ---
-
-    #[test]
-    fn format_tab_color_override_wins() {
-        let color = format_tab_color(Some("any/repo"), Some((255, 0, 0)));
-        assert_eq!(color, Some((255, 0, 0)));
-    }
-
-    #[test]
-    fn format_tab_color_pinned() {
-        let color = format_tab_color(Some("benkruger/flow"), None);
-        assert_eq!(color, Some((40, 180, 70)));
-    }
-
-    #[test]
-    fn format_tab_color_hash_based() {
-        let color = format_tab_color(Some("org/some-random-repo"), None);
-        assert!(color.is_some());
-        // Should be one of the TAB_COLORS
-        assert!(TAB_COLORS.contains(&color.unwrap()));
-    }
-
-    #[test]
-    fn format_tab_color_deterministic() {
-        let c1 = format_tab_color(Some("org/repo"), None);
-        let c2 = format_tab_color(Some("org/repo"), None);
-        assert_eq!(c1, c2);
-    }
-
-    #[test]
-    fn format_tab_color_none_for_empty_repo() {
-        assert_eq!(format_tab_color(Some(""), None), None);
-        assert_eq!(format_tab_color(None, None), None);
-    }
-
-    // --- pinned_color() ---
-
-    #[test]
-    fn pinned_color_known_repos() {
-        assert_eq!(pinned_color("HipaaHealth/mono-repo"), Some((50, 120, 220)));
-        assert_eq!(
-            pinned_color("benkruger/salted-kitchen"),
-            Some((220, 130, 20))
-        );
-        assert_eq!(pinned_color("benkruger/flow"), Some((40, 180, 70)));
-    }
-
-    #[test]
-    fn pinned_color_unknown_repo() {
-        assert_eq!(pinned_color("unknown/repo"), None);
-    }
-
-    // --- check_duplicate_issue() ---
-
-    #[test]
-    fn check_duplicate_empty_list() {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(check_duplicate_issue(dir.path(), &[] as &[i64], "any").is_none());
-    }
-
-    #[test]
-    fn check_duplicate_no_state_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(check_duplicate_issue(dir.path(), &[123], "any").is_none());
-    }
-
-    #[test]
-    fn check_duplicate_detects_overlap() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        std::fs::create_dir_all(&state_dir).unwrap();
-        std::fs::write(
-            state_dir.join("existing-branch.json"),
-            serde_json::json!({
-                "prompt": "work on issue #123",
-                "branch": "existing-branch",
-                "current_phase": "flow-code",
-                "pr_url": "https://github.com/test/repo/pull/99",
-            })
-            .to_string(),
-        )
-        .unwrap();
-        let result = check_duplicate_issue(dir.path(), &[123], "new-branch");
-        assert!(result.is_some());
-        let dup = result.unwrap();
-        assert_eq!(dup.branch, "existing-branch");
-        assert_eq!(dup.phase, "flow-code");
-        assert_eq!(dup.pr_url, "https://github.com/test/repo/pull/99");
-    }
-
-    #[test]
-    fn check_duplicate_no_false_positive() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        std::fs::create_dir_all(&state_dir).unwrap();
-        std::fs::write(
-            state_dir.join("existing-branch.json"),
-            serde_json::json!({
-                "prompt": "work on issue #123",
-                "branch": "existing-branch",
-                "current_phase": "flow-code",
-                "pr_url": "",
-            })
-            .to_string(),
-        )
-        .unwrap();
-        assert!(check_duplicate_issue(dir.path(), &[456], "new-branch").is_none());
-    }
-
-    #[test]
-    fn check_duplicate_multi_issue_overlap() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        std::fs::create_dir_all(&state_dir).unwrap();
-        std::fs::write(
-            state_dir.join("existing-branch.json"),
-            serde_json::json!({
-                "prompt": "work on issue #456",
-                "branch": "existing-branch",
-                "current_phase": "flow-plan",
-                "pr_url": "",
-            })
-            .to_string(),
-        )
-        .unwrap();
-        let result = check_duplicate_issue(dir.path(), &[123, 456], "new-branch");
-        assert!(result.is_some());
-    }
-
-    #[test]
-    fn check_duplicate_skips_self_branch() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        std::fs::create_dir_all(&state_dir).unwrap();
-        std::fs::write(
-            state_dir.join("my-branch.json"),
-            serde_json::json!({
-                "prompt": "work on issue #123",
-                "branch": "my-branch",
-                "current_phase": "flow-start",
-                "pr_url": "",
-            })
-            .to_string(),
-        )
-        .unwrap();
-        assert!(check_duplicate_issue(dir.path(), &[123], "my-branch").is_none());
-    }
-
-    #[test]
-    fn check_duplicate_skips_phases_json() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        std::fs::create_dir_all(&state_dir).unwrap();
-        std::fs::write(
-            state_dir.join("some-branch-phases.json"),
-            serde_json::json!({
-                "prompt": "work on issue #123",
-                "branch": "some-branch",
-                "current_phase": "flow-code",
-                "pr_url": "",
-            })
-            .to_string(),
-        )
-        .unwrap();
-        assert!(check_duplicate_issue(dir.path(), &[123], "other-branch").is_none());
-    }
-
-    #[test]
-    fn check_duplicate_skips_malformed_json() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        std::fs::create_dir_all(&state_dir).unwrap();
-        std::fs::write(state_dir.join("bad-json.json"), "not valid json {{{").unwrap();
-        assert!(check_duplicate_issue(dir.path(), &[123], "other-branch").is_none());
-    }
-
-    #[test]
-    fn check_duplicate_null_prompt() {
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        std::fs::create_dir_all(&state_dir).unwrap();
-        std::fs::write(
-            state_dir.join("null-prompt.json"),
-            serde_json::json!({"prompt": null, "branch": "null-prompt"}).to_string(),
-        )
-        .unwrap();
-        assert!(check_duplicate_issue(dir.path(), &[123], "other-branch").is_none());
-    }
-
-    #[test]
-    fn check_duplicate_skips_completed_flow() {
-        // A completed flow's leftover state file should not block a new flow
-        // targeting the same issue
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        std::fs::create_dir_all(&state_dir).unwrap();
-        std::fs::write(
-            state_dir.join("completed-branch.json"),
-            serde_json::json!({
-                "prompt": "work on issue #42",
-                "branch": "completed-branch",
-                "current_phase": "flow-complete",
-                "phases": {
-                    "flow-complete": {
-                        "status": "complete"
-                    }
-                },
-                "pr_url": "https://github.com/test/repo/pull/55",
-            })
-            .to_string(),
-        )
-        .unwrap();
-        assert!(
-            check_duplicate_issue(dir.path(), &[42], "new-branch").is_none(),
-            "Completed flow should not block new flow for the same issue"
-        );
-    }
-
-    #[test]
-    fn check_duplicate_skips_empty_state_file() {
-        // An empty (0-byte) state file should not block
-        let dir = tempfile::tempdir().unwrap();
-        let state_dir = dir.path().join(".flow-states");
-        std::fs::create_dir_all(&state_dir).unwrap();
-        std::fs::write(state_dir.join("empty-branch.json"), "").unwrap();
-        assert!(check_duplicate_issue(dir.path(), &[123], "other-branch").is_none());
-    }
-
-    // --- IssueInfo deserialization (issue #887) ---
-
-    #[test]
-    fn fetch_issue_info_struct_deserializes_full() {
-        let json = r#"{"title": "Some Issue", "labels": ["bug", "Flow In-Progress"]}"#;
-        let info: IssueInfo = serde_json::from_str(json).unwrap();
-        assert_eq!(info.title, "Some Issue");
-        assert_eq!(
-            info.labels,
-            vec!["bug".to_string(), "Flow In-Progress".to_string()]
-        );
-    }
-
-    #[test]
-    fn fetch_issue_info_struct_deserializes_missing_labels() {
-        // When the `labels` key is absent, `#[serde(default)]` must yield an empty vec
-        // rather than failing deserialization. This is the defensive default for
-        // older gh versions or shapes where jq does not emit the key.
-        let json = r#"{"title": "Some Issue"}"#;
-        let info: IssueInfo = serde_json::from_str(json).unwrap();
-        assert_eq!(info.title, "Some Issue");
-        assert!(info.labels.is_empty());
-    }
-
-    #[test]
-    fn fetch_issue_info_struct_deserializes_null_labels() {
-        // When `labels` is explicitly null, `#[serde(default)]` combined with
-        // the `Vec<String>` field type must still coerce to empty. Without this,
-        // a label-guard failure would surface as a misleading fetch error.
-        let json = r#"{"title": "Some Issue", "labels": null}"#;
-        let info: IssueInfo = serde_json::from_str(json).unwrap();
-        assert_eq!(info.title, "Some Issue");
-        assert!(info.labels.is_empty());
-    }
-
-    // --- read_version_from() ---
-
-    #[test]
-    fn read_version_from_valid_plugin_json() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("plugin.json");
-        fs::write(&path, r#"{"version": "1.2.3"}"#).unwrap();
-        assert_eq!(read_version_from(&path), "1.2.3");
-    }
-
-    #[test]
-    fn read_version_from_missing_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("nonexistent.json");
-        assert_eq!(read_version_from(&path), "?");
-    }
-
-    #[test]
-    fn read_version_from_malformed_json() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("plugin.json");
-        fs::write(&path, "{bad json").unwrap();
-        assert_eq!(read_version_from(&path), "?");
-    }
-
-    #[test]
-    fn read_version_from_no_version_key() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("plugin.json");
-        fs::write(&path, r#"{"name": "flow"}"#).unwrap();
-        assert_eq!(read_version_from(&path), "?");
-    }
-
-    // --- tolerant_i64 ---
-
-    #[test]
-    fn tolerant_i64_opt_accepts_int() {
-        assert_eq!(tolerant_i64_opt(&serde_json::json!(42)), Some(42));
-        assert_eq!(tolerant_i64_opt(&serde_json::json!(-7)), Some(-7));
-        assert_eq!(tolerant_i64_opt(&serde_json::json!(0)), Some(0));
-    }
-
-    #[test]
-    fn tolerant_i64_opt_accepts_float_truncates() {
-        assert_eq!(tolerant_i64_opt(&serde_json::json!(3.7)), Some(3));
-        assert_eq!(tolerant_i64_opt(&serde_json::json!(1.0)), Some(1));
-        assert_eq!(tolerant_i64_opt(&serde_json::json!(-2.9)), Some(-2));
-    }
-
-    #[test]
-    fn tolerant_i64_opt_accepts_string_numeric() {
-        assert_eq!(tolerant_i64_opt(&serde_json::json!("123")), Some(123));
-        assert_eq!(tolerant_i64_opt(&serde_json::json!("0")), Some(0));
-    }
-
-    #[test]
-    fn tolerant_i64_opt_accepts_negative_string() {
-        assert_eq!(tolerant_i64_opt(&serde_json::json!("-5")), Some(-5));
-    }
-
-    #[test]
-    fn tolerant_i64_opt_returns_none_for_bool() {
-        assert_eq!(tolerant_i64_opt(&serde_json::json!(true)), None);
-        assert_eq!(tolerant_i64_opt(&serde_json::json!(false)), None);
-    }
-
-    #[test]
-    fn tolerant_i64_opt_returns_none_for_null() {
-        assert_eq!(tolerant_i64_opt(&serde_json::json!(null)), None);
-    }
-
-    #[test]
-    fn tolerant_i64_opt_returns_none_for_unparseable_string() {
-        assert_eq!(tolerant_i64_opt(&serde_json::json!("garbage")), None);
-        assert_eq!(tolerant_i64_opt(&serde_json::json!("")), None);
-    }
-
-    #[test]
-    fn tolerant_i64_opt_returns_none_for_array() {
-        assert_eq!(tolerant_i64_opt(&serde_json::json!([1, 2, 3])), None);
-        assert_eq!(tolerant_i64_opt(&serde_json::json!({})), None);
-    }
-
-    #[test]
-    fn tolerant_i64_passes_through_when_opt_returns_some() {
-        assert_eq!(tolerant_i64(&serde_json::json!(42)), 42);
-        assert_eq!(tolerant_i64(&serde_json::json!("5")), 5);
-        assert_eq!(tolerant_i64(&serde_json::json!(7.9)), 7);
-    }
-
-    #[test]
-    fn tolerant_i64_defaults_zero_when_opt_returns_none() {
-        assert_eq!(tolerant_i64(&serde_json::json!(null)), 0);
-        assert_eq!(tolerant_i64(&serde_json::json!(true)), 0);
-        assert_eq!(tolerant_i64(&serde_json::json!("garbage")), 0);
-        assert_eq!(tolerant_i64(&serde_json::json!([])), 0);
-    }
-
-    #[test]
-    fn tolerant_i64_zero_for_missing_via_index() {
-        // `Index` on a missing key returns &Value::Null; tolerant_i64 should
-        // coerce to 0 so callers can use `state["missing"]` directly.
-        let state = serde_json::json!({"branch": "test"});
-        assert_eq!(tolerant_i64(&state["missing_key"]), 0);
-    }
-
-    // --- detect_dev_mode ---
-
-    #[test]
-    fn detect_dev_mode_false_when_flow_json_missing() {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(!detect_dev_mode(dir.path()));
-    }
-
-    #[test]
-    fn detect_dev_mode_true_when_backup_key_present() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join(".flow.json"),
-            r#"{"plugin_root_backup": "/path/to/prod"}"#,
-        )
-        .unwrap();
-        assert!(detect_dev_mode(dir.path()));
-    }
-
-    #[test]
-    fn detect_dev_mode_false_when_backup_key_absent() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join(".flow.json"),
-            r#"{"plugin_root": "/path/to/plugin"}"#,
-        )
-        .unwrap();
-        assert!(!detect_dev_mode(dir.path()));
-    }
-
-    #[test]
-    fn detect_dev_mode_false_when_json_malformed() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join(".flow.json"), "not json").unwrap();
-        assert!(!detect_dev_mode(dir.path()));
-    }
-
-    // --- read_flow_json_tab_color (tested via format_tab_color) ---
-
-    #[test]
-    fn read_flow_json_tab_color_valid_triplet() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join(".flow.json"),
-            r#"{"tab_color": [100, 150, 200]}"#,
-        )
-        .unwrap();
-        assert_eq!(
-            read_flow_json_tab_color(Some(dir.path())),
-            Some((100, 150, 200))
-        );
-    }
-
-    #[test]
-    fn read_flow_json_tab_color_none_when_missing_file() {
-        let dir = tempfile::tempdir().unwrap();
-        assert_eq!(read_flow_json_tab_color(Some(dir.path())), None);
-    }
-
-    #[test]
-    fn read_flow_json_tab_color_none_when_key_absent() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join(".flow.json"), r#"{"other": "value"}"#).unwrap();
-        assert_eq!(read_flow_json_tab_color(Some(dir.path())), None);
-    }
-
-    #[test]
-    fn read_flow_json_tab_color_none_when_wrong_array_length() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join(".flow.json"),
-            r#"{"tab_color": [100, 150]}"#,
-        )
-        .unwrap();
-        assert_eq!(read_flow_json_tab_color(Some(dir.path())), None);
-    }
-
-    #[test]
-    fn read_flow_json_tab_color_none_when_malformed_json() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join(".flow.json"), "not json").unwrap();
-        assert_eq!(read_flow_json_tab_color(Some(dir.path())), None);
-    }
-
-    // --- format_time edge cases ---
-
-    #[test]
-    fn format_time_zero_seconds() {
-        assert_eq!(format_time(0), "<1m");
-    }
-
-    #[test]
-    fn format_time_exactly_one_hour() {
-        assert_eq!(format_time(3600), "1h 0m");
-    }
-
-    // --- derive_feature / derive_worktree edge cases ---
-
-    #[test]
-    fn derive_feature_multi_hyphen() {
-        let feature = derive_feature("some-multi-word-feature");
-        // Should produce human-readable words from branch name.
-        assert!(!feature.is_empty());
-    }
-
-    #[test]
-    fn derive_worktree_contains_branch() {
-        let wt = derive_worktree("my-branch");
-        assert!(wt.contains("my-branch"));
-    }
-
-    // --- branch_name normalization edge cases ---
-
-    #[test]
-    fn branch_name_trims_trailing_whitespace() {
-        assert_eq!(branch_name("hello world   "), "hello-world");
-    }
-
-    #[test]
-    fn branch_name_collapses_internal_whitespace() {
-        let result = branch_name("hello    world");
-        // Multiple spaces should collapse to a single hyphen.
-        assert_eq!(result, "hello-world");
-    }
-
-    // --- elapsed_since robustness ---
-
-    #[test]
-    fn elapsed_since_unparseable_string_returns_zero() {
-        assert_eq!(elapsed_since(Some("not-a-timestamp"), None), 0);
-    }
-
-    // --- run_cmd ---
-
-    #[test]
-    fn run_cmd_success() {
-        let dir = tempfile::tempdir().unwrap();
-        let (stdout, _stderr) = run_cmd(&["echo", "hello"], dir.path(), "test-step", None).unwrap();
-        assert_eq!(stdout, "hello");
-    }
-
-    #[test]
-    fn run_cmd_failure() {
-        let dir = tempfile::tempdir().unwrap();
-        let err = run_cmd(&["false"], dir.path(), "test-step", None).unwrap_err();
-        assert_eq!(err.step, "test-step");
-    }
-
-    #[test]
-    fn run_cmd_timeout() {
-        let dir = tempfile::tempdir().unwrap();
-        let err = run_cmd(
-            &["sleep", "10"],
-            dir.path(),
-            "test-step",
-            Some(Duration::from_millis(200)),
-        )
-        .unwrap_err();
-        assert_eq!(err.step, "test-step");
-        assert!(
-            err.message.contains("Timed out"),
-            "expected timeout message, got: {}",
-            err.message
-        );
-    }
-
-    // --- bin_flow_path ---
-
-    #[test]
-    fn bin_flow_path_returns_path_or_fallback() {
-        let result = bin_flow_path();
-        assert!(
-            result.ends_with("bin/flow"),
-            "expected path ending with bin/flow, got: {}",
-            result
-        );
-    }
-
-    // --- detect_tty ---
-
-    #[test]
-    fn detect_tty_does_not_panic() {
-        let result = detect_tty();
-        if let Some(ref tty) = result {
-            assert!(
-                tty.starts_with("/dev/"),
-                "expected /dev/ prefix, got: {}",
-                tty
-            );
-        }
-        // None is acceptable in headless CI
-    }
-
-    // --- write_tab_sequences ---
-
-    #[test]
-    fn write_tab_sequences_with_repo_does_not_panic() {
-        let dir = tempfile::tempdir().unwrap();
-        // No .flow.json — uses hash-based color. /dev/tty write may fail
-        // in headless CI; either Ok or Err is acceptable.
-        let _ = write_tab_sequences(Some("test/repo"), Some(dir.path()));
-    }
-
-    #[test]
-    fn write_tab_sequences_none_repo_returns_ok() {
-        let result = write_tab_sequences(None, None);
-        assert!(result.is_ok());
-    }
-
-    // --- read_version / plugin_root ---
-
-    #[test]
-    fn read_version_returns_nonempty_string() {
-        let v = read_version();
-        assert!(!v.is_empty(), "read_version should never return empty");
-    }
-
-    #[test]
-    fn plugin_root_does_not_panic() {
-        // Returns Some(path) if CLAUDE_PLUGIN_ROOT is set, None otherwise.
-        let _ = plugin_root();
-    }
 }

@@ -1,23 +1,11 @@
 #!/usr/bin/env bash
-# FLOW build — called by `bin/flow ci` (and `bin/flow ci --build`).
-# Compiles the workspace; nonzero exit blocks downstream CI steps.
+# FLOW build — called by `bin/flow ci --build`.
+#
+# In this repo the build step is folded into bin/test (cargo-llvm-cov
+# nextest compiles the library, main binary, and every integration
+# test harness as part of its instrumented run). A separate cargo
+# build here would duplicate that work. See CLAUDE.md and
+# .claude/rules/tool-dispatch.md.
 set -euo pipefail
-
-# === GATE 1: warnings-as-errors (ENABLED) ===
-# -D warnings: zero-tolerance policy — any compile warning fails the build.
-export RUSTFLAGS="${RUSTFLAGS:-} -D warnings"
-
-# Force-rebuild: `bin/flow ci --build` sets FLOW_CI_REBUILD=1 to mean
-# "rebuild all our targets from scratch". Clean the flow-rs package
-# scope (our code only — dep caches stay warm) and then build every
-# target the workspace produces: main binary + all integration test
-# harnesses via `--all-targets`. This gives a clean, complete picture
-# of our build surface without wasting 3–5 minutes recompiling 100+
-# unchanged dep crates.
-# The default (no flag, plain `bin/flow ci`) stays incremental.
-if [ "${FLOW_CI_REBUILD:-}" = "1" ]; then
-  cargo clean -p flow-rs
-  exec cargo build --all-targets
-fi
-
-exec cargo build
+echo "bin/build: no-op — compilation happens in bin/test (cargo-llvm-cov nextest). Run bin/flow ci --test." >&2
+exit 0

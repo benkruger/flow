@@ -83,7 +83,7 @@ CI will fail if these are missing:
 ## Development Environment
 
 - Run tests with `bin/flow ci` only — never invoke cargo directly
-- `bin/flow ci` runs `./bin/format`, `./bin/lint`, `./bin/build`, `./bin/test` in sequence (format first for fail-fast)
+- `bin/flow ci` runs `./bin/format`, `./bin/lint`, `./bin/build`, `./bin/test` in sequence (format first for fail-fast). In THIS repo, `bin/build` is a no-op that exits 0 with an informational stderr message — compilation happens inside `bin/test` via `cargo-llvm-cov nextest`, so a separate build step would duplicate work. Target projects that need a real build step implement their own `bin/build`.
 - `bin/flow ci --format`/`--lint`/`--build`/`--test` runs only that single phase. Single-phase runs disable both sentinel read and write — one tool passing does not satisfy the all-four-passed contract the sentinel encodes.
 - `bin/flow ci --force` runs all four AND bypasses the sentinel skip
 - **Use `bin/flow ci --test -- <filter>` for targeted test runs during development** — `bin/flow ci` runs the full suite and is the gate before committing. `bin/flow ci --test -- hooks` runs every test in `tests/hooks.rs`. Never call cargo directly — always use `bin/flow ci`.

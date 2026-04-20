@@ -10,6 +10,8 @@ mod common;
 use std::fs;
 use std::process::Command;
 
+use flow_rs::commands::log::{append_log, run_impl_main};
+
 /// phase_transition.rs must call append_log for phase-transition logging.
 #[test]
 fn phase_transition_uses_append_log() {
@@ -133,4 +135,95 @@ fn bin_flow_log_exits_nonzero_when_log_path_is_directory() {
     assert_eq!(output.status.code().unwrap(), 1);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("flow log:"), "stderr: {}", stderr);
+}
+
+// --- Library-level unit tests (migrated from src/commands/log.rs) ---
+
+#[test]
+fn appends_to_existing_log() {
+    let dir = tempfile::tempdir().unwrap();
+    let log_dir = dir.path().join(".flow-states");
+    fs::create_dir(&log_dir).unwrap();
+    let log_file = log_dir.join("my-feature.log");
+    fs::write(&log_file, "existing line\n").unwrap();
+
+    append_log(dir.path(), "my-feature", "[Phase 1] Step 5 — test (exit 0)").unwrap();
+
+    let content = fs::read_to_string(&log_file).unwrap();
+    assert!(content.starts_with("existing line\n"));
+    assert!(content.contains("[Phase 1] Step 5 — test (exit 0)"));
+    // Should have exactly 2 lines
+    let lines: Vec<&str> = content.trim().lines().collect();
+    assert_eq!(lines.len(), 2);
+}
+
+#[test]
+fn creates_new_log_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let log_dir = dir.path().join(".flow-states");
+    fs::create_dir(&log_dir).unwrap();
+
+    append_log(dir.path(), "feat-branch", "[Phase 1] test message").unwrap();
+
+    let log_file = log_dir.join("feat-branch.log");
+    assert!(log_file.exists());
+    let content = fs::read_to_string(&log_file).unwrap();
+    assert!(content.contains("[Phase 1] test message"));
+}
+
+#[test]
+fn creates_directory_if_missing() {
+    let dir = tempfile::tempdir().unwrap();
+
+    append_log(dir.path(), "branch", "message").unwrap();
+
+    assert!(dir.path().join(".flow-states").is_dir());
+    assert!(dir.path().join(".flow-states").join("branch.log").exists());
+}
+
+#[test]
+fn multiple_appends() {
+    let dir = tempfile::tempdir().unwrap();
+    let log_dir = dir.path().join(".flow-states");
+    fs::create_dir(&log_dir).unwrap();
+
+    append_log(dir.path(), "branch", "first").unwrap();
+    append_log(dir.path(), "branch", "second").unwrap();
+
+    let content = fs::read_to_string(log_dir.join("branch.log")).unwrap();
+    let lines: Vec<&str> = content.trim().lines().collect();
+    assert_eq!(lines.len(), 2);
+    assert!(lines[0].ends_with("first"));
+    assert!(lines[1].ends_with("second"));
+}
+
+#[test]
+fn run_impl_main_success_returns_empty_stderr_zero_code() {
+    let dir = tempfile::tempdir().unwrap();
+    let (msg, code) = run_impl_main(dir.path(), "branch", "message");
+    assert_eq!(msg, "");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn run_impl_main_failure_returns_stderr_one_code() {
+    // Place a regular file at .flow-states/ so create_dir_all fails.
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join(".flow-states"), "I am a file, not a dir").unwrap();
+    let (msg, code) = run_impl_main(dir.path(), "branch", "message");
+    assert_eq!(code, 1);
+    assert!(msg.starts_with("flow log:"), "got: {}", msg);
+}
+
+#[test]
+fn timestamp_is_included() {
+    let dir = tempfile::tempdir().unwrap();
+
+    append_log(dir.path(), "branch", "test").unwrap();
+
+    let content = fs::read_to_string(dir.path().join(".flow-states/branch.log")).unwrap();
+    let line = content.trim();
+    // Should have format: "YYYY-MM-DDTHH:MM:SS-HH:MM test"
+    assert!(line.contains('T'), "Timestamp should contain 'T': {}", line);
+    assert!(line.ends_with("test"));
 }

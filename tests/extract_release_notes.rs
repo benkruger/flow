@@ -7,7 +7,7 @@
 use std::fs;
 use std::process::Command;
 
-use flow_rs::extract_release_notes::{extract, run_impl, Args};
+use flow_rs::extract_release_notes::{extract, run_impl, run_impl_main, Args};
 
 const SAMPLE_NOTES: &str = "\
 # Release Notes
@@ -172,6 +172,113 @@ fn test_cli_file_not_found() {
     let result = run_impl(&args, dir.path());
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("not found"));
+}
+
+// --- run_impl_main ---
+
+#[test]
+fn run_impl_main_none_returns_error_tuple() {
+    let args = Args {
+        version: Some("v0.1.0".to_string()),
+    };
+    let (msg, code) = run_impl_main(&args, None);
+    assert_eq!(code, 1);
+    assert!(msg.contains("could not find FLOW plugin root"));
+}
+
+#[test]
+fn run_impl_main_success_returns_written_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    fs::write(root.join("RELEASE-NOTES.md"), "## v0.1.0\n\nFirst.").unwrap();
+    let args = Args {
+        version: Some("v0.1.0".to_string()),
+    };
+    let (msg, code) = run_impl_main(&args, Some(root));
+    assert_eq!(code, 0);
+    assert!(msg.contains("Written to"));
+}
+
+#[test]
+fn run_impl_main_err_path_returns_no_section_found() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    fs::write(root.join("RELEASE-NOTES.md"), "## v0.1.0\n\nFirst.").unwrap();
+    let args = Args {
+        version: Some("v9.9.9".to_string()),
+    };
+    let (msg, code) = run_impl_main(&args, Some(root));
+    assert_eq!(code, 1);
+    assert!(msg.contains("no section found"));
+}
+
+// --- run_impl error paths ---
+
+/// Exercises the read_to_string Err arm. When RELEASE-NOTES.md is a
+/// directory instead of a file, exists() is true but read_to_string
+/// fails with EISDIR.
+#[test]
+fn run_impl_release_notes_is_directory_returns_read_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    std::fs::create_dir(root.join("RELEASE-NOTES.md")).unwrap();
+    let args = Args {
+        version: Some("v0.1.0".to_string()),
+    };
+    let err = run_impl(&args, &root).unwrap_err();
+    assert!(
+        err.contains("Error reading"),
+        "expected read error message, got: {}",
+        err
+    );
+}
+
+/// Exercises the fs::write Err arm. Pre-occupy the out_path as a
+/// directory so fs::write fails with EISDIR.
+#[test]
+fn run_impl_out_path_is_existing_directory_returns_write_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    fs::write(root.join("RELEASE-NOTES.md"), "## v0.1.0\n\nContent.").unwrap();
+    let tmp = root.join("tmp");
+    std::fs::create_dir_all(&tmp).unwrap();
+    std::fs::create_dir(tmp.join("release-notes-v0.1.0.md")).unwrap();
+    let args = Args {
+        version: Some("v0.1.0".to_string()),
+    };
+    let err = run_impl(&args, &root).unwrap_err();
+    assert!(err.contains("Error writing"), "got: {}", err);
+}
+
+/// Exercises the create_dir_all Err arm. When `tmp` is pre-occupied
+/// as a regular file, create_dir_all fails.
+#[test]
+fn run_impl_tmp_is_existing_file_returns_create_dir_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    fs::write(root.join("RELEASE-NOTES.md"), "## v0.1.0\n\nContent.").unwrap();
+    std::fs::write(root.join("tmp"), "regular file").unwrap();
+    let args = Args {
+        version: Some("v0.1.0".to_string()),
+    };
+    let err = run_impl(&args, &root).unwrap_err();
+    assert!(
+        err.contains("Error creating tmp dir"),
+        "expected create-dir error message, got: {}",
+        err
+    );
+}
+
+#[test]
+fn run_impl_accepts_version_with_or_without_v_prefix() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    fs::write(root.join("RELEASE-NOTES.md"), "## 0.5.0\n\nNotes here.").unwrap();
+    let args = Args {
+        version: Some("0.5.0".to_string()),
+    };
+    let output = run_impl(&args, &root).unwrap();
+    assert!(output.contains("release-notes-0.5.0.md"));
 }
 
 // --- Subprocess tests covering the `pub fn run` wrapper ---

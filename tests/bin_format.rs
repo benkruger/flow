@@ -34,9 +34,11 @@ fn script_is_valid_bash() {
     );
 }
 
-/// bin/format invokes `cargo fmt --check`.
+/// bin/format invokes `cargo fmt` in auto-fix mode (no --check).
+/// Auto-fix is the standing default; a prior revision used --check
+/// (report-only) but that required a separate fix path.
 #[test]
-fn invokes_cargo_fmt_check() {
+fn invokes_cargo_fmt_in_auto_fix_mode() {
     let dir = tempfile::tempdir().unwrap();
     let bin_dir = dir.path().join("bin");
     fs::create_dir_all(&bin_dir).unwrap();
@@ -84,8 +86,8 @@ fn invokes_cargo_fmt_check() {
         logged
     );
     assert!(
-        logged.contains("--check"),
-        "expected --check, got: {}",
+        !logged.contains("--check"),
+        "expected auto-fix mode (no --check), got: {}",
         logged
     );
 }

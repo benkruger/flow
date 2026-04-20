@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# FLOW format checker — called by `bin/flow ci` (and `bin/flow ci --format`).
-# Receives no arguments; returns nonzero if formatting is wrong.
+# FLOW formatter — called by `bin/flow ci` (and `bin/flow ci --format`).
+# Auto-fixes in place. Returns nonzero only on cargo fmt failures
+# (parse errors, rustfmt.toml issues).
 set -euo pipefail
-exec cargo fmt --check
+exec cargo fmt
