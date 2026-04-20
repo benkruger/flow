@@ -181,21 +181,76 @@ if [ "$PER_FILE" = "1" ]; then
   fi
 
   # Normal per-file: fail fast on any issue (nextest's fail-fast +
-  # terminate-after handle test/timing failures; no post-run grep
-  # needed).
+  # terminate-after handle test/timing failures).
+  #
+  # Coverage enforcement is a two-step: first run nextest under
+  # cargo-llvm-cov with `--no-report` so profraw is captured but no
+  # threshold check runs; then invoke `cargo llvm-cov report
+  # --fail-under-* --ignore-filename-regex` to scope the threshold
+  # to the mirrored src file. Doing it in one command (`cargo
+  # llvm-cov --fail-under-* nextest ...`) computes the threshold
+  # against the full codebase totals, ignoring the filter — the
+  # subcommand form only applies the regex to the printed table,
+  # not to the fail-under calculation.
   if [ -f "$src_file" ]; then
-    src_regex="${src_file//./\\.}"
-    COV_ARGS+=(
-      --fail-under-lines 100
-      --fail-under-regions 100
-      --fail-under-functions 100
-      --ignore-filename-regex "^(?!.*${src_regex}$).*$"
-    )
     echo "=== ${bin_name} (mirrored src: ${src_file}) ==="
-  else
-    echo "=== ${bin_name} (meta-test, no mirrored src) ==="
+    time_start=$SECONDS
+    # Step 1: run tests (cargo-llvm-cov captures profraw, no
+    # threshold gate yet — we extract the per-file number in
+    # step 2 below).
+    set +e
+    cargo llvm-cov --no-cfg-coverage --no-clean nextest \
+      "${NEXTEST_ARGS[@]}" "$@"
+    rc=$?
+    set -e
+    if [ "$rc" -ne 0 ]; then
+      exit "$rc"
+    fi
+    # Step 2: extract the coverage row for the mirrored src file
+    # and assert all three percentages (Regions, Functions, Lines)
+    # read 100.00%. We can't use cargo-llvm-cov's
+    # `--ignore-filename-regex + --fail-under-*` combination
+    # because llvm-cov's regex engine doesn't honor negative
+    # lookahead, so the filter silently matches nothing and the
+    # threshold evaluates against the full-codebase total.
+    #
+    # Basenames are unique across src/ in this codebase (verified
+    # by `tests/test_placement.rs` indirectly; enforced in practice
+    # by the flat-basename convention). Matching on the basename
+    # with a trailing whitespace boundary guards against partial
+    # matches like `commands/log.rs` being matched by `log.rs`.
+    basename_src="$(basename "$src_file")"
+    cov_report="$(cargo llvm-cov report 2>&1)"
+    cov_line="$(printf '%s\n' "$cov_report" | awk -v f="$basename_src" '
+      # Match any line whose first column ends with "/<basename>"
+      # or equals "<basename>" exactly.
+      $1 == f || $1 ~ "/" f "$" { print; exit }
+    ')"
+    if [ -z "$cov_line" ]; then
+      echo "FAIL: ${src_file} not found in coverage report" >&2
+      exit 1
+    fi
+    echo ""
+    echo "=== Coverage gate for ${src_file} ==="
+    echo "$cov_line"
+    # The report layout lists Regions cover in col 4, Functions
+    # cover (labeled "Executed") in col 7, Lines cover in col 10.
+    # All three must read 100.00%.
+    if ! printf '%s\n' "$cov_line" | awk '
+      { exit ($4 == "100.00%" && $7 == "100.00%" && $10 == "100.00%") ? 0 : 1 }
+    '; then
+      echo "" >&2
+      echo "FAIL: ${src_file} is not at 100/100/100" >&2
+      exit 1
+    fi
+    elapsed=$((SECONDS - time_start))
+    echo ""
+    echo "=== PASS (${elapsed}s) ==="
+    exit 0
   fi
 
+  # Meta-test (no mirrored src) — no coverage gate.
+  echo "=== ${bin_name} (meta-test, no mirrored src) ==="
   temp_log="$(mktemp -t flow-test-log.XXXXXX)"
   trap 'rm -f "$temp_log"' EXIT
   time_start=$SECONDS
@@ -208,7 +263,6 @@ if [ "$PER_FILE" = "1" ]; then
 END { if (c > 0) printf "\n" }'
   rc="${PIPESTATUS[0]}"
   set -e
-
   if [ "$rc" -ne 0 ]; then
     exit "$rc"
   fi
