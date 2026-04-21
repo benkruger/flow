@@ -274,32 +274,6 @@ pub fn run_impl_main(
     root: &Path,
     cwd: &Path,
 ) -> (Value, i32) {
-    run_impl_main_with_resolver(
-        phase,
-        action,
-        next_phase,
-        branch_override,
-        reason,
-        root,
-        cwd,
-        &resolve_branch,
-    )
-}
-
-/// Seam-injected variant of `run_impl_main`. Tests pass a mock
-/// branch resolver to drive the `resolve_branch` None path without
-/// racing on the process's git env.
-#[allow(clippy::too_many_arguments)]
-pub fn run_impl_main_with_resolver(
-    phase: &str,
-    action: &str,
-    next_phase: Option<&str>,
-    branch_override: Option<&str>,
-    reason: Option<&str>,
-    root: &Path,
-    cwd: &Path,
-    resolve_branch_fn: &dyn Fn(Option<&str>, &Path) -> Option<String>,
-) -> (Value, i32) {
     if !PHASE_ORDER.contains(&phase) {
         let msg = format!(
             "Invalid phase: {}. Must be one of: {}",
@@ -318,7 +292,7 @@ pub fn run_impl_main_with_resolver(
         return (json_error_value(&msg), 1);
     }
 
-    let branch = match resolve_branch_fn(branch_override, root) {
+    let branch = match resolve_branch(branch_override, root) {
         Some(b) => b,
         None => {
             return (json_error_value("Could not determine current branch"), 1);

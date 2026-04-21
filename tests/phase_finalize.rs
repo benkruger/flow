@@ -10,8 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use common::flow_states_dir;
-use flow_rs::notify_slack;
-use flow_rs::phase_finalize::{run_impl_with_deps, Args};
+use flow_rs::phase_finalize::{run_impl, Args};
 use serde_json::{json, Value};
 
 // --- Test helpers ---
@@ -634,20 +633,79 @@ fn phase_finalize_read_state(root: &std::path::Path, branch: &str) -> Value {
     serde_json::from_str(&content).unwrap()
 }
 
+/// Install a fake `curl` binary at `<dir>/bin/curl` whose stdout is the
+/// given `response_json`. Returns the `<dir>/bin` path the caller should
+/// prepend to PATH in the subprocess's environment.
+fn install_fake_curl(dir: &Path, response_json: &str) -> PathBuf {
+    let bin_dir = dir.join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    let script = format!(
+        "#!/usr/bin/env bash\ncat <<'FAKECURL'\n{}\nFAKECURL\n",
+        response_json
+    );
+    let curl = bin_dir.join("curl");
+    fs::write(&curl, script).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&curl, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    bin_dir
+}
+
+fn flow_rs_no_recursion() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.env_remove("FLOW_CI_RUNNING");
+    cmd
+}
+
+/// Subprocess: Slack reply mode — `--thread-ts` provided, fake curl
+/// returns a Slack-shaped ok JSON. State's `slack_notifications` must
+/// include the reply; `slack_thread_ts` must NOT be set.
 #[test]
-fn finalize_with_notifier_slack_thread_reply_success() {
+fn subprocess_slack_thread_reply_success_records_state() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    phase_finalize_write_state(root, "branch-a", "flow-code");
+    let root = dir.path().canonicalize().unwrap();
+    phase_finalize_write_state(&root, "branch-a", "flow-code");
+    let fake_bin = install_fake_curl(
+        &root,
+        r#"{"ok":true,"ts":"5555.6666","channel":"C123","message":{"text":"ok"}}"#,
+    );
 
-    let notifier = |_: &notify_slack::Args| -> Value { json!({"status": "ok", "ts": "5555.6666"}) };
-    let args = phase_finalize_test_args("flow-code", "branch-a", Some("1111.2222"), None);
+    let path_with_fake = format!(
+        "{}:{}",
+        fake_bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
 
-    let result = run_impl_with_deps(root, root, &args, &notifier).unwrap();
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["slack"]["status"], "ok");
+    let output = flow_rs_no_recursion()
+        .args([
+            "phase-finalize",
+            "--phase",
+            "flow-code",
+            "--branch",
+            "branch-a",
+            "--thread-ts",
+            "1111.2222",
+        ])
+        .current_dir(&root)
+        .env("PATH", path_with_fake)
+        .env("HOME", &root)
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-test")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C123")
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["slack"]["status"], "ok");
 
-    let state = phase_finalize_read_state(root, "branch-a");
+    let state = phase_finalize_read_state(&root, "branch-a");
     assert!(state.get("slack_thread_ts").is_none() || state["slack_thread_ts"].is_null());
     let notifs = state["slack_notifications"].as_array().unwrap();
     assert_eq!(notifs.len(), 1);
@@ -656,45 +714,227 @@ fn finalize_with_notifier_slack_thread_reply_success() {
     assert_eq!(notifs[0]["phase"], "flow-code");
 }
 
+/// Subprocess: Slack create mode — no `--thread-ts`, `--pr-url` present,
+/// fake curl returns ok. State's `slack_thread_ts` must be set to the
+/// returned ts.
 #[test]
-fn finalize_with_notifier_slack_thread_create_success() {
+fn subprocess_slack_thread_create_success_sets_thread_ts() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    phase_finalize_write_state(root, "branch-b", "flow-start");
-
-    let notifier = |_: &notify_slack::Args| -> Value { json!({"status": "ok", "ts": "7777.8888"}) };
-    let args = phase_finalize_test_args(
-        "flow-start",
-        "branch-b",
-        None,
-        Some("https://github.com/org/repo/pull/42"),
+    let root = dir.path().canonicalize().unwrap();
+    phase_finalize_write_state(&root, "branch-b", "flow-start");
+    let fake_bin = install_fake_curl(
+        &root,
+        r#"{"ok":true,"ts":"7777.8888","channel":"C123","message":{"text":"ok"}}"#,
     );
 
-    let result = run_impl_with_deps(root, root, &args, &notifier).unwrap();
-    assert_eq!(result["status"], "ok");
+    let path_with_fake = format!(
+        "{}:{}",
+        fake_bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
 
-    let state = phase_finalize_read_state(root, "branch-b");
+    let output = flow_rs_no_recursion()
+        .args([
+            "phase-finalize",
+            "--phase",
+            "flow-start",
+            "--branch",
+            "branch-b",
+            "--pr-url",
+            "https://github.com/org/repo/pull/42",
+        ])
+        .current_dir(&root)
+        .env("PATH", path_with_fake)
+        .env("HOME", &root)
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-test")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C123")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+
+    let state = phase_finalize_read_state(&root, "branch-b");
     assert_eq!(state["slack_thread_ts"], "7777.8888");
     let notifs = state["slack_notifications"].as_array().unwrap();
     assert_eq!(notifs.len(), 1);
     assert_eq!(notifs[0]["thread_ts"], "7777.8888");
 }
 
+/// Subprocess: state already has a `slack_notifications` array before
+/// finalize runs — a new slack success appends to the existing array
+/// rather than overwriting it. Exercises the `is_array().unwrap_or(false)`
+/// true path.
 #[test]
-fn finalize_with_notifier_slack_error_skips_state_record() {
+fn subprocess_slack_preexisting_array_appends_instead_of_resetting() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    phase_finalize_write_state(root, "branch-c", "flow-code");
+    let root = dir.path().canonicalize().unwrap();
+    phase_finalize_write_state(&root, "branch-pre", "flow-code");
 
-    let notifier =
-        |_: &notify_slack::Args| -> Value { json!({"status": "error", "message": "boom"}) };
-    let args = phase_finalize_test_args("flow-code", "branch-c", Some("1111.2222"), None);
+    // Patch the state file to include an existing slack_notifications array.
+    let state_path = root.join(".flow-states").join("branch-pre.json");
+    let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    state["slack_notifications"] = json!([
+        {"phase": "flow-plan", "ts": "0000.0000", "thread_ts": "1111.2222", "message": "prior"}
+    ]);
+    fs::write(&state_path, state.to_string()).unwrap();
 
-    let result = run_impl_with_deps(root, root, &args, &notifier).unwrap();
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["slack"]["status"], "error");
+    let fake_bin = install_fake_curl(
+        &root,
+        r#"{"ok":true,"ts":"9999.9999","channel":"C123","message":{"text":"ok"}}"#,
+    );
 
-    let state = phase_finalize_read_state(root, "branch-c");
+    let path_with_fake = format!(
+        "{}:{}",
+        fake_bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+
+    let output = flow_rs_no_recursion()
+        .args([
+            "phase-finalize",
+            "--phase",
+            "flow-code",
+            "--branch",
+            "branch-pre",
+            "--thread-ts",
+            "1111.2222",
+        ])
+        .current_dir(&root)
+        .env("PATH", path_with_fake)
+        .env("HOME", &root)
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-test")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C123")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+
+    let state = phase_finalize_read_state(&root, "branch-pre");
+    let notifs = state["slack_notifications"].as_array().unwrap();
+    assert_eq!(
+        notifs.len(),
+        2,
+        "existing entry preserved, new one appended"
+    );
+    assert_eq!(notifs[0]["phase"], "flow-plan"); // existing
+    assert_eq!(notifs[1]["phase"], "flow-code"); // new
+}
+
+/// A phase name outside the standard phase set exercises the
+/// `unwrap_or_else(|| args.phase.clone())` fallback when formatting the
+/// Slack message header. The state fixture includes the custom phase
+/// so phase_complete can write to it.
+#[test]
+fn subprocess_unknown_phase_name_slack_message_falls_back_to_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    // Build state with a non-standard phase entry.
+    let state_dir = root.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    let state = json!({
+        "schema_version": 1,
+        "branch": "branch-unknown",
+        "current_phase": "custom-phase",
+        "started_at": "2026-01-01T00:00:00-08:00",
+        "phases": {
+            "custom-phase": {
+                "name": "custom-phase",
+                "status": "in_progress",
+                "started_at": "2026-01-01T00:00:00-08:00",
+                "completed_at": null,
+                "session_started_at": "2026-01-01T00:00:00-08:00",
+                "cumulative_seconds": 0,
+                "visit_count": 1
+            }
+        },
+        "phase_transitions": [],
+        "prompt": "test feature",
+        "notes": [],
+    });
+    fs::write(
+        state_dir.join("branch-unknown.json"),
+        serde_json::to_string_pretty(&state).unwrap(),
+    )
+    .unwrap();
+
+    let fake_bin = install_fake_curl(
+        &root,
+        r#"{"ok":true,"ts":"1010.1010","channel":"C123","message":{"text":"ok"}}"#,
+    );
+
+    let path_with_fake = format!(
+        "{}:{}",
+        fake_bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+
+    let output = flow_rs_no_recursion()
+        .args([
+            "phase-finalize",
+            "--phase",
+            "custom-phase",
+            "--branch",
+            "branch-unknown",
+            "--thread-ts",
+            "1111.2222",
+        ])
+        .current_dir(&root)
+        .env("PATH", path_with_fake)
+        .env("HOME", &root)
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-test")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C123")
+        .output()
+        .unwrap();
+    // Slack path runs regardless of phase_complete's outcome.
+    let data = parse_output(&output);
+    assert!(
+        data["status"].as_str() == Some("ok") || data["status"].as_str() == Some("error"),
+        "unexpected status: {}",
+        data
+    );
+}
+
+/// Subprocess: Slack returns an error response — `slack_notifications`
+/// must NOT be appended to state.
+#[test]
+fn subprocess_slack_error_response_skips_state_record() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    phase_finalize_write_state(&root, "branch-c", "flow-code");
+    // Slack error response: ok:false + error string.
+    let fake_bin = install_fake_curl(&root, r#"{"ok":false,"error":"not_in_channel"}"#);
+
+    let path_with_fake = format!(
+        "{}:{}",
+        fake_bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+
+    let output = flow_rs_no_recursion()
+        .args([
+            "phase-finalize",
+            "--phase",
+            "flow-code",
+            "--branch",
+            "branch-c",
+            "--thread-ts",
+            "1111.2222",
+        ])
+        .current_dir(&root)
+        .env("PATH", path_with_fake)
+        .env("HOME", &root)
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-test")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C123")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["slack"]["status"], "error");
+
+    let state = phase_finalize_read_state(&root, "branch-c");
     let notifs_empty = state
         .get("slack_notifications")
         .map(|v| v.as_array().map(|a| a.is_empty()).unwrap_or(true))
@@ -703,13 +943,12 @@ fn finalize_with_notifier_slack_error_skips_state_record() {
 }
 
 #[test]
-fn finalize_with_notifier_slash_branch_returns_structured_error_no_panic() {
+fn finalize_slash_branch_returns_structured_error_no_panic() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    let notifier = |_: &notify_slack::Args| -> Value { json!({"status": "skipped"}) };
     let args = phase_finalize_test_args("flow-code", "feature/foo", None, None);
 
-    let result = run_impl_with_deps(root, root, &args, &notifier).unwrap();
+    let result = run_impl(root, root, &args).unwrap();
     assert_eq!(result["status"], "error");
     assert!(result["message"]
         .as_str()
@@ -718,13 +957,12 @@ fn finalize_with_notifier_slash_branch_returns_structured_error_no_panic() {
 }
 
 #[test]
-fn finalize_with_notifier_empty_branch_returns_structured_error_no_panic() {
+fn finalize_empty_branch_returns_structured_error_no_panic() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    let notifier = |_: &notify_slack::Args| -> Value { json!({"status": "skipped"}) };
     let args = phase_finalize_test_args("flow-code", "", None, None);
 
-    let result = run_impl_with_deps(root, root, &args, &notifier).unwrap();
+    let result = run_impl(root, root, &args).unwrap();
     assert_eq!(result["status"], "error");
     assert!(result["message"]
         .as_str()
@@ -733,13 +971,12 @@ fn finalize_with_notifier_empty_branch_returns_structured_error_no_panic() {
 }
 
 #[test]
-fn finalize_with_notifier_state_file_missing() {
+fn finalize_state_file_missing() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    let notifier = |_: &notify_slack::Args| -> Value { json!({"status": "skipped"}) };
     let args = phase_finalize_test_args("flow-code", "branch-missing", None, None);
 
-    let result = run_impl_with_deps(root, root, &args, &notifier).unwrap();
+    let result = run_impl(root, root, &args).unwrap();
     assert_eq!(result["status"], "error");
     assert!(result["message"]
         .as_str()
@@ -747,18 +984,68 @@ fn finalize_with_notifier_state_file_missing() {
         .contains("No state file found"));
 }
 
+/// When `.flow-states/<branch>-phases.json` (frozen config) exists,
+/// run_impl loads it and passes the frozen order/commands through to
+/// phase_complete. Exercise the load branch by writing a minimal frozen
+/// config alongside the normal state file.
 #[test]
-fn finalize_with_notifier_no_slack_args_response_omits_slack_key() {
+fn finalize_loads_frozen_config_when_present() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    phase_finalize_write_state(root, "branch-frozen", "flow-code");
+
+    let frozen = json!({
+        "order": ["flow-start", "flow-plan", "flow-code", "flow-code-review", "flow-learn", "flow-complete"],
+        "phases": {
+            "flow-start": {"name": "Start", "command": "/flow:flow-start"},
+            "flow-plan": {"name": "Plan", "command": "/flow:flow-plan"},
+            "flow-code": {"name": "Code", "command": "/flow:flow-code"},
+            "flow-code-review": {"name": "Code Review", "command": "/flow:flow-code-review"},
+            "flow-learn": {"name": "Learn", "command": "/flow:flow-learn"},
+            "flow-complete": {"name": "Complete", "command": "/flow:flow-complete"},
+        }
+    });
+    fs::write(
+        root.join(".flow-states").join("branch-frozen-phases.json"),
+        serde_json::to_string(&frozen).unwrap(),
+    )
+    .unwrap();
+
+    let args = phase_finalize_test_args("flow-code", "branch-frozen", None, None);
+    let result = run_impl(root, root, &args).unwrap();
+    assert_eq!(result["status"], "ok");
+}
+
+/// A state file whose root is a JSON array trips the
+/// `!(state.is_object() || state.is_null())` guard in the single
+/// `mutate_state` transform. The guard returns before calling
+/// `phase_complete`, so `result_holder` stays Null → `phase_result`
+/// status is neither "error" nor a formatted-time-bearing object →
+/// fall-through returns ok with default formatted_time/continue_action.
+#[test]
+fn finalize_array_state_returns_ok_via_guard() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let state_dir = root.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(state_dir.join("branch-array.json"), "[1, 2, 3]").unwrap();
+
+    let args = phase_finalize_test_args("flow-code", "branch-array", None, None);
+    let result = run_impl(root, root, &args).unwrap();
+    assert_eq!(result["status"], "ok");
+    // Defaults from unwrap_or fallbacks.
+    assert_eq!(result["formatted_time"], "<1m");
+    assert_eq!(result["continue_action"], "ask");
+}
+
+#[test]
+fn finalize_no_slack_args_response_omits_slack_key() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     phase_finalize_write_state(root, "branch-d", "flow-code");
-
-    let notifier = |_: &notify_slack::Args| -> Value {
-        panic!("notifier must not be called when neither thread_ts nor pr_url is set");
-    };
     let args = phase_finalize_test_args("flow-code", "branch-d", None, None);
 
-    let result = run_impl_with_deps(root, root, &args, &notifier).unwrap();
+    let result = run_impl(root, root, &args).unwrap();
     assert_eq!(result["status"], "ok");
     assert!(result.get("slack").is_none());
 

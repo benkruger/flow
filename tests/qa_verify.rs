@@ -1,25 +1,59 @@
-//! Integration tests for `src/qa_verify.rs`.
-//!
-//! Covers the CLI wrapper and the production subprocess runner inside
-//! `run_impl` that inline unit tests cannot reach. Inline tests drive
-//! `verify_impl` and `find_state_files` with injected closures and
-//! tempdir fixtures, but never spawn the real runner or the `run()`
-//! entry point.
+//! Integration tests for `src/qa_verify.rs`. Drive through the public
+//! `run_impl` entry and subprocess spawns of the compiled binary — no
+//! private helpers imported per `.claude/rules/test-placement.md`.
 
 use std::fs;
+use std::path::Path;
 use std::process::Command;
 
 use flow_rs::qa_verify;
-use flow_rs::qa_verify::verify_impl;
-use serde_json::{json, Value};
+use serde_json::Value;
 
-/// Subprocess: `bin/flow qa-verify --repo owner/nonexistent
-/// --project-root <tempdir>` drives `run()` through `run_impl` which
-/// builds the real subprocess runner. The runner's `gh pr list` call
-/// fails against a nonexistent repo — a legitimate production path —
-/// and the verify_impl pushes a "Could not fetch merged PRs" check.
-/// `run()` always exits 0 because qa-verify is a pure reporting
-/// command (see module doc comment).
+fn install_fake_gh(dir: &Path, stdout: &str, exit_code: u8) -> std::path::PathBuf {
+    let bin_dir = dir.join("fakebin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    let script = format!(
+        "#!/usr/bin/env bash\ncat <<'EOF'\n{}\nEOF\nexit {}\n",
+        stdout, exit_code
+    );
+    let gh = bin_dir.join("gh");
+    fs::write(&gh, script).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&gh, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    bin_dir
+}
+
+fn run_impl_with_fake_gh(fake_gh_dir: &Path, repo: &str, project_root: &Path) -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    let path_with_fake = format!(
+        "{}:{}",
+        fake_gh_dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    cmd.args([
+        "qa-verify",
+        "--repo",
+        repo,
+        "--project-root",
+        project_root.to_str().unwrap(),
+    ])
+    .env_remove("FLOW_CI_RUNNING")
+    .env("PATH", path_with_fake)
+    .env("HOME", project_root);
+    cmd
+}
+
+fn parse_last_json(output: &std::process::Output) -> Value {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let line = stdout.trim().lines().last().unwrap_or("");
+    serde_json::from_str(line).unwrap_or_else(|e| panic!("json parse failed: {} for {:?}", e, line))
+}
+
+// --- CLI integration ---
+
 #[test]
 fn qa_verify_cli_exits_zero_and_reports_check_failures() {
     let dir = tempfile::tempdir().unwrap();
@@ -37,28 +71,12 @@ fn qa_verify_cli_exits_zero_and_reports_check_failures() {
         .output()
         .expect("failed to spawn flow-rs");
 
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "qa-verify always exits 0, got {:?}\nstderr: {}",
-        output.status.code(),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("\"status\":\"ok\""),
-        "expected status=ok in stdout, got: {}",
-        stdout
-    );
-    assert!(
-        stdout.contains("\"checks\""),
-        "expected checks array in stdout, got: {}",
-        stdout
-    );
+    assert!(stdout.contains("\"status\":\"ok\""));
+    assert!(stdout.contains("\"checks\""));
 }
 
-/// Subprocess: tempdir carries a leftover state file. The check
-/// reports `"passed": false` for that assertion.
 #[test]
 fn qa_verify_cli_reports_leftover_state_file_failure() {
     let dir = tempfile::tempdir().unwrap();
@@ -81,221 +99,273 @@ fn qa_verify_cli_reports_leftover_state_file_failure() {
 
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("leftover"),
-        "expected 'leftover' in stdout, got: {}",
-        stdout
-    );
+    assert!(stdout.contains("leftover"));
 }
 
-/// Library-level: drives `run_impl` directly. The real inline runner
-/// closure fires, spawns `gh pr list` against a bogus repo, the `gh`
-/// command returns non-zero, and the runner closure returns `None`.
-/// The check table surfaces that path.
-#[test]
-fn qa_verify_run_impl_real_runner_none_branch_reports_fetch_failure() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().canonicalize().unwrap();
+// --- Library-level via run_impl(&Args) with fake gh ---
 
-    let args = qa_verify::Args {
-        repo: "owner/nonexistent-qa-verify-lib-test".to_string(),
+fn args_for(repo: &str, root: &Path) -> qa_verify::Args {
+    qa_verify::Args {
+        repo: repo.to_string(),
         project_root: root.to_string_lossy().to_string(),
-    };
-    let result = qa_verify::run_impl(&args).expect("run_impl returns Ok");
-    assert_eq!(result["status"], "ok");
-
-    let checks = result["checks"].as_array().expect("checks is array");
-    let pr_check = checks
-        .iter()
-        .find(|c| c["name"].as_str().is_some_and(|n| n.contains("PR")))
-        .expect("PR check exists");
-    // The gh call either failed (None → fetch-failure message) or
-    // succeeded with empty list (no merged PRs). Both branches set
-    // passed=false, which is what we're verifying as the "real
-    // runner was invoked and returned a structured response" path.
-    assert_eq!(pr_check["passed"], false);
-}
-
-// --- Library-level unit tests (migrated from src/qa_verify.rs) ---
-
-fn mock_ok_pr() -> Option<String> {
-    Some(serde_json::to_string(&json!([{"number": 1}])).unwrap())
-}
-
-fn mock_empty_list() -> Option<String> {
-    Some("[]".to_string())
+    }
 }
 
 #[test]
 fn test_verify_all_pass() {
+    // Empty dir + fake gh returning a merged-PR list → all checks pass.
     let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let fake = install_fake_gh(&root, r#"[{"number": 1}]"#, 0);
 
-    let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
-
-    assert_eq!(result["status"], "ok");
-    let checks = result["checks"].as_array().unwrap();
+    let output = run_impl_with_fake_gh(&fake, "owner/repo", &root)
+        .output()
+        .expect("spawn");
+    assert_eq!(output.status.code(), Some(0));
+    let data = parse_last_json(&output);
+    let checks = data["checks"].as_array().unwrap();
     assert!(checks.iter().all(|c| c["passed"] == true));
 }
 
 #[test]
 fn test_verify_leftover_state_file() {
     let dir = tempfile::tempdir().unwrap();
-    let state_dir = dir.path().join(".flow-states");
+    let root = dir.path().canonicalize().unwrap();
+    let state_dir = root.join(".flow-states");
     fs::create_dir(&state_dir).unwrap();
     fs::write(state_dir.join("leftover.json"), r#"{"branch":"leftover"}"#).unwrap();
+    let fake = install_fake_gh(&root, r#"[{"number": 1}]"#, 0);
 
-    let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
-
-    let checks = result["checks"].as_array().unwrap();
-    let state_check: Vec<&Value> = checks
+    let output = run_impl_with_fake_gh(&fake, "owner/repo", &root)
+        .output()
+        .expect("spawn");
+    let data = parse_last_json(&output);
+    let checks = data["checks"].as_array().unwrap();
+    let state_check = checks
         .iter()
-        .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
-        .collect();
-    assert!(!state_check.is_empty());
-    assert_eq!(state_check[0]["passed"], false);
+        .find(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
+        .expect("state check");
+    assert_eq!(state_check["passed"], false);
 }
 
 #[test]
 fn test_verify_leftover_worktree() {
     let dir = tempfile::tempdir().unwrap();
-    let wt_dir = dir.path().join(".worktrees").join("some-feature");
+    let root = dir.path().canonicalize().unwrap();
+    let wt_dir = root.join(".worktrees").join("some-feature");
     fs::create_dir_all(&wt_dir).unwrap();
+    let fake = install_fake_gh(&root, r#"[{"number": 1}]"#, 0);
 
-    let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
-
-    let checks = result["checks"].as_array().unwrap();
-    let wt_check: Vec<&Value> = checks
+    let output = run_impl_with_fake_gh(&fake, "owner/repo", &root)
+        .output()
+        .expect("spawn");
+    let data = parse_last_json(&output);
+    let checks = data["checks"].as_array().unwrap();
+    let wt_check = checks
         .iter()
-        .filter(|c| {
+        .find(|c| {
             c["name"]
                 .as_str()
                 .unwrap()
                 .to_lowercase()
                 .contains("worktree")
         })
-        .collect();
-    assert!(!wt_check.is_empty());
-    assert_eq!(wt_check[0]["passed"], false);
+        .expect("worktree check");
+    assert_eq!(wt_check["passed"], false);
 }
 
 #[test]
 fn test_verify_no_merged_pr() {
     let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let fake = install_fake_gh(&root, "[]", 0);
 
-    let result = verify_impl("owner/repo", dir.path(), &|_| mock_empty_list());
-
-    let checks = result["checks"].as_array().unwrap();
-    let pr_check: Vec<&Value> = checks
+    let output = run_impl_with_fake_gh(&fake, "owner/repo", &root)
+        .output()
+        .expect("spawn");
+    let data = parse_last_json(&output);
+    let checks = data["checks"].as_array().unwrap();
+    let pr_check = checks
         .iter()
-        .filter(|c| c["name"].as_str().unwrap().contains("PR"))
-        .collect();
-    assert!(!pr_check.is_empty());
-    assert_eq!(pr_check[0]["passed"], false);
+        .find(|c| c["name"].as_str().unwrap().contains("PR"))
+        .expect("PR check");
+    assert_eq!(pr_check["passed"], false);
+    assert!(pr_check["detail"]
+        .as_str()
+        .unwrap()
+        .contains("No merged PRs"));
 }
 
 #[test]
 fn test_verify_pr_fetch_failure() {
+    // Fake gh exits non-zero → subprocess_runner returns None.
     let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let fake = install_fake_gh(&root, "error", 1);
 
-    let result = verify_impl("owner/repo", dir.path(), &|_| None);
-
-    let checks = result["checks"].as_array().unwrap();
-    let pr_check: Vec<&Value> = checks
+    let output = run_impl_with_fake_gh(&fake, "owner/repo", &root)
+        .output()
+        .expect("spawn");
+    let data = parse_last_json(&output);
+    let checks = data["checks"].as_array().unwrap();
+    let pr_check = checks
         .iter()
-        .filter(|c| c["name"].as_str().unwrap().contains("PR"))
-        .collect();
-    assert!(!pr_check.is_empty());
-    assert_eq!(pr_check[0]["passed"], false);
+        .find(|c| c["name"].as_str().unwrap().contains("PR"))
+        .expect("PR check");
+    assert_eq!(pr_check["passed"], false);
+    assert!(pr_check["detail"]
+        .as_str()
+        .unwrap()
+        .contains("Could not fetch"));
 }
 
 #[test]
 fn test_verify_no_flow_states_dir() {
     let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let fake = install_fake_gh(&root, r#"[{"number": 1}]"#, 0);
 
-    let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
-
-    let checks = result["checks"].as_array().unwrap();
-    let state_check: Vec<&Value> = checks
+    let output = run_impl_with_fake_gh(&fake, "owner/repo", &root)
+        .output()
+        .expect("spawn");
+    let data = parse_last_json(&output);
+    let checks = data["checks"].as_array().unwrap();
+    let state_check = checks
         .iter()
-        .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
-        .collect();
-    assert!(!state_check.is_empty());
-    assert_eq!(state_check[0]["passed"], true);
+        .find(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
+        .expect("state check");
+    assert_eq!(state_check["passed"], true);
 }
 
 #[test]
 fn test_verify_excludes_orchestrate_files() {
     let dir = tempfile::tempdir().unwrap();
-    let state_dir = dir.path().join(".flow-states");
+    let root = dir.path().canonicalize().unwrap();
+    let state_dir = root.join(".flow-states");
     fs::create_dir(&state_dir).unwrap();
     fs::write(state_dir.join("orchestrate-queue.json"), "{}").unwrap();
+    let fake = install_fake_gh(&root, r#"[{"number": 1}]"#, 0);
 
-    let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
-
-    let checks = result["checks"].as_array().unwrap();
-    let state_check: Vec<&Value> = checks
+    let output = run_impl_with_fake_gh(&fake, "owner/repo", &root)
+        .output()
+        .expect("spawn");
+    let data = parse_last_json(&output);
+    let checks = data["checks"].as_array().unwrap();
+    let state_check = checks
         .iter()
-        .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
-        .collect();
-    assert_eq!(state_check[0]["passed"], true);
+        .find(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
+        .expect("state check");
+    assert_eq!(state_check["passed"], true);
 }
 
 #[test]
 fn test_verify_excludes_phases_files() {
     let dir = tempfile::tempdir().unwrap();
-    let state_dir = dir.path().join(".flow-states");
+    let root = dir.path().canonicalize().unwrap();
+    let state_dir = root.join(".flow-states");
     fs::create_dir(&state_dir).unwrap();
     fs::write(state_dir.join("feature-phases.json"), "{}").unwrap();
+    let fake = install_fake_gh(&root, r#"[{"number": 1}]"#, 0);
 
-    let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
-
-    let checks = result["checks"].as_array().unwrap();
-    let state_check: Vec<&Value> = checks
+    let output = run_impl_with_fake_gh(&fake, "owner/repo", &root)
+        .output()
+        .expect("spawn");
+    let data = parse_last_json(&output);
+    let checks = data["checks"].as_array().unwrap();
+    let state_check = checks
         .iter()
-        .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
-        .collect();
-    assert_eq!(state_check[0]["passed"], true);
-}
-
-/// Drives `subprocess_runner` Err path: nonexistent binary returns None.
-#[test]
-fn subprocess_runner_nonexistent_binary_returns_none() {
-    let result = flow_rs::qa_verify::subprocess_runner(&[
-        "/nonexistent/binary/path/does-not-exist-deadbeef",
-    ]);
-    assert!(result.is_none());
-}
-
-/// Drives `subprocess_runner` success branch via `/bin/echo` (always
-/// present on POSIX systems). Exits 0, returns captured stdout.
-#[test]
-fn subprocess_runner_success_branch_returns_stdout() {
-    let result = flow_rs::qa_verify::subprocess_runner(&["/bin/echo", "hello"]);
-    assert_eq!(result.as_deref(), Some("hello\n"));
-}
-
-/// Drives `subprocess_runner` non-zero exit: `/usr/bin/false` always
-/// exits 1. Returns None regardless of stdout.
-#[test]
-fn subprocess_runner_nonzero_exit_returns_none() {
-    // /usr/bin/false is present on all POSIX test environments.
-    let result = flow_rs::qa_verify::subprocess_runner(&["/usr/bin/false"]);
-    assert!(result.is_none());
+        .find(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
+        .expect("state check");
+    assert_eq!(state_check["passed"], true);
 }
 
 #[test]
 fn test_verify_excludes_dot_prefixed_json() {
     let dir = tempfile::tempdir().unwrap();
-    let state_dir = dir.path().join(".flow-states");
+    let root = dir.path().canonicalize().unwrap();
+    let state_dir = root.join(".flow-states");
     fs::create_dir(&state_dir).unwrap();
     fs::write(state_dir.join(".hidden-state.json"), "{}").unwrap();
+    let fake = install_fake_gh(&root, r#"[{"number": 1}]"#, 0);
 
-    let result = verify_impl("owner/repo", dir.path(), &|_| mock_ok_pr());
-
-    let checks = result["checks"].as_array().unwrap();
-    let state_check: Vec<&Value> = checks
+    let output = run_impl_with_fake_gh(&fake, "owner/repo", &root)
+        .output()
+        .expect("spawn");
+    let data = parse_last_json(&output);
+    let checks = data["checks"].as_array().unwrap();
+    let state_check = checks
         .iter()
-        .filter(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
-        .collect();
-    assert_eq!(state_check[0]["passed"], true);
+        .find(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
+        .expect("state check");
+    assert_eq!(state_check["passed"], true);
+}
+
+#[test]
+fn test_verify_excludes_non_json_files() {
+    // .flow-states/ contains a file that does NOT end in .json — the
+    // extension filter excludes it, so the state check still passes.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let state_dir = root.join(".flow-states");
+    fs::create_dir(&state_dir).unwrap();
+    fs::write(state_dir.join("something.txt"), "x").unwrap();
+    let fake = install_fake_gh(&root, r#"[{"number": 1}]"#, 0);
+
+    let output = run_impl_with_fake_gh(&fake, "owner/repo", &root)
+        .output()
+        .expect("spawn");
+    let data = parse_last_json(&output);
+    let checks = data["checks"].as_array().unwrap();
+    let state_check = checks
+        .iter()
+        .find(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
+        .expect("state check");
+    assert_eq!(state_check["passed"], true);
+}
+
+/// Restricted PATH (no `gh` binary anywhere) → Command::new().output()
+/// returns Err → subprocess_runner's `.ok()?` None branch fires →
+/// verify_impl records "Could not fetch merged PRs".
+#[test]
+fn subprocess_runner_spawn_failure_reports_fetch_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args([
+            "qa-verify",
+            "--repo",
+            "owner/repo",
+            "--project-root",
+            root.to_str().unwrap(),
+        ])
+        .env_remove("FLOW_CI_RUNNING")
+        .env("PATH", "/nonexistent-no-gh-here")
+        .env("HOME", &root)
+        .output()
+        .expect("spawn");
+    assert_eq!(output.status.code(), Some(0));
+    let data = parse_last_json(&output);
+    let checks = data["checks"].as_array().unwrap();
+    let pr_check = checks
+        .iter()
+        .find(|c| c["name"].as_str().unwrap().contains("PR"))
+        .expect("PR check");
+    assert_eq!(pr_check["passed"], false);
+    assert!(pr_check["detail"]
+        .as_str()
+        .unwrap()
+        .contains("Could not fetch"));
+}
+
+// --- Library-level: run_impl signature coverage ---
+
+#[test]
+fn run_impl_returns_ok_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let result = qa_verify::run_impl(&args_for("owner/nonexistent-lib", &root))
+        .expect("run_impl returns Ok");
+    assert_eq!(result["status"], "ok");
+    assert!(result["checks"].is_array());
 }

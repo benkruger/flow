@@ -54,6 +54,11 @@ pub fn queue_path(root: &Path) -> PathBuf {
 /// from the returned list. If `cleanup` is true, they are also deleted.
 /// Returns (entries, stale_found) where stale_found indicates whether
 /// any stale entries were encountered.
+///
+/// Called internally by `acquire` (cleanup=true) and `check`
+/// (cleanup=false). Exposed `pub` so tests can drive stale-handling
+/// and ordering branches directly without forcing every branch through
+/// the file-lock + timing dance the CLI surface wraps around it.
 pub fn list_queue(queue_dir: &Path, cleanup: bool) -> (Vec<(f64, String)>, bool) {
     let mut stale_found = false;
     let mut entries: Vec<(f64, String)> = Vec::new();
@@ -153,34 +158,13 @@ pub fn acquire(feature: &str, queue_dir: &Path) -> Value {
     }
 }
 
-/// Acquire with retry loop using the real thread::sleep.
-pub fn acquire_with_wait(feature: &str, queue_dir: &Path, timeout: u64, interval: u64) -> Value {
-    acquire_with_wait_impl(feature, queue_dir, timeout, interval, &mut |d| {
-        std::thread::sleep(d)
-    })
-}
-
-/// Seam-injected variant of [`acquire_with_wait`] that accepts a
-/// custom sleep closure. Tests substitute a no-op or side-effecting
-/// closure to drive every branch without blocking on real time.
+/// Acquire with retry loop using the real `thread::sleep`.
 ///
-/// Takes `&mut dyn FnMut(Duration)` rather than a generic `F`
-/// parameter so every caller's closure compiles into the SAME
-/// monomorphization. Generics create one monomorphization per
-/// caller type, and callers from other test binaries (or from
-/// code paths that never execute in the per-file test binary)
-/// show up as `Unexecuted instantiation`, inflating the
-/// uncovered-region/line counts. See
-/// `.claude/rules/rust-patterns.md` "Seam-injection variant for
-/// externally-coupled code" and the coverage-quest prompt's
-/// "Generic functions" note.
-pub fn acquire_with_wait_impl(
-    feature: &str,
-    queue_dir: &Path,
-    timeout: u64,
-    interval: u64,
-    sleep_fn: &mut dyn FnMut(Duration),
-) -> Value {
+/// Called cross-module from `tests/concurrency.rs` under real
+/// thread contention — per the concurrency test's inline rationale,
+/// direct library calls avoid fork/exec contention that pushes
+/// polling losers past their timeout under nextest parallelism.
+pub fn acquire_with_wait(feature: &str, queue_dir: &Path, timeout: u64, interval: u64) -> Value {
     let start = std::time::Instant::now();
     let result = acquire(feature, queue_dir);
     if result["status"] == "acquired" {
@@ -198,7 +182,7 @@ pub fn acquire_with_wait_impl(
             });
         }
         let remaining = timeout - elapsed;
-        sleep_fn(Duration::from_secs(std::cmp::min(interval, remaining)));
+        std::thread::sleep(Duration::from_secs(std::cmp::min(interval, remaining)));
         let result = acquire(feature, queue_dir);
         if result["status"] == "acquired" {
             return result;
@@ -229,7 +213,9 @@ pub fn release(feature: &str, queue_dir: &Path) -> Value {
     json!({"status": "released", "lock_path": lock_path, "was_present": was_present})
 }
 
-/// Check lock status without modifying.
+/// Check lock status without modifying. Wrapped by `run_impl_main`
+/// for the `--check` CLI dispatch; also exposed `pub` for library
+/// tests that exercise the branch on an empty vs. populated queue.
 pub fn check(queue_dir: &Path) -> Value {
     let lock_path = queue_dir.display().to_string();
     let (entries, _) = list_queue(queue_dir, false);

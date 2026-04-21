@@ -29,8 +29,7 @@
 //! - [`run_impl_main`] — main-arm dispatcher accepting injected
 //!   `config_reader` and `poster` closures, returning `(Value, i32)`.
 
-use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+use std::process::Command;
 
 use clap::Parser;
 use serde_json::{json, Value};
@@ -181,64 +180,31 @@ pub fn post_message_inner(
     }
 }
 
-/// Run a curl-shaped subprocess with timeout via an injected child factory.
-///
-/// `child_factory` returns a spawned `Child` (with stdout/stderr piped) for
-/// the supplied args. The seam exists so unit tests cover the success,
-/// timeout-kill, and spawn-error branches without spawning real `curl`.
-/// Production wraps this with a closure that calls `Command::new("curl")`.
-pub fn run_curl_with_timeout_inner(
-    args: &[&str],
-    timeout_secs: u64,
-    child_factory: &dyn Fn(&[&str]) -> std::io::Result<Child>,
-) -> Result<(i32, String, String), String> {
-    let mut child = child_factory(args).map_err(|e| format!("Failed to spawn curl: {}", e))?;
-
-    let timeout = Duration::from_secs(timeout_secs);
-    let start = Instant::now();
-    let poll_interval = Duration::from_millis(50);
-
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => {
-                let output = child.wait_with_output().map_err(|e| e.to_string())?;
-                let code = output.status.code().unwrap_or(1);
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                return Ok((code, stdout, stderr));
-            }
-            Ok(None) => {
-                if start.elapsed() >= timeout {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err("Timeout posting to Slack".to_string());
-                }
-                let remaining = timeout.saturating_sub(start.elapsed());
-                std::thread::sleep(poll_interval.min(remaining));
-            }
-            Err(e) => return Err(e.to_string()),
-        }
-    }
-}
-
-/// Run curl as a subprocess with timeout. Production binder over
-/// [`run_curl_with_timeout_inner`].
+/// Run curl as a subprocess. `timeout_secs` is forwarded to curl via
+/// `--max-time`, letting curl itself enforce the timeout rather than a
+/// hand-rolled polling loop — this collapses the timeout, success, and
+/// spawn-failure branches into a single `Command::output()` call per
+/// `.claude/rules/testability-means-simplicity.md`.
 pub fn run_curl_with_timeout(
     args: &[&str],
     timeout_secs: u64,
 ) -> Result<(i32, String, String), String> {
-    run_curl_with_timeout_inner(args, timeout_secs, &|args| {
-        Command::new("curl")
-            .args(args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-    })
+    let timeout_str = timeout_secs.to_string();
+    let mut cmd_args: Vec<&str> = vec!["--max-time", &timeout_str];
+    cmd_args.extend_from_slice(args);
+    let output = Command::new("curl")
+        .args(&cmd_args)
+        .output()
+        .map_err(|e| format!("Failed to spawn curl: {}", e))?;
+    let code = output.status.code().unwrap_or(1);
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    Ok((code, stdout, stderr))
 }
 
 /// Core notification logic with injectable config reader and poster.
 #[allow(clippy::type_complexity)]
-pub fn notify_with_deps(
+fn notify_with_deps(
     args: &Args,
     config_reader: &dyn Fn() -> Option<SlackConfig>,
     poster: &dyn Fn(&str, &str, &str, Option<&str>) -> Value,
@@ -267,16 +233,4 @@ pub fn notify(args: &Args) -> Value {
     notify_with_deps(args, &read_slack_config, &|bot, channel, text, tts| {
         post_message_inner(bot, channel, text, tts, &run_curl_with_timeout)
     })
-}
-
-/// Main-arm dispatcher: compute the notify result and pair it with an
-/// exit code. Always returns `(value, 0)` — failure modes surface as
-/// `status: "error"` inside the Value, never via shell exit code.
-#[allow(clippy::type_complexity)]
-pub fn run_impl_main(
-    args: Args,
-    config_reader: &dyn Fn() -> Option<SlackConfig>,
-    poster: &dyn Fn(&str, &str, &str, Option<&str>) -> Value,
-) -> (Value, i32) {
-    (notify_with_deps(&args, config_reader, poster), 0)
 }

@@ -1,3 +1,7 @@
+//! Integration tests for `flow_rs check-phase`. Drive through the public
+//! entry points only — no private helpers imported per
+//! `.claude/rules/test-placement.md`.
+
 mod common;
 
 use std::fs;
@@ -5,12 +9,12 @@ use std::path::Path;
 use std::process::Command;
 
 use common::flow_states_dir;
-use flow_rs::check_phase::{check_phase, run_impl_main, run_impl_main_with_resolver};
-use flow_rs::phase_config::{self, PhaseConfig, PHASE_ORDER};
-use indexmap::IndexMap;
+use flow_rs::check_phase::run_impl_main;
+use flow_rs::phase_config::PHASE_ORDER;
 use serde_json::{json, Value};
 
-fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> String {
+/// Build a state-file JSON matching the default phase order.
+fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
     let order = [
         "flow-start",
         "flow-plan",
@@ -31,38 +35,53 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> String {
     let status_map: std::collections::HashMap<&str, &str> =
         phase_statuses.iter().copied().collect();
 
-    let mut phases = String::from("{");
-    for (i, &p) in order.iter().enumerate() {
-        if i > 0 {
-            phases.push(',');
-        }
+    let mut phases = serde_json::Map::new();
+    for p in order {
         let status = status_map.get(p).copied().unwrap_or("pending");
-        let name = name_map.get(p).unwrap_or(&p);
+        let name = name_map.get(p).copied().unwrap_or(p);
         let visit_count = if status == "complete" || status == "in_progress" {
             1
         } else {
             0
         };
-        phases.push_str(&format!(
-            r#""{}":{{"name":"{}","status":"{}","started_at":null,"completed_at":null,"session_started_at":null,"cumulative_seconds":0,"visit_count":{}}}"#,
-            p, name, status, visit_count
-        ));
+        phases.insert(
+            p.to_string(),
+            json!({
+                "name": name,
+                "status": status,
+                "started_at": null,
+                "completed_at": null,
+                "session_started_at": null,
+                "cumulative_seconds": 0,
+                "visit_count": visit_count,
+            }),
+        );
     }
-    phases.push('}');
 
-    format!(
-        r#"{{"branch":"test-feature","current_phase":"{}","phases":{}}}"#,
-        current_phase, phases
-    )
+    json!({
+        "branch": "test-feature",
+        "current_phase": current_phase,
+        "phases": phases,
+    })
 }
 
-fn setup_state(dir: &std::path::Path, branch: &str, state_json: &str) {
+fn write_state(root: &Path, branch: &str, state: Value) {
+    let dir = root.join(".flow-states");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join(format!("{}.json", branch)), state.to_string()).unwrap();
+}
+
+fn setup_state(dir: &Path, branch: &str, state_json: &Value) {
     let state_dir = flow_states_dir(dir);
     fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join(format!("{}.json", branch)), state_json).unwrap();
+    fs::write(
+        state_dir.join(format!("{}.json", branch)),
+        state_json.to_string(),
+    )
+    .unwrap();
 }
 
-fn setup_git_repo(dir: &std::path::Path, branch: &str) {
+fn setup_git_repo(dir: &Path, branch: &str) {
     Command::new("git")
         .args(["-c", "init.defaultBranch=main", "init"])
         .current_dir(dir)
@@ -88,7 +107,6 @@ fn setup_git_repo(dir: &std::path::Path, branch: &str) {
         .current_dir(dir)
         .output()
         .unwrap();
-    // Create and switch to feature branch
     Command::new("git")
         .args(["checkout", "-b", branch])
         .current_dir(dir)
@@ -96,12 +114,20 @@ fn setup_git_repo(dir: &std::path::Path, branch: &str) {
         .unwrap();
 }
 
+fn flow_rs() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.env_remove("FLOW_CI_RUNNING");
+    cmd
+}
+
+// --- CLI integration tests ---
+
 #[test]
 fn phase_1_always_exits_0() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+    let output = flow_rs()
         .env_remove("FLOW_SIMULATE_BRANCH")
         .args(["check-phase", "--required", "flow-start"])
         .current_dir(dir.path())
@@ -115,7 +141,7 @@ fn no_state_file_exits_1() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+    let output = flow_rs()
         .env_remove("FLOW_SIMULATE_BRANCH")
         .args(["check-phase", "--required", "flow-plan"])
         .current_dir(dir.path())
@@ -127,14 +153,14 @@ fn no_state_file_exits_1() {
 }
 
 #[test]
-fn previous_phase_pending_blocks() {
+fn previous_phase_pending_blocks_cli() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
 
     let state = make_state("flow-plan", &[("flow-start", "pending")]);
     setup_state(dir.path(), "test-feature", &state);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+    let output = flow_rs()
         .env_remove("FLOW_SIMULATE_BRANCH")
         .args(["check-phase", "--required", "flow-plan"])
         .current_dir(dir.path())
@@ -147,14 +173,14 @@ fn previous_phase_pending_blocks() {
 }
 
 #[test]
-fn previous_phase_complete_allows() {
+fn previous_phase_complete_allows_cli() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
 
     let state = make_state("flow-plan", &[("flow-start", "complete")]);
     setup_state(dir.path(), "test-feature", &state);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+    let output = flow_rs()
         .env_remove("FLOW_SIMULATE_BRANCH")
         .args(["check-phase", "--required", "flow-plan"])
         .current_dir(dir.path())
@@ -171,7 +197,7 @@ fn branch_flag_uses_specified_state_file() {
     let state = make_state("flow-plan", &[("flow-start", "complete")]);
     setup_state(dir.path(), "other-feature", &state);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+    let output = flow_rs()
         .env_remove("FLOW_SIMULATE_BRANCH")
         .args([
             "check-phase",
@@ -191,14 +217,12 @@ fn no_state_file_for_current_branch() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "main");
 
-    // Create state files for OTHER branches — resolve_branch targets only
-    // the current branch, so check-phase reports no feature on "main".
     for name in ["feat-a", "feat-b"] {
         let state = make_state("flow-plan", &[("flow-start", "complete")]);
         setup_state(dir.path(), name, &state);
     }
 
-    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+    let output = flow_rs()
         .env_remove("FLOW_SIMULATE_BRANCH")
         .args(["check-phase", "--required", "flow-plan"])
         .current_dir(dir.path())
@@ -221,13 +245,12 @@ fn frozen_phases_file_is_loaded() {
     let state = make_state("flow-plan", &[("flow-start", "complete")]);
     setup_state(dir.path(), "test-feature", &state);
 
-    // Copy flow-phases.json as frozen phases
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let source = std::path::PathBuf::from(manifest_dir).join("flow-phases.json");
     let dest = flow_states_dir(dir.path()).join("test-feature-phases.json");
     fs::copy(source, dest).unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+    let output = flow_rs()
         .env_remove("FLOW_SIMULATE_BRANCH")
         .args(["check-phase", "--required", "flow-plan"])
         .current_dir(dir.path())
@@ -236,299 +259,33 @@ fn frozen_phases_file_is_loaded() {
     assert_eq!(output.status.code(), Some(0));
 }
 
-// --- Library-level tests (migrated from inline `#[cfg(test)]`) ---
-
-fn make_state_lib(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
-    let phase_names = phase_config::phase_names();
-    let mut phases = serde_json::Map::new();
-    for &p in PHASE_ORDER {
-        let status = phase_statuses
-            .iter()
-            .find(|(k, _)| *k == p)
-            .map(|(_, v)| *v)
-            .unwrap_or("pending");
-        let visit_count = if status == "complete" || status == "in_progress" {
-            1
-        } else {
-            0
-        };
-        phases.insert(
-            p.to_string(),
-            json!({
-                "name": phase_names.get(p).unwrap_or(&String::new()),
-                "status": status,
-                "started_at": null,
-                "completed_at": null,
-                "session_started_at": if status == "in_progress" { json!("2026-01-01T00:00:00Z") } else { json!(null) },
-                "cumulative_seconds": 0,
-                "visit_count": visit_count,
-            }),
-        );
-    }
-    json!({
-        "branch": "test-feature",
-        "current_phase": current_phase,
-        "phases": phases,
-    })
-}
-
+/// `check-phase` from a non-git cwd with no --branch returns "Could not
+/// determine current git branch". Exercises the resolve_branch->None
+/// arm; verified via subprocess so the test process's own git cwd does
+/// not interfere.
 #[test]
-fn previous_phase_pending_blocks_lib() {
-    let state = make_state_lib("flow-plan", &[("flow-start", "pending")]);
-    let (allowed, output) = check_phase(&state, "flow-plan", None).unwrap();
-    assert!(!allowed);
-    assert!(output.contains("BLOCKED"));
-    assert!(output.contains("pending"));
-}
+fn cli_no_branch_in_non_git_cwd_blocks() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().canonicalize().unwrap();
 
-#[test]
-fn previous_phase_in_progress_blocks_lib() {
-    let state = make_state_lib("flow-plan", &[("flow-start", "in_progress")]);
-    let (allowed, output) = check_phase(&state, "flow-plan", None).unwrap();
-    assert!(!allowed);
-    assert!(output.contains("BLOCKED"));
-    assert!(output.contains("in_progress"));
-}
-
-#[test]
-fn previous_phase_complete_allows_lib() {
-    let state = make_state_lib("flow-plan", &[("flow-start", "complete")]);
-    let (allowed, _output) = check_phase(&state, "flow-plan", None).unwrap();
-    assert!(allowed);
-}
-
-#[test]
-fn sequential_chain_phase_4_with_1_to_3_complete() {
-    let state = make_state_lib(
-        "flow-code-review",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "complete"),
-        ],
+    let output = flow_rs()
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env("FLOW_SIMULATE_BRANCH", "")
+        .args(["check-phase", "--required", "flow-plan"])
+        .current_dir(&dir)
+        .env("GIT_CEILING_DIRECTORIES", &dir)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Could not determine current git branch"),
+        "expected branch-resolution block, got: {}",
+        stdout
     );
-    let (allowed, _) = check_phase(&state, "flow-code-review", None).unwrap();
-    assert!(allowed);
 }
 
-#[test]
-fn re_entering_completed_phase_shows_note() {
-    let mut state = make_state_lib(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "complete")],
-    );
-    state["phases"]["flow-plan"]["visit_count"] = json!(2);
-    let (allowed, output) = check_phase(&state, "flow-plan", None).unwrap();
-    assert!(allowed);
-    assert!(output.contains("previously completed"));
-    assert!(output.contains("2 visit(s)"));
-}
-
-#[test]
-fn re_entering_completed_phase_without_visit_count_reports_zero() {
-    let mut state = make_state_lib(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "complete")],
-    );
-    state["phases"]["flow-plan"]
-        .as_object_mut()
-        .unwrap()
-        .remove("visit_count");
-    let (allowed, output) = check_phase(&state, "flow-plan", None).unwrap();
-    assert!(allowed);
-    assert!(output.contains("previously completed"));
-    assert!(output.contains("0 visit(s)"));
-}
-
-#[test]
-fn first_visit_no_previously_completed_message() {
-    let state = make_state_lib("flow-plan", &[("flow-start", "complete")]);
-    let (allowed, output) = check_phase(&state, "flow-plan", None).unwrap();
-    assert!(allowed);
-    assert!(!output.contains("previously completed"));
-}
-
-#[test]
-fn phase_5_requires_phase_4_complete() {
-    let state = make_state_lib(
-        "flow-learn",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "complete"),
-            ("flow-code-review", "pending"),
-        ],
-    );
-    let (allowed, output) = check_phase(&state, "flow-learn", None).unwrap();
-    assert!(!allowed);
-    assert!(output.contains("Phase 4"));
-}
-
-#[test]
-fn phase_6_requires_phase_5_complete() {
-    let state = make_state_lib(
-        "flow-complete",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "complete"),
-            ("flow-code-review", "complete"),
-            ("flow-learn", "pending"),
-        ],
-    );
-    let (allowed, output) = check_phase(&state, "flow-complete", None).unwrap();
-    assert!(!allowed);
-    assert!(output.contains("Phase 5"));
-}
-
-#[test]
-fn missing_phases_key_blocks() {
-    let state = json!({"branch": "test", "current_phase": "flow-plan"});
-    let (allowed, output) = check_phase(&state, "flow-plan", None).unwrap();
-    assert!(!allowed);
-    assert!(output.contains("BLOCKED"));
-}
-
-#[test]
-fn blocked_message_includes_correct_command() {
-    let state = make_state_lib(
-        "flow-code-review",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "pending"),
-        ],
-    );
-    let (allowed, output) = check_phase(&state, "flow-code-review", None).unwrap();
-    assert!(!allowed);
-    assert!(output.contains("/flow:flow-code"));
-}
-
-#[test]
-fn invalid_phase_name_errors() {
-    let state = make_state_lib("flow-start", &[("flow-start", "complete")]);
-    let result = check_phase(&state, "nonexistent", None);
-    assert!(result.is_err());
-}
-
-#[test]
-fn check_phase_uses_frozen_config_lib() {
-    let config = PhaseConfig {
-        order: vec![
-            "flow-start".into(),
-            "flow-plan".into(),
-            "flow-code-review".into(),
-        ],
-        names: {
-            let mut m = IndexMap::new();
-            m.insert("flow-start".into(), "Start".into());
-            m.insert("flow-plan".into(), "Plan".into());
-            m.insert("flow-code-review".into(), "Review".into());
-            m
-        },
-        numbers: {
-            let mut m = IndexMap::new();
-            m.insert("flow-start".into(), 1);
-            m.insert("flow-plan".into(), 2);
-            m.insert("flow-code-review".into(), 3);
-            m
-        },
-        commands: {
-            let mut m = IndexMap::new();
-            m.insert("flow-start".into(), "/t:a".into());
-            m.insert("flow-plan".into(), "/t:b".into());
-            m.insert("flow-code-review".into(), "/t:c".into());
-            m
-        },
-    };
-    let state = make_state_lib(
-        "flow-code-review",
-        &[("flow-start", "complete"), ("flow-plan", "complete")],
-    );
-    let (allowed, _) = check_phase(&state, "flow-code-review", Some(&config)).unwrap();
-    assert!(allowed);
-}
-
-#[test]
-fn check_phase_frozen_config_uses_correct_predecessor() {
-    let config = PhaseConfig {
-        order: vec!["flow-start".into(), "flow-code".into(), "flow-plan".into()],
-        names: {
-            let mut m = IndexMap::new();
-            m.insert("flow-start".into(), "Start".into());
-            m.insert("flow-code".into(), "Code".into());
-            m.insert("flow-plan".into(), "Plan".into());
-            m
-        },
-        numbers: {
-            let mut m = IndexMap::new();
-            m.insert("flow-start".into(), 1);
-            m.insert("flow-code".into(), 2);
-            m.insert("flow-plan".into(), 3);
-            m
-        },
-        commands: {
-            let mut m = IndexMap::new();
-            m.insert("flow-start".into(), "/t:a".into());
-            m.insert("flow-code".into(), "/t:b".into());
-            m.insert("flow-plan".into(), "/t:c".into());
-            m
-        },
-    };
-    let state = make_state_lib(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-code", "pending")],
-    );
-    let (allowed, output) = check_phase(&state, "flow-plan", Some(&config)).unwrap();
-    assert!(!allowed);
-    assert!(output.contains("BLOCKED"));
-}
-
-#[test]
-fn first_phase_has_no_prerequisites() {
-    let state = make_state_lib("flow-start", &[]);
-    let (allowed, output) = check_phase(&state, "flow-start", None).unwrap();
-    assert!(allowed);
-    assert!(output.is_empty());
-}
-
-#[test]
-fn missing_prev_name_falls_back_to_key() {
-    let config = PhaseConfig {
-        order: vec!["flow-start".into(), "flow-plan".into()],
-        names: IndexMap::new(),
-        numbers: IndexMap::new(),
-        commands: IndexMap::new(),
-    };
-    let state = make_state_lib("flow-plan", &[("flow-start", "pending")]);
-    let (allowed, output) = check_phase(&state, "flow-plan", Some(&config)).unwrap();
-    assert!(!allowed);
-    assert!(output.contains("flow-start"));
-    assert!(output.contains("/flow:flow-start"));
-}
-
-#[test]
-fn missing_phase_name_falls_back_to_key() {
-    let mut names = IndexMap::new();
-    names.insert("flow-start".into(), "Start".into());
-    let config = PhaseConfig {
-        order: vec!["flow-start".into(), "flow-plan".into()],
-        names,
-        numbers: IndexMap::new(),
-        commands: IndexMap::new(),
-    };
-    let state = make_state_lib("flow-plan", &[("flow-start", "pending")]);
-    let (allowed, output) = check_phase(&state, "flow-plan", Some(&config)).unwrap();
-    assert!(!allowed);
-    assert!(output.contains("flow-plan"));
-}
-
-fn write_state_lib(root: &Path, branch: &str, state: Value) {
-    let dir = root.join(".flow-states");
-    std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join(format!("{}.json", branch));
-    std::fs::write(&path, state.to_string()).unwrap();
-}
+// --- run_impl_main tests (library-level via public entry point) ---
 
 #[test]
 fn run_impl_main_first_phase_returns_empty_and_exit_0() {
@@ -553,13 +310,13 @@ fn run_impl_main_loads_frozen_phase_config_when_present() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();
     let states = root.join(".flow-states");
-    std::fs::create_dir_all(&states).unwrap();
+    fs::create_dir_all(&states).unwrap();
     let branch = "test-frozen-load";
-    let state = make_state_lib(
+    let state = make_state(
         "flow-plan",
         &[("flow-start", "complete"), ("flow-plan", "in_progress")],
     );
-    std::fs::write(
+    fs::write(
         states.join(format!("{}.json", branch)),
         serde_json::to_string(&state).unwrap(),
     )
@@ -576,7 +333,7 @@ fn run_impl_main_loads_frozen_phase_config_when_present() {
             "flow-complete": {"name": "Complete", "command": "/flow:flow-complete"},
         }
     });
-    std::fs::write(
+    fs::write(
         states.join(format!("{}-phases.json", branch)),
         serde_json::to_string(&frozen).unwrap(),
     )
@@ -588,21 +345,12 @@ fn run_impl_main_loads_frozen_phase_config_when_present() {
 }
 
 #[test]
-fn run_impl_main_with_resolver_none_returns_blocked() {
-    let dir = tempfile::tempdir().unwrap();
-    let resolver = |_: Option<&str>, _: &Path| -> Option<String> { None };
-    let (output, code) = run_impl_main_with_resolver("flow-plan", None, dir.path(), &resolver);
-    assert_eq!(code, 1);
-    assert!(output.contains("BLOCKED: Could not determine current git branch"));
-}
-
-#[test]
 fn run_impl_main_state_file_is_directory_returns_blocked() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();
     let states = root.join(".flow-states");
-    std::fs::create_dir_all(&states).unwrap();
-    std::fs::create_dir(states.join("test-feature.json")).unwrap();
+    fs::create_dir_all(&states).unwrap();
+    fs::create_dir(states.join("test-feature.json")).unwrap();
 
     let (output, code) = run_impl_main("flow-plan", Some("test-feature"), &root);
     assert_eq!(code, 1);
@@ -612,8 +360,8 @@ fn run_impl_main_state_file_is_directory_returns_blocked() {
 #[test]
 fn run_impl_main_unparseable_state_file_returns_blocked() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".flow-states")).unwrap();
-    std::fs::write(
+    fs::create_dir_all(dir.path().join(".flow-states")).unwrap();
+    fs::write(
         dir.path().join(".flow-states").join("test.json"),
         "not-valid-json",
     )
@@ -627,8 +375,8 @@ fn run_impl_main_unparseable_state_file_returns_blocked() {
 #[test]
 fn run_impl_main_allowed_returns_zero() {
     let dir = tempfile::tempdir().unwrap();
-    let state = make_state_lib("flow-plan", &[("flow-start", "complete")]);
-    write_state_lib(dir.path(), "test", state);
+    let state = make_state("flow-plan", &[("flow-start", "complete")]);
+    write_state(dir.path(), "test", state);
     let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
     assert_eq!(code, 0);
     assert!(out.is_empty());
@@ -637,25 +385,148 @@ fn run_impl_main_allowed_returns_zero() {
 #[test]
 fn run_impl_main_blocked_returns_one_with_blocked_message() {
     let dir = tempfile::tempdir().unwrap();
-    let state = make_state_lib("flow-plan", &[("flow-start", "pending")]);
-    write_state_lib(dir.path(), "test", state);
+    let state = make_state("flow-plan", &[("flow-start", "pending")]);
+    write_state(dir.path(), "test", state);
     let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
     assert_eq!(code, 1);
     assert!(out.contains("BLOCKED"));
 }
 
 #[test]
+fn run_impl_main_previous_phase_in_progress_blocks() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = make_state("flow-plan", &[("flow-start", "in_progress")]);
+    write_state(dir.path(), "test", state);
+    let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
+    assert_eq!(code, 1);
+    assert!(out.contains("BLOCKED"));
+    assert!(out.contains("in_progress"));
+}
+
+#[test]
+fn run_impl_main_sequential_chain_phase_4_allowed() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = make_state(
+        "flow-code-review",
+        &[
+            ("flow-start", "complete"),
+            ("flow-plan", "complete"),
+            ("flow-code", "complete"),
+        ],
+    );
+    write_state(dir.path(), "test", state);
+    let (_, code) = run_impl_main("flow-code-review", Some("test"), dir.path());
+    assert_eq!(code, 0);
+}
+
+#[test]
 fn run_impl_main_reentry_returns_note_and_zero() {
     let dir = tempfile::tempdir().unwrap();
-    let mut state = make_state_lib(
+    let mut state = make_state(
         "flow-plan",
         &[("flow-start", "complete"), ("flow-plan", "complete")],
     );
     state["phases"]["flow-plan"]["visit_count"] = json!(2);
-    write_state_lib(dir.path(), "test", state);
+    write_state(dir.path(), "test", state);
     let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
     assert_eq!(code, 0);
     assert!(out.contains("previously completed"));
+    assert!(out.contains("2 visit(s)"));
+}
+
+#[test]
+fn run_impl_main_reentry_missing_visit_count_reports_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = make_state(
+        "flow-plan",
+        &[("flow-start", "complete"), ("flow-plan", "complete")],
+    );
+    state["phases"]["flow-plan"]
+        .as_object_mut()
+        .unwrap()
+        .remove("visit_count");
+    write_state(dir.path(), "test", state);
+    let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
+    assert_eq!(code, 0);
+    assert!(out.contains("previously completed"));
+    assert!(out.contains("0 visit(s)"));
+}
+
+#[test]
+fn run_impl_main_first_visit_no_previously_completed_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = make_state("flow-plan", &[("flow-start", "complete")]);
+    write_state(dir.path(), "test", state);
+    let (out, _) = run_impl_main("flow-plan", Some("test"), dir.path());
+    assert!(!out.contains("previously completed"));
+}
+
+#[test]
+fn run_impl_main_phase_5_requires_phase_4_complete() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = make_state(
+        "flow-learn",
+        &[
+            ("flow-start", "complete"),
+            ("flow-plan", "complete"),
+            ("flow-code", "complete"),
+            ("flow-code-review", "pending"),
+        ],
+    );
+    write_state(dir.path(), "test", state);
+    let (out, code) = run_impl_main("flow-learn", Some("test"), dir.path());
+    assert_eq!(code, 1);
+    assert!(out.contains("Phase 4"));
+}
+
+#[test]
+fn run_impl_main_phase_6_requires_phase_5_complete() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = make_state(
+        "flow-complete",
+        &[
+            ("flow-start", "complete"),
+            ("flow-plan", "complete"),
+            ("flow-code", "complete"),
+            ("flow-code-review", "complete"),
+            ("flow-learn", "pending"),
+        ],
+    );
+    write_state(dir.path(), "test", state);
+    let (out, code) = run_impl_main("flow-complete", Some("test"), dir.path());
+    assert_eq!(code, 1);
+    assert!(out.contains("Phase 5"));
+}
+
+#[test]
+fn run_impl_main_missing_phases_key_blocks() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join(".flow-states")).unwrap();
+    fs::write(
+        dir.path().join(".flow-states").join("test.json"),
+        json!({"branch": "test", "current_phase": "flow-plan"}).to_string(),
+    )
+    .unwrap();
+    let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
+    assert_eq!(code, 1);
+    assert!(out.contains("BLOCKED"));
+}
+
+#[test]
+fn run_impl_main_blocked_message_includes_correct_command() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = make_state(
+        "flow-code-review",
+        &[
+            ("flow-start", "complete"),
+            ("flow-plan", "complete"),
+            ("flow-code", "pending"),
+        ],
+    );
+    write_state(dir.path(), "test", state);
+    let (out, code) = run_impl_main("flow-code-review", Some("test"), dir.path());
+    assert_eq!(code, 1);
+    assert!(out.contains("/flow:flow-code"));
 }
 
 #[test]
@@ -678,8 +549,8 @@ fn run_impl_main_empty_branch_returns_blocked_no_panic() {
 #[test]
 fn run_impl_main_invalid_phase_returns_json_error() {
     let dir = tempfile::tempdir().unwrap();
-    let state = make_state_lib("flow-start", &[("flow-start", "complete")]);
-    write_state_lib(dir.path(), "test", state);
+    let state = make_state("flow-start", &[("flow-start", "complete")]);
+    write_state(dir.path(), "test", state);
     let (out, code) = run_impl_main("nonexistent", Some("test"), dir.path());
     assert_eq!(code, 1);
     let parsed: Value = serde_json::from_str(&out).expect("invalid-phase path emits JSON");
@@ -688,4 +559,89 @@ fn run_impl_main_invalid_phase_returns_json_error() {
         .as_str()
         .unwrap()
         .contains("Invalid phase"));
+}
+
+/// Frozen phase config with missing `name` and `command` entries falls
+/// back to the phase key itself for name and `/flow:<key>` for command.
+#[test]
+fn run_impl_main_frozen_config_missing_names_and_commands_falls_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    let states = root.join(".flow-states");
+    fs::create_dir_all(&states).unwrap();
+    let branch = "fx";
+    let state = make_state("flow-plan", &[("flow-start", "pending")]);
+    fs::write(
+        states.join(format!("{}.json", branch)),
+        serde_json::to_string(&state).unwrap(),
+    )
+    .unwrap();
+
+    // Frozen config where phase entries omit both `name` AND `command`
+    // so check_phase hits both fallback arms in the message formatter.
+    let frozen = json!({
+        "order": ["flow-start", "flow-plan"],
+        "phases": {
+            "flow-start": {},
+            "flow-plan": {},
+        }
+    });
+    fs::write(
+        states.join(format!("{}-phases.json", branch)),
+        serde_json::to_string(&frozen).unwrap(),
+    )
+    .unwrap();
+
+    let (output, code) = run_impl_main("flow-plan", Some(branch), &root);
+    assert_eq!(code, 1);
+    assert!(output.contains("BLOCKED"));
+    assert!(output.contains("flow-start"));
+    assert!(output.contains("/flow:flow-start"));
+}
+
+/// A frozen phase config whose first phase differs from the default
+/// `PHASE_ORDER[0]` (`flow-start`) must still short-circuit on the
+/// frozen first phase. Exercises `check_phase`'s `phase_idx == 0`
+/// return arm, which run_impl_main's own PHASE_ORDER[0] short-circuit
+/// cannot reach when the frozen order differs.
+#[test]
+fn run_impl_main_frozen_first_phase_different_from_default() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    let states = root.join(".flow-states");
+    fs::create_dir_all(&states).unwrap();
+    let branch = "fxfirst";
+
+    let state = make_state("flow-plan", &[]);
+    fs::write(
+        states.join(format!("{}.json", branch)),
+        serde_json::to_string(&state).unwrap(),
+    )
+    .unwrap();
+
+    // Frozen config whose first phase is "flow-plan" (not the default
+    // "flow-start"). Requesting "flow-plan" reaches check_phase because
+    // run_impl_main only short-circuits on PHASE_ORDER[0] (="flow-start").
+    // Inside check_phase, phase_idx=0 under the frozen order, so the
+    // first-phase-short-circuit arm fires.
+    let frozen = json!({
+        "order": ["flow-plan", "flow-code"],
+        "phases": {
+            "flow-plan": {"name": "Plan", "command": "/flow:flow-plan"},
+            "flow-code": {"name": "Code", "command": "/flow:flow-code"},
+        }
+    });
+    fs::write(
+        states.join(format!("{}-phases.json", branch)),
+        serde_json::to_string(&frozen).unwrap(),
+    )
+    .unwrap();
+
+    let (output, code) = run_impl_main("flow-plan", Some(branch), &root);
+    assert_eq!(code, 0);
+    assert!(
+        output.is_empty(),
+        "expected empty output for first-phase allowed, got: {}",
+        output
+    );
 }

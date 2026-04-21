@@ -263,7 +263,7 @@ pub fn clean_local(local_path: &Path) {
 }
 
 /// Full reset workflow.
-pub fn reset_impl(
+fn reset_impl(
     repo: &str,
     local_path: Option<&str>,
     runner: &dyn Fn(&[&str], Option<&Path>) -> CmdResult,

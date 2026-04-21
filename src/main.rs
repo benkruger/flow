@@ -754,20 +754,12 @@ fn main() {
             flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::NotifySlack(args)) => {
-            let (value, code) = notify_slack::run_impl_main(
-                args,
-                &notify_slack::read_slack_config,
-                &|bot, channel, text, tts| {
-                    notify_slack::post_message_inner(
-                        bot,
-                        channel,
-                        text,
-                        tts,
-                        &notify_slack::run_curl_with_timeout,
-                    )
-                },
-            );
-            flow_rs::dispatch::dispatch_json(value, code);
+            // Delegate to notify_slack::notify so the subprocess test
+            // surface exercises notify and its internal binders, not
+            // a closure-injected seam. notify() is called cross-module
+            // from phase_finalize and start_finalize.
+            let value = notify_slack::notify(&args);
+            flow_rs::dispatch::dispatch_json(value, 0);
         }
         Some(Commands::WriteRule(args)) => {
             let (value, code) = write_rule::run_impl_main(&args);
@@ -777,7 +769,7 @@ fn main() {
             flow_rs::dispatch::dispatch_ok_result_json(phase_enter::run_impl(&args));
         }
         Some(Commands::PhaseFinalize(args)) => {
-            flow_rs::dispatch::dispatch_ok_result_json(phase_finalize::run_impl(&args));
+            flow_rs::dispatch::dispatch_ok_result_json(phase_finalize::run_impl_main(&args));
         }
         Some(Commands::PlanCheck(args)) => {
             flow_rs::dispatch::dispatch_ok_result_json(plan_check::run_impl(&args));

@@ -47,7 +47,7 @@ pub struct Args {
 ///
 /// Returns JSON value with status, plugin_root, and backup on success,
 /// or status and message on error.
-pub fn start_impl(flow_json_path: &Path, local_source_path: &Path) -> Value {
+fn start_impl(flow_json_path: &Path, local_source_path: &Path) -> Value {
     if !flow_json_path.exists() {
         return json!({
             "status": "error",
@@ -130,7 +130,7 @@ pub fn start_impl(flow_json_path: &Path, local_source_path: &Path) -> Value {
 ///
 /// Returns JSON value with status and restored path on success,
 /// or status and message on error.
-pub fn stop_impl(flow_json_path: &Path) -> Value {
+fn stop_impl(flow_json_path: &Path) -> Value {
     if !flow_json_path.exists() {
         return json!({
             "status": "error",

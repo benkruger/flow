@@ -1,22 +1,23 @@
 //! Tests for `src/commands/start_lock.rs`.
 //!
 //! Exercises queue management (`list_queue`, `queue_path`), lock
-//! state transitions (`acquire`, `acquire_with_wait_impl`, `release`,
+//! state transitions (`acquire`, `acquire_with_wait`, `release`,
 //! `check`), and the CLI dispatcher (`run_impl_main`). Tests drive
-//! through the public surface; `acquire_with_wait_impl` is exposed
-//! as a pub seam for injectable sleep per
-//! `.claude/rules/rust-patterns.md` "Timing-Sensitive Test Isolation".
+//! through the public surface only — `acquire_with_wait`'s retry
+//! loop uses `thread::sleep` with real short intervals when a test
+//! needs to cross the retry boundary.
 
 #[path = "../common/mod.rs"]
 mod common;
 
 use std::fs;
+use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use filetime::{set_file_mtime, FileTime};
 use flow_rs::commands::start_lock::{
-    acquire, acquire_with_wait, acquire_with_wait_impl, check, list_queue, queue_path, release,
-    run_impl_main, QUEUE_DIRNAME,
+    acquire, acquire_with_wait, check, list_queue, queue_path, release, run_impl_main,
+    QUEUE_DIRNAME,
 };
 use flow_rs::flow_paths::FlowStatesDir;
 
@@ -344,21 +345,23 @@ fn test_acquire_stale_cleanup_preserves_fresh() {
 
 #[test]
 fn test_acquire_with_wait_immediate() {
+    // Empty queue → acquire_with_wait succeeds without entering the
+    // retry loop (no thread::sleep, no retry branch).
     let dir = tempfile::tempdir().unwrap();
     let queue_dir = dir.path();
 
-    let mut sleep_called = false;
-    let result = acquire_with_wait_impl("test-feature", queue_dir, 90, 10, &mut |_| {
-        sleep_called = true;
-    });
+    let result = acquire_with_wait("test-feature", queue_dir, 90, 10);
     assert_eq!(result["status"], "acquired");
-    assert!(!sleep_called);
 }
 
 #[test]
 fn test_acquire_with_wait_succeeds_after_retry() {
+    // Lock is held by `blocking-feature`; a background thread deletes
+    // the blocking entry after a short delay. The foreground
+    // acquire_with_wait polls every 1s (the minimum non-zero interval)
+    // and eventually acquires the lock when the blocker goes away.
     let dir = tempfile::tempdir().unwrap();
-    let queue_dir = dir.path();
+    let queue_dir = dir.path().to_path_buf();
 
     let blocking = queue_dir.join("blocking-feature");
     fs::write(&blocking, "").unwrap();
@@ -369,14 +372,20 @@ fn test_acquire_with_wait_succeeds_after_retry() {
     .unwrap();
 
     let blocking_clone = blocking.clone();
-    let result = acquire_with_wait_impl("new-feature", queue_dir, 10, 1, &mut move |_| {
+    let releaser = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(100));
         let _ = fs::remove_file(&blocking_clone);
     });
+
+    let result = acquire_with_wait("new-feature", &queue_dir, 5, 1);
+    releaser.join().unwrap();
     assert_eq!(result["status"], "acquired");
 }
 
 #[test]
 fn test_acquire_with_wait_timeout() {
+    // timeout=0 triggers an immediate timeout after the first
+    // (blocked) attempt without waiting on real time.
     let dir = tempfile::tempdir().unwrap();
     let queue_dir = dir.path();
 
@@ -388,13 +397,7 @@ fn test_acquire_with_wait_timeout() {
     )
     .unwrap();
 
-    let result = acquire_with_wait_impl(
-        "new-feature",
-        queue_dir,
-        0, // timeout=0 triggers immediate timeout after first attempt
-        10,
-        &mut |_| {},
-    );
+    let result = acquire_with_wait("new-feature", queue_dir, 0, 10);
     assert_eq!(result["status"], "timeout");
     assert_eq!(result["feature"], "blocking-feature");
     assert!(result["waited_seconds"].is_number());
@@ -759,15 +762,15 @@ fn acquire_own_entry_with_pre_epoch_mtime_refreshes() {
     );
 }
 
-/// Covers the `continue` fall-through in acquire_with_wait_impl's
-/// retry loop (line that executes when the retry's acquire returns
-/// "locked" again). The sleep closure counts calls and removes the
-/// blocking entry after the second call so the third acquire
-/// succeeds.
+/// Covers the retry-loop `continue` fall-through in acquire_with_wait
+/// (line that executes when the retry's acquire returns "locked"
+/// again). The releaser thread holds the lock briefly, waits >1 polling
+/// interval, then releases — so acquire_with_wait must iterate at least
+/// twice before succeeding.
 #[test]
-fn acquire_with_wait_impl_loops_twice_before_acquiring() {
+fn acquire_with_wait_loops_at_least_twice_before_acquiring() {
     let dir = tempfile::tempdir().unwrap();
-    let queue_dir = dir.path();
+    let queue_dir = dir.path().to_path_buf();
     let blocking = queue_dir.join("blocking");
     fs::write(&blocking, "").unwrap();
     set_file_mtime(
@@ -776,21 +779,22 @@ fn acquire_with_wait_impl_loops_twice_before_acquiring() {
     )
     .unwrap();
 
-    let call_count = std::rc::Rc::new(std::cell::RefCell::new(0u32));
-    let cc = std::rc::Rc::clone(&call_count);
     let blocking_clone = blocking.clone();
-    let result = acquire_with_wait_impl("new-feature", queue_dir, 10, 1, &mut move |_| {
-        let mut count = cc.borrow_mut();
-        *count += 1;
-        if *count >= 2 {
-            let _ = fs::remove_file(&blocking_clone);
-        }
+    let releaser = thread::spawn(move || {
+        // Sleep >1s (the polling interval) so the retry loop iterates
+        // at least twice before the blocker is removed.
+        thread::sleep(Duration::from_millis(1100));
+        let _ = fs::remove_file(&blocking_clone);
     });
+
+    let start = std::time::Instant::now();
+    let result = acquire_with_wait("new-feature", &queue_dir, 10, 1);
+    releaser.join().unwrap();
     assert_eq!(result["status"], "acquired");
     assert!(
-        *call_count.borrow() >= 2,
-        "expected at least 2 sleep calls, got {}",
-        call_count.borrow()
+        start.elapsed() >= Duration::from_secs(1),
+        "expected at least 1s elapsed (retry loop iterated), got {:?}",
+        start.elapsed()
     );
 }
 

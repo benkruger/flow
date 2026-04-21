@@ -32,7 +32,8 @@
 //! `relative_cwd` and continue to work without modification.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
 use std::process::Command;
 
 use crate::flow_paths::FlowPaths;
@@ -42,18 +43,22 @@ use crate::flow_paths::FlowPaths;
 ///
 /// Resolution order:
 ///
-/// 1. Resolve the current branch from `cwd`. If detached HEAD or
-///    non-git, return Ok(()) (no enforcement).
+/// 1. Resolve the current branch from `cwd` via `current_branch_in`. If
+///    detached HEAD or non-git, return Ok(()) (no enforcement).
 /// 2. Read the state file at `<project_root>/.flow-states/<branch>.json`.
-///    If missing or unparseable, return Ok(()) (no active flow).
+///    If missing, unreadable (e.g. directory at that path), or
+///    unparseable, return Ok(()) (no active flow / fail-open).
 /// 3. Read `relative_cwd` from the state file. Default to empty.
-/// 4. Compute the worktree root via `git rev-parse --show-toplevel` from
-///    `cwd`. If git fails, return Ok(()) (can't determine worktree).
-/// 5. Compute expected = `<worktree_root>/<relative_cwd>` (just
+/// 4. Compute the worktree root via `git rev-parse --show-toplevel`.
+///    current_branch_in succeeded so cwd is a live git-managed
+///    directory — `--show-toplevel` succeeding is a hard invariant,
+///    enforced via `.expect()`. Any failure here signals a race or a
+///    broken git install.
+/// 5. Compute `expected = <worktree_root>/<relative_cwd>` (just
 ///    `<worktree_root>` when empty).
-/// 6. Canonicalize both `cwd` and `expected` and check that `cwd` is
-///    inside (or equal to) `expected`. If `cwd` is outside, return Err
-///    with a message naming the expected directory.
+/// 6. Canonicalize `cwd` and `expected` and check that `cwd` is inside
+///    (or equal to) `expected`. If `cwd` is outside, return Err with
+///    a message naming the expected directory.
 ///
 /// The check is a prefix match on canonical paths, so descending into
 /// subdirectories of `expected` is allowed (e.g. a root-level flow may
@@ -63,25 +68,7 @@ use crate::flow_paths::FlowPaths;
 /// `project_root` is the main repo root (where `.flow-states/` lives).
 /// `cwd` is the subcommand's current working directory.
 pub fn enforce(cwd: &Path, project_root: &Path) -> Result<(), String> {
-    enforce_with_deps(
-        cwd,
-        project_root,
-        &crate::git::current_branch_in,
-        &worktree_root_for,
-    )
-}
-
-/// Seam-injected variant of [`enforce`] that accepts custom resolvers
-/// for the branch-from-cwd and worktree-root-from-cwd lookups.
-/// Production passes `current_branch_in` and `worktree_root_for`;
-/// tests substitute closures to exercise each fail-open branch.
-pub fn enforce_with_deps(
-    cwd: &Path,
-    project_root: &Path,
-    branch_resolver: &dyn Fn(&Path) -> Option<String>,
-    worktree_root_resolver: &dyn Fn(&Path) -> Option<PathBuf>,
-) -> Result<(), String> {
-    let branch = match branch_resolver(cwd) {
+    let branch = match crate::git::current_branch_in(cwd) {
         Some(b) => b,
         None => return Ok(()),
     };
@@ -106,15 +93,18 @@ pub fn enforce_with_deps(
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
-    // current_branch_in(cwd) succeeded, so cwd is a git-managed
-    // directory: `git rev-parse --show-toplevel` is expected to succeed
-    // too. If it doesn't (transient git failure, network filesystem
-    // hiccup), treat it the same as "no active flow" and skip
-    // enforcement — consistent with the fail-open posture above.
-    let worktree_root = match worktree_root_resolver(cwd) {
-        Some(r) => r,
-        None => return Ok(()),
-    };
+    // current_branch_in(cwd) succeeded above, so cwd is a live
+    // git-managed directory: `git rev-parse --show-toplevel` must
+    // succeed too. Any failure here is a race (cwd removed mid-call)
+    // or a broken git install — neither is a production-supported
+    // state, so treat as an invariant via `.expect()`.
+    let output = Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .current_dir(cwd)
+        .output()
+        .expect("git rev-parse --show-toplevel must succeed in a git-managed cwd");
+    let toplevel = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let worktree_root = PathBuf::from(toplevel);
 
     let expected = if relative_cwd.is_empty() {
         worktree_root.clone()
@@ -122,19 +112,15 @@ pub fn enforce_with_deps(
         worktree_root.join(relative_cwd)
     };
 
-    // Canonicalize both paths with `unwrap_or` fallback: cwd.canonicalize()
-    // always succeeds in practice (current_branch_in succeeded so cwd is
-    // a live git directory), while expected.canonicalize() may fail when
-    // relative_cwd names a subdirectory that does not yet exist on disk.
-    // Both fall-back branches preserve the prefix-check invariant.
-    let cwd_canon = match cwd.canonicalize() {
-        Ok(p) => p,
-        Err(_) => cwd.to_path_buf(),
-    };
-    let expected_canon = match expected.canonicalize() {
-        Ok(p) => p,
-        Err(_) => expected.clone(),
-    };
+    // cwd is the live git-managed directory — canonicalize succeeds.
+    // expected may name a subdirectory that does not yet exist on
+    // disk (e.g. relative_cwd="api/src" where api/src is not created);
+    // fall back to the uncanonicalized expected so the prefix check
+    // still reaches a conclusion.
+    let cwd_canon = cwd
+        .canonicalize()
+        .expect("cwd is a live git-managed directory");
+    let expected_canon = expected.canonicalize().unwrap_or_else(|_| expected.clone());
 
     if !cwd_canon.starts_with(&expected_canon) {
         return Err(format!(
@@ -145,35 +131,4 @@ pub fn enforce_with_deps(
     }
 
     Ok(())
-}
-
-/// Compute the git worktree root for `cwd` via `git rev-parse --show-toplevel`.
-///
-/// Returns `None` for non-git directories or when git fails. The result
-/// is the worktree's root directory (e.g. `.worktrees/<branch>`), not
-/// the main repo root.
-pub fn worktree_root_for(cwd: &Path) -> Option<PathBuf> {
-    let output = Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .current_dir(cwd)
-        .output();
-    parse_worktree_root(output)
-}
-
-/// Parse the `git rev-parse --show-toplevel` subprocess output into
-/// a worktree root PathBuf. Exposed for tests: each of the three
-/// fail paths (spawn error, non-zero exit, empty stdout) is driven
-/// by a constructed `std::io::Result<Output>` without needing git
-/// subprocess control.
-pub fn parse_worktree_root(output: std::io::Result<std::process::Output>) -> Option<PathBuf> {
-    let output = output.ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if path.is_empty() {
-        None
-    } else {
-        Some(PathBuf::from(path))
-    }
 }

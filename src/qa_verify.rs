@@ -38,7 +38,7 @@ pub struct Args {
 
 /// Find all .flow-states/*.json files, excluding non-state files
 /// (orchestrate* and *-phases.json).
-pub fn find_state_files(project_root: &Path) -> Vec<PathBuf> {
+fn find_state_files(project_root: &Path) -> Vec<PathBuf> {
     let state_dir = FlowStatesDir::new(project_root).path().to_path_buf();
     let mut results = Vec::new();
     let entries = match std::fs::read_dir(&state_dir) {
@@ -67,7 +67,7 @@ pub fn find_state_files(project_root: &Path) -> Vec<PathBuf> {
 ///
 /// The runner takes a slice of command args and returns Some(stdout) on
 /// success, None on failure.
-pub fn verify_impl(
+fn verify_impl(
     repo: &str,
     project_root: &Path,
     runner: &dyn Fn(&[&str]) -> Option<String>,
@@ -140,7 +140,7 @@ pub fn verify_impl(
 /// return Some(stdout) on exit 0, None otherwise. Extracted into a
 /// `pub fn` so tests can drive it directly without env-var manipulation
 /// to satisfy the closure's code paths.
-pub fn subprocess_runner(cmd_args: &[&str]) -> Option<String> {
+fn subprocess_runner(cmd_args: &[&str]) -> Option<String> {
     let output = Command::new(cmd_args[0])
         .args(&cmd_args[1..])
         .output()

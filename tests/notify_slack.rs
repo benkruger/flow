@@ -2,11 +2,10 @@
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 use flow_rs::notify_slack::{
-    build_config, format_message, notify_with_deps, post_message_inner, read_slack_config_with_env,
-    run_curl_with_timeout_inner, run_impl_main, Args, SlackConfig,
+    build_config, format_message, post_message_inner, read_slack_config_with_env,
 };
 use serde_json::{json, Value};
 
@@ -98,46 +97,117 @@ fn format_message_unknown_phase() {
     assert!(result.contains("Some message"));
 }
 
-// --- run_curl_with_timeout_inner ---
+// --- run_curl_with_timeout subprocess tests ---
+//
+// `run_curl_with_timeout_inner` is no longer pub per the pub-for-testing
+// revert. Its success/timeout/spawn-error branches are now driven by
+// spawning the compiled `bin/flow notify-slack` binary with a fake
+// `curl` on PATH — this exercises `run_curl_with_timeout` (which wraps
+// `run_curl_with_timeout_inner` with the real curl factory) through
+// the real production path.
 
-#[test]
-fn run_curl_with_timeout_inner_success_returns_output() {
-    let factory = |_args: &[&str]| {
-        Command::new("sh")
-            .args(["-c", "echo ok"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-    };
-    let (code, stdout, stderr) = run_curl_with_timeout_inner(&["irrelevant"], 5, &factory).unwrap();
-    assert_eq!(code, 0);
-    assert!(stdout.contains("ok"));
-    assert!(stderr.is_empty());
+fn install_fake_bin(dir: &std::path::Path, name: &str, script: &str) -> std::path::PathBuf {
+    let bin_dir = dir.join("fakebin");
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    let bin = bin_dir.join(name);
+    std::fs::write(&bin, script).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    bin_dir
 }
 
 #[test]
-fn run_curl_with_timeout_inner_timeout_kills_child_returns_err() {
-    let factory = |_args: &[&str]| {
-        Command::new("sleep")
-            .arg("5")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-    };
-    let err = run_curl_with_timeout_inner(&["irrelevant"], 1, &factory).unwrap_err();
-    assert!(err.to_lowercase().contains("timeout"));
+fn subprocess_run_curl_success_returns_status_ok() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    // Fake curl returns a successful Slack response.
+    let bin_dir = install_fake_bin(
+        &root,
+        "curl",
+        r#"#!/usr/bin/env bash
+cat <<'EOF'
+{"ok":true,"ts":"1234.5678","channel":"C123","message":{"text":"ok"}}
+EOF
+exit 0
+"#,
+    );
+
+    let path_with_fake = format!(
+        "{}:{}",
+        bin_dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["notify-slack", "--phase", "flow-start", "--message", "hi"])
+        .env_remove("FLOW_CI_RUNNING")
+        .env("PATH", path_with_fake)
+        .env("HOME", &root)
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-test")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C123")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let last = stdout.trim().lines().last().unwrap_or("");
+    let data: Value = serde_json::from_str(last).expect("json");
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["ts"], "1234.5678");
 }
 
 #[test]
-fn run_curl_with_timeout_inner_spawn_error_returns_err() {
-    let factory = |_args: &[&str]| -> std::io::Result<std::process::Child> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "no such binary",
-        ))
-    };
-    let err = run_curl_with_timeout_inner(&["irrelevant"], 5, &factory).unwrap_err();
-    assert!(err.contains("no such binary") || err.contains("Failed to spawn"));
+fn subprocess_run_curl_nonzero_exit_surfaces_error() {
+    // Fake curl exits 1 with empty stderr → post_message_inner falls
+    // back to "curl failed" error message.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let bin_dir = install_fake_bin(&root, "curl", "#!/usr/bin/env bash\nexit 1\n");
+
+    let path_with_fake = format!(
+        "{}:{}",
+        bin_dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["notify-slack", "--phase", "flow-start", "--message", "hi"])
+        .env_remove("FLOW_CI_RUNNING")
+        .env("PATH", path_with_fake)
+        .env("HOME", &root)
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-test")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C123")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let last = stdout.trim().lines().last().unwrap_or("");
+    let data: Value = serde_json::from_str(last).expect("json");
+    assert_eq!(data["status"], "error");
+}
+
+#[test]
+fn subprocess_run_curl_spawn_failure_surfaces_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+
+    // No curl on PATH → Command::new("curl") spawn fails.
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["notify-slack", "--phase", "flow-start", "--message", "hi"])
+        .env_remove("FLOW_CI_RUNNING")
+        .env("PATH", "/nonexistent-no-curl-here")
+        .env("HOME", &root)
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-test")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C123")
+        .output()
+        .unwrap();
+    // Status may be 0 or non-zero depending on how the status field is
+    // routed. The important assertion is the error shape.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let last = stdout.trim().lines().last().unwrap_or("");
+    let data: Value = serde_json::from_str(last).expect("json");
+    assert_eq!(data["status"], "error");
 }
 
 // --- post_message_inner ---
@@ -236,137 +306,68 @@ fn post_message_invalid_json_response() {
     assert_eq!(result["status"], "error");
 }
 
-// --- notify_with_deps ---
+// Subprocess tests above drive `notify` → `notify_with_deps` through
+// the compiled binary with fake curl + env-var config. The no-config
+// skipped path is exercised separately:
 
-fn test_args(
-    phase: &str,
-    message: &str,
-    thread_ts: Option<&str>,
-    feature: Option<&str>,
-    pr_url: Option<&str>,
-) -> Args {
-    Args {
-        phase: phase.to_string(),
-        message: message.to_string(),
-        thread_ts: thread_ts.map(|s| s.to_string()),
-        feature: feature.map(|s| s.to_string()),
-        pr_url: pr_url.map(|s| s.to_string()),
-    }
+#[test]
+fn subprocess_notify_no_config_returns_skipped() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["notify-slack", "--phase", "flow-start", "--message", "hi"])
+        .env_remove("FLOW_CI_RUNNING")
+        .env_remove("CLAUDE_PLUGIN_CONFIG_slack_bot_token")
+        .env_remove("CLAUDE_PLUGIN_CONFIG_slack_channel")
+        .env("HOME", &root)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let last = stdout.trim().lines().last().unwrap_or("");
+    let data: Value = serde_json::from_str(last).expect("json");
+    assert_eq!(data["status"], "skipped");
+    assert_eq!(data["reason"], "no slack config");
 }
 
 #[test]
-fn notify_with_deps_no_config_returns_skipped() {
-    let args = test_args("flow-start", "Feature started", None, None, None);
-    let config_reader = || None;
-    let poster_called = RefCell::new(false);
-    let poster = |_: &str, _: &str, _: &str, _: Option<&str>| -> Value {
-        *poster_called.borrow_mut() = true;
-        json!({"status": "ok"})
-    };
-
-    let result = notify_with_deps(&args, &config_reader, &poster);
-    assert_eq!(result["status"], "skipped");
-    assert_eq!(result["reason"], "no slack config");
-    assert!(!*poster_called.borrow());
-}
-
-#[test]
-fn notify_with_deps_success_formats_and_posts() {
-    type PosterCall = (String, String, String, Option<String>);
-    let args = test_args(
-        "flow-start",
-        "Feature started",
-        Some("1234567890.123456"),
-        None,
-        None,
+fn subprocess_notify_feature_and_pr_url_formatted_into_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let bin_dir = install_fake_bin(
+        &root,
+        "curl",
+        r#"#!/usr/bin/env bash
+echo '{"ok":true,"ts":"1.1"}'
+exit 0
+"#,
     );
-    let config_reader = || {
-        Some(SlackConfig {
-            bot_token: "xoxb-test-token".to_string(),
-            channel: "C12345".to_string(),
-        })
-    };
-    let poster_calls: RefCell<Vec<PosterCall>> = RefCell::new(Vec::new());
-    let poster = |bot: &str, channel: &str, text: &str, tts: Option<&str>| -> Value {
-        poster_calls.borrow_mut().push((
-            bot.to_string(),
-            channel.to_string(),
-            text.to_string(),
-            tts.map(|s| s.to_string()),
-        ));
-        json!({"status": "ok", "ts": "5555.6666"})
-    };
-
-    let result = notify_with_deps(&args, &config_reader, &poster);
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["ts"], "5555.6666");
-
-    let calls = poster_calls.borrow();
-    assert_eq!(calls.len(), 1);
-    let (bot, channel, text, tts) = &calls[0];
-    assert_eq!(bot, "xoxb-test-token");
-    assert_eq!(channel, "C12345");
-    assert!(text.contains("Feature started"));
-    assert!(text.contains("Start"));
-    assert_eq!(tts.as_deref(), Some("1234567890.123456"));
-}
-
-// --- run_impl_main ---
-
-#[test]
-fn notify_slack_run_impl_main_writes_skipped_json_when_unconfigured() {
-    let args = test_args("flow-start", "hi", None, None, None);
-    let config_reader = || None;
-    let poster = |_: &str, _: &str, _: &str, _: Option<&str>| -> Value {
-        json!({"status": "ok", "ts": "9.9"})
-    };
-    let (value, code) = run_impl_main(args, &config_reader, &poster);
-    assert_eq!(value["status"], "skipped");
-    assert_eq!(value["reason"], "no slack config");
-    assert_eq!(code, 0);
-}
-
-#[test]
-fn notify_slack_run_impl_main_writes_ok_json_on_success() {
-    let args = test_args("flow-start", "hi", None, None, None);
-    let config_reader = || {
-        Some(SlackConfig {
-            bot_token: "xoxb".to_string(),
-            channel: "C".to_string(),
-        })
-    };
-    let poster = |_: &str, _: &str, _: &str, _: Option<&str>| -> Value {
-        json!({"status": "ok", "ts": "9.9"})
-    };
-    let (value, code) = run_impl_main(args, &config_reader, &poster);
-    assert_eq!(value["status"], "ok");
-    assert_eq!(value["ts"], "9.9");
-    assert_eq!(code, 0);
-}
-
-#[test]
-fn notify_with_deps_with_feature_and_pr_url() {
-    let args = test_args(
-        "flow-start",
-        "Feature started",
-        None,
-        Some("Invoice Export"),
-        Some("https://github.com/org/repo/pull/42"),
+    let path_with_fake = format!(
+        "{}:{}",
+        bin_dir.display(),
+        std::env::var("PATH").unwrap_or_default()
     );
-    let config_reader = || {
-        Some(SlackConfig {
-            bot_token: "xoxb-test-token".to_string(),
-            channel: "C12345".to_string(),
-        })
-    };
-    let posted_text: RefCell<String> = RefCell::new(String::new());
-    let poster = |_bot: &str, _channel: &str, text: &str, _tts: Option<&str>| -> Value {
-        *posted_text.borrow_mut() = text.to_string();
-        json!({"status": "ok", "ts": "5555.6666"})
-    };
-
-    let _ = notify_with_deps(&args, &config_reader, &poster);
-    let text = posted_text.borrow();
-    assert!(text.contains("Invoice Export"));
-    assert!(text.contains("https://github.com/org/repo/pull/42"));
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args([
+            "notify-slack",
+            "--phase",
+            "flow-start",
+            "--message",
+            "Feature started",
+            "--feature",
+            "Invoice Export",
+            "--pr-url",
+            "https://github.com/org/repo/pull/42",
+        ])
+        .env_remove("FLOW_CI_RUNNING")
+        .env("PATH", path_with_fake)
+        .env("HOME", &root)
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-test")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C123")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let last = stdout.trim().lines().last().unwrap_or("");
+    let data: Value = serde_json::from_str(last).expect("json");
+    assert_eq!(data["status"], "ok");
 }

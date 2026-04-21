@@ -15,7 +15,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use flow_rs::qa_mode::{self, run_impl, start_impl, stop_impl, Args};
+use flow_rs::qa_mode::{run_impl, Args};
 use serde_json::{json, Value};
 
 /// Subprocess: `bin/flow qa-mode --start` without `--local-path`.
@@ -211,19 +211,31 @@ fn qa_mode_cli_default_flow_json_resolves_to_project_root() {
     );
 }
 
-/// Library-level: `start_impl` with a `.flow.json` path that is a
-/// directory rather than a file. `read_to_string` fails, and the
-/// error branch returns `status=error` with a `read` failure message.
-/// Inline tests cover parse-failure via `test_start_missing_plugin_root`
-/// and similar; this test covers the `read_to_string` Err branch
-/// specifically.
+fn start_args(flow_json: &Path, local_path: &Path) -> Args {
+    Args {
+        start: true,
+        stop: false,
+        local_path: Some(local_path.to_string_lossy().to_string()),
+        flow_json: Some(flow_json.to_string_lossy().to_string()),
+    }
+}
+
+fn stop_args(flow_json: &Path) -> Args {
+    Args {
+        start: false,
+        stop: true,
+        local_path: None,
+        flow_json: Some(flow_json.to_string_lossy().to_string()),
+    }
+}
+
+/// Library-level: `run_impl --start` with a `.flow.json` path that is a
+/// directory rather than a file. `read_to_string` fails, and the error
+/// branch returns `status=error` with a `read` failure message.
 #[test]
-fn qa_mode_start_impl_flow_json_is_directory_returns_read_error() {
+fn qa_mode_start_flow_json_is_directory_returns_read_error() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    // Create the ".flow.json" path as a directory so read_to_string
-    // fails with EISDIR. The file's `exists()` guard passes (a
-    // directory "exists") so control flow reaches read_to_string.
     let flow_json_as_dir = root.join(".flow.json");
     fs::create_dir(&flow_json_as_dir).unwrap();
 
@@ -231,7 +243,7 @@ fn qa_mode_start_impl_flow_json_is_directory_returns_read_error() {
     fs::create_dir_all(local_source.join("bin")).unwrap();
     fs::write(local_source.join("bin").join("flow"), "#!/bin/bash\n").unwrap();
 
-    let result = qa_mode::start_impl(&flow_json_as_dir, &local_source);
+    let result = run_impl(&start_args(&flow_json_as_dir, &local_source)).unwrap();
     assert_eq!(result["status"], "error");
     let message = result["message"].as_str().expect("error carries message");
     assert!(
@@ -242,11 +254,11 @@ fn qa_mode_start_impl_flow_json_is_directory_returns_read_error() {
     );
 }
 
-/// Library-level: `start_impl` with a `.flow.json` that contains
-/// invalid JSON. `serde_json::from_str` fails, and the error branch
-/// returns `status=error` with a parse-failure message.
+/// Library-level: `run_impl --start` with a `.flow.json` that contains
+/// invalid JSON. `serde_json::from_str` fails, returning
+/// `status=error` with a parse-failure message.
 #[test]
-fn qa_mode_start_impl_invalid_json_returns_parse_error() {
+fn qa_mode_start_invalid_json_returns_parse_error() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     let flow_json = root.join(".flow.json");
@@ -256,7 +268,7 @@ fn qa_mode_start_impl_invalid_json_returns_parse_error() {
     fs::create_dir_all(local_source.join("bin")).unwrap();
     fs::write(local_source.join("bin").join("flow"), "#!/bin/bash\n").unwrap();
 
-    let result = qa_mode::start_impl(&flow_json, &local_source);
+    let result = run_impl(&start_args(&flow_json, &local_source)).unwrap();
     assert_eq!(result["status"], "error");
     let message = result["message"].as_str().expect("error carries message");
     assert!(
@@ -266,17 +278,14 @@ fn qa_mode_start_impl_invalid_json_returns_parse_error() {
     );
 }
 
-/// Library-level: `stop_impl` with a `.flow.json` path that is a
-/// directory rather than a file — `read_to_string` fails, and the
-/// error branch returns `status=error` with a read failure message.
 #[test]
-fn qa_mode_stop_impl_flow_json_is_directory_returns_read_error() {
+fn qa_mode_stop_flow_json_is_directory_returns_read_error() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     let flow_json_as_dir = root.join(".flow.json");
     fs::create_dir(&flow_json_as_dir).unwrap();
 
-    let result = qa_mode::stop_impl(&flow_json_as_dir);
+    let result = run_impl(&stop_args(&flow_json_as_dir)).unwrap();
     assert_eq!(result["status"], "error");
     let message = result["message"].as_str().expect("error carries message");
     assert!(
@@ -287,17 +296,14 @@ fn qa_mode_stop_impl_flow_json_is_directory_returns_read_error() {
     );
 }
 
-/// Library-level: `stop_impl` with a `.flow.json` that contains
-/// invalid JSON. `serde_json::from_str` fails, returning
-/// `status=error` with a parse-failure message.
 #[test]
-fn qa_mode_stop_impl_invalid_json_returns_parse_error() {
+fn qa_mode_stop_invalid_json_returns_parse_error() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     let flow_json = root.join(".flow.json");
     fs::write(&flow_json, "not json at all").unwrap();
 
-    let result = qa_mode::stop_impl(&flow_json);
+    let result = run_impl(&stop_args(&flow_json)).unwrap();
     assert_eq!(result["status"], "error");
     let message = result["message"].as_str().expect("error carries message");
     assert!(
@@ -337,7 +343,7 @@ fn test_start_happy_path() {
         }),
     );
 
-    let result = start_impl(&flow_json, &local_source);
+    let result = run_impl(&start_args(&flow_json, &local_source)).unwrap();
 
     assert_eq!(result["status"], "ok");
     assert_eq!(
@@ -357,7 +363,7 @@ fn test_start_missing_flow_json() {
     let flow_json = dir.path().join(".flow.json");
     let local_source = dir.path().join("flow-source");
 
-    let result = start_impl(&flow_json, &local_source);
+    let result = run_impl(&start_args(&flow_json, &local_source)).unwrap();
 
     assert_eq!(result["status"], "error");
     let msg = result["message"].as_str().unwrap().to_lowercase();
@@ -384,7 +390,7 @@ fn test_start_write_failure_returns_error() {
     perms.set_mode(0o444);
     fs::set_permissions(&flow_json, perms).unwrap();
 
-    let result = start_impl(&flow_json, &local_source);
+    let result = run_impl(&start_args(&flow_json, &local_source)).unwrap();
 
     let mut p = fs::metadata(&flow_json).unwrap().permissions();
     p.set_mode(0o644);
@@ -414,7 +420,7 @@ fn test_stop_write_failure_returns_error() {
     perms.set_mode(0o444);
     fs::set_permissions(&flow_json, perms).unwrap();
 
-    let result = stop_impl(&flow_json);
+    let result = run_impl(&stop_args(&flow_json)).unwrap();
 
     let mut p = fs::metadata(&flow_json).unwrap().permissions();
     p.set_mode(0o644);
@@ -440,7 +446,7 @@ fn test_start_missing_plugin_root() {
         &json!({"flow_version": "0.39.0", "commit_format": "full"}),
     );
 
-    let result = start_impl(&flow_json, &local_source);
+    let result = run_impl(&start_args(&flow_json, &local_source)).unwrap();
     assert_eq!(result["status"], "error");
     assert!(result["message"].as_str().unwrap().contains("plugin_root"));
 }
@@ -462,7 +468,7 @@ fn test_start_already_in_dev_mode() {
         }),
     );
 
-    let result = start_impl(&flow_json, &local_source);
+    let result = run_impl(&start_args(&flow_json, &local_source)).unwrap();
     assert_eq!(result["status"], "error");
     let msg = result["message"].as_str().unwrap().to_lowercase();
     assert!(msg.contains("already") || msg.contains("dev mode"));
@@ -478,7 +484,7 @@ fn test_start_invalid_local_path_not_exists() {
         &json!({"flow_version": "0.39.0", "plugin_root": "/original/path"}),
     );
 
-    let result = start_impl(&flow_json, &dir.path().join("nonexistent"));
+    let result = run_impl(&start_args(&flow_json, &dir.path().join("nonexistent"))).unwrap();
     assert_eq!(result["status"], "error");
     let msg = result["message"].as_str().unwrap().to_lowercase();
     assert!(msg.contains("not found") || msg.contains("does not exist"));
@@ -496,7 +502,7 @@ fn test_start_invalid_local_path_no_bin_flow() {
         &json!({"flow_version": "0.39.0", "plugin_root": "/original/path"}),
     );
 
-    let result = start_impl(&flow_json, &local_source);
+    let result = run_impl(&start_args(&flow_json, &local_source)).unwrap();
     assert_eq!(result["status"], "error");
     assert!(result["message"].as_str().unwrap().contains("bin/flow"));
 }
@@ -522,7 +528,7 @@ fn test_start_preserves_other_keys() {
         }),
     );
 
-    start_impl(&flow_json, &local_source);
+    run_impl(&start_args(&flow_json, &local_source)).unwrap();
 
     let data = read_flow_json(&flow_json);
     assert_eq!(data["flow_version"], "0.39.0");
@@ -551,7 +557,7 @@ fn test_stop_happy_path() {
         }),
     );
 
-    let result = stop_impl(&flow_json);
+    let result = run_impl(&stop_args(&flow_json)).unwrap();
     assert_eq!(result["status"], "ok");
     assert_eq!(result["restored"], "/original/cache/path");
 
@@ -570,7 +576,7 @@ fn test_stop_not_in_dev_mode() {
         &json!({"flow_version": "0.39.0", "plugin_root": "/some/path"}),
     );
 
-    let result = stop_impl(&flow_json);
+    let result = run_impl(&stop_args(&flow_json)).unwrap();
     assert_eq!(result["status"], "error");
     let msg = result["message"].as_str().unwrap().to_lowercase();
     assert!(msg.contains("not in dev mode") || msg.contains("backup"));
@@ -581,7 +587,7 @@ fn test_stop_missing_flow_json() {
     let dir = tempfile::tempdir().unwrap();
     let flow_json = dir.path().join(".flow.json");
 
-    let result = stop_impl(&flow_json);
+    let result = run_impl(&stop_args(&flow_json)).unwrap();
     assert_eq!(result["status"], "error");
     let msg = result["message"].as_str().unwrap().to_lowercase();
     assert!(msg.contains("not found") || msg.contains("does not exist"));
@@ -604,7 +610,7 @@ fn test_stop_preserves_other_keys() {
         }),
     );
 
-    stop_impl(&flow_json);
+    run_impl(&stop_args(&flow_json)).unwrap();
 
     let data = read_flow_json(&flow_json);
     assert_eq!(data["flow_version"], "0.39.0");

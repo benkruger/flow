@@ -17,15 +17,12 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use std::time::Duration;
 
 use clap::Parser;
 use indexmap::IndexMap;
 
 use crate::commands::log::append_log;
 use crate::flow_paths::FlowPaths;
-
-const CMD_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Parser, Debug)]
 #[command(name = "cleanup", about = "FLOW cleanup orchestrator")]
@@ -50,56 +47,38 @@ pub struct Args {
     pub pull: bool,
 }
 
-/// Run a command with `CMD_TIMEOUT`, returning (success, output_string).
-pub fn run_cmd(args: &[&str], cwd: &Path) -> (bool, String) {
-    run_cmd_with_timeout(args, cwd, CMD_TIMEOUT)
-}
-
-/// Run a command with an explicit timeout, returning (success, output_string).
-///
-/// Spawns a worker thread running `Command::output()` and waits on a
-/// channel with `recv_timeout`. On timeout, returns `(false, "timeout")`
-/// and orphans the child (the child will exit on its own when its
-/// underlying operation finishes). On success, returns
-/// `(status.success(), stderr_or_stdout)`.
-pub fn run_cmd_with_timeout(args: &[&str], cwd: &Path, timeout: Duration) -> (bool, String) {
-    let (tx, rx) = std::sync::mpsc::channel();
-    let args_owned: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
-    let cwd_owned = cwd.to_path_buf();
-    std::thread::spawn(move || {
-        let result = Command::new(&args_owned[0])
-            .args(&args_owned[1..])
-            .current_dir(&cwd_owned)
-            .output();
-        let _ = tx.send(result);
-    });
-    match rx.recv_timeout(timeout) {
-        Ok(Ok(output)) => {
+/// Run a command in `cwd` via `Command::output()` without a timeout.
+/// Returns `(success, trimmed-output)` where output is stderr on
+/// failure (or stdout when stderr is empty).
+fn run_cmd(args: &[&str], cwd: &Path) -> (bool, String) {
+    match Command::new(args[0])
+        .args(&args[1..])
+        .current_dir(cwd)
+        .output()
+    {
+        Ok(output) => {
             if output.status.success() {
-                return (
-                    true,
-                    String::from_utf8_lossy(&output.stdout).trim().to_string(),
-                );
-            }
-            let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            if error.is_empty() {
                 (
-                    false,
+                    true,
                     String::from_utf8_lossy(&output.stdout).trim().to_string(),
                 )
             } else {
-                (false, error)
+                let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                if err.is_empty() {
+                    (
+                        false,
+                        String::from_utf8_lossy(&output.stdout).trim().to_string(),
+                    )
+                } else {
+                    (false, err)
+                }
             }
         }
-        Ok(Err(e)) => (false, e.to_string()),
-        Err(_) => (false, "timeout".to_string()),
+        Err(e) => (false, e.to_string()),
     }
 }
 
-/// Format a (success, output) pair as either the success label or
-/// `"failed: <output>"`. Used to convert every external command
-/// result in `cleanup()` into the same step-string shape.
-pub fn label_result(ok: bool, ok_label: &str, output: &str) -> String {
+fn label_result(ok: bool, ok_label: &str, output: &str) -> String {
     if ok {
         ok_label.to_string()
     } else {
@@ -107,8 +86,7 @@ pub fn label_result(ok: bool, ok_label: &str, output: &str) -> String {
     }
 }
 
-/// Try to remove a file, returning "deleted", "skipped", or "failed: <reason>".
-pub fn try_delete_file(path: &Path) -> String {
+fn try_delete_file(path: &Path) -> String {
     if path.exists() {
         match fs::remove_file(path) {
             Ok(()) => "deleted".to_string(),
@@ -145,7 +123,7 @@ pub fn try_delete_file(path: &Path) -> String {
 /// matched, "deleted" if at least one regular file was successfully
 /// removed, or "failed: <reason>" when every matching regular file's
 /// deletion failed (reporting the first error encountered).
-pub fn try_delete_adversarial_test_files(flow_states: &Path, branch: &str) -> String {
+fn try_delete_adversarial_test_files(flow_states: &Path, branch: &str) -> String {
     let entries = match fs::read_dir(flow_states) {
         Ok(iter) => iter,
         Err(_) => return "skipped".to_string(),
@@ -193,6 +171,8 @@ pub fn try_delete_adversarial_test_files(flow_states: &Path, branch: &str) -> St
 }
 
 /// Perform cleanup steps. Returns an ordered map of step results.
+/// Called cross-module from `complete_finalize::run_impl_with_deps` as
+/// well as from `run_impl_main` below.
 pub fn cleanup(
     project_root: &Path,
     branch: &str,

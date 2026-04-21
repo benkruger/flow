@@ -1,20 +1,19 @@
-//! CLI integration tests and library-level tests for
-//! `flow-rs check-freshness`. Migrated from inline `#[cfg(test)]` per
-//! `.claude/rules/test-placement.md`.
+//! Integration tests for `flow-rs check-freshness`. All tests drive
+//! through the public entry point `run_impl_main` (or the compiled
+//! binary for CLI-dispatch coverage) — no private helpers are
+//! imported per `.claude/rules/test-placement.md`.
 
-use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use flow_rs::check_freshness::{
-    check_freshness, check_freshness_impl, exit_code_for_status, run_git_cmd, run_impl_main,
-    CmdResult,
-};
+use flow_rs::check_freshness::run_impl_main;
 use serde_json::{json, Value};
 
 fn flow_rs() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.env_remove("FLOW_CI_RUNNING");
+    cmd
 }
 
 /// Run a git command in `cwd` and panic with stderr on failure.
@@ -33,7 +32,7 @@ fn git(cwd: &Path, args: &[&str]) {
 }
 
 /// Create a git repo at `<tmp>/repo` with main branch, user config, and
-/// an initial commit. Returns the repo path.
+/// an initial commit. Returns the canonicalized repo path.
 fn make_repo(tmp: &Path) -> PathBuf {
     let repo = tmp.join("repo");
     fs::create_dir_all(&repo).unwrap();
@@ -44,7 +43,7 @@ fn make_repo(tmp: &Path) -> PathBuf {
     fs::write(repo.join("README.md"), "initial\n").unwrap();
     git(&repo, &["add", "-A"]);
     git(&repo, &["commit", "-m", "init"]);
-    repo
+    repo.canonicalize().unwrap()
 }
 
 /// Create a bare remote at `<tmp>/bare.git`, add it to `repo` as origin,
@@ -68,7 +67,7 @@ fn parse_last_json(stdout: &[u8]) -> Value {
         .unwrap_or_else(|e| panic!("JSON parse failed: {} (line: {:?})", e, line))
 }
 
-// --- CLI integration tests ---
+// --- CLI integration tests (binary dispatch) ---
 
 #[test]
 fn cli_up_to_date() {
@@ -98,18 +97,15 @@ fn cli_merged() {
     let repo = make_repo(tmp.path());
     attach_bare_remote(tmp.path(), &repo);
 
-    // Create a feature branch at the current head
     git(&repo, &["branch", "feature"]);
     git(&repo, &["switch", "feature"]);
 
-    // Advance main with a new commit, then push
     git(&repo, &["switch", "main"]);
     fs::write(repo.join("new_on_main.txt"), "new content\n").unwrap();
     git(&repo, &["add", "-A"]);
     git(&repo, &["commit", "-m", "new on main"]);
     git(&repo, &["push", "origin", "main"]);
 
-    // Switch back to feature branch — behind main by one commit
     git(&repo, &["switch", "feature"]);
 
     let output = flow_rs()
@@ -126,79 +122,6 @@ fn cli_merged() {
     );
     let data = parse_last_json(&output.stdout);
     assert_eq!(data["status"], "merged");
-}
-
-#[test]
-fn cli_with_state_file() {
-    let tmp = tempfile::tempdir().unwrap();
-    let repo = make_repo(tmp.path());
-    attach_bare_remote(tmp.path(), &repo);
-
-    // Create feature branch, then advance main
-    git(&repo, &["branch", "feature"]);
-    git(&repo, &["switch", "main"]);
-    fs::write(repo.join("main_file.txt"), "content\n").unwrap();
-    git(&repo, &["add", "-A"]);
-    git(&repo, &["commit", "-m", "advance main"]);
-    git(&repo, &["push", "origin", "main"]);
-    git(&repo, &["switch", "feature"]);
-
-    // Create a state file with freshness_retries: 0
-    let state_file = tmp.path().join("state.json");
-    fs::write(
-        &state_file,
-        json!({"branch": "feature", "freshness_retries": 0}).to_string(),
-    )
-    .unwrap();
-
-    let output = flow_rs()
-        .arg("check-freshness")
-        .arg("--state-file")
-        .arg(&state_file)
-        .current_dir(&repo)
-        .output()
-        .unwrap();
-
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let data = parse_last_json(&output.stdout);
-    assert_eq!(data["status"], "merged");
-    assert_eq!(data["retries"], 1);
-
-    // Verify state file was updated on disk
-    let state: Value = serde_json::from_str(&fs::read_to_string(&state_file).unwrap()).unwrap();
-    assert_eq!(state["freshness_retries"], 1);
-}
-
-#[test]
-fn cli_max_retries() {
-    let tmp = tempfile::tempdir().unwrap();
-    let repo = make_repo(tmp.path());
-
-    let state_file = tmp.path().join("state.json");
-    fs::write(
-        &state_file,
-        json!({"branch": "test", "freshness_retries": 3}).to_string(),
-    )
-    .unwrap();
-
-    let output = flow_rs()
-        .arg("check-freshness")
-        .arg("--state-file")
-        .arg(&state_file)
-        .current_dir(&repo)
-        .output()
-        .unwrap();
-
-    // Max retries exits with code 1 and prints max_retries status.
-    assert_eq!(output.status.code(), Some(1));
-    let data = parse_last_json(&output.stdout);
-    assert_eq!(data["status"], "max_retries");
-    assert_eq!(data["retries"], 3);
 }
 
 #[test]
@@ -227,19 +150,13 @@ fn cli_unknown_args_ignored() {
 
 /// Regression: check-freshness must inherit CWD from the caller. When
 /// invoked from a linked worktree, the main repo's HEAD is still `main`
-/// so git commands run there would trivially report `up_to_date`. This
-/// test sets up a repo where main is ahead of a feature worktree and
-/// runs check-freshness from INSIDE the feature worktree — it must
-/// report `merged` (feature brought up to date), not a false
-/// `up_to_date` from the main repo's perspective.
+/// so git commands run there would trivially report `up_to_date`.
 #[test]
 fn cli_runs_git_in_caller_worktree_not_main_repo() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = make_repo(tmp.path());
     attach_bare_remote(tmp.path(), &repo);
 
-    // Create a linked worktree on a feature branch whose HEAD is the
-    // initial commit (so it is behind main once we advance main below).
     let worktree = tmp.path().join("feature-wt");
     git(
         &repo,
@@ -252,17 +169,11 @@ fn cli_runs_git_in_caller_worktree_not_main_repo() {
         ],
     );
 
-    // Advance main in the main repo, then push.
     fs::write(repo.join("advance.txt"), "advance\n").unwrap();
     git(&repo, &["add", "-A"]);
     git(&repo, &["commit", "-m", "advance main"]);
     git(&repo, &["push", "origin", "main"]);
 
-    // Run check-freshness from the LINKED WORKTREE. A buggy
-    // implementation that resolves the CWD via `project_root()` would
-    // run git commands in the main repo (where HEAD=main) and return
-    // up_to_date trivially. A correct implementation inherits the
-    // feature worktree's CWD and merges origin/main into feature.
     let output = flow_rs()
         .arg("check-freshness")
         .current_dir(&worktree)
@@ -276,510 +187,420 @@ fn cli_runs_git_in_caller_worktree_not_main_repo() {
         String::from_utf8_lossy(&output.stderr)
     );
     let data = parse_last_json(&output.stdout);
-    assert_eq!(
-        data["status"], "merged",
-        "expected merged (feature was behind main), got: {}",
-        data
-    );
+    assert_eq!(data["status"], "merged");
 }
 
-// --- Library-level tests (migrated from inline `#[cfg(test)]`) ---
+// --- run_impl_main tests (library-level via public entry point) ---
 
-fn mock_runner(responses: Vec<CmdResult>) -> impl FnMut(&[&str], u64) -> CmdResult {
-    let mut iter = responses.into_iter();
-    move |_args, _timeout| iter.next().expect("Unexpected extra git call")
-}
+#[test]
+fn run_impl_main_max_retries_exits_1() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = make_repo(tmp.path());
 
-fn ok_result() -> CmdResult {
-    CmdResult::Ok {
-        returncode: 0,
-        stdout: String::new(),
-        stderr: String::new(),
-    }
-}
-
-fn err_result(returncode: i32, stderr: &str) -> CmdResult {
-    CmdResult::Ok {
-        returncode,
-        stdout: String::new(),
-        stderr: stderr.to_string(),
-    }
-}
-
-fn stdout_ok(stdout: &str) -> CmdResult {
-    CmdResult::Ok {
-        returncode: 0,
-        stdout: stdout.to_string(),
-        stderr: String::new(),
-    }
-}
-
-fn make_state_file(dir: &Path, retries: i64) -> PathBuf {
-    let path = dir.join("state.json");
+    let state_file = tmp.path().join("state.json");
     fs::write(
-        &path,
-        json!({"branch": "test", "freshness_retries": retries}).to_string(),
+        &state_file,
+        json!({"branch": "test", "freshness_retries": 3}).to_string(),
     )
     .unwrap();
-    path
-}
 
-#[test]
-fn test_up_to_date() {
-    let responses = vec![ok_result(), ok_result()];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(None, &mut git);
-    assert_eq!(result, json!({"status": "up_to_date"}));
-}
-
-#[test]
-fn test_merged() {
-    let responses = vec![ok_result(), err_result(1, ""), stdout_ok("Merge made\n")];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(None, &mut git);
-    assert_eq!(result, json!({"status": "merged"}));
-}
-
-#[test]
-fn test_conflict() {
-    let responses = vec![
-        ok_result(),
-        err_result(1, ""),
-        err_result(1, "CONFLICT"),
-        stdout_ok("UU file1.py\nAA file2.py\n"),
-    ];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(None, &mut git);
-    assert_eq!(
-        result,
-        json!({"status": "conflict", "files": ["file1.py", "file2.py"]})
-    );
-}
-
-#[test]
-fn test_fetch_failure() {
-    let responses = vec![err_result(1, "Could not resolve host")];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(None, &mut git);
-    assert_eq!(
-        result,
-        json!({
-            "status": "error",
-            "step": "fetch",
-            "message": "Could not resolve host",
-        })
-    );
-}
-
-#[test]
-fn test_merge_error_non_conflict() {
-    let responses = vec![
-        ok_result(),
-        err_result(1, ""),
-        err_result(1, "merge failed"),
-        stdout_ok(""),
-    ];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(None, &mut git);
-    assert_eq!(
-        result,
-        json!({
-            "status": "error",
-            "step": "merge",
-            "message": "merge failed",
-        })
-    );
-}
-
-#[test]
-fn test_fetch_timeout() {
-    let responses = vec![CmdResult::Timeout];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(None, &mut git);
-    assert_eq!(
-        result,
-        json!({
-            "status": "error",
-            "step": "fetch",
-            "message": "git fetch timed out after 60s",
-        })
-    );
-}
-
-#[test]
-fn test_merge_base_timeout() {
-    let responses = vec![
-        ok_result(),
-        CmdResult::Timeout,
-        stdout_ok("Already up to date"),
-    ];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(None, &mut git);
-    assert_eq!(result, json!({"status": "merged"}));
-}
-
-#[test]
-fn test_merge_timeout() {
-    let responses = vec![ok_result(), err_result(1, ""), CmdResult::Timeout];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(None, &mut git);
-    assert_eq!(
-        result,
-        json!({
-            "status": "error",
-            "step": "merge",
-            "message": "git merge timed out after 60s",
-        })
-    );
-}
-
-#[test]
-fn test_status_porcelain_timeout() {
-    let responses = vec![
-        ok_result(),
-        err_result(1, ""),
-        err_result(1, "CONFLICT"),
-        CmdResult::Timeout,
-    ];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(None, &mut git);
-    assert_eq!(
-        result,
-        json!({
-            "status": "error",
-            "step": "merge",
-            "message": "CONFLICT",
-        })
-    );
-}
-
-#[test]
-fn test_correct_git_commands_up_to_date() {
-    let calls = RefCell::new(Vec::<(Vec<String>, u64)>::new());
-    let responses = RefCell::new(vec![ok_result(), ok_result()].into_iter());
-    let mut git = |args: &[&str], timeout: u64| -> CmdResult {
-        calls
-            .borrow_mut()
-            .push((args.iter().map(|s| s.to_string()).collect(), timeout));
-        responses.borrow_mut().next().unwrap()
-    };
-    check_freshness_impl(None, &mut git);
-    let recorded = calls.into_inner();
-    assert_eq!(recorded.len(), 2);
-    assert_eq!(
-        recorded[0].0,
-        ["git", "fetch", "origin", "main"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-    );
-    assert_eq!(recorded[0].1, 60);
-}
-
-#[test]
-fn test_correct_git_commands_merged() {
-    let calls = RefCell::new(Vec::<(Vec<String>, u64)>::new());
-    let responses = RefCell::new(vec![ok_result(), err_result(1, ""), ok_result()].into_iter());
-    let mut git = |args: &[&str], timeout: u64| -> CmdResult {
-        calls
-            .borrow_mut()
-            .push((args.iter().map(|s| s.to_string()).collect(), timeout));
-        responses.borrow_mut().next().unwrap()
-    };
-    check_freshness_impl(None, &mut git);
-    let recorded = calls.into_inner();
-    assert_eq!(recorded.len(), 3);
-}
-
-#[test]
-fn test_dd_conflict_detected() {
-    let responses = vec![
-        ok_result(),
-        err_result(1, ""),
-        err_result(1, "CONFLICT"),
-        stdout_ok("DD deleted.py\n"),
-    ];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(None, &mut git);
-    assert_eq!(result["status"], "conflict");
-    assert_eq!(result["files"], json!(["deleted.py"]));
-}
-
-#[test]
-fn test_retry_increment() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_file = make_state_file(dir.path(), 0);
-    let responses = vec![ok_result(), err_result(1, ""), ok_result()];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(Some(&state_file), &mut git);
-    assert_eq!(result, json!({"status": "merged", "retries": 1}));
-}
-
-#[test]
-fn test_retry_max_reached() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_file = make_state_file(dir.path(), 3);
-    let mut git = mock_runner(vec![]);
-    let result = check_freshness_impl(Some(&state_file), &mut git);
-    assert_eq!(result, json!({"status": "max_retries", "retries": 3}));
-}
-
-#[test]
-fn test_retry_no_state_file() {
-    let responses = vec![ok_result(), err_result(1, ""), ok_result()];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(None, &mut git);
-    assert_eq!(result, json!({"status": "merged"}));
-    assert!(result.get("retries").is_none());
-}
-
-#[test]
-fn test_retry_not_incremented_on_up_to_date() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_file = make_state_file(dir.path(), 1);
-    let responses = vec![ok_result(), ok_result()];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(Some(&state_file), &mut git);
-    assert_eq!(result, json!({"status": "up_to_date"}));
-}
-
-#[test]
-fn test_retry_increment_on_conflict() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_file = make_state_file(dir.path(), 1);
-    let responses = vec![
-        ok_result(),
-        err_result(1, ""),
-        err_result(1, "CONFLICT"),
-        stdout_ok("UU conflict.py\n"),
-    ];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(Some(&state_file), &mut git);
-    assert_eq!(result["status"], "conflict");
-    assert_eq!(result["retries"], 2);
-}
-
-#[test]
-fn test_retry_array_root_state_skips_read_and_increment() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("state.json");
-    fs::write(&path, "[1, 2, 3]").unwrap();
-    let responses = vec![ok_result(), err_result(1, ""), ok_result()];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(Some(&path), &mut git);
-    assert_eq!(result, json!({"status": "merged", "retries": 0}));
-}
-
-#[test]
-fn test_retry_missing_key_in_state() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("state.json");
-    fs::write(&path, json!({"branch": "test"}).to_string()).unwrap();
-    let responses = vec![ok_result(), err_result(1, ""), ok_result()];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(Some(&path), &mut git);
-    assert_eq!(result, json!({"status": "merged", "retries": 1}));
-}
-
-#[test]
-fn test_retry_value_as_float() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("state.json");
-    fs::write(&path, r#"{"branch":"test","freshness_retries":1.0}"#).unwrap();
-    let responses = vec![ok_result(), err_result(1, ""), ok_result()];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(Some(&path), &mut git);
-    assert_eq!(result, json!({"status": "merged", "retries": 2}));
-}
-
-#[test]
-fn test_retry_value_as_string() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("state.json");
-    fs::write(&path, r#"{"branch":"test","freshness_retries":"2"}"#).unwrap();
-    let responses = vec![ok_result(), err_result(1, ""), ok_result()];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(Some(&path), &mut git);
-    assert_eq!(result, json!({"status": "merged", "retries": 3}));
-}
-
-#[test]
-fn test_retry_value_as_unparseable_string_defaults_to_zero() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("state.json");
-    fs::write(&path, r#"{"branch":"test","freshness_retries":"garbage"}"#).unwrap();
-    let responses = vec![ok_result(), err_result(1, ""), ok_result()];
-    let mut git = mock_runner(responses);
-    let result = check_freshness_impl(Some(&path), &mut git);
-    assert_eq!(result, json!({"status": "merged", "retries": 1}));
-}
-
-fn expect_ok(result: CmdResult) -> (i32, String, String) {
-    match result {
-        CmdResult::Ok {
-            returncode,
-            stdout,
-            stderr,
-        } => (returncode, stdout, stderr),
-        CmdResult::Timeout => panic!("expected Ok, got Timeout"),
-    }
-}
-
-fn expect_timeout(result: CmdResult) {
-    match result {
-        CmdResult::Timeout => {}
-        CmdResult::Ok {
-            returncode,
-            stdout,
-            stderr,
-        } => panic!(
-            "expected Timeout, got Ok(returncode={}, stdout={:?}, stderr={:?})",
-            returncode, stdout, stderr
-        ),
-    }
-}
-
-#[test]
-fn run_git_cmd_success_returns_returncode_zero() {
-    let dir = tempfile::tempdir().unwrap();
-    let cwd = dir.path().canonicalize().unwrap();
-    let (code, _, _) = expect_ok(run_git_cmd(&["/usr/bin/true"], 5, &cwd));
-    assert_eq!(code, 0);
-}
-
-#[test]
-fn run_git_cmd_nonzero_exit_returns_returncode() {
-    let dir = tempfile::tempdir().unwrap();
-    let cwd = dir.path().canonicalize().unwrap();
-    let (code, _, _) = expect_ok(run_git_cmd(&["/usr/bin/false"], 5, &cwd));
-    assert_eq!(code, 1);
-}
-
-#[test]
-fn run_git_cmd_spawn_failure_returns_127() {
-    let dir = tempfile::tempdir().unwrap();
-    let cwd = dir.path().canonicalize().unwrap();
-    let (code, _, _) = expect_ok(run_git_cmd(&["/no/such/binary/here-deadbeef"], 5, &cwd));
-    assert_eq!(code, 127);
-}
-
-#[test]
-fn run_git_cmd_timeout_returns_timeout_variant() {
-    let dir = tempfile::tempdir().unwrap();
-    let cwd = dir.path().canonicalize().unwrap();
-    expect_timeout(run_git_cmd(&["/bin/sleep", "10"], 1, &cwd));
-}
-
-#[test]
-fn run_git_cmd_signal_killed_returns_negative_one() {
-    let dir = tempfile::tempdir().unwrap();
-    let cwd = dir.path().canonicalize().unwrap();
-    let (code, _, _) = expect_ok(run_git_cmd(&["/bin/sh", "-c", "kill -9 $$"], 5, &cwd));
-    assert_eq!(code, -1);
-}
-
-#[test]
-fn run_git_cmd_captures_stdout_and_stderr() {
-    let dir = tempfile::tempdir().unwrap();
-    let cwd = dir.path().canonicalize().unwrap();
-    let (code, stdout, stderr) = expect_ok(run_git_cmd(
-        &["/bin/sh", "-c", "echo hi; echo err >&2"],
-        5,
-        &cwd,
-    ));
-    assert_eq!(code, 0);
-    assert!(stdout.contains("hi"));
-    assert!(stderr.contains("err"));
-}
-
-#[test]
-#[should_panic(expected = "expected Ok")]
-fn expect_ok_panics_on_timeout() {
-    expect_ok(CmdResult::Timeout);
-}
-
-#[test]
-#[should_panic(expected = "Unexpected extra git call")]
-fn mock_runner_panics_when_responses_exhausted() {
-    let mut git = mock_runner(vec![ok_result()]);
-    git(&[], 0);
-    git(&[], 0);
-}
-
-#[test]
-#[should_panic(expected = "expected Timeout")]
-fn expect_timeout_panics_on_ok() {
-    expect_timeout(CmdResult::Ok {
-        returncode: 0,
-        stdout: String::new(),
-        stderr: String::new(),
-    });
-}
-
-#[test]
-fn check_freshness_production_wrapper_returns_json_object() {
-    let dir = tempfile::tempdir().unwrap();
-    let cwd = dir.path().canonicalize().unwrap();
-    let result = check_freshness(None, &cwd);
-    assert!(result.is_object());
-    assert!(result.get("status").is_some());
-}
-
-#[test]
-fn run_impl_main_without_state_file_arg_parses_no_state() {
-    let dir = tempfile::tempdir().unwrap();
-    let cwd = dir.path().canonicalize().unwrap();
-    let raw_args: Vec<String> = Vec::new();
-    let (value, code) = run_impl_main(&raw_args, &cwd);
-    assert_eq!(code, 1);
-    assert!(value.is_object());
-}
-
-#[test]
-fn run_impl_main_with_state_file_arg_parses_path() {
-    let dir = tempfile::tempdir().unwrap();
-    let cwd = dir.path().canonicalize().unwrap();
-    let state_path = cwd.join("state.json");
-    fs::write(&state_path, json!({"branch": "test"}).to_string()).unwrap();
     let raw_args = vec![
         "--state-file".to_string(),
-        state_path.to_string_lossy().to_string(),
+        state_file.to_string_lossy().to_string(),
     ];
-    let (_value, _code) = run_impl_main(&raw_args, &cwd);
+    let (value, code) = run_impl_main(&raw_args, &repo);
+    assert_eq!(code, 1);
+    assert_eq!(value["status"], "max_retries");
+    assert_eq!(value["retries"], 3);
 }
 
 #[test]
-fn run_impl_main_ignores_unknown_flags() {
-    let dir = tempfile::tempdir().unwrap();
-    let cwd = dir.path().canonicalize().unwrap();
-    let raw_args = vec!["--unknown-flag".to_string(), "ignored".to_string()];
-    let (_value, _code) = run_impl_main(&raw_args, &cwd);
+fn run_impl_main_up_to_date_exits_0() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = make_repo(tmp.path());
+    attach_bare_remote(tmp.path(), &repo);
+
+    let (value, code) = run_impl_main(&[], &repo);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "up_to_date");
 }
 
 #[test]
-fn exit_code_for_status_up_to_date_returns_zero() {
-    assert_eq!(exit_code_for_status(&json!({"status": "up_to_date"})), 0);
+fn run_impl_main_merged_with_state_file_increments_retries() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = make_repo(tmp.path());
+    attach_bare_remote(tmp.path(), &repo);
+
+    git(&repo, &["branch", "feature"]);
+    git(&repo, &["switch", "main"]);
+    fs::write(repo.join("new.txt"), "x\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-m", "advance"]);
+    git(&repo, &["push", "origin", "main"]);
+    git(&repo, &["switch", "feature"]);
+
+    let state_file = tmp.path().join("state.json");
+    fs::write(
+        &state_file,
+        json!({"branch": "feature", "freshness_retries": 0}).to_string(),
+    )
+    .unwrap();
+
+    let raw_args = vec![
+        "--state-file".to_string(),
+        state_file.to_string_lossy().to_string(),
+    ];
+    let (value, code) = run_impl_main(&raw_args, &repo);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "merged");
+    assert_eq!(value["retries"], 1);
+
+    let state: Value = serde_json::from_str(&fs::read_to_string(&state_file).unwrap()).unwrap();
+    assert_eq!(state["freshness_retries"], 1);
 }
 
 #[test]
-fn exit_code_for_status_merged_returns_zero() {
-    assert_eq!(exit_code_for_status(&json!({"status": "merged"})), 0);
+fn run_impl_main_fetch_failure_returns_error() {
+    // No remote configured — `git fetch origin main` fails with
+    // "'origin' does not appear to be a git repository" or similar.
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = make_repo(tmp.path());
+
+    let (value, code) = run_impl_main(&[], &repo);
+    assert_eq!(code, 1);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["step"], "fetch");
+    assert!(
+        !value["message"].as_str().unwrap_or("").is_empty(),
+        "expected non-empty fetch error message, got: {}",
+        value
+    );
 }
 
 #[test]
-fn exit_code_for_status_error_returns_one() {
-    assert_eq!(exit_code_for_status(&json!({"status": "error"})), 1);
+fn run_impl_main_merge_conflict_detected() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = make_repo(tmp.path());
+    attach_bare_remote(tmp.path(), &repo);
+
+    // Write content to conflict.txt on main
+    fs::write(repo.join("conflict.txt"), "main content\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-m", "add conflict file"]);
+    git(&repo, &["push", "origin", "main"]);
+
+    // Branch off at init commit (before conflict.txt was added)
+    git(&repo, &["checkout", "-b", "feature", "HEAD~1"]);
+    fs::write(repo.join("conflict.txt"), "feature content\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-m", "feature add conflict file"]);
+
+    let state_file = tmp.path().join("state.json");
+    fs::write(
+        &state_file,
+        json!({"branch": "feature", "freshness_retries": 1}).to_string(),
+    )
+    .unwrap();
+
+    let raw_args = vec![
+        "--state-file".to_string(),
+        state_file.to_string_lossy().to_string(),
+    ];
+    let (value, code) = run_impl_main(&raw_args, &repo);
+    assert_eq!(code, 1);
+    assert_eq!(value["status"], "conflict");
+    assert!(value["files"].is_array());
+    let files: Vec<String> = value["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
+    assert!(
+        files.iter().any(|f| f == "conflict.txt"),
+        "expected conflict.txt in files, got: {:?}",
+        files
+    );
+    assert_eq!(value["retries"], 2);
 }
 
 #[test]
-fn exit_code_for_status_missing_status_returns_one() {
-    assert_eq!(exit_code_for_status(&json!({})), 1);
+fn run_impl_main_conflict_without_state_file_returns_no_retries() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = make_repo(tmp.path());
+    attach_bare_remote(tmp.path(), &repo);
+
+    fs::write(repo.join("c.txt"), "main\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-m", "main file"]);
+    git(&repo, &["push", "origin", "main"]);
+
+    git(&repo, &["checkout", "-b", "feature", "HEAD~1"]);
+    fs::write(repo.join("c.txt"), "feature\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-m", "feature file"]);
+
+    let (value, code) = run_impl_main(&[], &repo);
+    assert_eq!(code, 1);
+    assert_eq!(value["status"], "conflict");
+    assert!(value.get("retries").is_none());
+}
+
+#[test]
+fn run_impl_main_merged_without_state_file_no_retries_key() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = make_repo(tmp.path());
+    attach_bare_remote(tmp.path(), &repo);
+
+    git(&repo, &["branch", "feature"]);
+    git(&repo, &["switch", "main"]);
+    fs::write(repo.join("x.txt"), "y\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-m", "advance"]);
+    git(&repo, &["push", "origin", "main"]);
+    git(&repo, &["switch", "feature"]);
+
+    let (value, code) = run_impl_main(&[], &repo);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "merged");
+    assert!(value.get("retries").is_none());
 }
 
 #[test]
 fn run_impl_main_state_file_arg_without_value_is_ignored() {
-    let dir = tempfile::tempdir().unwrap();
-    let cwd = dir.path().canonicalize().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = make_repo(tmp.path());
+    attach_bare_remote(tmp.path(), &repo);
+
     let raw_args = vec!["--state-file".to_string()];
-    let (_value, _code) = run_impl_main(&raw_args, &cwd);
+    let (value, code) = run_impl_main(&raw_args, &repo);
+    // No state file → runs normally without retry tracking.
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "up_to_date");
+}
+
+// --- State-file type tolerance (exercises read_retries / increment_retries) ---
+
+#[test]
+fn run_impl_main_state_array_root_skips_retry_tracking() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = make_repo(tmp.path());
+    attach_bare_remote(tmp.path(), &repo);
+
+    git(&repo, &["branch", "feature"]);
+    git(&repo, &["switch", "main"]);
+    fs::write(repo.join("m.txt"), "m\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-m", "advance"]);
+    git(&repo, &["push", "origin", "main"]);
+    git(&repo, &["switch", "feature"]);
+
+    let state_file = tmp.path().join("state.json");
+    fs::write(&state_file, "[1, 2, 3]").unwrap();
+
+    let raw_args = vec![
+        "--state-file".to_string(),
+        state_file.to_string_lossy().to_string(),
+    ];
+    let (value, code) = run_impl_main(&raw_args, &repo);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "merged");
+    // array-root state skips the object-guarded mutation → retries = 0
+    assert_eq!(value["retries"], 0);
+}
+
+#[test]
+fn run_impl_main_state_missing_key_treats_as_zero() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = make_repo(tmp.path());
+    attach_bare_remote(tmp.path(), &repo);
+
+    git(&repo, &["branch", "feature"]);
+    git(&repo, &["switch", "main"]);
+    fs::write(repo.join("a.txt"), "a\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-m", "advance"]);
+    git(&repo, &["push", "origin", "main"]);
+    git(&repo, &["switch", "feature"]);
+
+    let state_file = tmp.path().join("state.json");
+    fs::write(&state_file, json!({"branch": "feature"}).to_string()).unwrap();
+
+    let raw_args = vec![
+        "--state-file".to_string(),
+        state_file.to_string_lossy().to_string(),
+    ];
+    let (value, code) = run_impl_main(&raw_args, &repo);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "merged");
+    assert_eq!(value["retries"], 1);
+}
+
+#[test]
+fn run_impl_main_state_float_retries_tolerated() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = make_repo(tmp.path());
+    attach_bare_remote(tmp.path(), &repo);
+
+    git(&repo, &["branch", "feature"]);
+    git(&repo, &["switch", "main"]);
+    fs::write(repo.join("f.txt"), "f\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-m", "advance"]);
+    git(&repo, &["push", "origin", "main"]);
+    git(&repo, &["switch", "feature"]);
+
+    let state_file = tmp.path().join("state.json");
+    fs::write(
+        &state_file,
+        r#"{"branch":"feature","freshness_retries":1.0}"#,
+    )
+    .unwrap();
+
+    let raw_args = vec![
+        "--state-file".to_string(),
+        state_file.to_string_lossy().to_string(),
+    ];
+    let (value, code) = run_impl_main(&raw_args, &repo);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "merged");
+    assert_eq!(value["retries"], 2);
+}
+
+#[test]
+fn run_impl_main_state_string_retries_tolerated() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = make_repo(tmp.path());
+    attach_bare_remote(tmp.path(), &repo);
+
+    git(&repo, &["branch", "feature"]);
+    git(&repo, &["switch", "main"]);
+    fs::write(repo.join("s.txt"), "s\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-m", "advance"]);
+    git(&repo, &["push", "origin", "main"]);
+    git(&repo, &["switch", "feature"]);
+
+    let state_file = tmp.path().join("state.json");
+    fs::write(
+        &state_file,
+        r#"{"branch":"feature","freshness_retries":"2"}"#,
+    )
+    .unwrap();
+
+    let raw_args = vec![
+        "--state-file".to_string(),
+        state_file.to_string_lossy().to_string(),
+    ];
+    let (value, code) = run_impl_main(&raw_args, &repo);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "merged");
+    assert_eq!(value["retries"], 3);
+}
+
+/// A merge failure that leaves `git status --porcelain` with no
+/// conflict markers (e.g. uncommitted changes block the merge) falls
+/// through to the final merge-error JSON. Exercised by leaving a
+/// dirty working tree before invoking check-freshness.
+#[test]
+fn run_impl_main_merge_fails_without_conflict_markers() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = make_repo(tmp.path());
+    attach_bare_remote(tmp.path(), &repo);
+
+    git(&repo, &["branch", "feature"]);
+    git(&repo, &["switch", "main"]);
+    fs::write(repo.join("new_main.txt"), "main\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-m", "main advance"]);
+    git(&repo, &["push", "origin", "main"]);
+
+    git(&repo, &["switch", "feature"]);
+    // Leave an UNTRACKED file whose name collides with the file
+    // introduced by main — merge aborts with "untracked working tree
+    // files would be overwritten" and status --porcelain shows "??" for
+    // the untracked file (no conflict markers).
+    fs::write(repo.join("new_main.txt"), "local unrelated\n").unwrap();
+
+    let (value, code) = run_impl_main(&[], &repo);
+    assert_eq!(code, 1);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["step"], "merge");
+    // No conflict files → no "files" key.
+    assert!(
+        value.get("files").is_none(),
+        "expected no files key in merge-error fallthrough, got: {}",
+        value
+    );
+}
+
+/// With PATH restricted so `git` cannot be spawned, the fetch call's
+/// `run_cmd_with_timeout` returns `Err("Failed to spawn git: ...")`.
+/// `run_git` folds that into `(-1, "", spawn_err)` so `check_freshness`
+/// returns a fetch error — exercises the Err branch of run_git.
+#[test]
+fn cli_fetch_spawn_failure_returns_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let repo = make_repo(&root);
+    attach_bare_remote(&root, &repo);
+
+    let output = flow_rs()
+        .arg("check-freshness")
+        .current_dir(&repo)
+        // Restrict PATH so flow-rs's child git spawn fails.
+        .env("PATH", "/nonexistent-path-for-flow-test")
+        .env("HOME", &root)
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_last_json(&output.stdout);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "fetch");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap_or("")
+            .to_lowercase()
+            .contains("failed to spawn"),
+        "expected spawn-failure message, got: {}",
+        data
+    );
+}
+
+#[test]
+fn run_impl_main_state_unparseable_string_defaults_to_zero() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = make_repo(tmp.path());
+    attach_bare_remote(tmp.path(), &repo);
+
+    git(&repo, &["branch", "feature"]);
+    git(&repo, &["switch", "main"]);
+    fs::write(repo.join("g.txt"), "g\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-m", "advance"]);
+    git(&repo, &["push", "origin", "main"]);
+    git(&repo, &["switch", "feature"]);
+
+    let state_file = tmp.path().join("state.json");
+    fs::write(
+        &state_file,
+        r#"{"branch":"feature","freshness_retries":"garbage"}"#,
+    )
+    .unwrap();
+
+    let raw_args = vec![
+        "--state-file".to_string(),
+        state_file.to_string_lossy().to_string(),
+    ];
+    let (value, code) = run_impl_main(&raw_args, &repo);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "merged");
+    assert_eq!(value["retries"], 1);
 }

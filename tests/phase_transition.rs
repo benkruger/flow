@@ -6,9 +6,7 @@ use std::process::Command;
 use common::flow_states_dir;
 use flow_rs::phase_config;
 use flow_rs::phase_config::PHASE_ORDER;
-use flow_rs::phase_transition::{
-    phase_complete, phase_enter, run_impl_main, run_impl_main_with_resolver,
-};
+use flow_rs::phase_transition::{phase_complete, phase_enter, run_impl_main};
 use indexmap::IndexMap;
 use serde_json::{json, Value};
 
@@ -1409,25 +1407,38 @@ fn run_impl_main_complete_with_next_phase_and_reason_exercises_closures() {
     assert_eq!(out["next_phase"], "flow-code-review");
 }
 
+/// In a non-git cwd with no `--branch` override, `resolve_branch`
+/// returns None and phase-transition surfaces a structured error.
+/// Exercised via subprocess so the test process's own git cwd does
+/// not interfere with branch resolution.
 #[test]
-fn run_impl_main_with_resolver_returning_none_returns_error() {
-    // Drives the seam-injected variant with a resolver that returns
-    // None, covering the `Could not determine current branch` path.
-    let dir = tempfile::tempdir().unwrap();
-    let resolver = |_ov: Option<&str>, _root: &std::path::Path| -> Option<String> { None };
-    let (out, code) = run_impl_main_with_resolver(
-        "flow-plan",
-        "enter",
-        None,
-        None,
-        None,
-        dir.path(),
-        dir.path(),
-        &resolver,
-    );
-    assert_eq!(code, 1);
-    assert_eq!(out["status"], "error");
-    assert!(out["message"]
+fn cli_no_branch_in_non_git_cwd_returns_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().canonicalize().unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .env_remove("FLOW_CI_RUNNING")
+        .env("FLOW_SIMULATE_BRANCH", "")
+        .env("GIT_CEILING_DIRECTORIES", &dir)
+        .args([
+            "phase-transition",
+            "--phase",
+            "flow-plan",
+            "--action",
+            "enter",
+        ])
+        .current_dir(&dir)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let line = stdout
+        .lines()
+        .rfind(|l| !l.trim().is_empty())
+        .expect("stdout");
+    let parsed: Value = serde_json::from_str(line.trim()).expect("json");
+    assert_eq!(parsed["status"], "error");
+    assert!(parsed["message"]
         .as_str()
         .unwrap()
         .contains("Could not determine current branch"));

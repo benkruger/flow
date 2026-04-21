@@ -28,7 +28,7 @@ use crate::phase_config::{self, load_phase_config, PhaseConfig, PHASE_ORDER};
 ///
 /// Returns `Ok((allowed, message))` where message may be empty if allowed
 /// with no note. Returns `Err` if the phase name is invalid.
-pub fn check_phase(
+fn check_phase(
     state: &Value,
     phase: &str,
     phase_config: Option<&PhaseConfig>,
@@ -140,26 +140,13 @@ pub fn check_phase(
 /// helper does not shell out to `git rev-parse` against the host
 /// worktree.
 pub fn run_impl_main(phase: &str, branch_override: Option<&str>, root: &Path) -> (String, i32) {
-    run_impl_main_with_resolver(phase, branch_override, root, &resolve_branch)
-}
-
-/// Seam-injected variant of [`run_impl_main`] that accepts a custom
-/// branch resolver closure. Production passes `resolve_branch`; tests
-/// pass a closure that returns `None` to exercise the
-/// "could not determine current git branch" arm.
-pub fn run_impl_main_with_resolver(
-    phase: &str,
-    branch_override: Option<&str>,
-    root: &Path,
-    resolver: &dyn Fn(Option<&str>, &Path) -> Option<String>,
-) -> (String, i32) {
     // First phase has no prerequisites — short-circuit before touching
     // the filesystem or resolving a branch.
     if phase == PHASE_ORDER[0] {
         return (String::new(), 0);
     }
 
-    let branch = match resolver(branch_override, root) {
+    let branch = match resolve_branch(branch_override, root) {
         Some(b) => b,
         None => {
             return (
