@@ -4,7 +4,7 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use flow_rs::hooks::validate_worktree_paths::{
-    get_file_path, is_shared_config, run_impl_main, validate, validate_shared_config,
+    get_file_path, is_shared_config, validate, validate_shared_config,
 };
 use serde_json::json;
 
@@ -290,62 +290,9 @@ fn test_shared_config_empty_tool_name_allowed() {
     assert!(msg.is_empty());
 }
 
-// --- run_impl_main decision core ---
-
-#[test]
-fn run_impl_main_no_hook_input_allows() {
-    let (code, msg) = run_impl_main(None, Some("/project/.worktrees/feat".to_string()));
-    assert_eq!(code, 0);
-    assert!(msg.is_none());
-}
-
-#[test]
-fn run_impl_main_empty_file_path_allows() {
-    let input = json!({"tool_input": {}});
-    let (code, msg) = run_impl_main(Some(input), Some("/project/.worktrees/feat".to_string()));
-    assert_eq!(code, 0);
-    assert!(msg.is_none());
-}
-
-#[test]
-fn run_impl_main_no_cwd_allows() {
-    let input = json!({"tool_input": {"file_path": "/some/path"}});
-    let (code, msg) = run_impl_main(Some(input), None);
-    assert_eq!(code, 0);
-    assert!(msg.is_none());
-}
-
-#[test]
-fn run_impl_main_blocks_main_repo_path_from_worktree() {
-    let input = json!({
-        "tool_input": {"file_path": "/project/lib/foo.py"}
-    });
-    let (code, msg) = run_impl_main(Some(input), Some("/project/.worktrees/feat".to_string()));
-    assert_eq!(code, 2);
-    assert!(msg.unwrap().contains("BLOCKED"));
-}
-
-#[test]
-fn run_impl_main_blocks_shared_config_edit() {
-    let input = json!({
-        "tool_name": "Edit",
-        "tool_input": {"file_path": "/project/.worktrees/feat/.gitignore"}
-    });
-    let (code, msg) = run_impl_main(Some(input), Some("/project/.worktrees/feat".to_string()));
-    assert_eq!(code, 2);
-    assert!(msg.unwrap().contains("shared configuration"));
-}
-
-#[test]
-fn run_impl_main_allows_worktree_internal_edit() {
-    let input = json!({
-        "tool_name": "Edit",
-        "tool_input": {"file_path": "/project/.worktrees/feat/src/lib.rs"}
-    });
-    let (code, msg) = run_impl_main(Some(input), Some("/project/.worktrees/feat".to_string()));
-    assert_eq!(code, 0);
-    assert!(msg.is_none());
-}
+// Direct `run_impl_main` tests removed — decision core is now
+// private. Its branches are driven through the subprocess tests
+// below that spawn `bin/flow hook validate-worktree-paths`.
 
 // --- run() subprocess smoke test ---
 

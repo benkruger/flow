@@ -296,7 +296,7 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
 /// called while the start lock is held — this serializes all
 /// main-branch mutations per the concurrency model. Returns `Err`
 /// if any git command fails (including "nothing to commit").
-pub fn commit_deps(cwd: &Path) -> Result<(), String> {
+fn commit_deps(cwd: &Path) -> Result<(), String> {
     // Spawning `git` cannot fail in practice on any supported target
     // — `git` is always on PATH and `Command::output()` only returns
     // Err when the binary cannot be executed at all. A failure there
@@ -341,7 +341,7 @@ pub fn commit_deps(cwd: &Path) -> Result<(), String> {
 }
 
 /// Run `git pull origin main`.
-pub fn git_pull(cwd: &Path) -> Result<(), String> {
+fn git_pull(cwd: &Path) -> Result<(), String> {
     // Spawning `git` and waiting for it cannot fail in practice on
     // any supported target.
     let child = std::process::Command::new("git")

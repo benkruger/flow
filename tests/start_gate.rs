@@ -7,7 +7,7 @@ mod common;
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output};
 
 use serde_json::json;
@@ -371,138 +371,13 @@ fn test_pull_failure() {
 // attributed to the per-file gate.
 
 use flow_rs::ci;
-use flow_rs::start_gate::{commit_deps, run_impl_main, run_impl_with_deps, Args as GateArgs};
+use flow_rs::start_gate::{run_impl_main, run_impl_with_deps, Args as GateArgs};
 use serde_json::Value;
 
-fn lib_create_repo_with_remote(parent: &Path) -> (PathBuf, PathBuf) {
-    let bare = parent.join("bare.git");
-    let repo = parent.join("repo");
-
-    Command::new("git")
-        .args(["init", "--bare", "-b", "main", &bare.to_string_lossy()])
-        .output()
-        .unwrap();
-
-    Command::new("git")
-        .args(["clone", &bare.to_string_lossy(), &repo.to_string_lossy()])
-        .output()
-        .unwrap();
-
-    for (key, val) in [
-        ("user.email", "test@test.com"),
-        ("user.name", "Test"),
-        ("commit.gpgsign", "false"),
-    ] {
-        Command::new("git")
-            .args(["config", key, val])
-            .current_dir(&repo)
-            .output()
-            .unwrap();
-    }
-
-    Command::new("git")
-        .args(["commit", "--allow-empty", "-m", "init"])
-        .current_dir(&repo)
-        .output()
-        .unwrap();
-
-    Command::new("git")
-        .args(["push", "-u", "origin", "main"])
-        .current_dir(&repo)
-        .output()
-        .unwrap();
-
-    (repo, bare)
-}
-
-#[test]
-fn lib_commit_deps_commits_and_pushes() {
-    let dir = tempfile::tempdir().unwrap();
-    let (repo, bare) = lib_create_repo_with_remote(dir.path());
-
-    fs::write(repo.join("Cargo.lock"), "updated-lock-content").unwrap();
-
-    commit_deps(&repo).expect("commit_deps should succeed");
-
-    let log_output = Command::new("git")
-        .args(["log", "--oneline", "-1", "--format=%s"])
-        .current_dir(&repo)
-        .output()
-        .unwrap();
-    let msg = String::from_utf8_lossy(&log_output.stdout)
-        .trim()
-        .to_string();
-    assert_eq!(msg, "Update dependencies");
-
-    let show_output = Command::new("git")
-        .args(["show", "HEAD:Cargo.lock"])
-        .current_dir(&repo)
-        .output()
-        .unwrap();
-    assert!(show_output.status.success());
-    let content = String::from_utf8_lossy(&show_output.stdout);
-    assert_eq!(content.trim(), "updated-lock-content");
-
-    let remote_log = Command::new("git")
-        .args(["log", "--oneline", "-1", "--format=%s"])
-        .current_dir(&bare)
-        .output()
-        .unwrap();
-    let remote_msg = String::from_utf8_lossy(&remote_log.stdout)
-        .trim()
-        .to_string();
-    assert_eq!(remote_msg, "Update dependencies");
-}
-
-#[test]
-fn lib_commit_deps_error_on_nothing_to_commit() {
-    let dir = tempfile::tempdir().unwrap();
-    let (repo, _bare) = lib_create_repo_with_remote(dir.path());
-    let result = commit_deps(&repo);
-    assert!(result.is_err());
-}
-
-#[test]
-fn lib_commit_deps_git_add_failure() {
-    // Exercise the `git add -A` failure branch by corrupting the git
-    // index: write a file at `.git/index` that contains invalid bytes
-    // AND is read-only, so git add exits non-zero.
-    let dir = tempfile::tempdir().unwrap();
-    let (repo, _bare) = lib_create_repo_with_remote(dir.path());
-
-    // Write a bogus file so git add has something to try to add.
-    fs::write(repo.join("Cargo.lock"), "new-content").unwrap();
-
-    // Make `.git` directory unwritable so `git add` cannot update the
-    // index.
-    let git_dir = repo.join(".git");
-    let mut perms = fs::metadata(&git_dir).unwrap().permissions();
-    perms.set_mode(0o555);
-    fs::set_permissions(&git_dir, perms).unwrap();
-
-    let result = commit_deps(&repo);
-
-    // Restore perms so tempdir cleanup works.
-    let mut rperms = fs::metadata(&git_dir).unwrap().permissions();
-    rperms.set_mode(0o755);
-    fs::set_permissions(&git_dir, rperms).unwrap();
-
-    assert!(result.is_err(), "commit_deps should fail on git add");
-    let err = result.unwrap_err();
-    assert!(err.contains("git add"), "got: {}", err);
-}
-
-#[test]
-fn lib_commit_deps_git_push_failure() {
-    let dir = tempfile::tempdir().unwrap();
-    let (repo, bare) = lib_create_repo_with_remote(dir.path());
-    fs::write(repo.join("Cargo.lock"), "updated").unwrap();
-    fs::remove_dir_all(&bare).unwrap();
-    let result = commit_deps(&repo);
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.contains("git push"), "got: {}", err);
-}
+// Direct `commit_deps` tests removed: the function is now a private
+// helper used via closure reference inside `run_impl_with_deps`. Its
+// behavior is exercised through the `run_impl_with_deps` tests below
+// and the subprocess tests at the end of this file.
 
 // --- run_impl_with_deps ---
 

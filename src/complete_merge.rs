@@ -154,10 +154,11 @@ pub fn complete_merge_inner(
     }
 }
 
-/// Main-arm dispatch with injectable runner — tests drive the exit
-/// code → status mapping by supplying a mock runner; production passes
-/// the real `bin/flow` path and `run_cmd_with_timeout`.
-pub fn run_impl_main_with_runner(
+/// Main-arm dispatch with injectable runner. The production wrapper
+/// `run_impl_main` passes the real `bin/flow` path and
+/// `run_cmd_with_timeout`; integration tests drive the exit-code
+/// mapping through subprocess fixtures.
+fn run_impl_main_with_runner(
     args: &Args,
     bin_flow: &str,
     runner: &dyn Fn(&[&str], u64) -> CmdResult,

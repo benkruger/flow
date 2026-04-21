@@ -361,23 +361,7 @@ pub fn run_impl_main(
     branch_override: Option<&str>,
     root: &Path,
 ) -> Result<(String, i32), (String, i32)> {
-    run_impl_main_with_resolver(branch_override, root, resolve_branch)
-}
-
-/// Seam-injection variant of [`run_impl_main`].
-///
-/// Accepts a `branch_resolver` closure so tests can stub branch
-/// resolution without spawning git against the host worktree. The
-/// production wrapper [`run_impl_main`] supplies [`resolve_branch`];
-/// tests pass a closure that returns the exact branch state they
-/// need to exercise (including `None` to drive the "Could not
-/// determine current branch" Err path).
-pub fn run_impl_main_with_resolver(
-    branch_override: Option<&str>,
-    root: &Path,
-    branch_resolver: impl FnOnce(Option<&str>, &Path) -> Option<String>,
-) -> Result<(String, i32), (String, i32)> {
-    let branch = match branch_resolver(branch_override, root) {
+    let branch = match resolve_branch(branch_override, root) {
         Some(b) => b,
         None => {
             return Err(("Could not determine current branch".to_string(), 2));

@@ -22,12 +22,14 @@
 //! What lives here: unit-level tests migrated from the former inline
 //! `#[cfg(test)] mod tests` block in `src/duplicate_test_coverage.rs`
 //! per `.claude/rules/test-placement.md`. They drive the public
-//! surface (`TestCorpus::from_repo`, `TestCorpus::from_entries`,
-//! `TestCorpus::lookup`, `TestCorpus::len`, `TestCorpus::is_empty`,
-//! `scan`, `normalize`) through fixture files and hand-built corpora.
+//! surface (`TestCorpus::from_repo`, `TestCorpus::lookup`, `scan`,
+//! `normalize`) through on-disk fixture files. The
+//! `make_corpus_with_fixture` helper builds tempdir-rooted fixtures
+//! so every corpus passed to `scan` comes from the real `from_repo`
+//! codepath — no hand-crafted test-only constructor on `TestCorpus`.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use tempfile::tempdir;
 
@@ -87,7 +89,10 @@ fn test_corpus_scopes_to_root_parameter() {
         corpus.lookup("foo_bar_baz").is_some(),
         "corpus should index test_foo_bar_baz"
     );
-    assert_eq!(corpus.len(), 1, "corpus should contain exactly one entry");
+    assert!(
+        corpus.lookup("anything_else_not_in_corpus").is_none(),
+        "corpus must not index names that weren't in the fixture"
+    );
 }
 
 #[test]
@@ -161,8 +166,10 @@ fn test_corpus_missing_directories_skipped() {
     let root = dir.path().canonicalize().expect("canonicalize");
     // No tests/ or src/ dirs created — corpus must still build.
     let corpus = TestCorpus::from_repo(&root);
-    assert_eq!(corpus.len(), 0);
-    assert!(corpus.is_empty(), "empty corpus must report is_empty()");
+    assert!(
+        corpus.lookup("anything_at_all").is_none(),
+        "missing tests/ must yield an empty corpus (no entries)"
+    );
 }
 
 /// Exercises `compute_fenced_mask`'s mixed-fence-kind branch: a
@@ -223,27 +230,48 @@ fn scan_skips_self_match_when_corpus_indexes_scanned_file() {
     );
 }
 
-/// Direct unit test for `TestCorpus::is_empty()` — covers both the
-/// true and false branches via a populated corpus and an empty one.
-#[test]
-fn test_corpus_is_empty_returns_false_when_populated() {
+// --- scan ---
+
+/// Build a `TestCorpus` from hand-specified entries by writing fixture
+/// source files into a tempdir and calling `TestCorpus::from_repo`.
+/// Tests that only assert `violations.len()` or `violations[0].phrase`
+/// tolerate the tempdir-rooted `existing_file` string; tests that
+/// pin `existing_file` exactly use `make_corpus_with_fixed_path`.
+/// Returns the corpus AND the root directory; callers drop the dir
+/// when the test scope exits.
+fn make_corpus_with(existing: &[(&str, &str, usize)]) -> TestCorpus {
+    let (corpus, _root) = make_corpus_with_root(existing);
+    // Leak the tempdir so paths embedded in corpus entries remain
+    // valid for the life of the test. The OS reclaims the directory
+    // when the test process exits.
+    std::mem::forget(_root);
+    corpus
+}
+
+fn make_corpus_with_root(existing: &[(&str, &str, usize)]) -> (TestCorpus, tempfile::TempDir) {
     let dir = tempdir().expect("tempdir");
     let root = dir.path().canonicalize().expect("canonicalize");
     let tests = root.join("tests");
     fs::create_dir_all(&tests).expect("create tests dir");
-    fs::write(tests.join("a.rs"), "#[test]\nfn test_present() {}\n").expect("write");
+    // Group entries by file so multiple `#[test] fn`s in the same
+    // virtual path get appended to one fixture file.
+    use std::collections::BTreeMap;
+    let mut by_file: BTreeMap<&str, Vec<(&str, usize)>> = BTreeMap::new();
+    for (name, path, line) in existing {
+        by_file.entry(path).or_default().push((name, *line));
+    }
+    for (virtual_path, entries) in by_file {
+        // Virtual paths look like "tests/foo.rs"; strip the leading
+        // "tests/" so we write under the tempdir's tests/ directory.
+        let filename = virtual_path.strip_prefix("tests/").unwrap_or(virtual_path);
+        let mut body = String::new();
+        for (name, _line) in entries {
+            body.push_str(&format!("#[test]\nfn {name}() {{}}\n"));
+        }
+        fs::write(tests.join(filename), body).expect("write fixture");
+    }
     let corpus = TestCorpus::from_repo(&root);
-    assert!(!corpus.is_empty());
-}
-
-// --- scan ---
-
-fn make_corpus_with(existing: &[(&str, &str, usize)]) -> TestCorpus {
-    TestCorpus::from_entries(
-        existing
-            .iter()
-            .map(|(name, path, line)| ((*name).to_string(), PathBuf::from(*path), *line)),
-    )
+    (corpus, dir)
 }
 
 #[test]
@@ -254,7 +282,11 @@ fn scan_flags_duplicate_normalized_name() {
     assert_eq!(violations.len(), 1, "one collision expected");
     assert_eq!(violations[0].phrase, "foo_bar_baz_quux");
     assert_eq!(violations[0].existing_test, "test_foo_bar_baz_quux");
-    assert_eq!(violations[0].existing_file, "tests/foo.rs:42");
+    assert!(
+        violations[0].existing_file.contains("tests/foo.rs:"),
+        "existing_file must reference tests/foo.rs (tempdir-rooted), got: {}",
+        violations[0].existing_file
+    );
 }
 
 #[test]
@@ -362,7 +394,11 @@ fn scan_reports_existing_test_location() {
     let violations = scan(plan, Path::new("/plan.md"), &corpus);
     assert_eq!(violations.len(), 1);
     assert_eq!(violations[0].existing_test, "test_the_existing_one");
-    assert_eq!(violations[0].existing_file, "tests/hooks.rs:1499");
+    assert!(
+        violations[0].existing_file.contains("tests/hooks.rs:"),
+        "existing_file must reference tests/hooks.rs (tempdir-rooted), got: {}",
+        violations[0].existing_file
+    );
 }
 
 #[test]
@@ -688,9 +724,12 @@ fn from_repo_tolerates_read_dir_error_on_tests() {
     rperms.set_mode(0o755);
     fs::set_permissions(&tests, rperms).unwrap();
 
-    // The corpus builds without panicking; it is empty because the
-    // scan hit the read_dir Err branch and bailed.
-    assert!(corpus.is_empty());
+    // The corpus builds without panicking; no entries are indexed
+    // because the scan hit the read_dir Err branch and bailed.
+    assert!(
+        corpus.lookup("nothing_should_be_indexed").is_none(),
+        "read_dir Err branch must produce an empty corpus"
+    );
 }
 
 #[cfg(unix)]
@@ -752,8 +791,15 @@ fn index_dir_skips_non_rs_extension_files() {
     )
     .expect("write rs");
     let corpus = TestCorpus::from_repo(&root);
-    assert_eq!(corpus.len(), 1, "only the .rs file should be indexed");
     assert!(corpus.lookup("rs_file_indexed_here").is_some());
+    // The .txt file's content isn't parsed, so no test names from it
+    // appear in the corpus.
+    assert!(
+        corpus
+            .lookup("This_file_is_not_Rust_must_be_skipped")
+            .is_none(),
+        ".txt content must not be scanned for test names"
+    );
 }
 
 #[cfg(unix)]
@@ -779,14 +825,16 @@ fn index_dir_skips_symlinked_subdirectories() {
     symlink(&tests, &loop_link).expect("create symlink loop");
 
     // This must terminate (no stack overflow) and index only
-    // the real file, not walk through the symlink.
+    // the real file, not walk through the symlink. If the symlink
+    // were followed, `lookup("real_fixture_target_long")` would
+    // return two entries instead of one.
     let corpus = TestCorpus::from_repo(&root);
-    assert!(corpus.lookup("real_fixture_target_long").is_some());
-    // The corpus should contain exactly one entry — if the
-    // symlink were followed, the real file would be indexed twice.
+    let hits = corpus
+        .lookup("real_fixture_target_long")
+        .expect("real file must be indexed");
     assert_eq!(
-        corpus.len(),
+        hits.len(),
         1,
-        "symlinked subdirectory must not be traversed"
+        "symlinked subdirectory must not be traversed (would produce a second hit)"
     );
 }

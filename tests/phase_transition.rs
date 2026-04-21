@@ -7,8 +7,7 @@ use common::flow_states_dir;
 use flow_rs::phase_config;
 use flow_rs::phase_config::PHASE_ORDER;
 use flow_rs::phase_transition::{
-    capture_diff_stats, capture_diff_stats_from_result, parse_diff_stat_summary, phase_complete,
-    phase_enter, run_impl_main, run_impl_main_with_resolver,
+    phase_complete, phase_enter, run_impl_main, run_impl_main_with_resolver,
 };
 use indexmap::IndexMap;
 use serde_json::{json, Value};
@@ -1206,114 +1205,183 @@ fn enter_phases_wrong_type_array() {
 }
 
 // ===== capture_diff_stats =====
+// `capture_diff_stats` is exercised via subprocess tests that spawn
+// `bin/flow phase-transition --action complete` against fixture repos
+// (see `code_phase_completion_captures_diff_stats`,
+// `diff_stats_with_merge_commit_in_history`,
+// `diff_stats_no_main_branch_returns_zeros`,
+// `diff_stats_no_diff_returns_zeros`,
+// `diff_stats_deletion_only`). `parse_diff_summary` is a private
+// helper reached transitively through the same path.
 
 #[test]
-fn parse_diff_stat_summary_files_and_insertions() {
-    let (files, ins, del) = parse_diff_stat_summary(" 3 files changed, 42 insertions(+)");
-    assert_eq!(files, 3);
-    assert_eq!(ins, 42);
-    assert_eq!(del, 0);
-}
+fn diff_stats_no_main_branch_returns_zeros() {
+    // Repo with a feature branch but no `main` ref. `git diff --stat
+    // main...HEAD` exits non-zero, hitting the `_` arm of
+    // `capture_diff_stats`'s match (covers both Err and Ok-non-success
+    // since they fall through the same `_` handler).
+    let dir = tempfile::tempdir().unwrap();
+    // Init directly on the feature branch — no main ever exists.
+    Command::new("git")
+        .args(["-c", "init.defaultBranch=my-feature", "init"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "Test"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "commit.gpgsign", "false"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
 
-#[test]
-fn parse_diff_stat_summary_deletions_only() {
-    // Covers the `else if part.contains("deletion")` branch.
-    let (files, ins, del) = parse_diff_stat_summary(" 1 file changed, 7 deletions(-)");
-    assert_eq!(files, 1);
-    assert_eq!(ins, 0);
-    assert_eq!(del, 7);
-}
+    let state = make_state(
+        "flow-code",
+        &[
+            ("flow-start", "complete"),
+            ("flow-plan", "complete"),
+            ("flow-code", "in_progress"),
+        ],
+    );
+    setup_state(dir.path(), "my-feature", &state);
 
-#[test]
-fn parse_diff_stat_summary_mixed() {
-    let (files, ins, del) =
-        parse_diff_stat_summary(" 5 files changed, 100 insertions(+), 50 deletions(-)");
-    assert_eq!(files, 5);
-    assert_eq!(ins, 100);
-    assert_eq!(del, 50);
-}
+    let (code, json) = run(
+        dir.path(),
+        "flow-code",
+        "complete",
+        &["--branch", "my-feature"],
+    );
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "ok");
 
-#[test]
-fn parse_diff_stat_summary_empty() {
-    let (files, ins, del) = parse_diff_stat_summary("");
-    assert_eq!(files, 0);
-    assert_eq!(ins, 0);
-    assert_eq!(del, 0);
-}
-
-#[test]
-fn parse_diff_stat_summary_non_numeric_parts_ignored() {
-    // Covers the None branches of the three `if let Some(n) = ...parse().ok()`
-    // guards — when a part contains the keyword but the first whitespace
-    // token is not a valid i64, the counter stays at 0.
-    let (files, ins, del) =
-        parse_diff_stat_summary("foo files changed, bar insertions(+), baz deletions(-)");
-    assert_eq!(files, 0);
-    assert_eq!(ins, 0);
-    assert_eq!(del, 0);
-}
-
-#[test]
-fn capture_diff_stats_returns_zeros_structure() {
-    let stats = capture_diff_stats();
-    assert!(stats.get("files_changed").is_some());
-    assert!(stats.get("insertions").is_some());
-    assert!(stats.get("deletions").is_some());
+    let state_path = flow_states_dir(dir.path()).join("my-feature.json");
+    let content = fs::read_to_string(state_path).unwrap();
+    let updated: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let stats = &updated["diff_stats"];
+    assert_eq!(stats["files_changed"], 0);
+    assert_eq!(stats["insertions"], 0);
+    assert_eq!(stats["deletions"], 0);
     assert!(stats.get("captured_at").is_some());
 }
 
 #[test]
-fn capture_diff_stats_from_result_spawn_error_returns_zeros() {
-    // Covers the Err branch of the subprocess result.
-    let result: std::io::Result<std::process::Output> = Err(std::io::Error::new(
-        std::io::ErrorKind::NotFound,
-        "git not found",
-    ));
-    let stats = capture_diff_stats_from_result(result);
+fn diff_stats_no_diff_returns_zeros() {
+    // Feature branch identical to main (no commits on top). `git diff
+    // --stat main...HEAD` prints empty stdout. Covers the
+    // `stdout.trim().lines().last().unwrap_or("")` None path and the
+    // three `extract(...)` None branches in `parse_diff_summary`
+    // (summary is "" so no part contains any keyword).
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "my-feature");
+
+    let state = make_state(
+        "flow-code",
+        &[
+            ("flow-start", "complete"),
+            ("flow-plan", "complete"),
+            ("flow-code", "in_progress"),
+        ],
+    );
+    setup_state(dir.path(), "my-feature", &state);
+
+    let (code, json) = run(
+        dir.path(),
+        "flow-code",
+        "complete",
+        &["--branch", "my-feature"],
+    );
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "ok");
+
+    let state_path = flow_states_dir(dir.path()).join("my-feature.json");
+    let content = fs::read_to_string(state_path).unwrap();
+    let updated: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let stats = &updated["diff_stats"];
     assert_eq!(stats["files_changed"], 0);
     assert_eq!(stats["insertions"], 0);
     assert_eq!(stats["deletions"], 0);
 }
 
 #[test]
-fn capture_diff_stats_from_result_non_success_returns_zeros() {
-    // Covers the `Ok(o) if o.status.success()` guard-fail path —
-    // subprocess exits non-zero.
-    use std::os::unix::process::ExitStatusExt;
-    let output = std::process::Output {
-        status: std::process::ExitStatus::from_raw(1 << 8),
-        stdout: vec![],
-        stderr: b"git error".to_vec(),
-    };
-    let stats = capture_diff_stats_from_result(Ok(output));
-    assert_eq!(stats["files_changed"], 0);
-}
+fn diff_stats_deletion_only() {
+    // Feature branch that DELETES a file present on main. `git diff
+    // --stat main...HEAD` reports the deletion, exercising the
+    // `extract("deletion")` Some path in `parse_diff_summary`.
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "temp");
+    // Add a file on main
+    Command::new("git")
+        .args(["checkout", "main"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    fs::write(dir.path().join("doomed.py"), "line1\nline2\nline3\n").unwrap();
+    Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "add doomed"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    // Create feature branch from main, delete the file
+    Command::new("git")
+        .args(["checkout", "-b", "my-feature"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    fs::remove_file(dir.path().join("doomed.py")).unwrap();
+    Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "delete doomed"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
 
-#[test]
-fn capture_diff_stats_from_result_empty_stdout_returns_zeros() {
-    use std::os::unix::process::ExitStatusExt;
-    let output = std::process::Output {
-        status: std::process::ExitStatus::from_raw(0),
-        stdout: b"".to_vec(),
-        stderr: vec![],
-    };
-    let stats = capture_diff_stats_from_result(Ok(output));
-    assert_eq!(stats["files_changed"], 0);
-}
+    let state = make_state(
+        "flow-code",
+        &[
+            ("flow-start", "complete"),
+            ("flow-plan", "complete"),
+            ("flow-code", "in_progress"),
+        ],
+    );
+    setup_state(dir.path(), "my-feature", &state);
 
-#[test]
-fn capture_diff_stats_from_result_parses_summary() {
-    use std::os::unix::process::ExitStatusExt;
-    let body = "foo.rs | 10 +++++++---\n 1 file changed, 8 insertions(+), 3 deletions(-)\n";
-    let output = std::process::Output {
-        status: std::process::ExitStatus::from_raw(0),
-        stdout: body.as_bytes().to_vec(),
-        stderr: vec![],
-    };
-    let stats = capture_diff_stats_from_result(Ok(output));
-    assert_eq!(stats["files_changed"], 1);
-    assert_eq!(stats["insertions"], 8);
-    assert_eq!(stats["deletions"], 3);
+    let (code, json) = run(
+        dir.path(),
+        "flow-code",
+        "complete",
+        &["--branch", "my-feature"],
+    );
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "ok");
+
+    let state_path = flow_states_dir(dir.path()).join("my-feature.json");
+    let content = fs::read_to_string(state_path).unwrap();
+    let updated: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let stats = &updated["diff_stats"];
+    assert!(stats["files_changed"].as_i64().unwrap() >= 1);
+    assert!(stats["deletions"].as_i64().unwrap() >= 3);
 }
 
 #[test]

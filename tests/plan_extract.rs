@@ -1,608 +1,10 @@
 mod common;
 
 use common::flow_states_dir;
-use flow_rs::duplicate_test_coverage::Violation as DupViolation;
-use flow_rs::external_input_audit::Violation as AuditViolation;
-use flow_rs::plan_extract::{
-    complete_plan_phase, count_tasks, count_tasks_any_level, extract_implementation_plan,
-    find_heading, gate_check, is_decomposed, is_heading_terminated, load_frozen_config,
-    promote_headings, read_dag_mode, violations_response,
-};
-use flow_rs::scope_enumeration::Violation;
-use serde_json::json;
-use std::path::PathBuf;
 
-// --- Unit tests for pure functions ---
-
-// (Unit tests are below, integration tests at end of file)
-
-#[test]
-fn extract_plan_basic() {
-    let body = "## Problem\n\nSomething.\n\n## Implementation Plan\n\n### Context\n\nStuff.\n\n### Tasks\n\n#### Task 1: Do thing\n\n## Files to Investigate\n\n- foo.rs\n";
-    let result = extract_implementation_plan(body).unwrap();
-    assert!(result.contains("### Context"));
-    assert!(result.contains("#### Task 1: Do thing"));
-    assert!(!result.contains("## Files to Investigate"));
-    assert!(!result.contains("## Problem"));
-}
-
-#[test]
-fn extract_plan_at_end_of_body() {
-    let body = "## Problem\n\nFoo.\n\n## Implementation Plan\n\n### Context\n\nLast section.";
-    let result = extract_implementation_plan(body).unwrap();
-    assert!(result.contains("### Context"));
-    assert!(result.contains("Last section."));
-}
-
-#[test]
-fn extract_plan_missing() {
-    let body = "## Problem\n\nNo plan here.\n\n## Files to Investigate\n\n- bar.rs\n";
-    assert!(extract_implementation_plan(body).is_none());
-}
-
-#[test]
-fn extract_plan_empty_section() {
-    let body = "## Implementation Plan\n\n## Files to Investigate\n";
-    assert!(extract_implementation_plan(body).is_none());
-}
-
-#[test]
-fn promote_headings_basic() {
-    let content = "### Context\n\nText.\n\n#### Task 1: Do thing\n\nMore text.\n";
-    let result = promote_headings(content);
-    assert!(result.contains("## Context"));
-    assert!(!result.contains("### Context"));
-    assert!(result.contains("### Task 1: Do thing"));
-    assert!(!result.contains("#### Task 1"));
-}
-
-#[test]
-fn promote_headings_skips_code_blocks() {
-    let content = "### Before\n\n```\n### Inside code block\n#### Also inside\n```\n\n### After\n";
-    let result = promote_headings(content);
-    assert!(result.contains("## Before"));
-    assert!(result.contains("### Inside code block"));
-    assert!(result.contains("#### Also inside"));
-    assert!(result.contains("## After"));
-}
-
-#[test]
-fn promote_headings_preserves_h2() {
-    // ## should NOT be promoted to # — only ### and #### are promoted
-    let content = "## Already H2\n\n### Should become H2\n";
-    let result = promote_headings(content);
-    assert!(result.contains("## Already H2"));
-    // The ### becomes ## too, so we have two ## lines
-    let h2_count = result.lines().filter(|l| l.starts_with("## ")).count();
-    assert_eq!(h2_count, 2);
-}
-
-#[test]
-fn promote_headings_fenced_with_language() {
-    let content = "### Heading\n\n```rust\n### not a heading\n```\n\n### Another\n";
-    let result = promote_headings(content);
-    assert!(result.contains("## Heading"));
-    assert!(result.contains("### not a heading"));
-    assert!(result.contains("## Another"));
-}
-
-#[test]
-fn count_tasks_basic() {
-    let content = "#### Task 1: First\n\nStuff.\n\n#### Task 2: Second\n\nMore.\n";
-    assert_eq!(count_tasks(content), 2);
-}
-
-#[test]
-fn count_tasks_skips_code_blocks() {
-    let content = "#### Task 1: Real\n\n```\n#### Task 2: Fake\n```\n\n#### Task 3: Also real\n";
-    assert_eq!(count_tasks(content), 2);
-}
-
-#[test]
-fn count_tasks_zero_when_none() {
-    let content = "### Context\n\nNo tasks here.\n";
-    assert_eq!(count_tasks(content), 0);
-}
-
-#[test]
-fn count_tasks_requires_task_prefix() {
-    // #### without "Task " should not count
-    let content = "#### Something else\n\n#### Task 1: Real\n";
-    assert_eq!(count_tasks(content), 1);
-}
-
-#[test]
-fn extract_plan_ends_at_first_h2() {
-    // extract_implementation_plan uses simple find("\n## ") — not code-block-aware.
-    // A ## inside a code block within the plan section ends extraction early.
-    // This is acceptable because flow-create-issue controls the issue format
-    // and does not produce ## headings inside code blocks.
-    let body = "## Implementation Plan\n\n### Context\n\n```\n## This is not a heading\n```\n\n### Tasks\n\n## Out of Scope\n";
-    let result = extract_implementation_plan(body).unwrap();
-    assert!(result.contains("### Context"));
-    // Extraction ends at the ## inside the code block (first \n## match)
-    assert!(!result.contains("### Tasks"));
-}
-
-#[test]
-fn extract_plan_rejects_heading_suffix() {
-    // "## Implementation Planning" should NOT match — it's a different heading
-    let body = "## Implementation Planning\n\n### Context\n\nStuff.\n";
-    assert!(extract_implementation_plan(body).is_none());
-}
-
-#[test]
-fn extract_plan_rejects_heading_extra_words() {
-    // "## Implementation Plan Details" should NOT match
-    let body = "## Problem\n\nFoo.\n\n## Implementation Plan Details\n\n### Context\n\nStuff.\n";
-    assert!(extract_implementation_plan(body).is_none());
-}
-
-#[test]
-fn extract_plan_rejects_mid_line_heading() {
-    // "## Implementation Plan" not at line start should NOT match
-    let body = "some text ## Implementation Plan\n\n### Context\n\nStuff.\n";
-    assert!(extract_implementation_plan(body).is_none());
-}
-
-#[test]
-fn extract_plan_matches_at_start_of_body() {
-    // Body starting with the heading should match
-    let body = "## Implementation Plan\n\n### Context\n\nStuff.\n";
-    let result = extract_implementation_plan(body).unwrap();
-    assert!(result.contains("### Context"));
-}
-
-#[test]
-fn extract_plan_matches_after_other_sections() {
-    // Heading preceded by \n (after other content) should match
-    let body = "## Problem\n\nFoo.\n\n## Implementation Plan\n\n### Context\n\nContent.\n";
-    let result = extract_implementation_plan(body).unwrap();
-    assert!(result.contains("### Context"));
-    assert!(result.contains("Content."));
-}
-
-#[test]
-fn extract_plan_matches_windows_line_endings() {
-    // Heading followed by \r\n should match
-    let body =
-        "## Problem\r\n\r\nFoo.\r\n\r\n## Implementation Plan\r\n\r\n### Context\r\n\r\nStuff.\r\n";
-    let result = extract_implementation_plan(body).unwrap();
-    assert!(result.contains("### Context"));
-}
-
-#[test]
-fn extract_plan_tolerates_trailing_space() {
-    // Heading with trailing spaces should still match
-    let body = "## Problem\n\nFoo.\n\n## Implementation Plan  \n\n### Context\n\nContent.\n";
-    let result = extract_implementation_plan(body).unwrap();
-    assert!(result.contains("### Context"));
-}
-
-#[test]
-fn extract_plan_tolerates_trailing_tab() {
-    // Heading with trailing tab should still match
-    let body = "## Implementation Plan\t\n\n### Context\n\nStuff.\n";
-    let result = extract_implementation_plan(body).unwrap();
-    assert!(result.contains("### Context"));
-}
-
-#[test]
-fn extract_plan_skips_suffix_finds_exact() {
-    // First heading has suffix (rejected), second is exact (accepted)
-    let body = "## Implementation Planning\n\nIgnore.\n\n## Implementation Plan\n\nReal content.\n";
-    let result = extract_implementation_plan(body).unwrap();
-    assert!(result.contains("Real content."));
-    assert!(!result.contains("Ignore."));
-}
-
-#[test]
-fn promote_headings_five_hashes_unchanged() {
-    // ##### should not be promoted (only ### and #### are)
-    let content = "##### Five hashes\n### Three hashes\n";
-    let result = promote_headings(content);
-    // ##### starts with #### so it gets promoted to ####
-    assert!(result.contains("#### Five hashes"));
-    assert!(result.contains("## Three hashes"));
-}
-
-#[test]
-fn count_tasks_ten() {
-    let mut content = String::new();
-    for i in 1..=10 {
-        content.push_str(&format!("#### Task {}: Description {}\n\nBody.\n\n", i, i));
-    }
-    assert_eq!(count_tasks(&content), 10);
-}
-
-// --- violations_response ---
-
-#[test]
-fn violations_response_aggregates_all_three_scanners_with_rule_tags() {
-    let scope = vec![Violation {
-        file: PathBuf::from("/tmp/plan.md"),
-        line: 10,
-        phrase: "every subcommand".to_string(),
-        context: "Add guard to every subcommand.".to_string(),
-    }];
-    let audit = vec![AuditViolation {
-        file: PathBuf::from("/tmp/plan.md"),
-        line: 20,
-        phrase: "panic on empty".to_string(),
-        context: "tighten to panic on empty".to_string(),
-    }];
-    let dup = vec![DupViolation {
-        file: PathBuf::from("/tmp/plan.md"),
-        line: 30,
-        phrase: "duplicate_name_here".to_string(),
-        context: "Plan names `duplicate_name_here` as new.".to_string(),
-        existing_test: "test_duplicate_name_here".to_string(),
-        existing_file: "tests/hooks.rs:1499".to_string(),
-    }];
-    let resp = violations_response(&scope, &audit, &dup, "extracted");
-    assert_eq!(resp["status"], "error");
-    assert_eq!(resp["path"], "extracted");
-
-    let violations = resp["violations"].as_array().expect("array");
-    assert_eq!(violations.len(), 3);
-    let rules: Vec<String> = violations
-        .iter()
-        .map(|v| v["rule"].as_str().unwrap_or("").to_string())
-        .collect();
-    assert!(rules.contains(&"scope-enumeration".to_string()));
-    assert!(rules.contains(&"external-input-audit".to_string()));
-    assert!(rules.contains(&"duplicate-test-coverage".to_string()));
-
-    let dup_entry = violations
-        .iter()
-        .find(|v| v["rule"].as_str() == Some("duplicate-test-coverage"))
-        .expect("dup entry present");
-    assert_eq!(
-        dup_entry["existing_test"].as_str(),
-        Some("test_duplicate_name_here")
-    );
-    assert_eq!(
-        dup_entry["existing_file"].as_str(),
-        Some("tests/hooks.rs:1499")
-    );
-
-    let msg = resp["message"].as_str().unwrap_or("");
-    assert!(msg.contains("3 plan-check violation"));
-    assert!(msg.contains("scope-enumeration.md"));
-    assert!(msg.contains("external-input-audit-gate.md"));
-    assert!(msg.contains("duplicate-test-coverage.md"));
-}
-
-#[test]
-fn violations_response_audit_only_omits_other_rule_messages() {
-    let scope: Vec<Violation> = vec![];
-    let audit = vec![AuditViolation {
-        file: PathBuf::from("/tmp/plan.md"),
-        line: 5,
-        phrase: "panic on empty".to_string(),
-        context: "tighten to panic on empty".to_string(),
-    }];
-    let dup: Vec<DupViolation> = vec![];
-    let resp = violations_response(&scope, &audit, &dup, "resumed");
-    let msg = resp["message"].as_str().unwrap_or("");
-    assert!(msg.contains("external-input-audit-gate.md"));
-    assert!(!msg.contains("scope-enumeration.md"));
-    assert!(!msg.contains("duplicate-test-coverage.md"));
-    assert_eq!(resp["path"], "resumed");
-}
-
-#[test]
-fn violations_response_duplicate_only_names_only_duplicate_rule() {
-    let scope: Vec<Violation> = vec![];
-    let audit: Vec<AuditViolation> = vec![];
-    let dup = vec![DupViolation {
-        file: PathBuf::from("/tmp/plan.md"),
-        line: 42,
-        phrase: "proposed_dup_name".to_string(),
-        context: "Add `proposed_dup_name` as a new test.".to_string(),
-        existing_test: "test_proposed_dup_name".to_string(),
-        existing_file: "tests/foo.rs:100".to_string(),
-    }];
-    let resp = violations_response(&scope, &audit, &dup, "extracted");
-    let msg = resp["message"].as_str().unwrap_or("");
-    assert!(msg.contains("duplicate-test-coverage.md"));
-    assert!(!msg.contains("scope-enumeration.md"));
-    assert!(!msg.contains("external-input-audit-gate.md"));
-}
-
-// --- load_frozen_config ---
-
-#[test]
-fn load_frozen_config_with_existing_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    let branch = "test-frozen";
-    let flow_states = root.join(".flow-states");
-    std::fs::create_dir_all(&flow_states).unwrap();
-    let frozen_path = flow_states.join(format!("{}-phases.json", branch));
-    let frozen_json = json!({
-        "order": ["flow-start", "flow-plan"],
-        "phases": {
-            "flow-start": {"name": "Start", "command": "/flow:flow-start"},
-            "flow-plan": {"name": "Plan", "command": "/flow:flow-plan"}
-        }
-    });
-    std::fs::write(&frozen_path, frozen_json.to_string()).unwrap();
-
-    let (order, commands) = load_frozen_config(root, branch);
-    assert!(
-        order.is_some(),
-        "order should be Some when frozen file exists"
-    );
-    assert!(commands.is_some());
-    let order = order.unwrap();
-    assert_eq!(order.len(), 2);
-    assert_eq!(order[0], "flow-start");
-}
-
-#[test]
-fn load_frozen_config_without_file_returns_none() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    let (order, commands) = load_frozen_config(root, "no-such-branch");
-    assert!(order.is_none());
-    assert!(commands.is_none());
-}
-
-// --- count_tasks_any_level ---
-
-#[test]
-fn count_tasks_any_level_skips_code_blocks() {
-    let content = "### Task 1: Real task\n\n\
-        ```\n\
-        ### Task 2: Inside code block\n\
-        ```\n\n\
-        ### Task 3: Another real task\n";
-    assert_eq!(count_tasks_any_level(content), 2);
-}
-
-#[test]
-fn count_tasks_any_level_counts_both_hash_levels() {
-    let content = "### Task 1: h3\n#### Task 2: h4\n### Task 3: h3\n";
-    assert_eq!(count_tasks_any_level(content), 3);
-}
-
-#[test]
-fn count_tasks_any_level_tilde_fence() {
-    let content = "### Task 1: Real\n~~~\n### Task 2: Fake\n~~~\n### Task 3: Real\n";
-    assert_eq!(count_tasks_any_level(content), 2);
-}
-
-// --- is_decomposed ---
-
-#[test]
-fn is_decomposed_matches_case_insensitive_lower() {
-    let issue = json!({"labels": [{"name": "decomposed"}]});
-    assert!(is_decomposed(&issue));
-}
-
-#[test]
-fn is_decomposed_matches_case_insensitive_mixed() {
-    let issue = json!({"labels": [{"name": "Decomposed"}]});
-    assert!(is_decomposed(&issue));
-}
-
-#[test]
-fn is_decomposed_matches_case_insensitive_upper() {
-    let issue = json!({"labels": [{"name": "DECOMPOSED"}]});
-    assert!(is_decomposed(&issue));
-}
-
-#[test]
-fn is_decomposed_false_without_label() {
-    let issue = json!({"labels": [{"name": "Bug"}, {"name": "Tech Debt"}]});
-    assert!(!is_decomposed(&issue));
-}
-
-#[test]
-fn is_decomposed_false_on_missing_labels_key() {
-    let issue = json!({"title": "x"});
-    assert!(!is_decomposed(&issue));
-}
-
-#[test]
-fn is_decomposed_false_on_empty_labels() {
-    let issue = json!({"labels": []});
-    assert!(!is_decomposed(&issue));
-}
-
-#[test]
-fn is_decomposed_false_when_labels_not_array() {
-    let issue = json!({"labels": "not an array"});
-    assert!(!is_decomposed(&issue));
-}
-
-#[test]
-fn is_decomposed_false_when_label_name_missing() {
-    let issue = json!({"labels": [{"color": "red"}]});
-    assert!(!is_decomposed(&issue));
-}
-
-// --- read_dag_mode ---
-
-#[test]
-fn read_dag_mode_default_when_missing() {
-    let state = json!({});
-    assert_eq!(read_dag_mode(&state), "auto");
-}
-
-#[test]
-fn read_dag_mode_explicit_never() {
-    let state = json!({"skills": {"flow-plan": {"dag": "never"}}});
-    assert_eq!(read_dag_mode(&state), "never");
-}
-
-#[test]
-fn read_dag_mode_explicit_always() {
-    let state = json!({"skills": {"flow-plan": {"dag": "always"}}});
-    assert_eq!(read_dag_mode(&state), "always");
-}
-
-#[test]
-fn read_dag_mode_empty_string_falls_back_to_default() {
-    let state = json!({"skills": {"flow-plan": {"dag": ""}}});
-    assert_eq!(read_dag_mode(&state), "auto");
-}
-
-#[test]
-fn read_dag_mode_non_string_falls_back_to_default() {
-    let state = json!({"skills": {"flow-plan": {"dag": 42}}});
-    assert_eq!(read_dag_mode(&state), "auto");
-}
-
-// --- is_heading_terminated ---
-
-#[test]
-fn is_heading_terminated_accepts_empty() {
-    assert!(is_heading_terminated(""));
-}
-
-#[test]
-fn is_heading_terminated_accepts_lf() {
-    assert!(is_heading_terminated("\n"));
-}
-
-#[test]
-fn is_heading_terminated_accepts_cr() {
-    assert!(is_heading_terminated("\r"));
-}
-
-#[test]
-fn is_heading_terminated_accepts_trailing_space_lf() {
-    assert!(is_heading_terminated("   \n"));
-}
-
-#[test]
-fn is_heading_terminated_accepts_trailing_tab_lf() {
-    assert!(is_heading_terminated("\t\n"));
-}
-
-#[test]
-fn is_heading_terminated_accepts_only_whitespace() {
-    assert!(is_heading_terminated("   "));
-}
-
-#[test]
-fn is_heading_terminated_rejects_text_with_leading_space() {
-    assert!(!is_heading_terminated(" foo"));
-}
-
-#[test]
-fn is_heading_terminated_rejects_inline_text() {
-    assert!(!is_heading_terminated("x"));
-}
-
-// --- find_heading ---
-
-#[test]
-fn find_heading_at_start() {
-    let body = "## Implementation Plan\n\ncontent";
-    assert_eq!(find_heading(body, "## Implementation Plan"), Some(0));
-}
-
-#[test]
-fn find_heading_after_prose() {
-    let body = "# Title\n\n## Implementation Plan\n\nbody";
-    assert_eq!(find_heading(body, "## Implementation Plan"), Some(9));
-}
-
-#[test]
-fn find_heading_not_found_when_inline() {
-    let body = "Some text with ## Implementation Plan inline.";
-    assert_eq!(find_heading(body, "## Implementation Plan"), None);
-}
-
-#[test]
-fn find_heading_not_found_when_absent() {
-    let body = "# Title\n\n## Context\n\n## Tasks\n";
-    assert_eq!(find_heading(body, "## Implementation Plan"), None);
-}
-
-#[test]
-fn find_heading_rejects_start_prefix_then_finds_exact() {
-    // Body starts with "## Implementation Planning" (not exact); the
-    // real match appears after a newline. strip_prefix matches but
-    // `is_heading_terminated` rejects the suffix, so the search
-    // continues via the `\n<heading>` loop.
-    let body = "## Implementation Planning\n\n## Implementation Plan\n\nbody";
-    let pos = find_heading(body, "## Implementation Plan").unwrap();
-    assert!(pos > 0);
-}
-
-#[test]
-fn find_heading_iterates_past_inline_match_to_exact() {
-    // First candidate after \n is "## Implementation Planx" (not
-    // terminated). The loop advances and finds the next candidate
-    // which is a real match.
-    let body = "## Context\n## Implementation Planx\n## Implementation Plan\n\nbody";
-    let pos = find_heading(body, "## Implementation Plan").unwrap();
-    assert!(pos > 20);
-}
-
-// --- gate_check ---
-
-#[test]
-fn gate_check_passes_when_start_complete() {
-    let state = json!({"phases": {"flow-start": {"status": "complete"}}});
-    assert!(gate_check(&state).is_ok());
-}
-
-#[test]
-fn gate_check_fails_when_start_incomplete() {
-    let state = json!({"phases": {"flow-start": {"status": "in_progress"}}});
-    let err = gate_check(&state).unwrap_err();
-    assert_eq!(err["status"], "error");
-    assert!(err["message"].as_str().unwrap().contains("flow-start"));
-}
-
-#[test]
-fn gate_check_fails_when_status_missing() {
-    let state = json!({"phases": {"flow-start": {}}});
-    assert!(gate_check(&state).is_err());
-}
-
-#[test]
-fn gate_check_fails_when_phases_missing() {
-    let state = json!({});
-    assert!(gate_check(&state).is_err());
-}
-
-// --- complete_plan_phase ---
-
-#[test]
-fn complete_plan_phase_returns_err_on_missing_state() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    let state_path = root.join(".flow-states").join("nonexistent.json");
-    let result = complete_plan_phase(&state_path, root, "nonexistent");
-    assert!(result.is_err(), "expected Err when state file is missing");
-    let err = result.unwrap_err();
-    assert!(
-        err.contains("Failed to complete phase"),
-        "expected map_err message, got: {}",
-        err
-    );
-}
-
-// --- extract_implementation_plan: empty-section branch ---
-
-#[test]
-fn extract_implementation_plan_none_when_empty_section_between_h2() {
-    let body = "## Implementation Plan\n\n## Next section\n";
-    assert_eq!(extract_implementation_plan(body), None);
-}
-
-#[test]
-fn extract_implementation_plan_runs_to_eof_when_no_next_heading() {
-    let body = "## Implementation Plan\n\ntail content only\n";
-    let extracted = extract_implementation_plan(body).unwrap();
-    assert!(extracted.contains("tail content only"));
-}
+// Unit tests for now-private helpers removed — all coverage is
+// driven through the `integration` subprocess module below via
+// `bin/flow plan-extract` against fixture repos.
 
 // --- Integration tests for run_impl (via subprocess) ---
 
@@ -1327,5 +729,470 @@ exit 1
             updated_state["phases"]["flow-plan"]["status"], "complete",
             "flow-plan should complete when enumerated plan passes the gate"
         );
+    }
+
+    // --- Coverage-required tests for now-private helpers ---
+    //
+    // The helpers these tests exercise (find_heading, promote_headings,
+    // count_tasks, extract_implementation_plan, violations_response,
+    // fetch_issue, load_frozen_config) used to be `pub` and had direct
+    // unit tests. Per `.claude/rules/test-placement.md`, the helpers
+    // are now private and their branches are driven through the
+    // `bin/flow plan-extract` subprocess surface via crafted fixtures.
+
+    #[test]
+    fn no_branch_in_non_git_dir_returns_error() {
+        // Covers the `resolve_state` None branch (`Could not determine
+        // current branch`) when the subprocess cwd is not a git repo
+        // and no --branch override is supplied. No state file exists
+        // either, so `resolve_branch` falls through to
+        // `current_branch()` which returns None.
+        let dir = tempfile::tempdir().unwrap();
+        let (code, json) = run_plan_extract(dir.path(), &[]);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "error");
+        assert!(
+            json["message"]
+                .as_str()
+                .unwrap_or("")
+                .contains("Could not determine current branch"),
+            "expected branch-resolution error, got: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn gh_fetch_fails_returns_standard_path() {
+        // Covers `fetch_issue` returning None (gh stub exits non-zero).
+        // Since the fetch fails for the single referenced issue,
+        // no decomposed_data is found — hits the "no decomposed issue
+        // found → standard path" branch with empty issue_body.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("fix issue #77", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r#"#!/bin/bash
+exit 1
+"#,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "standard");
+        assert!(
+            json["issue_body"].is_null(),
+            "issue_body must be null when all fetches fail"
+        );
+    }
+
+    #[test]
+    fn issue_body_starts_with_impl_plan_heading() {
+        // Covers `find_heading`'s start-of-body match (lines 178-181):
+        // the issue body's very first characters are the
+        // "## Implementation Plan" heading, hitting strip_prefix +
+        // is_heading_terminated both true.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("work on #200", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":200,"title":"Plan first","body":"## Implementation Plan\n\n### Context\n\nHead-anchored plan.\n\n### Tasks\n\n#### Task 1: Do thing","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "extracted");
+    }
+
+    #[test]
+    fn issue_body_has_planning_suffix_before_real_plan() {
+        // Covers `find_heading`'s loop-iteration path: the body has a
+        // preamble (so strip_prefix fails and the while loop takes
+        // over), then "\n## Implementation Planning" matches
+        // body.find() but is_heading_terminated returns false for
+        // the "ning..." suffix, so `start` advances and the loop
+        // iterates again to find the real "\n## Implementation Plan".
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("work on #201", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        // Body starts with preamble (not the heading), then contains
+        // "## Implementation Planning" which triggers the non-terminated
+        // match path, then the real "## Implementation Plan".
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":201,"title":"Planning vs Plan","body":"Intro text.\n\n## Implementation Planning\n\nignore.\n\n## Implementation Plan\n\n### Context\n\nReal plan.\n\n### Tasks\n\n#### Task 1: Do","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "extracted");
+        assert!(
+            json["plan_content"]
+                .as_str()
+                .unwrap_or("")
+                .contains("Real plan."),
+            "plan_content must start at the real Implementation Plan, got: {}",
+            json["plan_content"]
+        );
+    }
+
+    #[test]
+    fn resume_plan_with_code_fences_counts_tasks_outside_only() {
+        // Covers `count_tasks_any_level` code-block toggle (lines 313-315
+        // before my renumbering): the plan contains ``` fences around
+        // text that LOOKS like task headings (### Task inside fence)
+        // but must not be counted. Only the real task outside the
+        // fence counts.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let plan_content = "## Context\n\nBackground.\n\n## Tasks\n\n### Task 1: Real\n\n```\n### Task 2: Fake inside code\n```\n\n### Task 3: Another real\n";
+        let plan_rel = ".flow-states/test-feature-plan.md";
+
+        let state = make_plan_state("build a feature", |s| {
+            s["files"]["plan"] = serde_json::json!(plan_rel);
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let plan_abs = dir.path().join(plan_rel);
+        fs::write(&plan_abs, plan_content).unwrap();
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "resumed");
+
+        // code_tasks_total should be 2 (Task 1 and Task 3), not 3.
+        let updated_state: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(updated_state["code_tasks_total"], 2);
+    }
+
+    #[test]
+    fn extracted_path_with_pr_number_attempts_gh_pr_edit() {
+        // Covers the PR-edit branch: args.pr OR state.pr_number is set,
+        // render_body succeeds, gh_set_body is invoked. Uses a gh stub
+        // that accepts `gh pr edit <N> --body-file <path>` and records
+        // the invocation.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("work on #777", |s| {
+            s["pr_number"] = serde_json::json!(42);
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":777,"title":"Plan","body":"## Implementation Plan\n\n### Context\n\nBody.\n\n### Tasks\n\n#### Task 1: Do","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+if [[ "$1" == "pr" && "$2" == "edit" ]]; then
+    # Accept the edit; write a marker so the test can assert invocation.
+    echo "pr edit invoked" > "${PWD}/.gh-pr-edit-marker"
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "extracted");
+        // gh stub wrote the marker when pr edit was invoked — proves
+        // the gh_set_body path executed.
+        let marker = dir.path().join(".gh-pr-edit-marker");
+        assert!(
+            marker.exists(),
+            "gh stub's pr edit branch was not invoked; gh_set_body was skipped"
+        );
+    }
+
+    #[test]
+    fn issue_body_with_empty_impl_plan_section_falls_back_to_standard() {
+        // Covers `extract_implementation_plan`'s empty-section branch
+        // (line 225): when the section between "## Implementation Plan"
+        // and the next "## <heading>" is empty, the function returns
+        // None. run_impl then takes the "no plan section" branch and
+        // returns standard path.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("work on #202", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":202,"title":"Empty plan","body":"## Implementation Plan\n\n## Files to Investigate\n\n- foo.rs","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(
+            json["path"], "standard",
+            "empty Implementation Plan section should fall back to standard path"
+        );
+    }
+
+    #[test]
+    fn impl_plan_with_code_blocks_promotes_headings_outside_code() {
+        // Covers `promote_headings` code-block tracking (lines 240-250):
+        // fenced blocks (```) flip `in_code_block` so headings inside
+        // are preserved, while headings outside are promoted.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("work on #203", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        // Plan body has a code fence with ### and #### inside; the
+        // extractor must not promote those, but must promote the ones
+        // outside. Uses echo to preserve \n as literal in JSON output.
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":203,"title":"Code fence promotion","body":"## Implementation Plan\n\n### Context\n\nHere is code:\n\n```rust\n### not a heading\n#### also not a heading\n```\n\n### Tasks\n\n#### Task 1: First\n\nDo work.","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "extracted");
+        let plan = json["plan_content"].as_str().unwrap_or("");
+        // Headings outside the fence promoted one level.
+        assert!(plan.contains("## Context"));
+        assert!(plan.contains("### Task 1"));
+        // Headings inside the fence NOT promoted.
+        assert!(plan.contains("### not a heading"));
+        assert!(plan.contains("#### also not a heading"));
+    }
+
+    #[test]
+    fn frozen_phases_file_exists_is_honored_on_completion() {
+        // Covers `load_frozen_config`'s has-file branch (line 104):
+        // a `<branch>-phases.json` file exists, so load_phase_config is
+        // called and its result wraps into the frozen_order/commands
+        // returned tuple. Exercises the path on resume-path completion.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let plan_content = "## Context\n\nBoring plan.\n\n## Tasks\n\n### Task 1: Do\n";
+        let plan_rel = ".flow-states/test-feature-plan.md";
+
+        let state = make_plan_state("build a feature", |s| {
+            s["files"]["plan"] = serde_json::json!(plan_rel);
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let plan_abs = dir.path().join(plan_rel);
+        fs::write(&plan_abs, plan_content).unwrap();
+
+        // Write a frozen-phases config that honors load_phase_config's
+        // expected shape. This file's presence triggers load_frozen_config's
+        // `if frozen_path.exists()` true branch.
+        let frozen_path = flow_states_dir(dir.path()).join("test-feature-phases.json");
+        fs::write(
+            &frozen_path,
+            r#"{"order":["flow-start","flow-plan","flow-code","flow-code-review","flow-learn","flow-complete"],"phases":{"flow-start":{"name":"Start","command":"/flow:flow-start"},"flow-plan":{"name":"Plan","command":"/flow:flow-plan"},"flow-code":{"name":"Code","command":"/flow:flow-code"},"flow-code-review":{"name":"Code Review","command":"/flow:flow-code-review"},"flow-learn":{"name":"Learn","command":"/flow:flow-learn"},"flow-complete":{"name":"Complete","command":"/flow:flow-complete"}}}"#,
+        )
+        .unwrap();
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "resumed");
+    }
+
+    #[test]
+    fn resume_plan_with_duplicate_test_name_triggers_duplicate_rule() {
+        // Covers `violations_response`'s duplicate-violation branch
+        // (lines 361-364): the plan names a test whose normalized form
+        // collides with an existing test in the repo's test corpus.
+        // `dup_scan` finds the collision; the response message includes
+        // the duplicate-test-coverage rule file reference.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        // Seed the repo's test corpus with a test the plan will dup.
+        let tests_dir = dir.path().join("tests");
+        fs::create_dir_all(&tests_dir).unwrap();
+        fs::write(
+            tests_dir.join("seed.rs"),
+            "#[test]\nfn plan_extract_sample_regression_collision() {}\n",
+        )
+        .unwrap();
+
+        // Plan proposes a duplicate test name.
+        let plan_content = "## Context\n\nAdd a regression test.\n\n\
+            ## Tasks\n\n### Task 1: Add test\n\n\
+            ```rust\n\
+            fn plan_extract_sample_regression_collision() {}\n\
+            ```\n";
+        let plan_rel = ".flow-states/test-feature-plan.md";
+
+        let state = make_plan_state("build a feature", |s| {
+            s["files"]["plan"] = serde_json::json!(plan_rel);
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let plan_abs = dir.path().join(plan_rel);
+        fs::write(&plan_abs, plan_content).unwrap();
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "error");
+        let msg = json["message"].as_str().unwrap_or("");
+        assert!(
+            msg.contains("duplicate-test-coverage"),
+            "expected duplicate-test-coverage reference in message, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn resume_plan_with_non_object_files_resets_to_empty_object() {
+        // Covers the nested files-guard `state["files"] = json!({})`
+        // branch at the resume-path mutate_state closure: when
+        // `state.files` is a non-object value, the closure resets it
+        // to an empty object before assigning nested fields.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        // Craft a state where files is a STRING (not an object) but
+        // include a plan_rel key outside files so the resume path
+        // still fires. Actually — files.plan is the resume-detection
+        // key, so this path requires files to be an object containing
+        // "plan". The nested guard at 618/672 is in the extracted
+        // path (not resume). To reach the extracted path, files must
+        // not have a "plan" key. We'll set files to a non-object,
+        // which causes the standard-extracted path to hit the
+        // `state["files"] = json!({})` reset at line 619.
+        let state_json = r#"{
+            "branch": "test-feature",
+            "current_phase": "flow-start",
+            "prompt": "work on #300",
+            "files": "not-an-object",
+            "skills": {"flow-plan": {"continue": "auto", "dag": "auto"}},
+            "phases": {
+                "flow-start": {"name":"Start","status":"complete","started_at":null,"completed_at":null,"session_started_at":null,"cumulative_seconds":0,"visit_count":1},
+                "flow-plan": {"name":"Plan","status":"pending","started_at":null,"completed_at":null,"session_started_at":null,"cumulative_seconds":0,"visit_count":0},
+                "flow-code": {"name":"Code","status":"pending","started_at":null,"completed_at":null,"session_started_at":null,"cumulative_seconds":0,"visit_count":0},
+                "flow-code-review": {"name":"Code Review","status":"pending","started_at":null,"completed_at":null,"session_started_at":null,"cumulative_seconds":0,"visit_count":0},
+                "flow-learn": {"name":"Learn","status":"pending","started_at":null,"completed_at":null,"session_started_at":null,"cumulative_seconds":0,"visit_count":0},
+                "flow-complete": {"name":"Complete","status":"pending","started_at":null,"completed_at":null,"session_started_at":null,"cumulative_seconds":0,"visit_count":0}
+            },
+            "phase_transitions": []
+        }"#;
+        setup_state(dir.path(), "test-feature", state_json);
+
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":300,"title":"Test","body":"## Implementation Plan\n\n### Context\n\nHi.\n\n### Tasks\n\n#### Task 1: Do","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        // Post-run, state.files should be an object (reset by the nested guard).
+        let updated_state: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            updated_state["files"].is_object(),
+            "files must be reset to an object, got: {}",
+            updated_state["files"]
+        );
+    }
+
+    #[test]
+    fn gh_first_fetch_fails_second_succeeds() {
+        // Covers `fetch_issue` returning None for the first issue in a
+        // multi-issue prompt: the `continue` branch in the loop at
+        // line 550. The second fetch succeeds, the loop picks up the
+        // second issue body.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("fix issues #501 and #502", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        // gh stub: fail for #501, succeed for #502 (no Decomposed label).
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r#"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" && "$3" == "501" ]]; then
+    exit 1
+fi
+if [[ "$1" == "issue" && "$2" == "view" && "$3" == "502" ]]; then
+    echo '{"number":502,"title":"Second","body":"Plain body","labels":[]}'
+    exit 0
+fi
+exit 1
+"#,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "standard");
+        assert_eq!(json["issue_number"], 502);
+        assert_eq!(json["issue_body"].as_str().unwrap_or(""), "Plain body");
     }
 }

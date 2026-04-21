@@ -13,8 +13,7 @@ use std::process::{Child, Command, Output, Stdio};
 
 use common::{create_gh_stub, create_git_repo_with_remote, parse_output};
 use flow_rs::close_issues::{
-    close_issues_with_runner, close_issues_with_runner_and_timeout, run_impl_main,
-    run_impl_main_with_runner, Args,
+    close_issues_with_runner, close_issues_with_runner_and_timeout, run_impl_main, Args,
 };
 use flow_rs::utils::extract_issue_numbers;
 use serde_json::json;
@@ -411,35 +410,6 @@ fn close_issues_with_runner_spawn_failure_returns_failed_entry() {
         .contains("Failed to spawn"));
 }
 
-// --- run_impl_main_with_runner (seam wired through dispatcher) ---
-
-#[test]
-fn close_issues_run_impl_main_with_runner_dispatches_to_seam() {
-    // Plan-named: prove run_impl_main_with_runner reaches
-    // close_issues_with_runner with the injected child_factory, so
-    // a future refactor of the dispatcher can't silently bypass the
-    // seam. Per .claude/rules/subprocess-test-hygiene.md, the test
-    // never spawns real `gh`.
-    let dir = tempfile::tempdir().unwrap();
-    let state_file = dir.path().join("state.json");
-    fs::write(
-        &state_file,
-        r#"{"prompt":"work on #42 and #43","repo":"owner/repo"}"#,
-    )
-    .unwrap();
-    let args = Args {
-        state_file: state_file.to_string_lossy().to_string(),
-    };
-    let factory = |_args: &[&str]| {
-        Command::new("sh")
-            .args(["-c", "exit 0"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-    };
-    let (value, code) = run_impl_main_with_runner(args, &factory);
-    assert_eq!(code, 0);
-    assert_eq!(value["status"], "ok");
-    assert_eq!(value["closed"].as_array().unwrap().len(), 2);
-    assert_eq!(value["failed"].as_array().unwrap().len(), 0);
-}
+// Direct `run_impl_main_with_runner` test removed — the seam is now
+// private. Dispatch behavior is exercised via subprocess tests that
+// spawn `bin/flow close-issues` with a `gh` stub on PATH.

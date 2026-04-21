@@ -216,74 +216,41 @@ pub fn phase_complete(
     result
 }
 
-/// Parse a `git diff --stat` summary line into (files_changed,
-/// insertions, deletions). Pure function exposed as a public seam so
-/// `tests/phase_transition.rs` can exercise every comma-separated
-/// branch without spawning git.
-pub fn parse_diff_stat_summary(summary: &str) -> (i64, i64, i64) {
-    let mut files_changed: i64 = 0;
-    let mut insertions: i64 = 0;
-    let mut deletions: i64 = 0;
-
-    for part in summary.split(',') {
-        let part = part.trim();
-        if part.contains("file") {
-            if let Some(n) = part.split_whitespace().next().and_then(|s| s.parse().ok()) {
-                files_changed = n;
-            }
-        } else if part.contains("insertion") {
-            if let Some(n) = part.split_whitespace().next().and_then(|s| s.parse().ok()) {
-                insertions = n;
-            }
-        } else if part.contains("deletion") {
-            if let Some(n) = part.split_whitespace().next().and_then(|s| s.parse().ok()) {
-                deletions = n;
-            }
-        }
-    }
-
-    (files_changed, insertions, deletions)
-}
-
-/// Build a diff_stats JSON object from parsed counts.
-fn diff_stats_json(files_changed: i64, insertions: i64, deletions: i64) -> Value {
-    json!({
-        "files_changed": files_changed,
-        "insertions": insertions,
-        "deletions": deletions,
-        "captured_at": now(),
-    })
-}
-
-/// Build a diff_stats JSON object from the raw `git diff --stat`
-/// subprocess result. Public seam: tests pass constructed
-/// `io::Result<Output>` values to drive the Err and non-success Ok
-/// branches without spawning real git.
-pub fn capture_diff_stats_from_result(result: std::io::Result<std::process::Output>) -> Value {
-    let output = match result {
-        Ok(o) if o.status.success() => o,
-        _ => return diff_stats_json(0, 0, 0),
-    };
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let trimmed = stdout.trim();
-    if trimmed.is_empty() {
-        return diff_stats_json(0, 0, 0);
-    }
-    let summary = trimmed.lines().last().unwrap_or("");
-    let (files, ins, del) = parse_diff_stat_summary(summary);
-    diff_stats_json(files, ins, del)
-}
-
 /// Capture git diff --stat summary for the current branch vs main.
 ///
 /// Returns a JSON object with files_changed, insertions, deletions, captured_at.
 /// Best-effort: returns zeros if git fails.
 pub fn capture_diff_stats() -> Value {
-    capture_diff_stats_from_result(
-        Command::new("git")
-            .args(["diff", "--stat", "main...HEAD"])
-            .output(),
-    )
+    let (files, ins, del) = match Command::new("git")
+        .args(["diff", "--stat", "main...HEAD"])
+        .output()
+    {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let summary = stdout.trim().lines().last().unwrap_or("");
+            parse_diff_summary(summary)
+        }
+        _ => (0, 0, 0),
+    };
+    json!({
+        "files_changed": files,
+        "insertions": ins,
+        "deletions": del,
+        "captured_at": now(),
+    })
+}
+
+fn parse_diff_summary(summary: &str) -> (i64, i64, i64) {
+    let extract = |keyword: &str| -> i64 {
+        summary
+            .split(',')
+            .map(str::trim)
+            .find(|p| p.contains(keyword))
+            .and_then(|p| p.split_whitespace().next())
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(0)
+    };
+    (extract("file"), extract("insertion"), extract("deletion"))
 }
 
 /// Driver for the `bin/flow phase-transition` subcommand.

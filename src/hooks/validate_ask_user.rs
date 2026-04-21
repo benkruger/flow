@@ -148,7 +148,7 @@ pub fn validate(state_path: Option<&Path>) -> (bool, String, Option<Value>) {
 /// Decision produced by `run_impl_main` — translates to exit code +
 /// side effect in `run()`.
 #[derive(Debug)]
-pub enum HookAction {
+enum HookAction {
     /// Exit 0, no side effects. Used when the hook cannot resolve a
     /// state file (no stdin input, no branch, slash branch).
     Allow,
@@ -162,9 +162,10 @@ pub enum HookAction {
 
 /// Pure decision core for the validate-ask-user hook. Accepts the
 /// parsed stdin payload, current git branch, and project root as
-/// injected dependencies so every branch is reachable from unit
-/// tests.
-pub fn run_impl_main(
+/// parameters. Called from `run()` with live inputs; integration
+/// tests drive the decision tree by spawning the hook subprocess
+/// with controlled state fixtures.
+fn run_impl_main(
     hook_input: Option<Value>,
     branch: Option<String>,
     project_root: &Path,

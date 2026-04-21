@@ -244,7 +244,7 @@ pub fn build_violation_message(
 /// `external_input_audit` have identical field layouts but are
 /// distinct types; this helper takes field-level inputs so it can
 /// serialize either source without a trait dance.
-pub fn violation_to_tagged_json(
+fn violation_to_tagged_json(
     file: &Path,
     line: usize,
     phrase: &str,

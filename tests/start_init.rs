@@ -875,17 +875,6 @@ fn lib_start_init_run_impl_main_err_path() {
 }
 
 #[test]
-fn lib_default_init_state_runner_errors_on_bogus_cwd() {
-    // Exercise the map_err branch in default_init_state_runner. The
-    // cwd does not exist, so Command::output() fails before the child
-    // spawns.
-    use flow_rs::start_init::default_init_state_runner;
-    let bogus = std::path::Path::new("/nonexistent/absolutely-not-a-dir");
-    let err = default_init_state_runner(&["--help".to_string()], bogus).unwrap_err();
-    assert!(err.contains("Failed to spawn init-state"), "got: {}", err);
-}
-
-#[test]
 fn lib_start_init_auto_flag_appends_to_args() {
     // Covers the `if args.auto { cmd_args.push("--auto") }` branch.
     use std::sync::{Arc, Mutex};

@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use flow_rs::hooks::validate_ask_user::{run_impl_main, set_blocked, validate, HookAction};
+use flow_rs::hooks::validate_ask_user::{set_blocked, validate};
 use serde_json::{json, Value};
 
 fn write_state(dir: &Path, branch: &str, state: &Value) -> std::path::PathBuf {
@@ -455,86 +455,10 @@ fn run_subprocess_exits_0_outside_git_repo() {
     assert_eq!(code, 0);
 }
 
-// --- run_impl_main (decision core) ---
-
-#[test]
-fn run_impl_main_allow_when_no_hook_input() {
-    let dir = tempfile::tempdir().unwrap();
-    let action = run_impl_main(None, Some("test".to_string()), dir.path());
-    assert!(matches!(action, HookAction::Allow));
-}
-
-#[test]
-fn run_impl_main_allow_when_no_branch() {
-    let dir = tempfile::tempdir().unwrap();
-    let action = run_impl_main(Some(json!({})), None, dir.path());
-    assert!(matches!(action, HookAction::Allow));
-}
-
-#[test]
-fn run_impl_main_allow_when_slash_branch() {
-    let dir = tempfile::tempdir().unwrap();
-    // FlowPaths::try_new rejects slash-containing branches.
-    let action = run_impl_main(Some(json!({})), Some("feature/foo".to_string()), dir.path());
-    assert!(matches!(action, HookAction::Allow));
-}
-
-#[test]
-fn run_impl_main_allow_with_mark_when_no_auto_and_no_block() {
-    // State file exists but has no _auto_continue and no in_progress+auto
-    // config → validate allows with no response → AllowWithMark.
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().canonicalize().unwrap();
-    let state = json!({"current_phase": "flow-code", "branch": "test"});
-    write_state(&root, "test", &state);
-    let action = run_impl_main(Some(json!({})), Some("test".to_string()), &root);
-    assert!(
-        matches!(action, HookAction::AllowWithMark(_)),
-        "got {:?}",
-        action
-    );
-}
-
-#[test]
-fn run_impl_main_block_when_phase_in_progress_auto() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().canonicalize().unwrap();
-    let state = json!({
-        "current_phase": "flow-code",
-        "branch": "test",
-        "skills": {"flow-code": {"continue": "auto"}},
-        "phases": {"flow-code": {"status": "in_progress"}},
-    });
-    write_state(&root, "test", &state);
-    let action = run_impl_main(Some(json!({})), Some("test".to_string()), &root);
-    match action {
-        HookAction::Block(msg) => assert!(msg.contains("flow-code")),
-        other => panic!("expected Block, got {:?}", other),
-    }
-}
-
-#[test]
-fn run_impl_main_auto_answer_when_auto_continue_set() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().canonicalize().unwrap();
-    let state = json!({
-        "current_phase": "flow-code",
-        "branch": "test",
-        "_auto_continue": "/flow:flow-code-review",
-    });
-    write_state(&root, "test", &state);
-    let action = run_impl_main(Some(json!({})), Some("test".to_string()), &root);
-    match action {
-        HookAction::AutoAnswer(resp) => {
-            assert_eq!(resp["permissionDecision"], "allow");
-            assert!(resp["updatedInput"]
-                .as_str()
-                .unwrap()
-                .contains("/flow:flow-code-review"));
-        }
-        other => panic!("expected AutoAnswer, got {:?}", other),
-    }
-}
+// Direct `run_impl_main` / `HookAction` tests removed — the decision
+// core is now private, and its branches are exercised through the
+// subprocess tests below that spawn `bin/flow hook validate-ask-user`
+// against fixture state files.
 
 // Exercise the block and auto-answer subprocess paths so the stdio
 // side-effect branches of `run()` are covered.

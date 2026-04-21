@@ -20,10 +20,8 @@ pub fn project_root() -> PathBuf {
 }
 
 /// Pure helper for [`project_root`]: interpret the raw result of
-/// running `git worktree list --porcelain`. Tests can construct each
-/// variant (spawn error, non-zero exit, success with varied stdout)
-/// directly.
-pub fn project_root_from_output(output: io::Result<Output>) -> PathBuf {
+/// running `git worktree list --porcelain`.
+fn project_root_from_output(output: io::Result<Output>) -> PathBuf {
     match output {
         Ok(o) if o.status.success() => {
             project_root_with_stdout(&String::from_utf8_lossy(&o.stdout))
@@ -34,9 +32,8 @@ pub fn project_root_from_output(output: io::Result<Output>) -> PathBuf {
 
 /// Pure parser: take `git worktree list --porcelain` stdout and return
 /// the first `worktree <path>` line as a PathBuf, or `PathBuf::from(".")`
-/// when no such line is present. Empty input behaves the same as "no
-/// worktree line".
-pub fn project_root_with_stdout(stdout: &str) -> PathBuf {
+/// when no such line is present.
+fn project_root_with_stdout(stdout: &str) -> PathBuf {
     for line in stdout.lines() {
         if let Some(path) = line.strip_prefix("worktree ") {
             return PathBuf::from(path.trim());
@@ -84,11 +81,8 @@ pub fn current_branch_in(cwd: &Path) -> Option<String> {
 /// Pure helper for [`current_branch`] and [`current_branch_in`].
 /// `simulated` is the `FLOW_SIMULATE_BRANCH` env var value (empty string
 /// falls through); `output` is the raw `io::Result<Output>` from
-/// `git branch --show-current`. Tests can construct every variant
-/// directly — simulated hit, empty simulated, None simulated, git
-/// spawn-failed, git non-zero, git success with populated or empty
-/// stdout.
-pub fn current_branch_from_output(
+/// `git branch --show-current`.
+fn current_branch_from_output(
     simulated: Option<String>,
     output: io::Result<Output>,
 ) -> Option<String> {
@@ -135,9 +129,8 @@ pub fn resolve_branch_in(override_branch: Option<&str>, cwd: &Path, root: &Path)
 
 /// Pure resolution for [`resolve_branch`] and [`resolve_branch_in`].
 /// `branch` is the current-branch value (already resolved by whichever
-/// reader the caller used); `override_branch` wins when present. Exposed
-/// publicly so tests can drive every branch without spawning git.
-pub fn resolve_branch_impl(
+/// reader the caller used); `override_branch` wins when present.
+fn resolve_branch_impl(
     override_branch: Option<&str>,
     root: &Path,
     branch: Option<String>,

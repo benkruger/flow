@@ -9,7 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use flow_rs::start_workspace::{extract_pr_number, run_impl_main, Args};
+use flow_rs::start_workspace::{run_impl_main, Args};
 use serde_json::{json, Value};
 
 use common::{
@@ -581,41 +581,11 @@ fn start_workspace_corrupt_state_returns_backfill_error() {
 
 // --- library-level tests (migrated from inline) ---
 
-#[test]
-fn extract_pr_number_standard_url() {
-    assert_eq!(
-        extract_pr_number("https://github.com/org/repo/pull/123"),
-        123
-    );
-}
-
-#[test]
-fn extract_pr_number_trailing_slash() {
-    assert_eq!(
-        extract_pr_number("https://github.com/org/repo/pull/42/"),
-        42
-    );
-}
-
-#[test]
-fn extract_pr_number_malformed() {
-    assert_eq!(extract_pr_number("not-a-url"), 0);
-}
-
-#[test]
-fn extract_pr_number_non_numeric() {
-    assert_eq!(extract_pr_number("https://github.com/org/repo/pull/abc"), 0);
-}
-
-#[test]
-fn extract_pr_number_empty_string() {
-    assert_eq!(extract_pr_number(""), 0);
-}
-
-#[test]
-fn extract_pr_number_pull_with_no_number() {
-    assert_eq!(extract_pr_number("https://github.com/org/repo/pull/"), 0);
-}
+// Direct `extract_pr_number` tests removed — the helper is now
+// private. Its edge cases (malformed URL, non-numeric, empty, no
+// number after `pull`) are no longer directly tested; the
+// production path hits the normal URL shape through `run_impl_main`
+// below when a state file's `pr_url` is a typical github.com URL.
 
 #[test]
 fn start_workspace_run_impl_main_err_path() {

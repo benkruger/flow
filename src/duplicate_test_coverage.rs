@@ -122,37 +122,6 @@ impl TestCorpus {
     pub fn lookup(&self, normalized: &str) -> Option<&[(String, PathBuf, usize)]> {
         self.index.get(normalized).map(|v| v.as_slice())
     }
-
-    /// Number of indexed entries — useful for diagnostics and tests.
-    pub fn len(&self) -> usize {
-        self.index.values().map(|v| v.len()).sum()
-    }
-
-    /// True when no entries are indexed. Paired with `len` per clippy
-    /// `len_without_is_empty`.
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Construct a corpus from explicit `(full_name, path, line)`
-    /// entries. Normalizes each name and inserts into the index.
-    /// Used by integration tests that exercise the scanner with
-    /// hand-built corpora instead of on-disk fixture files.
-    pub fn from_entries<I, P>(entries: I) -> TestCorpus
-    where
-        I: IntoIterator<Item = (String, P, usize)>,
-        P: Into<PathBuf>,
-    {
-        let mut index: HashMap<String, Vec<(String, PathBuf, usize)>> = HashMap::new();
-        for (name, path, line) in entries {
-            let normalized = normalize(&name);
-            index
-                .entry(normalized)
-                .or_default()
-                .push((name, path.into(), line));
-        }
-        TestCorpus { index }
-    }
 }
 
 /// Normalize a test name for matching: lowercase first, then strip

@@ -14,8 +14,8 @@ use std::time::Duration;
 
 use common::{create_gh_stub, create_git_repo_with_remote, parse_output};
 use flow_rs::label_issues::{
-    default_timeout, gh_child_factory, label_issues_with_runner, run_impl_main,
-    run_impl_main_with_runner, Args, LabelResult, LABEL,
+    default_timeout, gh_child_factory, label_issues_with_runner, run_impl_main, Args, LabelResult,
+    LABEL,
 };
 use serde_json::json;
 
@@ -427,65 +427,10 @@ fn label_issues_run_impl_main_no_prompt_returns_ok_tuple() {
     assert_eq!(value["failed"].as_array().unwrap().len(), 0);
 }
 
-// --- run_impl_main_with_runner ---
-
-#[test]
-fn label_issues_run_impl_main_with_runner_dispatches_to_seam() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_file = dir.path().join("state.json");
-    std::fs::write(
-        &state_file,
-        r#"{"prompt":"work on #42 and #43","branch":"test"}"#,
-    )
-    .unwrap();
-    let args = Args {
-        state_file: state_file.to_string_lossy().to_string(),
-        add: true,
-        remove: false,
-    };
-    let factory = |_args: &[&str]| {
-        Command::new("sh")
-            .args(["-c", "exit 0"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-    };
-    let (value, code) = run_impl_main_with_runner(args, &factory);
-    assert_eq!(code, 0);
-    assert_eq!(value["status"], "ok");
-    assert_eq!(value["labeled"].as_array().unwrap().len(), 2);
-    assert_eq!(value["failed"].as_array().unwrap().len(), 0);
-}
-
-#[test]
-fn label_issues_run_impl_main_with_runner_mixed_outcomes_partitions_correctly() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_file = dir.path().join("state.json");
-    std::fs::write(
-        &state_file,
-        r#"{"prompt":"work on #1 and #2","branch":"test"}"#,
-    )
-    .unwrap();
-    let args = Args {
-        state_file: state_file.to_string_lossy().to_string(),
-        add: true,
-        remove: false,
-    };
-    let factory = |args: &[&str]| {
-        let num = args[2];
-        let cmd = if num == "1" { "exit 0" } else { "exit 1" };
-        Command::new("sh")
-            .args(["-c", cmd])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-    };
-    let (value, code) = run_impl_main_with_runner(args, &factory);
-    assert_eq!(code, 0);
-    assert_eq!(value["status"], "ok");
-    assert_eq!(value["labeled"], serde_json::json!([1]));
-    assert_eq!(value["failed"], serde_json::json!([2]));
-}
+// Direct `run_impl_main_with_runner` tests removed — the seam is
+// now private. Dispatch behavior is exercised via subprocess tests
+// at the bottom of this file that spawn `bin/flow label-issues`
+// with a `gh` stub on PATH.
 
 /// Covers the read_to_string Err arm — state-file path resolves to a
 /// directory, so `exists()` passes but `read_to_string` fails with

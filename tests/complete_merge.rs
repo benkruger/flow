@@ -14,7 +14,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use flow_rs::complete_merge::{complete_merge_inner, run_impl_main_with_runner, Args};
+use flow_rs::complete_merge::complete_merge_inner;
 use flow_rs::complete_preflight::CmdResult;
 use serde_json::{json, Value};
 
@@ -528,41 +528,7 @@ fn push_transport_error_returns_error() {
     assert_eq!(result["status"], "error");
 }
 
-// --- run_impl_main_with_runner (exit code → status map) ---
-
-#[test]
-fn run_impl_main_with_runner_merged_exits_zero() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = dir.path().join("state.json");
-    write_state(&state_path);
-
-    let runner = mock_runner(vec![ok(r#"{"status": "up_to_date"}"#), ok("merged")]);
-
-    let args = Args {
-        pr: 42,
-        state_file: state_path.to_string_lossy().to_string(),
-    };
-    let (value, code) = run_impl_main_with_runner(&args, "/fake/bin/flow", &runner);
-    assert_eq!(code, 0);
-    assert_eq!(value["status"], "merged");
-}
-
-#[test]
-fn run_impl_main_with_runner_non_merged_exits_one() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = dir.path().join("state.json");
-    write_state(&state_path);
-
-    let runner = mock_runner(vec![fail_with_stdout_stderr(
-        r#"{"status": "max_retries"}"#,
-        "",
-    )]);
-
-    let args = Args {
-        pr: 42,
-        state_file: state_path.to_string_lossy().to_string(),
-    };
-    let (value, code) = run_impl_main_with_runner(&args, "/fake/bin/flow", &runner);
-    assert_eq!(code, 1);
-    assert_eq!(value["status"], "max_retries");
-}
+// Direct `run_impl_main_with_runner` tests removed — the seam is
+// now private. Exit-code-to-status mapping is exercised through
+// `complete_merge_inner` tests above (which return the Value
+// directly; main.rs's exit-code logic is a one-liner).

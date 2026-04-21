@@ -196,9 +196,10 @@ pub fn validate(file_path: &str, cwd: &str) -> (bool, String) {
 
 /// Decision core for the validate-worktree-paths hook. Returns
 /// `(exit_code, Option<stderr_message>)` so `run()` can translate to
-/// `process::exit` + `eprintln!` side effects. Tests drive every
-/// branch with injected hook_input/cwd.
-pub fn run_impl_main(hook_input: Option<Value>, cwd: Option<String>) -> (i32, Option<String>) {
+/// `process::exit` + `eprintln!` side effects. Integration tests
+/// drive every branch through the hook subprocess with fixture
+/// stdin payloads.
+fn run_impl_main(hook_input: Option<Value>, cwd: Option<String>) -> (i32, Option<String>) {
     let hook_input = match hook_input {
         Some(v) => v,
         None => return (0, None),

@@ -43,7 +43,7 @@ pub struct Args {
 ///
 /// Searches for the "pull" segment and parses the next segment as the number.
 /// Returns 0 if the URL is malformed or not a PR URL.
-pub fn extract_pr_number(pr_url: &str) -> u32 {
+fn extract_pr_number(pr_url: &str) -> u32 {
     let parts: Vec<&str> = pr_url.trim_end_matches('/').split('/').collect();
     for (i, part) in parts.iter().enumerate() {
         if *part == "pull" && i + 1 < parts.len() {
@@ -151,7 +151,7 @@ pub(crate) fn initial_commit_push_pr(
 /// a `TempDir` for both. Returns a `Value` directly — every error
 /// scenario surfaces as a `status: "error"` payload with exit code 0
 /// via [`run_impl_main`]. No path returns `Err` at the Rust level.
-pub fn run_impl_with_paths(args: &Args, root: &Path, cwd: &Path) -> Value {
+fn run_impl_with_paths(args: &Args, root: &Path, cwd: &Path) -> Value {
     let branch = &args.branch;
     let feature_title = derive_feature(branch);
 

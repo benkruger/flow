@@ -70,11 +70,10 @@ pub struct Args {
 
 /// Default subprocess runner for `init-state`. Spawns the current
 /// executable with the given args and cwd, capturing stdout/stderr.
-///
-/// `pub` so integration tests can exercise its error paths directly.
-/// Every caller in `run_impl_with_deps` goes through the injected
-/// `init_state_runner` closure.
-pub fn default_init_state_runner(args: &[String], cwd: &Path) -> Result<Output, String> {
+/// Used as the production closure reference inside this module;
+/// integration tests drive its error paths through `run_impl_main`
+/// with fixtures that force the subprocess to fail.
+fn default_init_state_runner(args: &[String], cwd: &Path) -> Result<Output, String> {
     // std::env::current_exe fails only on platforms without a /proc or
     // equivalent, or when the binary has been unlinked mid-run. On
     // every supported target the call succeeds — a failure here is a

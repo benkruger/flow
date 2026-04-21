@@ -4,7 +4,6 @@
 use chrono::{FixedOffset, TimeZone};
 use flow_rs::format_status::{
     format_all_complete, format_multi_panel, format_panel, run_impl_main,
-    run_impl_main_with_resolver,
 };
 use flow_rs::phase_config::PhaseConfig;
 use indexmap::IndexMap;
@@ -857,17 +856,30 @@ fn format_multi_panel_unknown_phase_uses_question_mark_number() {
 }
 
 #[test]
-fn run_impl_main_with_resolver_returns_err_when_resolver_returns_none() {
-    // Covers the `None => return Err(...)` branch — the resolver
-    // seam returns None, so run_impl_main emits the branch-resolution
-    // error at exit code 2.
+fn run_impl_main_no_branch_in_non_git_dir_returns_err_exit_2() {
+    // Subprocess test: spawn `bin/flow format-status` with cwd set to
+    // a non-git tempdir and no --branch flag. `current_branch()` spawns
+    // `git branch --show-current` in the subprocess cwd; git fails in a
+    // non-git directory, so `resolve_branch` returns None and
+    // run_impl_main emits the branch-resolution error at exit code 2.
+    // Covers the `None => return Err(...)` branch in run_impl_main.
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let result = run_impl_main_with_resolver(None, &root, |_, _| None);
-    match result {
-        Err((msg, 2)) => assert!(msg.contains("Could not determine current branch")),
-        other => panic!("expected Err((..., 2)), got {:?}", other),
-    }
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["format-status"])
+        .current_dir(&root)
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env_remove("FLOW_CI_RUNNING")
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .output()
+        .expect("spawn flow-rs format-status");
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Could not determine current branch"),
+        "expected branch-resolve error in stderr, got: {}",
+        stderr
+    );
 }
 
 #[test]

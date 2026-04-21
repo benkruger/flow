@@ -41,7 +41,7 @@ pub struct Args {
 ///
 /// Strips the `flow-` prefix and replaces `-` with `_`.
 /// Example: `flow-code-review` → `code_review`
-pub fn phase_field_prefix(phase: &str) -> String {
+fn phase_field_prefix(phase: &str) -> String {
     phase
         .strip_prefix("flow-")
         .unwrap_or(phase)
@@ -89,10 +89,8 @@ fn resolve_state(args: &Args) -> Result<(PathBuf, String, PathBuf), Value> {
     Ok((root, branch, state_path))
 }
 
-/// Check that the previous phase in PHASE_ORDER is complete. Exposed
-/// as a public seam so integration tests in `tests/phase_enter.rs`
-/// can drive every gate branch without a real state file.
-pub fn gate_check(state: &Value, phase: &str) -> Result<(), Value> {
+/// Check that the previous phase in PHASE_ORDER is complete.
+fn gate_check(state: &Value, phase: &str) -> Result<(), Value> {
     let idx = PHASE_ORDER.iter().position(|&p| p == phase);
     let prev_phase = match idx {
         Some(i) if i > 0 => PHASE_ORDER[i - 1],

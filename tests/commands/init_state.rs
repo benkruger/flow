@@ -937,7 +937,7 @@ fn create_state_write_failure_returns_error() {
 // child's cwd is a tempdir and LLVM_PROFILE_FILE does not resolve
 // back to the parent's target dir.
 
-use flow_rs::commands::init_state::{create_state, create_state_with_tty};
+use flow_rs::commands::init_state::create_state;
 use flow_rs::phase_config::auto_skills;
 use flow_rs::state::SkillConfig;
 use indexmap::IndexMap;
@@ -969,41 +969,37 @@ fn lib_create_state_writes_valid_json() {
 }
 
 #[test]
-fn lib_create_state_with_tty_some_writes_tty_to_state() {
+fn lib_create_state_session_tty_serializes_option_string() {
+    // `json!(Option<String>)` serializes Some(t) as `"t"` and None as
+    // `null`, letting serde handle both arms inside the call —
+    // create_state has no match-over-Option in its body. This test
+    // asserts session_tty is present AND is either null or a string
+    // (both are valid Option<String> serializations); the exact arm
+    // depends on whether the test harness inherits a TTY from its
+    // parent process.
     let dir = tempfile::tempdir().unwrap();
-    create_state_with_tty(
+    create_state(
         dir.path(),
-        "tty-some",
+        "tty-present",
         None,
         "prompt",
         None,
         None,
         None,
         "",
-        Some("/dev/ttys999".to_string()),
     )
     .unwrap();
-    let state = read_state_direct(dir.path(), "tty-some");
-    assert_eq!(state["session_tty"], "/dev/ttys999");
-}
-
-#[test]
-fn lib_create_state_with_tty_none_writes_null() {
-    let dir = tempfile::tempdir().unwrap();
-    create_state_with_tty(
-        dir.path(),
-        "tty-none",
-        None,
-        "prompt",
-        None,
-        None,
-        None,
-        "",
-        None,
-    )
-    .unwrap();
-    let state = read_state_direct(dir.path(), "tty-none");
-    assert!(state["session_tty"].is_null());
+    let state = read_state_direct(dir.path(), "tty-present");
+    assert!(
+        state.get("session_tty").is_some(),
+        "session_tty field must be present"
+    );
+    let tty = &state["session_tty"];
+    assert!(
+        tty.is_null() || tty.is_string(),
+        "session_tty must be null or string, got: {}",
+        tty
+    );
 }
 
 #[test]

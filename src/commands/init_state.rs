@@ -43,38 +43,6 @@ pub fn create_state(
     start_steps_total: Option<i64>,
     relative_cwd: &str,
 ) -> Result<(), String> {
-    create_state_with_tty(
-        project_root,
-        branch,
-        skills,
-        prompt,
-        commit_format,
-        start_step,
-        start_steps_total,
-        relative_cwd,
-        detect_tty(),
-    )
-}
-
-/// Public seam for `create_state` that accepts the computed session-tty
-/// value as a parameter. The public wrapper above calls `detect_tty()`
-/// to produce the value; this inner form lets integration tests pass
-/// `Some("/dev/ttys0")` or `None` directly so both arms of the
-/// `match tty { Some(t) => json!(t), None => Value::Null }` branch
-/// are exercised without requiring a real PTY. No production caller
-/// uses this function directly.
-#[allow(clippy::too_many_arguments)]
-pub fn create_state_with_tty(
-    project_root: &Path,
-    branch: &str,
-    skills: Option<&IndexMap<String, SkillConfig>>,
-    prompt: &str,
-    commit_format: Option<&str>,
-    start_step: Option<i64>,
-    start_steps_total: Option<i64>,
-    relative_cwd: &str,
-    tty: Option<String>,
-) -> Result<(), String> {
     let current_time = now();
     let phases = build_initial_phases(&current_time);
 
@@ -96,13 +64,11 @@ pub fn create_state_with_tty(
             "state": format!(".flow-states/{}.json", branch),
         }),
     );
-    state.insert(
-        "session_tty".into(),
-        match tty {
-            Some(t) => json!(t),
-            None => Value::Null,
-        },
-    );
+    // `json!(Option<String>)` serializes Some(t) as `"t"` and None as
+    // `null`, letting serde handle both arms without a match in our
+    // code. This avoided exposing a `_with_tty` test seam solely to
+    // drive the two branches.
+    state.insert("session_tty".into(), json!(detect_tty()));
     state.insert("session_id".into(), Value::Null);
     state.insert("transcript_path".into(), Value::Null);
     state.insert("notes".into(), json!([]));

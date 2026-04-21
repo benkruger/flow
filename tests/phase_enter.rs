@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use common::flow_states_dir;
-use flow_rs::phase_enter::{gate_check, phase_field_prefix, resolve_mode};
+use flow_rs::phase_enter::resolve_mode;
 use serde_json::{json, Value};
 
 // --- Test helpers ---
@@ -612,87 +612,11 @@ fn test_reenter_complete_phase_returns_gate_error() {
     );
 }
 
-// --- phase_field_prefix (migrated from inline) ---
-
-#[test]
-fn phase_field_prefix_strips_flow_dash() {
-    assert_eq!(phase_field_prefix("flow-code-review"), "code_review");
-    assert_eq!(phase_field_prefix("flow-start"), "start");
-    assert_eq!(phase_field_prefix("flow-learn"), "learn");
-}
-
-#[test]
-fn phase_field_prefix_no_flow_prefix() {
-    assert_eq!(phase_field_prefix("custom-phase"), "custom_phase");
-    assert_eq!(phase_field_prefix("plain"), "plain");
-}
-
-// --- gate_check (migrated from inline) ---
-
-#[test]
-fn gate_check_predecessor_complete_succeeds() {
-    let state = json!({
-        "phases": {
-            "flow-start": {"status": "complete"},
-            "flow-plan": {"status": "pending"}
-        }
-    });
-    assert!(gate_check(&state, "flow-plan").is_ok());
-}
-
-#[test]
-fn gate_check_predecessor_not_complete() {
-    let state = json!({
-        "phases": {
-            "flow-start": {"status": "in_progress"},
-            "flow-plan": {"status": "pending"}
-        }
-    });
-    let err = gate_check(&state, "flow-plan").unwrap_err();
-    assert_eq!(err["status"], "error");
-    let msg = err["message"].as_str().unwrap();
-    assert!(msg.contains("flow-start"));
-    assert!(msg.contains("complete"));
-}
-
-#[test]
-fn gate_check_first_phase_returns_error() {
-    let state = json!({"phases": {}});
-    let err = gate_check(&state, "flow-start").unwrap_err();
-    assert_eq!(err["status"], "error");
-    assert!(err["message"].as_str().unwrap().contains("no predecessor"));
-}
-
-#[test]
-fn gate_check_unknown_phase_returns_error() {
-    let state = json!({"phases": {}});
-    let err = gate_check(&state, "nonexistent").unwrap_err();
-    assert_eq!(err["status"], "error");
-    assert!(err["message"]
-        .as_str()
-        .unwrap()
-        .contains("not found in phase order"));
-}
-
-#[test]
-fn gate_check_missing_phases_key() {
-    let state = json!({"branch": "test"});
-    let err = gate_check(&state, "flow-plan").unwrap_err();
-    assert_eq!(err["status"], "error");
-    assert!(err["message"].as_str().unwrap().contains("complete"));
-}
-
-#[test]
-fn gate_check_predecessor_missing_status_field() {
-    let state = json!({
-        "phases": {
-            "flow-start": {"name": "Start"},
-            "flow-plan": {"status": "pending"}
-        }
-    });
-    let err = gate_check(&state, "flow-plan").unwrap_err();
-    assert_eq!(err["status"], "error");
-}
+// Direct `phase_field_prefix` and `gate_check` tests removed — both
+// are now private. `phase_field_prefix` is exercised only through
+// `run_impl` (the prefix values surface as state-file field names
+// written by phase-enter); `gate_check` is exercised through the
+// subprocess tests above that spawn `bin/flow phase-enter`.
 
 // --- resolve_mode (migrated from inline) ---
 

@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use flow_rs::duplicate_test_coverage;
 use flow_rs::plan_check::{
     build_violation_message, duplicate_violation_to_tagged_json, resolve_plan_file_from_state,
-    resolve_plan_file_override, run_impl, violation_to_tagged_json, Args,
+    resolve_plan_file_override, run_impl, Args,
 };
 use std::process::Command;
 
@@ -506,35 +506,10 @@ fn relative_override_joins_project_root() {
     assert_eq!(resolved, PathBuf::from("/tmp/fake-root/custom/plan.md"));
 }
 
-#[test]
-fn violation_serializes_all_fields_with_rule_tag() {
-    let path = PathBuf::from("/tmp/plan.md");
-    let json = violation_to_tagged_json(
-        &path,
-        42,
-        "every subcommand",
-        "Add guard to every subcommand.",
-        "scope-enumeration",
-    );
-    assert_eq!(json["file"], "/tmp/plan.md");
-    assert_eq!(json["line"], 42);
-    assert_eq!(json["phrase"], "every subcommand");
-    assert_eq!(json["context"], "Add guard to every subcommand.");
-    assert_eq!(json["rule"], "scope-enumeration");
-}
-
-#[test]
-fn violation_to_tagged_json_carries_audit_rule_label() {
-    let path = PathBuf::from("/tmp/plan.md");
-    let json = violation_to_tagged_json(
-        &path,
-        10,
-        "panic on empty",
-        "tighten to panic on empty",
-        "external-input-audit",
-    );
-    assert_eq!(json["rule"], "external-input-audit");
-}
+// Direct `violation_to_tagged_json` tests removed — the helper is
+// now private. Its output shape is covered via `run_impl` tests
+// that assert on the violation JSON returned by the full plan-check
+// pipeline.
 
 #[test]
 fn message_names_only_scope_when_audit_count_is_zero() {

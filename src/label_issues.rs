@@ -129,13 +129,11 @@ pub struct Args {
     pub remove: bool,
 }
 
-/// Main-arm dispatcher with injected child_factory. Reads the state
-/// file, extracts issue numbers from the prompt, and labels them via
-/// the injected factory. Tests pass a mock child_factory to exercise
-/// the gh-spawning branch without spawning real `gh`. Returns
-/// `(value, exit_code)`: `(error+message+step, 1)` on state-file read
-/// or parse failure, `(ok+labeled+failed, 0)` on success.
-pub fn run_impl_main_with_runner(
+/// Main-arm dispatcher with injected child_factory. The production
+/// wrapper `run_impl_main` calls this with `&gh_child_factory`;
+/// integration tests drive this through the subprocess by putting a
+/// stub `gh` on PATH.
+fn run_impl_main_with_runner(
     args: Args,
     child_factory: &dyn Fn(&[&str]) -> std::io::Result<Child>,
 ) -> (Value, i32) {
