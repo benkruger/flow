@@ -120,7 +120,7 @@ fn happy_path_unknown_legacy_keys_ignored() {
 // here must match what prime-check computes at runtime.
 
 fn computed_config_hash() -> String {
-    flow_rs::prime_check::compute_config_hash().unwrap()
+    flow_rs::prime_check::compute_config_hash()
 }
 
 fn computed_setup_hash() -> String {
@@ -384,4 +384,191 @@ fn prime_check_reports_missing_plugin_version_via_subprocess() {
         "expected 'version' in message, got: {}",
         stdout
     );
+}
+
+// --- run_impl_main (main-arm dispatch seam) ---
+
+#[test]
+fn run_impl_main_none_plugin_root_returns_error_and_exit_one() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (value, code) = flow_rs::prime_check::run_impl_main(tmp.path(), None);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["message"].as_str().unwrap(), "Plugin root not found");
+    assert_eq!(code, 1);
+}
+
+#[test]
+fn run_impl_main_ok_returns_value_and_exit_zero() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_flow_json(
+        tmp.path(),
+        json!({"flow_version": current_plugin_version()}),
+    );
+    let (value, code) = flow_rs::prime_check::run_impl_main(tmp.path(), Some(plugin_root()));
+    assert_eq!(value["status"], "ok");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn run_impl_main_err_returns_error_and_exit_one() {
+    // plugin_root points at a dir without .claude-plugin/plugin.json
+    // so run_impl returns Err and run_impl_main wraps it as
+    // status=error exit 1.
+    let tmp = tempfile::tempdir().unwrap();
+    let bogus_plugin = tempfile::tempdir().unwrap();
+    write_flow_json(
+        tmp.path(),
+        json!({
+            "flow_version": "0.0.1",
+            "config_hash": "x",
+            "setup_hash": "y",
+        }),
+    );
+    let (value, code) =
+        flow_rs::prime_check::run_impl_main(tmp.path(), Some(bogus_plugin.path().to_path_buf()));
+    assert_eq!(value["status"], "error");
+    assert!(value["message"]
+        .as_str()
+        .unwrap()
+        .contains("Could not read"));
+    assert_eq!(code, 1);
+}
+
+// --- run_impl error-propagation branches ---
+//
+// The subprocess tests above also exercise these paths through the
+// real CLI, but cargo-llvm-cov does not always attribute subprocess
+// coverage back to the library code. Direct library-level tests make
+// the coverage for each `?` branch in run_impl explicit and visible
+// to the per-file gate.
+
+#[test]
+fn run_impl_errors_when_plugin_json_unreadable() {
+    // plugin_root is a tempdir with no .claude-plugin/plugin.json.
+    // The first `?` in run_impl propagates the fs::read_to_string Err.
+    let tmp = tempfile::tempdir().unwrap();
+    let bogus_plugin = tempfile::tempdir().unwrap();
+    write_flow_json(tmp.path(), json!({"flow_version": "0.0.1"}));
+    let err = flow_rs::prime_check::run_impl(tmp.path(), bogus_plugin.path()).unwrap_err();
+    assert!(err.contains("Could not read"), "got: {}", err);
+}
+
+#[test]
+fn run_impl_errors_when_plugin_json_malformed() {
+    // plugin.json exists but is not valid JSON.
+    let tmp = tempfile::tempdir().unwrap();
+    let bogus_plugin = tempfile::tempdir().unwrap();
+    fs::create_dir_all(bogus_plugin.path().join(".claude-plugin")).unwrap();
+    fs::write(
+        bogus_plugin
+            .path()
+            .join(".claude-plugin")
+            .join("plugin.json"),
+        "{not valid json",
+    )
+    .unwrap();
+    write_flow_json(tmp.path(), json!({"flow_version": "0.0.1"}));
+    let err = flow_rs::prime_check::run_impl(tmp.path(), bogus_plugin.path()).unwrap_err();
+    assert!(err.contains("Could not parse plugin.json"), "got: {}", err);
+}
+
+#[test]
+fn run_impl_errors_when_plugin_json_missing_version() {
+    // plugin.json is valid JSON but lacks the `version` field.
+    let tmp = tempfile::tempdir().unwrap();
+    let bogus_plugin = tempfile::tempdir().unwrap();
+    fs::create_dir_all(bogus_plugin.path().join(".claude-plugin")).unwrap();
+    fs::write(
+        bogus_plugin
+            .path()
+            .join(".claude-plugin")
+            .join("plugin.json"),
+        r#"{"name": "flow"}"#,
+    )
+    .unwrap();
+    write_flow_json(tmp.path(), json!({"flow_version": "0.0.1"}));
+    let err = flow_rs::prime_check::run_impl(tmp.path(), bogus_plugin.path()).unwrap_err();
+    assert!(err.contains("missing version"), "got: {}", err);
+}
+
+// --- compute_setup_hash error branch ---
+
+#[test]
+fn compute_setup_hash_errors_when_prime_setup_missing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let err = flow_rs::prime_check::compute_setup_hash(tmp.path()).unwrap_err();
+    assert!(err.contains("Could not read"), "got: {}", err);
+}
+
+#[test]
+fn run_impl_propagates_compute_setup_hash_error_in_mismatch_path() {
+    // Version-mismatch path calls compute_setup_hash(plugin_root). When
+    // the plugin_root has a valid plugin.json but no src/prime_setup.rs,
+    // compute_setup_hash returns Err and run_impl's `?` propagates it.
+    let tmp = tempfile::tempdir().unwrap();
+    let bogus_plugin = tempfile::tempdir().unwrap();
+    fs::create_dir_all(bogus_plugin.path().join(".claude-plugin")).unwrap();
+    fs::write(
+        bogus_plugin
+            .path()
+            .join(".claude-plugin")
+            .join("plugin.json"),
+        r#"{"version": "9.9.9-synthetic"}"#,
+    )
+    .unwrap();
+    write_flow_json(tmp.path(), json!({"flow_version": "0.0.1-prior"}));
+
+    let err = flow_rs::prime_check::run_impl(tmp.path(), bogus_plugin.path()).unwrap_err();
+    assert!(err.contains("Could not read"), "got: {}", err);
+    assert!(err.contains("prime_setup.rs"), "got: {}", err);
+}
+
+#[test]
+fn run_impl_propagates_write_error_in_auto_upgrade_path() {
+    // Auto-upgrade writes the updated flow_version back to .flow.json.
+    // When .flow.json is a directory, not a file, fs::write fails and
+    // the `?` operator propagates the error.
+    let tmp = tempfile::tempdir().unwrap();
+    // Set up a valid auto-upgrade-ready .flow.json with matching hashes.
+    // But .flow.json is a directory, not a file — fs::read_to_string
+    // returns Err, so run_impl short-circuits at the "not initialized"
+    // branch instead. Put a readable .flow.json inside a nested tempdir
+    // and then make the PARENT read-only so fs::write fails on the new
+    // file creation.
+    let config_hash = flow_rs::prime_check::compute_config_hash();
+    let setup_hash = flow_rs::prime_check::compute_setup_hash(&plugin_root()).unwrap();
+
+    // Write .flow.json normally, then swap it for a directory. This way
+    // read_flow_json succeeds (we pre-populate the content into memory
+    // via JSON-in-Rust setup) — but we need read_flow_json to actually
+    // read the bytes. Instead, use a read-only filesystem approach: make
+    // .flow.json non-writable AND add a second blocker so the Rust
+    // fs::write call fails when it tries to truncate+write.
+    write_flow_json(
+        tmp.path(),
+        json!({
+            "flow_version": "0.0.1-prior",
+            "config_hash": config_hash,
+            "setup_hash": setup_hash,
+        }),
+    );
+
+    // Remove write permission from .flow.json itself so fs::write fails
+    // on the open(O_WRONLY|O_TRUNC) syscall. Read permission is kept so
+    // read_flow_json succeeds earlier in run_impl.
+    use std::os::unix::fs::PermissionsExt;
+    let path = tmp.path().join(".flow.json");
+    let mut perms = fs::metadata(&path).unwrap().permissions();
+    perms.set_mode(0o444);
+    fs::set_permissions(&path, perms).unwrap();
+
+    let result = flow_rs::prime_check::run_impl(tmp.path(), &plugin_root());
+
+    // Restore perms so tempdir cleanup works cleanly.
+    let mut rperms = fs::metadata(&path).unwrap().permissions();
+    rperms.set_mode(0o644);
+    fs::set_permissions(&path, rperms).unwrap();
+
+    let err = result.unwrap_err();
+    assert!(err.contains("Could not write"), "got: {}", err);
 }

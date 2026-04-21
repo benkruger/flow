@@ -7,7 +7,7 @@ mod common;
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use serde_json::json;
@@ -363,4 +363,514 @@ fn test_pull_failure() {
         data["message"].as_str().unwrap_or("").contains("pull"),
         "Error should mention git pull"
     );
+}
+
+// --- Library-level tests for run_impl_with_deps / commit_deps / run_impl_main ---
+//
+// These tests drive the public seams directly so every branch is
+// attributed to the per-file gate.
+
+use flow_rs::ci;
+use flow_rs::start_gate::{commit_deps, run_impl_main, run_impl_with_deps, Args as GateArgs};
+use serde_json::Value;
+
+fn lib_create_repo_with_remote(parent: &Path) -> (PathBuf, PathBuf) {
+    let bare = parent.join("bare.git");
+    let repo = parent.join("repo");
+
+    Command::new("git")
+        .args(["init", "--bare", "-b", "main", &bare.to_string_lossy()])
+        .output()
+        .unwrap();
+
+    Command::new("git")
+        .args(["clone", &bare.to_string_lossy(), &repo.to_string_lossy()])
+        .output()
+        .unwrap();
+
+    for (key, val) in [
+        ("user.email", "test@test.com"),
+        ("user.name", "Test"),
+        ("commit.gpgsign", "false"),
+    ] {
+        Command::new("git")
+            .args(["config", key, val])
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+    }
+
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+
+    Command::new("git")
+        .args(["push", "-u", "origin", "main"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+
+    (repo, bare)
+}
+
+#[test]
+fn lib_commit_deps_commits_and_pushes() {
+    let dir = tempfile::tempdir().unwrap();
+    let (repo, bare) = lib_create_repo_with_remote(dir.path());
+
+    fs::write(repo.join("Cargo.lock"), "updated-lock-content").unwrap();
+
+    commit_deps(&repo).expect("commit_deps should succeed");
+
+    let log_output = Command::new("git")
+        .args(["log", "--oneline", "-1", "--format=%s"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    let msg = String::from_utf8_lossy(&log_output.stdout)
+        .trim()
+        .to_string();
+    assert_eq!(msg, "Update dependencies");
+
+    let show_output = Command::new("git")
+        .args(["show", "HEAD:Cargo.lock"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    assert!(show_output.status.success());
+    let content = String::from_utf8_lossy(&show_output.stdout);
+    assert_eq!(content.trim(), "updated-lock-content");
+
+    let remote_log = Command::new("git")
+        .args(["log", "--oneline", "-1", "--format=%s"])
+        .current_dir(&bare)
+        .output()
+        .unwrap();
+    let remote_msg = String::from_utf8_lossy(&remote_log.stdout)
+        .trim()
+        .to_string();
+    assert_eq!(remote_msg, "Update dependencies");
+}
+
+#[test]
+fn lib_commit_deps_error_on_nothing_to_commit() {
+    let dir = tempfile::tempdir().unwrap();
+    let (repo, _bare) = lib_create_repo_with_remote(dir.path());
+    let result = commit_deps(&repo);
+    assert!(result.is_err());
+}
+
+#[test]
+fn lib_commit_deps_git_add_failure() {
+    // Exercise the `git add -A` failure branch by corrupting the git
+    // index: write a file at `.git/index` that contains invalid bytes
+    // AND is read-only, so git add exits non-zero.
+    let dir = tempfile::tempdir().unwrap();
+    let (repo, _bare) = lib_create_repo_with_remote(dir.path());
+
+    // Write a bogus file so git add has something to try to add.
+    fs::write(repo.join("Cargo.lock"), "new-content").unwrap();
+
+    // Make `.git` directory unwritable so `git add` cannot update the
+    // index.
+    let git_dir = repo.join(".git");
+    let mut perms = fs::metadata(&git_dir).unwrap().permissions();
+    perms.set_mode(0o555);
+    fs::set_permissions(&git_dir, perms).unwrap();
+
+    let result = commit_deps(&repo);
+
+    // Restore perms so tempdir cleanup works.
+    let mut rperms = fs::metadata(&git_dir).unwrap().permissions();
+    rperms.set_mode(0o755);
+    fs::set_permissions(&git_dir, rperms).unwrap();
+
+    assert!(result.is_err(), "commit_deps should fail on git add");
+    let err = result.unwrap_err();
+    assert!(err.contains("git add"), "got: {}", err);
+}
+
+#[test]
+fn lib_commit_deps_git_push_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let (repo, bare) = lib_create_repo_with_remote(dir.path());
+    fs::write(repo.join("Cargo.lock"), "updated").unwrap();
+    fs::remove_dir_all(&bare).unwrap();
+    let result = commit_deps(&repo);
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.contains("git push"), "got: {}", err);
+}
+
+// --- run_impl_with_deps ---
+
+fn lib_seed_state(root: &Path, branch: &str) {
+    let state_dir = root.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(
+        state_dir.join(format!("{}.json", branch)),
+        r#"{"schema_version":1,"branch":"demo"}"#,
+    )
+    .unwrap();
+}
+
+fn lib_ok_ci(_args: &ci::Args, _cwd: &Path, _root: &Path, _force: bool) -> (Value, i32) {
+    (json!({"status": "ok"}), 0)
+}
+
+fn lib_err_ci_non_consistent(
+    _args: &ci::Args,
+    _cwd: &Path,
+    _root: &Path,
+    _force: bool,
+) -> (Value, i32) {
+    (
+        json!({"status": "error", "message": "CI failed with transient error"}),
+        1,
+    )
+}
+
+fn lib_deps_no_changes_ok(_cwd: &Path, _timeout: u64) -> (Value, i32) {
+    (json!({"status": "ok", "changes": false}), 0)
+}
+
+fn lib_deps_changed_ok(_cwd: &Path, _timeout: u64) -> (Value, i32) {
+    (json!({"status": "ok", "changes": true}), 0)
+}
+
+fn lib_commit_ok(_cwd: &Path) -> Result<(), String> {
+    Ok(())
+}
+
+#[test]
+fn lib_start_gate_pull_error_returns_infrastructure_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    lib_seed_state(&root, "pull-err-branch");
+    let args = GateArgs {
+        branch: "pull-err-branch".to_string(),
+    };
+    let pull_err = |_: &Path| -> Result<(), String> { Err("remote unreachable".to_string()) };
+
+    let result = run_impl_with_deps(
+        &args,
+        &root,
+        &root,
+        &pull_err,
+        &lib_ok_ci,
+        &lib_deps_no_changes_ok,
+        &lib_commit_ok,
+    );
+    assert_eq!(result["status"], "error");
+    assert_eq!(result["step"], "git_pull");
+    assert!(result["message"]
+        .as_str()
+        .unwrap()
+        .contains("remote unreachable"));
+}
+
+#[test]
+fn lib_start_gate_baseline_ci_non_consistent_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    lib_seed_state(&root, "ci-err-branch");
+    let args = GateArgs {
+        branch: "ci-err-branch".to_string(),
+    };
+    let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
+
+    let result = run_impl_with_deps(
+        &args,
+        &root,
+        &root,
+        &pull_ok,
+        &lib_err_ci_non_consistent,
+        &lib_deps_no_changes_ok,
+        &lib_commit_ok,
+    );
+    assert_eq!(result["status"], "error");
+    assert_eq!(result["step"], "ci_baseline");
+}
+
+#[test]
+fn lib_start_gate_post_ci_non_consistent_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    lib_seed_state(&root, "post-ci-err-branch");
+    let args = GateArgs {
+        branch: "post-ci-err-branch".to_string(),
+    };
+    let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
+    let calls = std::cell::RefCell::new(0usize);
+    let two_phase_ci = |args: &ci::Args, cwd: &Path, root: &Path, force: bool| -> (Value, i32) {
+        *calls.borrow_mut() += 1;
+        if *calls.borrow() == 1 {
+            lib_ok_ci(args, cwd, root, force)
+        } else {
+            lib_err_ci_non_consistent(args, cwd, root, force)
+        }
+    };
+
+    let result = run_impl_with_deps(
+        &args,
+        &root,
+        &root,
+        &pull_ok,
+        &two_phase_ci,
+        &lib_deps_changed_ok,
+        &lib_commit_ok,
+    );
+    assert_eq!(result["status"], "error");
+    assert_eq!(result["step"], "ci_post_deps");
+    assert_eq!(*calls.borrow(), 2);
+}
+
+#[test]
+fn lib_start_gate_commit_deps_failure_returns_commit_deps_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    lib_seed_state(&root, "commit-fail-branch");
+    let args = GateArgs {
+        branch: "commit-fail-branch".to_string(),
+    };
+    let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
+    let commit_err =
+        |_: &Path| -> Result<(), String> { Err("remote rejected push".to_string()) };
+
+    let result = run_impl_with_deps(
+        &args,
+        &root,
+        &root,
+        &pull_ok,
+        &lib_ok_ci,
+        &lib_deps_changed_ok,
+        &commit_err,
+    );
+    assert_eq!(result["status"], "error");
+    assert_eq!(result["step"], "commit_deps");
+    assert!(result["message"]
+        .as_str()
+        .unwrap()
+        .contains("remote rejected push"));
+}
+
+#[test]
+fn lib_start_gate_deps_changed_passes_returns_clean() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    lib_seed_state(&root, "happy-branch");
+    let args = GateArgs {
+        branch: "happy-branch".to_string(),
+    };
+    let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
+
+    let result = run_impl_with_deps(
+        &args,
+        &root,
+        &root,
+        &pull_ok,
+        &lib_ok_ci,
+        &lib_deps_changed_ok,
+        &lib_commit_ok,
+    );
+    assert_eq!(result["status"], "clean");
+    assert_eq!(result["deps_changed"], true);
+}
+
+#[test]
+fn lib_start_gate_baseline_flaky_returns_ci_flaky() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    lib_seed_state(&root, "flaky-branch");
+    let args = GateArgs {
+        branch: "flaky-branch".to_string(),
+    };
+    let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
+    let flaky_ci = |_: &ci::Args, _: &Path, _: &Path, _: bool| -> (Value, i32) {
+        (
+            json!({
+                "status": "ok",
+                "flaky": true,
+                "first_failure_output": "transient timeout",
+                "attempts": 2,
+            }),
+            0,
+        )
+    };
+
+    let result = run_impl_with_deps(
+        &args,
+        &root,
+        &root,
+        &pull_ok,
+        &flaky_ci,
+        &lib_deps_no_changes_ok,
+        &lib_commit_ok,
+    );
+    assert_eq!(result["status"], "ci_flaky");
+    assert_eq!(
+        result["flaky_context"],
+        "CI baseline on pristine main during flow-start"
+    );
+}
+
+#[test]
+fn lib_start_gate_deps_error_returns_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    lib_seed_state(&root, "deps-err-branch");
+    let args = GateArgs {
+        branch: "deps-err-branch".to_string(),
+    };
+    let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
+    let deps_error = |_: &Path, _: u64| -> (Value, i32) {
+        (
+            json!({"status": "error", "message": "deps subprocess died"}),
+            1,
+        )
+    };
+
+    let result = run_impl_with_deps(
+        &args,
+        &root,
+        &root,
+        &pull_ok,
+        &lib_ok_ci,
+        &deps_error,
+        &lib_commit_ok,
+    );
+    assert_eq!(result["status"], "error");
+    assert_eq!(result["step"], "update_deps");
+}
+
+#[test]
+fn lib_start_gate_ci_consistent_fail_returns_ci_failed() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    lib_seed_state(&root, "consist-fail-branch");
+    let args = GateArgs {
+        branch: "consist-fail-branch".to_string(),
+    };
+    let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
+    let consist_fail = |_: &ci::Args, _: &Path, _: &Path, _: bool| -> (Value, i32) {
+        (
+            json!({
+                "status": "error",
+                "consistent": true,
+                "output": "final failure",
+                "attempts": 3,
+            }),
+            1,
+        )
+    };
+
+    let result = run_impl_with_deps(
+        &args,
+        &root,
+        &root,
+        &pull_ok,
+        &consist_fail,
+        &lib_deps_no_changes_ok,
+        &lib_commit_ok,
+    );
+    assert_eq!(result["status"], "ci_failed");
+    assert_eq!(result["output"], "final failure");
+}
+
+#[test]
+fn lib_start_gate_post_ci_consistent_fail_returns_deps_ci_failed() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    lib_seed_state(&root, "deps-consist-fail-branch");
+    let args = GateArgs {
+        branch: "deps-consist-fail-branch".to_string(),
+    };
+    let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
+    let calls = std::cell::RefCell::new(0usize);
+    let two_phase = |args: &ci::Args, cwd: &Path, root: &Path, force: bool| -> (Value, i32) {
+        *calls.borrow_mut() += 1;
+        if *calls.borrow() == 1 {
+            lib_ok_ci(args, cwd, root, force)
+        } else {
+            (
+                json!({
+                    "status": "error",
+                    "consistent": true,
+                    "output": "post-deps fail",
+                    "attempts": 3,
+                }),
+                1,
+            )
+        }
+    };
+
+    let result = run_impl_with_deps(
+        &args,
+        &root,
+        &root,
+        &pull_ok,
+        &two_phase,
+        &lib_deps_changed_ok,
+        &lib_commit_ok,
+    );
+    assert_eq!(result["status"], "deps_ci_failed");
+}
+
+#[test]
+fn lib_start_gate_post_ci_flaky_returns_ci_flaky_with_deps_context() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    lib_seed_state(&root, "post-flaky-branch");
+    let args = GateArgs {
+        branch: "post-flaky-branch".to_string(),
+    };
+    let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
+    let calls = std::cell::RefCell::new(0usize);
+    let two_phase = |args: &ci::Args, cwd: &Path, root: &Path, force: bool| -> (Value, i32) {
+        *calls.borrow_mut() += 1;
+        if *calls.borrow() == 1 {
+            lib_ok_ci(args, cwd, root, force)
+        } else {
+            (
+                json!({
+                    "status": "ok",
+                    "flaky": true,
+                    "first_failure_output": "post-deps transient",
+                    "attempts": 2,
+                }),
+                0,
+            )
+        }
+    };
+
+    let result = run_impl_with_deps(
+        &args,
+        &root,
+        &root,
+        &pull_ok,
+        &two_phase,
+        &lib_deps_changed_ok,
+        &lib_commit_ok,
+    );
+    assert_eq!(result["status"], "ci_flaky");
+    assert_eq!(
+        result["flaky_context"],
+        "CI post-deps gate during flow-start after dependency update"
+    );
+}
+
+#[test]
+fn lib_start_gate_run_impl_main_err_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    lib_seed_state(&root, "main-err-branch");
+    let args = GateArgs {
+        branch: "main-err-branch".to_string(),
+    };
+    let (v, code) = run_impl_main(&args, &root, &root);
+    assert_eq!(code, 0);
+    assert_eq!(v["status"], "error");
+    assert_eq!(v["step"], "git_pull");
 }

@@ -590,7 +590,11 @@ fn main() {
                 extract_release_notes::run_impl_main(&args, flow_rs::utils::plugin_root());
             flow_rs::dispatch::dispatch_text(&msg, code);
         }
-        Some(Commands::PrimeCheck(args)) => prime_check::run(args),
+        Some(Commands::PrimeCheck(_args)) => {
+            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let (value, code) = prime_check::run_impl_main(&cwd, flow_rs::utils::plugin_root());
+            flow_rs::dispatch::dispatch_json(value, code);
+        }
         Some(Commands::PrimeSetup(args)) => {
             let (value, code) = prime_setup::run_impl_main(&args);
             flow_rs::dispatch::dispatch_json(value, code);

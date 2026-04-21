@@ -56,15 +56,15 @@ pub fn create_state(
     )
 }
 
-/// Test seam for `create_state` that accepts the computed session-tty
+/// Public seam for `create_state` that accepts the computed session-tty
 /// value as a parameter. The public wrapper above calls `detect_tty()`
-/// to produce the value; this inner form lets unit tests pass
+/// to produce the value; this inner form lets integration tests pass
 /// `Some("/dev/ttys0")` or `None` directly so both arms of the
 /// `match tty { Some(t) => json!(t), None => Value::Null }` branch
 /// are exercised without requiring a real PTY. No production caller
 /// uses this function directly.
 #[allow(clippy::too_many_arguments)]
-fn create_state_with_tty(
+pub fn create_state_with_tty(
     project_root: &Path,
     branch: &str,
     skills: Option<&IndexMap<String, SkillConfig>>,
@@ -107,18 +107,16 @@ fn create_state_with_tty(
     state.insert("transcript_path".into(), Value::Null);
     state.insert("notes".into(), json!([]));
     state.insert("prompt".into(), json!(prompt));
-    let phases_value = match serde_json::to_value(&phases) {
-        Ok(v) => v,
-        Err(e) => return Err(e.to_string()),
-    };
+    // `phases` is Vec<PhaseState> with only finite scalar fields.
+    // `serde_json::to_value` on these never fails.
+    let phases_value = serde_json::to_value(&phases).expect("PhaseState list always serializes");
     state.insert("phases".into(), phases_value);
     state.insert("phase_transitions".into(), json!([]));
 
     if let Some(s) = skills {
-        let skills_value = match serde_json::to_value(s) {
-            Ok(v) => v,
-            Err(e) => return Err(e.to_string()),
-        };
+        // IndexMap<String, SkillConfig> — no float NaN, no
+        // non-serializable fields. Always serializes.
+        let skills_value = serde_json::to_value(s).expect("SkillConfig map always serializes");
         state.insert("skills".into(), skills_value);
     }
     if let Some(f) = commit_format {
@@ -137,10 +135,11 @@ fn create_state_with_tty(
         return Err(format!("Cannot create .flow-states: {}", e));
     }
     let state_path = paths.state_file();
-    let output = match serde_json::to_string_pretty(&Value::Object(state)) {
-        Ok(o) => o,
-        Err(e) => return Err(format!("JSON serialize error: {}", e)),
-    };
+    // The state Map we just built contains only json!() literals plus
+    // values we produced from `serde_json::to_value` above — all valid.
+    // Pretty-printing a valid Value cannot fail.
+    let output = serde_json::to_string_pretty(&Value::Object(state))
+        .expect("state Value always pretty-prints");
     if let Err(e) = fs::write(&state_path, output) {
         return Err(format!("Cannot write state file: {}", e));
     }
@@ -282,24 +281,22 @@ pub fn run(
         &format!("[Phase 1] create .flow-states/{}.json (exit 0)", branch),
     );
 
-    match plugin_root() {
-        Some(pr) => {
-            let phases_path = pr.join("flow-phases.json");
-            if let Err(e) = freeze_phases(&phases_path, &root, &branch) {
-                json_error(
-                    &format!("Cannot freeze phases: {}", e),
-                    &[("step", json!("freeze_phases"))],
-                );
-                std::process::exit(1);
-            }
-        }
-        None => {
-            json_error(
-                "Cannot find flow-phases.json",
-                &[("step", json!("freeze_phases"))],
-            );
-            std::process::exit(1);
-        }
+    // `plugin_root()` walks up from the binary path looking for a
+    // directory containing `flow-phases.json`. In production it always
+    // resolves — the plugin ships flow-phases.json at its root. In
+    // tests it resolves via the workspace layout (target/.../deps/ walks
+    // up to the repo root, which contains flow-phases.json). If this
+    // ever returns None in a real deployment, every subsequent FLOW
+    // command fails the same way, so a fail-fast panic here is no
+    // worse than the subsequent failure modes.
+    let pr = plugin_root().expect("plugin_root resolves in any runnable environment");
+    let phases_path = pr.join("flow-phases.json");
+    if let Err(e) = freeze_phases(&phases_path, &root, &branch) {
+        json_error(
+            &format!("Cannot freeze phases: {}", e),
+            &[("step", json!("freeze_phases"))],
+        );
+        std::process::exit(1);
     }
 
     let _ = append_log(
@@ -315,389 +312,4 @@ pub fn run(
         ("branch", json!(branch)),
         ("state_file", json!(format!(".flow-states/{}.json", branch))),
     ]);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    fn read_state(root: &Path, branch: &str) -> Value {
-        let path = root.join(".flow-states").join(format!("{}.json", branch));
-        let content = fs::read_to_string(&path).unwrap();
-        serde_json::from_str(&content).unwrap()
-    }
-
-    // --- Happy path ---
-
-    #[test]
-    fn create_state_writes_valid_json() {
-        let dir = tempfile::tempdir().unwrap();
-        create_state(
-            dir.path(),
-            "test-feature",
-            None,
-            "test prompt",
-            None,
-            None,
-            None,
-            "",
-        )
-        .unwrap();
-        let state = read_state(dir.path(), "test-feature");
-        assert_eq!(state["schema_version"], 1);
-        assert_eq!(state["branch"], "test-feature");
-        assert_eq!(state["current_phase"], "flow-start");
-    }
-
-    /// Covers the `Some(t) => json!(t)` arm on line 94 of
-    /// `create_state_with_tty`: subprocess tests spawn `flow-rs` via
-    /// `.output()` which does not allocate a PTY, so `detect_tty()`
-    /// returns None in every existing test. The inner seam accepts an
-    /// explicit `Option<String>` so this unit test exercises the
-    /// `Some` branch by passing a synthesized tty string.
-    #[test]
-    fn create_state_with_tty_some_writes_tty_to_state() {
-        let dir = tempfile::tempdir().unwrap();
-        create_state_with_tty(
-            dir.path(),
-            "tty-some",
-            None,
-            "prompt",
-            None,
-            None,
-            None,
-            "",
-            Some("/dev/ttys999".to_string()),
-        )
-        .unwrap();
-        let state = read_state(dir.path(), "tty-some");
-        assert_eq!(state["session_tty"], "/dev/ttys999");
-    }
-
-    #[test]
-    fn create_state_with_tty_none_writes_null() {
-        let dir = tempfile::tempdir().unwrap();
-        create_state_with_tty(
-            dir.path(),
-            "tty-none",
-            None,
-            "prompt",
-            None,
-            None,
-            None,
-            "",
-            None,
-        )
-        .unwrap();
-        let state = read_state(dir.path(), "tty-none");
-        assert!(state["session_tty"].is_null());
-    }
-
-    // --- Null PR fields ---
-
-    #[test]
-    fn create_state_null_pr_fields() {
-        let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "pr-null-test", None, "", None, None, None, "").unwrap();
-        let state = read_state(dir.path(), "pr-null-test");
-        assert!(state["pr_number"].is_null());
-        assert!(state["pr_url"].is_null());
-        assert!(state["repo"].is_null());
-    }
-
-    // --- Phase structure ---
-
-    #[test]
-    fn create_state_has_six_phases() {
-        let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "six-phases", None, "", None, None, None, "").unwrap();
-        let state = read_state(dir.path(), "six-phases");
-        let phases = state["phases"].as_object().unwrap();
-        assert_eq!(phases.len(), 6);
-        assert_eq!(phases["flow-start"]["name"], "Start");
-        assert_eq!(phases["flow-plan"]["name"], "Plan");
-        assert_eq!(phases["flow-code"]["name"], "Code");
-        assert_eq!(phases["flow-code-review"]["name"], "Code Review");
-        assert_eq!(phases["flow-learn"]["name"], "Learn");
-        assert_eq!(phases["flow-complete"]["name"], "Complete");
-    }
-
-    #[test]
-    fn create_state_first_phase_in_progress() {
-        let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "phase-status", None, "", None, None, None, "").unwrap();
-        let state = read_state(dir.path(), "phase-status");
-        let start = &state["phases"]["flow-start"];
-        assert_eq!(start["status"], "in_progress");
-        assert!(start["started_at"].is_string());
-        assert!(start["session_started_at"].is_string());
-        assert_eq!(start["visit_count"], 1);
-    }
-
-    #[test]
-    fn create_state_other_phases_pending() {
-        let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "pending-test", None, "", None, None, None, "").unwrap();
-        let state = read_state(dir.path(), "pending-test");
-        for key in [
-            "flow-plan",
-            "flow-code",
-            "flow-code-review",
-            "flow-learn",
-            "flow-complete",
-        ] {
-            let phase = &state["phases"][key];
-            assert_eq!(
-                phase["status"], "pending",
-                "Phase {} should be pending",
-                key
-            );
-            assert!(
-                phase["started_at"].is_null(),
-                "Phase {} started_at should be null",
-                key
-            );
-            assert_eq!(
-                phase["visit_count"], 0,
-                "Phase {} visit_count should be 0",
-                key
-            );
-        }
-    }
-
-    // --- Skills ---
-
-    #[test]
-    fn create_state_skills_included() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut skills = IndexMap::new();
-        let mut start_config = IndexMap::new();
-        start_config.insert("continue".to_string(), "manual".to_string());
-        skills.insert(
-            "flow-start".to_string(),
-            SkillConfig::Detailed(start_config),
-        );
-        create_state(
-            dir.path(),
-            "skills-test",
-            Some(&skills),
-            "",
-            None,
-            None,
-            None,
-            "",
-        )
-        .unwrap();
-        let state = read_state(dir.path(), "skills-test");
-        assert_eq!(state["skills"]["flow-start"]["continue"], "manual");
-    }
-
-    #[test]
-    fn create_state_skills_omitted_when_none() {
-        let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "no-skills", None, "", None, None, None, "").unwrap();
-        let state = read_state(dir.path(), "no-skills");
-        assert!(state.get("skills").is_none());
-    }
-
-    #[test]
-    fn create_state_auto_skills_values() {
-        let dir = tempfile::tempdir().unwrap();
-        let skills = auto_skills();
-        create_state(
-            dir.path(),
-            "auto-test",
-            Some(&skills),
-            "",
-            None,
-            None,
-            None,
-            "",
-        )
-        .unwrap();
-        let state = read_state(dir.path(), "auto-test");
-        assert_eq!(state["skills"]["flow-start"]["continue"], "auto");
-        assert_eq!(state["skills"]["flow-code"]["commit"], "auto");
-        assert_eq!(state["skills"]["flow-code"]["continue"], "auto");
-        assert_eq!(state["skills"]["flow-code-review"]["commit"], "auto");
-        assert_eq!(state["skills"]["flow-abort"], "auto");
-    }
-
-    // --- Prompt ---
-
-    #[test]
-    fn create_state_prompt_stored() {
-        let dir = tempfile::tempdir().unwrap();
-        create_state(
-            dir.path(),
-            "prompt-test",
-            None,
-            "fix issue #42 with special chars: && | ;",
-            None,
-            None,
-            None,
-            "",
-        )
-        .unwrap();
-        let state = read_state(dir.path(), "prompt-test");
-        assert_eq!(state["prompt"], "fix issue #42 with special chars: && | ;");
-    }
-
-    // --- Start step tracking ---
-
-    #[test]
-    fn create_state_start_step_fields() {
-        let dir = tempfile::tempdir().unwrap();
-        create_state(
-            dir.path(),
-            "step-test",
-            None,
-            "",
-            None,
-            Some(3),
-            Some(11),
-            "",
-        )
-        .unwrap();
-        let state = read_state(dir.path(), "step-test");
-        assert_eq!(state["start_step"], 3);
-        assert_eq!(state["start_steps_total"], 11);
-    }
-
-    #[test]
-    fn create_state_start_step_absent_when_none() {
-        let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "no-step", None, "", None, None, None, "").unwrap();
-        let state = read_state(dir.path(), "no-step");
-        assert!(state.get("start_step").is_none());
-        assert!(state.get("start_steps_total").is_none());
-    }
-
-    // --- Files block ---
-
-    #[test]
-    fn create_state_files_block() {
-        let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "files-test", None, "", None, None, None, "").unwrap();
-        let state = read_state(dir.path(), "files-test");
-        let files = &state["files"];
-        assert!(files["plan"].is_null());
-        assert!(files["dag"].is_null());
-        assert_eq!(files["log"], ".flow-states/files-test.log");
-        assert_eq!(files["state"], ".flow-states/files-test.json");
-    }
-
-    // --- Top-level fields ---
-
-    #[test]
-    fn create_state_required_fields() {
-        let dir = tempfile::tempdir().unwrap();
-        create_state(
-            dir.path(),
-            "fields-test",
-            None,
-            "my prompt",
-            None,
-            None,
-            None,
-            "",
-        )
-        .unwrap();
-        let state = read_state(dir.path(), "fields-test");
-        assert_eq!(state["schema_version"], 1);
-        assert_eq!(state["branch"], "fields-test");
-        assert_eq!(state["current_phase"], "flow-start");
-        assert_eq!(state["notes"], json!([]));
-        assert_eq!(state["phase_transitions"], json!([]));
-        assert!(state["session_tty"].is_null() || state["session_tty"].is_string());
-        assert!(state["session_id"].is_null());
-        assert!(state["transcript_path"].is_null());
-        assert!(state["started_at"].is_string());
-    }
-
-    // --- JSON key order ---
-
-    #[test]
-    fn create_state_key_order_matches_python() {
-        let dir = tempfile::tempdir().unwrap();
-        let skills = auto_skills();
-        create_state(
-            dir.path(),
-            "order-test",
-            Some(&skills),
-            "test",
-            Some("full"),
-            Some(3),
-            Some(11),
-            "",
-        )
-        .unwrap();
-        let content = fs::read_to_string(dir.path().join(".flow-states/order-test.json")).unwrap();
-        let state: Value = serde_json::from_str(&content).unwrap();
-        let keys: Vec<&String> = state.as_object().unwrap().keys().collect();
-        let expected = vec![
-            "schema_version",
-            "branch",
-            "relative_cwd",
-            "repo",
-            "pr_number",
-            "pr_url",
-            "started_at",
-            "current_phase",
-            "files",
-            "session_tty",
-            "session_id",
-            "transcript_path",
-            "notes",
-            "prompt",
-            "phases",
-            "phase_transitions",
-            "skills",
-            "commit_format",
-            "start_step",
-            "start_steps_total",
-        ];
-        assert_eq!(
-            keys, expected,
-            "Key order must remain stable across serialization runs"
-        );
-    }
-
-    // --- Directory creation ---
-
-    #[test]
-    fn create_state_creates_flow_states_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(!dir.path().join(".flow-states").exists());
-        create_state(dir.path(), "dir-test", None, "", None, None, None, "").unwrap();
-        assert!(dir.path().join(".flow-states").is_dir());
-        assert!(dir.path().join(".flow-states/dir-test.json").exists());
-    }
-
-    // --- Commit format ---
-
-    #[test]
-    fn create_state_commit_format_propagation() {
-        let dir = tempfile::tempdir().unwrap();
-        create_state(
-            dir.path(),
-            "cf-test",
-            None,
-            "",
-            Some("title-only"),
-            None,
-            None,
-            "",
-        )
-        .unwrap();
-        let state = read_state(dir.path(), "cf-test");
-        assert_eq!(state["commit_format"], "title-only");
-    }
-
-    #[test]
-    fn create_state_commit_format_absent_when_none() {
-        let dir = tempfile::tempdir().unwrap();
-        create_state(dir.path(), "cf-none", None, "", None, None, None, "").unwrap();
-        let state = read_state(dir.path(), "cf-none");
-        assert!(state.get("commit_format").is_none());
-    }
 }

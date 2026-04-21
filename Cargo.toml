@@ -45,3 +45,7 @@ path = "tests/hooks/validate_ask_user.rs"
 [[test]]
 name = "validate_worktree_paths"
 path = "tests/hooks/validate_worktree_paths.rs"
+
+[[test]]
+name = "init_state"
+path = "tests/commands/init_state.rs"

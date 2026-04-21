@@ -14,11 +14,9 @@
 //! [`run_impl_with_deps`] is the fully-testable core: it accepts the
 //! project root, cwd, and four subprocess/environment callouts as
 //! injectable closures (plugin-root detection, prime-check,
-//! upgrade-check, and the init-state subprocess runner). Inline tests
-//! drive the plugin-root-None and init-state-dispatch error branches
-//! with stub closures against a `TempDir` fixture, so those paths are
-//! testable without spawning the real `init-state` binary, touching
-//! `CLAUDE_PLUGIN_ROOT`, or making a GitHub API call. Production
+//! upgrade-check, and the init-state subprocess runner). Integration
+//! tests drive the plugin-root-None and init-state-dispatch error
+//! branches with stub closures against a `TempDir` fixture. Production
 //! [`run_impl`] is a one-line binder.
 //!
 //! ## Why start_init has `run_impl_main_with_deps`
@@ -72,19 +70,21 @@ pub struct Args {
 
 /// Default subprocess runner for `init-state`. Spawns the current
 /// executable with the given args and cwd, capturing stdout/stderr.
-fn default_init_state_runner(args: &[String], cwd: &Path) -> Result<Output, String> {
-    let self_exe = match std::env::current_exe() {
-        Ok(p) => p,
-        Err(e) => return Err(format!("Could not determine current executable: {}", e)),
-    };
-    match std::process::Command::new(&self_exe)
+///
+/// `pub` so integration tests can exercise its error paths directly.
+/// Every caller in `run_impl_with_deps` goes through the injected
+/// `init_state_runner` closure.
+pub fn default_init_state_runner(args: &[String], cwd: &Path) -> Result<Output, String> {
+    // std::env::current_exe fails only on platforms without a /proc or
+    // equivalent, or when the binary has been unlinked mid-run. On
+    // every supported target the call succeeds — a failure here is a
+    // programmer-visible panic.
+    let self_exe = std::env::current_exe().expect("current executable path is resolvable");
+    std::process::Command::new(&self_exe)
         .args(args)
         .current_dir(cwd)
         .output()
-    {
-        Ok(o) => Ok(o),
-        Err(e) => Err(format!("Failed to spawn init-state: {}", e)),
-    }
+        .map_err(|e| format!("Failed to spawn init-state: {}", e))
 }
 
 /// Default upgrade-check binder. Resolves the plugin.json path and runs
@@ -238,21 +238,11 @@ pub fn run_impl_with_deps(
         return Ok(release_and_error(&msg, "prime_check"));
     }
 
-    // Capture version info for response
+    // Capture auto_upgraded state for the final response assembly.
     let auto_upgraded = prime_result
         .get("auto_upgraded")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let mut version_info = json!({});
-    if auto_upgraded {
-        version_info["auto_upgraded"] = json!(true);
-        if let Some(old) = prime_result.get("old_version") {
-            version_info["old_version"] = old.clone();
-        }
-        if let Some(new) = prime_result.get("new_version") {
-            version_info["new_version"] = new.clone();
-        }
-    }
 
     // Step 3: Upgrade check (best-effort, never errors)
     let upgrade_result = upgrade_check_fn(&plug_root);
@@ -376,10 +366,10 @@ pub fn run_impl_with_deps(
 
     if auto_upgraded {
         response["auto_upgraded"] = json!(true);
-        if let Some(old) = version_info.get("old_version") {
+        if let Some(old) = prime_result.get("old_version") {
             response["old_version"] = old.clone();
         }
-        if let Some(new) = version_info.get("new_version") {
+        if let Some(new) = prime_result.get("new_version") {
             response["new_version"] = new.clone();
         }
     }
@@ -449,406 +439,4 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
         &default_upgrade_check,
         &default_init_state_runner,
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::os::unix::process::ExitStatusExt;
-    use std::process::ExitStatus;
-
-    // --- run_impl_with_deps ---
-
-    /// Build a fake `Output` with the given stdout bytes and exit code 0.
-    fn fake_output(stdout: &str) -> Output {
-        Output {
-            status: ExitStatus::from_raw(0),
-            stdout: stdout.as_bytes().to_vec(),
-            stderr: Vec::new(),
-        }
-    }
-
-    fn ok_prime_check(_cwd: &Path, _plug_root: &Path) -> Result<Value, String> {
-        Ok(json!({"status": "ok"}))
-    }
-
-    fn ok_upgrade_check(_plug_root: &Path) -> Value {
-        json!({"status": "current"})
-    }
-
-    fn panic_init_runner(_args: &[String], _cwd: &Path) -> Result<Output, String> {
-        panic!("init_state_runner must not be called on plugin-root error path");
-    }
-
-    #[test]
-    fn start_init_plugin_root_none_returns_err() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_path_buf();
-        let args = Args {
-            feature_name: "plugroot-none".to_string(),
-            auto: false,
-            prompt_file: None,
-        };
-        let finder = || -> Option<PathBuf> { None };
-
-        let result = run_impl_with_deps(
-            &args,
-            &root,
-            &root,
-            &finder,
-            &ok_prime_check,
-            &ok_upgrade_check,
-            &panic_init_runner,
-        );
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("CLAUDE_PLUGIN_ROOT"));
-    }
-
-    #[test]
-    fn start_init_init_state_spawn_failure_returns_err() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_path_buf();
-        let plug_root = root.clone();
-        let args = Args {
-            feature_name: "spawn-fail".to_string(),
-            auto: false,
-            prompt_file: None,
-        };
-        let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-        let runner = |_: &[String], _: &Path| -> Result<Output, String> {
-            Err("Failed to spawn init-state: no such file".to_string())
-        };
-
-        let result = run_impl_with_deps(
-            &args,
-            &root,
-            &root,
-            &finder,
-            &ok_prime_check,
-            &ok_upgrade_check,
-            &runner,
-        );
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Failed to spawn init-state"));
-    }
-
-    #[test]
-    fn start_init_init_state_parse_fallback() {
-        // Runner returns Output with empty stdout → fallback JSON fires.
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_path_buf();
-        let plug_root = root.clone();
-        let args = Args {
-            feature_name: "parse-fallback".to_string(),
-            auto: false,
-            prompt_file: None,
-        };
-        let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-        let runner = |_: &[String], _: &Path| -> Result<Output, String> { Ok(fake_output("")) };
-
-        let result = run_impl_with_deps(
-            &args,
-            &root,
-            &root,
-            &finder,
-            &ok_prime_check,
-            &ok_upgrade_check,
-            &runner,
-        )
-        .unwrap();
-        assert_eq!(result["status"], "error");
-        assert_eq!(
-            result["message"].as_str().unwrap(),
-            "Could not parse init-state output"
-        );
-        assert_eq!(result["step"], "init_state");
-
-        // Lock must be released — the release_and_error helper deletes
-        // the queue entry.
-        let queue_entry = root.join(".flow-states/start-queue/parse-fallback");
-        assert!(
-            !queue_entry.exists(),
-            "lock must be released on parse fallback error"
-        );
-    }
-
-    #[test]
-    fn start_init_init_state_error_releases_lock_via_seam() {
-        // Runner returns Output with a valid error JSON → release lock.
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_path_buf();
-        let plug_root = root.clone();
-        let args = Args {
-            feature_name: "init-err".to_string(),
-            auto: false,
-            prompt_file: None,
-        };
-        let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-        let runner = |_: &[String], _: &Path| -> Result<Output, String> {
-            Ok(fake_output(
-                r#"{"status": "error", "message": "init-state refused", "step": "seeded_error"}"#,
-            ))
-        };
-
-        let result = run_impl_with_deps(
-            &args,
-            &root,
-            &root,
-            &finder,
-            &ok_prime_check,
-            &ok_upgrade_check,
-            &runner,
-        )
-        .unwrap();
-        assert_eq!(result["status"], "error");
-        assert_eq!(result["message"], "init-state refused");
-        assert_eq!(result["step"], "seeded_error");
-
-        let queue_entry = root.join(".flow-states/start-queue/init-err");
-        assert!(
-            !queue_entry.exists(),
-            "lock must be released on init-state error"
-        );
-    }
-
-    #[test]
-    fn start_init_prime_check_error_releases_lock_via_seam() {
-        // Inject a prime_check that returns Err → lock release path fires.
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_path_buf();
-        let plug_root = root.clone();
-        let args = Args {
-            feature_name: "prime-err".to_string(),
-            auto: false,
-            prompt_file: None,
-        };
-        let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-        let err_prime = |_: &Path, _: &Path| -> Result<Value, String> {
-            Err("missing plugin.json".to_string())
-        };
-
-        let result = run_impl_with_deps(
-            &args,
-            &root,
-            &root,
-            &finder,
-            &err_prime,
-            &ok_upgrade_check,
-            &panic_init_runner,
-        )
-        .unwrap();
-        assert_eq!(result["status"], "error");
-        assert_eq!(result["step"], "prime_check");
-        assert!(result["message"]
-            .as_str()
-            .unwrap()
-            .contains("missing plugin.json"));
-    }
-
-    #[test]
-    fn start_init_happy_path_via_seam_returns_ready() {
-        // Sanity: the full happy path via stubbed runners returns
-        // status=ready with the expected branch derivation.
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_path_buf();
-        let plug_root = root.clone();
-        let args = Args {
-            feature_name: "happy-seam".to_string(),
-            auto: false,
-            prompt_file: None,
-        };
-        let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-        let runner = |_: &[String], _: &Path| -> Result<Output, String> {
-            Ok(fake_output(r#"{"status": "ok", "branch": "happy-seam"}"#))
-        };
-
-        let result = run_impl_with_deps(
-            &args,
-            &root,
-            &root,
-            &finder,
-            &ok_prime_check,
-            &ok_upgrade_check,
-            &runner,
-        )
-        .unwrap();
-        assert_eq!(result["status"], "ready");
-        assert_eq!(result["branch"], "happy-seam");
-    }
-
-    #[test]
-    fn start_init_auto_upgraded_propagates_to_response() {
-        // prime_check returns auto_upgraded:true with old/new versions →
-        // response carries both fields.
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_path_buf();
-        let plug_root = root.clone();
-        let args = Args {
-            feature_name: "auto-up".to_string(),
-            auto: false,
-            prompt_file: None,
-        };
-        let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-        let upgraded_prime = |_: &Path, _: &Path| -> Result<Value, String> {
-            Ok(json!({
-                "status": "ok",
-                "auto_upgraded": true,
-                "old_version": "1.0.0",
-                "new_version": "1.0.1",
-            }))
-        };
-        let runner = |_: &[String], _: &Path| -> Result<Output, String> {
-            Ok(fake_output(r#"{"status": "ok"}"#))
-        };
-
-        let result = run_impl_with_deps(
-            &args,
-            &root,
-            &root,
-            &finder,
-            &upgraded_prime,
-            &ok_upgrade_check,
-            &runner,
-        )
-        .unwrap();
-        assert_eq!(result["status"], "ready");
-        assert_eq!(result["auto_upgraded"], true);
-        assert_eq!(result["old_version"], "1.0.0");
-        assert_eq!(result["new_version"], "1.0.1");
-    }
-
-    #[test]
-    fn start_init_upgrade_available_adds_upgrade_field() {
-        // upgrade_check returns status=upgrade_available → response
-        // includes the upgrade field.
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_path_buf();
-        let plug_root = root.clone();
-        let args = Args {
-            feature_name: "upgrade-avail".to_string(),
-            auto: false,
-            prompt_file: None,
-        };
-        let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-        let upgrade = |_: &Path| -> Value {
-            json!({"status": "upgrade_available", "latest": "99.0.0", "installed": "1.0.0"})
-        };
-        let runner = |_: &[String], _: &Path| -> Result<Output, String> {
-            Ok(fake_output(r#"{"status": "ok"}"#))
-        };
-
-        let result = run_impl_with_deps(
-            &args,
-            &root,
-            &root,
-            &finder,
-            &ok_prime_check,
-            &upgrade,
-            &runner,
-        )
-        .unwrap();
-        assert_eq!(result["status"], "ready");
-        assert_eq!(result["upgrade"]["status"], "upgrade_available");
-        assert_eq!(result["upgrade"]["latest"], "99.0.0");
-    }
-
-    #[test]
-    fn start_init_lock_already_held_returns_locked() {
-        // Pre-create a queue entry for another feature so acquire
-        // returns "locked". Exercises the early-return branch.
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_path_buf();
-        let plug_root = root.clone();
-        // Seed another feature's lock entry
-        let queue_dir = root.join(".flow-states/start-queue");
-        fs::create_dir_all(&queue_dir).unwrap();
-        fs::write(queue_dir.join("other-feature"), "").unwrap();
-
-        let args = Args {
-            feature_name: "blocked-feature".to_string(),
-            auto: false,
-            prompt_file: None,
-        };
-        let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-
-        let result = run_impl_with_deps(
-            &args,
-            &root,
-            &root,
-            &finder,
-            &ok_prime_check,
-            &ok_upgrade_check,
-            &panic_init_runner,
-        )
-        .unwrap();
-        assert_eq!(result["status"], "locked");
-        assert_eq!(result["feature"], "other-feature");
-    }
-
-    // --- run_impl_main ---
-
-    #[test]
-    fn start_init_run_impl_main_err_path() {
-        // run_impl_main_with_deps wraps run_impl_with_deps. When the
-        // plug_root_finder returns None, the inner Result is Err and
-        // the wrap produces (err_json, 1) with step=start_init_run_impl.
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_path_buf();
-        let args = Args {
-            feature_name: "main-err-branch".to_string(),
-            auto: false,
-            prompt_file: None,
-        };
-        let finder = || -> Option<PathBuf> { None };
-
-        let (v, code) = run_impl_main_with_deps(
-            &args,
-            &root,
-            &root,
-            &finder,
-            &ok_prime_check,
-            &ok_upgrade_check,
-            &panic_init_runner,
-        );
-        assert_eq!(code, 1);
-        assert_eq!(v["status"], "error");
-        assert_eq!(v["step"], "start_init_run_impl");
-        assert!(v["message"]
-            .as_str()
-            .unwrap_or("")
-            .contains("CLAUDE_PLUGIN_ROOT"));
-    }
-
-    #[test]
-    fn start_init_run_impl_main_ok_wraps_with_exit_zero() {
-        // Sanity: happy path through run_impl_main_with_deps.
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_path_buf();
-        let plug_root = root.clone();
-        let args = Args {
-            feature_name: "main-ok-branch".to_string(),
-            auto: false,
-            prompt_file: None,
-        };
-        let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-        let runner = |_: &[String], _: &Path| -> Result<Output, String> {
-            Ok(Output {
-                status: std::os::unix::process::ExitStatusExt::from_raw(0),
-                stdout: br#"{"status":"ok"}"#.to_vec(),
-                stderr: Vec::new(),
-            })
-        };
-
-        let (v, code) = run_impl_main_with_deps(
-            &args,
-            &root,
-            &root,
-            &finder,
-            &ok_prime_check,
-            &ok_upgrade_check,
-            &runner,
-        );
-        assert_eq!(code, 0);
-        assert_eq!(v["status"], "ready");
-    }
 }

@@ -431,8 +431,7 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
         }));
     }
 
-    let config_hash =
-        compute_config_hash().map_err(|e| json!({"status": "error", "message": e}))?;
+    let config_hash = compute_config_hash();
     let setup_hash =
         compute_setup_hash(&p_root).map_err(|e| json!({"status": "error", "message": e}))?;
 

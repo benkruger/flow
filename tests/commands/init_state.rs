@@ -1,3 +1,4 @@
+#[path = "../common/mod.rs"]
 mod common;
 
 use std::fs;
@@ -925,4 +926,444 @@ fn create_state_write_failure_returns_error() {
         data["step"], "create_state",
         "Error should come from the create_state step"
     );
+}
+
+// --- Library-level tests for create_state / create_state_with_tty ---
+//
+// These tests drive the public `create_state` and `create_state_with_tty`
+// seams directly so branch coverage in the library is attributed to the
+// per-file gate. Subprocess invocations of `init-state` do not
+// contribute to coverage for `src/commands/init_state.rs` because the
+// child's cwd is a tempdir and LLVM_PROFILE_FILE does not resolve
+// back to the parent's target dir.
+
+use flow_rs::commands::init_state::{create_state, create_state_with_tty};
+use flow_rs::phase_config::auto_skills;
+use flow_rs::state::SkillConfig;
+use indexmap::IndexMap;
+
+fn read_state_direct(root: &std::path::Path, branch: &str) -> Value {
+    let path = root.join(".flow-states").join(format!("{}.json", branch));
+    let content = fs::read_to_string(&path).unwrap();
+    serde_json::from_str(&content).unwrap()
+}
+
+#[test]
+fn lib_create_state_writes_valid_json() {
+    let dir = tempfile::tempdir().unwrap();
+    create_state(
+        dir.path(),
+        "test-feature",
+        None,
+        "test prompt",
+        None,
+        None,
+        None,
+        "",
+    )
+    .unwrap();
+    let state = read_state_direct(dir.path(), "test-feature");
+    assert_eq!(state["schema_version"], 1);
+    assert_eq!(state["branch"], "test-feature");
+    assert_eq!(state["current_phase"], "flow-start");
+}
+
+#[test]
+fn lib_create_state_with_tty_some_writes_tty_to_state() {
+    let dir = tempfile::tempdir().unwrap();
+    create_state_with_tty(
+        dir.path(),
+        "tty-some",
+        None,
+        "prompt",
+        None,
+        None,
+        None,
+        "",
+        Some("/dev/ttys999".to_string()),
+    )
+    .unwrap();
+    let state = read_state_direct(dir.path(), "tty-some");
+    assert_eq!(state["session_tty"], "/dev/ttys999");
+}
+
+#[test]
+fn lib_create_state_with_tty_none_writes_null() {
+    let dir = tempfile::tempdir().unwrap();
+    create_state_with_tty(
+        dir.path(),
+        "tty-none",
+        None,
+        "prompt",
+        None,
+        None,
+        None,
+        "",
+        None,
+    )
+    .unwrap();
+    let state = read_state_direct(dir.path(), "tty-none");
+    assert!(state["session_tty"].is_null());
+}
+
+#[test]
+fn lib_create_state_null_pr_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    create_state(dir.path(), "pr-null-test", None, "", None, None, None, "").unwrap();
+    let state = read_state_direct(dir.path(), "pr-null-test");
+    assert!(state["pr_number"].is_null());
+    assert!(state["pr_url"].is_null());
+    assert!(state["repo"].is_null());
+}
+
+#[test]
+fn lib_create_state_has_six_phases() {
+    let dir = tempfile::tempdir().unwrap();
+    create_state(dir.path(), "six-phases", None, "", None, None, None, "").unwrap();
+    let state = read_state_direct(dir.path(), "six-phases");
+    let phases = state["phases"].as_object().unwrap();
+    assert_eq!(phases.len(), 6);
+    assert_eq!(phases["flow-start"]["name"], "Start");
+    assert_eq!(phases["flow-plan"]["name"], "Plan");
+    assert_eq!(phases["flow-code"]["name"], "Code");
+    assert_eq!(phases["flow-code-review"]["name"], "Code Review");
+    assert_eq!(phases["flow-learn"]["name"], "Learn");
+    assert_eq!(phases["flow-complete"]["name"], "Complete");
+}
+
+#[test]
+fn lib_create_state_first_phase_in_progress() {
+    let dir = tempfile::tempdir().unwrap();
+    create_state(dir.path(), "phase-status", None, "", None, None, None, "").unwrap();
+    let state = read_state_direct(dir.path(), "phase-status");
+    let start = &state["phases"]["flow-start"];
+    assert_eq!(start["status"], "in_progress");
+    assert!(start["started_at"].is_string());
+    assert!(start["session_started_at"].is_string());
+    assert_eq!(start["visit_count"], 1);
+}
+
+#[test]
+fn lib_create_state_other_phases_pending() {
+    let dir = tempfile::tempdir().unwrap();
+    create_state(dir.path(), "pending-test", None, "", None, None, None, "").unwrap();
+    let state = read_state_direct(dir.path(), "pending-test");
+    for key in [
+        "flow-plan",
+        "flow-code",
+        "flow-code-review",
+        "flow-learn",
+        "flow-complete",
+    ] {
+        let phase = &state["phases"][key];
+        assert_eq!(
+            phase["status"], "pending",
+            "Phase {} should be pending",
+            key
+        );
+        assert!(
+            phase["started_at"].is_null(),
+            "Phase {} started_at should be null",
+            key
+        );
+        assert_eq!(
+            phase["visit_count"], 0,
+            "Phase {} visit_count should be 0",
+            key
+        );
+    }
+}
+
+#[test]
+fn lib_create_state_skills_included() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut skills = IndexMap::new();
+    let mut start_config = IndexMap::new();
+    start_config.insert("continue".to_string(), "manual".to_string());
+    skills.insert(
+        "flow-start".to_string(),
+        SkillConfig::Detailed(start_config),
+    );
+    create_state(
+        dir.path(),
+        "skills-test",
+        Some(&skills),
+        "",
+        None,
+        None,
+        None,
+        "",
+    )
+    .unwrap();
+    let state = read_state_direct(dir.path(), "skills-test");
+    assert_eq!(state["skills"]["flow-start"]["continue"], "manual");
+}
+
+#[test]
+fn lib_create_state_skills_omitted_when_none() {
+    let dir = tempfile::tempdir().unwrap();
+    create_state(dir.path(), "no-skills", None, "", None, None, None, "").unwrap();
+    let state = read_state_direct(dir.path(), "no-skills");
+    assert!(state.get("skills").is_none());
+}
+
+#[test]
+fn lib_create_state_auto_skills_values() {
+    let dir = tempfile::tempdir().unwrap();
+    let skills = auto_skills();
+    create_state(
+        dir.path(),
+        "auto-test",
+        Some(&skills),
+        "",
+        None,
+        None,
+        None,
+        "",
+    )
+    .unwrap();
+    let state = read_state_direct(dir.path(), "auto-test");
+    assert_eq!(state["skills"]["flow-start"]["continue"], "auto");
+    assert_eq!(state["skills"]["flow-code"]["commit"], "auto");
+    assert_eq!(state["skills"]["flow-code"]["continue"], "auto");
+    assert_eq!(state["skills"]["flow-code-review"]["commit"], "auto");
+    assert_eq!(state["skills"]["flow-abort"], "auto");
+}
+
+#[test]
+fn lib_create_state_prompt_stored() {
+    let dir = tempfile::tempdir().unwrap();
+    create_state(
+        dir.path(),
+        "prompt-test",
+        None,
+        "fix issue #42 with special chars: && | ;",
+        None,
+        None,
+        None,
+        "",
+    )
+    .unwrap();
+    let state = read_state_direct(dir.path(), "prompt-test");
+    assert_eq!(state["prompt"], "fix issue #42 with special chars: && | ;");
+}
+
+#[test]
+fn lib_create_state_start_step_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    create_state(
+        dir.path(),
+        "step-test",
+        None,
+        "",
+        None,
+        Some(3),
+        Some(11),
+        "",
+    )
+    .unwrap();
+    let state = read_state_direct(dir.path(), "step-test");
+    assert_eq!(state["start_step"], 3);
+    assert_eq!(state["start_steps_total"], 11);
+}
+
+#[test]
+fn lib_create_state_start_step_absent_when_none() {
+    let dir = tempfile::tempdir().unwrap();
+    create_state(dir.path(), "no-step", None, "", None, None, None, "").unwrap();
+    let state = read_state_direct(dir.path(), "no-step");
+    assert!(state.get("start_step").is_none());
+    assert!(state.get("start_steps_total").is_none());
+}
+
+#[test]
+fn lib_create_state_files_block() {
+    let dir = tempfile::tempdir().unwrap();
+    create_state(dir.path(), "files-test", None, "", None, None, None, "").unwrap();
+    let state = read_state_direct(dir.path(), "files-test");
+    let files = &state["files"];
+    assert!(files["plan"].is_null());
+    assert!(files["dag"].is_null());
+    assert_eq!(files["log"], ".flow-states/files-test.log");
+    assert_eq!(files["state"], ".flow-states/files-test.json");
+}
+
+#[test]
+fn lib_create_state_required_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    create_state(
+        dir.path(),
+        "fields-test",
+        None,
+        "my prompt",
+        None,
+        None,
+        None,
+        "",
+    )
+    .unwrap();
+    let state = read_state_direct(dir.path(), "fields-test");
+    assert_eq!(state["schema_version"], 1);
+    assert_eq!(state["branch"], "fields-test");
+    assert_eq!(state["current_phase"], "flow-start");
+    assert_eq!(state["notes"], json!([]));
+    assert_eq!(state["phase_transitions"], json!([]));
+    assert!(state["session_tty"].is_null() || state["session_tty"].is_string());
+    assert!(state["session_id"].is_null());
+    assert!(state["transcript_path"].is_null());
+    assert!(state["started_at"].is_string());
+}
+
+#[test]
+fn lib_create_state_key_order_matches_python() {
+    let dir = tempfile::tempdir().unwrap();
+    let skills = auto_skills();
+    create_state(
+        dir.path(),
+        "order-test",
+        Some(&skills),
+        "test",
+        Some("full"),
+        Some(3),
+        Some(11),
+        "",
+    )
+    .unwrap();
+    let content = fs::read_to_string(dir.path().join(".flow-states/order-test.json")).unwrap();
+    let state: Value = serde_json::from_str(&content).unwrap();
+    let keys: Vec<&String> = state.as_object().unwrap().keys().collect();
+    let expected = vec![
+        "schema_version",
+        "branch",
+        "relative_cwd",
+        "repo",
+        "pr_number",
+        "pr_url",
+        "started_at",
+        "current_phase",
+        "files",
+        "session_tty",
+        "session_id",
+        "transcript_path",
+        "notes",
+        "prompt",
+        "phases",
+        "phase_transitions",
+        "skills",
+        "commit_format",
+        "start_step",
+        "start_steps_total",
+    ];
+    assert_eq!(
+        keys, expected,
+        "Key order must remain stable across serialization runs"
+    );
+}
+
+#[test]
+fn lib_create_state_creates_flow_states_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(!dir.path().join(".flow-states").exists());
+    create_state(dir.path(), "dir-test", None, "", None, None, None, "").unwrap();
+    assert!(dir.path().join(".flow-states").is_dir());
+    assert!(dir.path().join(".flow-states/dir-test.json").exists());
+}
+
+#[test]
+fn lib_create_state_commit_format_propagation() {
+    let dir = tempfile::tempdir().unwrap();
+    create_state(
+        dir.path(),
+        "cf-test",
+        None,
+        "",
+        Some("title-only"),
+        None,
+        None,
+        "",
+    )
+    .unwrap();
+    let state = read_state_direct(dir.path(), "cf-test");
+    assert_eq!(state["commit_format"], "title-only");
+}
+
+#[test]
+fn lib_create_state_commit_format_absent_when_none() {
+    let dir = tempfile::tempdir().unwrap();
+    create_state(dir.path(), "cf-none", None, "", None, None, None, "").unwrap();
+    let state = read_state_direct(dir.path(), "cf-none");
+    assert!(state.get("commit_format").is_none());
+}
+
+#[test]
+fn lib_create_state_write_failure_returns_error() {
+    // Exercise the `fs::write` Err branch: make the target state file
+    // path a directory so fs::write fails with EISDIR. fs::create_dir_all
+    // on `.flow-states/` sees the dir already exists and skips, so we
+    // reach the fs::write call with a bad target.
+    let dir = tempfile::tempdir().unwrap();
+    let states = dir.path().join(".flow-states");
+    fs::create_dir_all(&states).unwrap();
+    // Create the branch's "state file" path as a directory.
+    let branch = "write-err";
+    fs::create_dir_all(states.join(format!("{}.json", branch))).unwrap();
+
+    let err = create_state(dir.path(), branch, None, "", None, None, None, "").unwrap_err();
+    assert!(err.contains("Cannot write state file"), "got: {}", err);
+}
+
+#[test]
+fn lib_create_state_dir_failure_returns_error() {
+    // Block fs::create_dir_all by placing a regular file at the
+    // `.flow-states` path: create_dir_all returns Err(AlreadyExists)
+    // when the path exists but is not a directory.
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join(".flow-states"), "not a directory").unwrap();
+
+    let err = create_state(dir.path(), "dir-err", None, "", None, None, None, "").unwrap_err();
+    assert!(err.contains("Cannot create .flow-states"), "got: {}", err);
+}
+
+#[test]
+fn freeze_phases_failure_returns_error() {
+    // Make `.flow-states/<branch>-phases.json` a directory so
+    // `fs::copy` inside freeze_phases fails. create_state still
+    // succeeds (it writes `.flow-states/<branch>.json` which is a
+    // different path).
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "rails", None);
+    let states = dir.path().join(".flow-states");
+    fs::create_dir_all(&states).unwrap();
+    let branch = "freeze-err";
+    fs::create_dir_all(states.join(format!("{}-phases.json", branch))).unwrap();
+
+    // Pass the branch via --branch so init-state uses our chosen name.
+    let output = run_init_state(dir.path(), &["--branch", branch, "anything"]);
+    assert_ne!(output.status.code(), Some(0));
+    let data = parse_stdout(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "freeze_phases");
+}
+
+#[test]
+fn run_reads_commit_format_from_flow_json() {
+    // Covers the .and_then + .map closures that extract `commit_format`
+    // from .flow.json in run().
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "rails", None);
+    // Re-write .flow.json with commit_format set.
+    fs::write(
+        dir.path().join(".flow.json"),
+        serde_json::to_string(&json!({
+            "flow_version": "1.1.0",
+            "commit_format": "title-only",
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let output = run_init_state(dir.path(), &["commit-format-feature"]);
+    assert_eq!(output.status.code(), Some(0));
+    let state = read_state_file(dir.path(), "commit-format-feature");
+    assert_eq!(state["commit_format"], "title-only");
 }
