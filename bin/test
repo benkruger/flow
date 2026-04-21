@@ -154,7 +154,14 @@ if [ "$PER_FILE" = "1" ]; then
   src_file="${test_file/#tests\//src/}"
   bin_name="$(basename "$test_file" .rs)"
 
-  NEXTEST_ARGS=(--status-level none --final-status-level fail -E "binary(${bin_name})")
+  # `-E 'binary(...)'` filters which compiled binaries RUN. Without
+  # `--test <name>` cargo still COMPILES all ~112 test binaries in
+  # the workspace because any src/ edit forces a re-link of every
+  # binary that depends on the `flow_rs` rlib. `--test` scopes
+  # compilation to the single mirrored binary, dropping per-file
+  # wall time from ~2m to ~10–30s on a lib edit. The `-E` filter is
+  # kept as belt-and-suspenders.
+  NEXTEST_ARGS=(--test "${bin_name}" --status-level none --final-status-level fail -E "binary(${bin_name})")
   COV_ARGS=(--no-cfg-coverage --no-clean)
 
   if [ "$AUDIT_MODE" = "1" ]; then
