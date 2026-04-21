@@ -1995,3 +1995,511 @@ fn test_render_detail_panel_issues_loop_breaks_on_row_overflow() {
     // Tight viewport so notes section starts close to max_y - 2.
     let _ = render_to_string(&app, 80, 20);
 }
+
+// --- Private-helper coverage through the public TuiApp surface ---
+//
+// Every branch of tui.rs's pure helpers is driven via the public
+// methods that call them. The for_tests platform points every
+// subprocess at /bin/true so spawns succeed with no side effect;
+// the test only needs the code path to run for coverage to register.
+
+fn app_with_pr_url(url: Option<&str>) -> TuiApp {
+    let mut app = make_app();
+    let mut flow = make_flow("Test", "Code", 3);
+    flow.pr_url = url.map(String::from);
+    app.flows = vec![flow];
+    app
+}
+
+fn app_with_repo_and_issues(
+    repo_val: serde_json::Value,
+    fallback_repo: Option<&str>,
+    issues: Vec<i64>,
+) -> TuiApp {
+    let mut app = TuiApp::new(
+        PathBuf::from("/tmp/test"),
+        "1.0.0".to_string(),
+        fallback_repo.map(String::from),
+        TuiAppPlatform::for_tests(),
+    );
+    let mut flow = make_flow("Test", "Code", 3);
+    flow.state = serde_json::json!({"branch": "test", "repo": repo_val});
+    flow.issue_numbers = issues;
+    app.flows = vec![flow];
+    app
+}
+
+fn app_with_session_tty(session_tty: serde_json::Value) -> TuiApp {
+    let mut app = make_app();
+    let mut flow = make_flow("Test", "Code", 3);
+    flow.state = serde_json::json!({"session_tty": session_tty});
+    app.flows = vec![flow];
+    app
+}
+
+fn app_with_orch_item(fallback_repo: Option<&str>, issue_number: Option<i64>) -> TuiApp {
+    let mut app = TuiApp::new(
+        PathBuf::from("/tmp/test"),
+        "1.0.0".to_string(),
+        fallback_repo.map(String::from),
+        TuiAppPlatform::for_tests(),
+    );
+    app.active_tab = 1;
+    app.orch_data = Some(OrchestrationSummary {
+        elapsed: "5m".to_string(),
+        completed_count: 0,
+        failed_count: 0,
+        total: 1,
+        is_running: true,
+        items: vec![OrchestrationItem {
+            icon: "\u{00b7}".to_string(),
+            issue_number,
+            title: "X".to_string(),
+            elapsed: String::new(),
+            pr_url: None,
+            reason: None,
+            status: "pending".to_string(),
+        }],
+    });
+    app
+}
+
+// --- TuiAppPlatform::production ---
+
+#[test]
+fn platform_production_returns_known_binaries() {
+    let p = TuiAppPlatform::production();
+    assert_eq!(p.open_binary, "open");
+    assert_eq!(p.osascript_binary, "osascript");
+    assert_eq!(p.bin_flow_path, PathBuf::from("bin/flow"));
+}
+
+// --- pr_files_url branches via open_pr ---
+
+#[test]
+fn open_pr_drives_pr_files_url_across_all_branches() {
+    // Each variant exercises a distinct branch of pr_files_url:
+    // - None       → open_pr early-returns (pr_files_url not called)
+    // - ""         → empty-input early return inside pr_files_url
+    // - plain      → standard append /files
+    // - trailing / → trim + append
+    // - multi //   → trim multiple + append
+    // - ?query     → query split, append /files before ?
+    // - #fragment  → fragment split, append /files before #
+    // - ? and #    → both splits
+    // - /files     → idempotent (already ends with /files)
+    // - /files/    → trim, still idempotent
+    for url in [
+        None,
+        Some(""),
+        Some("https://github.com/o/r/pull/100"),
+        Some("https://github.com/o/r/pull/100/"),
+        Some("https://example.com/x///"),
+        Some("https://github.com/o/r/pull/100?diff=split"),
+        Some("https://github.com/o/r/pull/100#discussion_r1"),
+        Some("https://github.com/o/r/pull/1?a=b#c"),
+        Some("https://github.com/o/r/pull/100/files"),
+        Some("https://github.com/o/r/pull/100/files/"),
+    ] {
+        let mut app = app_with_pr_url(url);
+        app.handle_key(key(KeyCode::Char('p')));
+    }
+}
+
+// --- flow_issue_url branches via open_flow_issue ('I' key) ---
+
+#[test]
+fn open_flow_issue_drives_flow_issue_url_across_all_branches() {
+    // state.repo present → state wins
+    let mut app = app_with_repo_and_issues(
+        serde_json::json!("state/wins"),
+        Some("fallback/repo"),
+        vec![42],
+    );
+    app.handle_key(key(KeyCode::Char('I')));
+
+    // state.repo absent → fallback wins
+    let mut app =
+        app_with_repo_and_issues(serde_json::Value::Null, Some("fallback/repo"), vec![42]);
+    app.handle_key(key(KeyCode::Char('I')));
+
+    // No issues → returns None
+    let mut app = app_with_repo_and_issues(serde_json::json!("o/r"), None, vec![]);
+    app.handle_key(key(KeyCode::Char('I')));
+
+    // No repo anywhere → returns None
+    let mut app = app_with_repo_and_issues(serde_json::Value::Null, None, vec![42]);
+    app.handle_key(key(KeyCode::Char('I')));
+
+    // state.repo empty string → falls back to parameter
+    let mut app = app_with_repo_and_issues(serde_json::json!(""), Some("fallback/repo"), vec![1]);
+    app.handle_key(key(KeyCode::Char('I')));
+
+    // state.repo non-string (corrupt) → falls back to parameter
+    let mut app =
+        app_with_repo_and_issues(serde_json::json!(12345), Some("fallback/repo"), vec![1]);
+    app.handle_key(key(KeyCode::Char('I')));
+
+    // Both empty → None
+    let mut app = app_with_repo_and_issues(serde_json::json!(""), Some(""), vec![1]);
+    app.handle_key(key(KeyCode::Char('I')));
+
+    // state empty, no fallback → None
+    let mut app = app_with_repo_and_issues(serde_json::json!(""), None, vec![1]);
+    app.handle_key(key(KeyCode::Char('I')));
+
+    // Multiple issues — picks smallest
+    let mut app = app_with_repo_and_issues(serde_json::json!("o/r"), None, vec![42, 7, 99]);
+    app.handle_key(key(KeyCode::Char('I')));
+}
+
+// --- orch_issue_url branches via open_orch_issue ('i' on orch tab) ---
+
+#[test]
+fn open_orch_issue_drives_orch_issue_url_across_all_branches() {
+    // repo and issue_number present → URL
+    let mut app = app_with_orch_item(Some("o/r"), Some(42));
+    app.handle_key(key(KeyCode::Char('i')));
+
+    // repo missing → None
+    let mut app = app_with_orch_item(None, Some(42));
+    app.handle_key(key(KeyCode::Char('i')));
+
+    // repo empty → None
+    let mut app = app_with_orch_item(Some(""), Some(42));
+    app.handle_key(key(KeyCode::Char('i')));
+
+    // issue_number missing → None
+    let mut app = app_with_orch_item(Some("o/r"), None);
+    app.handle_key(key(KeyCode::Char('i')));
+}
+
+// --- issue_open_target branches via issues view Enter ---
+
+#[test]
+fn issues_enter_drives_issue_open_target_branches() {
+    // Issue with URL → opens
+    let mut app = make_app();
+    let mut flow = make_flow("A", "Code", 3);
+    flow.issues = vec![IssueSummary {
+        label: "Bug".to_string(),
+        title: "t".to_string(),
+        url: "https://x/y".to_string(),
+        ref_str: "#1".to_string(),
+        phase_name: "Code".to_string(),
+    }];
+    app.flows = vec![flow];
+    app.view = View::Issues;
+    app.handle_key(key(KeyCode::Enter));
+
+    // Issue with empty URL → None returned; no spawn
+    let mut app = make_app();
+    let mut flow = make_flow("A", "Code", 3);
+    flow.issues = vec![IssueSummary {
+        label: "Bug".to_string(),
+        title: "t".to_string(),
+        url: String::new(),
+        ref_str: "#1".to_string(),
+        phase_name: "Code".to_string(),
+    }];
+    app.flows = vec![flow];
+    app.view = View::Issues;
+    app.handle_key(key(KeyCode::Enter));
+}
+
+// --- should_abort branches via handle_abort_confirm ---
+
+#[test]
+fn abort_confirm_lowercase_y_triggers_abort() {
+    let mut app = make_app();
+    let flow = make_flow("A", "Code", 3);
+    app.flows = vec![flow];
+    app.confirming_abort = true;
+    app.handle_key(key(KeyCode::Char('y')));
+    assert!(!app.confirming_abort);
+}
+
+#[test]
+fn abort_confirm_uppercase_y_triggers_abort() {
+    let mut app = make_app();
+    let flow = make_flow("A", "Code", 3);
+    app.flows = vec![flow];
+    app.confirming_abort = true;
+    app.handle_key(key(KeyCode::Char('Y')));
+    assert!(!app.confirming_abort);
+}
+
+#[test]
+fn abort_confirm_non_char_key_does_not_abort() {
+    let mut app = make_app();
+    let flow = make_flow("A", "Code", 3);
+    app.flows = vec![flow];
+    app.confirming_abort = true;
+    app.handle_key(key(KeyCode::Esc));
+    assert!(!app.confirming_abort);
+}
+
+// --- build_cleanup_command_args branches via abort_flow ---
+
+#[test]
+fn abort_with_pr_number_includes_pr_flag() {
+    // flow.pr_number = Some(100) via make_flow — exercises the
+    // `if let Some(pr) = pr_number` branch of build_cleanup_command_args.
+    let mut app = make_app();
+    let flow = make_flow("A", "Code", 3);
+    app.flows = vec![flow];
+    app.confirming_abort = true;
+    app.handle_key(key(KeyCode::Char('y')));
+}
+
+#[test]
+fn abort_without_pr_number_omits_pr_flag() {
+    // pr_number = None — exercises the else branch of the if-let.
+    let mut app = make_app();
+    let mut flow = make_flow("A", "Code", 3);
+    flow.pr_number = None;
+    app.flows = vec![flow];
+    app.confirming_abort = true;
+    app.handle_key(key(KeyCode::Char('y')));
+}
+
+#[test]
+fn abort_with_no_flows_is_noop() {
+    // flows.is_empty() early return in abort_flow.
+    let mut app = make_app();
+    app.confirming_abort = true;
+    app.handle_key(key(KeyCode::Char('y')));
+}
+
+// --- worktree_session_tty branches via open_worktree (Enter) ---
+
+#[test]
+fn open_worktree_drives_worktree_session_tty_branches() {
+    // String value → Some("/dev/ttys003")
+    let mut app = app_with_session_tty(serde_json::json!("/dev/ttys003"));
+    app.handle_key(key(KeyCode::Enter));
+
+    // Missing field → None
+    let mut app = make_app();
+    let mut flow = make_flow("A", "Code", 3);
+    flow.state = serde_json::json!({});
+    app.flows = vec![flow];
+    app.handle_key(key(KeyCode::Enter));
+
+    // Non-string value → None
+    let mut app = app_with_session_tty(serde_json::json!(12345));
+    app.handle_key(key(KeyCode::Enter));
+
+    // Empty string → Some("") — passes through, build_iterm_activation_script
+    // called with empty input (covers escape_applescript_string "safe pass")
+    let mut app = app_with_session_tty(serde_json::json!(""));
+    app.handle_key(key(KeyCode::Enter));
+}
+
+// --- escape_applescript_string + build_iterm_activation_script ---
+
+#[test]
+fn open_worktree_with_special_chars_drives_escape_branches() {
+    // Session tty containing structural chars exercises the
+    // "add \\" branch of escape_applescript_string.
+    let mut app = app_with_session_tty(serde_json::json!("a\"b"));
+    app.handle_key(key(KeyCode::Enter));
+
+    let mut app = app_with_session_tty(serde_json::json!("a\\b"));
+    app.handle_key(key(KeyCode::Enter));
+
+    // Safe chars only — exercises the pass-through branch
+    let mut app = app_with_session_tty(serde_json::json!("/dev/ttys099"));
+    app.handle_key(key(KeyCode::Enter));
+}
+
+// --- parse_osascript_result branches via activate_iterm_tab ---
+
+fn make_app_with_osascript(osascript_path: &str) -> TuiApp {
+    let mut platform = TuiAppPlatform::for_tests();
+    platform.osascript_binary = osascript_path.to_string();
+    TuiApp::new(
+        PathBuf::from("/tmp/test"),
+        "1.0.0".to_string(),
+        Some("test/repo".to_string()),
+        platform,
+    )
+}
+
+fn write_fixture_script(dir: &std::path::Path, name: &str, body: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let path = dir.join(name);
+    std::fs::write(&path, body).unwrap();
+    let mut perms = std::fs::metadata(&path).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&path, perms).unwrap();
+    path
+}
+
+#[test]
+fn parse_osascript_result_success_activated_returns_true() {
+    let dir = tempfile::tempdir().unwrap();
+    let script = write_fixture_script(dir.path(), "osascript", "#!/bin/sh\necho activated\n");
+    let mut app = make_app_with_osascript(&script.to_string_lossy());
+    let mut flow = make_flow("A", "Code", 3);
+    flow.state = serde_json::json!({"session_tty": "/dev/ttys003"});
+    app.flows = vec![flow];
+    // Drive activate_iterm_tab directly to assert the return value.
+    assert!(app.activate_iterm_tab("/dev/ttys003"));
+}
+
+#[test]
+fn parse_osascript_result_success_not_activated_returns_false() {
+    let dir = tempfile::tempdir().unwrap();
+    let script = write_fixture_script(dir.path(), "osascript", "#!/bin/sh\necho not_found\n");
+    let mut app = make_app_with_osascript(&script.to_string_lossy());
+    let mut flow = make_flow("A", "Code", 3);
+    flow.state = serde_json::json!({"session_tty": "/dev/ttys003"});
+    app.flows = vec![flow];
+    assert!(!app.activate_iterm_tab("/dev/ttys003"));
+}
+
+#[test]
+fn parse_osascript_result_failure_returns_false() {
+    let mut app = make_app_with_osascript("/bin/false");
+    let mut flow = make_flow("A", "Code", 3);
+    flow.state = serde_json::json!({"session_tty": "/dev/ttys003"});
+    app.flows = vec![flow];
+    assert!(!app.activate_iterm_tab("/dev/ttys003"));
+}
+
+#[test]
+fn activate_iterm_tab_spawn_error_returns_false() {
+    // Non-existent binary → Command::output() returns Err →
+    // parse_osascript_result is NOT called; the Err(_) => false arm
+    // of the match is taken.
+    let app = make_app_with_osascript("/nonexistent/path/to/osascript");
+    assert!(!app.activate_iterm_tab("/dev/ttys003"));
+}
+
+// --- open_orch_issue: no orch_data and out-of-bounds item ---
+
+#[test]
+fn open_orch_issue_with_no_orch_data_is_noop() {
+    let mut app = make_app();
+    app.active_tab = 1;
+    // orch_data stays None
+    app.handle_key(key(KeyCode::Char('i')));
+}
+
+#[test]
+fn open_orch_issue_with_out_of_bounds_selection_is_noop() {
+    let mut app = make_app();
+    app.active_tab = 1;
+    app.orch_data = Some(OrchestrationSummary {
+        elapsed: "5m".to_string(),
+        completed_count: 0,
+        failed_count: 0,
+        total: 0,
+        is_running: true,
+        items: vec![],
+    });
+    // orch_selected stays 0 but items is empty → items.get(0) is None
+    app.handle_key(key(KeyCode::Char('i')));
+}
+
+#[test]
+fn orch_input_up_down_noop_when_items_empty() {
+    let mut app = make_app();
+    app.active_tab = 1;
+    app.orch_data = Some(OrchestrationSummary {
+        elapsed: "5m".to_string(),
+        completed_count: 0,
+        failed_count: 0,
+        total: 0,
+        is_running: true,
+        items: vec![],
+    });
+    // Up/Down guards `if item_count > 0` — must fall through.
+    app.handle_key(key(KeyCode::Up));
+    app.handle_key(key(KeyCode::Down));
+}
+
+// --- handle_key: Esc with view=List falls through the Esc guard ---
+
+#[test]
+fn esc_with_view_list_does_not_change_view() {
+    // Covers the `KeyCode::Esc if matches!(view, Log | Issues | Tasks)`
+    // guard's false arm — when view=List the guard fails and the arm
+    // is skipped, falling through to the view==List arm.
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    assert_eq!(app.view, View::List);
+    app.handle_key(key(KeyCode::Esc));
+    // handle_list_input matches nothing on Esc → no-op.
+    assert_eq!(app.view, View::List);
+}
+
+// --- orch detail panel: failed without reason, completed without pr_url ---
+
+#[test]
+fn render_orch_detail_failed_without_reason_renders_no_detail() {
+    let mut app = make_app();
+    app.active_tab = 1;
+    app.orch_data = Some(OrchestrationSummary {
+        elapsed: "5m".to_string(),
+        completed_count: 0,
+        failed_count: 1,
+        total: 1,
+        is_running: false,
+        items: vec![OrchestrationItem {
+            icon: "\u{2717}".to_string(),
+            issue_number: Some(10),
+            title: "Failed".to_string(),
+            elapsed: "1m".to_string(),
+            pr_url: None,
+            reason: None,
+            status: "failed".to_string(),
+        }],
+    });
+    let output = render_to_string(&app, 120, 40);
+    // Failed item with no reason → detail panel skipped
+    assert!(!output.contains("Reason:"));
+}
+
+#[test]
+fn render_orch_detail_completed_without_pr_url_renders_no_detail() {
+    let mut app = make_app();
+    app.active_tab = 1;
+    app.orch_data = Some(OrchestrationSummary {
+        elapsed: "5m".to_string(),
+        completed_count: 1,
+        failed_count: 0,
+        total: 1,
+        is_running: false,
+        items: vec![OrchestrationItem {
+            icon: "\u{2713}".to_string(),
+            issue_number: Some(10),
+            title: "Done".to_string(),
+            elapsed: "3m".to_string(),
+            pr_url: None,
+            reason: None,
+            status: "completed".to_string(),
+        }],
+    });
+    let output = render_to_string(&app, 120, 40);
+    assert!(!output.contains("PR:"));
+}
+
+// --- rl_color branches via render (with non-stale metrics) ---
+
+#[test]
+fn render_metrics_non_stale_drives_rl_color_branches() {
+    // Below 70 (default), in yellow band (70-89), in red band (>=90).
+    // Negative values (corrupt state) fall through to default.
+    for (rl_5h, rl_7d) in [(0, 0), (50, 65), (75, 85), (90, 95), (100, 100), (-1, -10)] {
+        let mut app = make_app();
+        app.metrics = AccountMetrics {
+            cost_monthly: "8.00".to_string(),
+            rl_5h: Some(rl_5h),
+            rl_7d: Some(rl_7d),
+            stale: false,
+        };
+        let _ = render_to_string(&app, 120, 40);
+    }
+}

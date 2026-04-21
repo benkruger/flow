@@ -35,6 +35,10 @@ serde_yaml = "0.9"
 tempfile = "3"
 
 [[test]]
+name = "validate_pretool"
+path = "tests/hooks/validate_pretool.rs"
+
+[[test]]
 name = "validate_claude_paths"
 path = "tests/hooks/validate_claude_paths.rs"
 

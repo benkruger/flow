@@ -54,23 +54,36 @@ under any circumstance without an explicit English directive.
 CURRENT STATE
 ═══════════════════════════════════════════════════════════════
 
-- 44 src files still contain inline `#[cfg(test)] mod tests {...}`
-  blocks. Run `bin/flow ci` once to see the full list — the
-  meta-test `src_contains_no_inline_cfg_test_blocks` in
-  tests/test_placement.rs enumerates them. Each file needs its
-  tests migrated to the mirror path under tests/ per
-  .claude/rules/test-placement.md, and sometimes refactored so
+- Three src files still contain inline `#[cfg(test)] mod tests {...}`
+  blocks — the last blockers for the
+  `src_contains_no_inline_cfg_test_blocks` contract test in
+  tests/test_placement.rs:
+    * src/hooks/validate_pretool.rs
+    * src/tui.rs
+    * src/tui_data.rs
+  Each needs its tests migrated to the mirror path under tests/
+  per .claude/rules/test-placement.md, and sometimes refactored so
   100/100/100 is reachable through the public surface only.
-- 5 files already at 100/100/100 (committed): scaffold_qa, git,
-  state, lock, flow_paths.
+- Previous sessions migrated/reverted ~14 modules (close_issue,
+  close_issues, complete_*, finalize_commit, issue, label_issues,
+  scaffold_qa, start_*). Those are the canonical reference
+  implementations for the patterns below — read them when stuck.
 - The full-suite `bin/flow ci` currently fails at the test_placement
   contract test (fail-fast cancels the remaining suite). The
   cargo-llvm-cov --fail-under-* gate only fires after all tests
-  pass, so total coverage percentages are not yet enforceable
-  globally. Work one file at a time via
-  `bin/flow ci --test tests/<name>.rs` — that path runs only the
-  mirrored test file and gates on 100/100/100 for the matching
+  pass, so once these three files are migrated AND the rest of the
+  suite passes, the gate may surface additional per-file gaps.
+  Fix those as they appear.
+- Work one file at a time via
+  `bin/flow ci --test tests/<path>/<name>.rs` — that path runs only
+  the mirrored test file and gates on 100/100/100 for the matching
   src file.
+- TUI caveat: crossterm raw-mode and alternate-screen paths cannot
+  run without a real terminal, so they are the legitimate
+  "externally-coupled" carve-out in rust-patterns.md — closure-
+  injected seams are acceptable there (see tui_terminal.rs for the
+  reference pattern). Everything else in tui.rs and tui_data.rs
+  should be testable through the public surface.
 
 ═══════════════════════════════════════════════════════════════
 WORKFLOW — PER FILE
