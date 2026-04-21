@@ -8,6 +8,10 @@
 //! and returns the JSON result for `dispatch::dispatch_json`. The
 //! `main.rs` `Commands::PhaseTransition` arm delegates here and prints
 //! the returned Value via `dispatch::dispatch_json`.
+//!
+//! Tests live in `tests/phase_transition.rs` per
+//! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]` block
+//! in this file.
 
 use std::path::Path;
 use std::process::Command;
@@ -72,13 +76,18 @@ pub fn phase_enter(state: &mut Value, phase: &str, reason: Option<&str>) -> Valu
         .unwrap()
         .push(transition);
 
-    // Clear auto-continue, discussion-mode, and stale continuation flags from previous phase
-    if let Some(obj) = state.as_object_mut() {
-        obj.remove("_auto_continue");
-        obj.remove("_stop_instructed");
-        obj.remove("_continue_pending");
-        obj.remove("_continue_context");
-    }
+    // Clear auto-continue, discussion-mode, and stale continuation flags
+    // from previous phase. State is guaranteed to be an object here —
+    // earlier `state["phases"][phase]` IndexMut accesses would have
+    // panicked on any non-object input. `.expect` covers the truly-
+    // unreachable None arm per `.claude/rules/testability-means-simplicity.md`.
+    let obj = state
+        .as_object_mut()
+        .expect("phase_enter requires object state");
+    obj.remove("_auto_continue");
+    obj.remove("_stop_instructed");
+    obj.remove("_continue_pending");
+    obj.remove("_continue_context");
 
     let first_visit = visit_count == 1;
 
@@ -175,8 +184,14 @@ pub fn phase_complete(
 
     if should_set_auto_continue {
         state["_auto_continue"] = json!(next_command.as_ref().unwrap());
-    } else if let Some(obj) = state.as_object_mut() {
-        obj.remove("_auto_continue");
+    } else {
+        // State is guaranteed to be an object here — earlier
+        // `state["phases"][phase]` accesses would have panicked
+        // on any non-object input.
+        state
+            .as_object_mut()
+            .expect("phase_complete requires object state")
+            .remove("_auto_continue");
     }
 
     // Capture diff stats for code phase
@@ -201,37 +216,11 @@ pub fn phase_complete(
     result
 }
 
-/// Capture git diff --stat summary for the current branch vs main.
-///
-/// Returns a JSON object with files_changed, insertions, deletions, captured_at.
-/// Best-effort: returns zeros if git fails.
-pub fn capture_diff_stats() -> Value {
-    let zeros = || {
-        json!({
-            "files_changed": 0,
-            "insertions": 0,
-            "deletions": 0,
-            "captured_at": now()
-        })
-    };
-
-    let output = match Command::new("git")
-        .args(["diff", "--stat", "main...HEAD"])
-        .output()
-    {
-        Ok(o) if o.status.success() => o,
-        _ => return zeros(),
-    };
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let trimmed = stdout.trim();
-    if trimmed.is_empty() {
-        return zeros();
-    }
-
-    let lines: Vec<&str> = trimmed.lines().collect();
-    let summary = lines.last().unwrap_or(&"");
-
+/// Parse a `git diff --stat` summary line into (files_changed,
+/// insertions, deletions). Pure function exposed as a public seam so
+/// `tests/phase_transition.rs` can exercise every comma-separated
+/// branch without spawning git.
+pub fn parse_diff_stat_summary(summary: &str) -> (i64, i64, i64) {
     let mut files_changed: i64 = 0;
     let mut insertions: i64 = 0;
     let mut deletions: i64 = 0;
@@ -253,12 +242,48 @@ pub fn capture_diff_stats() -> Value {
         }
     }
 
+    (files_changed, insertions, deletions)
+}
+
+/// Build a diff_stats JSON object from parsed counts.
+fn diff_stats_json(files_changed: i64, insertions: i64, deletions: i64) -> Value {
     json!({
         "files_changed": files_changed,
         "insertions": insertions,
         "deletions": deletions,
-        "captured_at": now()
+        "captured_at": now(),
     })
+}
+
+/// Build a diff_stats JSON object from the raw `git diff --stat`
+/// subprocess result. Public seam: tests pass constructed
+/// `io::Result<Output>` values to drive the Err and non-success Ok
+/// branches without spawning real git.
+pub fn capture_diff_stats_from_result(result: std::io::Result<std::process::Output>) -> Value {
+    let output = match result {
+        Ok(o) if o.status.success() => o,
+        _ => return diff_stats_json(0, 0, 0),
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let trimmed = stdout.trim();
+    if trimmed.is_empty() {
+        return diff_stats_json(0, 0, 0);
+    }
+    let summary = trimmed.lines().last().unwrap_or("");
+    let (files, ins, del) = parse_diff_stat_summary(summary);
+    diff_stats_json(files, ins, del)
+}
+
+/// Capture git diff --stat summary for the current branch vs main.
+///
+/// Returns a JSON object with files_changed, insertions, deletions, captured_at.
+/// Best-effort: returns zeros if git fails.
+pub fn capture_diff_stats() -> Value {
+    capture_diff_stats_from_result(
+        Command::new("git")
+            .args(["diff", "--stat", "main...HEAD"])
+            .output(),
+    )
 }
 
 /// Driver for the `bin/flow phase-transition` subcommand.
@@ -282,6 +307,32 @@ pub fn run_impl_main(
     root: &Path,
     cwd: &Path,
 ) -> (Value, i32) {
+    run_impl_main_with_resolver(
+        phase,
+        action,
+        next_phase,
+        branch_override,
+        reason,
+        root,
+        cwd,
+        &resolve_branch,
+    )
+}
+
+/// Seam-injected variant of `run_impl_main`. Tests pass a mock
+/// branch resolver to drive the `resolve_branch` None path without
+/// racing on the process's git env.
+#[allow(clippy::too_many_arguments)]
+pub fn run_impl_main_with_resolver(
+    phase: &str,
+    action: &str,
+    next_phase: Option<&str>,
+    branch_override: Option<&str>,
+    reason: Option<&str>,
+    root: &Path,
+    cwd: &Path,
+    resolve_branch_fn: &dyn Fn(Option<&str>, &Path) -> Option<String>,
+) -> (Value, i32) {
     if !PHASE_ORDER.contains(&phase) {
         let msg = format!(
             "Invalid phase: {}. Must be one of: {}",
@@ -300,7 +351,7 @@ pub fn run_impl_main(
         return (json_error_value(&msg), 1);
     }
 
-    let branch = match resolve_branch(branch_override, root) {
+    let branch = match resolve_branch_fn(branch_override, root) {
         Some(b) => b,
         None => {
             return (json_error_value("Could not determine current branch"), 1);
@@ -428,1078 +479,11 @@ pub fn run_impl_main(
 
 /// Build a `json_error`-shaped Value (parsed from `json_error_string`)
 /// so `run_impl_main` can return `(Value, i32)` while matching the
-/// pre-extraction `json_error` output contract exactly.
+/// pre-extraction `json_error` output contract exactly. The parse
+/// cannot fail — `json_error_string` constructs the JSON from a valid
+/// serde_json::Map — so `.expect` is correct per
+/// `.claude/rules/testability-means-simplicity.md`.
 fn json_error_value(message: &str) -> Value {
     serde_json::from_str::<Value>(&json_error_string(message, &[]))
-        .unwrap_or_else(|_| json!({"status": "error", "message": message}))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::phase_config;
-    use serde_json::json;
-
-    /// Build a minimal state Value matching conftest.py make_state().
-    fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
-        let phase_names = phase_config::phase_names();
-        let mut phases = serde_json::Map::new();
-        for &p in PHASE_ORDER {
-            let status = phase_statuses
-                .iter()
-                .find(|(k, _)| *k == p)
-                .map(|(_, v)| *v)
-                .unwrap_or("pending");
-            let visit_count: i64 = if status == "complete" || status == "in_progress" {
-                1
-            } else {
-                0
-            };
-            let session = if status == "in_progress" {
-                json!("2026-01-01T00:00:00Z")
-            } else {
-                json!(null)
-            };
-            phases.insert(
-                p.to_string(),
-                json!({
-                    "name": phase_names.get(p).unwrap_or(&String::new()),
-                    "status": status,
-                    "started_at": null,
-                    "completed_at": null,
-                    "session_started_at": session,
-                    "cumulative_seconds": 0,
-                    "visit_count": visit_count,
-                }),
-            );
-        }
-        json!({
-            "branch": "test-feature",
-            "current_phase": current_phase,
-            "phases": phases,
-            "phase_transitions": [],
-        })
-    }
-
-    // ===== phase_enter tests =====
-
-    #[test]
-    fn enter_sets_all_fields() {
-        let mut state = make_state("flow-start", &[("flow-start", "complete")]);
-        let result = phase_enter(&mut state, "flow-plan", None);
-
-        assert_eq!(result["status"], "ok");
-        assert_eq!(result["phase"], "flow-plan");
-        assert_eq!(result["action"], "enter");
-        assert_eq!(result["visit_count"], 1);
-        assert_eq!(result["first_visit"], true);
-
-        assert_eq!(state["phases"]["flow-plan"]["status"], "in_progress");
-        assert!(state["phases"]["flow-plan"]["started_at"].is_string());
-        assert!(state["phases"]["flow-plan"]["session_started_at"].is_string());
-        assert_eq!(state["phases"]["flow-plan"]["visit_count"], 1);
-        assert_eq!(state["current_phase"], "flow-plan");
-    }
-
-    #[test]
-    fn enter_first_visit_sets_started_at() {
-        let mut state = make_state("flow-start", &[("flow-start", "complete")]);
-        assert!(state["phases"]["flow-plan"]["started_at"].is_null());
-
-        phase_enter(&mut state, "flow-plan", None);
-
-        assert!(state["phases"]["flow-plan"]["started_at"].is_string());
-    }
-
-    #[test]
-    fn enter_reentry_preserves_started_at() {
-        let mut state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "complete")],
-        );
-        state["phases"]["flow-plan"]["started_at"] = json!("2026-01-15T10:00:00Z");
-        state["phases"]["flow-plan"]["visit_count"] = json!(2);
-
-        let result = phase_enter(&mut state, "flow-plan", None);
-
-        assert_eq!(result["visit_count"], 3);
-        assert_eq!(result["first_visit"], false);
-        assert_eq!(
-            state["phases"]["flow-plan"]["started_at"],
-            "2026-01-15T10:00:00Z"
-        );
-        assert_eq!(state["phases"]["flow-plan"]["visit_count"], 3);
-    }
-
-    #[test]
-    fn enter_flow_complete() {
-        let mut state = make_state(
-            "flow-learn",
-            &[
-                ("flow-start", "complete"),
-                ("flow-plan", "complete"),
-                ("flow-code", "complete"),
-                ("flow-code-review", "complete"),
-                ("flow-learn", "complete"),
-            ],
-        );
-        let result = phase_enter(&mut state, "flow-complete", None);
-
-        assert_eq!(result["status"], "ok");
-        assert_eq!(result["phase"], "flow-complete");
-        assert_eq!(result["visit_count"], 1);
-        assert_eq!(result["first_visit"], true);
-        assert_eq!(state["phases"]["flow-complete"]["status"], "in_progress");
-        assert!(state["phases"]["flow-complete"]["started_at"].is_string());
-        assert_eq!(state["current_phase"], "flow-complete");
-    }
-
-    #[test]
-    fn enter_non_code_review_does_not_set_code_review_step() {
-        let mut state = make_state("flow-start", &[("flow-start", "complete")]);
-        phase_enter(&mut state, "flow-plan", None);
-
-        assert!(state.get("code_review_step").is_none() || state["code_review_step"].is_null());
-    }
-
-    #[test]
-    fn enter_clears_auto_continue() {
-        let mut state = make_state("flow-start", &[("flow-start", "complete")]);
-        state["_auto_continue"] = json!("/flow:flow-plan");
-
-        phase_enter(&mut state, "flow-plan", None);
-
-        assert!(state.get("_auto_continue").is_none() || state["_auto_continue"].is_null());
-    }
-
-    #[test]
-    fn enter_clears_stop_instructed() {
-        let mut state = make_state("flow-start", &[("flow-start", "complete")]);
-        state["_stop_instructed"] = json!(true);
-
-        phase_enter(&mut state, "flow-plan", None);
-
-        assert!(
-            state.get("_stop_instructed").is_none(),
-            "_stop_instructed must be removed by phase_enter"
-        );
-    }
-
-    #[test]
-    fn enter_clears_continue_pending() {
-        let mut state = make_state("flow-start", &[("flow-start", "complete")]);
-        state["_continue_pending"] = json!("commit");
-        state["_continue_context"] = json!("stale instructions");
-
-        phase_enter(&mut state, "flow-plan", None);
-
-        assert!(
-            state.get("_continue_pending").is_none(),
-            "_continue_pending must be removed by phase_enter"
-        );
-        assert!(
-            state.get("_continue_context").is_none(),
-            "_continue_context must be removed by phase_enter"
-        );
-    }
-
-    #[test]
-    fn enter_no_error_when_auto_continue_absent() {
-        let mut state = make_state("flow-start", &[("flow-start", "complete")]);
-        // No _auto_continue in state
-        let result = phase_enter(&mut state, "flow-plan", None);
-
-        assert_eq!(result["status"], "ok");
-        assert!(state.get("_auto_continue").is_none() || state["_auto_continue"].is_null());
-    }
-
-    #[test]
-    fn enter_records_phase_transition() {
-        let mut state = make_state("flow-start", &[("flow-start", "complete")]);
-        state["phase_transitions"] = json!([]);
-
-        phase_enter(&mut state, "flow-plan", None);
-
-        let transitions = state["phase_transitions"].as_array().unwrap();
-        assert_eq!(transitions.len(), 1);
-        assert_eq!(transitions[0]["from"], "flow-start");
-        assert_eq!(transitions[0]["to"], "flow-plan");
-        assert!(transitions[0]["timestamp"].is_string());
-        assert!(transitions[0].get("reason").is_none() || transitions[0]["reason"].is_null());
-    }
-
-    #[test]
-    fn enter_appends_to_existing_transitions() {
-        let mut state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "complete")],
-        );
-        state["phase_transitions"] = json!([
-            {"from": "flow-start", "to": "flow-plan", "timestamp": "2026-01-01T00:00:00-08:00"}
-        ]);
-
-        phase_enter(&mut state, "flow-code", None);
-
-        let transitions = state["phase_transitions"].as_array().unwrap();
-        assert_eq!(transitions.len(), 2);
-        assert_eq!(transitions[1]["from"], "flow-plan");
-        assert_eq!(transitions[1]["to"], "flow-code");
-    }
-
-    #[test]
-    fn enter_transition_has_no_reason_by_default() {
-        let mut state = make_state("flow-start", &[("flow-start", "complete")]);
-        state["phase_transitions"] = json!([]);
-
-        phase_enter(&mut state, "flow-plan", None);
-
-        let entry = &state["phase_transitions"][0];
-        assert!(entry.get("reason").is_none() || entry["reason"].is_null());
-    }
-
-    #[test]
-    fn enter_transition_with_reason() {
-        let mut state = make_state(
-            "flow-code",
-            &[
-                ("flow-start", "complete"),
-                ("flow-plan", "complete"),
-                ("flow-code", "complete"),
-            ],
-        );
-        state["phase_transitions"] = json!([]);
-
-        phase_enter(&mut state, "flow-plan", Some("approach was wrong"));
-
-        assert_eq!(
-            state["phase_transitions"][0]["reason"],
-            "approach was wrong"
-        );
-    }
-
-    #[test]
-    fn enter_creates_transitions_array_if_missing() {
-        let mut state = make_state("flow-start", &[("flow-start", "complete")]);
-        // Remove phase_transitions key
-        state.as_object_mut().unwrap().remove("phase_transitions");
-
-        phase_enter(&mut state, "flow-plan", None);
-
-        assert!(state["phase_transitions"].is_array());
-        assert_eq!(state["phase_transitions"].as_array().unwrap().len(), 1);
-    }
-
-    // ===== phase_complete tests =====
-
-    #[test]
-    fn complete_sets_all_fields() {
-        let mut state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
-        );
-        let result = phase_complete(&mut state, "flow-plan", None, None, None);
-
-        assert_eq!(result["status"], "ok");
-        assert_eq!(result["phase"], "flow-plan");
-        assert_eq!(result["action"], "complete");
-        assert!(result.get("cumulative_seconds").is_some());
-        assert!(result.get("formatted_time").is_some());
-        assert_eq!(result["next_phase"], "flow-code");
-
-        assert_eq!(state["phases"]["flow-plan"]["status"], "complete");
-        assert!(state["phases"]["flow-plan"]["completed_at"].is_string());
-        assert!(state["phases"]["flow-plan"]["session_started_at"].is_null());
-        assert_eq!(state["current_phase"], "flow-code");
-    }
-
-    #[test]
-    fn complete_adds_to_existing_cumulative() {
-        let mut state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
-        );
-        state["phases"]["flow-plan"]["cumulative_seconds"] = json!(600);
-
-        let result = phase_complete(&mut state, "flow-plan", None, None, None);
-
-        assert!(result["cumulative_seconds"].as_i64().unwrap() >= 600);
-    }
-
-    #[test]
-    fn complete_formatted_time_less_than_one_minute() {
-        let mut state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
-        );
-        state["phases"]["flow-plan"]["cumulative_seconds"] = json!(0);
-        state["phases"]["flow-plan"]["session_started_at"] = json!(null);
-
-        let result = phase_complete(&mut state, "flow-plan", None, None, None);
-
-        assert_eq!(result["formatted_time"], "<1m");
-    }
-
-    #[test]
-    fn complete_next_phase_override() {
-        let mut state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
-        );
-
-        let result = phase_complete(
-            &mut state,
-            "flow-plan",
-            Some("flow-code-review"),
-            None,
-            None,
-        );
-
-        assert_eq!(result["next_phase"], "flow-code-review");
-        assert_eq!(state["current_phase"], "flow-code-review");
-    }
-
-    #[test]
-    fn complete_null_session_started_at() {
-        let mut state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
-        );
-        state["phases"]["flow-plan"]["session_started_at"] = json!(null);
-        state["phases"]["flow-plan"]["cumulative_seconds"] = json!(100);
-
-        let result = phase_complete(&mut state, "flow-plan", None, None, None);
-
-        assert_eq!(result["cumulative_seconds"], 100);
-    }
-
-    #[test]
-    fn complete_formatted_time_minutes() {
-        let mut state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
-        );
-        state["phases"]["flow-plan"]["cumulative_seconds"] = json!(300);
-        state["phases"]["flow-plan"]["session_started_at"] = json!(null);
-
-        let result = phase_complete(&mut state, "flow-plan", None, None, None);
-
-        assert_eq!(result["formatted_time"], "5m");
-    }
-
-    #[test]
-    fn complete_formatted_time_hours() {
-        let mut state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
-        );
-        state["phases"]["flow-plan"]["cumulative_seconds"] = json!(3900);
-        state["phases"]["flow-plan"]["session_started_at"] = json!(null);
-
-        let result = phase_complete(&mut state, "flow-plan", None, None, None);
-
-        assert_eq!(result["formatted_time"], "1h 5m");
-    }
-
-    #[test]
-    fn complete_uses_custom_phase_order() {
-        let mut state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
-        );
-        let custom_order: Vec<String> = vec![
-            "flow-start".into(),
-            "flow-plan".into(),
-            "flow-code-review".into(),
-        ];
-
-        let result = phase_complete(&mut state, "flow-plan", None, Some(&custom_order), None);
-
-        assert_eq!(result["next_phase"], "flow-code-review");
-        assert_eq!(state["current_phase"], "flow-code-review");
-    }
-
-    #[test]
-    fn complete_terminal_phase_auto_next() {
-        let mut state = make_state(
-            "flow-complete",
-            &[
-                ("flow-start", "complete"),
-                ("flow-plan", "complete"),
-                ("flow-code", "complete"),
-                ("flow-code-review", "complete"),
-                ("flow-learn", "complete"),
-                ("flow-complete", "in_progress"),
-            ],
-        );
-
-        let result = phase_complete(&mut state, "flow-complete", None, None, None);
-
-        assert_eq!(result["status"], "ok");
-        assert_eq!(result["next_phase"], "flow-complete");
-        assert_eq!(state["current_phase"], "flow-complete");
-    }
-
-    #[test]
-    fn complete_flow_complete_with_next_phase() {
-        let mut state = make_state(
-            "flow-complete",
-            &[
-                ("flow-start", "complete"),
-                ("flow-plan", "complete"),
-                ("flow-code", "complete"),
-                ("flow-code-review", "complete"),
-                ("flow-learn", "complete"),
-                ("flow-complete", "in_progress"),
-            ],
-        );
-
-        let result = phase_complete(
-            &mut state,
-            "flow-complete",
-            Some("flow-complete"),
-            None,
-            None,
-        );
-
-        assert_eq!(result["status"], "ok");
-        assert_eq!(result["next_phase"], "flow-complete");
-        assert_eq!(state["phases"]["flow-complete"]["status"], "complete");
-        assert!(state["phases"]["flow-complete"]["completed_at"].is_string());
-    }
-
-    // ===== Auto-continue tests =====
-
-    #[test]
-    fn complete_sets_auto_continue_when_skills_continue_auto() {
-        let mut state = make_state("flow-start", &[("flow-start", "in_progress")]);
-        state["skills"] = json!({"flow-start": {"continue": "auto"}});
-
-        let result = phase_complete(&mut state, "flow-start", None, None, None);
-
-        assert_eq!(state["_auto_continue"], "/flow:flow-plan");
-        assert_eq!(result["next_phase"], "flow-plan");
-    }
-
-    #[test]
-    fn complete_sets_auto_continue_with_flat_string_config() {
-        let mut state = make_state("flow-start", &[("flow-start", "in_progress")]);
-        state["skills"] = json!({"flow-start": "auto"});
-
-        phase_complete(&mut state, "flow-start", None, None, None);
-
-        assert_eq!(state["_auto_continue"], "/flow:flow-plan");
-    }
-
-    #[test]
-    fn complete_no_auto_continue_when_manual() {
-        let mut state = make_state("flow-start", &[("flow-start", "in_progress")]);
-        state["skills"] = json!({"flow-start": {"continue": "manual"}});
-
-        phase_complete(&mut state, "flow-start", None, None, None);
-
-        assert!(state.get("_auto_continue").is_none() || state["_auto_continue"].is_null());
-    }
-
-    #[test]
-    fn complete_no_auto_continue_when_no_skills() {
-        let mut state = make_state("flow-start", &[("flow-start", "in_progress")]);
-        // No skills key
-
-        phase_complete(&mut state, "flow-start", None, None, None);
-
-        assert!(state.get("_auto_continue").is_none() || state["_auto_continue"].is_null());
-    }
-
-    #[test]
-    fn complete_clears_auto_continue_when_switching_to_manual() {
-        let mut state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
-        );
-        state["skills"] = json!({"flow-plan": {"continue": "manual"}});
-        state["_auto_continue"] = json!("/flow:flow-plan");
-
-        phase_complete(&mut state, "flow-plan", None, None, None);
-
-        assert!(state.get("_auto_continue").is_none() || state["_auto_continue"].is_null());
-    }
-
-    #[test]
-    fn complete_no_auto_continue_when_skill_config_unexpected_type() {
-        let mut state = make_state("flow-start", &[("flow-start", "in_progress")]);
-        state["skills"] = json!({"flow-start": 42});
-
-        phase_complete(&mut state, "flow-start", None, None, None);
-
-        assert!(state.get("_auto_continue").is_none() || state["_auto_continue"].is_null());
-    }
-
-    #[test]
-    fn complete_result_continue_action_invoke_when_auto() {
-        let mut state = make_state("flow-start", &[("flow-start", "in_progress")]);
-        state["skills"] = json!({"flow-start": {"continue": "auto"}});
-
-        let result = phase_complete(&mut state, "flow-start", None, None, None);
-
-        assert_eq!(result["continue_action"], "invoke");
-        assert_eq!(result["continue_target"], "/flow:flow-plan");
-    }
-
-    #[test]
-    fn complete_result_continue_action_ask_when_manual() {
-        let mut state = make_state("flow-start", &[("flow-start", "in_progress")]);
-        state["skills"] = json!({"flow-start": {"continue": "manual"}});
-
-        let result = phase_complete(&mut state, "flow-start", None, None, None);
-
-        assert_eq!(result["continue_action"], "ask");
-        assert!(result.get("continue_target").is_none());
-    }
-
-    #[test]
-    fn complete_result_continue_action_ask_when_absent() {
-        let mut state = make_state("flow-start", &[("flow-start", "in_progress")]);
-
-        let result = phase_complete(&mut state, "flow-start", None, None, None);
-
-        assert_eq!(result["continue_action"], "ask");
-        assert!(result.get("continue_target").is_none());
-    }
-
-    #[test]
-    fn complete_result_continue_action_invoke_with_flat_string() {
-        let mut state = make_state("flow-start", &[("flow-start", "in_progress")]);
-        state["skills"] = json!({"flow-start": "auto"});
-
-        let result = phase_complete(&mut state, "flow-start", None, None, None);
-
-        assert_eq!(result["continue_action"], "invoke");
-        assert_eq!(result["continue_target"], "/flow:flow-plan");
-    }
-
-    #[test]
-    fn complete_result_continue_action_ask_with_unexpected_type() {
-        let mut state = make_state("flow-start", &[("flow-start", "in_progress")]);
-        state["skills"] = json!({"flow-start": 42});
-
-        let result = phase_complete(&mut state, "flow-start", None, None, None);
-
-        assert_eq!(result["continue_action"], "ask");
-        assert!(result.get("continue_target").is_none());
-    }
-
-    #[test]
-    fn complete_result_continue_action_ask_when_auto_but_no_command() {
-        let mut state = make_state("flow-start", &[("flow-start", "in_progress")]);
-        state["skills"] = json!({"flow-start": {"continue": "auto"}});
-
-        // Pass phase_commands that omits flow-plan
-        let mut cmds = IndexMap::new();
-        cmds.insert("flow-start".to_string(), "/flow:flow-start".to_string());
-
-        let result = phase_complete(&mut state, "flow-start", None, None, Some(&cmds));
-
-        assert_eq!(result["continue_action"], "ask");
-        assert!(result.get("continue_target").is_none());
-        assert!(state.get("_auto_continue").is_none() || state["_auto_continue"].is_null());
-    }
-
-    #[test]
-    fn complete_future_session_started_clamps_to_zero() {
-        let mut state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
-        );
-        state["phases"]["flow-plan"]["session_started_at"] = json!("2099-12-31T23:59:59Z");
-        state["phases"]["flow-plan"]["cumulative_seconds"] = json!(50);
-
-        let result = phase_complete(&mut state, "flow-plan", None, None, None);
-
-        assert_eq!(result["cumulative_seconds"], 50);
-    }
-
-    // ===== counter type tolerance tests =====
-
-    #[test]
-    fn enter_visit_count_string_tolerance() {
-        let mut state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "complete")],
-        );
-        // Simulate a state file where visit_count was stored as a string
-        state["phases"]["flow-plan"]["visit_count"] = json!("3");
-
-        let result = phase_enter(&mut state, "flow-plan", None);
-
-        // Should read "3" as 3 and increment to 4
-        assert_eq!(result["visit_count"], 4);
-        assert_eq!(state["phases"]["flow-plan"]["visit_count"], 4);
-    }
-
-    #[test]
-    fn enter_visit_count_float_tolerance() {
-        let mut state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "complete")],
-        );
-        // Simulate a state file where visit_count was stored as a float
-        state["phases"]["flow-plan"]["visit_count"] = json!(3.0);
-
-        let result = phase_enter(&mut state, "flow-plan", None);
-
-        // Should read 3.0 as 3 and increment to 4
-        assert_eq!(result["visit_count"], 4);
-        assert_eq!(state["phases"]["flow-plan"]["visit_count"], 4);
-    }
-
-    #[test]
-    fn complete_cumulative_seconds_string_tolerance() {
-        let mut state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
-        );
-        // Simulate a state file where cumulative_seconds was stored as a string
-        state["phases"]["flow-plan"]["cumulative_seconds"] = json!("120");
-        state["phases"]["flow-plan"]["session_started_at"] = json!("2099-12-31T23:59:59Z");
-
-        let result = phase_complete(&mut state, "flow-plan", None, None, None);
-
-        // Should read "120" as 120 and preserve it (future session clamps elapsed to 0)
-        assert_eq!(result["cumulative_seconds"], 120);
-    }
-
-    #[test]
-    fn complete_cumulative_seconds_float_tolerance() {
-        let mut state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
-        );
-        // Simulate a state file where cumulative_seconds was stored as a float
-        state["phases"]["flow-plan"]["cumulative_seconds"] = json!(120.0);
-        state["phases"]["flow-plan"]["session_started_at"] = json!("2099-12-31T23:59:59Z");
-
-        let result = phase_complete(&mut state, "flow-plan", None, None, None);
-
-        // Should read 120.0 as 120 and preserve it (future session clamps elapsed to 0)
-        assert_eq!(result["cumulative_seconds"], 120);
-    }
-
-    // ===== phase_enter schema robustness tests =====
-
-    #[test]
-    fn enter_phases_key_absent() {
-        // State has no "phases" key at all — auto-vivification should handle it
-        let mut state = json!({
-            "branch": "test-feature",
-            "current_phase": "flow-start",
-        });
-        let result = phase_enter(&mut state, "flow-plan", None);
-        assert_eq!(result["status"], "ok");
-        assert_eq!(state["phases"]["flow-plan"]["status"], "in_progress");
-    }
-
-    #[test]
-    fn enter_phases_key_null() {
-        // State has "phases": null — auto-vivification should handle it
-        let mut state = json!({
-            "branch": "test-feature",
-            "current_phase": "flow-start",
-            "phases": null,
-        });
-        let result = phase_enter(&mut state, "flow-plan", None);
-        assert_eq!(result["status"], "ok");
-        assert_eq!(state["phases"]["flow-plan"]["status"], "in_progress");
-    }
-
-    #[test]
-    fn enter_phases_wrong_type_string() {
-        // State has "phases" as a string — must not panic
-        let mut state = json!({
-            "branch": "test-feature",
-            "current_phase": "flow-start",
-            "phases": "corrupted",
-        });
-        let result = phase_enter(&mut state, "flow-plan", None);
-        // After the guard resets the wrong type, entry should succeed
-        assert_eq!(result["status"], "ok");
-    }
-
-    #[test]
-    fn enter_phases_wrong_type_array() {
-        // State has "phases" as an array — must not panic
-        let mut state = json!({
-            "branch": "test-feature",
-            "current_phase": "flow-start",
-            "phases": [1, 2, 3],
-        });
-        let result = phase_enter(&mut state, "flow-plan", None);
-        assert_eq!(result["status"], "ok");
-    }
-
-    // ===== capture_diff_stats tests =====
-
-    #[test]
-    fn capture_diff_stats_returns_zeros_structure() {
-        // Just verify the structure — detailed parsing tested in integration
-        let stats = capture_diff_stats();
-        assert!(stats.get("files_changed").is_some());
-        assert!(stats.get("insertions").is_some());
-        assert!(stats.get("deletions").is_some());
-        assert!(stats.get("captured_at").is_some());
-    }
-
-    // ===== run_impl_main (main.rs PhaseTransition arm driver) =====
-
-    fn write_state(root: &std::path::Path, branch: &str, state: Value) {
-        let dir = root.join(".flow-states");
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join(format!("{}.json", branch));
-        std::fs::write(&path, state.to_string()).unwrap();
-    }
-
-    #[test]
-    fn run_impl_main_invalid_phase_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let (out, code) = run_impl_main(
-            "nonexistent",
-            "enter",
-            None,
-            Some("test"),
-            None,
-            dir.path(),
-            dir.path(),
-        );
-        assert_eq!(code, 1);
-        assert_eq!(out["status"], "error");
-        assert!(out["message"].as_str().unwrap().contains("Invalid phase"));
-    }
-
-    #[test]
-    fn run_impl_main_invalid_action_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let (out, code) = run_impl_main(
-            "flow-plan",
-            "bogus",
-            None,
-            Some("test"),
-            None,
-            dir.path(),
-            dir.path(),
-        );
-        assert_eq!(code, 1);
-        assert_eq!(out["status"], "error");
-        assert!(out["message"].as_str().unwrap().contains("Invalid action"));
-    }
-
-    fn init_git_repo(dir: &std::path::Path, branch: &str) {
-        let run = |args: &[&str]| {
-            let output = std::process::Command::new("git")
-                .args(args)
-                .current_dir(dir)
-                .output()
-                .expect("git command failed");
-            assert!(output.status.success(), "git {:?} failed", args);
-        };
-        run(&["init", "--initial-branch", branch]);
-        run(&["config", "user.email", "test@test.com"]);
-        run(&["config", "user.name", "Test"]);
-        run(&["config", "commit.gpgsign", "false"]);
-        run(&["commit", "--allow-empty", "-m", "init"]);
-    }
-
-    #[test]
-    fn run_impl_main_cwd_drift_returns_error() {
-        // Build a real git repo with branch "feature-x" and a state file
-        // whose `relative_cwd` is "api". The cwd_scope guard reads the
-        // branch via `current_branch_in(cwd)`, so a non-git TempDir
-        // would no-op the guard. Passing cwd = repo root (not repo/api)
-        // triggers the drift error path.
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path(), "feature-x");
-        let mut state = make_state("flow-plan", &[("flow-start", "complete")]);
-        state["relative_cwd"] = json!("api");
-        write_state(dir.path(), "feature-x", state);
-
-        let (out, code) = run_impl_main(
-            "flow-plan",
-            "enter",
-            None,
-            None, // let resolve_branch use git
-            None,
-            dir.path(),
-            dir.path(), // cwd at repo root, but relative_cwd="api" expects repo/api
-        );
-        assert_eq!(code, 1);
-        assert_eq!(out["status"], "error");
-        let msg = out["message"].as_str().unwrap();
-        // cwd_scope::enforce names the expected directory in the error.
-        assert!(
-            msg.to_lowercase().contains("api") || msg.to_lowercase().contains("expected"),
-            "expected cwd-drift error naming api or expected, got: {}",
-            msg
-        );
-    }
-
-    #[test]
-    fn run_impl_main_slash_branch_returns_error_no_panic() {
-        // `--branch feature/foo` (standard git ref shape) must not
-        // panic — must return a structured error. Guards against the
-        // Issue #1054 recurrence caught by the adversarial agent.
-        let dir = tempfile::tempdir().unwrap();
-        let (out, code) = run_impl_main(
-            "flow-plan",
-            "enter",
-            None,
-            Some("feature/foo"),
-            None,
-            dir.path(),
-            dir.path(),
-        );
-        assert_eq!(code, 1);
-        assert_eq!(out["status"], "error");
-        let msg = out["message"].as_str().unwrap();
-        assert!(
-            msg.contains("Invalid branch") || msg.contains("feature/foo"),
-            "expected invalid-branch error, got: {}",
-            msg
-        );
-    }
-
-    #[test]
-    fn run_impl_main_empty_branch_returns_error_no_panic() {
-        // Empty `--branch ""` must not panic — must return structured error.
-        let dir = tempfile::tempdir().unwrap();
-        let (out, code) = run_impl_main(
-            "flow-plan",
-            "enter",
-            None,
-            Some(""),
-            None,
-            dir.path(),
-            dir.path(),
-        );
-        assert_eq!(code, 1);
-        assert_eq!(out["status"], "error");
-        assert!(out["message"].as_str().unwrap().contains("Invalid branch"));
-    }
-
-    #[test]
-    fn run_impl_main_no_state_file_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let (out, code) = run_impl_main(
-            "flow-plan",
-            "enter",
-            None,
-            Some("test"),
-            None,
-            dir.path(),
-            dir.path(),
-        );
-        assert_eq!(code, 1);
-        assert_eq!(out["status"], "error");
-        assert!(out["message"]
-            .as_str()
-            .unwrap()
-            .contains("No state file found"));
-    }
-
-    #[test]
-    fn run_impl_main_unparseable_state_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".flow-states")).unwrap();
-        std::fs::write(
-            dir.path().join(".flow-states").join("test.json"),
-            "not-json",
-        )
-        .unwrap();
-        let (out, code) = run_impl_main(
-            "flow-plan",
-            "enter",
-            None,
-            Some("test"),
-            None,
-            dir.path(),
-            dir.path(),
-        );
-        assert_eq!(code, 1);
-        assert_eq!(out["status"], "error");
-        assert!(out["message"]
-            .as_str()
-            .unwrap()
-            .contains("Could not read state file"));
-    }
-
-    #[test]
-    fn run_impl_main_missing_phase_key_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".flow-states")).unwrap();
-        // State has phases object but no flow-plan entry.
-        let bare = json!({"branch": "test", "current_phase": "flow-start", "phases": {}});
-        std::fs::write(
-            dir.path().join(".flow-states").join("test.json"),
-            bare.to_string(),
-        )
-        .unwrap();
-        let (out, code) = run_impl_main(
-            "flow-plan",
-            "enter",
-            None,
-            Some("test"),
-            None,
-            dir.path(),
-            dir.path(),
-        );
-        assert_eq!(code, 1);
-        assert!(out["message"]
-            .as_str()
-            .unwrap()
-            .contains("Phase flow-plan not found"));
-    }
-
-    #[test]
-    fn run_impl_main_enter_success_returns_zero() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = make_state("flow-start", &[("flow-start", "complete")]);
-        write_state(dir.path(), "test", state);
-        let (out, code) = run_impl_main(
-            "flow-plan",
-            "enter",
-            None,
-            Some("test"),
-            None,
-            dir.path(),
-            dir.path(),
-        );
-        assert_eq!(code, 0);
-        assert_eq!(out["status"], "ok");
-        assert_eq!(out["phase"], "flow-plan");
-        assert_eq!(out["action"], "enter");
-        // Log entry must be written on success.
-        let log_content = std::fs::read_to_string(dir.path().join(".flow-states").join("test.log"))
-            .expect("log file must exist after append_log");
-        assert!(log_content.contains("phase-transition --action enter --phase flow-plan"));
-        assert!(log_content.contains("\"ok\""));
-    }
-
-    #[test]
-    fn run_impl_main_complete_success_returns_zero() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut state = make_state(
-            "flow-plan",
-            &[("flow-start", "complete"), ("flow-plan", "in_progress")],
-        );
-        state["phases"]["flow-plan"]["started_at"] = json!("2026-01-01T00:00:00Z");
-        state["phases"]["flow-plan"]["session_started_at"] = json!("2026-01-01T00:00:00Z");
-        write_state(dir.path(), "test", state);
-        let (out, code) = run_impl_main(
-            "flow-plan",
-            "complete",
-            None,
-            Some("test"),
-            None,
-            dir.path(),
-            dir.path(),
-        );
-        assert_eq!(code, 0);
-        assert_eq!(out["status"], "ok");
-        assert_eq!(out["action"], "complete");
-    }
-
-    // ===== coverage gap tests =====
-
-    #[test]
-    fn complete_flow_code_captures_diff_stats() {
-        // Exercises the `if phase == "flow-code"` branch at line 183
-        // that calls `capture_diff_stats()` and stores the result.
-        let mut state = make_state(
-            "flow-code",
-            &[
-                ("flow-start", "complete"),
-                ("flow-plan", "complete"),
-                ("flow-code", "in_progress"),
-            ],
-        );
-        let result = phase_complete(&mut state, "flow-code", None, None, None);
-
-        assert_eq!(result["status"], "ok");
-        assert_eq!(result["next_phase"], "flow-code-review");
-        // diff_stats must be populated (the test runs in a git repo,
-        // so capture_diff_stats succeeds with real or zero values)
-        assert!(
-            state.get("diff_stats").is_some(),
-            "flow-code completion must capture diff_stats"
-        );
-        assert!(state["diff_stats"].get("files_changed").is_some());
-        assert!(state["diff_stats"].get("captured_at").is_some());
-    }
-
-    #[test]
-    fn complete_phases_wrong_type_string_resets() {
-        // Exercises the phase_complete guard at lines 126-129 that
-        // resets "phases" to {} when it is a non-object/non-null type.
-        let mut state = json!({
-            "branch": "test-feature",
-            "current_phase": "flow-plan",
-            "phases": "corrupted",
-            "phase_transitions": [],
-        });
-        let result = phase_complete(&mut state, "flow-plan", None, None, None);
-        // After the guard resets the wrong type, completion should succeed
-        assert_eq!(result["status"], "ok");
-    }
-
-    #[test]
-    fn complete_phases_wrong_type_array_resets() {
-        // Array variant of the same guard — mirrors enter_phases_wrong_type_array.
-        let mut state = json!({
-            "branch": "test-feature",
-            "current_phase": "flow-plan",
-            "phases": [1, 2, 3],
-            "phase_transitions": [],
-        });
-        let result = phase_complete(&mut state, "flow-plan", None, None, None);
-        assert_eq!(result["status"], "ok");
-    }
-
-    #[test]
-    fn run_impl_main_mutate_state_failure_returns_error() {
-        // Make the state file read-only so mutate_state fails when
-        // trying to write back. Exercises the Err path at lines 412-426.
-        use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().unwrap();
-        init_git_repo(dir.path(), "test");
-        let state = make_state("flow-start", &[("flow-start", "complete")]);
-        write_state(dir.path(), "test", state);
-
-        let state_file = dir.path().join(".flow-states").join("test.json");
-        std::fs::set_permissions(&state_file, std::fs::Permissions::from_mode(0o444)).unwrap();
-
-        let (out, code) = run_impl_main(
-            "flow-plan",
-            "enter",
-            None,
-            Some("test"),
-            None,
-            dir.path(),
-            dir.path(),
-        );
-        // Restore permissions for cleanup
-        let _ = std::fs::set_permissions(&state_file, std::fs::Permissions::from_mode(0o644));
-        assert_eq!(code, 1);
-        assert_eq!(out["status"], "error");
-        assert!(
-            out["message"]
-                .as_str()
-                .unwrap()
-                .contains("State mutation failed"),
-            "should report mutation failure: {}",
-            out["message"]
-        );
-        // Log entry must still be written on failure path
-        let log_path = dir.path().join(".flow-states").join("test.log");
-        if log_path.exists() {
-            let log = std::fs::read_to_string(&log_path).unwrap();
-            assert!(log.contains("\"error\""));
-        }
-    }
+        .expect("json_error_string produces valid JSON")
 }

@@ -19,7 +19,7 @@ use clap::Parser;
 use serde_json::json;
 
 use crate::complete_preflight::LOCAL_TIMEOUT;
-use crate::issue::{fetch_database_id, run_gh_cmd};
+use crate::issue::{fetch_database_id_with_runner, run_gh_cmd};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -56,7 +56,7 @@ pub fn create_sub_issue(
     }
 
     // Resolve parent to verify it exists (API URL uses parent_number, not the DB ID)
-    let (_, err) = fetch_database_id(repo, parent_number);
+    let (_, err) = fetch_database_id_with_runner(repo, parent_number, &run_gh_cmd);
     if let Some(e) = err {
         return Err(format!(
             "Failed to resolve parent #{}: {}",
@@ -64,7 +64,7 @@ pub fn create_sub_issue(
         ));
     }
 
-    let (child_id, err) = fetch_database_id(repo, child_number);
+    let (child_id, err) = fetch_database_id_with_runner(repo, child_number, &run_gh_cmd);
     if let Some(e) = err {
         return Err(format!("Failed to resolve child #{}: {}", child_number, e));
     }
