@@ -49,3 +49,11 @@ path = "tests/hooks/validate_worktree_paths.rs"
 [[test]]
 name = "init_state"
 path = "tests/commands/init_state.rs"
+
+[[test]]
+name = "set_timestamp"
+path = "tests/commands/set_timestamp.rs"
+
+[[test]]
+name = "start_lock"
+path = "tests/commands/start_lock.rs"

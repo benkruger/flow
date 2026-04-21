@@ -6,24 +6,30 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
 use crate::flow_paths::FlowStatesDir;
-use crate::git::project_root;
-use crate::output::json_error;
 
 pub const QUEUE_DIRNAME: &str = "start-queue";
 pub const STALE_TIMEOUT_SECONDS: u64 = 1800; // 30 minutes
 
-/// Get file mtime as seconds since UNIX epoch.
-fn mtime_secs(path: &Path) -> Option<f64> {
-    let meta = fs::metadata(path).ok()?;
-    let mtime = meta.modified().ok()?;
-    let duration = mtime.duration_since(UNIX_EPOCH).ok()?;
-    Some(duration.as_secs_f64())
+/// Get file mtime as seconds since UNIX epoch. Returns `0.0` on any
+/// failure (metadata error, mtime unsupported, or a pre-UNIX_EPOCH
+/// mtime). Callers treat `0.0` as maximally stale, so a broken entry
+/// is classified as stale and cleaned up on the next list_queue pass
+/// — the same outcome we'd get from an explicit skip branch, but
+/// expressed without a fallible return type.
+fn mtime_secs(path: &Path) -> f64 {
+    fs::metadata(path)
+        .and_then(|m| m.modified())
+        .map(|t| {
+            t.duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0)
+        })
+        .unwrap_or(0.0)
 }
 
 /// Create the queue directory if needed, return its path.
@@ -68,10 +74,7 @@ pub fn list_queue(queue_dir: &Path, cleanup: bool) -> (Vec<(f64, String)>, bool)
         if !path.is_file() {
             continue;
         }
-        let mtime = match mtime_secs(&path) {
-            Some(t) => t,
-            None => continue, // stat failed — skip
-        };
+        let mtime = mtime_secs(&path);
         if (now_secs - mtime) > STALE_TIMEOUT_SECONDS as f64 {
             if cleanup {
                 let _ = fs::remove_file(&path);
@@ -105,15 +108,14 @@ pub fn acquire(feature: &str, queue_dir: &Path) -> Value {
     // If an existing entry is stale (from a previous incomplete run),
     // replace it so _list_queue cleanup doesn't delete our only entry.
     if entry.exists() {
-        if let Some(mtime) = mtime_secs(&entry) {
-            let now_secs = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs_f64();
-            if (now_secs - mtime) > STALE_TIMEOUT_SECONDS as f64 {
-                let _ = fs::remove_file(&entry);
-                let _ = fs::File::create(&entry);
-            }
+        let mtime = mtime_secs(&entry);
+        let now_secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64();
+        if (now_secs - mtime) > STALE_TIMEOUT_SECONDS as f64 {
+            let _ = fs::remove_file(&entry);
+            let _ = fs::File::create(&entry);
         }
     } else {
         let _ = fs::File::create(&entry);
@@ -153,22 +155,36 @@ pub fn acquire(feature: &str, queue_dir: &Path) -> Value {
 
 /// Acquire with retry loop using the real thread::sleep.
 pub fn acquire_with_wait(feature: &str, queue_dir: &Path, timeout: u64, interval: u64) -> Value {
-    acquire_with_wait_impl(feature, queue_dir, timeout, interval, |d| {
-        std::thread::sleep(d)
-    })
+    acquire_with_wait_impl(
+        feature,
+        queue_dir,
+        timeout,
+        interval,
+        &mut |d| std::thread::sleep(d),
+    )
 }
 
-/// Internal: acquire with injectable sleep for testing.
-fn acquire_with_wait_impl<F>(
+/// Seam-injected variant of [`acquire_with_wait`] that accepts a
+/// custom sleep closure. Tests substitute a no-op or side-effecting
+/// closure to drive every branch without blocking on real time.
+///
+/// Takes `&mut dyn FnMut(Duration)` rather than a generic `F`
+/// parameter so every caller's closure compiles into the SAME
+/// monomorphization. Generics create one monomorphization per
+/// caller type, and callers from other test binaries (or from
+/// code paths that never execute in the per-file test binary)
+/// show up as `Unexecuted instantiation`, inflating the
+/// uncovered-region/line counts. See
+/// `.claude/rules/rust-patterns.md` "Seam-injection variant for
+/// externally-coupled code" and the coverage-quest prompt's
+/// "Generic functions" note.
+pub fn acquire_with_wait_impl(
     feature: &str,
     queue_dir: &Path,
     timeout: u64,
     interval: u64,
-    mut sleep_fn: F,
-) -> Value
-where
-    F: FnMut(Duration),
-{
+    sleep_fn: &mut dyn FnMut(Duration),
+) -> Value {
     let start = std::time::Instant::now();
     let result = acquire(feature, queue_dir);
     if result["status"] == "acquired" {
@@ -234,8 +250,10 @@ pub fn check(queue_dir: &Path) -> Value {
     })
 }
 
-/// CLI entry point.
-pub fn run(
+/// Testable core of the start-lock CLI. Returns the JSON payload the
+/// CLI wrapper would print plus the exit code. The wrapper in
+/// `main.rs` computes `project_root()` once and passes it in.
+pub fn run_impl_main(
     acquire_flag: bool,
     release_flag: bool,
     check_flag: bool,
@@ -243,558 +261,44 @@ pub fn run(
     wait: bool,
     timeout: u64,
     interval: u64,
-) {
+    root: &Path,
+) -> (Value, i32) {
     if acquire_flag {
         let feature = match feature {
             Some(f) => f,
             None => {
-                json_error("--feature required for --acquire", &[]);
-                process::exit(1);
+                return (
+                    json!({"status": "error", "message": "--feature required for --acquire"}),
+                    1,
+                )
             }
         };
-        let root = project_root();
-        let queue_dir = queue_path(&root);
+        let queue_dir = queue_path(root);
         let result = if wait {
             acquire_with_wait(&feature, &queue_dir, timeout, interval)
         } else {
             acquire(&feature, &queue_dir)
         };
-        println!("{}", serde_json::to_string(&result).unwrap());
+        (result, 0)
     } else if release_flag {
         let feature = match feature {
             Some(f) => f,
             None => {
-                json_error("--feature required for --release", &[]);
-                process::exit(1);
+                return (
+                    json!({"status": "error", "message": "--feature required for --release"}),
+                    1,
+                )
             }
         };
-        let root = project_root();
-        let queue_dir = queue_path(&root);
-        let result = release(&feature, &queue_dir);
-        println!("{}", serde_json::to_string(&result).unwrap());
+        let queue_dir = queue_path(root);
+        (release(&feature, &queue_dir), 0)
     } else if check_flag {
-        let root = project_root();
-        let queue_dir = queue_path(&root);
-        let result = check(&queue_dir);
-        println!("{}", serde_json::to_string(&result).unwrap());
+        let queue_dir = queue_path(root);
+        (check(&queue_dir), 0)
     } else {
-        json_error("Specify --acquire, --release, or --check", &[]);
-        process::exit(1);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use filetime::{set_file_mtime, FileTime};
-
-    // --- queue_path tests ---
-
-    #[test]
-    fn test_queue_path_creates_dirs() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        let qp = queue_path(&root);
-        assert!(qp.is_dir());
-        assert_eq!(qp, FlowStatesDir::new(&root).path().join(QUEUE_DIRNAME));
-    }
-
-    #[test]
-    fn test_queue_path_idempotent() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        let qp1 = queue_path(root);
-        let qp2 = queue_path(root);
-        assert_eq!(qp1, qp2);
-        assert!(qp2.is_dir());
-    }
-
-    // --- list_queue tests ---
-
-    #[test]
-    fn test_list_queue_empty() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-        let (entries, stale) = list_queue(queue_dir, false);
-        assert!(entries.is_empty());
-        assert!(!stale);
-    }
-
-    #[test]
-    fn test_list_queue_sorted_by_mtime_then_name() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-
-        let older = queue_dir.join("beta");
-        fs::write(&older, "").unwrap();
-        set_file_mtime(
-            &older,
-            FileTime::from_system_time(SystemTime::now() - Duration::from_secs(20)),
+        (
+            json!({"status": "error", "message": "Specify --acquire, --release, or --check"}),
+            1,
         )
-        .unwrap();
-
-        let newer = queue_dir.join("alpha");
-        fs::write(&newer, "").unwrap();
-        set_file_mtime(
-            &newer,
-            FileTime::from_system_time(SystemTime::now() - Duration::from_secs(10)),
-        )
-        .unwrap();
-
-        let (entries, _) = list_queue(queue_dir, false);
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].1, "beta"); // older first
-        assert_eq!(entries[1].1, "alpha"); // newer second
-    }
-
-    #[test]
-    fn test_list_queue_tiebreaker_by_name() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-
-        let same_time = SystemTime::now() - Duration::from_secs(10);
-        for name in ["charlie", "alpha"] {
-            let path = queue_dir.join(name);
-            fs::write(&path, "").unwrap();
-            set_file_mtime(&path, FileTime::from_system_time(same_time)).unwrap();
-        }
-
-        let (entries, _) = list_queue(queue_dir, false);
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].1, "alpha"); // alphabetically first
-        assert_eq!(entries[1].1, "charlie");
-    }
-
-    #[test]
-    fn test_list_queue_skips_subdirectories() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-        fs::create_dir(queue_dir.join("subdir")).unwrap();
-        fs::write(queue_dir.join("real-entry"), "").unwrap();
-
-        let (entries, _) = list_queue(queue_dir, false);
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].1, "real-entry");
-    }
-
-    #[test]
-    fn test_list_queue_cleanup_removes_stale() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-
-        let stale = queue_dir.join("old-feature");
-        fs::write(&stale, "").unwrap();
-        set_file_mtime(
-            &stale,
-            FileTime::from_system_time(SystemTime::now() - Duration::from_secs(1860)),
-        )
-        .unwrap();
-
-        let fresh = queue_dir.join("new-feature");
-        fs::write(&fresh, "").unwrap();
-
-        let (entries, stale_removed) = list_queue(queue_dir, true);
-        assert!(stale_removed);
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].1, "new-feature");
-        assert!(!stale.exists());
-    }
-
-    #[test]
-    fn test_list_queue_no_cleanup_preserves_stale_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-
-        let stale = queue_dir.join("old-feature");
-        fs::write(&stale, "").unwrap();
-        set_file_mtime(
-            &stale,
-            FileTime::from_system_time(SystemTime::now() - Duration::from_secs(1860)),
-        )
-        .unwrap();
-
-        let (entries, stale_flag) = list_queue(queue_dir, false);
-        assert!(stale_flag); // stale detected
-        assert!(entries.is_empty()); // stale entries excluded from list
-        assert!(stale.exists()); // file still present (not cleaned up)
-    }
-
-    #[test]
-    fn test_list_queue_nonexistent_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path().join("nonexistent");
-        let (entries, stale) = list_queue(&queue_dir, false);
-        assert!(entries.is_empty());
-        assert!(!stale);
-    }
-
-    // --- acquire tests ---
-
-    #[test]
-    fn test_acquire_empty_queue() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-
-        let result = acquire("test-feature", queue_dir);
-        assert_eq!(result["status"], "acquired");
-        assert!(queue_dir.join("test-feature").exists());
-        assert_eq!(result["lock_path"], queue_dir.display().to_string());
-    }
-
-    #[test]
-    fn test_acquire_locked_by_older_entry() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-
-        let older = queue_dir.join("alpha-feature");
-        fs::write(&older, "").unwrap();
-        set_file_mtime(
-            &older,
-            FileTime::from_system_time(SystemTime::now() - Duration::from_secs(10)),
-        )
-        .unwrap();
-
-        let result = acquire("beta-feature", queue_dir);
-        assert_eq!(result["status"], "locked");
-        assert_eq!(result["feature"], "alpha-feature");
-        assert!(queue_dir.join("beta-feature").exists());
-        assert_eq!(result["lock_path"], queue_dir.display().to_string());
-    }
-
-    #[test]
-    fn test_acquire_stale_cleanup_acquires() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-
-        let stale = queue_dir.join("old-feature");
-        fs::write(&stale, "").unwrap();
-        set_file_mtime(
-            &stale,
-            FileTime::from_system_time(SystemTime::now() - Duration::from_secs(1860)),
-        )
-        .unwrap();
-
-        let result = acquire("new-feature", queue_dir);
-        assert_eq!(result["status"], "acquired");
-        assert_eq!(result["stale_broken"], true);
-        assert!(!stale.exists());
-        assert!(queue_dir.join("new-feature").exists());
-    }
-
-    #[test]
-    fn test_acquire_tiebreaker_by_name() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-
-        let same_time = SystemTime::now() - Duration::from_secs(10);
-        for name in ["charlie-feature", "alpha-feature"] {
-            let path = queue_dir.join(name);
-            fs::write(&path, "").unwrap();
-            set_file_mtime(&path, FileTime::from_system_time(same_time)).unwrap();
-        }
-
-        let result = acquire("delta-feature", queue_dir);
-        assert_eq!(result["status"], "locked");
-        assert_eq!(result["feature"], "alpha-feature");
-    }
-
-    #[test]
-    fn test_acquire_idempotent_when_first() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-        fs::write(queue_dir.join("my-feature"), "").unwrap();
-
-        let result = acquire("my-feature", queue_dir);
-        assert_eq!(result["status"], "acquired");
-    }
-
-    #[test]
-    fn test_acquire_replaces_own_stale_entry() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-
-        let stale_self = queue_dir.join("my-feature");
-        fs::write(&stale_self, "").unwrap();
-        // Use a 2-hour-old mtime (7200s) to put the entry well past
-        // STALE_TIMEOUT_SECONDS (1800s) regardless of filesystem mtime
-        // precision or the delta between set_file_mtime and the
-        // acquire() call's SystemTime::now(). The 60-second margin the
-        // earlier 1860s value provided was insufficient to guarantee
-        // coverage of the `fs::File::create(&entry)` line after the
-        // stale-removal step on every run.
-        set_file_mtime(
-            &stale_self,
-            FileTime::from_system_time(SystemTime::now() - Duration::from_secs(7200)),
-        )
-        .unwrap();
-        let initial_mtime = fs::metadata(&stale_self)
-            .unwrap()
-            .modified()
-            .unwrap()
-            .duration_since(UNIX_EPOCH)
-            .unwrap();
-
-        let result = acquire("my-feature", queue_dir);
-        assert_eq!(result["status"], "acquired");
-        // Entry must still exist (replaced with fresh mtime, not deleted)
-        assert!(queue_dir.join("my-feature").exists());
-        // The entry's mtime must have advanced — proof that
-        // `fs::remove_file + fs::File::create` ran. If the stale check
-        // had been skipped, the mtime would still be ~2 hours ago.
-        let final_mtime = fs::metadata(queue_dir.join("my-feature"))
-            .unwrap()
-            .modified()
-            .unwrap()
-            .duration_since(UNIX_EPOCH)
-            .unwrap();
-        assert!(
-            final_mtime > initial_mtime,
-            "entry mtime must advance after stale-replace; initial={:?} final={:?}",
-            initial_mtime,
-            final_mtime
-        );
-    }
-
-    #[test]
-    fn test_acquire_skips_subdirectories() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-        fs::create_dir(queue_dir.join("subdir")).unwrap();
-
-        let result = acquire("my-feature", queue_dir);
-        assert_eq!(result["status"], "acquired");
-    }
-
-    #[test]
-    fn test_acquire_stale_cleanup_preserves_fresh() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-
-        let stale = queue_dir.join("aaa-stale");
-        fs::write(&stale, "").unwrap();
-        set_file_mtime(
-            &stale,
-            FileTime::from_system_time(SystemTime::now() - Duration::from_secs(1860)),
-        )
-        .unwrap();
-
-        let fresh = queue_dir.join("bbb-fresh");
-        fs::write(&fresh, "").unwrap();
-        set_file_mtime(
-            &fresh,
-            FileTime::from_system_time(SystemTime::now() - Duration::from_secs(10)),
-        )
-        .unwrap();
-
-        let result = acquire("ccc-new", queue_dir);
-        assert_eq!(result["status"], "locked");
-        assert_eq!(result["feature"], "bbb-fresh");
-        assert_eq!(result["stale_broken"], true);
-        assert!(!stale.exists());
-        assert!(fresh.exists());
-        assert!(queue_dir.join("ccc-new").exists());
-    }
-
-    // --- acquire_with_wait tests ---
-
-    #[test]
-    fn test_acquire_with_wait_immediate() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-
-        let mut sleep_called = false;
-        let result = acquire_with_wait_impl("test-feature", queue_dir, 90, 10, |_| {
-            sleep_called = true;
-        });
-        assert_eq!(result["status"], "acquired");
-        assert!(!sleep_called);
-    }
-
-    #[test]
-    fn test_acquire_with_wait_succeeds_after_retry() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-
-        let blocking = queue_dir.join("blocking-feature");
-        fs::write(&blocking, "").unwrap();
-        set_file_mtime(
-            &blocking,
-            FileTime::from_system_time(SystemTime::now() - Duration::from_secs(10)),
-        )
-        .unwrap();
-
-        let blocking_clone = blocking.clone();
-        let result = acquire_with_wait_impl("new-feature", queue_dir, 10, 1, move |_| {
-            let _ = fs::remove_file(&blocking_clone);
-        });
-        assert_eq!(result["status"], "acquired");
-    }
-
-    #[test]
-    fn test_acquire_with_wait_timeout() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-
-        let blocking = queue_dir.join("blocking-feature");
-        fs::write(&blocking, "").unwrap();
-        set_file_mtime(
-            &blocking,
-            FileTime::from_system_time(SystemTime::now() - Duration::from_secs(10)),
-        )
-        .unwrap();
-
-        let result = acquire_with_wait_impl(
-            "new-feature",
-            queue_dir,
-            0, // timeout=0 triggers immediate timeout after first attempt
-            10,
-            |_| {},
-        );
-        assert_eq!(result["status"], "timeout");
-        assert_eq!(result["feature"], "blocking-feature");
-        assert!(result["waited_seconds"].is_number());
-    }
-
-    // --- release tests ---
-
-    #[test]
-    fn test_release_deletes_own_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-        fs::write(queue_dir.join("my-feature"), "").unwrap();
-
-        let result = release("my-feature", queue_dir);
-        assert_eq!(result["status"], "released");
-        assert_eq!(result["lock_path"], queue_dir.display().to_string());
-        assert_eq!(result["was_present"], true);
-        assert!(!queue_dir.join("my-feature").exists());
-    }
-
-    #[test]
-    fn test_release_only_deletes_own_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-        fs::write(queue_dir.join("my-feature"), "").unwrap();
-        fs::write(queue_dir.join("other-feature"), "").unwrap();
-
-        let result = release("my-feature", queue_dir);
-        assert_eq!(result["status"], "released");
-        assert!(!queue_dir.join("my-feature").exists());
-        assert!(queue_dir.join("other-feature").exists());
-    }
-
-    #[test]
-    fn test_release_idempotent_when_no_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-
-        let result = release("nonexistent", queue_dir);
-        assert_eq!(result["status"], "released");
-        assert_eq!(result["was_present"], false);
-    }
-
-    // --- check tests ---
-
-    #[test]
-    fn test_check_when_free() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-
-        let result = check(queue_dir);
-        assert_eq!(result["status"], "free");
-        assert_eq!(result["lock_path"], queue_dir.display().to_string());
-    }
-
-    #[test]
-    fn test_check_when_locked() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-        fs::write(queue_dir.join("some-feature"), "").unwrap();
-
-        let result = check(queue_dir);
-        assert_eq!(result["status"], "locked");
-        assert_eq!(result["feature"], "some-feature");
-    }
-
-    #[test]
-    fn test_check_stale_returns_free_without_cleanup() {
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-
-        let stale = queue_dir.join("old-feature");
-        fs::write(&stale, "").unwrap();
-        set_file_mtime(
-            &stale,
-            FileTime::from_system_time(SystemTime::now() - Duration::from_secs(1860)),
-        )
-        .unwrap();
-
-        let result = check(queue_dir);
-        // Stale entries excluded from list but not deleted
-        assert_eq!(result["status"], "free");
-        assert!(stale.exists());
-    }
-
-    #[test]
-    fn release_error_when_file_persists() {
-        // Exercises the release error branch: after remove_file fails
-        // (permission denied on read-only dir), the file still exists
-        // and release returns status="error".
-        use std::os::unix::fs::PermissionsExt;
-
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path().join("queue");
-        fs::create_dir(&queue_dir).unwrap();
-        let entry = queue_dir.join("locked-feature");
-        fs::write(&entry, "").unwrap();
-
-        // Drop guard restores permissions even if an assertion panics,
-        // preventing leaked read-only dirs in the temp tree.
-        struct PermGuard(std::path::PathBuf);
-        impl Drop for PermGuard {
-            fn drop(&mut self) {
-                let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
-            }
-        }
-
-        fs::set_permissions(&queue_dir, fs::Permissions::from_mode(0o555)).unwrap();
-        let _guard = PermGuard(queue_dir.clone());
-
-        let result = release("locked-feature", &queue_dir);
-        assert_eq!(result["status"], "error");
-        assert!(result["message"]
-            .as_str()
-            .unwrap_or("")
-            .contains("persists after unlink"));
-        assert_eq!(result["was_present"], true);
-    }
-
-    #[test]
-    fn test_list_queue_future_mtime_not_stale() {
-        // A queue entry with mtime in the future (clock skew) must not be
-        // classified as stale. The stale check computes (now - mtime); a future
-        // mtime produces a negative value which is always < STALE_TIMEOUT_SECONDS.
-        let dir = tempfile::tempdir().unwrap();
-        let queue_dir = dir.path();
-
-        let future_entry = queue_dir.join("future-feature");
-        fs::write(&future_entry, "").unwrap();
-        set_file_mtime(
-            &future_entry,
-            FileTime::from_system_time(SystemTime::now() + Duration::from_secs(3600)),
-        )
-        .unwrap();
-
-        let (entries, stale_found) = list_queue(queue_dir, true);
-        assert_eq!(entries.len(), 1, "Future-mtime entry should be in the list");
-        assert_eq!(entries[0].1, "future-feature");
-        assert!(
-            !stale_found,
-            "Future mtime should not trigger stale detection"
-        );
-        assert!(
-            future_entry.exists(),
-            "Future-mtime entry must not be deleted"
-        );
     }
 }

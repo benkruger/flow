@@ -631,7 +631,15 @@ fn main() {
             flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::SetTimestamp { set_args, branch }) => {
-            commands::set_timestamp::run(set_args, branch);
+            let root = project_root();
+            let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
+            let (value, code) = commands::set_timestamp::run_impl_main(
+                &set_args,
+                branch.as_deref(),
+                &root,
+                &cwd,
+            );
+            flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::SetBlocked) => {
             commands::set_blocked::run();
@@ -680,7 +688,11 @@ fn main() {
             timeout,
             interval,
         }) => {
-            commands::start_lock::run(acquire, release, check, feature, wait, timeout, interval);
+            let root = project_root();
+            let (value, code) = commands::start_lock::run_impl_main(
+                acquire, release, check, feature, wait, timeout, interval, &root,
+            );
+            flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::StartStep {
             step,
