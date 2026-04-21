@@ -636,8 +636,7 @@ fn lib_start_gate_commit_deps_failure_returns_commit_deps_error() {
         branch: "commit-fail-branch".to_string(),
     };
     let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
-    let commit_err =
-        |_: &Path| -> Result<(), String> { Err("remote rejected push".to_string()) };
+    let commit_err = |_: &Path| -> Result<(), String> { Err("remote rejected push".to_string()) };
 
     let result = run_impl_with_deps(
         &args,

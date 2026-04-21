@@ -74,7 +74,7 @@ fn resolve_state(args: &Args) -> Result<(PathBuf, String, PathBuf), Value> {
 }
 
 /// Check that flow-start is complete. Returns error JSON if not.
-fn gate_check(state: &Value) -> Result<(), Value> {
+pub fn gate_check(state: &Value) -> Result<(), Value> {
     let start_status = state
         .get("phases")
         .and_then(|p| p.get("flow-start"))
@@ -92,7 +92,7 @@ fn gate_check(state: &Value) -> Result<(), Value> {
 }
 
 /// Load frozen phase config if available, for phase_complete.
-fn load_frozen_config(
+pub fn load_frozen_config(
     root: &Path,
     branch: &str,
 ) -> (
@@ -136,7 +136,7 @@ fn fetch_issue(issue_number: i64) -> Option<Value> {
 }
 
 /// Check if an issue has the "decomposed" label (case-insensitive).
-fn is_decomposed(issue: &Value) -> bool {
+pub fn is_decomposed(issue: &Value) -> bool {
     issue
         .get("labels")
         .and_then(|l| l.as_array())
@@ -155,7 +155,7 @@ fn is_decomposed(issue: &Value) -> bool {
 /// Read the DAG mode from the state file's skills config.
 ///
 /// Returns "auto" if the key is missing or not a string.
-fn read_dag_mode(state: &Value) -> String {
+pub fn read_dag_mode(state: &Value) -> String {
     state
         .get("skills")
         .and_then(|s| s.get("flow-plan"))
@@ -173,7 +173,7 @@ fn read_dag_mode(state: &Value) -> String {
 /// position 0) and be followed by optional trailing whitespace then `\n`,
 /// `\r`, or end of string. Trailing spaces and tabs after the heading text
 /// are tolerated (common in editor artifacts and copy-paste).
-fn find_heading(body: &str, heading: &str) -> Option<usize> {
+pub fn find_heading(body: &str, heading: &str) -> Option<usize> {
     // Check if body starts with the heading
     if let Some(after) = body.strip_prefix(heading) {
         if is_heading_terminated(after) {
@@ -197,7 +197,7 @@ fn find_heading(body: &str, heading: &str) -> Option<usize> {
 
 /// Check that the text after a heading marker is a valid line termination:
 /// optional trailing whitespace (spaces/tabs) followed by `\n`, `\r`, or EOF.
-fn is_heading_terminated(after: &str) -> bool {
+pub fn is_heading_terminated(after: &str) -> bool {
     let trimmed = after.trim_start_matches([' ', '\t']);
     trimmed.is_empty() || trimmed.starts_with('\n') || trimmed.starts_with('\r')
 }
@@ -332,7 +332,7 @@ pub fn count_tasks_any_level(content: &str) -> usize {
 /// gate callsite with one parser. Each violation carries a `rule`
 /// field naming the scanner that fired so the repair loop can point
 /// the user at the right rule file.
-fn violations_response(
+pub fn violations_response(
     scope_violations: &[Violation],
     audit_violations: &[AuditViolation],
     dup_violations: &[DupViolation],
@@ -382,7 +382,7 @@ fn violations_response(
 }
 
 /// Run phase_complete via mutate_state and return the result JSON.
-fn complete_plan_phase(state_path: &Path, root: &Path, branch: &str) -> Result<Value, String> {
+pub fn complete_plan_phase(state_path: &Path, root: &Path, branch: &str) -> Result<Value, String> {
     let (frozen_order, frozen_commands) = load_frozen_config(root, branch);
     let result_holder = std::cell::RefCell::new(Value::Null);
 
@@ -805,335 +805,4 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         "formatted_time": formatted_time,
         "continue_action": continue_action,
     }))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::PathBuf;
-
-    // --- violations_response ---
-
-    /// All three scanners' violations land in one tagged
-    /// `violations[]` array. The `rule` field tells the repair loop
-    /// which scanner fired so the user can be pointed at the right
-    /// rule file. Duplicate-test-coverage violations additionally
-    /// carry `existing_test` and `existing_file` so the caller can
-    /// name both the proposed test and its pre-existing twin.
-    #[test]
-    fn violations_response_aggregates_all_three_scanners_with_rule_tags() {
-        let scope = vec![Violation {
-            file: PathBuf::from("/tmp/plan.md"),
-            line: 10,
-            phrase: "every subcommand".to_string(),
-            context: "Add guard to every subcommand.".to_string(),
-        }];
-        let audit = vec![AuditViolation {
-            file: PathBuf::from("/tmp/plan.md"),
-            line: 20,
-            phrase: "panic on empty".to_string(),
-            context: "tighten to panic on empty".to_string(),
-        }];
-        let dup = vec![DupViolation {
-            file: PathBuf::from("/tmp/plan.md"),
-            line: 30,
-            phrase: "duplicate_name_here".to_string(),
-            context: "Plan names `duplicate_name_here` as new.".to_string(),
-            existing_test: "test_duplicate_name_here".to_string(),
-            existing_file: "tests/hooks.rs:1499".to_string(),
-        }];
-        let resp = violations_response(&scope, &audit, &dup, "extracted");
-        assert_eq!(resp["status"], "error");
-        assert_eq!(resp["path"], "extracted");
-
-        let violations = resp["violations"].as_array().expect("array");
-        assert_eq!(violations.len(), 3);
-        let rules: Vec<String> = violations
-            .iter()
-            .map(|v| v["rule"].as_str().unwrap_or("").to_string())
-            .collect();
-        assert!(rules.contains(&"scope-enumeration".to_string()));
-        assert!(rules.contains(&"external-input-audit".to_string()));
-        assert!(rules.contains(&"duplicate-test-coverage".to_string()));
-
-        // Duplicate entries must carry existing_test and existing_file.
-        let dup_entry = violations
-            .iter()
-            .find(|v| v["rule"].as_str() == Some("duplicate-test-coverage"))
-            .expect("dup entry present");
-        assert_eq!(
-            dup_entry["existing_test"].as_str(),
-            Some("test_duplicate_name_here")
-        );
-        assert_eq!(
-            dup_entry["existing_file"].as_str(),
-            Some("tests/hooks.rs:1499")
-        );
-
-        let msg = resp["message"].as_str().unwrap_or("");
-        assert!(msg.contains("3 plan-check violation"));
-        assert!(msg.contains("scope-enumeration.md"));
-        assert!(msg.contains("external-input-audit-gate.md"));
-        assert!(msg.contains("duplicate-test-coverage.md"));
-    }
-
-    /// When only the audit scanner finds a violation, the message
-    /// names only the audit rule file — not the scope-enumeration
-    /// or duplicate-test-coverage rules — so the user is not
-    /// misdirected.
-    #[test]
-    fn violations_response_audit_only_omits_other_rule_messages() {
-        let scope: Vec<Violation> = vec![];
-        let audit = vec![AuditViolation {
-            file: PathBuf::from("/tmp/plan.md"),
-            line: 5,
-            phrase: "panic on empty".to_string(),
-            context: "tighten to panic on empty".to_string(),
-        }];
-        let dup: Vec<DupViolation> = vec![];
-        let resp = violations_response(&scope, &audit, &dup, "resumed");
-        let msg = resp["message"].as_str().unwrap_or("");
-        assert!(msg.contains("external-input-audit-gate.md"));
-        assert!(!msg.contains("scope-enumeration.md"));
-        assert!(!msg.contains("duplicate-test-coverage.md"));
-        assert_eq!(resp["path"], "resumed");
-    }
-
-    // --- load_frozen_config ---
-
-    /// When a frozen phases file exists at the expected path,
-    /// `load_frozen_config` returns `(Some(order), Some(commands))`
-    /// with values parsed from the file. This exercises lines 117,
-    /// 121-122 which are unreached when no frozen file exists.
-    #[test]
-    fn load_frozen_config_with_existing_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        let branch = "test-frozen";
-        let flow_states = root.join(".flow-states");
-        std::fs::create_dir_all(&flow_states).unwrap();
-        let frozen_path = flow_states.join(format!("{}-phases.json", branch));
-        let frozen_json = serde_json::json!({
-            "order": ["flow-start", "flow-plan"],
-            "phases": {
-                "flow-start": {"name": "Start", "command": "/flow:flow-start"},
-                "flow-plan": {"name": "Plan", "command": "/flow:flow-plan"}
-            }
-        });
-        std::fs::write(&frozen_path, frozen_json.to_string()).unwrap();
-
-        let (order, commands) = load_frozen_config(root, branch);
-        assert!(
-            order.is_some(),
-            "order should be Some when frozen file exists"
-        );
-        assert!(
-            commands.is_some(),
-            "commands should be Some when frozen file exists"
-        );
-        let order = order.unwrap();
-        assert_eq!(order.len(), 2);
-        assert_eq!(order[0], "flow-start");
-    }
-
-    // --- count_tasks_any_level code-block toggle ---
-
-    /// `count_tasks_any_level` must not count task headings inside
-    /// fenced code blocks. This exercises lines 327-328 (the
-    /// code-block toggle branch).
-    #[test]
-    fn count_tasks_any_level_skips_code_blocks() {
-        let content = "### Task 1: Real task\n\n\
-            ```\n\
-            ### Task 2: Inside code block\n\
-            ```\n\n\
-            ### Task 3: Another real task\n";
-        assert_eq!(count_tasks_any_level(content), 2);
-    }
-
-    /// Duplicate-only response names only the duplicate rule file.
-    #[test]
-    fn violations_response_duplicate_only_names_only_duplicate_rule() {
-        let scope: Vec<Violation> = vec![];
-        let audit: Vec<AuditViolation> = vec![];
-        let dup = vec![DupViolation {
-            file: PathBuf::from("/tmp/plan.md"),
-            line: 42,
-            phrase: "proposed_dup_name".to_string(),
-            context: "Add `proposed_dup_name` as a new test.".to_string(),
-            existing_test: "test_proposed_dup_name".to_string(),
-            existing_file: "tests/foo.rs:100".to_string(),
-        }];
-        let resp = violations_response(&scope, &audit, &dup, "extracted");
-        let msg = resp["message"].as_str().unwrap_or("");
-        assert!(msg.contains("duplicate-test-coverage.md"));
-        assert!(!msg.contains("scope-enumeration.md"));
-        assert!(!msg.contains("external-input-audit-gate.md"));
-    }
-
-    // --- is_decomposed ---
-
-    #[test]
-    fn is_decomposed_matches_case_insensitive() {
-        let issue = json!({"labels": [{"name": "Decomposed"}]});
-        assert!(is_decomposed(&issue));
-        let issue = json!({"labels": [{"name": "decomposed"}]});
-        assert!(is_decomposed(&issue));
-        let issue = json!({"labels": [{"name": "DECOMPOSED"}]});
-        assert!(is_decomposed(&issue));
-    }
-
-    #[test]
-    fn is_decomposed_false_without_label() {
-        let issue = json!({"labels": [{"name": "Bug"}, {"name": "Tech Debt"}]});
-        assert!(!is_decomposed(&issue));
-    }
-
-    #[test]
-    fn is_decomposed_false_on_missing_labels() {
-        let issue = json!({"title": "x"});
-        assert!(!is_decomposed(&issue));
-    }
-
-    #[test]
-    fn is_decomposed_false_on_empty_labels() {
-        let issue = json!({"labels": []});
-        assert!(!is_decomposed(&issue));
-    }
-
-    // --- read_dag_mode ---
-
-    #[test]
-    fn read_dag_mode_default_when_missing() {
-        let state = json!({});
-        assert_eq!(read_dag_mode(&state), "auto");
-    }
-
-    #[test]
-    fn read_dag_mode_explicit_never() {
-        let state = json!({"skills": {"flow-plan": {"dag": "never"}}});
-        assert_eq!(read_dag_mode(&state), "never");
-    }
-
-    #[test]
-    fn read_dag_mode_explicit_always() {
-        let state = json!({"skills": {"flow-plan": {"dag": "always"}}});
-        assert_eq!(read_dag_mode(&state), "always");
-    }
-
-    #[test]
-    fn read_dag_mode_empty_string_falls_back_to_default() {
-        let state = json!({"skills": {"flow-plan": {"dag": ""}}});
-        assert_eq!(read_dag_mode(&state), "auto");
-    }
-
-    // --- is_heading_terminated ---
-
-    #[test]
-    fn is_heading_terminated_accepts_newline_tab_space_eof() {
-        assert!(is_heading_terminated(""));
-        assert!(is_heading_terminated("\n"));
-        assert!(is_heading_terminated("\r"));
-        assert!(is_heading_terminated("   \n"));
-        assert!(is_heading_terminated("\t\n"));
-        assert!(is_heading_terminated("   "));
-    }
-
-    #[test]
-    fn is_heading_terminated_rejects_text_content() {
-        assert!(!is_heading_terminated(" foo"));
-        assert!(!is_heading_terminated("x"));
-    }
-
-    // --- find_heading ---
-
-    #[test]
-    fn find_heading_at_start() {
-        let body = "## Implementation Plan\n\ncontent";
-        assert_eq!(find_heading(body, "## Implementation Plan"), Some(0));
-    }
-
-    #[test]
-    fn find_heading_after_prose() {
-        let body = "# Title\n\n## Implementation Plan\n\nbody";
-        assert_eq!(find_heading(body, "## Implementation Plan"), Some(9));
-    }
-
-    #[test]
-    fn find_heading_not_found_when_inline() {
-        let body = "Some text with ## Implementation Plan inline.";
-        assert_eq!(find_heading(body, "## Implementation Plan"), None);
-    }
-
-    #[test]
-    fn find_heading_not_found_when_absent() {
-        let body = "# Title\n\n## Context\n\n## Tasks\n";
-        assert_eq!(find_heading(body, "## Implementation Plan"), None);
-    }
-
-    // --- count_tasks ---
-
-    #[test]
-    fn count_tasks_counts_h4_tasks_only() {
-        let content = "### Something\n#### Task 1: A\n#### Task 2: B\n### Other\n";
-        assert_eq!(count_tasks(content), 2);
-    }
-
-    #[test]
-    fn count_tasks_skips_code_blocks() {
-        let content = "#### Task 1: Real\n```\n#### Task 99: In code\n```\n#### Task 2: Real\n";
-        assert_eq!(count_tasks(content), 2);
-    }
-
-    #[test]
-    fn count_tasks_returns_zero_when_none() {
-        let content = "### Heading\ncontent without task headings\n";
-        assert_eq!(count_tasks(content), 0);
-    }
-
-    // --- extract_implementation_plan ---
-
-    #[test]
-    fn extract_implementation_plan_returns_section_content() {
-        let body =
-            "# Title\n\n## Implementation Plan\n\nbody line 1\nbody line 2\n\n## Next\ntail\n";
-        let extracted = extract_implementation_plan(body).unwrap();
-        assert!(extracted.contains("body line 1"));
-        assert!(extracted.contains("body line 2"));
-        assert!(!extracted.contains("tail"));
-        assert!(!extracted.contains("# Title"));
-    }
-
-    #[test]
-    fn extract_implementation_plan_none_when_empty_section() {
-        let body = "## Implementation Plan\n\n## Next section\n";
-        assert_eq!(extract_implementation_plan(body), None);
-    }
-
-    #[test]
-    fn extract_implementation_plan_runs_to_eof_when_no_next_heading() {
-        let body = "## Implementation Plan\n\ntail content only\n";
-        let extracted = extract_implementation_plan(body).unwrap();
-        assert!(extracted.contains("tail content only"));
-    }
-
-    // --- complete_plan_phase error path ---
-
-    /// When `mutate_state` fails (e.g. non-existent state file path),
-    /// `complete_plan_phase` returns `Err(String)` via the `.map_err`
-    /// closure at line 412.
-    #[test]
-    fn complete_plan_phase_returns_err_on_missing_state() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        let state_path = root.join(".flow-states").join("nonexistent.json");
-        let result = complete_plan_phase(&state_path, root, "nonexistent");
-        assert!(result.is_err(), "expected Err when state file is missing");
-        let err = result.unwrap_err();
-        assert!(
-            err.contains("Failed to complete phase"),
-            "expected map_err message, got: {}",
-            err
-        );
-    }
 }

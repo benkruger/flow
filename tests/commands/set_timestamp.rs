@@ -415,12 +415,7 @@ fn run_impl_main_non_json_mutate_error_returns_raw_message() {
     // misses, so the message passes through as-is.
     fs::create_dir(state_dir.join("set-ts-io.json")).unwrap();
 
-    let (value, code) = run_impl_main(
-        &["foo=bar".to_string()],
-        Some("set-ts-io"),
-        &root,
-        &root,
-    );
+    let (value, code) = run_impl_main(&["foo=bar".to_string()], Some("set-ts-io"), &root, &root);
     assert_eq!(code, 1);
     assert_eq!(value["status"], "error");
     let msg = value["message"].as_str().unwrap();
@@ -777,7 +772,10 @@ fn test_cli_error_no_state_file() {
     let parsed: Value =
         serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).unwrap();
     assert_eq!(parsed["status"], "error");
-    assert!(parsed["message"].as_str().unwrap().contains("No state file"));
+    assert!(parsed["message"]
+        .as_str()
+        .unwrap()
+        .contains("No state file"));
 }
 
 #[test]
@@ -814,7 +812,10 @@ fn test_cli_error_invalid_format() {
     let (code, output) = run_cli(dir.path(), &["--set", "design.approved_at"]);
     assert_eq!(code, 1);
     assert_eq!(output["status"], "error");
-    assert!(output["message"].as_str().unwrap().contains("Invalid format"));
+    assert!(output["message"]
+        .as_str()
+        .unwrap()
+        .contains("Invalid format"));
 }
 
 #[test]
@@ -827,7 +828,10 @@ fn test_cli_error_corrupt_json() {
     let (code, output) = run_cli(dir.path(), &["--set", "design.approved_at=NOW"]);
     assert_eq!(code, 1);
     assert_eq!(output["status"], "error");
-    assert!(output["message"].as_str().unwrap().contains("Could not read"));
+    assert!(output["message"]
+        .as_str()
+        .unwrap()
+        .contains("Could not read"));
 }
 
 /// `resolve_branch` None branch: subprocess cwd is a non-git tempdir,

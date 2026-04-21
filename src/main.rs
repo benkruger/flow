@@ -633,12 +633,8 @@ fn main() {
         Some(Commands::SetTimestamp { set_args, branch }) => {
             let root = project_root();
             let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
-            let (value, code) = commands::set_timestamp::run_impl_main(
-                &set_args,
-                branch.as_deref(),
-                &root,
-                &cwd,
-            );
+            let (value, code) =
+                commands::set_timestamp::run_impl_main(&set_args, branch.as_deref(), &root, &cwd);
             flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::SetBlocked) => {

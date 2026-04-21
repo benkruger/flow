@@ -45,14 +45,9 @@ pub fn set_nested(obj: &mut Value, path_parts: &[&str], value: Value) -> Result<
                 .get_mut(*part)
                 .ok_or_else(|| format!("Key '{}' not found", part))?,
             Value::Null => {
-                return Err(format!(
-                    "Cannot navigate into NoneType with key '{}'",
-                    part
-                ))
+                return Err(format!("Cannot navigate into NoneType with key '{}'", part))
             }
-            Value::Bool(_) => {
-                return Err(format!("Cannot navigate into bool with key '{}'", part))
-            }
+            Value::Bool(_) => return Err(format!("Cannot navigate into bool with key '{}'", part)),
             Value::Number(_) => {
                 return Err(format!("Cannot navigate into int with key '{}'", part))
             }

@@ -155,13 +155,9 @@ pub fn acquire(feature: &str, queue_dir: &Path) -> Value {
 
 /// Acquire with retry loop using the real thread::sleep.
 pub fn acquire_with_wait(feature: &str, queue_dir: &Path, timeout: u64, interval: u64) -> Value {
-    acquire_with_wait_impl(
-        feature,
-        queue_dir,
-        timeout,
-        interval,
-        &mut |d| std::thread::sleep(d),
-    )
+    acquire_with_wait_impl(feature, queue_dir, timeout, interval, &mut |d| {
+        std::thread::sleep(d)
+    })
 }
 
 /// Seam-injected variant of [`acquire_with_wait`] that accepts a
@@ -253,6 +249,7 @@ pub fn check(queue_dir: &Path) -> Value {
 /// Testable core of the start-lock CLI. Returns the JSON payload the
 /// CLI wrapper would print plus the exit code. The wrapper in
 /// `main.rs` computes `project_root()` once and passes it in.
+#[allow(clippy::too_many_arguments)]
 pub fn run_impl_main(
     acquire_flag: bool,
     release_flag: bool,
