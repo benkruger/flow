@@ -10,12 +10,9 @@
 //! Tests live at tests/create_milestone.rs per .claude/rules/test-placement.md —
 //! no inline #[cfg(test)] in this file.
 
-use std::time::Duration;
-
 use clap::Parser;
 use serde_json::json;
 
-use crate::complete_preflight::LOCAL_TIMEOUT;
 use crate::issue::run_gh_cmd;
 
 #[derive(Parser, Debug)]
@@ -41,22 +38,18 @@ pub fn create_milestone(repo: &str, title: &str, due_date: &str) -> Result<(i64,
     let api_path = format!("repos/{}/milestones", repo);
     let title_field = format!("title={}", title);
     let due_on_field = format!("due_on={}T00:00:00Z", due_date);
-    let timeout = Duration::from_secs(LOCAL_TIMEOUT);
 
-    let stdout = run_gh_cmd(
-        &[
-            "gh",
-            "api",
-            &api_path,
-            "--method",
-            "POST",
-            "-f",
-            &title_field,
-            "-f",
-            &due_on_field,
-        ],
-        Some(timeout),
-    )?;
+    let stdout = run_gh_cmd(&[
+        "gh",
+        "api",
+        &api_path,
+        "--method",
+        "POST",
+        "-f",
+        &title_field,
+        "-f",
+        &due_on_field,
+    ])?;
 
     let data: serde_json::Value =
         serde_json::from_str(&stdout).map_err(|_| format!("Invalid JSON response: {}", stdout))?;

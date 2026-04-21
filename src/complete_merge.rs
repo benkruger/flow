@@ -11,13 +11,17 @@
 //!   CI pending: {"status": "ci_pending", "pr_number": N}
 //!   Max retry:  {"status": "max_retries", "pr_number": N}
 //!   Error:      {"status": "error", "message": "...", "pr_number": N}
+//!
+//! Tests live in `tests/complete_merge.rs` per
+//! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]` block
+//! in this file.
 
 use std::path::Path;
 
 use clap::Parser;
 use serde_json::{json, Value};
 
-use crate::complete_preflight::{run_cmd_with_timeout, CmdResult, NETWORK_TIMEOUT};
+use crate::complete_preflight::{run_cmd_with_timeout, NETWORK_TIMEOUT};
 use crate::lock::mutate_state;
 use crate::utils::bin_flow_path;
 const MERGE_STEP: i64 = 5;
@@ -42,13 +46,25 @@ fn error_result(message: &str, pr_number: i64) -> Value {
     })
 }
 
-/// Core complete-merge logic with injectable runner.
-pub fn complete_merge_inner(
-    pr_number: i64,
-    state_file: &str,
-    bin_flow: &str,
-    runner: &dyn Fn(&[&str], u64) -> CmdResult,
-) -> Value {
+/// Collapse a `CmdResult` into `None` on success (exit 0) or
+/// `Some(message)` on spawn failure or non-zero exit. Tests drive
+/// this directly with constructed `Ok`/`Err` values so the spawn-Err
+/// branch of the call sites is reachable without an unusable-binary
+/// fixture.
+pub fn cmd_failure_message(result: crate::complete_preflight::CmdResult) -> Option<String> {
+    match result {
+        Err(e) => Some(e),
+        Ok((0, _, _)) => None,
+        Ok((_, _, stderr)) => Some(stderr.trim().to_string()),
+    }
+}
+
+/// Production logic for complete-merge. Runs check-freshness then
+/// dispatches to squash merge or push-after-merge per the freshness
+/// result.
+fn complete_merge(pr_number: i64, state_file: &str) -> Value {
+    let bin_flow = bin_flow_path();
+
     // Set step counter if state file exists
     let state_path = Path::new(state_file);
     if state_path.exists() {
@@ -60,9 +76,8 @@ pub fn complete_merge_inner(
         });
     }
 
-    // Run check-freshness
-    let freshness_result = runner(
-        &[bin_flow, "check-freshness", "--state-file", state_file],
+    let freshness_result = run_cmd_with_timeout(
+        &[&bin_flow, "check-freshness", "--state-file", state_file],
         NETWORK_TIMEOUT,
     );
 
@@ -107,42 +122,31 @@ pub fn complete_merge_inner(
         }
         "merged" => {
             // Main had new commits, merged into branch — push
-            match runner(&["git", "push"], NETWORK_TIMEOUT) {
-                Err(e) => error_result(
-                    &format!("Push failed after freshness merge: {}", e),
+            match cmd_failure_message(run_cmd_with_timeout(&["git", "push"], NETWORK_TIMEOUT)) {
+                Some(msg) => error_result(
+                    &format!("Push failed after freshness merge: {}", msg),
                     pr_number,
                 ),
-                Ok((code, _, stderr)) => {
-                    if code != 0 {
-                        error_result(
-                            &format!("Push failed after freshness merge: {}", stderr.trim()),
-                            pr_number,
-                        )
-                    } else {
-                        json!({
-                            "status": "ci_rerun",
-                            "pushed": true,
-                            "pr_number": pr_number,
-                        })
-                    }
-                }
+                None => json!({
+                    "status": "ci_rerun",
+                    "pushed": true,
+                    "pr_number": pr_number,
+                }),
             }
         }
         "up_to_date" => {
             // Proceed to squash merge
             let pr_str = pr_number.to_string();
-            match runner(&["gh", "pr", "merge", &pr_str, "--squash"], NETWORK_TIMEOUT) {
-                Err(e) => error_result(&e, pr_number),
-                Ok((code, _, stderr)) => {
-                    if code == 0 {
-                        json!({"status": "merged", "pr_number": pr_number})
+            match cmd_failure_message(run_cmd_with_timeout(
+                &["gh", "pr", "merge", &pr_str, "--squash"],
+                NETWORK_TIMEOUT,
+            )) {
+                None => json!({"status": "merged", "pr_number": pr_number}),
+                Some(msg) => {
+                    if msg.contains("base branch policy") {
+                        json!({"status": "ci_pending", "pr_number": pr_number})
                     } else {
-                        let stderr_trim = stderr.trim();
-                        if stderr_trim.contains("base branch policy") {
-                            json!({"status": "ci_pending", "pr_number": pr_number})
-                        } else {
-                            error_result(stderr_trim, pr_number)
-                        }
+                        error_result(&msg, pr_number)
                     }
                 }
             }
@@ -154,21 +158,9 @@ pub fn complete_merge_inner(
     }
 }
 
-/// Main-arm dispatch with injectable runner. The production wrapper
-/// `run_impl_main` passes the real `bin/flow` path and
-/// `run_cmd_with_timeout`; integration tests drive the exit-code
-/// mapping through subprocess fixtures.
-fn run_impl_main_with_runner(
-    args: &Args,
-    bin_flow: &str,
-    runner: &dyn Fn(&[&str], u64) -> CmdResult,
-) -> (Value, i32) {
-    let result = complete_merge_inner(args.pr, &args.state_file, bin_flow, runner);
-    let code = if result["status"] == "merged" { 0 } else { 1 };
-    (result, code)
-}
-
 /// Main-arm dispatch: runs complete_merge and returns (value, exit code).
 pub fn run_impl_main(args: &Args) -> (Value, i32) {
-    run_impl_main_with_runner(args, &bin_flow_path(), &run_cmd_with_timeout)
+    let result = complete_merge(args.pr, &args.state_file);
+    let code = if result["status"] == "merged" { 0 } else { 1 };
+    (result, code)
 }

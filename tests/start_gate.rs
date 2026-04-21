@@ -1,7 +1,9 @@
 //! Integration tests for start-gate subcommand.
 //!
 //! start-gate consolidates: git pull + CI baseline (retry 3) + update-deps +
-//! post-deps CI (retry 3 if deps changed) into a single command.
+//! post-deps CI (retry 3 if deps changed) into a single command. Every test
+//! drives through the compiled binary — no library seams or closure-injected
+//! runners.
 
 mod common;
 
@@ -192,6 +194,33 @@ fn test_ci_failed_baseline() {
     assert!(data["output"].is_string(), "Must include CI output");
 }
 
+/// Non-consistent CI error on baseline: a CI run that returns
+/// `status:error` WITHOUT `consistent:true`. This happens when the repo
+/// has no `bin/{format,lint,build,test}` scripts at all — `ci::run_impl`
+/// returns the "no tools" error shape with no `consistent` field.
+#[test]
+fn test_ci_baseline_non_consistent_returns_error_step_ci_baseline() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    // No bin/* scripts — ci::run_impl short-circuits with
+    // "No ./bin/{format,lint,build,test} scripts found" (no consistent field).
+    create_state_file(&repo, "no-tools-branch");
+
+    let output = run_start_gate(&repo, "no-tools-branch");
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "ci_baseline");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap_or("")
+            .to_lowercase()
+            .contains("scripts"),
+        "error message should mention missing scripts: {}",
+        data["message"]
+    );
+}
+
 #[test]
 fn test_deps_changed_ci_passes() {
     let dir = tempfile::tempdir().unwrap();
@@ -276,6 +305,33 @@ fn test_deps_ci_failed() {
     let data = parse_output(&output);
     assert_eq!(data["status"], "deps_ci_failed");
     assert!(data["output"].is_string(), "Must include CI output");
+}
+
+/// Non-consistent CI error on post-deps: baseline CI passes, bin/dependencies
+/// modifies the tree AND removes the bin/* scripts so post-deps CI sees
+/// empty tools and returns `status:error` without `consistent:true`.
+#[test]
+fn test_post_deps_ci_non_consistent_returns_error_step_ci_post_deps() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    install_passing_noncritical_tools(&repo);
+    let bin_dir = repo.join("bin");
+    // bin/test passes (baseline succeeds)
+    fs::write(bin_dir.join("test"), "#!/bin/bash\nexit 0\n").unwrap();
+    fs::set_permissions(bin_dir.join("test"), fs::Permissions::from_mode(0o755)).unwrap();
+
+    // bin/dependencies creates a tree change AND removes the bin/* scripts
+    // so post-deps CI hits the "no tools" branch.
+    create_bin_deps(
+        &repo,
+        "echo updated > deps-output.txt\nrm bin/format bin/lint bin/build bin/test",
+    );
+    create_state_file(&repo, "post-deps-non-consistent");
+
+    let output = run_start_gate(&repo, "post-deps-non-consistent");
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "ci_post_deps");
 }
 
 #[test]
@@ -365,386 +421,114 @@ fn test_pull_failure() {
     );
 }
 
-// --- Library-level tests for run_impl_with_deps / commit_deps / run_impl_main ---
-//
-// These tests drive the public seams directly so every branch is
-// attributed to the per-file gate.
+/// commit_deps push failure: bin/dependencies makes a tree change and
+/// also removes the `origin` remote. `git commit` succeeds locally but
+/// `git push origin main` fails (no such remote). commit_deps surfaces
+/// the error and start-gate emits step:commit_deps.
+#[test]
+fn test_commit_deps_push_failure_returns_error_step_commit_deps() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    create_bin_tools(&repo, 0);
+    // bin/dependencies makes a change AND removes the origin remote so
+    // git push fails.
+    create_bin_deps(
+        &repo,
+        "echo 'updated' > deps-output.txt\ngit remote remove origin",
+    );
+    create_state_file(&repo, "push-fail-branch");
 
-use flow_rs::ci;
-use flow_rs::start_gate::{run_impl_main, run_impl_with_deps, Args as GateArgs};
-use serde_json::Value;
+    let output = run_start_gate(&repo, "push-fail-branch");
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error", "got: {}", data);
+    assert_eq!(data["step"], "commit_deps");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("dependency update"),
+        "message should mention dependency update: {}",
+        data["message"]
+    );
+}
 
-// Direct `commit_deps` tests removed: the function is now a private
-// helper used via closure reference inside `run_impl_with_deps`. Its
-// behavior is exercised through the `run_impl_with_deps` tests below
-// and the subprocess tests at the end of this file.
+/// commit_deps failure: a pre-commit hook that always fails. bin/dependencies
+/// changes the tree, post-deps CI passes, then commit_deps invokes
+/// `git commit` which runs the hook → non-zero exit → commit_deps returns
+/// Err and start-gate emits step:commit_deps.
+#[test]
+fn test_commit_deps_failure_returns_error_step_commit_deps() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    create_bin_tools(&repo, 0);
+    create_bin_deps(&repo, "echo 'updated' > deps-output.txt");
+    create_state_file(&repo, "commit-deps-fail-branch");
 
-// --- run_impl_with_deps ---
-
-fn lib_seed_state(root: &Path, branch: &str) {
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    // Install a pre-commit hook that always fails, so `git commit`
+    // inside commit_deps returns non-zero.
+    let hook_dir = repo.join(".git").join("hooks");
+    fs::create_dir_all(&hook_dir).unwrap();
+    let hook_path = hook_dir.join("pre-commit");
     fs::write(
-        state_dir.join(format!("{}.json", branch)),
-        r#"{"schema_version":1,"branch":"demo"}"#,
+        &hook_path,
+        "#!/bin/bash\necho 'pre-commit hook rejection' >&2\nexit 1\n",
     )
     .unwrap();
-}
+    fs::set_permissions(&hook_path, fs::Permissions::from_mode(0o755)).unwrap();
 
-fn lib_ok_ci(_args: &ci::Args, _cwd: &Path, _root: &Path, _force: bool) -> (Value, i32) {
-    (json!({"status": "ok"}), 0)
-}
-
-fn lib_err_ci_non_consistent(
-    _args: &ci::Args,
-    _cwd: &Path,
-    _root: &Path,
-    _force: bool,
-) -> (Value, i32) {
-    (
-        json!({"status": "error", "message": "CI failed with transient error"}),
-        1,
-    )
-}
-
-fn lib_deps_no_changes_ok(_cwd: &Path, _timeout: u64) -> (Value, i32) {
-    (json!({"status": "ok", "changes": false}), 0)
-}
-
-fn lib_deps_changed_ok(_cwd: &Path, _timeout: u64) -> (Value, i32) {
-    (json!({"status": "ok", "changes": true}), 0)
-}
-
-fn lib_commit_ok(_cwd: &Path) -> Result<(), String> {
-    Ok(())
-}
-
-#[test]
-fn lib_start_gate_pull_error_returns_infrastructure_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    lib_seed_state(&root, "pull-err-branch");
-    let args = GateArgs {
-        branch: "pull-err-branch".to_string(),
-    };
-    let pull_err = |_: &Path| -> Result<(), String> { Err("remote unreachable".to_string()) };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &pull_err,
-        &lib_ok_ci,
-        &lib_deps_no_changes_ok,
-        &lib_commit_ok,
+    let output = run_start_gate(&repo, "commit-deps-fail-branch");
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error", "got: {}", data);
+    assert_eq!(data["step"], "commit_deps");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("dependency update"),
+        "message should mention dependency update: {}",
+        data["message"]
     );
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["step"], "git_pull");
-    assert!(result["message"]
-        .as_str()
-        .unwrap()
-        .contains("remote unreachable"));
 }
 
+/// run_impl_main exit code contract: returns 0 even when status is
+/// "error" (business errors land in JSON, not the exit code).
 #[test]
-fn lib_start_gate_baseline_ci_non_consistent_error() {
+fn test_run_impl_main_always_exits_0() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    lib_seed_state(&root, "ci-err-branch");
-    let args = GateArgs {
-        branch: "ci-err-branch".to_string(),
-    };
-    let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
+    let repo = dir.path().join("repo");
+    fs::create_dir_all(&repo).unwrap();
+    Command::new("git")
+        .args(["-c", "init.defaultBranch=main", "init"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    for (key, val) in [
+        ("user.email", "test@test.com"),
+        ("user.name", "Test"),
+        ("commit.gpgsign", "false"),
+    ] {
+        Command::new("git")
+            .args(["config", key, val])
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+    }
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
 
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &pull_ok,
-        &lib_err_ci_non_consistent,
-        &lib_deps_no_changes_ok,
-        &lib_commit_ok,
-    );
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["step"], "ci_baseline");
-}
+    create_state_file(&repo, "exit-code-branch");
 
-#[test]
-fn lib_start_gate_post_ci_non_consistent_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    lib_seed_state(&root, "post-ci-err-branch");
-    let args = GateArgs {
-        branch: "post-ci-err-branch".to_string(),
-    };
-    let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
-    let calls = std::cell::RefCell::new(0usize);
-    let two_phase_ci = |args: &ci::Args, cwd: &Path, root: &Path, force: bool| -> (Value, i32) {
-        *calls.borrow_mut() += 1;
-        if *calls.borrow() == 1 {
-            lib_ok_ci(args, cwd, root, force)
-        } else {
-            lib_err_ci_non_consistent(args, cwd, root, force)
-        }
-    };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &pull_ok,
-        &two_phase_ci,
-        &lib_deps_changed_ok,
-        &lib_commit_ok,
-    );
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["step"], "ci_post_deps");
-    assert_eq!(*calls.borrow(), 2);
-}
-
-#[test]
-fn lib_start_gate_commit_deps_failure_returns_commit_deps_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    lib_seed_state(&root, "commit-fail-branch");
-    let args = GateArgs {
-        branch: "commit-fail-branch".to_string(),
-    };
-    let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
-    let commit_err = |_: &Path| -> Result<(), String> { Err("remote rejected push".to_string()) };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &pull_ok,
-        &lib_ok_ci,
-        &lib_deps_changed_ok,
-        &commit_err,
-    );
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["step"], "commit_deps");
-    assert!(result["message"]
-        .as_str()
-        .unwrap()
-        .contains("remote rejected push"));
-}
-
-#[test]
-fn lib_start_gate_deps_changed_passes_returns_clean() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    lib_seed_state(&root, "happy-branch");
-    let args = GateArgs {
-        branch: "happy-branch".to_string(),
-    };
-    let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &pull_ok,
-        &lib_ok_ci,
-        &lib_deps_changed_ok,
-        &lib_commit_ok,
-    );
-    assert_eq!(result["status"], "clean");
-    assert_eq!(result["deps_changed"], true);
-}
-
-#[test]
-fn lib_start_gate_baseline_flaky_returns_ci_flaky() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    lib_seed_state(&root, "flaky-branch");
-    let args = GateArgs {
-        branch: "flaky-branch".to_string(),
-    };
-    let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
-    let flaky_ci = |_: &ci::Args, _: &Path, _: &Path, _: bool| -> (Value, i32) {
-        (
-            json!({
-                "status": "ok",
-                "flaky": true,
-                "first_failure_output": "transient timeout",
-                "attempts": 2,
-            }),
-            0,
-        )
-    };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &pull_ok,
-        &flaky_ci,
-        &lib_deps_no_changes_ok,
-        &lib_commit_ok,
-    );
-    assert_eq!(result["status"], "ci_flaky");
+    // No remote → git pull fails → status:error, exit 0.
+    let output = run_start_gate(&repo, "exit-code-branch");
     assert_eq!(
-        result["flaky_context"],
-        "CI baseline on pristine main during flow-start"
+        output.status.code(),
+        Some(0),
+        "run_impl_main always returns exit 0 per the JSON-contract discipline"
     );
-}
-
-#[test]
-fn lib_start_gate_deps_error_returns_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    lib_seed_state(&root, "deps-err-branch");
-    let args = GateArgs {
-        branch: "deps-err-branch".to_string(),
-    };
-    let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
-    let deps_error = |_: &Path, _: u64| -> (Value, i32) {
-        (
-            json!({"status": "error", "message": "deps subprocess died"}),
-            1,
-        )
-    };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &pull_ok,
-        &lib_ok_ci,
-        &deps_error,
-        &lib_commit_ok,
-    );
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["step"], "update_deps");
-}
-
-#[test]
-fn lib_start_gate_ci_consistent_fail_returns_ci_failed() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    lib_seed_state(&root, "consist-fail-branch");
-    let args = GateArgs {
-        branch: "consist-fail-branch".to_string(),
-    };
-    let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
-    let consist_fail = |_: &ci::Args, _: &Path, _: &Path, _: bool| -> (Value, i32) {
-        (
-            json!({
-                "status": "error",
-                "consistent": true,
-                "output": "final failure",
-                "attempts": 3,
-            }),
-            1,
-        )
-    };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &pull_ok,
-        &consist_fail,
-        &lib_deps_no_changes_ok,
-        &lib_commit_ok,
-    );
-    assert_eq!(result["status"], "ci_failed");
-    assert_eq!(result["output"], "final failure");
-}
-
-#[test]
-fn lib_start_gate_post_ci_consistent_fail_returns_deps_ci_failed() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    lib_seed_state(&root, "deps-consist-fail-branch");
-    let args = GateArgs {
-        branch: "deps-consist-fail-branch".to_string(),
-    };
-    let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
-    let calls = std::cell::RefCell::new(0usize);
-    let two_phase = |args: &ci::Args, cwd: &Path, root: &Path, force: bool| -> (Value, i32) {
-        *calls.borrow_mut() += 1;
-        if *calls.borrow() == 1 {
-            lib_ok_ci(args, cwd, root, force)
-        } else {
-            (
-                json!({
-                    "status": "error",
-                    "consistent": true,
-                    "output": "post-deps fail",
-                    "attempts": 3,
-                }),
-                1,
-            )
-        }
-    };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &pull_ok,
-        &two_phase,
-        &lib_deps_changed_ok,
-        &lib_commit_ok,
-    );
-    assert_eq!(result["status"], "deps_ci_failed");
-}
-
-#[test]
-fn lib_start_gate_post_ci_flaky_returns_ci_flaky_with_deps_context() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    lib_seed_state(&root, "post-flaky-branch");
-    let args = GateArgs {
-        branch: "post-flaky-branch".to_string(),
-    };
-    let pull_ok = |_: &Path| -> Result<(), String> { Ok(()) };
-    let calls = std::cell::RefCell::new(0usize);
-    let two_phase = |args: &ci::Args, cwd: &Path, root: &Path, force: bool| -> (Value, i32) {
-        *calls.borrow_mut() += 1;
-        if *calls.borrow() == 1 {
-            lib_ok_ci(args, cwd, root, force)
-        } else {
-            (
-                json!({
-                    "status": "ok",
-                    "flaky": true,
-                    "first_failure_output": "post-deps transient",
-                    "attempts": 2,
-                }),
-                0,
-            )
-        }
-    };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &pull_ok,
-        &two_phase,
-        &lib_deps_changed_ok,
-        &lib_commit_ok,
-    );
-    assert_eq!(result["status"], "ci_flaky");
-    assert_eq!(
-        result["flaky_context"],
-        "CI post-deps gate during flow-start after dependency update"
-    );
-}
-
-#[test]
-fn lib_start_gate_run_impl_main_err_path() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    lib_seed_state(&root, "main-err-branch");
-    let args = GateArgs {
-        branch: "main-err-branch".to_string(),
-    };
-    let (v, code) = run_impl_main(&args, &root, &root);
-    assert_eq!(code, 0);
-    assert_eq!(v["status"], "error");
-    assert_eq!(v["step"], "git_pull");
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "git_pull");
 }

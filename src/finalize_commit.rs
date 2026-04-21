@@ -15,7 +15,6 @@
 //!
 //! Output (JSON to stdout):
 //!   Success:   {"status": "ok", "sha": "<commit-hash>", "pull_merged": <bool>}
-//!   Warning:   {"status": "ok", "sha": "", "pull_merged": true, "warning": "..."}
 //!   Conflict:  {"status": "conflict", "files": ["file1.py", ...]}
 //!   Error:     {"status": "error", "step": "ci|plan_deviation|commit|pull|push", "message": "..."}
 
@@ -82,15 +81,30 @@ fn emit_deviation_stderr(branch: &str, deviations: &[Deviation]) {
     eprintln!("Then re-run the commit.");
 }
 
-/// Core finalize-commit logic with injectable git runner for testing.
-#[allow(clippy::type_complexity)]
-pub fn finalize_commit_inner(
-    message_file: &str,
-    branch: &str,
-    git: &dyn Fn(&[&str], u64) -> Result<(i32, String, String), String>,
-) -> Value {
+/// Prepend `git -C <cwd>` to args and invoke via the shared timeout-aware
+/// runner. Avoids `set_current_dir` (process-wide; races in parallel tests).
+fn run_git_in_dir(
+    cwd: &std::path::Path,
+    args: &[&str],
+    timeout_secs: u64,
+) -> Result<(i32, String, String), String> {
+    let mut cmd_args = vec!["git", "-C", cwd.to_str().unwrap_or(".")];
+    cmd_args.extend_from_slice(args);
+    run_cmd_with_timeout(&cmd_args, timeout_secs)
+}
+
+/// Core commit → pull → push sequence. Private — drives through the
+/// compiled `bin/flow finalize-commit` binary for testing via real git
+/// fixtures and stubs. No closure-injection seam.
+///
+/// The first git call (`git commit`) handles spawn/timeout Err directly.
+/// All subsequent calls `.expect()` on Ok because git was proven alive
+/// by the commit; rev-parse HEAD always succeeds after a successful
+/// commit, so its Err and non-zero branches are omitted per
+/// `.claude/rules/testability-means-simplicity.md`.
+fn finalize_commit(message_file: &str, branch: &str, cwd: &std::path::Path) -> Value {
     // Step 1: git commit -F <message_file>
-    match git(&["commit", "-F", message_file], LOCAL_TIMEOUT) {
+    match run_git_in_dir(cwd, &["commit", "-F", message_file], LOCAL_TIMEOUT) {
         Err(e) => {
             remove_message_file(message_file);
             return json!({
@@ -111,107 +125,48 @@ pub fn finalize_commit_inner(
         }
     }
 
-    // Capture post-commit SHA for pull_merged detection.
-    // If this fails, default to pull_merged=true (safe: don't refresh sentinel).
-    let post_commit_sha =
-        git(&["rev-parse", "HEAD"], LOCAL_TIMEOUT)
-            .ok()
-            .and_then(|(code, stdout, _)| {
-                if code == 0 {
-                    Some(stdout.trim().to_string())
-                } else {
-                    None
-                }
-            });
+    // Capture post-commit SHA for pull_merged detection. After a successful
+    // commit, git is alive and HEAD exists — both Err and non-zero branches
+    // would be unreachable defensive code.
+    let (_, post_stdout, _) = run_git_in_dir(cwd, &["rev-parse", "HEAD"], LOCAL_TIMEOUT)
+        .expect("git located by commit call");
+    let post_commit_sha = post_stdout.trim().to_string();
 
     // Step 2: git pull origin <branch>
-    match git(&["pull", "origin", branch], NETWORK_TIMEOUT) {
-        Err(e) => {
-            return json!({
-                "status": "error",
-                "step": "pull",
-                "message": format!("git pull {}", e)
-            });
+    let (pull_code, _, pull_stderr) =
+        run_git_in_dir(cwd, &["pull", "origin", branch], NETWORK_TIMEOUT)
+            .expect("git located by commit call");
+    if pull_code != 0 {
+        let (_, status_stdout, _) = run_git_in_dir(cwd, &["status", "--porcelain"], LOCAL_TIMEOUT)
+            .expect("git located by commit call");
+        let conflicts = parse_conflict_files(&status_stdout);
+        if !conflicts.is_empty() {
+            return json!({"status": "conflict", "files": conflicts});
         }
-        Ok((code, _, stderr)) if code != 0 => {
-            // Check for merge conflicts
-            match git(&["status", "--porcelain"], LOCAL_TIMEOUT) {
-                Err(_) => {
-                    return json!({
-                        "status": "error",
-                        "step": "pull",
-                        "message": stderr.trim()
-                    });
-                }
-                Ok((_, stdout, _)) => {
-                    let conflicts = parse_conflict_files(&stdout);
-                    if !conflicts.is_empty() {
-                        return json!({"status": "conflict", "files": conflicts});
-                    }
-                    return json!({
-                        "status": "error",
-                        "step": "pull",
-                        "message": stderr.trim()
-                    });
-                }
-            }
-        }
-        Ok(_) => {} // pull succeeded
+        return json!({
+            "status": "error",
+            "step": "pull",
+            "message": pull_stderr.trim()
+        });
     }
 
     // Step 3: git push
-    match git(&["push"], NETWORK_TIMEOUT) {
-        Err(e) => {
-            return json!({
-                "status": "error",
-                "step": "push",
-                "message": format!("git push {}", e)
-            });
-        }
-        Ok((code, _, stderr)) if code != 0 => {
-            return json!({
-                "status": "error",
-                "step": "push",
-                "message": stderr.trim()
-            });
-        }
-        Ok(_) => {}
+    let (push_code, _, push_stderr) =
+        run_git_in_dir(cwd, &["push"], NETWORK_TIMEOUT).expect("git located by commit call");
+    if push_code != 0 {
+        return json!({
+            "status": "error",
+            "step": "push",
+            "message": push_stderr.trim()
+        });
     }
 
-    // Step 4: git rev-parse HEAD
-    match git(&["rev-parse", "HEAD"], LOCAL_TIMEOUT) {
-        Err(_) => json!({
-            "status": "ok",
-            "sha": "",
-            "pull_merged": true,
-            "warning": "commit succeeded but SHA retrieval timed out"
-        }),
-        Ok((code, _, _)) if code != 0 => json!({
-            "status": "ok",
-            "sha": "",
-            "pull_merged": true,
-            "warning": "commit succeeded but SHA retrieval failed"
-        }),
-        Ok((_, stdout, _)) => {
-            let final_sha = stdout.trim();
-            let pull_merged = post_commit_sha.as_deref() != Some(final_sha);
-            json!({"status": "ok", "sha": final_sha, "pull_merged": pull_merged})
-        }
-    }
-}
-
-/// Adapter: prepends `git -C <cwd>` so `run_impl` can target a specific
-/// directory without `set_current_dir` (which races in parallel tests).
-/// Delegates to the shared `run_cmd_with_timeout` helper, which owns the
-/// subprocess-spawn/poll/kill logic and is covered by its own tests.
-fn run_git_in_dir(
-    cwd: &std::path::Path,
-    args: &[&str],
-    timeout_secs: u64,
-) -> Result<(i32, String, String), String> {
-    let mut cmd_args = vec!["git", "-C", cwd.to_str().unwrap_or(".")];
-    cmd_args.extend_from_slice(args);
-    run_cmd_with_timeout(&cmd_args, timeout_secs)
+    // Step 4: final rev-parse HEAD
+    let (_, final_stdout, _) = run_git_in_dir(cwd, &["rev-parse", "HEAD"], LOCAL_TIMEOUT)
+        .expect("git located by commit call");
+    let final_sha = final_stdout.trim();
+    let pull_merged = post_commit_sha != final_sha;
+    json!({"status": "ok", "sha": final_sha, "pull_merged": pull_merged})
 }
 
 /// Testable entry point: enforces CI, runs finalize-commit, then maintains
@@ -284,16 +239,12 @@ pub fn run_impl(
             &args.branch,
             &format!("[Phase {}] finalize-commit — ci (ok)", pn),
         );
-        let cwd_owned = cwd.to_path_buf();
-        let git = |git_args: &[&str], timeout: u64| -> Result<(i32, String, String), String> {
-            run_git_in_dir(&cwd_owned, git_args, timeout)
-        };
 
         // Capture the staged diff for the plan-deviation gate.
         // An error or non-zero exit from `git diff --cached`
         // produces an empty diff, which makes the gate a no-op
         // (the plan has no tests to cross-reference against).
-        let staged_diff = match git(&["diff", "--cached"], LOCAL_TIMEOUT) {
+        let staged_diff = match run_git_in_dir(cwd, &["diff", "--cached"], LOCAL_TIMEOUT) {
             Ok((0, stdout, _)) => stdout,
             _ => String::new(),
         };
@@ -304,7 +255,7 @@ pub fn run_impl(
         // enforcement of `.claude/rules/plan-commit-atomicity.md`
         // "Plan Signature Deviations Must Be Logged".
         match crate::plan_deviation::run_impl(root, &args.branch, &staged_diff) {
-            Ok(()) => finalize_commit_inner(&args.message_file, &args.branch, &git),
+            Ok(()) => finalize_commit(&args.message_file, &args.branch, cwd),
             Err(deviations) => {
                 emit_deviation_stderr(&args.branch, &deviations);
                 let _ = append_log(

@@ -13,13 +13,10 @@
 //! Tests live at tests/link_blocked_by.rs per .claude/rules/test-placement.md —
 //! no inline #[cfg(test)] in this file.
 
-use std::time::Duration;
-
 use clap::Parser;
 use serde_json::json;
 
-use crate::complete_preflight::LOCAL_TIMEOUT;
-use crate::issue::{fetch_database_id_with_runner, run_gh_cmd};
+use crate::issue::{fetch_database_id, run_gh_cmd};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -55,8 +52,7 @@ pub fn link_blocked_by(
         ));
     }
 
-    // Resolve blocked issue to verify it exists (API URL uses blocked_number, not the DB ID)
-    let (_, err) = fetch_database_id_with_runner(repo, blocked_number, &run_gh_cmd);
+    let (_, err) = fetch_database_id(repo, blocked_number);
     if let Some(e) = err {
         return Err(format!(
             "Failed to resolve blocked #{}: {}",
@@ -64,7 +60,7 @@ pub fn link_blocked_by(
         ));
     }
 
-    let (blocking_id, err) = fetch_database_id_with_runner(repo, blocking_number, &run_gh_cmd);
+    let (blocking_id, err) = fetch_database_id(repo, blocking_number);
     if let Some(e) = err {
         return Err(format!(
             "Failed to resolve blocking #{}: {}",
@@ -78,20 +74,16 @@ pub fn link_blocked_by(
         repo, blocked_number
     );
     let issue_id_field = format!("issue_id={}", blocking_id);
-    let timeout = Duration::from_secs(LOCAL_TIMEOUT);
 
-    run_gh_cmd(
-        &[
-            "gh",
-            "api",
-            &api_path,
-            "--method",
-            "POST",
-            "-F",
-            &issue_id_field,
-        ],
-        Some(timeout),
-    )?;
+    run_gh_cmd(&[
+        "gh",
+        "api",
+        &api_path,
+        "--method",
+        "POST",
+        "-F",
+        &issue_id_field,
+    ])?;
 
     Ok((blocked_number, blocking_number))
 }

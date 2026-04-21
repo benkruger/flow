@@ -13,13 +13,10 @@
 //! Tests live at tests/create_sub_issue.rs per .claude/rules/test-placement.md —
 //! no inline #[cfg(test)] in this file.
 
-use std::time::Duration;
-
 use clap::Parser;
 use serde_json::json;
 
-use crate::complete_preflight::LOCAL_TIMEOUT;
-use crate::issue::{fetch_database_id_with_runner, run_gh_cmd};
+use crate::issue::{fetch_database_id, run_gh_cmd};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -55,8 +52,7 @@ pub fn create_sub_issue(
         ));
     }
 
-    // Resolve parent to verify it exists (API URL uses parent_number, not the DB ID)
-    let (_, err) = fetch_database_id_with_runner(repo, parent_number, &run_gh_cmd);
+    let (_, err) = fetch_database_id(repo, parent_number);
     if let Some(e) = err {
         return Err(format!(
             "Failed to resolve parent #{}: {}",
@@ -64,7 +60,7 @@ pub fn create_sub_issue(
         ));
     }
 
-    let (child_id, err) = fetch_database_id_with_runner(repo, child_number, &run_gh_cmd);
+    let (child_id, err) = fetch_database_id(repo, child_number);
     if let Some(e) = err {
         return Err(format!("Failed to resolve child #{}: {}", child_number, e));
     }
@@ -72,20 +68,16 @@ pub fn create_sub_issue(
 
     let api_path = format!("repos/{}/issues/{}/sub_issues", repo, parent_number);
     let sub_issue_field = format!("sub_issue_id={}", child_id);
-    let timeout = Duration::from_secs(LOCAL_TIMEOUT);
 
-    run_gh_cmd(
-        &[
-            "gh",
-            "api",
-            &api_path,
-            "--method",
-            "POST",
-            "-F",
-            &sub_issue_field,
-        ],
-        Some(timeout),
-    )?;
+    run_gh_cmd(&[
+        "gh",
+        "api",
+        &api_path,
+        "--method",
+        "POST",
+        "-F",
+        &sub_issue_field,
+    ])?;
 
     Ok((parent_number, child_number))
 }

@@ -4,14 +4,9 @@
 //! Returns JSON with formatted_time and continue_action for the skill
 //! to use in the COMPLETE banner and transition HARD-GATE.
 //!
-//! # Dependency-injected core
-//!
-//! [`run_impl_with_deps`] is the fully-testable core: it accepts the
-//! project root as a `&Path` and the Slack notifier as an injectable
-//! closure, so unit tests can drive every branch against a `TempDir`
-//! fixture without touching host state or spawning `curl`. Production
-//! [`run_impl_main`] is a one-line binder that passes the real
-//! notifier.
+//! Tests live in `tests/start_finalize.rs` per
+//! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]` block
+//! in this file.
 
 use std::path::Path;
 
@@ -45,34 +40,27 @@ pub struct Args {
     pub auto: bool,
 }
 
-/// Testable core with injected project root and Slack notifier.
-///
-/// Production `run_impl_main` binds `notifier` to [`notify_slack::notify`].
-/// Tests supply a `TempDir` path and a stub closure returning canned
-/// `Value` responses.
-pub fn run_impl_with_deps(
-    args: &Args,
-    root: &Path,
-    notifier: &dyn Fn(&notify_slack::Args) -> Value,
-) -> Value {
+/// Main-arm entry point: runs the full start-finalize sequence.
+/// Tests supply a `TempDir` `root` to drive every branch without
+/// touching host state.
+pub fn run_impl_main(args: &Args, root: &Path) -> (Value, i32) {
     let branch = &args.branch;
     let paths = FlowPaths::new(root, branch);
     let state_path = paths.state_file();
 
     if !state_path.exists() {
-        return json!({
-            "status": "error",
-            "message": format!("No state file found: {}", state_path.display()),
-        });
+        return (
+            json!({
+                "status": "error",
+                "message": format!("No state file found: {}", state_path.display()),
+            }),
+            0,
+        );
     }
 
     // Update TUI step counter
     update_step(&state_path, 5);
 
-    // Load frozen phase config if available. Combining the exists +
-    // parse + destructure into a single match keeps coverage scoped
-    // to two observable outcomes (loaded vs not-loaded) rather than
-    // three Option-valued closures.
     let frozen_path = paths.frozen_phases();
     let (frozen_order, frozen_commands) = match phase_config::load_phase_config(&frozen_path) {
         Ok(c) => (Some(c.order), Some(c.commands)),
@@ -93,14 +81,14 @@ pub fn run_impl_with_deps(
         *result_holder.borrow_mut() = result;
     });
 
-    match mutate_result {
-        Ok(_) => {}
-        Err(e) => {
-            return json!({
+    if let Err(e) = mutate_result {
+        return (
+            json!({
                 "status": "error",
                 "message": format!("State mutation failed: {}", e),
-            });
-        }
+            }),
+            0,
+        );
     }
 
     let phase_result = result_holder.into_inner();
@@ -122,7 +110,8 @@ pub fn run_impl_with_deps(
         .unwrap_or("ask")
         .to_string();
 
-    // Step 2: Slack notification (best-effort)
+    // Step 2: Slack notification (best-effort). notify_slack::notify
+    // returns {"status":"skipped"} when the Slack env vars are unset.
     let mut slack_result = json!({"status": "skipped"});
     if let Some(ref pr_url) = args.pr_url {
         let message = format!("Phase 1: Start complete — PR created for {}", branch);
@@ -133,19 +122,13 @@ pub fn run_impl_with_deps(
             thread_ts: None,
             feature: None,
         };
-        slack_result = notifier(&slack_args);
+        slack_result = notify_slack::notify(&slack_args);
 
         if slack_result["status"] == "ok" {
-            // Store thread_ts and notification in state
             let ts = slack_result["ts"].as_str().unwrap_or("").to_string();
             let msg_clone = message.clone();
             let ts_clone = ts.clone();
 
-            // SAFETY: The first mutate_state call (phase_complete)
-            // runs against the same state file and wrote back a
-            // valid object. By this point the object invariant
-            // holds, so direct IndexMut assignments are safe
-            // without a per-closure object guard.
             let _ = mutate_state(&state_path, &mut |state| {
                 state["slack_thread_ts"] = json!(&ts_clone);
 
@@ -174,7 +157,6 @@ pub fn run_impl_with_deps(
         );
     }
 
-    // Build response
     let mut response = json!({
         "status": "ok",
         "formatted_time": formatted_time,
@@ -185,16 +167,5 @@ pub fn run_impl_with_deps(
         response["slack"] = slack_result;
     }
 
-    response
-}
-
-/// Main-arm entry point: returns the `(Value, i32)` contract that
-/// `dispatch::dispatch_json` consumes. Takes `root: &Path` per
-/// `.claude/rules/rust-patterns.md` "Main-arm dispatch" so unit
-/// tests can pass a `TempDir` fixture instead of the host
-/// `project_root()`. `start_finalize::run_impl_with_deps` always
-/// returns `Value` — business errors appear in the `status: "error"`
-/// payload with exit code `0`.
-pub fn run_impl_main(args: &Args, root: &Path) -> (Value, i32) {
-    (run_impl_with_deps(args, root, &notify_slack::notify), 0)
+    (response, 0)
 }

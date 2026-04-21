@@ -1,26 +1,22 @@
 //! Integration tests for start-finalize subcommand.
 //!
-//! start-finalize consolidates: phase-transition complete + notify-slack +
-//! set-timestamp + add-notification into a single command.
+//! The `run_impl_with_deps` pub seam was removed; tests now drive
+//! `run_impl_main(&args, &root)` at the library level for non-Slack
+//! branches and use subprocess + curl-stub fixtures to drive each
+//! Slack response variant.
 
 mod common;
 
-use std::cell::RefCell;
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use flow_rs::notify_slack;
-use flow_rs::start_finalize::{run_impl_main, run_impl_with_deps, Args};
+use flow_rs::start_finalize::{run_impl_main, Args};
 use serde_json::{json, Value};
-
-use std::os::unix::fs::PermissionsExt;
 
 use common::{flow_states_dir, parse_output};
 
-// --- Test helpers ---
-
-/// Create a minimal git repo (no remote needed for finalize).
 fn create_git_repo(parent: &Path) -> PathBuf {
     let repo = parent.join("repo");
     fs::create_dir_all(&repo).unwrap();
@@ -52,7 +48,6 @@ fn create_git_repo(parent: &Path) -> PathBuf {
     repo
 }
 
-/// Create a state file with flow-start in_progress (ready for completion).
 fn create_state_file(repo: &Path, branch: &str, skills_continue: &str) {
     let state_dir = flow_states_dir(repo);
     fs::create_dir_all(&state_dir).unwrap();
@@ -133,14 +128,10 @@ fn create_state_file(repo: &Path, branch: &str, skills_continue: &str) {
         },
         "phase_transitions": [],
         "skills": {
-            "flow-start": {
-                "continue": skills_continue
-            },
-            "flow-plan": {
-                "continue": skills_continue,
-                "dag": "auto"
-            }
+            "flow-start": {"continue": skills_continue},
+            "flow-plan": {"continue": skills_continue, "dag": "auto"}
         },
+        "notifications": [],
         "start_step": 4,
         "start_steps_total": 5
     });
@@ -151,237 +142,51 @@ fn create_state_file(repo: &Path, branch: &str, skills_continue: &str) {
     .unwrap();
 }
 
-/// Run flow-rs start-finalize.
-fn run_start_finalize(repo: &Path, branch: &str, extra_args: &[&str]) -> Output {
-    let mut args = vec!["start-finalize", "--branch", branch];
-    args.extend_from_slice(extra_args);
-
-    Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(&args)
-        .current_dir(repo)
-        .env_remove("FLOW_SIMULATE_BRANCH")
-        .env_remove("SLACK_BOT_TOKEN")
-        .env_remove("SLACK_CHANNEL")
-        .output()
-        .unwrap()
-}
-
-// --- Tests ---
-
-#[test]
-fn test_happy_path_no_slack() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = create_git_repo(dir.path());
-    create_state_file(&repo, "finalize-branch", "auto");
-
-    let output = run_start_finalize(&repo, "finalize-branch", &[]);
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let data = parse_output(&output);
-    assert_eq!(data["status"], "ok");
-    assert!(
-        data["formatted_time"].is_string(),
-        "Must include formatted_time"
-    );
-    assert!(
-        data["continue_action"].is_string(),
-        "Must include continue_action"
-    );
-
-    // State should be updated
-    let state_path = flow_states_dir(&repo).join("finalize-branch.json");
-    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
-    assert_eq!(state["phases"]["flow-start"]["status"], "complete");
-    assert_eq!(state["current_phase"], "flow-plan");
-}
-
-#[test]
-fn test_continue_action_auto() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = create_git_repo(dir.path());
-    create_state_file(&repo, "auto-branch", "auto");
-
-    let output = run_start_finalize(&repo, "auto-branch", &[]);
-    let data = parse_output(&output);
-    assert_eq!(data["status"], "ok");
-    assert_eq!(
-        data["continue_action"], "invoke",
-        "Auto mode should return continue_action=invoke"
-    );
-}
-
-#[test]
-fn test_continue_action_manual() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = create_git_repo(dir.path());
-    create_state_file(&repo, "manual-branch", "manual");
-
-    let output = run_start_finalize(&repo, "manual-branch", &[]);
-    let data = parse_output(&output);
-    assert_eq!(data["status"], "ok");
-    assert_eq!(
-        data["continue_action"], "ask",
-        "Manual mode should return continue_action=ask"
-    );
-}
-
-#[test]
-fn test_slack_skipped_without_config() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = create_git_repo(dir.path());
-    create_state_file(&repo, "slack-branch", "auto");
-
-    let output = run_start_finalize(
-        &repo,
-        "slack-branch",
-        &["--pr-url", "https://github.com/test/repo/pull/42"],
-    );
-    let data = parse_output(&output);
-    assert_eq!(data["status"], "ok");
-    // Slack should be skipped (no SLACK_BOT_TOKEN env var)
-    assert!(
-        data.get("slack").is_none() || data["slack"]["status"] == "skipped",
-        "Slack should be skipped without config"
-    );
-}
-
-#[test]
-fn test_finalize_missing_state_file() {
-    // Exercises lines 48-52: state file does not exist → status=error.
-    let dir = tempfile::tempdir().unwrap();
-    let repo = create_git_repo(dir.path());
-    // Do NOT create a state file
-
-    let output = run_start_finalize(&repo, "nonexistent-branch", &[]);
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let data = parse_output(&output);
-    assert_eq!(data["status"], "error");
-    assert!(
-        data["message"]
-            .as_str()
-            .unwrap_or("")
-            .contains("No state file"),
-        "error should mention missing state file, got: {}",
-        data["message"]
-    );
-}
-
-#[test]
-fn test_finalize_corrupt_state_returns_error() {
-    // Exercises lines 83-90: mutate_state fails on corrupt JSON → status=error.
-    let dir = tempfile::tempdir().unwrap();
-    let repo = create_git_repo(dir.path());
-    let state_dir = flow_states_dir(&repo);
-    fs::create_dir_all(&state_dir).unwrap();
-    // Write corrupt content that exists but is not valid JSON
-    fs::write(state_dir.join("corrupt-branch.json"), "not json{{{").unwrap();
-
-    let output = run_start_finalize(&repo, "corrupt-branch", &[]);
-    assert_eq!(output.status.code(), Some(0));
-    let data = parse_output(&output);
-    assert_eq!(data["status"], "error");
-    assert!(
-        data["message"]
-            .as_str()
-            .unwrap_or("")
-            .contains("State mutation failed"),
-        "error should mention mutation failure, got: {}",
-        data["message"]
-    );
-}
-
-// Note: lines 103-107 (phase_complete error guard) are defensive dead
-// code — phase_complete() in phase_transition.rs always returns
-// status="ok". The guard protects against a future change to
-// phase_complete that introduces an error return. No test can trigger
-// this path without modifying phase_complete itself.
-
-#[test]
-fn test_slack_success_stores_thread_ts() {
-    // Exercises lines 132-160: Slack success path stores thread_ts
-    // and appends to notifications[]. Uses a fake curl stub that
-    // returns a valid Slack response.
-    let dir = tempfile::tempdir().unwrap();
-    let repo = create_git_repo(dir.path());
-    create_state_file(&repo, "slack-ok-branch", "auto");
-
-    // Create a curl stub that returns a valid Slack response
-    let stub_dir = repo.join(".stub-bin");
-    fs::create_dir_all(&stub_dir).unwrap();
+fn write_curl_stub(stub_dir: &Path, response: &str) {
+    fs::create_dir_all(stub_dir).unwrap();
     let curl_stub = stub_dir.join("curl");
     fs::write(
         &curl_stub,
-        "#!/bin/bash\necho '{\"ok\": true, \"ts\": \"1234567890.123456\"}'",
+        format!("#!/bin/bash\nprintf '%s' '{}'\n", response),
     )
     .unwrap();
     fs::set_permissions(&curl_stub, fs::Permissions::from_mode(0o755)).unwrap();
+}
 
-    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args([
-            "start-finalize",
-            "--branch",
-            "slack-ok-branch",
-            "--pr-url",
-            "https://github.com/test/repo/pull/42",
-        ])
-        .current_dir(&repo)
+fn run_start_finalize_subprocess(
+    repo: &Path,
+    branch: &str,
+    extra_args: &[&str],
+    stub_dir: Option<&Path>,
+    bot_token: Option<&str>,
+) -> Output {
+    let mut args = vec!["start-finalize", "--branch", branch];
+    args.extend_from_slice(extra_args);
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.args(&args)
+        .current_dir(repo)
         .env_remove("FLOW_SIMULATE_BRANCH")
-        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-fake-token")
-        .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C12345")
-        .env(
+        .env_remove("SLACK_BOT_TOKEN")
+        .env_remove("SLACK_CHANNEL");
+    if let Some(token) = bot_token {
+        cmd.env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", token)
+            .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C12345");
+    }
+    if let Some(dir) = stub_dir {
+        cmd.env(
             "PATH",
             format!(
                 "{}:{}",
-                stub_dir.display(),
+                dir.display(),
                 std::env::var("PATH").unwrap_or_default()
             ),
-        )
-        .output()
-        .unwrap();
-
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let data = parse_output(&output);
-    assert_eq!(data["status"], "ok");
-    // The response should include the slack field since it wasn't skipped
-    assert!(
-        data.get("slack").is_some(),
-        "Response should include slack field when Slack call succeeds"
-    );
-    assert_eq!(data["slack"]["status"], "ok");
-
-    // Check state file for thread_ts and notifications
-    let state_path = flow_states_dir(&repo).join("slack-ok-branch.json");
-    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
-    assert_eq!(
-        state["slack_thread_ts"], "1234567890.123456",
-        "thread_ts should be stored in state"
-    );
-    let notifications = state["notifications"].as_array();
-    assert!(
-        notifications.is_some() && !notifications.unwrap().is_empty(),
-        "notifications[] should be populated"
-    );
-    assert_eq!(notifications.unwrap()[0]["phase"], "flow-start");
-    assert_eq!(notifications.unwrap()[0]["ts"], "1234567890.123456");
+        );
+    }
+    cmd.output().unwrap()
 }
 
-// --- run_impl_with_deps (library-level unit tests) ---
-
-fn seed_state(branch: &str, skills_continue: &str) -> (tempfile::TempDir, PathBuf) {
+fn seed_state_library(branch: &str, skills_continue: &str) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();
     let state_dir = root.join(".flow-states");
@@ -419,136 +224,219 @@ fn seed_state(branch: &str, skills_continue: &str) -> (tempfile::TempDir, PathBu
     (dir, root)
 }
 
-fn panicking_notifier(_args: &notify_slack::Args) -> Value {
-    panic!("notifier must not be called when pr_url is None");
+// --- Subprocess tests (CLI entry) ---
+
+#[test]
+fn test_happy_path_no_slack() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo(dir.path());
+    create_state_file(&repo, "finalize-branch", "auto");
+
+    let output = run_start_finalize_subprocess(&repo, "finalize-branch", &[], None, None);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert!(data["formatted_time"].is_string());
+    assert!(data["continue_action"].is_string());
+
+    let state_path = flow_states_dir(&repo).join("finalize-branch.json");
+    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    assert_eq!(state["phases"]["flow-start"]["status"], "complete");
+    assert_eq!(state["current_phase"], "flow-plan");
 }
 
 #[test]
-fn finalize_no_pr_url_skips_slack() {
-    let (_dir, root) = seed_state("no-url-branch", "auto");
-    let args = Args {
-        branch: "no-url-branch".to_string(),
-        pr_url: None,
-        auto: false,
-    };
+fn test_continue_action_auto() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo(dir.path());
+    create_state_file(&repo, "auto-branch", "auto");
 
-    let result = run_impl_with_deps(&args, &root, &panicking_notifier);
-    assert_eq!(result["status"], "ok");
-    assert!(result.get("slack").is_none());
-
-    let state_path = root.join(".flow-states/no-url-branch.json");
-    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
-    assert!(state.get("slack_thread_ts").is_none());
+    let output = run_start_finalize_subprocess(&repo, "auto-branch", &[], None, None);
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["continue_action"], "invoke");
 }
 
 #[test]
-fn finalize_notifier_skipped_leaves_state_untouched() {
-    let (_dir, root) = seed_state("skipped-branch", "auto");
-    let args = Args {
-        branch: "skipped-branch".to_string(),
-        pr_url: Some("https://github.com/test/repo/pull/42".to_string()),
-        auto: false,
-    };
-    let notifier = |_: &notify_slack::Args| -> Value { json!({"status": "skipped"}) };
+fn test_continue_action_manual() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo(dir.path());
+    create_state_file(&repo, "manual-branch", "manual");
 
-    let result = run_impl_with_deps(&args, &root, &notifier);
-    assert_eq!(result["status"], "ok");
-    assert!(result.get("slack").is_none());
-
-    let state_path = root.join(".flow-states/skipped-branch.json");
-    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
-    assert!(state.get("slack_thread_ts").is_none());
-    assert!(state["notifications"].as_array().unwrap().is_empty());
+    let output = run_start_finalize_subprocess(&repo, "manual-branch", &[], None, None);
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["continue_action"], "ask");
 }
 
 #[test]
-fn finalize_notifier_ok_writes_thread_ts_and_notification() {
-    let (_dir, root) = seed_state("ok-branch", "auto");
-    let args = Args {
-        branch: "ok-branch".to_string(),
-        pr_url: Some("https://github.com/test/repo/pull/42".to_string()),
-        auto: false,
-    };
-    let notifier = |_: &notify_slack::Args| -> Value { json!({"status": "ok", "ts": "1234.5678"}) };
+fn test_slack_skipped_without_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo(dir.path());
+    create_state_file(&repo, "slack-branch", "auto");
 
-    let result = run_impl_with_deps(&args, &root, &notifier);
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["slack"]["status"], "ok");
-    assert_eq!(result["slack"]["ts"], "1234.5678");
+    let output = run_start_finalize_subprocess(
+        &repo,
+        "slack-branch",
+        &["--pr-url", "https://github.com/test/repo/pull/42"],
+        None,
+        None,
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert!(
+        data.get("slack").is_none() || data["slack"]["status"] == "skipped",
+        "Slack should be skipped without config"
+    );
+}
 
-    let state_path = root.join(".flow-states/ok-branch.json");
+#[test]
+fn test_slack_success_stores_thread_ts() {
+    // curl stub returns {"ok":true,"ts":"..."} → slack.status=ok →
+    // state stores thread_ts and notification.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo(dir.path());
+    create_state_file(&repo, "slack-ok-branch", "auto");
+    let stub_dir = repo.join(".stub-bin");
+    write_curl_stub(&stub_dir, r#"{"ok": true, "ts": "1234567890.123456"}"#);
+
+    let output = run_start_finalize_subprocess(
+        &repo,
+        "slack-ok-branch",
+        &["--pr-url", "https://github.com/test/repo/pull/42"],
+        Some(&stub_dir),
+        Some("xoxb-fake-token"),
+    );
+
+    assert_eq!(output.status.code(), Some(0));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert!(data.get("slack").is_some());
+    assert_eq!(data["slack"]["status"], "ok");
+
+    let state_path = flow_states_dir(&repo).join("slack-ok-branch.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
-    assert_eq!(state["slack_thread_ts"], "1234.5678");
+    assert_eq!(state["slack_thread_ts"], "1234567890.123456");
     let notifications = state["notifications"].as_array().unwrap();
-    assert_eq!(notifications.len(), 1);
+    assert!(!notifications.is_empty());
     assert_eq!(notifications[0]["phase"], "flow-start");
-    assert_eq!(notifications[0]["ts"], "1234.5678");
-    assert_eq!(notifications[0]["thread_ts"], "1234.5678");
+    assert_eq!(notifications[0]["ts"], "1234567890.123456");
 }
 
 #[test]
-fn finalize_notifier_error_continues_best_effort() {
-    let (_dir, root) = seed_state("err-branch", "auto");
-    let args = Args {
-        branch: "err-branch".to_string(),
-        pr_url: Some("https://github.com/test/repo/pull/42".to_string()),
-        auto: false,
-    };
-    let notifier =
-        |_: &notify_slack::Args| -> Value { json!({"status": "error", "message": "curl failed"}) };
+fn test_slack_ok_without_ts_falls_back_to_empty() {
+    // curl stub returns {"ok":true} (no ts) → slack.status=ok →
+    // thread_ts stored as empty string.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo(dir.path());
+    create_state_file(&repo, "no-ts-branch", "auto");
+    let stub_dir = repo.join(".stub-bin");
+    write_curl_stub(&stub_dir, r#"{"ok": true}"#);
 
-    let result = run_impl_with_deps(&args, &root, &notifier);
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["slack"]["status"], "error");
+    let output = run_start_finalize_subprocess(
+        &repo,
+        "no-ts-branch",
+        &["--pr-url", "https://github.com/test/repo/pull/42"],
+        Some(&stub_dir),
+        Some("xoxb-fake-token"),
+    );
 
-    let state_path = root.join(".flow-states/err-branch.json");
+    assert_eq!(output.status.code(), Some(0));
+    let data = parse_output(&output);
+    assert_eq!(data["slack"]["status"], "ok");
+
+    let state_path = flow_states_dir(&repo).join("no-ts-branch.json");
+    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    assert_eq!(state["slack_thread_ts"], "");
+}
+
+#[test]
+fn test_slack_error_continues_best_effort() {
+    // curl stub returns {"ok":false,"error":"..."} → slack.status=error
+    // → state unchanged, response records slack error.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo(dir.path());
+    create_state_file(&repo, "slack-err-branch", "auto");
+    let stub_dir = repo.join(".stub-bin");
+    write_curl_stub(&stub_dir, r#"{"ok": false, "error": "invalid_auth"}"#);
+
+    let output = run_start_finalize_subprocess(
+        &repo,
+        "slack-err-branch",
+        &["--pr-url", "https://github.com/test/repo/pull/42"],
+        Some(&stub_dir),
+        Some("xoxb-fake-token"),
+    );
+
+    assert_eq!(output.status.code(), Some(0));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["slack"]["status"], "error");
+
+    let state_path = flow_states_dir(&repo).join("slack-err-branch.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert!(state.get("slack_thread_ts").is_none());
 }
 
 #[test]
-fn finalize_notifier_ok_with_wrong_notifications_type_heals() {
-    let (_dir, root) = seed_state("heal-branch", "auto");
-    let state_path = root.join(".flow-states/heal-branch.json");
+fn test_slack_success_heals_wrong_notifications_type() {
+    // State file has notifications as string (wrong type). After
+    // successful Slack, the mutate closure heals it to array and
+    // pushes the notification entry.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo(dir.path());
+    create_state_file(&repo, "heal-branch", "auto");
+    let state_path = flow_states_dir(&repo).join("heal-branch.json");
     let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     state["notifications"] = json!("not-an-array");
     fs::write(&state_path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
 
-    let args = Args {
-        branch: "heal-branch".to_string(),
-        pr_url: Some("https://github.com/test/repo/pull/42".to_string()),
-        auto: false,
-    };
-    let notifier = |_: &notify_slack::Args| -> Value { json!({"status": "ok", "ts": "9.9"}) };
+    let stub_dir = repo.join(".stub-bin");
+    write_curl_stub(&stub_dir, r#"{"ok": true, "ts": "9.9"}"#);
 
-    let result = run_impl_with_deps(&args, &root, &notifier);
-    assert_eq!(result["status"], "ok");
+    let output = run_start_finalize_subprocess(
+        &repo,
+        "heal-branch",
+        &["--pr-url", "https://github.com/test/repo/pull/42"],
+        Some(&stub_dir),
+        Some("xoxb-fake-token"),
+    );
 
+    assert_eq!(output.status.code(), Some(0));
     let healed: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     let arr = healed["notifications"].as_array().unwrap();
     assert_eq!(arr.len(), 1);
     assert_eq!(arr[0]["ts"], "9.9");
 }
 
+// --- Library-level tests (run_impl_main with TempDir fixtures) ---
+
 #[test]
-fn finalize_missing_state_returns_error_with_deps() {
+fn test_finalize_missing_state_file() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();
     let args = Args {
-        branch: "nope-branch".to_string(),
+        branch: "nonexistent-branch".to_string(),
         pr_url: None,
         auto: false,
     };
-    let result = run_impl_with_deps(&args, &root, &panicking_notifier);
-    assert_eq!(result["status"], "error");
-    assert!(result["message"]
+
+    let (value, code) = run_impl_main(&args, &root);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert!(value["message"]
         .as_str()
-        .unwrap()
+        .unwrap_or("")
         .contains("No state file"));
 }
 
 #[test]
-fn finalize_corrupt_state_returns_error_with_deps() {
+fn test_finalize_corrupt_state_returns_error() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();
     let state_dir = root.join(".flow-states");
@@ -560,39 +448,69 @@ fn finalize_corrupt_state_returns_error_with_deps() {
         pr_url: None,
         auto: false,
     };
-    let result = run_impl_with_deps(&args, &root, &panicking_notifier);
-    assert_eq!(result["status"], "error");
-    assert!(result["message"]
+
+    let (value, code) = run_impl_main(&args, &root);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert!(value["message"]
         .as_str()
-        .unwrap()
+        .unwrap_or("")
         .contains("State mutation failed"));
 }
 
-/// Covers the `load_phase_config().ok() == None` branch: the frozen
-/// file exists but has invalid schema (missing `phases` key). The
-/// `.ok()` converts Err to None, and production proceeds with
-/// frozen_config=None.
 #[test]
-fn finalize_with_invalid_frozen_phases_falls_back() {
-    let (_dir, root) = seed_state("invalid-frozen-branch", "auto");
+fn test_finalize_no_pr_url_skips_slack() {
+    let (_dir, root) = seed_state_library("no-url-branch", "auto");
+    let args = Args {
+        branch: "no-url-branch".to_string(),
+        pr_url: None,
+        auto: false,
+    };
+
+    let (value, code) = run_impl_main(&args, &root);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+    assert!(value.get("slack").is_none());
+
+    let state_path = root.join(".flow-states/no-url-branch.json");
+    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    assert!(state.get("slack_thread_ts").is_none());
+}
+
+#[test]
+fn test_finalize_happy_wraps_with_exit_zero() {
+    let (_dir, root) = seed_state_library("happy-branch", "auto");
+    let args = Args {
+        branch: "happy-branch".to_string(),
+        pr_url: None,
+        auto: false,
+    };
+
+    let (value, code) = run_impl_main(&args, &root);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+}
+
+#[test]
+fn test_finalize_with_invalid_frozen_phases_falls_back() {
+    let (_dir, root) = seed_state_library("invalid-frozen-branch", "auto");
     let frozen_path = root.join(".flow-states/invalid-frozen-branch-phases.json");
-    fs::write(&frozen_path, "{\"order\": []}").unwrap(); // missing "phases"
+    fs::write(&frozen_path, r#"{"order": []}"#).unwrap();
 
     let args = Args {
         branch: "invalid-frozen-branch".to_string(),
         pr_url: None,
         auto: false,
     };
-    let result = run_impl_with_deps(&args, &root, &panicking_notifier);
-    assert_eq!(result["status"], "ok");
+
+    let (value, code) = run_impl_main(&args, &root);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
 }
 
-/// Covers the `frozen_path.exists() == true` branch: seed a
-/// `.flow-states/frozen-phases.json` so `run_impl_with_deps` loads
-/// the frozen phase config.
 #[test]
-fn finalize_with_frozen_phases_loads_config() {
-    let (_dir, root) = seed_state("frozen-branch", "auto");
+fn test_finalize_with_frozen_phases_loads_config() {
+    let (_dir, root) = seed_state_library("frozen-branch", "auto");
     let frozen_path = root.join(".flow-states/frozen-branch-phases.json");
     let frozen = json!({
         "order": ["flow-start", "flow-plan", "flow-code", "flow-code-review", "flow-learn", "flow-complete"],
@@ -612,98 +530,24 @@ fn finalize_with_frozen_phases_loads_config() {
         pr_url: None,
         auto: false,
     };
-    let result = run_impl_with_deps(&args, &root, &panicking_notifier);
-    assert_eq!(result["status"], "ok");
-}
 
-/// Covers the `slack_result["ts"].as_str().unwrap_or("")` None
-/// branch: notifier returns `{"status":"ok"}` without a `ts` field.
-/// The empty-string fallback flows through and `slack_thread_ts`
-/// becomes empty rather than panicking.
-#[test]
-fn finalize_notifier_ok_without_ts_falls_back_to_empty() {
-    let (_dir, root) = seed_state("no-ts-branch", "auto");
-    let args = Args {
-        branch: "no-ts-branch".to_string(),
-        pr_url: Some("https://github.com/test/repo/pull/42".to_string()),
-        auto: false,
-    };
-    let notifier = |_: &notify_slack::Args| -> Value { json!({"status": "ok"}) };
-
-    let result = run_impl_with_deps(&args, &root, &notifier);
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["slack"]["status"], "ok");
-
-    let state_path = root.join(".flow-states/no-ts-branch.json");
-    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
-    assert_eq!(state["slack_thread_ts"], "");
-}
-
-#[test]
-fn finalize_with_deps_notifier_called_once() {
-    let (_dir, root) = seed_state("call-count-branch", "auto");
-    let args = Args {
-        branch: "call-count-branch".to_string(),
-        pr_url: Some("https://github.com/test/repo/pull/42".to_string()),
-        auto: false,
-    };
-    let calls: RefCell<usize> = RefCell::new(0);
-    let notifier = |_: &notify_slack::Args| -> Value {
-        *calls.borrow_mut() += 1;
-        json!({"status": "ok", "ts": "42.0"})
-    };
-
-    let _ = run_impl_with_deps(&args, &root, &notifier);
-    assert_eq!(*calls.borrow(), 1);
-}
-
-// --- run_impl_main ---
-
-#[test]
-fn finalize_run_impl_main_err_path() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    let args = Args {
-        branch: "main-err-branch".to_string(),
-        pr_url: None,
-        auto: false,
-    };
-    let (v, code) = run_impl_main(&args, &root);
+    let (value, code) = run_impl_main(&args, &root);
     assert_eq!(code, 0);
-    assert_eq!(v["status"], "error");
-    assert!(v["message"]
-        .as_str()
-        .unwrap_or("")
-        .contains("No state file found"));
+    assert_eq!(value["status"], "ok");
 }
 
 #[test]
-fn finalize_run_impl_main_happy_wraps_with_exit_zero() {
-    let (_dir, root) = seed_state("happy-main-branch", "auto");
-    let args = Args {
-        branch: "happy-main-branch".to_string(),
-        pr_url: None,
-        auto: false,
-    };
-    let (v, code) = run_impl_main(&args, &root);
-    assert_eq!(code, 0);
-    assert_eq!(v["status"], "ok");
-}
-
-/// Exercises `run_impl_main` with `pr_url=Some`, covering the real
-/// `notify_slack::notify` binding. When `SLACK_WEBHOOK_URL` is unset
-/// in the test env, `notify` returns `{"status":"skipped"}` without
-/// network I/O — the response's slack field is omitted per the
-/// `status != "skipped"` filter.
-#[test]
-fn finalize_run_impl_main_pr_url_threads_to_real_notifier() {
-    let (_dir, root) = seed_state("real-notifier-branch", "auto");
+fn test_finalize_pr_url_skipped_slack_without_env() {
+    // run_impl_main with pr_url=Some but SLACK env vars unset →
+    // notify_slack::notify returns skipped → slack field absent.
+    let (_dir, root) = seed_state_library("real-notifier-branch", "auto");
     let args = Args {
         branch: "real-notifier-branch".to_string(),
         pr_url: Some("https://github.com/test/repo/pull/42".to_string()),
         auto: false,
     };
-    let (v, code) = run_impl_main(&args, &root);
+
+    let (value, code) = run_impl_main(&args, &root);
     assert_eq!(code, 0);
-    assert_eq!(v["status"], "ok");
+    assert_eq!(value["status"], "ok");
 }

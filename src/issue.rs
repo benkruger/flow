@@ -17,13 +17,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
 
 use clap::Parser;
 use regex::Regex;
 use serde_json::json;
-
-use crate::complete_preflight::LOCAL_TIMEOUT;
 
 #[derive(Parser, Debug)]
 #[command(name = "issue", about = "Create a GitHub issue")]
@@ -83,13 +80,7 @@ pub(crate) fn should_reject_for_code_review(
     if override_flag {
         return None;
     }
-    let Some(content) = state_json else {
-        // No state file — command is running outside an active flow.
-        return None;
-    };
-    // Empty state is treated as "no flow"; any other non-empty content
-    // that fails to parse or lacks current_phase is treated as "flow
-    // state present but phase unknown" — fail CLOSED.
+    let content = state_json?;
     if content.trim().is_empty() {
         return None;
     }
@@ -124,8 +115,6 @@ pub(crate) fn should_reject_for_code_review(
     }
 }
 
-/// Standard rejection message returned by both the parsed-value gate
-/// and the raw-text duplicate-key defense.
 fn code_review_block_message() -> String {
     "bin/flow issue is disabled during Code Review. All real \
      findings must be fixed in Step 4. If this is a FLOW \
@@ -135,19 +124,11 @@ fn code_review_block_message() -> String {
         .to_string()
 }
 
-/// Defense-in-depth scanner against duplicate-key bypass. Walks the
-/// raw JSON text looking for every `"current_phase"` key occurrence
-/// and inspecting the value that follows. Returns true if any
-/// occurrence's value normalizes to `flow-code-review`. Per
-/// `.claude/rules/security-gates.md` "Enumerate Bypass Variants",
-/// duplicate keys (serde last-wins) and BOM are explicitly enumerated;
-/// this scanner closes the duplicate-key surface.
 fn raw_contains_code_review_phase(content: &str) -> bool {
     let needle = "\"current_phase\"";
     let mut start = 0;
     while let Some(pos) = content[start..].find(needle) {
         let key_end = start + pos + needle.len();
-        // Skip any whitespace and the colon.
         let after_key = content[key_end..].trim_start();
         if let Some(rest) = after_key.strip_prefix(':') {
             let after_colon = rest.trim_start();
@@ -176,23 +157,14 @@ fn fail_closed_message(detail: &str) -> String {
     )
 }
 
-#[derive(Debug)]
-pub struct IssueResult {
-    pub url: String,
-    pub number: Option<i64>,
-    pub id: Option<i64>,
+struct IssueResult {
+    url: String,
+    number: Option<i64>,
+    id: Option<i64>,
 }
 
-/// Type alias for the gh-runner closure used by `_with_runner` seams.
-/// Production binds to `&run_gh_cmd`. Tests inject mock closures
-/// returning queued `Result<String, String>` responses per call.
-pub type GhRunner = dyn Fn(&[&str], Option<Duration>) -> Result<String, String>;
-
 /// Read body text from a file and delete the file.
-///
-/// Returns the body text or an error message.
 /// Relative paths are resolved against `root`.
-/// The file is always deleted after reading, even if empty.
 pub fn read_body_file(path: &str, root: &Path) -> Result<String, String> {
     let resolved: PathBuf = if Path::new(path).is_absolute() {
         PathBuf::from(path)
@@ -203,32 +175,23 @@ pub fn read_body_file(path: &str, root: &Path) -> Result<String, String> {
     let body = fs::read_to_string(&resolved)
         .map_err(|e| format!("Could not read body file '{}': {}", resolved.display(), e))?;
 
-    // Best-effort cleanup of the temp body file. The caller has
-    // already received the body content, and the file is per-flow
-    // scoped, so a deletion error here is non-fatal.
+    // Best-effort cleanup of the temp body file.
     let _ = fs::remove_file(&resolved);
 
     Ok(body)
 }
 
 /// Extract issue number from a GitHub issue URL.
-///
-/// Returns the integer issue number, or None if the URL doesn't match.
 pub fn parse_issue_number(url: &str) -> Option<i64> {
     let re = Regex::new(r"/issues/(\d+)").unwrap();
     re.captures(url).and_then(|cap| cap[1].parse().ok())
 }
 
-/// Fetch the REST API database ID for an issue via an injected runner.
-/// Production wraps this with `&run_gh_cmd`. Tests inject mocks.
-pub fn fetch_database_id_with_runner(
-    repo: &str,
-    number: i64,
-    runner: &GhRunner,
-) -> (Option<i64>, Option<String>) {
-    let timeout = Duration::from_secs(LOCAL_TIMEOUT);
+/// Fetch the REST API database ID for an issue. Returns (id, error).
+/// Used cross-module by `create_sub_issue.rs` and `link_blocked_by.rs`.
+pub fn fetch_database_id(repo: &str, number: i64) -> (Option<i64>, Option<String>) {
     let api_path = format!("repos/{}/issues/{}", repo, number);
-    match runner(&["gh", "api", &api_path, "--jq", ".id"], Some(timeout)) {
+    match run_gh_cmd(&["gh", "api", &api_path, "--jq", ".id"]) {
         Ok(stdout) => match stdout.trim().parse::<i64>() {
             Ok(id) => (Some(id), None),
             Err(_) => (
@@ -240,18 +203,16 @@ pub fn fetch_database_id_with_runner(
     }
 }
 
-/// Create-issue with an injected gh runner (testable seam).
-pub fn create_issue_with_runner(
+/// Run gh issue create and return issue details. Includes label-not-
+/// found retry logic: if the label doesn't exist, tries to create it
+/// and retries. If label creation fails, retries without the label.
+fn create_issue(
     repo: &str,
     title: &str,
     label: Option<&str>,
     body: Option<&str>,
     milestone: Option<&str>,
-    runner: &GhRunner,
 ) -> Result<IssueResult, String> {
-    let timeout = Duration::from_secs(LOCAL_TIMEOUT);
-
-    // Build initial command
     let title_owned = title.to_string();
     let mut cmd_args: Vec<String> = vec![
         "gh".into(),
@@ -276,16 +237,13 @@ pub fn create_issue_with_runner(
     }
 
     let cmd_refs: Vec<&str> = cmd_args.iter().map(|s| s.as_str()).collect();
-    match runner(&cmd_refs, Some(timeout)) {
-        Ok(url) => Ok(build_issue_result_with_runner(repo, url, runner)),
+    match run_gh_cmd(&cmd_refs) {
+        Ok(url) => Ok(build_issue_result(repo, url)),
         Err(error) => {
-            // Label-not-found retry logic
             if let Some(l) = label {
                 let err_lower = error.to_lowercase();
                 if err_lower.contains("label") && err_lower.contains("not found") {
-                    return retry_with_label_with_runner(
-                        repo, title, l, body, milestone, timeout, runner,
-                    );
+                    return retry_with_label(repo, title, l, body, milestone);
                 }
             }
             Err(error)
@@ -293,26 +251,15 @@ pub fn create_issue_with_runner(
     }
 }
 
-/// Retry-with-label with an injected gh runner. Production wraps with
-/// `&run_gh_cmd`. Tests drive the label-create success/failure branches
-/// and the retry-with/without-label branches via the runner queue.
-pub fn retry_with_label_with_runner(
+fn retry_with_label(
     repo: &str,
     title: &str,
     label: &str,
     body: Option<&str>,
     milestone: Option<&str>,
-    timeout: Duration,
-    runner: &GhRunner,
 ) -> Result<IssueResult, String> {
-    // Try creating the label
-    let label_created = runner(
-        &["gh", "label", "create", label, "--repo", repo],
-        Some(timeout),
-    )
-    .is_ok();
+    let label_created = run_gh_cmd(&["gh", "label", "create", label, "--repo", repo]).is_ok();
 
-    // Retry: with label if created, without if not
     let mut retry_args: Vec<String> = vec![
         "gh".into(),
         "issue".into(),
@@ -336,14 +283,14 @@ pub fn retry_with_label_with_runner(
     }
 
     let retry_refs: Vec<&str> = retry_args.iter().map(|s| s.as_str()).collect();
-    let url = runner(&retry_refs, Some(timeout))?;
-    Ok(build_issue_result_with_runner(repo, url, runner))
+    let url = run_gh_cmd(&retry_refs)?;
+    Ok(build_issue_result(repo, url))
 }
 
-fn build_issue_result_with_runner(repo: &str, url: String, runner: &GhRunner) -> IssueResult {
+fn build_issue_result(repo: &str, url: String) -> IssueResult {
     let number = parse_issue_number(&url);
     let db_id = number.and_then(|n| {
-        let (id, _) = fetch_database_id_with_runner(repo, n, runner);
+        let (id, _) = fetch_database_id(repo, n);
         id
     });
     IssueResult {
@@ -353,77 +300,21 @@ fn build_issue_result_with_runner(repo: &str, url: String, runner: &GhRunner) ->
     }
 }
 
-/// Run a gh-shaped subprocess via an injected child factory, returning
-/// stdout on success. The seam exists so unit tests cover the success,
-/// non-zero-exit, timeout-kill, and spawn-error branches without
-/// spawning real `gh`. Production wraps this with a closure that calls
-/// `Command::new(args[0]).args(&args[1..])`.
-pub fn run_gh_cmd_inner(
-    args: &[&str],
-    timeout: Option<Duration>,
-    child_factory: &dyn Fn(&[&str]) -> std::io::Result<std::process::Child>,
-) -> Result<String, String> {
-    let mut child = child_factory(args).map_err(|e| format!("Failed to spawn: {}", e))?;
-
-    if let Some(dur) = timeout {
-        let start = std::time::Instant::now();
-        let poll_interval = Duration::from_millis(50);
-        loop {
-            match child.try_wait() {
-                Ok(Some(_status)) => {
-                    // `wait_with_output` on an owned child whose stdout/
-                    // stderr handles are piped is infallible in practice —
-                    // the only way it returns Err is a hard kernel IO
-                    // failure on the already-owned pipes, which we cannot
-                    // recover from at this layer. Panic is correct per
-                    // `.claude/rules/testability-means-simplicity.md`.
-                    let output = child
-                        .wait_with_output()
-                        .expect("wait_with_output on owned piped child is infallible");
-                    if !output.status.success() {
-                        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                        return Err(extract_error(&stderr, &stdout));
-                    }
-                    return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
-                }
-                // Ok(None) = child still running; Err(_) = transient IO
-                // error from try_wait. Both paths poll-or-timeout — no
-                // reason to escalate a transient probe failure into a
-                // hard error when the next poll may succeed.
-                Ok(None) | Err(_) => {
-                    if start.elapsed() >= dur {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        return Err(format!("Command timed out after {}s", dur.as_secs()));
-                    }
-                    std::thread::sleep(poll_interval.min(dur - start.elapsed()));
-                }
-            }
-        }
-    } else {
-        let output = child
-            .wait_with_output()
-            .expect("wait_with_output on owned piped child is infallible");
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            return Err(extract_error(&stderr, &stdout));
-        }
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+/// Run a gh CLI command, returning stdout on success. Used cross-module
+/// by `create_sub_issue.rs`, `link_blocked_by.rs`, and `create_milestone.rs`.
+/// gh has its own network timeout so no hand-rolled loop is needed per
+/// .claude/rules/testability-means-simplicity.md.
+pub fn run_gh_cmd(args: &[&str]) -> Result<String, String> {
+    let output = Command::new(args[0])
+        .args(&args[1..])
+        .output()
+        .map_err(|e| format!("Failed to spawn: {}", e))?;
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
     }
-}
-
-/// Run a gh CLI command, returning stdout on success.
-/// Returns Err with the error message on failure or timeout.
-pub fn run_gh_cmd(args: &[&str], timeout: Option<Duration>) -> Result<String, String> {
-    run_gh_cmd_inner(args, timeout, &|args| {
-        Command::new(args[0])
-            .args(&args[1..])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-    })
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Err(extract_error(&stderr, &stdout))
 }
 
 pub fn extract_error(stderr: &str, stdout: &str) -> String {
@@ -440,24 +331,19 @@ pub fn extract_error(stderr: &str, stdout: &str) -> String {
 /// an exit code. Returns `(value, 0)` on success, `(error_value, 1)` on
 /// any failure path. All previously `process::exit`-bearing branches
 /// (Code Review filing block, repo-detect failure, body-file read
-/// failure, gh-create failure) now return the error tuple instead.
+/// failure, gh-create failure) return the error tuple instead.
 ///
-/// Closure parameters seam off the production dependencies so unit tests
-/// can drive every branch without spawning real `gh` or relying on a
-/// host git remote:
+/// Closure parameters seam off the production dependencies:
 /// - `state_reader` returns the current branch's state file content
 ///   (or `None` if no flow is active). Production binds it to
 ///   `resolve_branch + read_to_string`.
 /// - `repo_resolver` returns the repo from `git remote` (or `None`).
 ///   Production binds it to `detect_repo(Some(root))`.
-/// - `runner` is the gh-runner closure threaded through to
-///   `create_issue_with_runner`. Production binds it to `&run_gh_cmd`.
 pub fn run_impl_main(
     args: Args,
     root: &Path,
     state_reader: &dyn Fn() -> Option<String>,
     repo_resolver: &dyn Fn() -> Option<String>,
-    runner: &GhRunner,
 ) -> (serde_json::Value, i32) {
     // Code Review filing gate.
     let state_json = state_reader();
@@ -492,7 +378,6 @@ pub fn run_impl_main(
         }
     };
 
-    // Read body from file if provided.
     let body = if let Some(ref bf) = args.body_file {
         match read_body_file(bf, root) {
             Ok(b) => Some(b),
@@ -502,13 +387,12 @@ pub fn run_impl_main(
         None
     };
 
-    match create_issue_with_runner(
+    match create_issue(
         &repo,
         &args.title,
         args.label.as_deref(),
         body.as_deref(),
         args.milestone.as_deref(),
-        runner,
     ) {
         Ok(result) => (
             json!({

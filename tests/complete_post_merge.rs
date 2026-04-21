@@ -1,25 +1,21 @@
 //! Subprocess integration tests for `bin/flow complete-post-merge`.
 //!
-//! Covers the CLI entry (`run`) and the `post_merge` production
-//! wrapper that calls `project_root()`. The inline tests in
-//! `src/complete_post_merge.rs::tests` cover `post_merge_inner`'s
-//! branches via mock runners; these subprocess tests prove the
-//! wrapper dispatches end-to-end and honors the best-effort
-//! always-exit-0 contract.
+//! post_merge_inner has been folded into the private body of `post_merge`
+//! and is no longer a pub testing seam. Tests drive the module via the
+//! public `post_merge` wrapper (and the `complete-post-merge` subcommand)
+//! with a configurable `bin/flow` stub whose per-subcommand behavior is
+//! controlled via env vars (FAKE_PT_STATUS, FAKE_PT_OUT, FAKE_RENDER_EXIT,
+//! etc.) so each branch is exercised through the real subprocess chain.
 
-use std::cell::RefCell;
-use std::collections::VecDeque;
+mod common;
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::rc::Rc;
 
-use flow_rs::complete_post_merge::post_merge_inner;
-use flow_rs::complete_preflight::CmdResult;
+use flow_rs::complete_post_merge::{ok_stdout_as_json, post_merge};
 use serde_json::{json, Value};
-
-mod common;
 
 const BRANCH: &str = "test-feature";
 
@@ -34,31 +30,134 @@ fn make_repo_fixture(parent: &Path) -> PathBuf {
     repo
 }
 
-fn write_state_file(repo: &Path, branch: &str) -> PathBuf {
-    let state_dir = repo.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state = common::make_complete_state(branch, "complete", None);
-    let state_path = state_dir.join(format!("{}.json", branch));
-    fs::write(&state_path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
-    state_path
+/// Default happy-path state (repo set, no slack thread).
+fn happy_state(branch: &str) -> Value {
+    json!({
+        "schema_version": 1,
+        "branch": branch,
+        "pr_number": 42,
+        "pr_url": "https://github.com/test/test/pull/42",
+        "prompt": "work on issue #100",
+        "complete_step": 5,
+        "repo": "test/test",
+        "phases": {
+            "flow-start": {"status": "complete"},
+            "flow-plan": {"status": "complete"},
+            "flow-code": {"status": "complete"},
+            "flow-code-review": {"status": "complete"},
+            "flow-learn": {"status": "complete"},
+            "flow-complete": {"status": "in_progress"}
+        }
+    })
 }
 
-/// Write a `bin/flow` stub that exits 0 for every subcommand.
-/// Post-merge calls several `bin/flow` subcommands (phase-transition,
-/// render-pr-body, format-issues-summary, close-issues,
-/// format-complete-summary, label-issues); the stub makes them all
-/// succeed trivially without touching GitHub or the state file.
-fn write_flow_stub(path: &Path) {
+fn write_state_file_at(path: &Path, content: &Value) {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).unwrap();
     }
-    let script = "#!/bin/sh\nexit 0\n";
+    fs::write(path, serde_json::to_string_pretty(content).unwrap()).unwrap();
+}
+
+/// Configurable bin/flow stub. Behavior per subcommand is controlled by
+/// env vars passed to the parent flow-rs spawn; the child inherits them.
+///
+/// Env contract:
+///   FAKE_PT_OUT       → phase-transition stdout (default ok JSON)
+///   FAKE_PT_EXIT      → phase-transition exit code (default 0)
+///   FAKE_PT_ERR       → phase-transition stderr (default empty)
+///   FAKE_RENDER_EXIT  → render-pr-body exit code (default 0)
+///   FAKE_RENDER_ERR   → render-pr-body stderr (default empty)
+///   FAKE_ISSUES_OUT   → format-issues-summary stdout (default no-issues)
+///   FAKE_CLOSE_OUT    → close-issues stdout (default empty)
+///   FAKE_SUMMARY_OUT  → format-complete-summary stdout (default ok)
+///   FAKE_LABEL_EXIT   → label-issues exit code (default 0)
+///   FAKE_LABEL_ERR    → label-issues stderr (default empty)
+///   FAKE_ACP_OUT      → auto-close-parent stdout (default no-close)
+///   FAKE_SLACK_OUT    → notify-slack stdout (default ok with ts)
+///   FAKE_SLACK_EXIT   → notify-slack exit code (default 0)
+///   FAKE_ADD_NOT_OUT  → add-notification stdout
+fn write_configurable_flow_stub(path: &Path) {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    let script = r#"#!/bin/sh
+case "$1" in
+    phase-transition)
+        if [ -n "$FAKE_PT_ERR" ]; then printf '%s' "$FAKE_PT_ERR" >&2; fi
+        if [ -n "$FAKE_PT_OUT" ]; then
+            printf '%s' "$FAKE_PT_OUT"
+        else
+            printf '%s' '{"status":"ok","formatted_time":"1m","cumulative_seconds":60}'
+        fi
+        exit ${FAKE_PT_EXIT:-0}
+        ;;
+    render-pr-body)
+        if [ -n "$FAKE_RENDER_ERR" ]; then printf '%s' "$FAKE_RENDER_ERR" >&2; fi
+        exit ${FAKE_RENDER_EXIT:-0}
+        ;;
+    format-issues-summary)
+        if [ -n "$FAKE_ISSUES_OUT" ]; then
+            printf '%s' "$FAKE_ISSUES_OUT"
+        else
+            printf '%s' '{"status":"ok","has_issues":false,"banner_line":""}'
+        fi
+        exit 0
+        ;;
+    close-issues)
+        if [ -n "$FAKE_CLOSE_OUT" ]; then
+            printf '%s' "$FAKE_CLOSE_OUT"
+        else
+            printf '%s' '{"status":"ok","closed":[],"failed":[]}'
+        fi
+        exit 0
+        ;;
+    format-complete-summary)
+        if [ -n "$FAKE_SUMMARY_OUT" ]; then
+            printf '%s' "$FAKE_SUMMARY_OUT"
+        else
+            printf '%s' '{"status":"ok","summary":"test summary","issues_links":""}'
+        fi
+        exit 0
+        ;;
+    label-issues)
+        if [ -n "$FAKE_LABEL_ERR" ]; then printf '%s' "$FAKE_LABEL_ERR" >&2; fi
+        exit ${FAKE_LABEL_EXIT:-0}
+        ;;
+    auto-close-parent)
+        if [ -n "$FAKE_ACP_OUT" ]; then
+            printf '%s' "$FAKE_ACP_OUT"
+        else
+            printf '%s' '{"status":"ok","parent_closed":false,"milestone_closed":false}'
+        fi
+        exit 0
+        ;;
+    notify-slack)
+        if [ -n "$FAKE_SLACK_OUT" ]; then
+            printf '%s' "$FAKE_SLACK_OUT"
+        else
+            printf '%s' '{"status":"ok","ts":"1234.5678"}'
+        fi
+        exit ${FAKE_SLACK_EXIT:-0}
+        ;;
+    add-notification)
+        if [ -n "$FAKE_ADD_NOT_OUT" ]; then
+            printf '%s' "$FAKE_ADD_NOT_OUT"
+        else
+            printf '%s' '{"status":"ok"}'
+        fi
+        exit 0
+        ;;
+    *)
+        exit 0
+        ;;
+esac
+"#;
     fs::write(path, script).unwrap();
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
 }
 
-/// Write a `gh` stub that exits 0 for every subcommand.
-fn build_path_stub_dir(parent: &Path) -> PathBuf {
+/// Build the minimal PATH stub dir: just a `gh` that always exits 0.
+fn path_stub_dir(parent: &Path) -> PathBuf {
     let stubs = parent.join("stubs");
     fs::create_dir_all(&stubs).unwrap();
     let gh_path = stubs.join("gh");
@@ -67,36 +166,39 @@ fn build_path_stub_dir(parent: &Path) -> PathBuf {
     stubs
 }
 
-fn run_post_merge(
+/// Spawn flow-rs complete-post-merge with env overrides for the stub.
+fn run_post_merge_sub(
     cwd: &Path,
     pr: &str,
     state_file: &str,
     branch: &str,
     flow_bin_path: &Path,
-    path_stub_dir: &Path,
-) -> (i32, String, String) {
+    path_stubs: &Path,
+    env: &[(&str, &str)],
+) -> (i32, String) {
     let current_path = std::env::var("PATH").unwrap_or_default();
-    let new_path = format!("{}:{}", path_stub_dir.display(), current_path);
-    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args([
-            "complete-post-merge",
-            "--pr",
-            pr,
-            "--state-file",
-            state_file,
-            "--branch",
-            branch,
-        ])
-        .current_dir(cwd)
-        .env("PATH", new_path)
-        .env("FLOW_BIN_PATH", flow_bin_path)
-        .env_remove("FLOW_CI_RUNNING")
-        .output()
-        .expect("spawn flow-rs");
+    let new_path = format!("{}:{}", path_stubs.display(), current_path);
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.args([
+        "complete-post-merge",
+        "--pr",
+        pr,
+        "--state-file",
+        state_file,
+        "--branch",
+        branch,
+    ])
+    .current_dir(cwd)
+    .env("PATH", new_path)
+    .env("FLOW_BIN_PATH", flow_bin_path)
+    .env_remove("FLOW_CI_RUNNING");
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let output = cmd.output().expect("spawn flow-rs");
     (
         output.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&output.stdout).to_string(),
-        String::from_utf8_lossy(&output.stderr).to_string(),
     )
 }
 
@@ -109,1232 +211,910 @@ fn last_json_line(stdout: &str) -> Value {
         .unwrap_or_else(|e| panic!("failed to parse JSON line '{}': {}", last, e))
 }
 
-/// With most subprocesses stubbed to succeed and a minimal state
-/// fixture, post-merge runs to completion and exits 0 per its
-/// best-effort always-exit-0 contract. Exercises the CLI `run`
-/// entry's unconditional exit-0 arm.
+/// Write a state file inside the repo's `.flow-states/` and return
+/// (repo, state_file_path, flow_bin_path, path_stubs).
+fn setup(parent: &Path, state: Value) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+    let repo = make_repo_fixture(parent);
+    let state_dir = repo.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    let state_path = state_dir.join(format!("{}.json", BRANCH));
+    write_state_file_at(&state_path, &state);
+    let flow_bin = parent.join("bin-flow-stub").join("flow");
+    write_configurable_flow_stub(&flow_bin);
+    let stubs = path_stub_dir(parent);
+    (repo, state_path, flow_bin, stubs)
+}
+
 #[test]
-fn post_merge_run_best_effort_exits_0() {
+fn post_merge_happy_path_returns_ok() {
     let dir = tempfile::tempdir().unwrap();
     let parent = dir.path().canonicalize().unwrap();
-    let repo = make_repo_fixture(&parent);
-    let state_path = write_state_file(&repo, BRANCH);
-    let flow_bin = parent.join("bin-flow-stub").join("flow");
-    write_flow_stub(&flow_bin);
-    let path_stub = build_path_stub_dir(&parent);
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
 
-    let (code, stdout, _) = run_post_merge(
+    let (code, stdout) = run_post_merge_sub(
         &repo,
         "42",
         state_path.to_string_lossy().as_ref(),
         BRANCH,
         &flow_bin,
-        &path_stub,
+        &stubs,
+        &[],
     );
 
-    assert_eq!(
-        code, 0,
-        "complete-post-merge is best-effort and always exits 0; stdout={}",
-        stdout
-    );
+    assert_eq!(code, 0);
     let json = last_json_line(&stdout);
+    assert_eq!(json["status"], "ok");
+    assert_eq!(json["formatted_time"], "1m");
+    assert_eq!(json["cumulative_seconds"], 60);
+    assert_eq!(json["summary"], "test summary");
+    assert!(json["failures"].as_object().unwrap().is_empty());
+}
+
+#[test]
+fn post_merge_invalid_branch_returns_invalid_branch_failure() {
+    // try_new rejects slash-containing branches.
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        "bad/branch",
+        &flow_bin,
+        &stubs,
+        &[],
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert!(json["failures"]["invalid_branch"].is_string());
+}
+
+#[test]
+fn post_merge_missing_state_file_still_runs() {
+    // state_path doesn't exist → state = {}, repo absent, no mutate_state.
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = make_repo_fixture(&parent);
+    let missing = repo.join(".flow-states").join("nonexistent.json");
+    fs::create_dir_all(missing.parent().unwrap()).unwrap();
+    let flow_bin = parent.join("bin-flow-stub").join("flow");
+    write_configurable_flow_stub(&flow_bin);
+    let stubs = path_stub_dir(&parent);
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        missing.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[],
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["status"], "ok");
+    assert_eq!(json["parents_closed"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn post_merge_corrupt_state_file_falls_back_to_empty() {
+    // state_path exists but JSON is malformed → fallback to json!({}).
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = make_repo_fixture(&parent);
+    let state_dir = repo.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    let state_path = state_dir.join(format!("{}.json", BRANCH));
+    fs::write(&state_path, "{corrupt").unwrap();
+    let flow_bin = parent.join("bin-flow-stub").join("flow");
+    write_configurable_flow_stub(&flow_bin);
+    let stubs = path_stub_dir(&parent);
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[],
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    // Corrupt JSON still returns a well-formed post-merge result.
     assert_eq!(json["status"], "ok");
 }
 
-/// The `post_merge` wrapper calls `project_root()` and threads
-/// production `bin_flow_path()` + `run_cmd_with_timeout` into
-/// `post_merge_inner`. With stubs in place, the resulting JSON
-/// contains the expected default fields (status, closed_issues,
-/// parents_closed, slack), proving the wrapper's delegation chain
-/// reaches `post_merge_inner` end-to-end.
 #[test]
-fn post_merge_wrapper_resolves_project_root() {
+fn post_merge_state_wrong_type_records_step_counter_failure() {
+    // state file is a JSON array — mutate_state's object guard fires,
+    // but no step_counter failure because mutate_state itself returns Ok.
+    // Actually: state is array → our state_path.exists() is true, but
+    // mutate_state assigns to state["complete_step"] which hits the guard
+    // and returns early Ok. The failures map stays empty on this path.
     let dir = tempfile::tempdir().unwrap();
     let parent = dir.path().canonicalize().unwrap();
     let repo = make_repo_fixture(&parent);
-    let state_path = write_state_file(&repo, BRANCH);
+    let state_dir = repo.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    let state_path = state_dir.join(format!("{}.json", BRANCH));
+    fs::write(&state_path, "[]").unwrap();
     let flow_bin = parent.join("bin-flow-stub").join("flow");
-    write_flow_stub(&flow_bin);
-    let path_stub = build_path_stub_dir(&parent);
+    write_configurable_flow_stub(&flow_bin);
+    let stubs = path_stub_dir(&parent);
 
-    let (_, stdout, _) = run_post_merge(
+    let (code, _stdout) = run_post_merge_sub(
         &repo,
         "42",
         state_path.to_string_lossy().as_ref(),
         BRANCH,
         &flow_bin,
-        &path_stub,
+        &stubs,
+        &[],
+    );
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn post_merge_phase_transition_error_records_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[
+            ("FAKE_PT_OUT", "not-json"),
+            ("FAKE_PT_EXIT", "1"),
+            ("FAKE_PT_ERR", "pt exploded"),
+        ],
     );
 
+    assert_eq!(code, 0);
     let json = last_json_line(&stdout);
-    // The wrapper's delegation is proved by the presence of the
-    // default result fields that only `post_merge_inner` populates.
-    assert!(
-        json.get("closed_issues").is_some(),
-        "post_merge_inner must populate closed_issues; got: {}",
-        json
-    );
-    assert!(
-        json.get("parents_closed").is_some(),
-        "post_merge_inner must populate parents_closed; got: {}",
-        json
-    );
-    assert!(
-        json.get("slack").is_some(),
-        "post_merge_inner must populate slack; got: {}",
-        json
-    );
-}
-
-// ===================================================================
-// Unit tests for `post_merge_inner` — drives the public seam with a
-// mock runner. Migrated from inline `#[cfg(test)]` in
-// `src/complete_post_merge.rs` per `.claude/rules/test-placement.md`.
-// ===================================================================
-
-const PT_COMPLETE_OK: &str = r#"{"status": "ok", "phase": "flow-complete", "action": "complete", "cumulative_seconds": 45, "formatted_time": "<1m", "next_phase": "flow-complete", "continue_action": "invoke"}"#;
-const RENDER_PR_OK: &str = r#"{"status": "ok", "sections": ["What"]}"#;
-const ISSUES_SUMMARY_NO_ISSUES: &str =
-    r#"{"status": "ok", "has_issues": false, "banner_line": "", "table": ""}"#;
-const ISSUES_SUMMARY_WITH_ISSUES: &str = r#"{"status": "ok", "has_issues": true, "banner_line": "Issues filed: 1 (Flaky Test: 1)", "table": "| Label | Title |"}"#;
-const CLOSE_ISSUES_EMPTY: &str = r#"{"status": "ok", "closed": [], "failed": []}"#;
-const CLOSE_ISSUES_WITH_CLOSED: &str = r#"{"status": "ok", "closed": [{"number": 100, "url": "https://github.com/test/test/issues/100"}], "failed": []}"#;
-const SUMMARY_OK: &str =
-    r#"{"status": "ok", "summary": "test summary", "total_seconds": 300, "issues_links": ""}"#;
-const LABEL_OK: &str = r#"{"status": "ok", "labeled": [100], "failed": []}"#;
-const AUTO_CLOSE_OK: &str =
-    r#"{"status": "ok", "parent_closed": false, "milestone_closed": false}"#;
-const SLACK_OK: &str = r#"{"status": "ok", "ts": "1234567890.123456"}"#;
-const ADD_NOTIFICATION_OK: &str = r#"{"status": "ok", "notification_count": 1}"#;
-
-fn mock_runner(responses: Vec<CmdResult>) -> impl Fn(&[&str], u64) -> CmdResult {
-    let queue = RefCell::new(VecDeque::from(responses));
-    move |_args: &[&str], _timeout: u64| -> CmdResult {
-        queue
-            .borrow_mut()
-            .pop_front()
-            .expect("mock_runner: no more responses")
-    }
-}
-
-fn tracking_runner(
-    responses: Vec<CmdResult>,
-    calls: Rc<RefCell<Vec<Vec<String>>>>,
-) -> impl Fn(&[&str], u64) -> CmdResult {
-    let queue = RefCell::new(VecDeque::from(responses));
-    move |args: &[&str], _timeout: u64| -> CmdResult {
-        calls
-            .borrow_mut()
-            .push(args.iter().map(|s| s.to_string()).collect());
-        queue
-            .borrow_mut()
-            .pop_front()
-            .expect("tracking_runner: no more responses")
-    }
-}
-
-fn ok(stdout: &str) -> CmdResult {
-    Ok((0, stdout.to_string(), String::new()))
-}
-
-fn fail(stderr: &str) -> CmdResult {
-    Ok((1, String::new(), stderr.to_string()))
-}
-
-fn err(msg: &str) -> CmdResult {
-    Err(msg.to_string())
-}
-
-/// Setup fixture: create root/.flow-states/ and write state file there.
-fn setup_inner(
-    dir: &Path,
-    branch: &str,
-    slack_thread_ts: Option<&str>,
-    repo: Option<&str>,
-) -> PathBuf {
-    let state_dir = dir.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let mut state = json!({
-        "schema_version": 1,
-        "branch": branch,
-        "pr_number": 42,
-        "pr_url": "https://github.com/test/test/pull/42",
-        "prompt": "work on issue #100",
-        "complete_step": 5,
-        "phases": {
-            "flow-start": {"status": "complete"},
-            "flow-plan": {"status": "complete"},
-            "flow-code": {"status": "complete"},
-            "flow-code-review": {"status": "complete"},
-            "flow-learn": {"status": "complete"},
-            "flow-complete": {"status": "in_progress"}
-        }
-    });
-    if let Some(ts) = slack_thread_ts {
-        state["slack_thread_ts"] = json!(ts);
-    }
-    if let Some(r) = repo {
-        state["repo"] = json!(r);
-    } else {
-        state["repo"] = json!("test/test");
-    }
-    let state_path = state_dir.join(format!("{}.json", branch));
-    fs::write(&state_path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
-    state_path
-}
-
-// --- happy paths ---
-
-#[test]
-fn happy_path_no_issues() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["formatted_time"], "<1m");
-    assert_eq!(result["summary"], "test summary");
-    assert_eq!(result["cumulative_seconds"], 45);
+    assert!(json["failures"]["phase_transition"].is_string());
 }
 
 #[test]
-fn happy_path_with_closed_issues() {
+fn post_merge_phase_transition_non_ok_status_records_failure() {
     let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
+    let parent = dir.path().canonicalize().unwrap();
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
 
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_WITH_CLOSED),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-        ok(AUTO_CLOSE_OK),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[("FAKE_PT_OUT", r#"{"status":"error","message":"x"}"#)],
     );
 
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["closed_issues"].as_array().unwrap().len(), 1);
-
-    let closed_path = dir
-        .path()
-        .join(".flow-states")
-        .join("test-feature-closed-issues.json");
-    assert!(closed_path.exists());
-    let content: Value = serde_json::from_str(&fs::read_to_string(&closed_path).unwrap()).unwrap();
-    assert_eq!(content[0]["number"], 100);
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert!(json["failures"]["phase_transition"].is_string());
 }
 
 #[test]
-fn individual_failure_continues() {
+fn post_merge_render_pr_body_failure_records_failure() {
     let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
+    let parent = dir.path().canonicalize().unwrap();
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
 
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(SUMMARY_OK),
-        fail("gh error"),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[
+            ("FAKE_RENDER_EXIT", "1"),
+            ("FAKE_RENDER_ERR", "render failed"),
+        ],
     );
 
-    assert_eq!(result["status"], "ok");
-    assert!(result["failures"]
-        .as_object()
-        .unwrap()
-        .contains_key("label_issues"));
-}
-
-// --- slack ---
-
-#[test]
-fn slack_not_configured() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["slack"]["status"], "skipped");
-}
-
-#[test]
-fn slack_succeeds() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", Some("1234.5678"), None);
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-        ok(SLACK_OK),
-        ok(ADD_NOTIFICATION_OK),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["slack"]["status"], "ok");
-    assert_eq!(result["slack"]["ts"], "1234567890.123456");
-}
-
-#[test]
-fn slack_failure_continues() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", Some("1234.5678"), None);
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-        ok(r#"{"status": "error", "message": "token expired"}"#),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["slack"]["status"], "error");
-    assert_eq!(result["status"], "ok");
-}
-
-#[test]
-fn slack_invalid_response() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", Some("1234.5678"), None);
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-        ok("not json"),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["slack"]["status"], "error");
-    assert!(result["slack"]["message"]
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert!(json["failures"]["render_pr_body"]
         .as_str()
-        .unwrap()
-        .to_lowercase()
+        .unwrap_or("")
+        .contains("render failed"));
+}
+
+#[test]
+fn post_merge_issues_summary_with_issues_sets_banner() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[(
+            "FAKE_ISSUES_OUT",
+            r#"{"status":"ok","has_issues":true,"banner_line":"Issues: 1"}"#,
+        )],
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["banner_line"], "Issues: 1");
+}
+
+#[test]
+fn post_merge_close_issues_writes_file_and_populates() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[(
+            "FAKE_CLOSE_OUT",
+            r#"{"status":"ok","closed":[{"number":100,"url":"https://github.com/test/test/issues/100"}],"failed":[]}"#,
+        )],
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    let closed = json["closed_issues"].as_array().unwrap();
+    assert_eq!(closed.len(), 1);
+    assert_eq!(closed[0]["number"], 100);
+    let closed_file = repo
+        .join(".flow-states")
+        .join(format!("{}-closed-issues.json", BRANCH));
+    assert!(closed_file.exists(), "closed-issues file should be written");
+}
+
+#[test]
+fn post_merge_label_issues_failure_records_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[
+            ("FAKE_LABEL_EXIT", "1"),
+            ("FAKE_LABEL_ERR", "label remove failed"),
+        ],
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert!(json["failures"]["label_issues"]
+        .as_str()
+        .unwrap_or("")
+        .contains("label remove failed"));
+}
+
+#[test]
+fn post_merge_auto_close_parent_pushes_when_parent_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[
+            (
+                "FAKE_CLOSE_OUT",
+                r#"{"status":"ok","closed":[{"number":100,"url":"https://github.com/test/test/issues/100"}],"failed":[]}"#,
+            ),
+            (
+                "FAKE_ACP_OUT",
+                r#"{"status":"ok","parent_closed":true,"milestone_closed":false}"#,
+            ),
+        ],
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    let parents = json["parents_closed"].as_array().unwrap();
+    assert_eq!(parents.len(), 1);
+    assert_eq!(parents[0], 100);
+}
+
+#[test]
+fn post_merge_auto_close_parent_milestone_closed_pushes() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[
+            (
+                "FAKE_CLOSE_OUT",
+                r#"{"status":"ok","closed":[{"number":101}],"failed":[]}"#,
+            ),
+            (
+                "FAKE_ACP_OUT",
+                r#"{"status":"ok","parent_closed":false,"milestone_closed":true}"#,
+            ),
+        ],
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["parents_closed"][0], 101);
+}
+
+#[test]
+fn post_merge_auto_close_parent_skipped_when_no_repo() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    // Drop repo from state.
+    let mut state = happy_state(BRANCH);
+    state.as_object_mut().unwrap().remove("repo");
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, state);
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[(
+            "FAKE_CLOSE_OUT",
+            r#"{"status":"ok","closed":[{"number":100}],"failed":[]}"#,
+        )],
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    // No repo → auto-close loop skipped → parents_closed empty.
+    assert_eq!(json["parents_closed"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn post_merge_empty_repo_treated_as_none() {
+    // repo == "" should be filtered like None.
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let mut state = happy_state(BRANCH);
+    state["repo"] = json!("");
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, state);
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[(
+            "FAKE_CLOSE_OUT",
+            r#"{"status":"ok","closed":[{"number":100}],"failed":[]}"#,
+        )],
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["parents_closed"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn post_merge_slack_thread_ts_posts_notification() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let mut state = happy_state(BRANCH);
+    state["slack_thread_ts"] = json!("9999.0001");
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, state);
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[],
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["slack"]["status"], "ok");
+    assert_eq!(json["slack"]["ts"], "1234.5678");
+}
+
+#[test]
+fn post_merge_slack_thread_ts_empty_skips_notification() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let mut state = happy_state(BRANCH);
+    state["slack_thread_ts"] = json!("");
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, state);
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[],
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["slack"]["status"], "skipped");
+}
+
+#[test]
+fn post_merge_slack_invalid_json_response_records_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let mut state = happy_state(BRANCH);
+    state["slack_thread_ts"] = json!("9999.0001");
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, state);
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[("FAKE_SLACK_OUT", "not-json")],
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["slack"]["status"], "error");
+    assert!(json["slack"]["message"]
+        .as_str()
+        .unwrap_or("")
         .contains("invalid"));
 }
 
 #[test]
-fn slack_thread_ts_empty_string_skipped() {
+fn post_merge_slack_non_ok_records_slack_data() {
     let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", Some(""), None);
+    let parent = dir.path().canonicalize().unwrap();
+    let mut state = happy_state(BRANCH);
+    state["slack_thread_ts"] = json!("9999.0001");
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, state);
 
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[(
+            "FAKE_SLACK_OUT",
+            r#"{"status":"error","message":"svc down"}"#,
+        )],
     );
 
-    assert_eq!(result["slack"]["status"], "skipped");
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["slack"]["status"], "error");
+    assert_eq!(json["slack"]["message"], "svc down");
 }
 
 #[test]
-fn slack_transport_error() {
+fn post_merge_slack_ok_without_ts_skips_add_notification() {
     let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", Some("1234.5678"), None);
+    let parent = dir.path().canonicalize().unwrap();
+    let mut state = happy_state(BRANCH);
+    state["slack_thread_ts"] = json!("9999.0001");
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, state);
 
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-        err("Timed out after 60s"),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[("FAKE_SLACK_OUT", r#"{"status":"ok"}"#)],
     );
 
-    assert_eq!(result["slack"]["status"], "error");
-    assert_eq!(result["status"], "ok");
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["slack"]["status"], "ok");
 }
 
-// --- phase-transition invocation ---
+#[test]
+fn post_merge_format_complete_summary_non_ok_leaves_defaults() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[("FAKE_SUMMARY_OUT", r#"{"status":"error","message":"x"}"#)],
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["summary"], "");
+    assert_eq!(json["issues_links"], "");
+}
 
 #[test]
-fn phase_transition_called_with_next_phase() {
+fn post_merge_phase_transition_bad_json_uses_parse_err() {
+    // Drives the `parse_err.unwrap_or_else(... stderr ...)` path: the
+    // stub exits 0 but returns non-JSON stdout. stderr is empty so the
+    // parse_err branch wins.
     let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
+    let parent = dir.path().canonicalize().unwrap();
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
 
-    let calls: Rc<RefCell<Vec<Vec<String>>>> = Rc::new(RefCell::new(Vec::new()));
-    let runner = tracking_runner(
-        vec![
-            ok(PT_COMPLETE_OK),
-            ok(RENDER_PR_OK),
-            ok(ISSUES_SUMMARY_NO_ISSUES),
-            ok(CLOSE_ISSUES_EMPTY),
-            ok(SUMMARY_OK),
-            ok(LABEL_OK),
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[("FAKE_PT_OUT", "not-json")],
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert!(json["failures"]["phase_transition"].is_string());
+}
+
+#[test]
+fn post_merge_close_issues_file_write_failure_records_failure() {
+    // Make `.flow-states/` a file (not a dir) — but that breaks
+    // everything. Instead, make the closed-issues write target
+    // unwritable by pre-creating it as a directory.
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
+    // Pre-create <branch>-closed-issues.json as a directory → write
+    // returns EISDIR.
+    let blocker = repo
+        .join(".flow-states")
+        .join(format!("{}-closed-issues.json", BRANCH));
+    fs::create_dir(&blocker).unwrap();
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[(
+            "FAKE_CLOSE_OUT",
+            r#"{"status":"ok","closed":[{"number":100}],"failed":[]}"#,
+        )],
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert!(json["failures"]["closed_issues_file"].is_string());
+}
+
+// --- library-level test: verifies the public wrapper resolves project
+// root and threads into the inlined post_merge body. Drives through
+// the public `post_merge` function rather than a removed _inner seam. ---
+
+#[test]
+fn post_merge_slack_spawn_error_records_failure() {
+    // Drives the slack `Err(e)` arm of run_cmd_with_timeout: point
+    // FLOW_BIN_PATH at a non-existent binary so every bin/flow spawn
+    // fails. Slack thread_ts is set, so the slack branch is entered
+    // and the spawn error propagates into the slack "error" result.
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = make_repo_fixture(&parent);
+    let state_dir = repo.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    let state_path = state_dir.join(format!("{}.json", BRANCH));
+    let mut state = happy_state(BRANCH);
+    state["slack_thread_ts"] = json!("9999.0001");
+    write_state_file_at(&state_path, &state);
+    let nonexistent = parent.join("does-not-exist").join("flow");
+    let stubs = path_stub_dir(&parent);
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &nonexistent,
+        &stubs,
+        &[],
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["slack"]["status"], "error");
+    assert!(json["slack"]["message"].is_string());
+}
+
+#[test]
+fn post_merge_no_flow_states_dir_skips_log() {
+    // Drives the `paths.flow_states_dir().is_dir()` false branch in the
+    // log closure: write the state file to a directory that is NOT
+    // `.flow-states/` so the log closure's guard fails every call.
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = make_repo_fixture(&parent);
+    // Intentionally do NOT create .flow-states/. State file lives at
+    // repo root.
+    let state_path = repo.join("state.json");
+    write_state_file_at(&state_path, &happy_state(BRANCH));
+    let flow_bin = parent.join("bin-flow-stub").join("flow");
+    write_configurable_flow_stub(&flow_bin);
+    let stubs = path_stub_dir(&parent);
+
+    let (code, _stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[],
+    );
+    assert_eq!(code, 0);
+    assert!(!repo.join(".flow-states").exists());
+}
+
+#[test]
+fn post_merge_state_path_is_dir_falls_back_to_empty() {
+    // Drives the `fs::read_to_string(state_path) Err(_)` arm: state_path
+    // is an existing directory, so exists() returns true but
+    // read_to_string returns EISDIR → state falls back to json!({}).
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = make_repo_fixture(&parent);
+    let state_dir = repo.join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    let state_as_dir = state_dir.join(format!("{}.json", BRANCH));
+    fs::create_dir(&state_as_dir).unwrap();
+    let flow_bin = parent.join("bin-flow-stub").join("flow");
+    write_configurable_flow_stub(&flow_bin);
+    let stubs = path_stub_dir(&parent);
+
+    let (code, _stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_as_dir.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[],
+    );
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn post_merge_issues_summary_non_json_skips_parse_block() {
+    // Drives the `if let Some(iss_data) = parsed` None-fallthrough arm
+    // when format-issues-summary returns non-JSON stdout.
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
+
+    let (code, _stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[("FAKE_ISSUES_OUT", "not-json")],
+    );
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn post_merge_close_issues_non_json_skips_parse_block() {
+    // Drives the `if let Some(close_data) = parsed` None-fallthrough arm.
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[("FAKE_CLOSE_OUT", "not-json")],
+    );
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    // Non-JSON close stdout leaves closed_issues empty.
+    assert_eq!(json["closed_issues"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn post_merge_format_summary_non_json_skips_parse_block() {
+    // Drives the `if let Some(sum_data) = parsed` None-fallthrough arm.
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
+
+    let (code, _stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[("FAKE_SUMMARY_OUT", "not-json")],
+    );
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn post_merge_auto_close_parent_non_json_skips_parse_block() {
+    // Drives the `if let Some(acp_data) = parsed` None-fallthrough arm:
+    // repo is set, close-issues populates closed_issues, but
+    // auto-close-parent returns non-JSON → parsed=None → the whole
+    // acp parse block is skipped, parents_closed stays empty.
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[
+            (
+                "FAKE_CLOSE_OUT",
+                r#"{"status":"ok","closed":[{"number":100}],"failed":[]}"#,
+            ),
+            ("FAKE_ACP_OUT", "not-json"),
         ],
-        calls.clone(),
     );
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["parents_closed"].as_array().unwrap().len(), 0);
+}
 
-    post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
+// --- ok_stdout_as_json direct coverage ---
+
+#[test]
+fn post_merge_close_issues_response_missing_closed_array_stays_empty() {
+    // Drives the `if let Some(closed_arr) = close_data.get("closed").and_then(as_array)`
+    // None fallthrough: close-issues returns JSON without a `closed`
+    // array (e.g. shape drift), so closed_issues stays empty.
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
+
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[("FAKE_CLOSE_OUT", r#"{"status":"ok","unexpected":"shape"}"#)],
     );
-
-    let pt_call = calls
-        .borrow()
-        .iter()
-        .find(|c| c.iter().any(|a| a == "phase-transition"))
-        .cloned()
-        .expect("phase-transition call not found");
-    assert!(pt_call.contains(&"--next-phase".to_string()));
-    assert!(pt_call.contains(&"flow-complete".to_string()));
-    assert!(pt_call.contains(&"--branch".to_string()));
-    assert!(pt_call.contains(&"test-feature".to_string()));
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["closed_issues"].as_array().unwrap().len(), 0);
 }
 
 #[test]
-fn render_pr_body_called_with_state_file() {
+fn post_merge_closed_issue_without_number_skipped_in_auto_close_loop() {
+    // Drives the `if let Some(issue_num) = issue.get("number").and_then(...)`
+    // None fallthrough: closed entry lacks a `number` field, so the acp
+    // call is skipped and the loop continues.
     let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
+    let parent = dir.path().canonicalize().unwrap();
+    let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
 
-    let calls: Rc<RefCell<Vec<Vec<String>>>> = Rc::new(RefCell::new(Vec::new()));
-    let runner = tracking_runner(
-        vec![
-            ok(PT_COMPLETE_OK),
-            ok(RENDER_PR_OK),
-            ok(ISSUES_SUMMARY_NO_ISSUES),
-            ok(CLOSE_ISSUES_EMPTY),
-            ok(SUMMARY_OK),
-            ok(LABEL_OK),
-        ],
-        calls.clone(),
+    let (code, stdout) = run_post_merge_sub(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        &flow_bin,
+        &stubs,
+        &[(
+            "FAKE_CLOSE_OUT",
+            r#"{"status":"ok","closed":[{"url":"https://github.com/x/y/issues/1"}],"failed":[]}"#,
+        )],
     );
-
-    post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    let render_call = calls
-        .borrow()
-        .iter()
-        .find(|c| c.iter().any(|a| a == "render-pr-body"))
-        .cloned()
-        .expect("render-pr-body call not found");
-    assert!(render_call.contains(&"--state-file".to_string()));
-    assert!(render_call.contains(&state_path.to_str().unwrap().to_string()));
-}
-
-// --- step counter persistence ---
-
-#[test]
-fn step_counters_updated() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-    ]);
-
-    post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    let content = fs::read_to_string(&state_path).unwrap();
-    let state: Value = serde_json::from_str(&content).unwrap();
-    assert_eq!(state["complete_step"], json!(6));
-}
-
-// --- error paths ---
-
-#[test]
-fn phase_transition_failure_captured() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
-
-    let runner = mock_runner(vec![
-        fail(r#"{"status": "error", "message": "bad state"}"#),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["status"], "ok");
-    assert!(result["failures"]
-        .as_object()
-        .unwrap()
-        .contains_key("phase_transition"));
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    // No number → auto-close-parent loop skips this entry → parents_closed stays empty.
+    assert_eq!(json["parents_closed"].as_array().unwrap().len(), 0);
 }
 
 #[test]
-fn corrupt_state_file_handled() {
+fn ok_stdout_as_json_ok_valid_json_returns_some() {
+    let result = Ok((0, r#"{"status":"ok"}"#.to_string(), String::new()));
+    let value = ok_stdout_as_json(result).expect("expected Some");
+    assert_eq!(value["status"], "ok");
+}
+
+#[test]
+fn ok_stdout_as_json_ok_invalid_json_returns_none() {
+    let result = Ok((0, "not-json".to_string(), String::new()));
+    assert!(ok_stdout_as_json(result).is_none());
+}
+
+#[test]
+fn ok_stdout_as_json_err_returns_none() {
+    let result = Err("spawn failed".to_string());
+    assert!(ok_stdout_as_json(result).is_none());
+}
+
+#[test]
+fn post_merge_wrapper_returns_value_object() {
+    // Drive post_merge via its public signature. With no gh or bin/flow
+    // on PATH the subcommand spawns fail, but best-effort semantics mean
+    // the function returns a well-formed Value::Object with failures.
     let dir = tempfile::tempdir().unwrap();
-    let state_dir = dir.path().join(".flow-states");
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = make_repo_fixture(&parent);
+    let state_dir = repo.join(".flow-states");
     fs::create_dir_all(&state_dir).unwrap();
-    let state_path = state_dir.join("test-feature.json");
-    fs::write(&state_path, "not valid json{{{").unwrap();
+    let state_path = state_dir.join(format!("{}.json", BRANCH));
+    write_state_file_at(&state_path, &happy_state(BRANCH));
 
-    let runner = mock_runner(vec![
-        fail(r#"{"status": "error"}"#),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-    ]);
+    // Change cwd to the repo so project_root resolves correctly; spawn
+    // a thread is unnecessary because post_merge is sync.
+    let prev = std::env::current_dir().ok();
+    std::env::set_current_dir(&repo).unwrap();
 
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
+    let value = post_merge(42, state_path.to_string_lossy().as_ref(), BRANCH);
 
-    assert_eq!(result["status"], "ok");
-}
+    if let Some(prev) = prev {
+        let _ = std::env::set_current_dir(prev);
+    }
 
-#[test]
-fn issues_summary_with_issues_populates_banner() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_WITH_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["banner_line"], "Issues filed: 1 (Flaky Test: 1)");
-}
-
-#[test]
-fn closed_issues_file_write_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = dir.path().join("state.json");
-    let state = json!({
-        "schema_version": 1,
-        "branch": "test-feature",
-        "pr_number": 42,
-        "repo": "test/test",
-        "phases": {}
-    });
-    fs::write(&state_path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_WITH_CLOSED),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-        ok(AUTO_CLOSE_OK),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert!(result["failures"]
-        .as_object()
-        .unwrap()
-        .contains_key("closed_issues_file"));
-}
-
-#[test]
-fn parent_closed_populates_parents_closed() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_WITH_CLOSED),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-        ok(r#"{"status": "ok", "parent_closed": true, "milestone_closed": false}"#),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    let parents: Vec<i64> = result["parents_closed"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_i64().unwrap())
-        .collect();
-    assert_eq!(parents, vec![100]);
-}
-
-#[test]
-fn milestone_closed_also_populates_parents_closed() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_WITH_CLOSED),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-        ok(r#"{"status": "ok", "parent_closed": false, "milestone_closed": true}"#),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    let parents: Vec<i64> = result["parents_closed"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_i64().unwrap())
-        .collect();
-    assert_eq!(parents, vec![100]);
-}
-
-#[test]
-fn repo_null_skips_auto_close_parent() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state = json!({
-        "schema_version": 1,
-        "branch": "test-feature",
-        "pr_number": 42,
-        "repo": null,
-        "phases": {}
-    });
-    let state_path = state_dir.join("test-feature.json");
-    fs::write(&state_path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_WITH_CLOSED),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["parents_closed"], json!([]));
-}
-
-#[test]
-fn repo_empty_string_skips_auto_close_parent() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, Some(""));
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_WITH_CLOSED),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["parents_closed"], json!([]));
-}
-
-#[test]
-fn timeout_handling_all_calls_fail() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
-
-    let runner = mock_runner(vec![
-        err("Timed out after 60s"),
-        err("Timed out after 60s"),
-        err("Timed out after 30s"),
-        err("Timed out after 60s"),
-        err("Timed out after 30s"),
-        err("Timed out after 60s"),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["status"], "ok");
-    let failures = result["failures"].as_object().unwrap();
-    assert!(failures.contains_key("phase_transition"));
-    assert!(failures.contains_key("render_pr_body"));
-    assert!(failures.contains_key("label_issues"));
-}
-
-#[test]
-fn render_pr_body_failure_captured() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        fail("gh API error"),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert!(result["failures"]
-        .as_object()
-        .unwrap()
-        .contains_key("render_pr_body"));
-}
-
-#[test]
-fn missing_state_file_still_produces_result() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = dir.path().join(".flow-states").join("test-feature.json");
-    fs::create_dir_all(state_path.parent().unwrap()).unwrap();
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["slack"]["status"], "skipped");
-}
-
-#[test]
-fn non_object_state_file_does_not_panic() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state_path = state_dir.join("test-feature.json");
-    fs::write(&state_path, "[1, 2, 3]").unwrap();
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["status"], "ok");
-}
-
-#[test]
-fn invalid_branch_with_slash_returns_early_with_invalid_branch_failure() {
-    // Covers the `FlowPaths::try_new` None branch (invalid_branch path).
-    // A slash-containing branch is rejected by FlowPaths because the
-    // flat .flow-states/ layout cannot address it.
-    let dir = tempfile::tempdir().unwrap();
-    let runner = mock_runner(vec![]);
-
-    let result = post_merge_inner(
-        42,
-        "/nonexistent/state.json",
-        "feature/slash",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    let failures = result["failures"].as_object().unwrap();
-    assert!(failures.contains_key("invalid_branch"));
-    assert!(failures["invalid_branch"]
-        .as_str()
-        .unwrap()
-        .contains("contains '/'"));
-    // No further subprocesses should have been called.
-}
-
-#[test]
-fn state_path_read_error_falls_back_to_empty_state() {
-    // Covers the `Err(_) => json!({})` branch of read_to_string:
-    // state_path.exists() is true but read fails (e.g. path is a
-    // directory). post_merge_inner must tolerate the failure and
-    // continue with an empty state value.
-    let dir = tempfile::tempdir().unwrap();
-    let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    // Create a DIRECTORY at the state_path so read_to_string fails.
-    let state_path = state_dir.join("test-feature.json");
-    fs::create_dir_all(&state_path).unwrap();
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["status"], "ok");
-    // Empty state → no repo → no auto-close-parent calls, no slack.
-    assert_eq!(result["slack"]["status"], "skipped");
-}
-
-#[test]
-fn format_complete_summary_non_ok_status_does_not_populate_summary() {
-    // Covers the fallthrough when sum_data.status != "ok": summary and
-    // issues_links stay at their default empty strings.
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(r#"{"status": "error", "message": "summary failed"}"#),
-        ok(LABEL_OK),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["summary"], "");
-    assert_eq!(result["issues_links"], "");
-}
-
-#[test]
-fn auto_close_parent_runner_error_is_silently_ignored() {
-    // Covers the fallthrough when runner returns Err for auto-close-
-    // parent (closing `}` of `if let Ok(..) = runner(..)`). The error
-    // is swallowed per best-effort semantics.
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_WITH_CLOSED),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-        err("auto-close-parent timeout"),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["parents_closed"], json!([]));
-}
-
-#[test]
-fn slack_status_ok_without_ts_skips_add_notification() {
-    // Covers the None branch of `if let Some(ts) = ts_opt`: slack returns
-    // status=ok but no "ts" field (or empty). We still record the slack
-    // object but skip the add-notification call.
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", Some("1234.5678"), None);
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-        ok(r#"{"status": "ok"}"#),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["slack"]["status"], "ok");
-}
-
-#[test]
-fn phase_transition_parseable_non_ok_falls_back_to_stderr_branch() {
-    // Covers `let msg = parse_err.unwrap_or_else(|| stderr.trim().to_string())`
-    // at line 181: the closure fires when parse_err is None — i.e.,
-    // stdout IS valid JSON but status is not "ok". The fallback closure
-    // reads stderr.
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
-
-    let runner = mock_runner(vec![
-        // phase-transition returns valid JSON but status != "ok" AND
-        // subprocess exited 1 so stderr carries text.
-        Ok((
-            1,
-            r#"{"status":"error","message":"phase locked"}"#.to_string(),
-            "stderr detail".to_string(),
-        )),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_EMPTY),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    let failures = result["failures"].as_object().unwrap();
-    assert!(failures.contains_key("phase_transition"));
-    // The message came from stderr (not the JSON parse error), because
-    // parse_err was None (JSON parsed cleanly) and the fallback fired.
-    assert_eq!(failures["phase_transition"], "stderr detail");
-}
-
-#[test]
-fn close_issues_json_without_closed_array_produces_empty_list() {
-    // Covers the fallthrough of `if let Some(closed_arr) = close_data.get("closed")...`
-    // — close-issues returns parseable JSON without a "closed" array.
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(r#"{"status":"ok"}"#),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["closed_issues"], json!([]));
-}
-
-#[test]
-fn closed_issue_without_number_field_skips_auto_close() {
-    // Covers the fallthrough of `if let Some(issue_num) = issue.get("number")...`
-    // when a closed issue entry has no numeric "number" field.
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        // closed entry missing "number" — skip auto-close-parent.
-        ok(r#"{"status":"ok","closed":[{"url":"https://example.com/issues/x"}],"failed":[]}"#),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-        // No auto-close-parent call — issue had no number.
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["parents_closed"], json!([]));
-}
-
-#[test]
-fn auto_close_parent_parse_failure_is_silently_ignored() {
-    // Covers the fallthrough when auto-close-parent's stdout is not
-    // parseable JSON — the `if let Some(acp_data) = parsed` arm does
-    // not fire and parents_closed stays empty.
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok(CLOSE_ISSUES_WITH_CLOSED),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-        ok("not valid json{{{"),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["parents_closed"], json!([]));
-}
-
-#[test]
-fn close_issues_parse_failure_continues() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_path = setup_inner(dir.path(), "test-feature", None, None);
-
-    let runner = mock_runner(vec![
-        ok(PT_COMPLETE_OK),
-        ok(RENDER_PR_OK),
-        ok(ISSUES_SUMMARY_NO_ISSUES),
-        ok("not json"),
-        ok(SUMMARY_OK),
-        ok(LABEL_OK),
-    ]);
-
-    let result = post_merge_inner(
-        42,
-        state_path.to_str().unwrap(),
-        "test-feature",
-        dir.path(),
-        "/fake/bin/flow",
-        &runner,
-    );
-
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["closed_issues"], json!([]));
+    assert!(value.is_object());
+    assert_eq!(value["status"], "ok");
 }

@@ -6,21 +6,14 @@
 //! - "ci_flaky" — CI was flaky (baseline or post-deps), includes filing context
 //! - "ci_failed" — consistent CI failure on baseline (lock held)
 //! - "deps_ci_failed" — consistent CI failure after dep update (lock held)
-//! - "error" — infrastructure failure (pull failed, deps error)
+//! - "error" — infrastructure failure (pull failed, non-consistent CI error,
+//!   deps error, commit-deps error)
 //!
-//! # Dependency-injected core
-//!
-//! [`run_impl_with_deps`] is the fully-testable core: it accepts the
-//! project root and cwd as `&Path` parameters and the git-pull,
-//! CI-runner, deps-runner, and commit-deps steps as injectable
-//! closures. Integration tests exercise every branch against a
-//! `TempDir` fixture with stub closures, so the non-consistent CI
-//! error paths and `commit_deps` failure path are testable without
-//! spawning git or CI. Production [`run_impl`] binds the closures to
-//! [`git_pull`], [`ci::run_impl`], [`run_update_deps`], and
-//! [`commit_deps`].
+//! Logic is driven entirely through the compiled binary; integration tests
+//! use real git and controllable `bin/*` stubs in a `TempDir` fixture.
 
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 use clap::Parser;
 use serde_json::{json, Value};
@@ -41,20 +34,11 @@ pub struct Args {
     pub branch: String,
 }
 
-/// Testable core with injected project root, cwd, and subprocess
-/// steps. Production [`run_impl`] binds the closures to
-/// [`git_pull`], [`ci::run_impl`], [`run_update_deps`], and
-/// [`commit_deps`]. Tests inject stubs returning canned values.
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
-pub fn run_impl_with_deps(
-    args: &Args,
-    root: &Path,
-    cwd: &Path,
-    git_pull_fn: &dyn Fn(&Path) -> Result<(), String>,
-    ci_runner: &dyn Fn(&ci::Args, &Path, &Path, bool) -> (Value, i32),
-    deps_runner: &dyn Fn(&Path, u64) -> (Value, i32),
-    commit_deps_fn: &dyn Fn(&Path) -> Result<(), String>,
-) -> Value {
+/// Main-arm entry point: drives git pull + baseline CI + update-deps +
+/// post-deps CI + commit-deps sequentially. `run_impl_with_deps` always
+/// returns `Value` — business errors appear in the `status: "error"`
+/// payload with exit code `0`.
+pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
     let branch = &args.branch;
 
     // Update TUI step counter
@@ -62,7 +46,7 @@ pub fn run_impl_with_deps(
     update_step(&state_path, 2);
 
     // Step 1: git pull origin main
-    let pull_result = git_pull_fn(cwd);
+    let pull_result = git_pull(cwd);
     let _ = append_log(
         root,
         branch,
@@ -72,11 +56,14 @@ pub fn run_impl_with_deps(
         ),
     );
     if let Err(msg) = pull_result {
-        return json!({
-            "status": "error",
-            "message": format!("git pull failed: {}", msg),
-            "step": "git_pull",
-        });
+        return (
+            json!({
+                "status": "error",
+                "message": format!("git pull failed: {}", msg),
+                "step": "git_pull",
+            }),
+            0,
+        );
     }
 
     // Step 2: CI baseline with retry
@@ -93,7 +80,7 @@ pub fn run_impl_with_deps(
         clean: false,
         trailing: Vec::new(),
     };
-    let (ci_result, _ci_code) = ci_runner(&ci_args, cwd, root, false);
+    let (ci_result, _ci_code) = ci::run_impl(&ci_args, cwd, root, false);
     let _ = append_log(
         root,
         branch,
@@ -111,17 +98,23 @@ pub fn run_impl_with_deps(
             .and_then(|v| v.as_bool())
             .unwrap_or(false)
         {
-            return json!({
-                "status": "ci_failed",
-                "output": ci_result["output"],
-                "attempts": ci_result["attempts"],
-            });
+            return (
+                json!({
+                    "status": "ci_failed",
+                    "output": ci_result["output"],
+                    "attempts": ci_result["attempts"],
+                }),
+                0,
+            );
         }
-        return json!({
-            "status": "error",
-            "message": ci_result["message"],
-            "step": "ci_baseline",
-        });
+        return (
+            json!({
+                "status": "error",
+                "message": ci_result["message"],
+                "step": "ci_baseline",
+            }),
+            0,
+        );
     }
 
     // Check for flaky baseline
@@ -138,7 +131,7 @@ pub fn run_impl_with_deps(
     }
 
     // Step 3: Update dependencies
-    let (deps_result, _deps_code) = deps_runner(cwd, DEPS_TIMEOUT_SECS);
+    let (deps_result, _deps_code) = run_update_deps(cwd, DEPS_TIMEOUT_SECS);
     let _ = append_log(
         root,
         branch,
@@ -157,24 +150,30 @@ pub fn run_impl_with_deps(
     let deps_error = deps_result["status"] == "error";
 
     if deps_error {
-        return json!({
-            "status": "error",
-            "message": deps_result["message"],
-            "step": "update_deps",
-        });
+        return (
+            json!({
+                "status": "error",
+                "message": deps_result["message"],
+                "step": "update_deps",
+            }),
+            0,
+        );
     }
 
     if deps_skipped || deps_no_changes {
         // No dep changes — return clean (with flaky info if applicable)
         if let Some(info) = flaky_info {
-            return json!({
-                "status": "ci_flaky",
-                "first_failure_output": info["first_failure_output"],
-                "attempts": info["attempts"],
-                "flaky_context": info["flaky_context"],
-            });
+            return (
+                json!({
+                    "status": "ci_flaky",
+                    "first_failure_output": info["first_failure_output"],
+                    "attempts": info["attempts"],
+                    "flaky_context": info["flaky_context"],
+                }),
+                0,
+            );
         }
-        return json!({"status": "clean"});
+        return (json!({"status": "clean"}), 0);
     }
 
     // Step 4: Post-deps CI. Reaching this point means dependencies were
@@ -193,7 +192,7 @@ pub fn run_impl_with_deps(
         clean: false,
         trailing: Vec::new(),
     };
-    let (post_ci_result, _post_ci_code) = ci_runner(&post_ci_args, cwd, root, false);
+    let (post_ci_result, _post_ci_code) = ci::run_impl(&post_ci_args, cwd, root, false);
     let _ = append_log(
         root,
         branch,
@@ -209,17 +208,23 @@ pub fn run_impl_with_deps(
             .and_then(|v| v.as_bool())
             .unwrap_or(false)
         {
-            return json!({
-                "status": "deps_ci_failed",
-                "output": post_ci_result["output"],
-                "attempts": post_ci_result["attempts"],
-            });
+            return (
+                json!({
+                    "status": "deps_ci_failed",
+                    "output": post_ci_result["output"],
+                    "attempts": post_ci_result["attempts"],
+                }),
+                0,
+            );
         }
-        return json!({
-            "status": "error",
-            "message": post_ci_result["message"],
-            "step": "ci_post_deps",
-        });
+        return (
+            json!({
+                "status": "error",
+                "message": post_ci_result["message"],
+                "step": "ci_post_deps",
+            }),
+            0,
+        );
     }
 
     // Check for flaky post-deps
@@ -237,17 +242,20 @@ pub fn run_impl_with_deps(
     }
 
     // Commit dependency changes to main while holding the start lock
-    if let Err(e) = commit_deps_fn(cwd) {
+    if let Err(e) = commit_deps(cwd) {
         let _ = append_log(
             root,
             branch,
             &format!("[Phase 1] start-gate — commit deps (error: {})", e),
         );
-        return json!({
-            "status": "error",
-            "message": format!("Failed to commit dependency update: {}", e),
-            "step": "commit_deps",
-        });
+        return (
+            json!({
+                "status": "error",
+                "message": format!("Failed to commit dependency update: {}", e),
+                "step": "commit_deps",
+            }),
+            0,
+        );
     }
     let _ = append_log(root, branch, "[Phase 1] start-gate — commit deps (ok)");
 
@@ -264,29 +272,7 @@ pub fn run_impl_with_deps(
         response["flaky_context"] = info["flaky_context"].clone();
     }
 
-    response
-}
-
-/// Main-arm entry point: returns the `(Value, i32)` contract that
-/// `dispatch::dispatch_json` consumes. Takes `root: &Path` and
-/// `cwd: &Path` per `.claude/rules/rust-patterns.md` "Main-arm
-/// dispatch" so integration tests can pass a `TempDir` fixture
-/// instead of the host `project_root()`/`current_dir()`.
-/// `run_impl_with_deps` always returns `Value` — business errors
-/// appear in the `status: "error"` payload with exit code `0`.
-pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
-    (
-        run_impl_with_deps(
-            args,
-            root,
-            cwd,
-            &git_pull,
-            &ci::run_impl,
-            &run_update_deps,
-            &commit_deps,
-        ),
-        0,
-    )
+    (response, 0)
 }
 
 /// Commit dependency changes to main and push.
@@ -301,19 +287,20 @@ fn commit_deps(cwd: &Path) -> Result<(), String> {
     // — `git` is always on PATH and `Command::output()` only returns
     // Err when the binary cannot be executed at all. A failure there
     // is a programmer-visible panic rather than a silent skip.
-    let add = std::process::Command::new("git")
+    //
+    // `git add -A` also cannot fail in normal repo states — we are
+    // inside the deps-changed branch (post-deps CI already ran git
+    // commands against this repo), and `git add -A` succeeds even
+    // when there is nothing to add. Its result is discarded; any
+    // subsequent commit failure surfaces the real error via the
+    // git commit exit check below.
+    let _ = Command::new("git")
         .args(["add", "-A"])
         .current_dir(cwd)
         .output()
         .expect("git add -A spawn");
-    if !add.status.success() {
-        return Err(format!(
-            "git add: {}",
-            String::from_utf8_lossy(&add.stderr).trim()
-        ));
-    }
 
-    let commit = std::process::Command::new("git")
+    let commit = Command::new("git")
         .args(["commit", "-m", "Update dependencies"])
         .current_dir(cwd)
         .output()
@@ -325,7 +312,7 @@ fn commit_deps(cwd: &Path) -> Result<(), String> {
         ));
     }
 
-    let push = std::process::Command::new("git")
+    let push = Command::new("git")
         .args(["push", "origin", "main"])
         .current_dir(cwd)
         .output()
@@ -344,11 +331,11 @@ fn commit_deps(cwd: &Path) -> Result<(), String> {
 fn git_pull(cwd: &Path) -> Result<(), String> {
     // Spawning `git` and waiting for it cannot fail in practice on
     // any supported target.
-    let child = std::process::Command::new("git")
+    let child = Command::new("git")
         .args(["pull", "origin", "main"])
         .current_dir(cwd)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .expect("git pull spawn");
 

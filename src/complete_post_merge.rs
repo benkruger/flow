@@ -16,7 +16,7 @@ use clap::Parser;
 use serde_json::{json, Map, Value};
 
 use crate::commands::log::append_log;
-use crate::complete_preflight::{run_cmd_with_timeout, CmdResult, LOCAL_TIMEOUT, NETWORK_TIMEOUT};
+use crate::complete_preflight::{run_cmd_with_timeout, LOCAL_TIMEOUT, NETWORK_TIMEOUT};
 use crate::flow_paths::FlowPaths;
 use crate::git::project_root;
 use crate::lock::mutate_state;
@@ -48,15 +48,21 @@ fn parse_json_or(stdout: &str) -> (Option<Value>, Option<String>) {
     }
 }
 
-/// Core post-merge logic with injectable runner. Best-effort throughout.
-pub fn post_merge_inner(
-    pr_number: i64,
-    state_file: &str,
-    branch: &str,
-    root: &Path,
-    bin_flow: &str,
-    runner: &dyn Fn(&[&str], u64) -> CmdResult,
-) -> Value {
+/// Collapse a `CmdResult` + JSON-parse into a single `Option<Value>`.
+/// Returns `None` when the subprocess spawn failed OR the stdout is
+/// not valid JSON; `Some(value)` otherwise. Used by call sites that
+/// treat both outcomes as "skip downstream processing."
+pub fn ok_stdout_as_json(result: crate::complete_preflight::CmdResult) -> Option<Value> {
+    let (_code, stdout, _stderr) = result.ok()?;
+    parse_json_or(&stdout).0
+}
+
+/// Production wrapper: runs the full post-merge sequence. Best-effort
+/// throughout — all subcommand failures land in the JSON `failures`
+/// map rather than raising.
+pub fn post_merge(pr_number: i64, state_file: &str, branch: &str) -> Value {
+    let root = project_root();
+    let bin_flow = bin_flow_path();
     let state_path = Path::new(state_file);
 
     // Initialize result with default fields (preserve_order maintains this order)
@@ -77,10 +83,8 @@ pub fn post_merge_inner(
     // `--branch` is external CLI input. When the branch is invalid for
     // FlowPaths (contains '/' or is empty), return the initialized
     // result with a single `invalid_branch` failure rather than
-    // panicking: post-merge's artifact paths
-    // (`.flow-states/<branch>-issues.json` etc.) cannot address a
-    // slash-containing branch in the flat `.flow-states/` layout.
-    let paths = match FlowPaths::try_new(root, branch) {
+    // panicking.
+    let paths = match FlowPaths::try_new(&root, branch) {
         Some(p) => p,
         None => {
             failures.insert(
@@ -96,7 +100,7 @@ pub fn post_merge_inner(
     };
     let log = |msg: &str| {
         if paths.flow_states_dir().is_dir() {
-            let _ = append_log(root, branch, msg);
+            let _ = append_log(&root, branch, msg);
         }
     };
 
@@ -110,9 +114,6 @@ pub fn post_merge_inner(
         json!({})
     };
 
-    // Treat both `null` and the empty string `""` as "no repo set" so
-    // downstream issue-closing and Slack steps short-circuit cleanly
-    // when the state file lacks a repo.
     let repo: Option<String> = state
         .get("repo")
         .and_then(|v| v.as_str())
@@ -141,7 +142,7 @@ pub fn post_merge_inner(
 
     // Phase transition complete
     let pt_args = [
-        bin_flow,
+        bin_flow.as_str(),
         "phase-transition",
         "--phase",
         "flow-complete",
@@ -152,7 +153,7 @@ pub fn post_merge_inner(
         "--branch",
         branch,
     ];
-    match runner(&pt_args, NETWORK_TIMEOUT) {
+    match run_cmd_with_timeout(&pt_args, NETWORK_TIMEOUT) {
         Err(e) => {
             log("[Phase 6] complete-post-merge — phase-transition (error)");
             failures.insert("phase_transition".to_string(), json!(e));
@@ -174,10 +175,6 @@ pub fn post_merge_inner(
                     log("[Phase 6] complete-post-merge — phase-transition (ok)");
                 }
                 _ => {
-                    // Prefer the structured parse error when present;
-                    // fall back to the raw stderr text from the
-                    // subprocess so the failure surfaces something
-                    // human-readable in either case.
                     let msg = parse_err.unwrap_or_else(|| stderr.trim().to_string());
                     log("[Phase 6] complete-post-merge — phase-transition (failed)");
                     failures.insert("phase_transition".to_string(), json!(msg));
@@ -186,19 +183,17 @@ pub fn post_merge_inner(
         }
     }
 
-    // Render PR body — pass state_file explicitly because render-pr-body's
-    // auto-detection uses current_branch(), which returns "main" when the
-    // Complete skill runs from the project root after merge.
+    // Render PR body
     let pr_str = pr_number.to_string();
     let render_args = [
-        bin_flow,
+        bin_flow.as_str(),
         "render-pr-body",
         "--pr",
         &pr_str,
         "--state-file",
         state_file,
     ];
-    match runner(&render_args, NETWORK_TIMEOUT) {
+    match run_cmd_with_timeout(&render_args, NETWORK_TIMEOUT) {
         Err(e) => {
             log("[Phase 6] complete-post-merge — render-pr-body (error)");
             failures.insert("render_pr_body".to_string(), json!(e));
@@ -217,14 +212,14 @@ pub fn post_merge_inner(
     let issues_output_path = paths.issues_file();
     let issues_output = issues_output_path.to_string_lossy().to_string();
     let iss_args = [
-        bin_flow,
+        bin_flow.as_str(),
         "format-issues-summary",
         "--state-file",
         state_file,
         "--output",
         &issues_output,
     ];
-    if let Ok((_code, stdout, _stderr)) = runner(&iss_args, LOCAL_TIMEOUT) {
+    if let Ok((_code, stdout, _stderr)) = run_cmd_with_timeout(&iss_args, LOCAL_TIMEOUT) {
         let (parsed, _) = parse_json_or(&stdout);
         if let Some(iss_data) = parsed {
             if iss_data.get("has_issues").and_then(|v| v.as_bool()) == Some(true) {
@@ -236,15 +231,17 @@ pub fn post_merge_inner(
             }
         }
     }
-    // Transport errors on format-issues-summary are silently ignored:
-    // the issues banner is decorative, and post-merge should not fail
-    // because the formatter subprocess returned a non-zero status.
 
     // --- Step 9: Close referenced issues ---
 
-    let close_args = [bin_flow, "close-issues", "--state-file", state_file];
+    let close_args = [
+        bin_flow.as_str(),
+        "close-issues",
+        "--state-file",
+        state_file,
+    ];
     let mut closed_issues: Vec<Value> = Vec::new();
-    if let Ok((_code, stdout, _stderr)) = runner(&close_args, NETWORK_TIMEOUT) {
+    if let Ok((_code, stdout, _stderr)) = run_cmd_with_timeout(&close_args, NETWORK_TIMEOUT) {
         let (parsed, _) = parse_json_or(&stdout);
         if let Some(close_data) = parsed {
             if let Some(closed_arr) = close_data.get("closed").and_then(|v| v.as_array()) {
@@ -258,9 +255,6 @@ pub fn post_merge_inner(
         closed_issues.len(),
     ));
 
-    // Write closed-issues file if non-empty. Vec<Value> always
-    // serializes cleanly — `expect` covers an unreachable branch
-    // per `.claude/rules/testability-means-simplicity.md`.
     if !closed_issues.is_empty() {
         let closed_path = paths.closed_issues();
         let closed_json =
@@ -276,7 +270,7 @@ pub fn post_merge_inner(
     let closed_file_path_buf = paths.closed_issues();
     let closed_file_path = closed_file_path_buf.to_string_lossy().to_string();
     let mut sum_args: Vec<&str> = vec![
-        bin_flow,
+        bin_flow.as_str(),
         "format-complete-summary",
         "--state-file",
         state_file,
@@ -285,7 +279,7 @@ pub fn post_merge_inner(
         sum_args.push("--closed-issues-file");
         sum_args.push(&closed_file_path);
     }
-    if let Ok((_code, stdout, _stderr)) = runner(&sum_args, LOCAL_TIMEOUT) {
+    if let Ok((_code, stdout, _stderr)) = run_cmd_with_timeout(&sum_args, LOCAL_TIMEOUT) {
         let (parsed, _) = parse_json_or(&stdout);
         if let Some(sum_data) = parsed {
             if sum_data.get("status").and_then(|v| v.as_str()) == Some("ok") {
@@ -302,17 +296,16 @@ pub fn post_merge_inner(
             }
         }
     }
-    // Transport errors on format-complete-summary are silently ignored
 
     // Remove In-Progress labels
     let label_args = [
-        bin_flow,
+        bin_flow.as_str(),
         "label-issues",
         "--state-file",
         state_file,
         "--remove",
     ];
-    match runner(&label_args, NETWORK_TIMEOUT) {
+    match run_cmd_with_timeout(&label_args, NETWORK_TIMEOUT) {
         Err(e) => {
             failures.insert("label_issues".to_string(), json!(e));
         }
@@ -330,27 +323,26 @@ pub fn post_merge_inner(
             if let Some(issue_num) = issue.get("number").and_then(|v| v.as_i64()) {
                 let issue_num_str = issue_num.to_string();
                 let acp_args = [
-                    bin_flow,
+                    bin_flow.as_str(),
                     "auto-close-parent",
                     "--repo",
                     repo_str.as_str(),
                     "--issue-number",
                     &issue_num_str,
                 ];
-                if let Ok((_code, stdout, _stderr)) = runner(&acp_args, NETWORK_TIMEOUT) {
-                    let (parsed, _) = parse_json_or(&stdout);
-                    if let Some(acp_data) = parsed {
-                        let parent_closed = acp_data
-                            .get("parent_closed")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
-                        let milestone_closed = acp_data
-                            .get("milestone_closed")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
-                        if parent_closed || milestone_closed {
-                            parents_closed.push(issue_num);
-                        }
+                if let Some(acp_data) =
+                    ok_stdout_as_json(run_cmd_with_timeout(&acp_args, NETWORK_TIMEOUT))
+                {
+                    let parent_closed = acp_data
+                        .get("parent_closed")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let milestone_closed = acp_data
+                        .get("milestone_closed")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    if parent_closed || milestone_closed {
+                        parents_closed.push(issue_num);
                     }
                 }
             }
@@ -358,9 +350,7 @@ pub fn post_merge_inner(
     }
     result.insert("parents_closed".to_string(), json!(parents_closed));
 
-    // Slack notification — only post if a non-empty thread_ts is set;
-    // both `null` and the empty string `""` mean "no Slack thread to
-    // reply to" and skip the notification entirely.
+    // Slack notification — only post if a non-empty thread_ts is set.
     let slack_thread_ts: Option<String> = state
         .get("slack_thread_ts")
         .and_then(|v| v.as_str())
@@ -370,7 +360,7 @@ pub fn post_merge_inner(
     if let Some(ref thread_ts) = slack_thread_ts {
         let msg = format!("Phase 6: Complete finished for PR #{}", pr_number);
         let slack_args = [
-            bin_flow,
+            bin_flow.as_str(),
             "notify-slack",
             "--phase",
             "flow-complete",
@@ -379,7 +369,7 @@ pub fn post_merge_inner(
             "--thread-ts",
             thread_ts.as_str(),
         ];
-        match runner(&slack_args, NETWORK_TIMEOUT) {
+        match run_cmd_with_timeout(&slack_args, NETWORK_TIMEOUT) {
             Err(e) => {
                 result.insert(
                     "slack".to_string(),
@@ -390,7 +380,6 @@ pub fn post_merge_inner(
                 let (parsed, _) = parse_json_or(&stdout);
                 match parsed {
                     Some(slack_data) => {
-                        // Record notification if successful
                         let status_ok =
                             slack_data.get("status").and_then(|v| v.as_str()) == Some("ok");
                         let ts_opt = slack_data
@@ -402,7 +391,7 @@ pub fn post_merge_inner(
                         if status_ok {
                             if let Some(ts) = ts_opt {
                                 let add_args = [
-                                    bin_flow,
+                                    bin_flow.as_str(),
                                     "add-notification",
                                     "--phase",
                                     "flow-complete",
@@ -416,7 +405,7 @@ pub fn post_merge_inner(
                                 // Fire-and-forget: the notification
                                 // record is best-effort and a failure
                                 // here must not roll back the merge.
-                                let _ = runner(&add_args, LOCAL_TIMEOUT);
+                                let _ = run_cmd_with_timeout(&add_args, LOCAL_TIMEOUT);
                             }
                         }
                     }
@@ -440,23 +429,6 @@ pub fn post_merge_inner(
     Value::Object(result)
 }
 
-/// Production wrapper.
-pub fn post_merge(pr_number: i64, state_file: &str, branch: &str) -> Value {
-    let root = project_root();
-    post_merge_inner(
-        pr_number,
-        state_file,
-        branch,
-        &root,
-        &bin_flow_path(),
-        &run_cmd_with_timeout,
-    )
-}
-
-/// CLI entry point. Always exits 0 — post-merge is best-effort and any
-/// downstream failures (Slack, label cleanup, parent issue close) are
-/// surfaced inside the JSON `failures` map rather than via the exit
-/// code, so the calling skill can continue cleaning up.
 /// Main-arm dispatch: always returns exit code 0 (best-effort).
 pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
     (post_merge(args.pr, &args.state_file, &args.branch), 0)

@@ -1,40 +1,19 @@
 //! Integration tests for `flow_rs::finalize_commit` — drives the public
-//! surface (`finalize_commit_inner` with mock git, `run_impl` with real git,
-//! `run_impl_main` via the compiled binary). Private helpers
-//! (`remove_message_file`, `emit_deviation_stderr`, `run_git_with_timeout`,
-//! `run_git_in_dir`) are exercised indirectly through these entry points.
+//! surface (`run_impl` with real git, `run_impl_main` via the compiled
+//! binary). Private helpers (`remove_message_file`, `emit_deviation_stderr`,
+//! `run_git_in_dir`, `finalize_commit`) are exercised indirectly through
+//! the public entry points. No `finalize_commit_inner` pub-for-testing
+//! seam — every git call goes through the real binary inside a fixture
+//! repo or a stub on PATH.
 
-use std::cell::RefCell;
-use std::collections::VecDeque;
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use flow_rs::finalize_commit::{finalize_commit_inner, run_impl, Args};
+use flow_rs::finalize_commit::{run_impl, Args};
 use serde_json::{json, Value};
-
-type GitResult = Result<(i32, String, String), String>;
-
-fn mock_git(responses: Vec<GitResult>) -> impl Fn(&[&str], u64) -> GitResult {
-    let queue = RefCell::new(VecDeque::from(responses));
-    move |_args: &[&str], _timeout: u64| -> GitResult {
-        queue
-            .borrow_mut()
-            .pop_front()
-            .expect("no more mock responses")
-    }
-}
-
-fn ok(stdout: &str) -> GitResult {
-    Ok((0, stdout.to_string(), String::new()))
-}
-
-fn fail(stderr: &str) -> GitResult {
-    Ok((1, String::new(), stderr.to_string()))
-}
-
-fn timeout(msg: &str) -> GitResult {
-    Err(msg.to_string())
-}
 
 /// Assert a git command succeeded. Panics with stderr on failure.
 fn git_assert_ok(output: &std::process::Output) {
@@ -47,354 +26,6 @@ fn git_assert_ok(output: &std::process::Output) {
         stderr
     );
 }
-
-// --- finalize_commit_inner (mock git) ---
-
-#[test]
-fn happy_path() {
-    let dir = tempfile::tempdir().unwrap();
-    let msg = dir.path().join(".flow-commit-msg");
-    fs::write(&msg, "Test commit.").unwrap();
-
-    let git = mock_git(vec![
-        ok(""),         // git commit
-        ok("abc123\n"), // git rev-parse HEAD (post-commit)
-        ok(""),         // git pull
-        ok(""),         // git push
-        ok("abc123\n"), // git rev-parse HEAD (final)
-    ]);
-
-    let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["sha"], "abc123");
-    assert_eq!(result["pull_merged"], false);
-    // Also covers remove_message_file (unlinks the msg file after commit).
-    assert!(!msg.exists());
-}
-
-#[test]
-fn commit_failure() {
-    let dir = tempfile::tempdir().unwrap();
-    let msg = dir.path().join(".flow-commit-msg");
-    fs::write(&msg, "Test commit.").unwrap();
-
-    let git = mock_git(vec![fail("nothing to commit")]);
-
-    let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["step"], "commit");
-    assert_eq!(result["message"], "nothing to commit");
-    assert!(!msg.exists());
-}
-
-#[test]
-fn pull_conflict() {
-    let dir = tempfile::tempdir().unwrap();
-    let msg = dir.path().join(".flow-commit-msg");
-    fs::write(&msg, "Test commit.").unwrap();
-
-    let git = mock_git(vec![
-        ok(""),                                                           // git commit
-        ok("commit_sha\n"), // git rev-parse HEAD (post-commit)
-        fail("CONFLICT"),   // git pull
-        Ok((0, "UU file1.py\nAA file2.py\n".to_string(), String::new())), // git status
-    ]);
-
-    let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
-    assert_eq!(result["status"], "conflict");
-    let files: Vec<String> = result["files"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap().to_string())
-        .collect();
-    assert_eq!(files, vec!["file1.py", "file2.py"]);
-}
-
-#[test]
-fn pull_error_non_conflict() {
-    let dir = tempfile::tempdir().unwrap();
-    let msg = dir.path().join(".flow-commit-msg");
-    fs::write(&msg, "Test commit.").unwrap();
-
-    let git = mock_git(vec![
-        ok(""),                         // git commit
-        ok("commit_sha\n"),             // git rev-parse HEAD (post-commit)
-        fail("Could not resolve host"), // git pull
-        ok(""),                         // git status (clean)
-    ]);
-
-    let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["step"], "pull");
-    assert_eq!(result["message"], "Could not resolve host");
-}
-
-#[test]
-fn push_failure() {
-    let dir = tempfile::tempdir().unwrap();
-    let msg = dir.path().join(".flow-commit-msg");
-    fs::write(&msg, "Test commit.").unwrap();
-
-    let git = mock_git(vec![
-        ok(""),                    // git commit
-        ok("commit_sha\n"),        // git rev-parse HEAD (post-commit)
-        ok(""),                    // git pull
-        fail("permission denied"), // git push
-    ]);
-
-    let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["step"], "push");
-    assert_eq!(result["message"], "permission denied");
-}
-
-#[test]
-fn message_file_missing_ok() {
-    // Covers remove_message_file's "missing file ignored" branch — the
-    // file was never created, yet finalize_commit_inner calls
-    // remove_message_file in the Ok arm anyway. The production helper uses
-    // `let _ = fs::remove_file(path)` so cleanup is idempotent.
-    let dir = tempfile::tempdir().unwrap();
-    let msg = dir.path().join(".flow-commit-msg");
-
-    let git = mock_git(vec![
-        ok(""),         // git commit
-        ok("def456\n"), // git rev-parse HEAD (post-commit)
-        ok(""),         // git pull
-        ok(""),         // git push
-        ok("def456\n"), // git rev-parse HEAD (final)
-    ]);
-
-    let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["pull_merged"], false);
-}
-
-#[test]
-fn rev_parse_failure() {
-    let dir = tempfile::tempdir().unwrap();
-    let msg = dir.path().join(".flow-commit-msg");
-    fs::write(&msg, "Test commit.").unwrap();
-
-    let git = mock_git(vec![
-        ok(""),             // git commit
-        ok("commit_sha\n"), // git rev-parse HEAD (post-commit)
-        ok(""),             // git pull
-        ok(""),             // git push
-        fail("bad HEAD"),   // git rev-parse HEAD (final)
-    ]);
-
-    let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["sha"], "");
-    assert_eq!(result["pull_merged"], true);
-    assert_eq!(
-        result["warning"],
-        "commit succeeded but SHA retrieval failed"
-    );
-}
-
-#[test]
-fn commit_timeout() {
-    let dir = tempfile::tempdir().unwrap();
-    let msg = dir.path().join(".flow-commit-msg");
-    fs::write(&msg, "Test commit.").unwrap();
-
-    let git = mock_git(vec![timeout("timed out after 30s")]);
-
-    let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["step"], "commit");
-    assert!(result["message"].as_str().unwrap().contains("timed out"));
-    assert!(!msg.exists());
-}
-
-#[test]
-fn pull_timeout() {
-    let dir = tempfile::tempdir().unwrap();
-    let msg = dir.path().join(".flow-commit-msg");
-    fs::write(&msg, "Test commit.").unwrap();
-
-    let git = mock_git(vec![
-        ok(""),                         // git commit
-        ok("commit_sha\n"),             // git rev-parse HEAD (post-commit)
-        timeout("timed out after 60s"), // git pull
-    ]);
-
-    let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["step"], "pull");
-    assert!(result["message"].as_str().unwrap().contains("timed out"));
-}
-
-#[test]
-fn push_timeout() {
-    let dir = tempfile::tempdir().unwrap();
-    let msg = dir.path().join(".flow-commit-msg");
-    fs::write(&msg, "Test commit.").unwrap();
-
-    let git = mock_git(vec![
-        ok(""),                         // git commit
-        ok("commit_sha\n"),             // git rev-parse HEAD (post-commit)
-        ok(""),                         // git pull
-        timeout("timed out after 60s"), // git push
-    ]);
-
-    let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["step"], "push");
-    assert!(result["message"].as_str().unwrap().contains("timed out"));
-}
-
-#[test]
-fn rev_parse_timeout() {
-    let dir = tempfile::tempdir().unwrap();
-    let msg = dir.path().join(".flow-commit-msg");
-    fs::write(&msg, "Test commit.").unwrap();
-
-    let git = mock_git(vec![
-        ok(""),                         // git commit
-        ok("commit_sha\n"),             // git rev-parse HEAD (post-commit)
-        ok(""),                         // git pull
-        ok(""),                         // git push
-        timeout("timed out after 30s"), // git rev-parse HEAD (final)
-    ]);
-
-    let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["sha"], "");
-    assert_eq!(result["pull_merged"], true);
-    assert_eq!(
-        result["warning"],
-        "commit succeeded but SHA retrieval timed out"
-    );
-}
-
-#[test]
-fn status_porcelain_timeout() {
-    let dir = tempfile::tempdir().unwrap();
-    let msg = dir.path().join(".flow-commit-msg");
-    fs::write(&msg, "Test commit.").unwrap();
-
-    let git = mock_git(vec![
-        ok(""),                         // git commit
-        ok("commit_sha\n"),             // git rev-parse HEAD (post-commit)
-        fail("Could not resolve host"), // git pull
-        timeout("timed out after 30s"), // git status --porcelain
-    ]);
-
-    let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["step"], "pull");
-    assert_eq!(result["message"], "Could not resolve host");
-}
-
-#[test]
-fn dd_conflict_detected() {
-    let dir = tempfile::tempdir().unwrap();
-    let msg = dir.path().join(".flow-commit-msg");
-    fs::write(&msg, "Test commit.").unwrap();
-
-    let git = mock_git(vec![
-        ok(""),                                                // git commit
-        ok("commit_sha\n"),                                    // git rev-parse HEAD (post-commit)
-        fail("CONFLICT"),                                      // git pull
-        Ok((0, "DD deleted.py\n".to_string(), String::new())), // git status
-    ]);
-
-    let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
-    assert_eq!(result["status"], "conflict");
-    let files: Vec<String> = result["files"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap().to_string())
-        .collect();
-    assert_eq!(files, vec!["deleted.py"]);
-}
-
-#[test]
-fn pull_merged_false_when_shas_match() {
-    let dir = tempfile::tempdir().unwrap();
-    let msg = dir.path().join(".flow-commit-msg");
-    fs::write(&msg, "Test commit.").unwrap();
-
-    let git = mock_git(vec![
-        ok(""),           // git commit
-        ok("same_sha\n"), // git rev-parse HEAD (post-commit)
-        ok(""),           // git pull (no new content)
-        ok(""),           // git push
-        ok("same_sha\n"), // git rev-parse HEAD (final — unchanged)
-    ]);
-
-    let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["sha"], "same_sha");
-    assert_eq!(result["pull_merged"], false);
-}
-
-#[test]
-fn pull_merged_true_when_shas_differ() {
-    let dir = tempfile::tempdir().unwrap();
-    let msg = dir.path().join(".flow-commit-msg");
-    fs::write(&msg, "Test commit.").unwrap();
-
-    let git = mock_git(vec![
-        ok(""),      // git commit
-        ok("aaa\n"), // git rev-parse HEAD (post-commit)
-        ok(""),      // git pull (merged remote changes)
-        ok(""),      // git push
-        ok("bbb\n"), // git rev-parse HEAD (final — changed by pull)
-    ]);
-
-    let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["sha"], "bbb");
-    assert_eq!(result["pull_merged"], true);
-}
-
-#[test]
-fn pull_merged_true_when_post_commit_revparse_fails() {
-    let dir = tempfile::tempdir().unwrap();
-    let msg = dir.path().join(".flow-commit-msg");
-    fs::write(&msg, "Test commit.").unwrap();
-
-    let git = mock_git(vec![
-        ok(""),            // git commit
-        fail("bad HEAD"),  // git rev-parse HEAD (post-commit — fails)
-        ok(""),            // git pull
-        ok(""),            // git push
-        ok("final_sha\n"), // git rev-parse HEAD (final)
-    ]);
-
-    let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["sha"], "final_sha");
-    assert_eq!(result["pull_merged"], true);
-}
-
-#[test]
-fn pull_merged_true_when_final_revparse_fails() {
-    let dir = tempfile::tempdir().unwrap();
-    let msg = dir.path().join(".flow-commit-msg");
-    fs::write(&msg, "Test commit.").unwrap();
-
-    let git = mock_git(vec![
-        ok(""),           // git commit
-        ok("post_sha\n"), // git rev-parse HEAD (post-commit)
-        ok(""),           // git pull
-        ok(""),           // git push
-        fail("bad HEAD"), // git rev-parse HEAD (final — fails)
-    ]);
-
-    let result = finalize_commit_inner(msg.to_str().unwrap(), "my-branch", &git);
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["sha"], "");
-    assert_eq!(result["pull_merged"], true);
-}
-
-// --- run_impl integration fixtures (real git) ---
 
 /// Set up a bare remote + clone with a passing bin/ci script and .flow-states dir.
 /// Returns (clone_dir, bare_dir) as TempDirs that must be kept alive.
@@ -515,7 +146,6 @@ exit 0
     fs::write(&bin_test, script).unwrap();
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&bin_test, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
@@ -583,10 +213,138 @@ fn read_state(clone_path: &std::path::Path, branch: &str) -> Value {
     serde_json::from_str(&content).unwrap()
 }
 
+/// Write a `git` stub that forwards specific subcommands to the real
+/// `/usr/bin/git` and overrides others via env-var-controlled FAKE_*
+/// knobs. Returns the PATH-entry directory containing the stub.
+///
+/// Supported subcommand overrides (applied when the corresponding env
+/// var is set):
+///   - `commit`: FAKE_COMMIT_EXIT, FAKE_COMMIT_STDERR
+///   - `pull`:   FAKE_PULL_EXIT, FAKE_PULL_STDERR
+///   - `push`:   FAKE_PUSH_EXIT, FAKE_PUSH_STDERR
+///   - `status`: FAKE_STATUS_OUT (when set, overrides git status --porcelain output)
+///
+/// Calls not matched by any of the above — including `rev-parse`, `diff`,
+/// `log`, `ls-files`, `hash-object`, etc. — exec real git. This keeps
+/// `ci::tree_snapshot` and other internals working while letting tests
+/// selectively simulate pull/push/commit failures.
+fn write_git_stub(parent: &Path) -> PathBuf {
+    let stubs = parent.join("git-stubs");
+    fs::create_dir_all(&stubs).unwrap();
+    let script = r#"#!/bin/sh
+# Strip the leading `-C <path>` pair that run_git_in_dir always prepends.
+REPO_PATH=""
+if [ "$1" = "-C" ]; then
+    REPO_PATH="$2"
+    shift 2
+fi
+SUBCMD="$1"
+shift
+case "$SUBCMD" in
+    commit)
+        if [ -n "$FAKE_COMMIT_STDERR" ]; then printf '%s' "$FAKE_COMMIT_STDERR" >&2; fi
+        if [ -n "$FAKE_COMMIT_EXIT" ]; then exit "$FAKE_COMMIT_EXIT"; fi
+        exec /usr/bin/git -C "$REPO_PATH" commit "$@"
+        ;;
+    pull)
+        if [ -n "$FAKE_PULL_STDERR" ]; then printf '%s' "$FAKE_PULL_STDERR" >&2; fi
+        if [ -n "$FAKE_PULL_EXIT" ]; then exit "$FAKE_PULL_EXIT"; fi
+        exec /usr/bin/git -C "$REPO_PATH" pull "$@"
+        ;;
+    push)
+        if [ -n "$FAKE_PUSH_STDERR" ]; then printf '%s' "$FAKE_PUSH_STDERR" >&2; fi
+        if [ -n "$FAKE_PUSH_EXIT" ]; then exit "$FAKE_PUSH_EXIT"; fi
+        exec /usr/bin/git -C "$REPO_PATH" push "$@"
+        ;;
+    status)
+        # Only intercept the --porcelain form finalize_commit uses after
+        # a pull failure; pass everything else through to real git.
+        if [ "$1" = "--porcelain" ] && [ -n "${FAKE_STATUS_OUT+set}" ]; then
+            printf '%s' "$FAKE_STATUS_OUT"
+            exit 0
+        fi
+        exec /usr/bin/git -C "$REPO_PATH" status "$@"
+        ;;
+    *)
+        exec /usr/bin/git -C "$REPO_PATH" "$SUBCMD" "$@"
+        ;;
+esac
+"#;
+    let git_path = stubs.join("git");
+    fs::write(&git_path, script).unwrap();
+    #[cfg(unix)]
+    {
+        fs::set_permissions(&git_path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    stubs
+}
+
+/// Helper: run `bin/flow finalize-commit` against a repo fixture with a
+/// controlled git stub on PATH.
+fn run_finalize_with_stub(
+    clone_path: &Path,
+    msg_path: &Path,
+    branch: &str,
+    stubs: &Path,
+    env: &[(&str, &str)],
+) -> std::process::Output {
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{}", stubs.display(), current_path);
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.args(["finalize-commit", msg_path.to_str().unwrap(), branch])
+        .current_dir(clone_path)
+        .env("PATH", new_path)
+        .env_remove("FLOW_CI_RUNNING");
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    cmd.output().expect("spawn flow-rs")
+}
+
+fn last_json_line(stdout: &str) -> Value {
+    let last = stdout
+        .lines()
+        .rfind(|l| l.trim_start().starts_with('{'))
+        .unwrap_or_else(|| panic!("no JSON line in stdout; stdout={}", stdout));
+    serde_json::from_str(last)
+        .unwrap_or_else(|e| panic!("failed to parse JSON line '{}': {}", last, e))
+}
+
+// --- run_impl: happy path (real git) ---
+
+#[test]
+fn happy_path_commit_pull_push_succeed() {
+    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let clone_path = clone_dir.path();
+
+    fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .output()
+            .unwrap(),
+    );
+
+    let msg_path = clone_path.join(".flow-commit-msg");
+    fs::write(&msg_path, "Test commit.").unwrap();
+
+    write_ci_sentinel(clone_path, "main");
+
+    let args = Args {
+        message_file: msg_path.to_str().unwrap().to_string(),
+        branch: "main".to_string(),
+    };
+    let result = run_impl(&args, clone_path, clone_path).unwrap();
+    assert_eq!(result["status"], "ok", "got: {}", result);
+    assert_eq!(result["pull_merged"], false);
+    // Message file was removed after commit.
+    assert!(!msg_path.exists());
+}
+
 // --- run_impl: CI enforcement ---
 
 #[test]
-fn test_ci_fails_blocks_commit() {
+fn ci_fails_blocks_commit() {
     let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
     let clone_path = clone_dir.path();
 
@@ -638,7 +396,7 @@ fn test_ci_fails_blocks_commit() {
 }
 
 #[test]
-fn test_ci_sentinel_fresh_skips_ci() {
+fn ci_sentinel_fresh_skips_ci() {
     let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
     let clone_path = clone_dir.path();
 
@@ -682,7 +440,7 @@ fn test_ci_sentinel_fresh_skips_ci() {
 // --- run_impl: continue_pending state handling ---
 
 #[test]
-fn run_impl_error_clears_continue_pending() {
+fn error_clears_continue_pending() {
     let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
     let clone_path = clone_dir.path();
 
@@ -734,7 +492,7 @@ fn run_impl_error_clears_continue_pending() {
 }
 
 #[test]
-fn run_impl_ok_preserves_continue_pending() {
+fn ok_preserves_continue_pending() {
     let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
     let clone_path = clone_dir.path();
 
@@ -775,7 +533,7 @@ fn run_impl_ok_preserves_continue_pending() {
 }
 
 #[test]
-fn run_impl_conflict_preserves_continue_pending() {
+fn conflict_preserves_continue_pending() {
     let (clone_dir, bare_dir) = setup_integration_repo_with_ci();
     let clone_path = clone_dir.path();
 
@@ -897,7 +655,7 @@ fn run_impl_conflict_preserves_continue_pending() {
 // --- run_impl: sentinel refresh ---
 
 #[test]
-fn run_impl_refreshes_sentinel_after_commit() {
+fn refreshes_sentinel_after_commit() {
     let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
     let clone_path = clone_dir.path().to_str().unwrap().to_string();
 
@@ -945,7 +703,7 @@ fn run_impl_refreshes_sentinel_after_commit() {
 }
 
 #[test]
-fn run_impl_no_sentinel_refresh_when_pull_merges() {
+fn no_sentinel_refresh_when_pull_merges() {
     let (clone_dir, bare_dir) = setup_integration_repo_with_ci();
     let clone_path = clone_dir.path().to_str().unwrap().to_string();
 
@@ -1052,15 +810,15 @@ fn run_impl_no_sentinel_refresh_when_pull_merges() {
 
 // --- run_impl: staged_diff fallback when `git diff --cached` fails ---
 
-/// Exercises the `_ => String::new()` fallback on line ~336 where
-/// `git diff --cached` returns a non-zero exit code. Triggered by running
-/// against a directory that isn't a git repo — the `-C <cwd>` flag makes
-/// every git subcommand fail with exit 128. CI is bypassed via a
-/// sentinel. With an empty staged_diff the plan-deviation scanner
-/// collects no deviations and the commit path moves on to `git commit`,
-/// which also fails — status becomes "error" with step "commit".
+/// Exercises the `_ => String::new()` fallback where `git diff --cached`
+/// returns a non-zero exit code. Triggered by running against a directory
+/// that isn't a git repo — every git subcommand fails with exit 128.
+/// CI is bypassed via a sentinel. With an empty staged_diff the
+/// plan-deviation scanner collects no deviations and the commit path moves
+/// on to `git commit`, which also fails — status becomes "error" with
+/// step "commit".
 #[test]
-fn run_impl_staged_diff_fallback_when_git_diff_fails() {
+fn staged_diff_fallback_when_git_diff_fails() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
 
@@ -1099,7 +857,7 @@ fn run_impl_staged_diff_fallback_when_git_diff_fails() {
 /// closure with state as an array, the guard returns early, and no
 /// continuation-field reset is attempted.
 #[test]
-fn run_impl_error_state_wrong_type_guard_fires() {
+fn error_state_wrong_type_guard_fires() {
     let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
     let clone_path = clone_dir.path();
 
@@ -1151,12 +909,10 @@ fn run_impl_error_state_wrong_type_guard_fires() {
 /// with fixture `expected = "original"`, but the staged diff's `test_foo`
 /// body is empty (does not contain "original"), so the gate fires.
 #[test]
-fn run_impl_plan_deviation_blocks_commit() {
+fn plan_deviation_blocks_commit() {
     let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
     let clone_path = clone_dir.path();
 
-    // Write the plan file with a Tasks section naming a test and a plan
-    // value that must appear in the test body.
     let flow_states = clone_path.join(".flow-states");
     fs::create_dir_all(&flow_states).unwrap();
     let plan_path = flow_states.join("main-plan.md");
@@ -1174,8 +930,6 @@ fn test_foo() {
 "#;
     fs::write(&plan_path, plan_content).unwrap();
 
-    // Write a state file pointing to the plan file; the plan-deviation
-    // scanner reads `state["files"]["plan"]` to locate it.
     let state_file = flow_states.join("main.json");
     let state = json!({
         "branch": "main",
@@ -1184,7 +938,6 @@ fn test_foo() {
     });
     fs::write(&state_file, serde_json::to_string_pretty(&state).unwrap()).unwrap();
 
-    // Stage a test file whose `test_foo` body does NOT contain "original".
     let tests_dir = clone_path.join("tests");
     fs::create_dir_all(&tests_dir).unwrap();
     let test_file = tests_dir.join("foo.rs");
@@ -1205,7 +958,6 @@ fn test_foo() {
     let msg_path = clone_path.join(".flow-commit-msg");
     fs::write(&msg_path, "Add test_foo").unwrap();
 
-    // CI sentinel so ci::run_impl takes the fast skip path.
     write_ci_sentinel(clone_path, "main");
 
     let args = Args {
@@ -1239,7 +991,7 @@ fn test_foo() {
 /// expressions at the log line and the JSON "message" field — both are
 /// the same pluralization pattern so both are covered by the same test.
 #[test]
-fn run_impl_plan_deviation_two_deviations_plural_message() {
+fn plan_deviation_two_deviations_plural_message() {
     let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
     let clone_path = clone_dir.path();
 
@@ -1312,10 +1064,226 @@ fn test_beta() {
     assert_eq!(deviations.len(), 2);
 }
 
+// --- run_impl: commit-step error paths (via git stub) ---
+
+/// Commit spawn failure: with git absent from PATH, the compiled flow-rs
+/// subprocess fails to spawn `git commit`. `run_cmd_with_timeout` returns
+/// Err, which `finalize_commit` converts to a commit-error JSON via its
+/// Err arm. CI is bypassed via a sentinel matching the "no-git" snapshot
+/// (tree_snapshot hashes all-empty git outputs to a deterministic value
+/// the test pre-computes in an empty directory).
+#[test]
+fn commit_spawn_failure_returns_error_step_commit() {
+    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let clone_path = clone_dir.path();
+
+    let msg_path = clone_path.join(".flow-commit-msg");
+    fs::write(&msg_path, "msg").unwrap();
+
+    // Pre-compute the "no-git" tree_snapshot hash using an empty dir —
+    // every git_stdout call in tree_snapshot returns "" (git exits
+    // non-zero since it's not a git repo), producing the same hash the
+    // flow-rs subprocess will compute when git is absent from PATH.
+    let empty_dir = tempfile::tempdir().unwrap();
+    let no_git_snapshot = flow_rs::ci::tree_snapshot(empty_dir.path(), None);
+    let sentinel = flow_rs::ci::sentinel_path(clone_path, "main");
+    fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+    fs::write(&sentinel, &no_git_snapshot).unwrap();
+
+    // PATH is empty: ci::run_impl calls tree_snapshot → git absent →
+    // every git call returns Err → program_stdout "" → snapshot matches
+    // sentinel → CI skips. Then finalize_commit calls run_cmd_with_timeout
+    // for `git commit` which spawn-fails → Err branch fires.
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["finalize-commit", msg_path.to_str().unwrap(), "main"])
+        .current_dir(clone_path)
+        .env("PATH", "")
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .expect("spawn flow-rs");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["status"], "error", "got: {}", json);
+    assert_eq!(json["step"], "commit");
+    let msg = json["message"].as_str().unwrap();
+    assert!(
+        msg.to_lowercase().contains("failed to spawn"),
+        "expected spawn failure in message, got: {}",
+        msg
+    );
+    // Message file removed even on Err path.
+    assert!(!msg_path.exists());
+}
+
+/// Commit fails with nonzero exit + stderr. Covers the
+/// `Ok((code, _, stderr))` commit-error branch.
+#[test]
+fn commit_nonzero_returns_error_step_commit() {
+    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let clone_path = clone_dir.path();
+
+    let msg_path = clone_path.join(".flow-commit-msg");
+    fs::write(&msg_path, "msg").unwrap();
+
+    write_ci_sentinel(clone_path, "main");
+
+    let stubs = write_git_stub(clone_path);
+
+    let output = run_finalize_with_stub(
+        clone_path,
+        &msg_path,
+        "main",
+        &stubs,
+        &[
+            ("FAKE_COMMIT_EXIT", "1"),
+            ("FAKE_COMMIT_STDERR", "nothing to commit"),
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["status"], "error", "got: {}", json);
+    assert_eq!(json["step"], "commit");
+    assert_eq!(json["message"], "nothing to commit");
+    // Message file removed after commit-step exit.
+    assert!(!msg_path.exists());
+}
+
+/// Commit spawns successfully; pull fails with nonzero exit + stderr; git
+/// status --porcelain returns clean. Covers pull-error no-conflict path.
+#[test]
+fn pull_nonzero_no_conflict_returns_error_step_pull() {
+    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let clone_path = clone_dir.path();
+
+    fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap(),
+    );
+
+    let msg_path = clone_path.join(".flow-commit-msg");
+    fs::write(&msg_path, "msg").unwrap();
+
+    write_ci_sentinel(clone_path, "main");
+
+    let stubs = write_git_stub(clone_path);
+
+    let output = run_finalize_with_stub(
+        clone_path,
+        &msg_path,
+        "main",
+        &stubs,
+        &[
+            ("FAKE_PULL_EXIT", "1"),
+            ("FAKE_PULL_STDERR", "Could not resolve host"),
+            ("FAKE_STATUS_OUT", ""),
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["status"], "error", "got: {}", json);
+    assert_eq!(json["step"], "pull");
+    assert_eq!(json["message"], "Could not resolve host");
+}
+
+/// Commit ok; pull fails; git status --porcelain reports UU/AA conflict
+/// markers. Covers pull-conflict path, emits "conflict" status with
+/// files array.
+#[test]
+fn pull_nonzero_with_conflict_returns_conflict_status() {
+    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let clone_path = clone_dir.path();
+
+    fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap(),
+    );
+
+    let msg_path = clone_path.join(".flow-commit-msg");
+    fs::write(&msg_path, "msg").unwrap();
+
+    write_ci_sentinel(clone_path, "main");
+
+    let stubs = write_git_stub(clone_path);
+
+    let output = run_finalize_with_stub(
+        clone_path,
+        &msg_path,
+        "main",
+        &stubs,
+        &[
+            ("FAKE_PULL_EXIT", "1"),
+            ("FAKE_PULL_STDERR", "CONFLICT"),
+            ("FAKE_STATUS_OUT", "UU file1.rs\nAA file2.rs\n"),
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["status"], "conflict", "got: {}", json);
+    let files: Vec<String> = json["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(files, vec!["file1.rs", "file2.rs"]);
+}
+
+/// Commit ok, pull ok, push fails with nonzero exit. Covers push-error
+/// branch.
+#[test]
+fn push_nonzero_returns_error_step_push() {
+    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let clone_path = clone_dir.path();
+
+    fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap(),
+    );
+
+    let msg_path = clone_path.join(".flow-commit-msg");
+    fs::write(&msg_path, "msg").unwrap();
+
+    write_ci_sentinel(clone_path, "main");
+
+    let stubs = write_git_stub(clone_path);
+
+    let output = run_finalize_with_stub(
+        clone_path,
+        &msg_path,
+        "main",
+        &stubs,
+        &[
+            ("FAKE_PUSH_EXIT", "1"),
+            ("FAKE_PUSH_STDERR", "permission denied"),
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["status"], "error", "got: {}", json);
+    assert_eq!(json["step"], "push");
+    assert_eq!(json["message"], "permission denied");
+}
+
 // --- run_impl error arg validation ---
 
 #[test]
-fn run_impl_empty_message_file_returns_err() {
+fn empty_message_file_returns_err() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     let args = Args {
@@ -1327,7 +1295,7 @@ fn run_impl_empty_message_file_returns_err() {
 }
 
 #[test]
-fn run_impl_empty_branch_returns_err() {
+fn empty_branch_returns_err() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     let args = Args {

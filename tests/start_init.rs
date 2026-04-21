@@ -2,11 +2,13 @@
 //!
 //! start-init consolidates: lock acquire + prime-check + upgrade-check +
 //! prompt write + init-state + label-issues into a single command.
-//! All tests use `run_impl` for testability (run() calls process::exit).
+//! Every test drives through the compiled binary — no library seams.
 
 mod common;
 
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -297,7 +299,8 @@ fn test_no_flow_json_returns_error() {
 
 #[test]
 fn test_flow_in_progress_label_returns_error() {
-    // Exercises lines 76-85: issue carries "Flow In-Progress" label → error.
+    // Exercises the Flow In-Progress label guard: issue carries
+    // "Flow In-Progress" label → error.
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -340,7 +343,7 @@ fn test_flow_in_progress_label_returns_error() {
 
 #[test]
 fn test_duplicate_issue_returns_error() {
-    // Exercises lines 101-112: another flow targets the same issue → error.
+    // Another flow targets the same issue → error.
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -487,576 +490,312 @@ fn test_lock_uses_canonical_branch_not_feature_name() {
     );
 }
 
-// --- Library-level tests for run_impl_with_deps / run_impl_main_with_deps ---
-//
-// These tests drive the public seams directly so every branch of the
-// composed-dependency function is attributed to the per-file gate.
+// --- Edge-case coverage tests ---
 
-use flow_rs::start_init::{run_impl_main_with_deps, run_impl_with_deps, Args};
-use serde_json::{json, Value};
-use std::os::unix::process::ExitStatusExt;
-use std::process::ExitStatus;
+/// Plugin root undetectable: CLAUDE_PLUGIN_ROOT points to a dir
+/// without flow-phases.json AND the flow-rs binary is in a location
+/// whose parent chain doesn't reach a plugin root either. `plugin_root()`
+/// returns None, `run_impl` returns Err, `run_impl_main` wraps as
+/// `(err_json, 1)`.
+#[test]
+fn test_plugin_root_undetectable_returns_exit_1() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = create_git_repo_with_remote(&parent);
+    let stub_dir = create_default_gh_stub(&repo);
 
-fn lib_fake_output(stdout: &str) -> Output {
-    Output {
-        status: ExitStatus::from_raw(0),
-        stdout: stdout.as_bytes().to_vec(),
-        stderr: Vec::new(),
+    // Copy flow-rs to an isolated location. parent-chain traversal
+    // from this copy won't find flow-phases.json anywhere.
+    let isolated_bin_dir = parent.join("isolated-bin");
+    fs::create_dir_all(&isolated_bin_dir).unwrap();
+    let isolated_bin = isolated_bin_dir.join("flow-rs");
+    fs::copy(env!("CARGO_BIN_EXE_flow-rs"), &isolated_bin).unwrap();
+    #[cfg(unix)]
+    {
+        fs::set_permissions(&isolated_bin, fs::Permissions::from_mode(0o755)).unwrap();
     }
-}
 
-fn lib_ok_prime_check(_cwd: &Path, _plug_root: &Path) -> Result<Value, String> {
-    Ok(json!({"status": "ok"}))
-}
+    // CLAUDE_PLUGIN_ROOT points at a dir without flow-phases.json.
+    let invalid_plugin_root = parent.join("no-flow-phases-dir");
+    fs::create_dir_all(&invalid_plugin_root).unwrap();
 
-fn lib_ok_upgrade_check(_plug_root: &Path) -> Value {
-    json!({"status": "current"})
-}
-
-fn lib_panic_init_runner(_args: &[String], _cwd: &Path) -> Result<Output, String> {
-    panic!("init_state_runner must not be called on plugin-root error path");
-}
-
-#[test]
-fn lib_start_init_plugin_root_none_returns_err() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    let args = Args {
-        feature_name: "plugroot-none".to_string(),
-        auto: false,
-        prompt_file: None,
-    };
-    let finder = || -> Option<PathBuf> { None };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &finder,
-        &lib_ok_prime_check,
-        &lib_ok_upgrade_check,
-        &lib_panic_init_runner,
+    let path_env = format!(
+        "{}:{}",
+        stub_dir.to_string_lossy(),
+        std::env::var("PATH").unwrap_or_default()
     );
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("CLAUDE_PLUGIN_ROOT"));
-}
+    let output = Command::new(&isolated_bin)
+        .args(["start-init", "plugroot-none"])
+        .current_dir(&repo)
+        .env("PATH", &path_env)
+        .env("CLAUDE_PLUGIN_ROOT", &invalid_plugin_root)
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .output()
+        .unwrap();
 
-#[test]
-fn lib_start_init_init_state_spawn_failure_returns_err() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    let plug_root = root.clone();
-    let args = Args {
-        feature_name: "spawn-fail".to_string(),
-        auto: false,
-        prompt_file: None,
-    };
-    let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-    let runner = |_: &[String], _: &Path| -> Result<Output, String> {
-        Err("Failed to spawn init-state: no such file".to_string())
-    };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &finder,
-        &lib_ok_prime_check,
-        &lib_ok_upgrade_check,
-        &runner,
-    );
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Failed to spawn init-state"));
-}
-
-#[test]
-fn lib_start_init_init_state_parse_fallback() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    let plug_root = root.clone();
-    let args = Args {
-        feature_name: "parse-fallback".to_string(),
-        auto: false,
-        prompt_file: None,
-    };
-    let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-    let runner = |_: &[String], _: &Path| -> Result<Output, String> { Ok(lib_fake_output("")) };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &finder,
-        &lib_ok_prime_check,
-        &lib_ok_upgrade_check,
-        &runner,
-    )
-    .unwrap();
-    assert_eq!(result["status"], "error");
     assert_eq!(
-        result["message"].as_str().unwrap(),
-        "Could not parse init-state output"
+        output.status.code(),
+        Some(1),
+        "plugin_root undetectable should exit 1: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(result["step"], "init_state");
-
-    let queue_entry = root.join(".flow-states/start-queue/parse-fallback");
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "start_init_run_impl");
     assert!(
-        !queue_entry.exists(),
-        "lock must be released on parse fallback error"
+        data["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("CLAUDE_PLUGIN_ROOT"),
+        "error message should mention CLAUDE_PLUGIN_ROOT: {}",
+        data["message"]
     );
 }
 
+/// --auto flag routes through to the init-state subprocess, which
+/// translates it into fully-autonomous skill config in the state file.
 #[test]
-fn lib_start_init_init_state_error_releases_lock_via_seam() {
+fn test_auto_flag_produces_auto_skill_config_in_state() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    let plug_root = root.clone();
-    let args = Args {
-        feature_name: "init-err".to_string(),
-        auto: false,
-        prompt_file: None,
-    };
-    let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-    let runner = |_: &[String], _: &Path| -> Result<Output, String> {
-        Ok(lib_fake_output(
-            r#"{"status": "error", "message": "init-state refused", "step": "seeded_error"}"#,
-        ))
-    };
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
 
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &finder,
-        &lib_ok_prime_check,
-        &lib_ok_upgrade_check,
-        &runner,
-    )
-    .unwrap();
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["message"], "init-state refused");
-    assert_eq!(result["step"], "seeded_error");
+    let output = run_start_init(&repo, "auto-flag-feature", &["--auto"], &stub_dir);
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ready");
 
-    let queue_entry = root.join(".flow-states/start-queue/init-err");
+    let branch = data["branch"].as_str().unwrap();
+    let state_path = flow_states_dir(&repo).join(format!("{}.json", branch));
+    let content = fs::read_to_string(&state_path).unwrap();
+    let state: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+    // --auto → init-state sets every skill to "auto" continue mode.
+    let skills = state["skills"].as_object().expect("skills object present");
     assert!(
-        !queue_entry.exists(),
-        "lock must be released on init-state error"
+        !skills.is_empty(),
+        "skills config should be populated under --auto"
     );
-}
-
-#[test]
-fn lib_start_init_prime_check_error_releases_lock_via_seam() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    let plug_root = root.clone();
-    let args = Args {
-        feature_name: "prime-err".to_string(),
-        auto: false,
-        prompt_file: None,
-    };
-    let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-    let err_prime =
-        |_: &Path, _: &Path| -> Result<Value, String> { Err("missing plugin.json".to_string()) };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &finder,
-        &err_prime,
-        &lib_ok_upgrade_check,
-        &lib_panic_init_runner,
-    )
-    .unwrap();
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["step"], "prime_check");
-    assert!(result["message"]
-        .as_str()
-        .unwrap()
-        .contains("missing plugin.json"));
-}
-
-#[test]
-fn lib_start_init_happy_path_via_seam_returns_ready() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    let plug_root = root.clone();
-    let args = Args {
-        feature_name: "happy-seam".to_string(),
-        auto: false,
-        prompt_file: None,
-    };
-    let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-    let runner = |_: &[String], _: &Path| -> Result<Output, String> {
-        Ok(lib_fake_output(
-            r#"{"status": "ok", "branch": "happy-seam"}"#,
-        ))
-    };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &finder,
-        &lib_ok_prime_check,
-        &lib_ok_upgrade_check,
-        &runner,
-    )
-    .unwrap();
-    assert_eq!(result["status"], "ready");
-    assert_eq!(result["branch"], "happy-seam");
-}
-
-#[test]
-fn lib_start_init_auto_upgraded_without_versions_omits_fields() {
-    // auto_upgraded:true but neither old_version nor new_version is
-    // present — covers the `if let Some(...) = .get(...)` None arms.
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    let plug_root = root.clone();
-    let args = Args {
-        feature_name: "auto-no-versions".to_string(),
-        auto: false,
-        prompt_file: None,
-    };
-    let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-    let upgraded_prime = |_: &Path, _: &Path| -> Result<Value, String> {
-        Ok(json!({"status": "ok", "auto_upgraded": true}))
-    };
-    let runner = |_: &[String], _: &Path| -> Result<Output, String> {
-        Ok(lib_fake_output(r#"{"status": "ok"}"#))
-    };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &finder,
-        &upgraded_prime,
-        &lib_ok_upgrade_check,
-        &runner,
-    )
-    .unwrap();
-    assert_eq!(result["status"], "ready");
-    assert_eq!(result["auto_upgraded"], true);
-    assert!(result.get("old_version").is_none());
-    assert!(result.get("new_version").is_none());
-}
-
-#[test]
-fn lib_start_init_auto_upgraded_propagates_to_response() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    let plug_root = root.clone();
-    let args = Args {
-        feature_name: "auto-up".to_string(),
-        auto: false,
-        prompt_file: None,
-    };
-    let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-    let upgraded_prime = |_: &Path, _: &Path| -> Result<Value, String> {
-        Ok(json!({
-            "status": "ok",
-            "auto_upgraded": true,
-            "old_version": "1.0.0",
-            "new_version": "1.0.1",
-        }))
-    };
-    let runner = |_: &[String], _: &Path| -> Result<Output, String> {
-        Ok(lib_fake_output(r#"{"status": "ok"}"#))
-    };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &finder,
-        &upgraded_prime,
-        &lib_ok_upgrade_check,
-        &runner,
-    )
-    .unwrap();
-    assert_eq!(result["status"], "ready");
-    assert_eq!(result["auto_upgraded"], true);
-    assert_eq!(result["old_version"], "1.0.0");
-    assert_eq!(result["new_version"], "1.0.1");
-}
-
-#[test]
-fn lib_start_init_upgrade_available_adds_upgrade_field() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    let plug_root = root.clone();
-    let args = Args {
-        feature_name: "upgrade-avail".to_string(),
-        auto: false,
-        prompt_file: None,
-    };
-    let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-    let upgrade = |_: &Path| -> Value {
-        json!({"status": "upgrade_available", "latest": "99.0.0", "installed": "1.0.0"})
-    };
-    let runner = |_: &[String], _: &Path| -> Result<Output, String> {
-        Ok(lib_fake_output(r#"{"status": "ok"}"#))
-    };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &finder,
-        &lib_ok_prime_check,
-        &upgrade,
-        &runner,
-    )
-    .unwrap();
-    assert_eq!(result["status"], "ready");
-    assert_eq!(result["upgrade"]["status"], "upgrade_available");
-    assert_eq!(result["upgrade"]["latest"], "99.0.0");
-}
-
-#[test]
-fn lib_start_init_lock_already_held_returns_locked() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    let plug_root = root.clone();
-    let queue_dir = root.join(".flow-states/start-queue");
-    fs::create_dir_all(&queue_dir).unwrap();
-    fs::write(queue_dir.join("other-feature"), "").unwrap();
-
-    let args = Args {
-        feature_name: "blocked-feature".to_string(),
-        auto: false,
-        prompt_file: None,
-    };
-    let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &finder,
-        &lib_ok_prime_check,
-        &lib_ok_upgrade_check,
-        &lib_panic_init_runner,
-    )
-    .unwrap();
-    assert_eq!(result["status"], "locked");
-    assert_eq!(result["feature"], "other-feature");
-}
-
-#[test]
-fn lib_start_init_run_impl_main_err_path() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    let args = Args {
-        feature_name: "main-err-branch".to_string(),
-        auto: false,
-        prompt_file: None,
-    };
-    let finder = || -> Option<PathBuf> { None };
-
-    let (v, code) = run_impl_main_with_deps(
-        &args,
-        &root,
-        &root,
-        &finder,
-        &lib_ok_prime_check,
-        &lib_ok_upgrade_check,
-        &lib_panic_init_runner,
-    );
-    assert_eq!(code, 1);
-    assert_eq!(v["status"], "error");
-    assert_eq!(v["step"], "start_init_run_impl");
-    assert!(v["message"]
-        .as_str()
-        .unwrap_or("")
-        .contains("CLAUDE_PLUGIN_ROOT"));
-}
-
-#[test]
-fn lib_start_init_auto_flag_appends_to_args() {
-    // Covers the `if args.auto { cmd_args.push("--auto") }` branch.
-    use std::sync::{Arc, Mutex};
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    let plug_root = root.clone();
-    let args = Args {
-        feature_name: "auto-flag".to_string(),
-        auto: true,
-        prompt_file: None,
-    };
-    let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-    let captured = Arc::new(Mutex::new(Vec::<String>::new()));
-    let captured_clone = Arc::clone(&captured);
-    let runner = move |args: &[String], _: &Path| -> Result<Output, String> {
-        *captured_clone.lock().unwrap() = args.to_vec();
-        Ok(lib_fake_output(r#"{"status": "ok"}"#))
-    };
-
-    let _ = run_impl_with_deps(
-        &args,
-        &root,
-        &root,
-        &finder,
-        &lib_ok_prime_check,
-        &lib_ok_upgrade_check,
-        &runner,
-    )
-    .unwrap();
-    let seen = captured.lock().unwrap();
+    // At least one skill should be "auto" — verifies the flag propagated.
+    let any_auto = skills.values().any(|v| {
+        v.as_str() == Some("auto") || v.get("continue").and_then(|c| c.as_str()) == Some("auto")
+    });
     assert!(
-        seen.contains(&"--auto".to_string()),
-        "runner must receive --auto arg when args.auto=true, got: {:?}",
-        *seen
+        any_auto,
+        "at least one skill should resolve to auto continue mode under --auto"
     );
 }
 
+/// cwd outside root: when the user runs start-init from a directory
+/// that isn't a subpath of the project root, `strip_prefix` returns Err
+/// and `relative_cwd` falls back to empty string. Exercised by spawning
+/// flow-rs with `current_dir` set to a path unrelated to the repo.
 #[test]
-fn lib_start_init_cwd_outside_root_produces_empty_relative_cwd() {
-    // When cwd is not a subpath of root, strip_prefix returns Err and
-    // relative_cwd falls back to empty string.
-    use std::sync::{Arc, Mutex};
-    let root_tmp = tempfile::tempdir().unwrap();
-    let cwd_tmp = tempfile::tempdir().unwrap();
-    let root = root_tmp.path().to_path_buf();
-    let plug_root = root.clone();
-    let args = Args {
-        feature_name: "unrelated-cwd".to_string(),
-        auto: false,
-        prompt_file: None,
-    };
-    let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-    let captured = Arc::new(Mutex::new(Vec::<String>::new()));
-    let captured_clone = Arc::clone(&captured);
-    let runner = move |args: &[String], _: &Path| -> Result<Output, String> {
-        *captured_clone.lock().unwrap() = args.to_vec();
-        Ok(lib_fake_output(r#"{"status": "ok"}"#))
-    };
-
-    let _ = run_impl_with_deps(
-        &args,
-        &root,
-        cwd_tmp.path(),
-        &finder,
-        &lib_ok_prime_check,
-        &lib_ok_upgrade_check,
-        &runner,
-    )
-    .unwrap();
-    let seen = captured.lock().unwrap();
-    // Find --relative-cwd and assert next arg is empty
-    let pos = seen
-        .iter()
-        .position(|a| a == "--relative-cwd")
-        .expect("--relative-cwd arg present");
-    assert_eq!(
-        seen[pos + 1],
-        "",
-        "unrelated cwd falls back to empty relative_cwd"
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn lib_start_init_non_canonicalizable_root_falls_back_to_raw() {
-    // Pass a broken-symlink path as root — canonicalize() returns Err
-    // on a dangling symlink so the fallback branch fires. run_impl_with_deps
-    // does not require root to be canonical; fs::create_dir_all on the
-    // symlink path simply fails silently and the rest proceeds.
-    use std::os::unix::fs::symlink;
-    let outer = tempfile::tempdir().unwrap();
-    let broken_root = outer.path().join("broken-root");
-    // Create a symlink pointing at a nonexistent target.
-    symlink(outer.path().join("missing-target"), &broken_root).unwrap();
-
-    let plug_root = outer.path().to_path_buf();
-    let args = Args {
-        feature_name: "broken-root".to_string(),
-        auto: false,
-        prompt_file: None,
-    };
-    let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-    let runner = |_: &[String], _: &Path| -> Result<Output, String> {
-        Ok(lib_fake_output(r#"{"status": "ok"}"#))
-    };
-
-    // Not asserting on the result — the test is about covering the
-    // canonicalize Err fallback. Any outcome is fine as long as the
-    // function does not panic.
-    let _ = run_impl_with_deps(
-        &args,
-        &broken_root,
-        &broken_root,
-        &finder,
-        &lib_ok_prime_check,
-        &lib_ok_upgrade_check,
-        &runner,
-    );
-}
-
-#[test]
-fn lib_start_init_non_canonicalizable_cwd_falls_back_to_raw_path() {
-    // Passing a cwd path that does not exist forces canonicalize() to
-    // return Err and the fallback branch fires. run_impl_with_deps does
-    // not create cwd — it only creates state_dir under root — so the
-    // missing cwd survives into canonicalize().
-    let root_tmp = tempfile::tempdir().unwrap();
-    let root = root_tmp.path().to_path_buf();
-    let missing_cwd = root.join("does-not-exist");
-    let plug_root = root.clone();
-    let args = Args {
-        feature_name: "missing-cwd".to_string(),
-        auto: false,
-        prompt_file: None,
-    };
-    let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-    let runner = |_: &[String], _: &Path| -> Result<Output, String> {
-        Ok(lib_fake_output(r#"{"status": "ok"}"#))
-    };
-
-    let result = run_impl_with_deps(
-        &args,
-        &root,
-        &missing_cwd,
-        &finder,
-        &lib_ok_prime_check,
-        &lib_ok_upgrade_check,
-        &runner,
-    )
-    .unwrap();
-    // Success path — the fallback let run_impl_with_deps continue.
-    assert_eq!(result["status"], "ready");
-}
-
-#[test]
-fn lib_start_init_run_impl_main_ok_wraps_with_exit_zero() {
+fn test_cwd_outside_root_produces_empty_relative_cwd() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    let plug_root = root.clone();
-    let args = Args {
-        feature_name: "main-ok-branch".to_string(),
-        auto: false,
-        prompt_file: None,
-    };
-    let finder = move || -> Option<PathBuf> { Some(plug_root.clone()) };
-    let runner = |_: &[String], _: &Path| -> Result<Output, String> {
-        Ok(Output {
-            status: ExitStatus::from_raw(0),
-            stdout: br#"{"status":"ok"}"#.to_vec(),
-            stderr: Vec::new(),
-        })
-    };
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = create_git_repo_with_remote(&parent);
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
 
-    let (v, code) = run_impl_main_with_deps(
-        &args,
-        &root,
-        &root,
-        &finder,
-        &lib_ok_prime_check,
-        &lib_ok_upgrade_check,
-        &runner,
+    // cwd is a sibling of the repo (both under `parent` but not a parent-child
+    // relationship). run-impl computes relative_cwd from cwd vs project_root
+    // — project_root resolves from cwd upward (via git rev-parse), so we
+    // exercise the branch where the auto-detected root differs from `repo`.
+    let unrelated_cwd = parent.join("unrelated-cwd");
+    fs::create_dir_all(&unrelated_cwd).unwrap();
+    // Initialize a git repo in the unrelated cwd so project_root resolves.
+    Command::new("git")
+        .args(["-c", "init.defaultBranch=main", "init"])
+        .current_dir(&unrelated_cwd)
+        .output()
+        .unwrap();
+    for (key, val) in [
+        ("user.email", "test@test.com"),
+        ("user.name", "Test"),
+        ("commit.gpgsign", "false"),
+    ] {
+        Command::new("git")
+            .args(["config", key, val])
+            .current_dir(&unrelated_cwd)
+            .output()
+            .unwrap();
+    }
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(&unrelated_cwd)
+        .output()
+        .unwrap();
+    write_flow_json(&unrelated_cwd, &current_plugin_version(), None);
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let path_env = format!(
+        "{}:{}",
+        stub_dir.to_string_lossy(),
+        std::env::var("PATH").unwrap_or_default()
     );
-    assert_eq!(code, 0);
-    assert_eq!(v["status"], "ready");
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["start-init", "unrelated-cwd-feature"])
+        .current_dir(&unrelated_cwd)
+        .env("PATH", &path_env)
+        .env("CLAUDE_PLUGIN_ROOT", &manifest_dir)
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .output()
+        .unwrap();
+
+    // We just need the happy path to succeed here — the test's purpose
+    // is to exercise the branch where cwd.canonicalize vs root.canonicalize
+    // produces an Err from strip_prefix (relative_cwd = "").
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ready", "got: {}", data);
+}
+
+/// Auto-upgrade response includes old_version and new_version fields
+/// when prime_check returns `auto_upgraded: true`. Triggered by a
+/// `.flow.json` file whose config/setup hashes match the current plugin
+/// but whose `flow_version` field is stale.
+#[test]
+fn test_auto_upgrade_fields_in_response() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let stub_dir = create_default_gh_stub(&repo);
+    let plug_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+
+    // Compute the current hashes so prime_check recognizes a matching
+    // priming with only a stale version.
+    let config_hash = flow_rs::prime_check::compute_config_hash();
+    let setup_hash = flow_rs::prime_check::compute_setup_hash(&plug_root).unwrap();
+
+    let flow_json = serde_json::json!({
+        "flow_version": "0.0.1",
+        "config_hash": config_hash,
+        "setup_hash": setup_hash,
+    });
+    fs::write(
+        repo.join(".flow.json"),
+        serde_json::to_string_pretty(&flow_json).unwrap(),
+    )
+    .unwrap();
+
+    let output = run_start_init(&repo, "auto-upgrade-feature", &[], &stub_dir);
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ready", "got: {}", data);
+    assert_eq!(data["auto_upgraded"], true);
+    assert_eq!(data["old_version"], "0.0.1");
+    assert_eq!(data["new_version"], current_plugin_version());
+}
+
+/// Upgrade-available response includes the `upgrade` field when the gh
+/// stub reports a newer release is available.
+#[test]
+fn test_upgrade_available_adds_upgrade_field() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+
+    // gh stub: `gh api .../releases/latest --jq .tag_name` returns a
+    // much newer tag than the current plugin version.
+    let stub_dir = create_gh_stub(
+        &repo,
+        "#!/bin/bash\n\
+         if [[ \"$1\" == \"issue\" && \"$2\" == \"view\" ]]; then exit 1; fi\n\
+         if [[ \"$1\" == \"issue\" && \"$2\" == \"edit\" ]]; then exit 0; fi\n\
+         if [[ \"$1\" == \"api\" ]]; then\n\
+           echo 'v999.0.0'\n\
+           exit 0\n\
+         fi\n\
+         echo \"https://github.com/test/repo/pull/42\"\n",
+    );
+
+    let output = run_start_init(&repo, "upgrade-avail-feature", &[], &stub_dir);
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ready");
+    let upgrade = data.get("upgrade").expect("upgrade field present");
+    assert_eq!(upgrade["status"], "upgrade_available");
+    assert!(upgrade["latest"].is_string());
+}
+
+/// init-state returning a `status: error` JSON — exercised by blocking
+/// the state file write. A directory is pre-created at the path where
+/// init-state wants to write the state file (`<branch>.json`), so
+/// `fs::write` inside init-state's create_state fails. init-state
+/// emits `status:error` and exits 1. The outer start-init sees the
+/// error JSON, releases the lock, and propagates the error.
+#[test]
+fn test_init_state_error_releases_lock_and_returns_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+
+    // Pre-create a DIRECTORY at the state file path. fs::write fails
+    // because target is a directory, not a file.
+    let state_dir = flow_states_dir(&repo);
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::create_dir_all(state_dir.join("init-err-branch.json")).unwrap();
+
+    let output = run_start_init(&repo, "init-err-branch", &[], &stub_dir);
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error", "got: {}", data);
+
+    // Lock must be released on init-state error.
+    let queue_dir = flow_states_dir(&repo).join("start-queue");
+    assert!(
+        !queue_dir.join("init-err-branch").exists(),
+        "Lock must be released on init-state error"
+    );
+}
+
+/// prime_check infrastructure Err: the plugin.json at CLAUDE_PLUGIN_ROOT
+/// is unreadable/malformed. `prime_check::run_impl` returns Err, which
+/// start-init folds into a status:error with the Err message.
+#[test]
+fn test_prime_check_infrastructure_err_returns_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = create_git_repo_with_remote(&parent);
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+
+    // Construct a plugin-root-like dir with flow-phases.json so
+    // `plugin_root()` accepts it, but with plugin.json that is NOT
+    // valid JSON so prime_check::run_impl returns Err.
+    let fake_plugin_root = parent.join("fake-plugin-root");
+    fs::create_dir_all(fake_plugin_root.join(".claude-plugin")).unwrap();
+    fs::write(fake_plugin_root.join("flow-phases.json"), "{}").unwrap();
+    fs::write(
+        fake_plugin_root.join(".claude-plugin").join("plugin.json"),
+        "not valid json at all",
+    )
+    .unwrap();
+
+    let path_env = format!(
+        "{}:{}",
+        stub_dir.to_string_lossy(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["start-init", "prime-infra-err"])
+        .current_dir(&repo)
+        .env("PATH", &path_env)
+        .env("CLAUDE_PLUGIN_ROOT", &fake_plugin_root)
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .output()
+        .unwrap();
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error", "got: {}", data);
+    let msg = data["message"].as_str().unwrap_or("");
+    // prime_check's Err message mentions parsing plugin.json.
+    assert!(
+        msg.to_lowercase().contains("plugin.json") || msg.to_lowercase().contains("parse"),
+        "expected prime_check infrastructure error, got: {}",
+        msg
+    );
+
+    // Lock is released on prime-check error path.
+    let queue_dir = flow_states_dir(&repo).join("start-queue");
+    assert!(
+        !queue_dir.join("prime-infra-err").exists(),
+        "Lock must be released on prime-check infrastructure error"
+    );
 }

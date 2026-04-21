@@ -2,8 +2,7 @@
 //!
 //! Provides `resolve_mode`, `check_learn_phase`, `check_pr_status`,
 //! `merge_main`, and `run_cmd_with_timeout` — reused by `complete-fast`
-//! (the skill's Step 1 entry point) and available as a standalone
-//! subcommand for backward compatibility.
+//! and available as a standalone subcommand for backward compatibility.
 //!
 //! Usage: bin/flow complete-preflight [--branch <name>] [--auto] [--manual]
 //!
@@ -13,6 +12,10 @@
 //!   Conflict: {"status": "conflict", "conflict_files": ["..."], ...}
 //!   Inferred: {"status": "ok", "inferred": true, ...}
 //!   Error:    {"status": "error", "message": "..."}
+//!
+//! Tests live in `tests/complete_preflight.rs` per
+//! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]` block
+//! in this file.
 
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -30,63 +33,10 @@ use crate::utils::{bin_flow_path, derive_worktree, parse_conflict_files};
 pub const LOCAL_TIMEOUT: u64 = 30;
 /// Standard timeout for network subprocess calls (git fetch, gh api, etc.).
 pub const NETWORK_TIMEOUT: u64 = 60;
-/// Step counter total for complete phase: 6 steps (running checks, local CI,
-/// GitHub CI, confirming, merging PR, finalizing).
+/// Step counter total for complete phase.
 pub const COMPLETE_STEPS_TOTAL: i64 = 6;
 
 pub type CmdResult = Result<(i32, String, String), String>;
-
-/// Error returned by `wait_with_timeout` when the deadline expires
-/// before the child exits.
-///
-/// `try_wait()` returning an OS-level I/O error on a live child is a
-/// vanishingly rare case that has never been observed in practice;
-/// `wait_with_timeout` treats it as a programmer invariant failure
-/// via `.expect()` rather than widening the error surface with a
-/// variant that production code would only hit under pathological
-/// OS conditions.
-#[derive(Debug)]
-pub enum WaitError {
-    Timeout,
-}
-
-/// Poll a `try_wait`-style function until the child is ready or the
-/// deadline expires. Abstracted from `run_cmd_with_timeout`'s poll
-/// loop so unit tests can inject mock `try_wait_fn` and `sleep_fn`
-/// closures to cover every branch (immediate ready, polled then
-/// exits, deadline expired) without spawning real subprocesses or
-/// sleeping real wall-clock time.
-///
-/// The caller retains ownership of the child process. On
-/// `Err(WaitError::Timeout)` the caller is responsible for calling
-/// `child.kill()` + `child.wait()` and draining any stdio threads.
-pub fn wait_with_timeout<W, S>(
-    mut try_wait_fn: W,
-    mut sleep_fn: S,
-    timeout: Duration,
-) -> Result<std::process::ExitStatus, WaitError>
-where
-    W: FnMut() -> std::io::Result<Option<std::process::ExitStatus>>,
-    S: FnMut(Duration),
-{
-    let start = Instant::now();
-    let poll_interval = Duration::from_millis(50);
-    loop {
-        // try_wait() on a live child returns an I/O error only under
-        // OS-level pathology; treated as a programmer invariant.
-        let status = try_wait_fn().expect("try_wait on a live child cannot fail in practice");
-        match status {
-            Some(s) => return Ok(s),
-            None => {
-                if start.elapsed() >= timeout {
-                    return Err(WaitError::Timeout);
-                }
-                let remaining = timeout.saturating_sub(start.elapsed());
-                sleep_fn(poll_interval.min(remaining));
-            }
-        }
-    }
-}
 
 #[derive(Parser, Debug)]
 #[command(name = "complete-preflight", about = "FLOW Complete phase preflight")]
@@ -105,14 +55,7 @@ pub struct Args {
 /// Run a subprocess command with a timeout. `args[0]` is the program.
 ///
 /// Drains stdout and stderr in spawned threads to prevent pipe buffer
-/// deadlock — children writing >64KB to a piped stream would otherwise
-/// block forever when the kernel buffer fills and `try_wait()` would
-/// never observe the child exiting.
-///
-/// Delegates the `try_wait` + sleep loop to `wait_with_timeout` and
-/// dispatches the `WaitError` variants: `Timeout` triggers child
-/// termination + stdio drain + formatted timeout error;
-/// `Io(msg)` drains stdio and surfaces the message verbatim.
+/// deadlock.
 pub fn run_cmd_with_timeout(args: &[&str], timeout_secs: u64) -> CmdResult {
     let (program, rest) = match args.split_first() {
         Some(p) => p,
@@ -125,9 +68,6 @@ pub fn run_cmd_with_timeout(args: &[&str], timeout_secs: u64) -> CmdResult {
         .spawn()
         .map_err(|e| format!("Failed to spawn {}: {}", program, e))?;
 
-    // stdout/stderr were configured as pipes above, so `take()` must
-    // succeed here — the Option arm exists only because of Command's
-    // stdio API, not because pipe availability can vary at runtime.
     let mut stdout_handle = child.stdout.take().expect("child stdout was piped above");
     let mut stderr_handle = child.stderr.take().expect("child stderr was piped above");
     let stdout_reader = std::thread::spawn(move || {
@@ -143,17 +83,29 @@ pub fn run_cmd_with_timeout(args: &[&str], timeout_secs: u64) -> CmdResult {
         buf
     });
 
-    // `wait_with_timeout` only surfaces `Timeout` — see its doc comment
-    // for why OS-level try_wait errors are treated as an invariant.
     let timeout = Duration::from_secs(timeout_secs);
-    let status = match wait_with_timeout(|| child.try_wait(), std::thread::sleep, timeout) {
-        Ok(s) => s,
-        Err(WaitError::Timeout) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            let _ = stdout_reader.join();
-            let _ = stderr_reader.join();
-            return Err(format!("Timed out after {}s", timeout_secs));
+    let start = Instant::now();
+    let poll_interval = Duration::from_millis(50);
+    let status = loop {
+        // try_wait() on a live child returns an I/O error only under
+        // OS-level pathology; treated as a programmer invariant per
+        // `.claude/rules/testability-means-simplicity.md`.
+        let maybe_status = child
+            .try_wait()
+            .expect("try_wait on a live child cannot fail in practice");
+        match maybe_status {
+            Some(s) => break s,
+            None => {
+                if start.elapsed() >= timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = stdout_reader.join();
+                    let _ = stderr_reader.join();
+                    return Err(format!("Timed out after {}s", timeout_secs));
+                }
+                let remaining = timeout.saturating_sub(start.elapsed());
+                std::thread::sleep(poll_interval.min(remaining));
+            }
         }
     };
 
@@ -205,44 +157,8 @@ pub fn check_learn_phase(state: &Value) -> Vec<String> {
     }
 }
 
-/// Call phase-transition --action enter via the runner.
-/// Returns parsed JSON value on success, error message on failure.
-fn phase_transition_enter(
-    branch: &str,
-    bin_flow: &str,
-    runner: &dyn Fn(&[&str], u64) -> CmdResult,
-) -> Result<Value, String> {
-    let result = runner(
-        &[
-            bin_flow,
-            "phase-transition",
-            "--phase",
-            "flow-complete",
-            "--action",
-            "enter",
-            "--branch",
-            branch,
-        ],
-        LOCAL_TIMEOUT,
-    );
-    match result {
-        Err(e) => Err(e),
-        Ok((code, stdout, stderr)) => {
-            if code != 0 {
-                return Err(stderr.trim().to_string());
-            }
-            serde_json::from_str(stdout.trim())
-                .map_err(|_| format!("Invalid JSON from phase-transition: {}", stdout))
-        }
-    }
-}
-
-/// Check PR state via gh pr view. Returns PR state string on success.
-pub fn check_pr_status(
-    pr_number: Option<i64>,
-    branch: &str,
-    runner: &dyn Fn(&[&str], u64) -> CmdResult,
-) -> Result<String, String> {
+/// Check PR state via `gh pr view`. Returns PR state string on success.
+pub fn check_pr_status(pr_number: Option<i64>, branch: &str) -> Result<String, String> {
     let identifier = if let Some(n) = pr_number {
         n.to_string()
     } else if !branch.is_empty() {
@@ -250,7 +166,7 @@ pub fn check_pr_status(
     } else {
         return Err("No PR number or branch to check".to_string());
     };
-    let result = runner(
+    let (code, stdout, stderr) = run_cmd_with_timeout(
         &[
             "gh",
             "pr",
@@ -262,21 +178,16 @@ pub fn check_pr_status(
             ".state",
         ],
         NETWORK_TIMEOUT,
-    );
-    match result {
-        Err(e) => Err(e),
-        Ok((code, stdout, stderr)) => {
-            if code != 0 {
-                let err = stderr.trim();
-                if err.is_empty() {
-                    Err("Could not find PR".to_string())
-                } else {
-                    Err(err.to_string())
-                }
-            } else {
-                Ok(stdout.trim().to_string())
-            }
+    )?;
+    if code != 0 {
+        let err = stderr.trim();
+        if err.is_empty() {
+            Err("Could not find PR".to_string())
+        } else {
+            Err(err.to_string())
         }
+    } else {
+        Ok(stdout.trim().to_string())
     }
 }
 
@@ -287,9 +198,11 @@ pub fn check_pr_status(
 ///   ("merged", None) — merged successfully (new commits)
 ///   ("conflict", Some(files_array)) — merge conflicts
 ///   ("error", Some(message_string)) — unexpected error
-pub fn merge_main(runner: &dyn Fn(&[&str], u64) -> CmdResult) -> (String, Option<Value>) {
-    // Fetch
-    match runner(&["git", "fetch", "origin", "main"], NETWORK_TIMEOUT) {
+pub fn merge_main() -> (String, Option<Value>) {
+    // First git call probes binary availability. Err (spawn/timeout)
+    // surfaces directly. Subsequent calls `.expect()` on Ok because
+    // git was proven alive here; per `.claude/rules/testability-means-simplicity.md`.
+    match run_cmd_with_timeout(&["git", "fetch", "origin", "main"], NETWORK_TIMEOUT) {
         Err(e) => return ("error".to_string(), Some(json!(e))),
         Ok((code, _, stderr)) if code != 0 => {
             return ("error".to_string(), Some(json!(stderr.trim())));
@@ -297,71 +210,70 @@ pub fn merge_main(runner: &dyn Fn(&[&str], u64) -> CmdResult) -> (String, Option
         Ok(_) => {}
     }
 
-    // Check if already up to date
-    match runner(
+    let (mb_code, _, _) = run_cmd_with_timeout(
         &["git", "merge-base", "--is-ancestor", "origin/main", "HEAD"],
         LOCAL_TIMEOUT,
-    ) {
-        Err(e) => return ("error".to_string(), Some(json!(e))),
-        Ok((code, _, _)) => {
-            if code == 0 {
-                return ("clean".to_string(), None);
-            }
-        }
+    )
+    .expect("git located by earlier fetch call");
+    if mb_code == 0 {
+        return ("clean".to_string(), None);
     }
 
-    // Merge
-    match runner(&["git", "merge", "origin/main"], NETWORK_TIMEOUT) {
-        Err(e) => ("error".to_string(), Some(json!(e))),
-        Ok((code, _, stderr)) => {
-            if code == 0 {
-                // Merged successfully — push
-                match runner(&["git", "push"], NETWORK_TIMEOUT) {
-                    Err(e) => (
-                        "error".to_string(),
-                        Some(json!(format!("Merge succeeded but push failed: {}", e))),
-                    ),
-                    Ok((push_code, _, push_stderr)) => {
-                        if push_code != 0 {
-                            (
-                                "error".to_string(),
-                                Some(json!(format!(
-                                    "Merge succeeded but push failed: {}",
-                                    push_stderr.trim()
-                                ))),
-                            )
-                        } else {
-                            ("merged".to_string(), None)
-                        }
-                    }
-                }
-            } else {
-                // Merge failed — check for conflicts
-                match runner(&["git", "status", "--porcelain"], LOCAL_TIMEOUT) {
-                    Err(_) => ("error".to_string(), Some(json!(stderr.trim()))),
-                    Ok((_, status_stdout, _)) => {
-                        let conflicts = parse_conflict_files(&status_stdout);
-                        if !conflicts.is_empty() {
-                            ("conflict".to_string(), Some(json!(conflicts)))
-                        } else {
-                            ("error".to_string(), Some(json!(stderr.trim())))
-                        }
-                    }
-                }
-            }
+    let (m_code, _, m_stderr) =
+        run_cmd_with_timeout(&["git", "merge", "origin/main"], NETWORK_TIMEOUT)
+            .expect("git located by earlier fetch call");
+    if m_code == 0 {
+        let (push_code, _, push_stderr) = run_cmd_with_timeout(&["git", "push"], NETWORK_TIMEOUT)
+            .expect("git located by earlier fetch call");
+        if push_code != 0 {
+            (
+                "error".to_string(),
+                Some(json!(format!(
+                    "Merge succeeded but push failed: {}",
+                    push_stderr.trim()
+                ))),
+            )
+        } else {
+            ("merged".to_string(), None)
+        }
+    } else {
+        let (_, status_stdout, _) =
+            run_cmd_with_timeout(&["git", "status", "--porcelain"], LOCAL_TIMEOUT)
+                .expect("git located by earlier fetch call");
+        let conflicts = parse_conflict_files(&status_stdout);
+        if !conflicts.is_empty() {
+            ("conflict".to_string(), Some(json!(conflicts)))
+        } else {
+            ("error".to_string(), Some(json!(m_stderr.trim())))
         }
     }
 }
 
-/// Core preflight logic with injectable runner.
-pub fn preflight_inner(
-    branch: Option<&str>,
-    auto: bool,
-    manual: bool,
-    root: &Path,
-    bin_flow: &str,
-    runner: &dyn Fn(&[&str], u64) -> CmdResult,
-) -> Value {
+/// Call phase-transition --action enter. Returns parsed JSON value on
+/// success, error message on failure.
+fn phase_transition_enter(branch: &str) -> Result<Value, String> {
+    let bin_flow = bin_flow_path();
+    let (code, stdout, stderr) = run_cmd_with_timeout(
+        &[
+            &bin_flow,
+            "phase-transition",
+            "--phase",
+            "flow-complete",
+            "--action",
+            "enter",
+            "--branch",
+            branch,
+        ],
+        LOCAL_TIMEOUT,
+    )?;
+    if code != 0 {
+        return Err(stderr.trim().to_string());
+    }
+    serde_json::from_str(stdout.trim())
+        .map_err(|_| format!("Invalid JSON from phase-transition: {}", stdout))
+}
+
+fn preflight(branch: Option<&str>, auto: bool, manual: bool, root: &Path) -> Value {
     // Resolve branch
     let branch = match branch {
         Some(b) if !b.is_empty() => b.to_string(),
@@ -373,11 +285,6 @@ pub fn preflight_inner(
         }
     };
 
-    // Read state file. External-input audit: `branch` may be the
-    // `--branch` CLI override per `.claude/rules/external-input-validation.md`;
-    // slash-containing or empty values cannot address flat
-    // `.flow-states/` paths, so use `try_new` and surface a structured
-    // error rather than panicking.
     let state_path = match FlowPaths::try_new(root, &branch) {
         Some(paths) => paths.state_file(),
         None => {
@@ -417,10 +324,8 @@ pub fn preflight_inner(
         inferred = true;
     }
 
-    // Resolve mode
     let mode = resolve_mode(auto, manual, state.as_ref());
 
-    // Warnings
     let warnings = match state.as_ref() {
         Some(s) => check_learn_phase(s),
         None => Vec::new(),
@@ -428,36 +333,32 @@ pub fn preflight_inner(
 
     // Phase transition enter (only if state file exists)
     if state.is_some() {
-        if let Err(e) = phase_transition_enter(&branch, bin_flow, runner) {
+        if let Err(e) = phase_transition_enter(&branch) {
             return json!({
                 "status": "error",
                 "message": format!("Phase transition failed: {}", e)
             });
         }
 
-        // Set step counters
+        // Set step counters. state_path points at a file read_to_string
+        // already validated; no other writer in flow.
         let _ = mutate_state(&state_path, &mut |s| {
-            if !(s.is_object() || s.is_null()) {
-                return;
-            }
             s["complete_steps_total"] = json!(COMPLETE_STEPS_TOTAL);
             s["complete_step"] = json!(1);
         });
     }
 
-    // Check PR status
     let pr_number = state
         .as_ref()
         .and_then(|s| s.get("pr_number"))
         .and_then(|v| v.as_i64());
-    let pr_state = match check_pr_status(pr_number, &branch, runner) {
+    let pr_state = match check_pr_status(pr_number, &branch) {
         Ok(s) => s,
         Err(e) => {
             return json!({"status": "error", "message": e});
         }
     };
 
-    // Build base result (order preserved via preserve_order feature)
     let mut base = serde_json::Map::new();
     base.insert("mode".to_string(), json!(mode));
     base.insert("pr_state".to_string(), json!(pr_state));
@@ -473,7 +374,6 @@ pub fn preflight_inner(
         base.insert("worktree".to_string(), json!(derive_worktree(&branch)));
     }
 
-    // Dispatch on PR state
     match pr_state.as_str() {
         "MERGED" => {
             let mut out = serde_json::Map::new();
@@ -496,7 +396,7 @@ pub fn preflight_inner(
             Value::Object(out)
         }
         "OPEN" => {
-            let (merge_status, merge_data) = merge_main(runner);
+            let (merge_status, merge_data) = merge_main();
             let mut out = serde_json::Map::new();
             match merge_status.as_str() {
                 "conflict" => {
@@ -541,27 +441,14 @@ pub fn preflight_inner(
     }
 }
 
-/// Production wrapper — resolves branch, root, bin_flow, runner automatically.
-pub fn preflight(branch: Option<&str>, auto: bool, manual: bool, root: Option<&Path>) -> Value {
-    let default_root = project_root();
-    let root_ref: &Path = root.unwrap_or(&default_root);
-    let resolved_branch: Option<String> = match branch {
+/// Main-arm dispatch: returns (value, exit code).
+pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
+    let root = project_root();
+    let resolved_branch: Option<String> = match args.branch.as_deref() {
         Some(b) => Some(b.to_string()),
         None => current_branch(),
     };
-    preflight_inner(
-        resolved_branch.as_deref(),
-        auto,
-        manual,
-        root_ref,
-        &bin_flow_path(),
-        &run_cmd_with_timeout,
-    )
-}
-
-/// Main-arm dispatch: returns (value, exit code).
-pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
-    let result = preflight(args.branch.as_deref(), args.auto, args.manual, None);
+    let result = preflight(resolved_branch.as_deref(), args.auto, args.manual, &root);
     let code = if result["status"] == "ok" { 0 } else { 1 };
     (result, code)
 }
