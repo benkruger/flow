@@ -164,6 +164,61 @@ test:
    the public surface without a production consumer, and every
    future maintainer must treat the exposed item as part of the
    crate's contract.
+
+   **Bright-line test for `pub` additions.** Before adding `pub`
+   to any item, the author MUST name the non-test production
+   consumer outside this module, in the commit message and in the
+   item's own doc comment. If the only callers are (a) a thin
+   production wrapper (`run()`, a main.rs match arm, or any other
+   same-module dispatcher that exists to forward to this item) and
+   (b) integration tests, the `pub` is for testing and is
+   forbidden. No exceptions for mirroring pre-existing anti-patterns
+   elsewhere in the codebase — pre-existing exposures that fail
+   this test are debt to be audited, not precedent to copy.
+
+   **Forbidden naming shapes as pub.** The following function-name
+   suffixes/shapes are overwhelmingly indicative of pub-for-testing
+   unless accompanied by a named non-test cross-module consumer:
+   `_inner`, `_impl`, `_with_runner`, `_with_resolver`,
+   `_with_deps`, `_with_tty`, `_with_timeout`, and any
+   `run_impl_main_with_*` variant that exists alongside a real
+   `run_impl_main`. When one of these shapes is proposed as `pub`,
+   the author must either (a) provide the named consumer or
+   (b) keep the item private and drive tests through the real
+   production entry point via subprocess or fixture.
+
+   **Carve-out: externally-coupled test seams.** The
+   `rust-patterns.md` "Seam-injection variant for externally-coupled
+   code" section defines ONE legitimate class of `pub` test seam:
+   variants that inject dependencies `cargo nextest` genuinely
+   cannot supply — real TTY, raw-mode terminal, network socket,
+   live crossterm event loop. This carve-out is closed. CI
+   runners, git subprocess output, gh subprocess output, state
+   file reads, sentinel file state, tree snapshots, and PR number
+   parsing are NOT externally coupled in this sense — they are
+   fixture-controllable from integration tests. A `pub` seam for
+   any of those fails the bright-line test above.
+
+   **When the test resists the real production path.** If a branch
+   cannot be reached through the real production entry, the fix is
+   one of (in priority order):
+
+   1. `.expect("<rationale>")` on the unreachable arm per
+      `.claude/rules/testability-means-simplicity.md`. The
+      `.expect` does not count against coverage because it does
+      not create a branch.
+   2. Delete the branch entirely if it has no production
+      consumer — unreachable defensive code is a code smell.
+   3. Restructure the function so the hard-to-test branch is
+      gone (simpler primitive, fewer seams). `Command::output()`
+      instead of hand-rolled timeout loops. `From<io::Error>`
+      instead of `.map_err(|e| e.to_string())`.
+   4. Only then — and only then — introduce a `pub` seam, with a
+      named non-test consumer documented in the doc comment.
+
+   A `pub` addition whose justification is "the test needs it" is
+   forbidden no matter how the wording is dressed up. The
+   justification must name a real caller in real production code.
 4. If the new test file sits under a `tests/` subdirectory, add a
    `[[test]]` stanza to `Cargo.toml`:
 

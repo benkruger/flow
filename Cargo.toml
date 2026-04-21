@@ -39,6 +39,10 @@ name = "validate_claude_paths"
 path = "tests/hooks/validate_claude_paths.rs"
 
 [[test]]
+name = "stop_continue"
+path = "tests/hooks/stop_continue.rs"
+
+[[test]]
 name = "validate_ask_user"
 path = "tests/hooks/validate_ask_user.rs"
 

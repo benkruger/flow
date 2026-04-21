@@ -158,7 +158,34 @@ and passes them in, matching the shape of the pre-existing
 module's production wrapper depends on resources `cargo nextest`
 cannot supply (real TTY, raw-mode terminal, network socket), expose
 the dependencies as closure parameters in an `_impl` variant and
-keep the production wrapper a thin closure-supplier. Reference:
+keep the production wrapper a thin closure-supplier.
+
+**This carve-out is closed, not open-ended.** The list of
+"externally-coupled" resources that justify a pub test seam is
+exactly: real TTY (`libc::isatty`), raw-mode terminal (crossterm
+`enable_raw_mode`/`LeaveAlternateScreen`), live crossterm event
+loop, network socket opened inside the module. Nothing else. In
+particular, the following do NOT qualify as externally coupled and
+cannot be used to justify a pub test seam:
+
+- Subprocess calls to `gh`, `git`, `bin/flow`, or any other binary —
+  these are fixture-controllable (prepend a fake binary to PATH,
+  use a bare git repo, spawn the real binary with prepared stdin).
+- File system reads (state files, sentinel files, plan files,
+  config files) — fixture-controllable via tempdir.
+- Environment variables — controllable via `Command::env`.
+- Return values of `current_branch()`, `project_root()`,
+  `current_dir()` — fixture-controllable.
+- CI sentinel state, tree snapshot comparison, PR status —
+  fixture-controllable.
+
+A `pub fn <name>_with_runner`, `_with_resolver`, `_with_deps`, or
+`_inner` variant for any of those surfaces is a test seam, not an
+externally-coupled seam. Per
+`.claude/rules/test-placement.md` "Bright-line test for `pub`
+additions", it is forbidden unless it has a named non-test consumer.
+
+Reference:
 `tui_terminal::run_tui_arm_impl(is_tty_fn, run_terminal_fn, root)`
 accepts `is_tty_fn: FnOnce() -> bool` and `run_terminal_fn:
 FnOnce(&mut TuiApp) -> io::Result<()>` so unit tests substitute
@@ -182,10 +209,24 @@ Drop unwind. The production caller passes the real cleanup closure
 guarantee. Per `.claude/rules/panic-safe-cleanup.md`, the closure
 must swallow its own errors because `Drop` cannot return them.
 
-**Three-tier dispatch for subprocess-coordinating modules.** When a
-main-arm subcommand coordinates external subprocesses (git, other
-`bin/flow` subcommands, notifiers, CI runners), the pattern grows a
-third tier to keep subprocess calls injectable:
+**Three-tier dispatch for subprocess-coordinating modules.**
+
+**NOTE:** this tier pattern has been over-applied in the codebase as
+pub-for-testing. Before adopting it, confirm the dependencies truly
+cannot be exercised via the real production path with fixtures. If
+the dependencies are `gh`/`git`/`bin/flow` subprocess calls, fixture
+them via a fake binary on PATH instead of introducing a `_with_deps`
+pub seam. If the dependencies are filesystem reads or environment
+variables, fixture them via tempdir and `Command::env`. A
+`_with_deps` variant whose only non-test caller is the
+same-module `run_impl` production binder fails the bright-line
+test in `.claude/rules/test-placement.md` and is forbidden.
+
+The pattern below is documented because it genuinely fits a narrow
+class of modules (TUI, complex state machines driven by live
+subprocesses whose failure modes cannot be reproduced by faking
+stdout). Apply it only when the simpler-primitive and fixture-based
+approaches have been tried and documented as insufficient.
 
 1. `pub fn run_impl_with_deps(args, root, cwd, ...closures) -> Value`
    — testable core with injectable closures for every subprocess
