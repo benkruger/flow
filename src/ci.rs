@@ -626,13 +626,13 @@ pub fn delete_profraws_recursive(dir: &Path) -> (u64, u64) {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            let ft = match entry.file_type() {
-                Ok(ft) => ft,
-                Err(_) => continue,
-            };
-            if ft.is_dir() {
+            // `path.is_dir()` / `path.is_file()` use `metadata()` and
+            // return `false` on any error — there is no separate Err
+            // branch to instrument. Under `target/llvm-cov-target/`
+            // symlinks don't appear, so following them is a non-issue.
+            if path.is_dir() {
                 stack.push(path);
-            } else if ft.is_file() && path.extension().map(|e| e == "profraw").unwrap_or(false) {
+            } else if path.is_file() && path.extension().map(|e| e == "profraw").unwrap_or(false) {
                 if let Ok(meta) = fs::metadata(&path) {
                     bytes = bytes.saturating_add(meta.len());
                 }

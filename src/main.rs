@@ -604,12 +604,11 @@ fn main() {
             flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::AutoCloseParent(args)) => {
-            let (value, code) = match std::env::current_dir() {
-                Ok(cwd) => {
-                    auto_close_parent::run_impl_main(args, &cwd, &auto_close_parent::run_api)
-                }
-                Err(_) => auto_close_parent::safe_default_ok(),
-            };
+            let (value, code) = auto_close_parent::run_with_current_dir_from(
+                args,
+                std::env::current_dir,
+                &auto_close_parent::run_api,
+            );
             flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::CompleteFast(args)) => {

@@ -44,15 +44,13 @@ pub struct Args {
 /// Searches for the "pull" segment and parses the next segment as the number.
 /// Returns 0 if the URL is malformed or not a PR URL.
 fn extract_pr_number(pr_url: &str) -> u32 {
-    let parts: Vec<&str> = pr_url.trim_end_matches('/').split('/').collect();
-    for (i, part) in parts.iter().enumerate() {
-        if *part == "pull" && i + 1 < parts.len() {
-            if let Ok(n) = parts[i + 1].parse::<u32>() {
-                return n;
-            }
-        }
-    }
-    0
+    pr_url
+        .trim_end_matches('/')
+        .split('/')
+        .skip_while(|s| *s != "pull")
+        .nth(1)
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(0)
 }
 
 /// Create a git worktree for the feature branch.
@@ -99,12 +97,12 @@ pub(crate) fn initial_commit_push_pr(
     prompt: &str,
 ) -> Result<(String, u32), SetupError> {
     let commit_msg_path = wt_path.join(".flow-commit-msg");
-    std::fs::write(&commit_msg_path, format!("Start {} branch", branch)).map_err(|e| {
-        SetupError {
-            step: "commit".to_string(),
-            message: e.to_string(),
-        }
-    })?;
+    // `create_worktree` above succeeded, so `wt_path` exists and is
+    // writable. A failure here would indicate disk-full or read-only
+    // filesystem — neither is a FLOW-supported recovery state, so
+    // treat as an invariant via `.expect()`.
+    std::fs::write(&commit_msg_path, format!("Start {} branch", branch))
+        .expect(".flow-commit-msg write must succeed in a freshly-created worktree");
 
     let result = run_cmd(
         &["git", "commit", "--allow-empty", "-F", ".flow-commit-msg"],

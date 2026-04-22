@@ -25,7 +25,21 @@ pub const FILE_READ_COMMANDS: &[&str] = &["cat", "head", "tail", "grep", "rg", "
 /// Returns `(settings, project_root)` where `project_root` is the directory
 /// containing `.claude/`. Returns `(None, None)` if not found or unparseable.
 pub fn find_settings_and_root() -> (Option<Value>, Option<PathBuf>) {
-    find_settings_and_root_from(&env::current_dir().unwrap_or_default())
+    find_settings_and_root_with(env::current_dir)
+}
+
+/// Seam-injected variant of [`find_settings_and_root`] that accepts a
+/// caller-supplied cwd provider. Production binds `cwd_fn =
+/// env::current_dir`; tests pass a closure returning `Err` to
+/// exercise the fallback path.
+pub fn find_settings_and_root_with<F>(cwd_fn: F) -> (Option<Value>, Option<PathBuf>)
+where
+    F: FnOnce() -> std::io::Result<PathBuf>,
+{
+    match cwd_fn() {
+        Ok(cwd) => find_settings_and_root_from(&cwd),
+        Err(_) => (None, None),
+    }
 }
 
 /// Testable version that takes an explicit starting directory.
@@ -59,7 +73,20 @@ pub fn find_settings_and_root_from(start: &Path) -> (Option<Value>, Option<PathB
 ///
 /// Returns `None` if not on a branch or if detection fails.
 pub fn detect_branch_from_cwd() -> Option<String> {
-    detect_branch_from_path(&env::current_dir().ok()?)
+    detect_branch_from_cwd_with(env::current_dir)
+}
+
+/// Seam-injected variant of [`detect_branch_from_cwd`]. Production
+/// binds `cwd_fn = env::current_dir`; tests pass a closure
+/// returning `Err` to exercise the None path.
+pub fn detect_branch_from_cwd_with<F>(cwd_fn: F) -> Option<String>
+where
+    F: FnOnce() -> std::io::Result<PathBuf>,
+{
+    match cwd_fn() {
+        Ok(cwd) => detect_branch_from_path(&cwd),
+        Err(_) => None,
+    }
 }
 
 /// Testable version that takes an explicit path.

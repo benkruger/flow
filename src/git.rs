@@ -34,12 +34,13 @@ fn project_root_from_output(output: io::Result<Output>) -> PathBuf {
 /// the first `worktree <path>` line as a PathBuf, or `PathBuf::from(".")`
 /// when no such line is present.
 fn project_root_with_stdout(stdout: &str) -> PathBuf {
-    for line in stdout.lines() {
-        if let Some(path) = line.strip_prefix("worktree ") {
-            return PathBuf::from(path.trim());
-        }
-    }
-    PathBuf::from(".")
+    stdout
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("worktree ")
+                .map(|p| PathBuf::from(p.trim()))
+        })
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 /// Get the current git branch name.

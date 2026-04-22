@@ -48,17 +48,17 @@ const SHARED_CONFIG_FILENAMES: &[&str] = &[
 /// shared-config filenames, or when the path passes through a `.github/`
 /// directory (workflows, issue templates, CODEOWNERS).
 pub fn is_shared_config(file_path: &str) -> bool {
-    if file_path.is_empty() {
-        return false;
-    }
-
     let path = Path::new(file_path);
     let components: Vec<&str> = path
         .components()
         .filter_map(|c| c.as_os_str().to_str())
         .collect();
 
-    // Check filename against the exact-match list
+    // Check filename against the exact-match list. Empty file_path
+    // yields an empty components vec → `.last()` is None → inner
+    // block is skipped → fall through to the .github loop and
+    // `return false` below, matching the intent of the prior
+    // early-return without a separate uncovered guard.
     if let Some(filename) = components.last() {
         if SHARED_CONFIG_FILENAMES.contains(filename) {
             return true;

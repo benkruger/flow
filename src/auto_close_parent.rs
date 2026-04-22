@@ -276,12 +276,25 @@ pub fn run_impl_main(args: Args, cwd: &Path, runner: &GhApiRunner) -> (Value, i3
 
 /// Best-effort safe-default payload when we can't determine cwd —
 /// auto-close-parent never fails the caller, so we return ok with
-/// both close flags false. Extracted as a constant so the cwd-Err
-/// branch in main.rs is a single `match` arm that any reader can
-/// see at a glance.
+/// both close flags false.
 pub fn safe_default_ok() -> (Value, i32) {
     (
         json!({"status": "ok", "parent_closed": false, "milestone_closed": false}),
         0,
     )
+}
+
+/// Seam-injected wrapper that dispatches between `run_impl_main` and
+/// `safe_default_ok` based on a caller-supplied cwd provider.
+/// Production binds `cwd_fn = std::env::current_dir`; tests pass a
+/// closure returning `Err` to exercise the safe-default branch
+/// without needing to unlink the subprocess cwd via `pre_exec`.
+pub fn run_with_current_dir_from<F>(args: Args, cwd_fn: F, runner: &GhApiRunner) -> (Value, i32)
+where
+    F: FnOnce() -> std::io::Result<std::path::PathBuf>,
+{
+    match cwd_fn() {
+        Ok(cwd) => run_impl_main(args, &cwd, runner),
+        Err(_) => safe_default_ok(),
+    }
 }

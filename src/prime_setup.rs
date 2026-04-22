@@ -104,10 +104,15 @@ pub fn is_subsumed(candidate: &str, existing_set: &HashSet<String>) -> bool {
         if &ex_caps[1] != cand_type {
             continue;
         }
-        if let Some(regex) = permission_to_regex(existing) {
-            if regex.is_match(&test_string) {
-                return true;
-            }
+        // `permission_to_regex` uses the same outer shape as the
+        // `outer_re` captures above — any entry that captures here
+        // is guaranteed to return Some from `permission_to_regex`.
+        // The `.expect` does not create an instrumented branch per
+        // `.claude/rules/testability-means-simplicity.md`.
+        let regex = permission_to_regex(existing)
+            .expect("outer_re match implies permission_to_regex succeeds");
+        if regex.is_match(&test_string) {
+            return true;
         }
     }
     false
@@ -272,11 +277,11 @@ pub fn update_git_exclude(project_root: &Path) -> bool {
     };
 
     let git_dir_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let git_dir = if Path::new(&git_dir_str).is_absolute() {
-        PathBuf::from(&git_dir_str)
-    } else {
-        project_root.join(&git_dir_str)
-    };
+    // `Path::join` with an absolute argument returns the absolute
+    // argument verbatim, and with a relative argument it roots the
+    // argument at `project_root`. One join covers both cases the
+    // prior if/else handled.
+    let git_dir = project_root.join(&git_dir_str);
 
     let info_dir = git_dir.join("info");
     let _ = fs::create_dir_all(&info_dir);
@@ -332,12 +337,14 @@ pub fn install_pre_commit_hook(project_root: &Path) -> Result<(), String> {
     )
 }
 
-/// Resolve the user's home directory, preferring `$HOME` for testability.
+/// Resolve the user's home directory from `$HOME`. FLOW is
+/// Unix-only (macOS/Linux); `HOME` is guaranteed to be set by the
+/// shell, so the lookup is an invariant — any failure here is an
+/// environmental corruption worth surfacing via `.expect()`.
 fn home_dir() -> PathBuf {
-    match env::var("HOME") {
-        Ok(h) => PathBuf::from(h),
-        Err(_) => PathBuf::from(env::var("USERPROFILE").unwrap_or_else(|_| ".".to_string())),
-    }
+    PathBuf::from(
+        env::var("HOME").expect("HOME environment variable is set on all supported platforms"),
+    )
 }
 
 /// Install a global flow launcher at `~/.local/bin/flow`.

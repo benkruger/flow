@@ -5,14 +5,15 @@
 
 mod common;
 
+use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
 use common::{create_gh_stub, create_git_repo_with_remote, parse_output};
 use flow_rs::auto_close_parent::{
     all_sub_issues_closed, check_milestone_closed, check_parent_closed, fetch_issue_fields,
-    parse_issue_fields, run_api, run_impl_main, safe_default_ok, should_close_milestone, Args,
-    GhApiRunner,
+    parse_issue_fields, run_api, run_impl_main, run_with_current_dir_from, safe_default_ok,
+    should_close_milestone, Args, GhApiRunner,
 };
 
 fn run_cmd(repo: &Path, args: &[&str], stub_dir: &Path) -> Output {
@@ -694,4 +695,109 @@ fn auto_close_parent_run_impl_main_happy_path_closes_both() {
     assert_eq!(value["status"], "ok");
     assert_eq!(value["parent_closed"], true);
     assert_eq!(value["milestone_closed"], true);
+}
+
+/// Directly exercises the `Err` arm of `run_with_current_dir_from`
+/// by passing a `cwd_fn` closure that returns Err. The seam
+/// replaces the previous `match std::env::current_dir()` in
+/// main.rs's AutoCloseParent arm, making this branch testable
+/// without `pre_exec`+rmdir subprocess gymnastics.
+#[test]
+fn run_with_current_dir_from_cwd_err_returns_safe_default() {
+    let args = Args {
+        repo: "owner/repo".to_string(),
+        issue_number: 1,
+    };
+    let runner: &GhApiRunner = &|_, _| Ok(String::new());
+    let (value, code) = run_with_current_dir_from(
+        args,
+        || Err(std::io::Error::other("simulated current_dir failure")),
+        runner,
+    );
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["parent_closed"], false);
+    assert_eq!(value["milestone_closed"], false);
+}
+
+/// Exercises the `Ok` arm of `run_with_current_dir_from` by passing
+/// a `cwd_fn` closure that returns a valid path and a stub runner.
+#[test]
+fn run_with_current_dir_from_cwd_ok_routes_to_run_impl_main() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cwd = tmp.path().to_path_buf();
+    let args = Args {
+        repo: "owner/repo".to_string(),
+        issue_number: 1,
+    };
+    // Runner returns empty string for all calls — all gh calls
+    // "succeed" with empty data, yielding parent_closed=false
+    // and milestone_closed=false.
+    let runner: &GhApiRunner = &|_, _| Ok(String::new());
+    let (value, code) = run_with_current_dir_from(args, move || Ok(cwd.clone()), runner);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+}
+
+/// Drives the `Err(_) => auto_close_parent::safe_default_ok()` branch
+/// in `main.rs`'s `AutoCloseParent` match arm by forcing the
+/// subprocess's `std::env::current_dir()` to fail. The child is
+/// spawned with `current_dir(cwd)` set; a `pre_exec` closure then
+/// `rmdir`s that cwd after the kernel has chdir'd the child into it,
+/// leaving the child with an unlinked cwd inode — `getcwd(3)` then
+/// returns `ENOENT` and Rust's `env::current_dir()` reports Err.
+///
+/// The subprocess must still exit 0 and emit the safe-default JSON,
+/// because auto-close-parent is contractually best-effort.
+#[cfg(unix)]
+#[test]
+fn auto_close_parent_subprocess_with_stale_cwd_uses_safe_default() {
+    use std::os::unix::process::CommandExt;
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let cwd = root.join("doomed");
+    fs::create_dir(&cwd).expect("mkdir doomed");
+
+    let cwd_for_preexec = cwd.clone();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.arg("auto-close-parent");
+    cmd.args(["--repo", "x/y", "--issue-number", "1"]);
+    cmd.current_dir(&cwd);
+    cmd.env_remove("FLOW_CI_RUNNING");
+    cmd.env("GH_TOKEN", "invalid");
+    cmd.env("HOME", &root);
+    cmd.env("GIT_CEILING_DIRECTORIES", &root);
+
+    // SAFETY: `pre_exec` requires the closure to be async-signal-safe.
+    // `libc::rmdir` is listed as AS-safe by POSIX; we only call it and
+    // return Ok — no memory allocation, no panic surfaces.
+    let preexec_path = std::ffi::CString::new(cwd_for_preexec.to_str().expect("utf8").as_bytes())
+        .expect("CString from cwd path");
+    unsafe {
+        cmd.pre_exec(move || {
+            libc::rmdir(preexec_path.as_ptr());
+            Ok(())
+        });
+    }
+
+    let output = cmd.output().expect("spawn flow-rs auto-close-parent");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "expected exit 0 for safe-default path, got status {:?}; stderr={}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"parent_closed\":false"),
+        "expected safe-default JSON, got stdout={}",
+        stdout
+    );
+    assert!(
+        stdout.contains("\"milestone_closed\":false"),
+        "expected safe-default JSON, got stdout={}",
+        stdout
+    );
 }

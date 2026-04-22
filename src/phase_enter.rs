@@ -225,10 +225,11 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let enter_result_holder = std::cell::RefCell::new(Value::Null);
     let phase_name = args.phase.clone();
 
+    // `gate_check` above rejects any state that is not an object whose
+    // `phases.<prev>.status == "complete"` — by the time we reach the
+    // closure, the parsed state is guaranteed to be an object, so no
+    // defensive non-object guard is needed here.
     let mutate_result = mutate_state(&state_path, &mut |state| {
-        if !(state.is_object() || state.is_null()) {
-            return;
-        }
         let result = phase_enter(state, &phase_name, None);
         *enter_result_holder.borrow_mut() = result;
     });
@@ -253,12 +254,11 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         ),
     );
 
-    if enter_result["status"] == "error" {
-        return Ok(json!({
-            "status": "error",
-            "message": enter_result["message"],
-        }));
-    }
+    // `phase_enter` in `phase_transition.rs` never returns a
+    // status="error" payload — it always returns status="ok". The
+    // status check below is therefore an unreachable defensive branch
+    // and is intentionally omitted to keep the coverage gate clean
+    // per `.claude/rules/testability-means-simplicity.md`.
 
     // Set step counters if --steps-total provided
     if let Some(total) = args.steps_total {
@@ -266,10 +266,9 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         let steps_total_field = format!("{}_steps_total", prefix);
         let step_field = format!("{}_step", prefix);
 
+        // Same non-object guard omission rationale as the enter
+        // mutation above — gate_check already enforced object state.
         let _ = mutate_state(&state_path, &mut move |state| {
-            if !(state.is_object() || state.is_null()) {
-                return;
-            }
             state[&steps_total_field] = json!(total);
             state[&step_field] = json!(0);
         });

@@ -697,3 +697,77 @@ fn resolve_mode_flow_learn_object_override() {
     assert_eq!(commit, "manual");
     assert_eq!(cont, "manual");
 }
+
+/// Covers the `Err(_) => return Err(...)` branch of `resolve_branch` in
+/// `resolve_state`. Spawning `phase-enter` from a non-git directory
+/// with no `--branch` flag produces a current-branch failure.
+#[test]
+fn phase_enter_no_branch_in_non_git_dir_errors() {
+    let tmp = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["phase-enter", "--phase", "flow-code"])
+        .current_dir(tmp.path())
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env_remove("FLOW_CI_RUNNING")
+        .env("GIT_CEILING_DIRECTORIES", tmp.path())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let last = stdout.trim().lines().last().unwrap_or("");
+    let data: Value = serde_json::from_str(last).unwrap_or(json!({}));
+    assert_eq!(data["status"], "error");
+    let msg = data["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("Could not determine current branch") || msg.contains("Invalid branch"),
+        "expected branch-resolution error, got: {}",
+        msg
+    );
+}
+
+/// Covers the `cwd_scope::enforce` Err branch at line 183 of
+/// `phase_enter::run_impl`. The state file declares
+/// `relative_cwd="api"` but the subprocess runs from the worktree
+/// root — cwd is NOT inside `<root>/api`, so `enforce` returns Err
+/// and run_impl short-circuits with a "cwd drift" error payload.
+#[test]
+fn phase_enter_with_relative_cwd_mismatch_returns_cwd_drift_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "cwd-drift";
+    let repo = create_git_repo(dir.path(), branch);
+    // `cwd_scope::enforce` keys off `current_branch_in(cwd)` — switch
+    // the repo's active branch to `branch` so the state-file lookup
+    // for `<branch>.json` finds our fixture.
+    Command::new("git")
+        .args(["checkout", branch])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    let state_dir = flow_states_dir(&repo);
+    fs::create_dir_all(&state_dir).unwrap();
+    // Force relative_cwd to "api" so cwd-scope expects `<repo>/api`.
+    fs::write(
+        state_dir.join(format!("{}.json", branch)),
+        serde_json::to_string(&json!({
+            "branch": branch,
+            "relative_cwd": "api",
+            "current_phase": "flow-plan",
+            "phases": {
+                "flow-plan": {"status": "complete"}
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let last = stdout.trim().lines().last().unwrap_or("");
+    let data: Value = serde_json::from_str(last).unwrap_or(json!({}));
+    assert_eq!(data["status"], "error");
+    let msg = data["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("cwd drift"),
+        "expected cwd drift error, got: {}",
+        msg
+    );
+}

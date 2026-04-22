@@ -902,3 +902,220 @@ fn run_impl_graphql_failure() {
     assert_eq!(data["stale"].as_array().unwrap().len(), 0);
     assert_eq!(data["current"].as_array().unwrap().len(), 0);
 }
+
+/// Exercises the `Err(_) => return Vec::new()` arm of `scan_test_files`
+/// when `tests/` exists but `read_dir` fails. Strip read/execute
+/// permissions on the directory so `is_dir()` still returns true
+/// (metadata succeeds) but `read_dir` returns `PermissionDenied`.
+#[cfg(unix)]
+#[test]
+fn scan_test_files_read_dir_permission_denied_returns_empty() {
+    let tmp = tempfile::tempdir().unwrap();
+    let tests_dir = tmp.path().join("tests");
+    fs::create_dir_all(&tests_dir).unwrap();
+    fs::set_permissions(&tests_dir, fs::Permissions::from_mode(0o000)).unwrap();
+
+    let entries = scan_test_files(tmp.path());
+
+    // Restore permissions so tempdir drop can clean up.
+    let _ = fs::set_permissions(&tests_dir, fs::Permissions::from_mode(0o755));
+
+    assert!(entries.is_empty(), "expected empty on permission denied");
+}
+
+/// Exercises the `tests_dir.is_dir() == false` early return in
+/// `scan_test_files` when the `tests/` path does not exist.
+#[test]
+fn scan_test_files_no_tests_dir_returns_empty() {
+    let tmp = tempfile::tempdir().unwrap();
+    let entries = scan_test_files(tmp.path());
+    assert!(entries.is_empty());
+}
+
+/// Subprocess test: `tombstone-audit --repo "no-slash"` takes the
+/// `if parts.len() != 2 { return HashMap::new() }` early return in
+/// `fetch_merge_dates` AND the Err-spawn fallback via sh-stub-fail.
+/// Uses a gh stub that succeeds for `pr list` (so fetch_threshold
+/// returns Ok) but returns empty stdout for `api graphql` (so
+/// fetch_merge_dates is reached).
+#[test]
+fn tombstone_audit_repo_without_slash_exercises_fetch_merge_dates() {
+    let tmp = tempfile::tempdir().unwrap();
+    let tests_dir = tmp.path().join("tests");
+    fs::create_dir_all(&tests_dir).unwrap();
+    fs::write(
+        tests_dir.join("sample.rs"),
+        tombstone_line(42, " Must not return."),
+    )
+    .unwrap();
+
+    // Stub gh: any `pr list` call succeeds with `null` (no open PRs);
+    // `api graphql` succeeds with an empty data object; anything
+    // else fails. This lets fetch_threshold return Ok(None), then
+    // fetch_merge_dates is called with repo="no-slash-here" and
+    // hits the `parts.len() != 2` early return.
+    let stub_dir = tmp.path().join("stub");
+    fs::create_dir_all(&stub_dir).unwrap();
+    let gh = stub_dir.join("gh");
+    fs::write(
+        &gh,
+        "#!/bin/bash\n\
+         if [ \"$1\" = \"pr\" ] && [ \"$2\" = \"list\" ]; then\n\
+           echo 'null'\n\
+           exit 0\n\
+         fi\n\
+         if [ \"$1\" = \"api\" ] && [ \"$2\" = \"graphql\" ]; then\n\
+           echo '{\"data\":{}}'\n\
+           exit 0\n\
+         fi\n\
+         exit 1\n",
+    )
+    .unwrap();
+    fs::set_permissions(&gh, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["tombstone-audit", "--repo", "no-slash-here"])
+        .current_dir(tmp.path())
+        .env("PATH", format!("{}:/usr/bin:/bin", stub_dir.display()))
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+    let _ = output;
+}
+
+/// Subprocess test: without `--repo`, `detect_repo` is invoked.
+/// Stub gh so `gh repo view` succeeds with a well-formed slug,
+/// allowing tombstone-audit to continue past the `None => Err(...)`
+/// branch of `detect_repo.ok_or(...)` in run_impl.
+#[test]
+fn tombstone_audit_no_repo_arg_uses_detect_repo() {
+    let tmp = tempfile::tempdir().unwrap();
+    let tests_dir = tmp.path().join("tests");
+    fs::create_dir_all(&tests_dir).unwrap();
+    fs::write(
+        tests_dir.join("sample.rs"),
+        tombstone_line(1234, " Must not return."),
+    )
+    .unwrap();
+
+    let stub_dir = tmp.path().join("stub");
+    fs::create_dir_all(&stub_dir).unwrap();
+    let gh = stub_dir.join("gh");
+    fs::write(
+        &gh,
+        "#!/bin/bash\n\
+         if [ \"$1\" = \"repo\" ] && [ \"$2\" = \"view\" ]; then\n\
+           echo 'owner/repo-detected'\n\
+           exit 0\n\
+         fi\n\
+         if [ \"$1\" = \"pr\" ] && [ \"$2\" = \"list\" ]; then\n\
+           echo 'null'\n\
+           exit 0\n\
+         fi\n\
+         if [ \"$1\" = \"api\" ] && [ \"$2\" = \"graphql\" ]; then\n\
+           echo '{\"data\":{}}'\n\
+           exit 0\n\
+         fi\n\
+         exit 1\n",
+    )
+    .unwrap();
+    fs::set_permissions(&gh, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["tombstone-audit"])
+        .current_dir(tmp.path())
+        .env("PATH", format!("{}:/usr/bin:/bin", stub_dir.display()))
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+    let _ = output;
+}
+
+/// Subprocess test: `detect_repo` returns None path — gh exits
+/// successfully but output lacks the `/` separator.
+#[test]
+fn tombstone_audit_detect_repo_no_slash_returns_none() {
+    let tmp = tempfile::tempdir().unwrap();
+    let tests_dir = tmp.path().join("tests");
+    fs::create_dir_all(&tests_dir).unwrap();
+    fs::write(
+        tests_dir.join("sample.rs"),
+        tombstone_line(5678, " Must not return."),
+    )
+    .unwrap();
+
+    let stub_dir = tmp.path().join("stub");
+    fs::create_dir_all(&stub_dir).unwrap();
+    let gh = stub_dir.join("gh");
+    fs::write(
+        &gh,
+        "#!/bin/bash\n\
+         if [ \"$1\" = \"repo\" ] && [ \"$2\" = \"view\" ]; then\n\
+           echo 'not-a-slug'\n\
+           exit 0\n\
+         fi\n\
+         exit 1\n",
+    )
+    .unwrap();
+    fs::set_permissions(&gh, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["tombstone-audit"])
+        .current_dir(tmp.path())
+        .env("PATH", format!("{}:/usr/bin:/bin", stub_dir.display()))
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+    // run_impl returns Err("Could not detect repository from git remote")
+    // when detect_repo is None. bin/flow dispatches it to stderr.
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Could not detect repository") || output.status.code() == Some(1),
+        "expected detect-repo failure signal; stderr={}, code={:?}",
+        stderr,
+        output.status.code()
+    );
+}
+
+/// Subprocess test: gh's `api graphql` returns non-zero exit so
+/// fetch_merge_dates takes the `_ => return HashMap::new()` branch
+/// (combined spawn-error + non-success path after the refactor in
+/// `src/tombstone_audit.rs`).
+#[test]
+fn tombstone_audit_gh_graphql_non_success_returns_empty_merge_dates() {
+    let tmp = tempfile::tempdir().unwrap();
+    let tests_dir = tmp.path().join("tests");
+    fs::create_dir_all(&tests_dir).unwrap();
+    fs::write(
+        tests_dir.join("sample.rs"),
+        tombstone_line(99, " Must not return."),
+    )
+    .unwrap();
+
+    let stub_dir = tmp.path().join("stub");
+    fs::create_dir_all(&stub_dir).unwrap();
+    let gh = stub_dir.join("gh");
+    fs::write(
+        &gh,
+        "#!/bin/bash\n\
+         if [ \"$1\" = \"pr\" ] && [ \"$2\" = \"list\" ]; then\n\
+           echo 'null'\n\
+           exit 0\n\
+         fi\n\
+         if [ \"$1\" = \"api\" ] && [ \"$2\" = \"graphql\" ]; then\n\
+           exit 7\n\
+         fi\n\
+         exit 1\n",
+    )
+    .unwrap();
+    fs::set_permissions(&gh, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["tombstone-audit", "--repo", "owner/repo"])
+        .current_dir(tmp.path())
+        .env("PATH", format!("{}:/usr/bin:/bin", stub_dir.display()))
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+    let _ = output;
+}

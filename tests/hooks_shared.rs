@@ -253,7 +253,8 @@ fn test_build_permission_regexes_missing_key() {
 
 use flow_rs::flow_paths::FlowPaths;
 use flow_rs::hooks::{
-    detect_branch_from_path, find_settings_and_root_from, is_flow_active, resolve_main_root,
+    detect_branch_from_cwd_with, detect_branch_from_path, find_settings_and_root_from,
+    find_settings_and_root_with, is_flow_active, resolve_main_root,
 };
 
 /// Covers the `Err(_) => return (None, None)` arm on line 39 of
@@ -365,4 +366,42 @@ fn resolve_main_root_passthrough_without_marker() {
         resolve_main_root(plain),
         std::path::PathBuf::from("/project")
     );
+}
+
+/// Covers the Err arm of the cwd_fn match in `find_settings_and_root_with`.
+#[test]
+fn find_settings_and_root_with_cwd_err_returns_none_none() {
+    let (settings, root) =
+        find_settings_and_root_with(|| Err(std::io::Error::other("simulated current_dir failure")));
+    assert!(settings.is_none());
+    assert!(root.is_none());
+}
+
+/// Covers the Ok arm of the cwd_fn match in `find_settings_and_root_with`
+/// with a fixture dir that doesn't have `.claude/settings.json`.
+#[test]
+fn find_settings_and_root_with_cwd_ok_but_no_settings_returns_none_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let dir_path = dir.path().to_path_buf();
+    let (settings, root) = find_settings_and_root_with(move || Ok(dir_path));
+    assert!(settings.is_none());
+    assert!(root.is_none());
+}
+
+/// Covers the Err arm of the cwd_fn match in `detect_branch_from_cwd_with`.
+#[test]
+fn detect_branch_from_cwd_with_cwd_err_returns_none() {
+    let result =
+        detect_branch_from_cwd_with(|| Err(std::io::Error::other("simulated current_dir failure")));
+    assert!(result.is_none());
+}
+
+/// Covers the Ok arm of the cwd_fn match in `detect_branch_from_cwd_with`.
+#[test]
+fn detect_branch_from_cwd_with_cwd_ok_delegates_to_path_variant() {
+    let dir = tempfile::tempdir().unwrap();
+    let dir_path = dir.path().to_path_buf();
+    // Non-git tempdir → detect_branch_from_path returns None.
+    let result = detect_branch_from_cwd_with(move || Ok(dir_path));
+    assert!(result.is_none());
 }

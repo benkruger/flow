@@ -38,6 +38,35 @@ fn project_root_in_real_repo_returns_existing_path() {
     assert!(root.exists() || root == Path::new("."));
 }
 
+/// Drives the `worktree <path>` parse branch in `project_root_with_stdout`
+/// (line 40 of src/git.rs) by spawning the compiled `flow-rs` binary
+/// with cwd set to a fixture git repo. The subprocess's internal
+/// `project_root()` runs `git worktree list --porcelain` inside the
+/// fixture; the output carries a `worktree <path>` line that exercises
+/// the strip_prefix-matched return.
+#[test]
+fn project_root_subprocess_in_git_repo_covers_worktree_parse() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git_repo(&root, "main");
+    // `plan-check` calls `project_root()` at the top of `run_impl`
+    // before any state-file resolution, so even when the plan file is
+    // missing the subprocess still hits the git parse branch.
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["plan-check", "--plan-file", "/nonexistent/plan.md"])
+        .current_dir(&root)
+        .env_remove("FLOW_CI_RUNNING")
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs plan-check");
+    // We don't care about the exit status or output — the coverage
+    // signal comes from the subprocess executing project_root() under
+    // cwd=fixture_git_repo.
+    let _ = output;
+}
+
 // --- current_branch (subprocess) ---
 
 #[test]

@@ -432,6 +432,189 @@ fn test_worktree_partial_failure_recovery_after_cleanup() {
     );
 }
 
+/// Covers the `Some(r) => json!(r)` arm of the backfill match on
+/// `repo_clone` AND the valid-prompt-file `Ok(content)` branch
+/// (lines 268 and 170-172). The repo's origin url is a fake
+/// github.com URL (so detect_repo returns Some), while pushurl is
+/// the real bare repo so `git push` still succeeds.
+#[test]
+fn test_backfill_with_repo_and_valid_prompt_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+
+    // Save current push URL and install a fake github URL as `url` so
+    // `detect_repo` returns Some("owner/name"). The `pushurl` stays
+    // pointed at the real bare remote so `git push` keeps working.
+    let original_url = String::from_utf8_lossy(
+        &Command::new("git")
+            .args(["remote", "get-url", "origin"])
+            .current_dir(&repo)
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .trim()
+    .to_string();
+    Command::new("git")
+        .args(["remote", "set-url", "--push", "origin", &original_url])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args([
+            "remote",
+            "set-url",
+            "origin",
+            "https://github.com/owner/name.git",
+        ])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+
+    // Write state file with repo set to "Some" value.
+    let state_dir = flow_states_dir(&repo);
+    fs::create_dir_all(&state_dir).unwrap();
+    let state = json!({
+        "schema_version": 1,
+        "branch": "repo-set-branch",
+        "repo": "owner/name",
+        "pr_number": null,
+        "pr_url": null,
+        "started_at": "2026-01-01T00:00:00-08:00",
+        "current_phase": "flow-start",
+        "files": {
+            "plan": null,
+            "dag": null,
+            "log": ".flow-states/repo-set-branch.log",
+            "state": ".flow-states/repo-set-branch.json"
+        },
+        "session_tty": null,
+        "session_id": null,
+        "transcript_path": null,
+        "notes": [],
+        "prompt": "test feature",
+        "phases": {},
+        "phase_transitions": [],
+        "start_step": 2,
+        "start_steps_total": 5
+    });
+    fs::write(
+        state_dir.join("repo-set-branch.json"),
+        serde_json::to_string_pretty(&state).unwrap(),
+    )
+    .unwrap();
+    create_lock_entry(&repo, "repo-set-branch");
+
+    let prompt_file = repo.join(".flow-prompt");
+    fs::write(&prompt_file, "Make a real feature\n").unwrap();
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args([
+            "start-workspace",
+            "Real Feature",
+            "--branch",
+            "repo-set-branch",
+            "--prompt-file",
+            prompt_file.to_str().unwrap(),
+        ])
+        .current_dir(&repo)
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                stub_dir.to_string_lossy(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        )
+        .env("CLAUDE_PLUGIN_ROOT", &manifest_dir)
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("panicked at"), "panicked: {}", stderr);
+    // Prompt file should have been removed by successful read path.
+    assert!(
+        !prompt_file.exists(),
+        "prompt file must be removed after successful Ok read"
+    );
+}
+
+/// Covers the `git push` error propagation at line 122: state is
+/// set up normally but `origin` remote URL points to an unreachable
+/// destination so `git push` fails, `?` propagates, and the
+/// subprocess surfaces a push-step error payload.
+#[test]
+fn test_push_failure_propagates_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+
+    // Point origin at an unreachable bogus path — push must fail.
+    Command::new("git")
+        .args([
+            "remote",
+            "set-url",
+            "origin",
+            "/nonexistent/bogus/path/to/a.git",
+        ])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+
+    let state_dir = flow_states_dir(&repo);
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(
+        state_dir.join("push-fail-branch.json"),
+        serde_json::to_string(&json!({
+            "schema_version": 1,
+            "branch": "push-fail-branch",
+            "repo": null,
+            "started_at": "2026-01-01T00:00:00-08:00",
+            "current_phase": "flow-start",
+            "phases": {},
+            "phase_transitions": [],
+            "prompt": "feature",
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    create_lock_entry(&repo, "push-fail-branch");
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args([
+            "start-workspace",
+            "Push Fail Feature",
+            "--branch",
+            "push-fail-branch",
+        ])
+        .current_dir(&repo)
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                stub_dir.to_string_lossy(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        )
+        .env("CLAUDE_PLUGIN_ROOT", &manifest_dir)
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .output()
+        .unwrap();
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(
+        data["step"].as_str().unwrap_or(""),
+        "push",
+        "expected push step error, got: {:?}",
+        data
+    );
+}
+
 #[test]
 fn test_prompt_file_not_found_releases_lock() {
     // Exercises lines 171-188: prompt file read fails → error + lock released.

@@ -325,6 +325,17 @@ fn is_subsumed_cross_type_no_match() {
     ));
 }
 
+/// Covers the `None => continue` arm when an existing entry in the set
+/// does not match the `<Type>(<inner>)` outer regex. The malformed
+/// existing entry is skipped, no subsumption is found.
+#[test]
+fn is_subsumed_skips_malformed_existing_entry() {
+    assert!(!prime_setup::is_subsumed(
+        "Bash(git status)",
+        &HashSet::from(["plain-string".to_string(), "Bash(git status)".to_string(),])
+    ));
+}
+
 // ── write_version_marker ────────────────────────────────────
 
 #[test]
@@ -1119,4 +1130,171 @@ fn install_bin_stubs_handles_mkdir_failure() {
         installed.is_empty(),
         "no stubs should be installed when bin/ directory cannot be created"
     );
+}
+
+/// Covers the `plugin_root() == None` error branch in `run_impl`
+/// (lines 424-427). We copy the compiled `flow-rs` to a tempdir
+/// whose parent chain contains no `flow-phases.json`, and invoke it
+/// without `CLAUDE_PLUGIN_ROOT`. `plugin_root` returns None, so the
+/// subcommand surfaces a "Plugin root not found" error payload.
+#[test]
+fn prime_setup_without_plugin_root_errors() {
+    let tmp = tempfile::tempdir().unwrap();
+    let binary_copy = tmp.path().join("flow-rs");
+    fs::copy(env!("CARGO_BIN_EXE_flow-rs"), &binary_copy).unwrap();
+    fs::set_permissions(&binary_copy, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let project = tmp.path().join("project");
+    fs::create_dir_all(&project).unwrap();
+
+    let output = Command::new(&binary_copy)
+        .arg("prime-setup")
+        .arg(&project)
+        .env_remove("CLAUDE_PLUGIN_ROOT")
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+    let data = parse_stdout(&output.stdout);
+    assert_eq!(data["status"], "error");
+    let msg = data["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("Plugin root not found"),
+        "expected 'Plugin root not found', got: {}",
+        msg
+    );
+}
+
+/// Covers the `version == "?"` early-return in `run_impl` (lines
+/// 433-437): CLAUDE_PLUGIN_ROOT points at a fake plugin directory
+/// whose `flow-phases.json` exists (so `plugin_root` returns Some) but
+/// whose `.claude-plugin/plugin.json` is malformed (so `read_version`
+/// returns "?"). The subprocess surfaces a status:error payload with
+/// the "Could not read plugin version" message.
+#[test]
+fn prime_setup_unreadable_plugin_version_errors() {
+    let tmp = tempfile::tempdir().unwrap();
+    let fake_plugin = tmp.path().join("fake-plugin");
+    fs::create_dir_all(&fake_plugin).unwrap();
+    // flow-phases.json must exist for `plugin_root` to return Some.
+    fs::write(fake_plugin.join("flow-phases.json"), "{}").unwrap();
+    // plugin.json with invalid JSON → read_version returns "?".
+    let claude_plugin = fake_plugin.join(".claude-plugin");
+    fs::create_dir_all(&claude_plugin).unwrap();
+    fs::write(claude_plugin.join("plugin.json"), "not valid json").unwrap();
+
+    let project = tmp.path().join("project");
+    fs::create_dir_all(&project).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .arg("prime-setup")
+        .arg(&project)
+        .env("CLAUDE_PLUGIN_ROOT", &fake_plugin)
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+    let data = parse_stdout(&output.stdout);
+    assert_eq!(data["status"], "error");
+    let msg = data["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("plugin version") || msg.contains("version"),
+        "expected plugin-version error, got: {}",
+        msg
+    );
+}
+
+/// Covers the `Err(_) => continue` arm of `fs::read_to_string` in
+/// `install_bin_stubs` (line ~530): a stubs directory contains a
+/// file that `is_file()` reports as ok but whose permissions prevent
+/// read access.
+#[cfg(unix)]
+#[test]
+fn install_bin_stubs_read_source_permission_denied_skips() {
+    let tmp = tempfile::tempdir().unwrap();
+    let fake_plugin = tmp.path().join("plug");
+    let stubs_dir = fake_plugin.join("assets").join("bin-stubs");
+    fs::create_dir_all(&stubs_dir).unwrap();
+    for tool in ["format", "lint", "build", "test"] {
+        let src = stubs_dir.join(format!("{}.sh", tool));
+        fs::write(&src, "#!/bin/bash\nexit 0\n").unwrap();
+        // Strip read permission so fs::read_to_string fails.
+        fs::set_permissions(&src, fs::Permissions::from_mode(0o000)).unwrap();
+    }
+    let project = tmp.path().join("project");
+    fs::create_dir_all(&project).unwrap();
+    let installed = prime_setup::install_bin_stubs(&project, &fake_plugin);
+    // Restore read so tempdir cleanup succeeds.
+    for tool in ["format", "lint", "build", "test"] {
+        let _ = fs::set_permissions(
+            stubs_dir.join(format!("{}.sh", tool)),
+            fs::Permissions::from_mode(0o644),
+        );
+    }
+    // All four tools skipped due to read failure.
+    assert!(
+        installed.is_empty(),
+        "expected empty installed list on read failure, got: {:?}",
+        installed
+    );
+}
+
+/// Covers the `if fs::write(&target, &content).is_err() { continue }`
+/// branch (line ~533) in `install_bin_stubs`: when the target bin
+/// directory is read-only so the write fails.
+#[cfg(unix)]
+#[test]
+fn install_bin_stubs_write_target_failure_skips() {
+    let tmp = tempfile::tempdir().unwrap();
+    let fake_plugin = tmp.path().join("plug");
+    let stubs_dir = fake_plugin.join("assets").join("bin-stubs");
+    fs::create_dir_all(&stubs_dir).unwrap();
+    for tool in ["format", "lint", "build", "test"] {
+        let src = stubs_dir.join(format!("{}.sh", tool));
+        fs::write(&src, "#!/bin/bash\nexit 0\n").unwrap();
+    }
+    let project = tmp.path().join("project");
+    let bin_dir = project.join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    // Strip write permission on the bin/ directory so fs::write fails.
+    fs::set_permissions(&bin_dir, fs::Permissions::from_mode(0o555)).unwrap();
+    let installed = prime_setup::install_bin_stubs(&project, &fake_plugin);
+    // Restore write so tempdir cleanup succeeds.
+    let _ = fs::set_permissions(&bin_dir, fs::Permissions::from_mode(0o755));
+    assert!(
+        installed.is_empty(),
+        "expected empty installed list when bin/ is read-only, got: {:?}",
+        installed
+    );
+}
+
+/// Covers lines 464 (the `install_launcher` Err warning branch). We
+/// set HOME to a path where .local/bin cannot be created (HOME is a
+/// regular file, not a directory) so install_launcher fails.
+#[test]
+fn prime_setup_install_launcher_warning_branch() {
+    let tmp = tempfile::tempdir().unwrap();
+    // HOME is a regular FILE, not a directory. .local/bin cannot be
+    // created under a file path → install_launcher returns Err.
+    let bad_home = tmp.path().join("not-a-dir");
+    fs::write(&bad_home, "block").unwrap();
+
+    let project = tmp.path().join("project");
+    fs::create_dir_all(&project).unwrap();
+
+    // `args.plugin_root.is_some()` triggers the install_launcher call
+    // path. Supply an explicit --plugin-root to force it.
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args([
+            "prime-setup",
+            project.to_str().unwrap(),
+            "--plugin-root",
+            env!("CARGO_MANIFEST_DIR"),
+        ])
+        .env("HOME", &bad_home)
+        .env("CLAUDE_PLUGIN_ROOT", env!("CARGO_MANIFEST_DIR"))
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // Must not panic; the Warning is printed to stderr.
+    assert!(!stderr.contains("panicked at"));
 }

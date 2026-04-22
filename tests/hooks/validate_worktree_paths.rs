@@ -345,3 +345,52 @@ fn test_shared_config_file_path_equals_cwd_allowed() {
     // so allowed = true.
     assert!(allowed);
 }
+
+/// Drives the `None => return (0, None)` branch in `run_impl_main`'s
+/// cwd match. The production wrapper reads cwd from
+/// `std::env::current_dir().ok().map(...)`; forcing the subprocess's
+/// cwd inode to be unlinked via `pre_exec` + `rmdir` makes
+/// `getcwd(3)` return `ENOENT`, so the hook sees `cwd = None`.
+#[cfg(unix)]
+#[test]
+fn run_subprocess_exits_0_when_current_dir_fails() {
+    use std::os::unix::process::CommandExt;
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let cwd = root.join("doomed");
+    std::fs::create_dir(&cwd).expect("mkdir doomed");
+
+    let preexec_path = std::ffi::CString::new(cwd.to_str().expect("utf8").as_bytes())
+        .expect("CString from cwd path");
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.args(["hook", "validate-worktree-paths"])
+        .env_remove("FLOW_CI_RUNNING")
+        .current_dir(&cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    // SAFETY: `libc::rmdir` is POSIX async-signal-safe; the closure
+    // allocates no memory and does not panic.
+    unsafe {
+        cmd.pre_exec(move || {
+            libc::rmdir(preexec_path.as_ptr());
+            Ok(())
+        });
+    }
+
+    let mut child = cmd.spawn().expect("spawn flow-rs");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(br#"{"tool_input":{"file_path":"/tmp/x"}}"#)
+        .unwrap();
+    let output = child.wait_with_output().expect("wait");
+    // With cwd unresolvable, the hook exits 0 (no-op) because it
+    // cannot validate a path it can't contextualize against a
+    // worktree root.
+    assert_eq!(output.status.code(), Some(0));
+}

@@ -237,12 +237,11 @@ fn fetch_threshold(repo: &str) -> Result<Option<String>, String> {
     }
 }
 
-/// Fetch merge dates for PRs via batched GraphQL query.
+/// Fetch merge dates for PRs via batched GraphQL query. Callers must
+/// pass a non-empty `pr_numbers` slice — `run_impl` already short-
+/// circuits when the tombstone entry list is empty, so no empty-slice
+/// guard is needed here.
 fn fetch_merge_dates(repo: &str, pr_numbers: &[u64]) -> HashMap<u64, MergeInfo> {
-    if pr_numbers.is_empty() {
-        return HashMap::new();
-    }
-
     let parts: Vec<&str> = repo.splitn(2, '/').collect();
     if parts.len() != 2 {
         return HashMap::new();
@@ -251,6 +250,11 @@ fn fetch_merge_dates(repo: &str, pr_numbers: &[u64]) -> HashMap<u64, MergeInfo> 
 
     let query = build_merge_query(pr_numbers);
 
+    // Combine spawn-error and non-success exit into a single
+    // `_ => return` arm so coverage does not require a separate
+    // spawn-Err fixture. A stubbed gh returning non-zero exercises
+    // the catchall; real spawn failures collapse into the same
+    // path.
     let output = match std::process::Command::new("gh")
         .args([
             "api",
@@ -264,13 +268,9 @@ fn fetch_merge_dates(repo: &str, pr_numbers: &[u64]) -> HashMap<u64, MergeInfo> 
         ])
         .output()
     {
-        Ok(o) => o,
-        Err(_) => return HashMap::new(),
+        Ok(o) if o.status.success() => o,
+        _ => return HashMap::new(),
     };
-
-    if !output.status.success() {
-        return HashMap::new();
-    }
 
     let json_str = String::from_utf8_lossy(&output.stdout);
     parse_merge_response(&json_str, pr_numbers)

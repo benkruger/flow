@@ -411,3 +411,60 @@ fn test_agent_integration_explicit_empty_command_triggers_agent_path() {
         "Explicit empty command + general-purpose must still trigger Agent blocking"
     );
 }
+
+/// Subprocess test with cwd inode unlinked via `pre_exec` + `rmdir`.
+/// Inside the child, `std::env::current_dir()` returns `ENOENT`,
+/// which forces `hooks::find_settings_and_root()` to take its
+/// `.unwrap_or_default()` branch AND `hooks::detect_branch_from_cwd()`
+/// to take its `.ok()?` early-return. Both are private wrappers of
+/// their `_from` variants, and this pre_exec test is the only path
+/// that exercises the Err arm of the top-level `env::current_dir()`
+/// call inside each.
+#[cfg(unix)]
+#[test]
+fn validate_pretool_with_stale_cwd_does_not_panic() {
+    use std::os::unix::process::CommandExt;
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let cwd = root.join("doomed");
+    fs::create_dir(&cwd).expect("mkdir doomed");
+
+    let preexec_path =
+        std::ffi::CString::new(cwd.to_str().expect("utf8").as_bytes()).expect("CString");
+
+    let mut cmd = flow_rs();
+    cmd.arg("hook")
+        .arg("validate-pretool")
+        .env_remove("FLOW_CI_RUNNING")
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .current_dir(&cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    // SAFETY: libc::rmdir is POSIX async-signal-safe. The closure
+    // allocates nothing, produces no panic surface, and does not
+    // interact with any parent-process state.
+    unsafe {
+        cmd.pre_exec(move || {
+            libc::rmdir(preexec_path.as_ptr());
+            Ok(())
+        });
+    }
+
+    let mut child = cmd.spawn().expect("spawn flow-rs");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(br#"{"tool_name":"Bash","tool_input":{"command":"git status"}}"#)
+        .unwrap();
+    let output = child.wait_with_output().expect("wait");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked at"),
+        "validate-pretool must not panic with stale cwd; stderr={}",
+        stderr
+    );
+}
