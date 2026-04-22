@@ -505,7 +505,13 @@ fn main() {
             let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
             let root = flow_rs::git::project_root();
             let (value, code) = ci::run_impl(&args, &cwd, &root, flow_ci_running);
-            flow_rs::dispatch::dispatch_json(value, code);
+            // Pretty-print: this arm is run interactively by humans far more
+            // than every other arm, and its JSON carries the phase-timing
+            // phases[] array which is dense to scan compact. Other arms keep
+            // compact JSON so existing stdout-contains substring tests stay
+            // green.
+            println!("{}", serde_json::to_string_pretty(&value).unwrap());
+            std::process::exit(code);
         }
         Some(Commands::UpdateDeps) => {
             let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));

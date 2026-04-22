@@ -296,7 +296,7 @@ fi
 # when there is no matching profdata for them. `bin/flow ci --clean`
 # is the user-facing reset for a true fresh-clone experience.
 
-NEXTEST_ARGS=(--status-level none --final-status-level fail)
+NEXTEST_ARGS=(--status-level pass --final-status-level fail)
 COV_ARGS=(--no-cfg-coverage --no-clean)
 
 if [ "$AUDIT_MODE" = "1" ]; then
@@ -345,12 +345,60 @@ if [ $# -eq 0 ]; then
 fi
 echo "=== nextest: cargo llvm-cov nextest ==="
 time_start=$SECONDS
+# Heartbeat + coverage filter + failure classification. The pipeline:
+#   cargo llvm-cov ... 2>&1 | tee <log> | awk <filter>
+# (a) nextest sees a non-TTY and skips its multi-line animated progress
+# bar at the source, (b) tee preserves the full unfiltered stream to a
+# branch-scoped log so we can classify the failure cause at the end,
+# (c) awk collapses each passing test to a single dot that flushes
+# live, and (d) coverage rows that read 100/100/100 on
+# Regions/Functions/Lines drop out so only rows with a real gap remain.
+# The Branches column always shows "-" here (no branches computed), so
+# counting "100.00%" occurrences is sufficient — a row with three of
+# them is exactly fully covered. FAIL/LEAK/TIMEOUT, compile output, the
+# Summary line, the table header/separators, and the TOTAL line pass
+# through verbatim. PIPESTATUS[0] (not $?) gives cargo llvm-cov's exit
+# specifically, independent of tee/awk success.
+mkdir -p .flow-states
+branch="$(branch_for_audit)"
+ci_log=".flow-states/${branch}-ci-last.log"
+: > "$ci_log"
 set +e
-cargo llvm-cov "${COV_ARGS[@]}" nextest "${NEXTEST_ARGS[@]}" "$@"
-rc=$?
+cargo llvm-cov "${COV_ARGS[@]}" nextest "${NEXTEST_ARGS[@]}" "$@" 2>&1 | tee "$ci_log" | awk '
+  /^ *PASS / { printf "."; c++; fflush(); next }
+  /^TOTAL / { if (c > 0) { printf "\n\n"; c = 0 } print; fflush(); next }
+  {
+    s = $0
+    n = gsub(/100\.00%/, "&", s)
+    if (n >= 3) next
+    if (c > 0) { printf "\n\n"; c = 0 }
+    print; fflush()
+  }
+  END { if (c > 0) printf "\n" }'
+rc=${PIPESTATUS[0]}
 set -e
 
 if [ "$rc" -ne 0 ]; then
+  # Classify the failure so the user sees the real cause above the
+  # JSON wrapper ci.rs emits. Nextest prints FAIL/LEAK-FAIL/TIMEOUT
+  # lines when tests themselves fail; absence of those markers means
+  # the tests passed and cargo llvm-cov's --fail-under-* gate tripped.
+  # Layout is a short title line + indented detail lines so the
+  # scroll-back reads top-down instead of wrap-right.
+  echo "" >&2
+  if grep -qE '^ *(FAIL|LEAK-FAIL|TIMEOUT) ' "$ci_log" 2>/dev/null; then
+    echo "FAIL — one or more tests failed" >&2
+    echo "   See output above." >&2
+    echo "   Full log: ${ci_log}" >&2
+  elif [ $# -eq 0 ] && grep -q 'tests run:' "$ci_log" 2>/dev/null; then
+    echo "FAIL — coverage below 100/100/100 gate" >&2
+    echo "   See non-100% rows above." >&2
+    echo "   Full log: ${ci_log}" >&2
+  else
+    echo "FAIL — bin/test exited ${rc}" >&2
+    echo "   Full log: ${ci_log}" >&2
+  fi
+  echo "" >&2
   exit "$rc"
 fi
 # Slow tests are terminated by nextest (terminate-after=1) and
