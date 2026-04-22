@@ -16,6 +16,13 @@ paths, per-codegen-unit monomorphization hunts, or elaborate
 seam injection — **stop writing tests and simplify the code
 instead**.
 
+Before reaching for simplification, run the triage in
+`.claude/rules/reachable-is-testable.md`. Simplification is the
+response when the triage surfaces an over-engineered branch
+with no legitimate public consumer. When the triage surfaces
+that the production path uses a fixture the test environment
+lacks, the fix is in the test, not the production code.
+
 ## The diagnostic in practice
 
 Signals that the code is over-engineered:
@@ -86,6 +93,9 @@ exist.
 
 ## Cross-references
 
+- `.claude/rules/reachable-is-testable.md` — the triage that
+  runs first. Simplification applies only after triage surfaces
+  an over-engineered branch with no legitimate public consumer.
 - `.claude/rules/tests-guard-real-regressions.md` — every test
   must name a specific regression it guards. Coverage-required
   tests that exist only to hit an over-engineered branch are
