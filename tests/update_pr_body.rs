@@ -946,3 +946,171 @@ fn run_impl_main_append_section_unreadable_content_file_returns_error() {
         msg
     );
 }
+
+// ============================================================
+// Coverage-required tests for remaining uncovered regions
+// ============================================================
+
+/// Covers the `|i| i + artifacts_idx + 1` closure in
+/// `add_artifact_to_body` (line 44 of src/update_pr_body.rs).
+/// The closure runs only when `body.find("\n## ")` returns Some —
+/// i.e., there is another `## ` section AFTER `## Artifacts`.
+#[test]
+fn add_artifact_to_body_with_section_after_artifacts_covers_find_closure() {
+    let body = "## What\n\nFeature Title.\n\n## Artifacts\n\n- **Existing**: `/x.md`\n\n## Changes\n\nA change.\n";
+    let result = add_artifact_to_body(body, "New Plan", "/new.md");
+    assert!(result.contains("- **New Plan**: `/new.md`"));
+    // The new line must be inserted inside the Artifacts section,
+    // BEFORE the ## Changes section.
+    let artifacts_idx = result.find("## Artifacts").unwrap();
+    let changes_idx = result.find("## Changes").unwrap();
+    let new_line_idx = result.find("- **New Plan**").unwrap();
+    assert!(new_line_idx > artifacts_idx);
+    assert!(new_line_idx < changes_idx);
+}
+
+/// Covers the `stdout` else arm on line 140 of `gh_get_body`:
+/// `return Err(if !stderr.is_empty() { stderr } else { stdout });`.
+/// When gh exits non-zero with EMPTY stderr but non-empty stdout,
+/// the else arm (stdout) is selected.
+#[test]
+fn gh_get_body_nonzero_exit_empty_stderr_uses_stdout_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    // gh pr view exits 1 with stderr empty; stdout carries the error text.
+    let stub_dir = create_gh_stub(
+        &repo,
+        "#!/bin/bash\n\
+         if [ \"$2\" = \"view\" ]; then\n\
+           echo 'pr not found on stdout'\n\
+           exit 1\n\
+         fi\n\
+         exit 1\n",
+    );
+    let output = run_cmd(
+        &repo,
+        &[
+            "--pr",
+            "1",
+            "--add-artifact",
+            "--label",
+            "X",
+            "--value",
+            "y",
+        ],
+        &stub_dir,
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    let msg = data["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("pr not found on stdout"),
+        "expected stdout-branch message; got: {}",
+        msg
+    );
+}
+
+/// Covers the `stdout` else arm on line 158 of `gh_set_body`:
+/// `return Err(if !stderr.is_empty() { stderr } else { stdout });`.
+/// When gh pr edit exits non-zero with EMPTY stderr but non-empty
+/// stdout, the else arm (stdout) is selected.
+#[test]
+fn gh_set_body_nonzero_exit_empty_stderr_uses_stdout_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    // View succeeds with some body; edit exits 1 with empty stderr
+    // and non-empty stdout.
+    let stub_dir = create_gh_stub(
+        &repo,
+        "#!/bin/bash\n\
+         if [ \"$2\" = \"view\" ]; then\n\
+           echo 'existing body'\n\
+           exit 0\n\
+         fi\n\
+         if [ \"$2\" = \"edit\" ]; then\n\
+           echo 'edit error on stdout'\n\
+           exit 1\n\
+         fi\n\
+         exit 1\n",
+    );
+    let output = run_cmd(
+        &repo,
+        &[
+            "--pr",
+            "1",
+            "--add-artifact",
+            "--label",
+            "X",
+            "--value",
+            "y",
+        ],
+        &stub_dir,
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    let msg = data["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("edit error on stdout"),
+        "expected stdout-branch message; got: {}",
+        msg
+    );
+}
+
+/// Covers the `.map_err(|e| e.to_string())?` spawn-failure arm on
+/// line 153 of `gh_set_body` (3 regions: closure body, the map_err
+/// region, and the `?` Err propagation). The stub's first invocation
+/// (`gh pr view`) returns a valid body then renames itself. The
+/// next `gh pr edit` call made from `gh_set_body` cannot resolve
+/// `gh` on PATH, so `Command::new("gh").output()` returns Err.
+///
+/// PATH is `<stub_dir>:/bin` — `/bin` provides `mv` but neither
+/// `/bin` nor `/usr/bin` nor `/opt/homebrew/bin` is on PATH, so
+/// after the stub renames itself, no `gh` remains reachable.
+#[test]
+fn gh_set_body_spawn_failure_via_self_delete_stub() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let log_path = repo.join("gh-invocations.log");
+    let stub_dir = create_gh_stub(
+        &repo,
+        &format!(
+            "#!/bin/bash\n\
+             echo \"invoked: $@\" >> \"{log}\"\n\
+             if [ \"$2\" = \"view\" ]; then\n\
+               echo 'existing body'\n\
+               /bin/mv \"${{BASH_SOURCE[0]}}\" \"${{BASH_SOURCE[0]}}.moved\"\n\
+               exit 0\n\
+             fi\n\
+             exit 1\n",
+            log = log_path.display()
+        ),
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .arg("update-pr-body")
+        .args([
+            "--pr",
+            "1",
+            "--add-artifact",
+            "--label",
+            "X",
+            "--value",
+            "y",
+        ])
+        .current_dir(&repo)
+        .env("PATH", format!("{}:/bin", stub_dir.to_string_lossy()))
+        .env("CLAUDE_PLUGIN_ROOT", env!("CARGO_MANIFEST_DIR"))
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    // Exactly 1 gh invocation in the log proves the rename took effect
+    // and the second lookup spawn-failed (never reached the stub).
+    let log_contents = fs::read_to_string(&log_path).unwrap_or_default();
+    assert_eq!(
+        log_contents.lines().count(),
+        1,
+        "expected exactly 1 gh invocation (view only); log: {}",
+        log_contents
+    );
+}

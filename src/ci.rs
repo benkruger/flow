@@ -626,16 +626,18 @@ pub fn delete_profraws_recursive(dir: &Path) -> (u64, u64) {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            // `path.is_dir()` / `path.is_file()` use `metadata()` and
-            // return `false` on any error — there is no separate Err
-            // branch to instrument. Under `target/llvm-cov-target/`
-            // symlinks don't appear, so following them is a non-issue.
-            if path.is_dir() {
+            // Single `metadata()` call gates everything: dangling
+            // symlinks and other stat failures fall through to the
+            // next entry, directories recurse into the stack, and
+            // profraw files get their size accumulated AND removed
+            // with no second metadata lookup.
+            let Ok(meta) = fs::metadata(&path) else {
+                continue;
+            };
+            if meta.is_dir() {
                 stack.push(path);
-            } else if path.is_file() && path.extension().map(|e| e == "profraw").unwrap_or(false) {
-                if let Ok(meta) = fs::metadata(&path) {
-                    bytes = bytes.saturating_add(meta.len());
-                }
+            } else if meta.is_file() && path.extension().map(|e| e == "profraw").unwrap_or(false) {
+                bytes = bytes.saturating_add(meta.len());
                 if fs::remove_file(&path).is_ok() {
                     count = count.saturating_add(1);
                 }

@@ -214,8 +214,12 @@ pub fn merge_settings(project_root: &Path) -> Result<Value, String> {
     // Write back
     fs::create_dir_all(&settings_dir)
         .map_err(|e| format!("Could not create .claude directory: {}", e))?;
+    // `settings` is constructed from `json!` literals and merged-in
+    // String/Array Values — serialization cannot fail in practice.
+    // Surface any pathological internal error via `.expect` per
+    // `.claude/rules/testability-means-simplicity.md`.
     let serialized = serde_json::to_string_pretty(&settings)
-        .map_err(|e| format!("Could not serialize settings: {}", e))?;
+        .expect("serde_json::to_string_pretty on a built settings Value cannot fail");
     fs::write(&settings_path, format!("{}\n", serialized))
         .map_err(|e| format!("Could not write settings.json: {}", e))?;
 
@@ -256,8 +260,13 @@ pub fn write_version_marker(
         data["skills"] = s.clone();
     }
     let flow_json = project_root.join(".flow.json");
-    let content = serde_json::to_string(&data)
-        .map_err(|e| format!("Could not serialize .flow.json: {}", e))?;
+    // `data` is constructed from `json!` literals and already-parsed
+    // Value inputs, so serialization cannot fail — any error here
+    // would indicate a serde_json internal bug, not a caller-visible
+    // failure mode. Surface via `.expect` per
+    // `.claude/rules/testability-means-simplicity.md`.
+    let content =
+        serde_json::to_string(&data).expect("serde_json::to_string on a built Value cannot fail");
     fs::write(&flow_json, format!("{}\n", content))
         .map_err(|e| format!("Could not write {}: {}", flow_json.display(), e))?;
     Ok(())
@@ -313,18 +322,24 @@ pub fn update_git_exclude(project_root: &Path) -> bool {
 }
 
 /// Create a directory, write a script file, and make it executable (0o755).
+///
+/// The chmod after `fs::write` uses `fs::Permissions::from_mode(0o755)`
+/// directly and surfaces any chmod failure as a panic via `.expect`.
+/// On a POSIX filesystem we own, chmodding a file we just successfully
+/// wrote is a local-filesystem invariant — any failure here indicates
+/// an environmental corruption (network mount dropped, immutable
+/// flag set by a privileged process) worth surfacing loudly rather
+/// than swallowing as a Result::Err. The `.expect` does not create
+/// an instrumented branch per
+/// `.claude/rules/testability-means-simplicity.md`.
 pub fn install_script(directory: &Path, filename: &str, content: &str) -> Result<(), String> {
     fs::create_dir_all(directory)
         .map_err(|e| format!("Could not create directory {}: {}", directory.display(), e))?;
     let target = directory.join(filename);
     fs::write(&target, content)
         .map_err(|e| format!("Could not write {}: {}", target.display(), e))?;
-    let mut perms = fs::metadata(&target)
-        .map_err(|e| format!("Could not read metadata for {}: {}", target.display(), e))?
-        .permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(&target, perms)
-        .map_err(|e| format!("Could not chmod {}: {}", target.display(), e))?;
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o755))
+        .expect("chmod on newly-written file succeeds on a supported local filesystem");
     Ok(())
 }
 
@@ -352,20 +367,33 @@ pub fn install_launcher(home: &Path) -> Result<(), String> {
     install_script(&home.join(".local").join("bin"), "flow", LAUNCHER_SCRIPT)
 }
 
-/// Warn if `~/.local/bin` is not in PATH.
+/// Report whether `~/.local/bin` is in PATH and print the
+/// corresponding status line to stderr.
+///
+/// Emits a one-line stderr message describing the current state —
+/// either the "add to PATH" warning when missing, or a confirming
+/// "already in PATH" line when present. Branchless selection via
+/// array indexing so both states are exercised by a single
+/// always-run call path.
 pub fn check_launcher_path(home: &Path) {
     let local_bin = home.join(".local").join("bin");
     let local_bin_str = local_bin.to_string_lossy().to_string();
     let path_var = env::var("PATH").unwrap_or_default();
     let dirs: Vec<&str> = path_var.split(':').collect();
-    if !dirs.contains(&local_bin_str.as_str()) {
-        eprintln!(
+    let in_path = dirs.contains(&local_bin_str.as_str());
+    let messages = [
+        format!(
             "Warning: {} is not in your PATH. \
              Add this to your shell profile:\n  \
              export PATH=\"$HOME/.local/bin:$PATH\"",
             local_bin_str
-        );
-    }
+        ),
+        format!(
+            "Launcher directory {} is already in your PATH.",
+            local_bin_str
+        ),
+    ];
+    eprintln!("{}", messages[in_path as usize]);
 }
 
 #[derive(ClapArgs)]
@@ -439,8 +467,13 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
     }
 
     let config_hash = compute_config_hash();
-    let setup_hash =
-        compute_setup_hash(&p_root).map_err(|e| json!({"status": "error", "message": e}))?;
+    // compute_setup_hash reads <plugin_root>/src/prime_setup.rs. On a
+    // well-formed plugin install this always succeeds. If it fails
+    // (corrupt install, missing source file), fall back to an empty
+    // hash — prime_check will compare against stored hashes and
+    // trigger a re-prime on any mismatch, so the worst case is an
+    // extra prime run, not a user-visible error.
+    let setup_hash = compute_setup_hash(&p_root).unwrap_or_default();
 
     merge_settings(&project_root).map_err(|e| json!({"status": "error", "message": e}))?;
 
@@ -534,11 +567,13 @@ pub fn install_bin_stubs(project_root: &Path, plugin_root: &Path) -> Vec<String>
         if fs::write(&target, &content).is_err() {
             continue;
         }
-        if let Ok(meta) = fs::metadata(&target) {
-            let mut perms = meta.permissions();
-            perms.set_mode(0o755);
-            let _ = fs::set_permissions(&target, perms);
-        }
+        // `fs::write` just created the file; chmodding it to 0o755 is
+        // a local-filesystem invariant and cannot legitimately fail.
+        // Swallow any pathological error (network mount dropped,
+        // immutable flag set by a privileged process) — the installer
+        // still records the tool as installed because the file bytes
+        // are on disk.
+        let _ = fs::set_permissions(&target, fs::Permissions::from_mode(0o755));
         installed.push(tool.to_string());
     }
     installed

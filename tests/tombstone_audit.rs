@@ -1119,3 +1119,87 @@ fn tombstone_audit_gh_graphql_non_success_returns_empty_merge_dates() {
         .unwrap();
     let _ = output;
 }
+
+/// Subprocess test: with no `--repo` arg and no `gh` binary on PATH,
+/// `detect_repo` hits the `.output().ok()?` Err arm (Command::new("gh")
+/// fails to spawn because the binary is not reachable). `detect_repo`
+/// returns None, run_impl's `.ok_or(...)` surfaces the
+/// "Could not detect repository" error.
+#[test]
+fn tombstone_audit_gh_spawn_err_in_detect_repo() {
+    let tmp = tempfile::tempdir().unwrap();
+    let tests_dir = tmp.path().join("tests");
+    fs::create_dir_all(&tests_dir).unwrap();
+    fs::write(
+        tests_dir.join("sample.rs"),
+        tombstone_line(4242, " Must not return."),
+    )
+    .unwrap();
+
+    // PATH="/usr/bin:/bin" — git is at /usr/bin/git, but gh is NOT
+    // installed there (typical install path is /opt/homebrew/bin/gh
+    // on macOS, /usr/local/bin/gh or similar elsewhere). Command::new
+    // ("gh") inside detect_repo fails to spawn.
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["tombstone-audit"])
+        .current_dir(tmp.path())
+        .env("PATH", "/usr/bin:/bin")
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Could not detect repository") || output.status.code() == Some(1),
+        "expected detect-repo-spawn-failure signal; stderr={}, code={:?}",
+        stderr,
+        output.status.code()
+    );
+}
+
+/// Subprocess test: with `--repo owner/repo` (skipping detect_repo)
+/// and no `gh` binary on PATH, `fetch_threshold` hits the
+/// `.map_err(|e| ...)?` arm (Command::new("gh") fails to spawn).
+/// run_impl returns Ok with `status: "threshold_error"` payload.
+#[test]
+fn tombstone_audit_gh_spawn_err_in_fetch_threshold() {
+    let tmp = tempfile::tempdir().unwrap();
+    let tests_dir = tmp.path().join("tests");
+    fs::create_dir_all(&tests_dir).unwrap();
+    fs::write(
+        tests_dir.join("sample.rs"),
+        tombstone_line(4243, " Must not return."),
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["tombstone-audit", "--repo", "owner/repo"])
+        .current_dir(tmp.path())
+        .env("PATH", "/usr/bin:/bin")
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "expected exit 0 with threshold_error payload; stderr={}, code={:?}",
+        String::from_utf8_lossy(&output.stderr),
+        output.status.code()
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let data: Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
+        panic!(
+            "Failed to parse JSON: {}\nstdout: {}\nstderr: {}",
+            e,
+            stdout,
+            String::from_utf8_lossy(&output.stderr)
+        )
+    });
+    assert_eq!(data["status"], "threshold_error");
+    let msg = data["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("gh pr list failed to execute"),
+        "expected spawn-failure message; got: {}",
+        msg
+    );
+}

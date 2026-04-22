@@ -785,3 +785,82 @@ fn start_workspace_run_impl_main_err_path() {
     assert_eq!(code, 0);
     assert_eq!(v["status"], "error");
 }
+
+/// Covers the `result?` Err propagation in `initial_commit_push_pr`
+/// (line 115) — `git commit` inside the worktree fails because the
+/// main repo has a pre-commit hook that exits non-zero. The commit
+/// step returns Err; `?` propagates out of `initial_commit_push_pr`;
+/// `run_impl_with_paths` surfaces a `status: error, step: commit`
+/// payload and releases the lock.
+#[cfg(unix)]
+#[test]
+fn test_commit_hook_failure_propagates_error() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    create_state_file(&repo, "hook-fail-branch");
+    create_lock_entry(&repo, "hook-fail-branch");
+
+    // Install a pre-commit hook that exits non-zero. Worktrees share
+    // the main repo's `.git/hooks/`, so `git commit --allow-empty` in
+    // the new worktree triggers this hook and fails. `--allow-empty`
+    // does NOT skip hooks (only `--no-verify` would).
+    let hook = repo.join(".git").join("hooks").join("pre-commit");
+    fs::create_dir_all(hook.parent().unwrap()).unwrap();
+    fs::write(&hook, "#!/bin/bash\nexit 1\n").unwrap();
+    fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = run_start_workspace(&repo, "Hook Fail Feature", "hook-fail-branch", &stub_dir);
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(
+        data["step"].as_str().unwrap_or(""),
+        "commit",
+        "expected commit-step error, got: {:?}",
+        data
+    );
+    // Lock MUST still be released on error.
+    let queue_dir = flow_states_dir(&repo).join("start-queue");
+    assert!(
+        !queue_dir.join("hook-fail-branch").exists(),
+        "Lock must be released after commit-hook failure"
+    );
+}
+
+/// Covers the `if state_path.exists() { ... }` false branch in
+/// `run_impl_with_paths` — when start-workspace runs WITHOUT a
+/// pre-existing state file, the backfill block is skipped and
+/// execution falls through to lock release + response construction.
+/// This can happen if `init-state` was never invoked before
+/// `start-workspace`; the command still creates the worktree and PR,
+/// just without state-file backfill.
+#[test]
+fn test_no_state_file_skips_backfill() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    // NO create_state_file — the state file does not exist.
+    // Still create a lock entry so release_lock finds something.
+    create_lock_entry(&repo, "no-state-branch");
+
+    let output = run_start_workspace(&repo, "No State Feature", "no-state-branch", &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["branch"], "no-state-branch");
+    // Worktree created despite missing state file.
+    assert!(repo.join(".worktrees").join("no-state-branch").is_dir());
+    // Lock still released.
+    let queue_dir = flow_states_dir(&repo).join("start-queue");
+    assert!(!queue_dir.join("no-state-branch").exists());
+    // State file was NOT created by backfill (branch block was skipped).
+    assert!(!flow_states_dir(&repo).join("no-state-branch.json").exists());
+}

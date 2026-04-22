@@ -771,3 +771,142 @@ fn phase_enter_with_relative_cwd_mismatch_returns_cwd_drift_error() {
         msg
     );
 }
+
+/// Covers the `map_err(|e| format!("Could not read state file: {}", e))?`
+/// closure on line 188 of `run_impl`. The state "file" is actually a
+/// directory — `Path::exists()` returns true for directories, so
+/// `resolve_state` passes, but `fs::read_to_string` then fails with
+/// `EISDIR`. The `?` propagates a `Err(String)` from `run_impl`,
+/// which the binary's dispatch converts into exit 1 + stderr message.
+#[test]
+fn phase_enter_state_path_is_directory_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "state-is-dir";
+    let _repo = create_git_repo(dir.path(), branch);
+    let repo = &_repo;
+    let state_dir = flow_states_dir(repo);
+    fs::create_dir_all(&state_dir).unwrap();
+    // Create a DIRECTORY at the state file path. exists() returns
+    // true, but read_to_string returns Err(EISDIR).
+    fs::create_dir_all(state_dir.join(format!("{}.json", branch))).unwrap();
+
+    let output = run_phase_enter(repo, &["--phase", "flow-code", "--branch", branch]);
+    // Infrastructure-level Err is routed through
+    // `dispatch_ok_result_json` → `{status:error, message}` on stdout
+    // with exit code 1.
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "expected exit 1 from Err(String), stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    let msg = data["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("Could not read state file"),
+        "expected 'Could not read state file' in message, got: {}",
+        msg
+    );
+}
+
+/// Covers the `or_else(|| state.get("plan_file")...)` fallback closure
+/// on line 221 of `run_impl`. State has no `files.plan` entry but
+/// does have a top-level `plan_file` (legacy schema shape). The
+/// response's `plan_file` field comes from the fallback.
+#[test]
+fn phase_enter_legacy_plan_file_fallback_covered() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "legacy-plan";
+    let _repo = create_git_repo(dir.path(), branch);
+    let repo = &_repo;
+    let state_dir = flow_states_dir(repo);
+    fs::create_dir_all(&state_dir).unwrap();
+    // Legacy state: no `files.plan`, has top-level `plan_file`.
+    let state = json!({
+        "branch": branch,
+        "repo": "test/repo",
+        "pr_number": 42,
+        "pr_url": "https://github.com/test/repo/pull/42",
+        "feature": "Legacy Feature",
+        "slack_thread_ts": "1.2",
+        "current_phase": "flow-plan",
+        "plan_file": ".flow-states/legacy-plan.md",
+        "files": {"plan": null, "log": format!(".flow-states/{}.log", branch)},
+        "phases": {
+            "flow-start": {"status": "complete"},
+            "flow-plan": {"status": "complete"},
+        },
+        "phase_transitions": [],
+    });
+    fs::write(
+        state_dir.join(format!("{}.json", branch)),
+        serde_json::to_string_pretty(&state).unwrap(),
+    )
+    .unwrap();
+
+    let output = run_phase_enter(repo, &["--phase", "flow-code", "--branch", branch]);
+    let data = parse_output(&output);
+    assert_eq!(
+        data["status"],
+        "ok",
+        "stderr: {}, stdout: {}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert_eq!(
+        data["plan_file"], ".flow-states/legacy-plan.md",
+        "plan_file must come from the legacy top-level field"
+    );
+}
+
+/// Covers the implicit `None` arm of all five `if let Some(x) = field`
+/// blocks that build the response (pr_number, pr_url, feature,
+/// slack_thread_ts, plan_file). State has none of the optional fields
+/// populated; the response is built with only the required fields.
+#[test]
+fn phase_enter_response_omits_absent_optional_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "minimal-state";
+    let _repo = create_git_repo(dir.path(), branch);
+    let repo = &_repo;
+    let state_dir = flow_states_dir(repo);
+    fs::create_dir_all(&state_dir).unwrap();
+    // Minimal state: no pr_number, no pr_url, no feature, no
+    // slack_thread_ts, no files.plan, no top-level plan_file. All
+    // five optional response fields are absent.
+    let state = json!({
+        "branch": branch,
+        "current_phase": "flow-plan",
+        "phases": {
+            "flow-start": {"status": "complete"},
+            "flow-plan": {"status": "complete"},
+        },
+        "phase_transitions": [],
+    });
+    fs::write(
+        state_dir.join(format!("{}.json", branch)),
+        serde_json::to_string_pretty(&state).unwrap(),
+    )
+    .unwrap();
+
+    let output = run_phase_enter(repo, &["--phase", "flow-code", "--branch", branch]);
+    let data = parse_output(&output);
+    assert_eq!(
+        data["status"],
+        "ok",
+        "stderr: {}, stdout: {}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+    );
+    // None of the optional fields appear in the response.
+    assert!(data.get("pr_number").is_none(), "pr_number must be absent");
+    assert!(data.get("pr_url").is_none(), "pr_url must be absent");
+    assert!(data.get("feature").is_none(), "feature must be absent");
+    assert!(
+        data.get("slack_thread_ts").is_none(),
+        "slack_thread_ts must be absent"
+    );
+    assert!(data.get("plan_file").is_none(), "plan_file must be absent");
+}

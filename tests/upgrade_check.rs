@@ -188,6 +188,44 @@ fn malformed_tag() {
         .contains("parse"));
 }
 
+/// Covers the `Err` arms of each `.parse::<u32>().ok()?` in
+/// `parse_version` (lines 172, 173, 174). A tag of the form
+/// "a.b.c" has 3 dot-separated parts (passing the length guard),
+/// but each segment fails u32 parsing — the `?` propagates `None`
+/// at the first failing segment. Running three separate scenarios
+/// ensures each position's Err arm fires at least once.
+#[test]
+fn malformed_tag_three_dotted_parts_covers_parse_err_arms() {
+    fn run_with_tag(tag: &'static str) -> serde_json::Value {
+        let dir = tempfile::tempdir().unwrap();
+        let plugin = write_plugin_json(
+            dir.path(),
+            r#"{"version":"1.0.0","repository":"https://github.com/foo/bar"}"#,
+        );
+        let mut gh = move |_owner_repo: &str, _t: u64| GhResult::Ok {
+            returncode: 0,
+            stdout: tag.to_string(),
+            stderr: String::new(),
+        };
+        upgrade_check_impl(&plugin, 10, &mut gh)
+    }
+
+    // Fails on parts[0] → Err arm of line 172.
+    let r = run_with_tag("a.2.3");
+    assert_eq!(r["status"], "unknown");
+    assert!(r["reason"].as_str().unwrap().contains("parse"));
+
+    // Fails on parts[1] → Err arm of line 173.
+    let r = run_with_tag("1.b.3");
+    assert_eq!(r["status"], "unknown");
+    assert!(r["reason"].as_str().unwrap().contains("parse"));
+
+    // Fails on parts[2] → Err arm of line 174.
+    let r = run_with_tag("1.2.c");
+    assert_eq!(r["status"], "unknown");
+    assert!(r["reason"].as_str().unwrap().contains("parse"));
+}
+
 #[test]
 fn no_repository_url() {
     let dir = tempfile::tempdir().unwrap();

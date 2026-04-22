@@ -187,16 +187,28 @@ pub fn read_version_with(claude_plugin_root: Option<&str>, current_exe: Option<&
         Some(p) => p,
         None => return "?".to_string(),
     };
-    let plugin_root = match exe
-        .parent()
-        .and_then(|p| p.parent())
-        .and_then(|p| p.parent())
-    {
-        Some(r) => r,
+    // Walk up to 5 levels from the binary looking for the plugin
+    // root (identified by `.claude-plugin/plugin.json`). 5 levels
+    // covers both the release layout (`<plugin>/target/release/flow-rs`
+    // → 3 up) and the cargo-llvm-cov test layout
+    // (`<plugin>/target/llvm-cov-target/debug/deps/<test>-HASH`
+    // → 5 up). Fixed levels were brittle; a bounded walk matches
+    // both.
+    let mut dir = match exe.parent() {
+        Some(p) => p,
         None => return "?".to_string(),
     };
-    let plugin_json = plugin_root.join(".claude-plugin").join("plugin.json");
-    read_version_from(&plugin_json)
+    for _ in 0..5 {
+        let plugin_json = dir.join(".claude-plugin").join("plugin.json");
+        if plugin_json.exists() {
+            return read_version_from(&plugin_json);
+        }
+        dir = match dir.parent() {
+            Some(p) => p,
+            None => return "?".to_string(),
+        };
+    }
+    "?".to_string()
 }
 
 // --- Plugin root ---

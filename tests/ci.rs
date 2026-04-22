@@ -1380,6 +1380,66 @@ fn delete_profraws_recursive_removes_top_and_nested() {
     assert!(root.join("keepme.txt").exists());
 }
 
+/// Covers the `let Ok(meta) = fs::metadata(&path) else { continue }`
+/// Err arm. A dangling symlink is listed by `read_dir` but
+/// `fs::metadata` follows the symlink and returns `ENOENT` — the
+/// iteration falls through without touching `bytes` or `count`.
+#[cfg(unix)]
+#[test]
+fn delete_profraws_recursive_skips_dangling_symlinks() {
+    use std::os::unix::fs::symlink;
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    // A real profraw so the function has something to process.
+    fs::write(root.join("real.profraw"), b"x".repeat(10)).unwrap();
+    // A dangling symlink with a .profraw extension — metadata() on
+    // it fails with ENOENT.
+    symlink(
+        root.join("nonexistent-target"),
+        root.join("dangling.profraw"),
+    )
+    .unwrap();
+
+    let (count, bytes) = delete_profraws_recursive(root);
+
+    // Only the real profraw was removed and its bytes counted.
+    assert_eq!(count, 1);
+    assert_eq!(bytes, 10);
+    assert!(!root.join("real.profraw").exists());
+    // The dangling symlink survives — the loop skipped it.
+    assert!(root.join("dangling.profraw").symlink_metadata().is_ok());
+}
+
+/// Covers the `fs::remove_file(...).is_ok() == false` arm. A
+/// read-only parent directory lets `fs::metadata` succeed (`x` bit
+/// allows stat) but blocks `remove_file` with `EACCES`. `bytes` still
+/// accumulates; `count` does not.
+#[cfg(unix)]
+#[test]
+fn delete_profraws_recursive_handles_remove_failure() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    let readonly = tmp.path().join("readonly");
+    fs::create_dir(&readonly).unwrap();
+    fs::write(readonly.join("locked.profraw"), b"z".repeat(25)).unwrap();
+
+    // r-x on the parent dir: stat succeeds (needs x), remove fails
+    // (needs w).
+    fs::set_permissions(&readonly, fs::Permissions::from_mode(0o555)).unwrap();
+
+    let (count, bytes) = delete_profraws_recursive(tmp.path());
+
+    // Restore permissions so the TempDir drop can clean up.
+    fs::set_permissions(&readonly, fs::Permissions::from_mode(0o755)).unwrap();
+
+    // metadata() succeeded → bytes counted. remove_file() failed →
+    // count stayed zero.
+    assert_eq!(count, 0);
+    assert_eq!(bytes, 25);
+    // File survives the failed removal.
+    assert!(readonly.join("locked.profraw").exists());
+}
+
 // --- run_clean ---
 
 #[test]

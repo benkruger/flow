@@ -1488,6 +1488,16 @@ fn read_version_with_exe_path_walks_to_plugin_json() {
     assert_eq!(read_version_with(None, Some(&exe)), "2.0.1");
 }
 
+#[test]
+fn read_version_with_exe_deeper_than_walk_limit_returns_question_mark() {
+    // exe path with 6+ directory levels. `read_version_with` walks
+    // up to 5 levels. None of those 5 dirs contain `.claude-plugin/
+    // plugin.json`, so the loop exhausts and the final fallback
+    // `"?".to_string()` is returned.
+    let exe = std::path::PathBuf::from("/a/b/c/d/e/f/g/binary");
+    assert_eq!(read_version_with(None, Some(&exe)), "?");
+}
+
 // --- plugin_root_with seam ---
 
 #[test]
