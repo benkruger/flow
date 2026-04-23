@@ -372,6 +372,85 @@ fn test_set_tab_color_unreadable_state_file() {
     set_tab_color(dir.path(), "test", &state_path);
 }
 
+/// Covers the Err arm of `set_tab_color`'s `if let Err(e) = result`
+/// (the `log_diag(... "set_tab_color error: {e}" ...)` branch).
+/// That arm only fires when `write_tab_sequences`'s
+/// `fs::write("/dev/tty", ...)` call returns Err. Whether the write
+/// succeeds depends on the test process's controlling terminal:
+/// interactive shells give the process a tty → write succeeds → Err
+/// arm uncovered; non-tty contexts (Claude Code, most CI agents) →
+/// write fails → Err arm covered. That environmental flakiness was
+/// producing non-deterministic coverage across `bin/flow ci` runs.
+///
+/// This test spawns a subprocess of the test binary with `setsid`
+/// via `pre_exec` to detach it from the controlling terminal before
+/// `execvp`, then runs the set_tab_color call body inside. The
+/// subprocess's `fs::write("/dev/tty", ...)` returns `ENXIO` (no
+/// controlling terminal), forcing the Err arm every run regardless
+/// of how the host was launched.
+///
+/// The subprocess dispatch is keyed on an env var
+/// `FLOW_TEST_SET_TAB_COLOR_ERR_WORKER=1`. When set, the test binary
+/// body runs the worker code instead of the nextest harness. Other
+/// tests in the binary ignore this path because the env var is
+/// unset in their process.
+#[cfg(unix)]
+#[test]
+fn test_set_tab_color_err_arm_via_setsid_subprocess() {
+    use std::os::unix::process::CommandExt;
+
+    // Worker branch: if this env var is set, the test binary was
+    // spawned by the harness below. Drive set_tab_color with a
+    // state path that has "repo" so write_tab_sequences reaches
+    // `fs::write("/dev/tty", ...)`, which fails after setsid.
+    if std::env::var("FLOW_TEST_SET_TAB_COLOR_ERR_WORKER").is_ok() {
+        let dir = std::env::var("FLOW_TEST_WORKER_DIR").expect("worker dir");
+        let root = std::path::PathBuf::from(&dir);
+        let state_path = root.join(".flow-states").join("test.json");
+        // set_tab_color swallows errors via log_diag — no assertion
+        // needed, the profdata's count on the Err arm is the signal.
+        set_tab_color(&root, "test", &state_path);
+        std::process::exit(0);
+    }
+
+    // Harness branch: set up fixture, spawn worker in a new session.
+    let dir = tempfile::tempdir().unwrap();
+    let state_dir = dir.path().join(".flow-states");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(
+        state_dir.join("test.json"),
+        r#"{"repo": "owner/repo"}"#,
+    )
+    .unwrap();
+
+    let test_exe = std::env::current_exe().expect("current_exe");
+    let mut cmd = Command::new(&test_exe);
+    cmd.arg("--exact")
+        .arg("test_set_tab_color_err_arm_via_setsid_subprocess")
+        .arg("--nocapture")
+        .env("FLOW_TEST_SET_TAB_COLOR_ERR_WORKER", "1")
+        .env("FLOW_TEST_WORKER_DIR", dir.path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    // SAFETY: setsid is async-signal-safe.
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+
+    let status = cmd.status().expect("spawn worker");
+    assert!(
+        status.success(),
+        "worker process did not exit cleanly: {:?}",
+        status
+    );
+}
+
 // --- format_block_output ---
 
 #[test]
@@ -883,16 +962,38 @@ fn test_discussion_mode_cleared_on_continue_pending() {
 
 // --- run() subprocess tests ---
 
+/// Spawn `flow-rs hook stop-continue` with the child detached from its
+/// controlling terminal via `setsid()`. Without setsid, the child
+/// inherits the parent's controlling tty — on an interactive host,
+/// `write_tab_sequences`'s `fs::write("/dev/tty", ...)` call then
+/// succeeds, leaving the Err arm of `set_tab_color`'s `if let
+/// Err(e) = result` uncovered. On a non-tty host (Claude Code, CI
+/// agents) the write fails naturally, but that's environmental
+/// flakiness — the test shouldn't depend on how the host was
+/// launched. `setsid()` makes the child a new session leader
+/// with no controlling terminal, so `/dev/tty` access returns
+/// `ENXIO` regardless of the host's tty state, forcing the Err
+/// path deterministically.
 fn run_hook(cwd: &Path, stdin_input: &str) -> (i32, String, String) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["hook", "stop-continue"])
+    use std::os::unix::process::CommandExt;
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.args(["hook", "stop-continue"])
         .current_dir(cwd)
         .env_remove("FLOW_CI_RUNNING")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn flow-rs");
+        .stderr(Stdio::piped());
+    // SAFETY: `setsid()` is async-signal-safe. The closure allocates
+    // nothing and either returns Ok or propagates the errno error.
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut child = cmd.spawn().expect("spawn flow-rs");
     child
         .stdin
         .as_mut()

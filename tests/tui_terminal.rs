@@ -290,24 +290,68 @@ fn crossterm_events_under_nextest_returns_without_panic() {
     let _ = crossterm_events(Duration::from_millis(1));
 }
 
-/// Covers `run_terminal` directly — without a TTY,
+/// Covers `run_terminal` directly — without a controlling terminal,
 /// `enable_raw_mode()?` returns Err and the function returns early,
 /// covering the function entry and the ? propagation.
+///
+/// crossterm's `enable_raw_mode` opens `/dev/tty` (the controlling
+/// terminal), not stdout. When nextest runs from an interactive
+/// shell the test subprocess inherits the shell's controlling tty,
+/// so `/dev/tty` is openable and `enable_raw_mode()` succeeds —
+/// leaving the Err propagation uncovered. This test uses a
+/// setsid-worker subprocess: the harness respawns the test binary
+/// with `libc::setsid()` in `pre_exec`, which detaches the child
+/// from any inherited controlling tty. The worker then calls
+/// `run_terminal(&mut app)` under a no-tty session and confirms Err.
+#[cfg(unix)]
 #[test]
 fn run_terminal_without_tty_returns_err() {
-    let tmp = tempfile::tempdir().unwrap();
-    let mut app = TuiApp::new(
-        tmp.path().to_path_buf(),
-        "0.0.0".to_string(),
-        None,
-        TuiAppPlatform::production(),
-    );
-    let result = run_terminal(&mut app);
-    // nextest subprocess has no TTY; enable_raw_mode returns Err.
+    use std::os::unix::process::CommandExt;
+    use std::process::{Command, Stdio};
+
+    // Worker branch: we are the respawned child with setsid applied.
+    // Call run_terminal; exit 0 on Err (expected), 1 on Ok (bug).
+    if std::env::var("FLOW_TEST_RUN_TERMINAL_ERR_WORKER").is_ok() {
+        let dir = std::env::var("FLOW_TEST_WORKER_DIR").expect("worker dir");
+        let mut app = TuiApp::new(
+            PathBuf::from(&dir),
+            "0.0.0".to_string(),
+            None,
+            TuiAppPlatform::production(),
+        );
+        let result = run_terminal(&mut app);
+        if result.is_err() {
+            std::process::exit(0);
+        }
+        std::process::exit(1);
+    }
+
+    // Harness branch: spawn self as worker with setsid so the child
+    // has no controlling terminal.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let test_exe = std::env::current_exe().expect("current_exe");
+    let mut cmd = Command::new(&test_exe);
+    cmd.arg("--exact")
+        .arg("run_terminal_without_tty_returns_err")
+        .arg("--nocapture")
+        .env("FLOW_TEST_RUN_TERMINAL_ERR_WORKER", "1")
+        .env("FLOW_TEST_WORKER_DIR", tmp.path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let status = cmd.status().expect("spawn worker");
     assert!(
-        result.is_err(),
-        "expected Err from enable_raw_mode without TTY, got {:?}",
-        result
+        status.success(),
+        "worker subprocess should exit 0 (run_terminal returned Err without controlling tty); got {:?}",
+        status
     );
 }
 
@@ -460,15 +504,15 @@ fn run_tui_arm_real_pty_quits_on_q_key() {
     // byte, not when the first `event::poll` call actually starts —
     // the child still has to continue into `run_terminal_body` and
     // `TuiApp::run_event_loop` before calling `events(2000ms)`.
-    // Under CI load that gap can stretch past 1 second, so this
-    // sleep must be generous: 3500ms gives a 1500ms margin over the
-    // 2000ms poll deadline to absorb scheduling variance. Tighter
-    // margins (tried at 100, 500, 1500ms) flaked under parallel
-    // suites with `q` arriving inside the first poll's wait window,
-    // returning Ok(true) on the first poll instead of Ok(false) +
-    // Ok(true) on two polls, which left the `Ok(None)` arm of
-    // `crossterm_events` uncovered.
-    std::thread::sleep(Duration::from_millis(3500));
+    // Under CI load that gap can stretch well past 1 second, and
+    // interactive-terminal parent sessions (where nextest + test
+    // binary + flow-rs subprocess all inherit job-control signal
+    // plumbing) add further scheduling variance. 5000ms gives a
+    // 3000ms margin over the 2000ms poll deadline — deliberately
+    // conservative because the alternative is non-deterministic
+    // `Ok(None)` coverage that flakes between "ran from Claude
+    // Code" (no tty) and "ran from iTerm" (interactive tty).
+    std::thread::sleep(Duration::from_millis(5000));
     let bytes: [u8; 2] = [b'q', b'\n'];
     let wrote = unsafe {
         libc::write(
