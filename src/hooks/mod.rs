@@ -9,7 +9,6 @@
 
 use regex::Regex;
 use serde_json::Value;
-use std::env;
 use std::path::{Path, PathBuf};
 
 use crate::flow_paths::FlowPaths;
@@ -20,29 +19,7 @@ const WORKTREE_MARKER: &str = ".worktrees/";
 /// Commands that have dedicated tool alternatives.
 pub const FILE_READ_COMMANDS: &[&str] = &["cat", "head", "tail", "grep", "rg", "find", "ls"];
 
-/// Find `.claude/settings.json` by walking up from CWD.
-///
-/// Returns `(settings, project_root)` where `project_root` is the directory
-/// containing `.claude/`. Returns `(None, None)` if not found or unparseable.
-pub fn find_settings_and_root() -> (Option<Value>, Option<PathBuf>) {
-    find_settings_and_root_with(env::current_dir)
-}
-
-/// Seam-injected variant of [`find_settings_and_root`] that accepts a
-/// caller-supplied cwd provider. Production binds `cwd_fn =
-/// env::current_dir`; tests pass a closure returning `Err` to
-/// exercise the fallback path.
-pub fn find_settings_and_root_with<F>(cwd_fn: F) -> (Option<Value>, Option<PathBuf>)
-where
-    F: FnOnce() -> std::io::Result<PathBuf>,
-{
-    match cwd_fn() {
-        Ok(cwd) => find_settings_and_root_from(&cwd),
-        Err(_) => (None, None),
-    }
-}
-
-/// Testable version that takes an explicit starting directory.
+/// Find `.claude/settings.json` by walking up from a starting directory.
 pub fn find_settings_and_root_from(start: &Path) -> (Option<Value>, Option<PathBuf>) {
     let mut current = start.to_path_buf();
     loop {
@@ -63,33 +40,24 @@ pub fn find_settings_and_root_from(start: &Path) -> (Option<Value>, Option<PathB
     (None, None)
 }
 
-/// Detect the current branch name from the working directory path.
+/// Detect the current branch name from an explicit working directory path.
 ///
-/// In a worktree (`.worktrees/<branch>/`), walks up from the given path to find
-/// the worktree root (directory containing a `.git` file), then extracts the
-/// branch name as the relative path from `.worktrees/` to that root.
+/// Worktree-path invariants (cited below via `.expect`):
+///   * `worktrees_dir` always contains `.worktrees`, so its `parent()`
+///     is always Some — it can never be `/` or an empty path.
+///   * `cwd` contains `.worktrees/` textually, so `current` starts
+///     as a descendant of `worktrees_dir`. Walking up via
+///     `.parent()` reduces the path one level at a time, so
+///     `current` is guaranteed to reach `worktrees_dir` — the
+///     single loop guard `current != *worktrees_dir` is sufficient.
+///     `strip_prefix(worktrees_dir)` always succeeds on the
+///     in-body use because the body runs only while `current` is
+///     still a strict descendant; `current.parent()` likewise
+///     always returns Some.
 ///
-/// Falls back to `git branch --show-current` when not in a worktree.
-///
-/// Returns `None` if not on a branch or if detection fails.
-pub fn detect_branch_from_cwd() -> Option<String> {
-    detect_branch_from_cwd_with(env::current_dir)
-}
-
-/// Seam-injected variant of [`detect_branch_from_cwd`]. Production
-/// binds `cwd_fn = env::current_dir`; tests pass a closure
-/// returning `Err` to exercise the None path.
-pub fn detect_branch_from_cwd_with<F>(cwd_fn: F) -> Option<String>
-where
-    F: FnOnce() -> std::io::Result<PathBuf>,
-{
-    match cwd_fn() {
-        Ok(cwd) => detect_branch_from_path(&cwd),
-        Err(_) => None,
-    }
-}
-
-/// Testable version that takes an explicit path.
+/// Per `.claude/rules/testability-means-simplicity.md`, `.expect`
+/// does not create an instrumented branch, so these
+/// provably-unreachable error arms are collapsed at the source.
 pub fn detect_branch_from_path(cwd: &Path) -> Option<String> {
     let cwd_str = cwd.to_string_lossy();
     if let Some(marker_pos) = cwd_str.find(WORKTREE_MARKER) {
@@ -97,30 +65,31 @@ pub fn detect_branch_from_path(cwd: &Path) -> Option<String> {
         let worktrees_dir = Path::new(worktrees_dir_str.trim_end_matches('/'));
 
         let mut current = cwd.to_path_buf();
-        while current != *worktrees_dir && current.parent() != Some(worktrees_dir.parent()?) {
+        while current != *worktrees_dir {
             if current.join(".git").is_file() {
                 let branch = current
                     .strip_prefix(worktrees_dir)
-                    .ok()?
+                    .expect("current is a descendant of worktrees_dir per loop invariant")
                     .to_string_lossy()
                     .to_string();
-                // The loop guard `current != *worktrees_dir` prevents
-                // strip_prefix from yielding an empty or "." remainder —
-                // every entry into the body runs while `current` is
-                // strictly a descendant of worktrees_dir, so the
-                // remainder is always a non-empty branch name.
                 return Some(branch);
             }
-            current = current.parent()?.to_path_buf();
+            current = current
+                .parent()
+                .expect("current is strictly deeper than worktrees_dir per loop guard")
+                .to_path_buf();
         }
     }
 
     // Fallback to git subprocess (using provided path as CWD)
-    let output = std::process::Command::new("git")
+    let output = match std::process::Command::new("git")
         .args(["branch", "--show-current"])
         .current_dir(cwd)
         .output()
-        .ok()?;
+    {
+        Ok(o) => o,
+        Err(_) => return None,
+    };
     if !output.status.success() {
         return None;
     }
@@ -187,9 +156,14 @@ pub fn build_permission_regexes(settings: &Value, list_key: &str) -> Vec<Regex> 
 }
 
 /// Read JSON from stdin. Returns None on parse failure (fail-open).
+///
+/// A stdin read failure falls through to empty-string parsing rather
+/// than short-circuiting: `serde_json::from_str("")` returns `Err`
+/// which `.ok()?` collapses to `None` — same observable result as the
+/// early return used to, without the separate branch.
 pub fn read_hook_input() -> Option<Value> {
     let mut input = String::new();
-    std::io::Read::read_to_string(&mut std::io::stdin(), &mut input).ok()?;
+    let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
     serde_json::from_str(&input).ok()
 }
 

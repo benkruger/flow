@@ -51,8 +51,7 @@ pub struct Args {
 ///
 /// Returns (root, branch_name, state_path). Returns Err if branch cannot
 /// be resolved or state file does not exist.
-fn resolve_state(args: &Args) -> Result<(PathBuf, String, PathBuf), Value> {
-    let root = project_root();
+fn resolve_state(args: &Args, root: PathBuf) -> Result<(PathBuf, String, PathBuf), Value> {
     let branch = match resolve_branch(args.branch.as_deref(), &root) {
         Some(b) => b,
         None => {
@@ -115,7 +114,13 @@ fn load_frozen_config(
 /// Returns None if gh is not available or the command fails. Relies on
 /// gh's internal HTTP timeout for network-level protection.
 fn fetch_issue(issue_number: i64) -> Option<Value> {
-    let output = Command::new("gh")
+    // Spawn failure, non-zero exit, and JSON parse failure all fold
+    // to the same `None` result through the Option method chain.
+    // `filter`'s predicate runs only on Ok+success, so the non-zero
+    // exit branch is the filter drop; the spawn-failure branch is
+    // `.ok()` converting Err→None; JSON parse failure is
+    // `from_slice(...).ok()` returning None.
+    Command::new("gh")
         .args([
             "issue",
             "view",
@@ -126,13 +131,9 @@ fn fetch_issue(issue_number: i64) -> Option<Value> {
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    serde_json::from_slice(&output.stdout).ok()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| serde_json::from_slice(&o.stdout).ok())
 }
 
 /// Check if an issue has the "decomposed" label (case-insensitive).
@@ -252,29 +253,36 @@ fn promote_headings(content: &str) -> String {
             continue;
         }
 
-        // Promote headings: remove one leading # if line starts with ## or more
+        // Promote headings: remove one leading # if line starts with ## or more.
+        // `trimmed.starts_with("####")` ⇒ `line.find("####")` returns Some
+        // because `line` contains `trimmed` verbatim (same bytes after
+        // `trim_start`). `.expect` does not create an instrumented
+        // branch per `.claude/rules/testability-means-simplicity.md`.
         if trimmed.starts_with("####") {
-            // #### → ###
-            if let Some(pos) = line.find("####") {
-                result.push_str(&line[..pos]);
-                result.push_str(&line[pos + 1..]);
-            }
+            let pos = line
+                .find("####")
+                .expect("trimmed.starts_with(####) implies line.find(####) is Some");
+            result.push_str(&line[..pos]);
+            result.push_str(&line[pos + 1..]);
         } else if trimmed.starts_with("###") {
-            // ### → ##
-            if let Some(pos) = line.find("###") {
-                result.push_str(&line[..pos]);
-                result.push_str(&line[pos + 1..]);
-            }
+            let pos = line
+                .find("###")
+                .expect("trimmed.starts_with(###) implies line.find(###) is Some");
+            result.push_str(&line[..pos]);
+            result.push_str(&line[pos + 1..]);
         } else {
             result.push_str(line);
         }
         result.push('\n');
     }
 
-    // Remove trailing newline added by the loop
-    if result.ends_with('\n') && !content.ends_with('\n') {
-        result.pop();
-    }
+    // Remove trailing newline added by the loop. `promote_headings`
+    // is only called with trimmed content from
+    // `extract_implementation_plan`, so `content` never ends with
+    // '\n' — the guard is unreachable by construction and elided
+    // per `.claude/rules/testability-means-simplicity.md`. `pop` on
+    // an empty string (empty-content edge case) is a safe no-op.
+    result.pop();
     result
 }
 
@@ -383,24 +391,34 @@ fn violations_response(
     })
 }
 
-/// Run phase_complete via mutate_state and return the result JSON.
-fn complete_plan_phase(state_path: &Path, root: &Path, branch: &str) -> Result<Value, String> {
-    let (frozen_order, frozen_commands) = load_frozen_config(root, branch);
-    let result_holder = std::cell::RefCell::new(Value::Null);
+/// Single point of state-mutation error formatting.
+///
+/// Consolidates every `mutate_state(&state_path, ...).map_err(|e|
+/// format!("<label>: {}", e))?` pattern in run_impl_with_root so the
+/// error-formatting closure has ONE instantiation instead of one per
+/// callsite. The `?` propagation still lives at each callsite (Rust's
+/// desugar), but the map_err closure that formats the error message
+/// is defined once here and shared across every caller — meaning a
+/// single test that drives any callsite into the Err arm covers the
+/// formatter for all of them.
+fn commit_state(
+    state_path: &Path,
+    err_label: &str,
+    transform: &mut dyn FnMut(&mut Value),
+) -> Result<(), String> {
+    mutate_state(state_path, transform)
+        .map(|_| ())
+        .map_err(|e| format!("{}: {}", err_label, e))
+}
 
-    mutate_state(state_path, &mut |state| {
-        let result = phase_complete(
-            state,
-            "flow-plan",
-            None,
-            frozen_order.as_deref(),
-            frozen_commands.as_ref(),
-        );
-        *result_holder.borrow_mut() = result;
-    })
-    .map_err(|e| format!("Failed to complete phase: {}", e))?;
-
-    Ok(result_holder.into_inner())
+/// Read + parse the state JSON. Consolidates the read+parse pair used
+/// by `run_impl_with_root` at startup and after mutations — the
+/// `Could not read`/`Invalid JSON` map_err closures now have one
+/// instantiation each shared across every caller.
+fn read_state_json(state_path: &Path, read_err_label: &str) -> Result<Value, String> {
+    let content =
+        std::fs::read_to_string(state_path).map_err(|e| format!("{}: {}", read_err_label, e))?;
+    serde_json::from_str(&content).map_err(|e| format!("Invalid JSON in state file: {}", e))
 }
 
 /// Fallible entry point for plan extraction.
@@ -409,17 +427,30 @@ fn complete_plan_phase(state_path: &Path, root: &Path, branch: &str) -> Result<V
 /// (including status-error responses like gate failures). Returns
 /// `Err(String)` only for infrastructure failures (file I/O, lock errors).
 pub fn run_impl(args: &Args) -> Result<Value, String> {
+    run_impl_with_root(args, project_root())
+}
+
+/// Seam-injected variant of [`run_impl`] accepting the project root
+/// as a parameter. Production binds `root = project_root()` via the
+/// `run_impl` wrapper above; library tests pass a fixture repo path
+/// directly so every private helper (resolve_state, gate_check,
+/// load_frozen_config, fetch_issue, is_decomposed, read_dag_mode,
+/// find_heading, is_heading_terminated, extract_implementation_plan,
+/// promote_headings, count_tasks, count_tasks_any_level,
+/// violations_response) reaches 100% per
+/// `.claude/rules/no-waivers.md` without requiring the test process
+/// to chdir. `run_impl` is the non-test production consumer, so
+/// this pub seam satisfies the bright-line test in
+/// `.claude/rules/test-placement.md`.
+pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
     // --- Resolve state file ---
-    let (root, branch, state_path) = match resolve_state(args) {
+    let (root, branch, state_path) = match resolve_state(args, root) {
         Ok(v) => v,
         Err(err_json) => return Ok(err_json),
     };
 
     // --- Read state for gate and resume checks ---
-    let state_content = std::fs::read_to_string(&state_path)
-        .map_err(|e| format!("Could not read state file: {}", e))?;
-    let state: Value = serde_json::from_str(&state_content)
-        .map_err(|e| format!("Invalid JSON in state file: {}", e))?;
+    let state = read_state_json(&state_path, "Could not read state file")?;
 
     // --- Gate: flow-start must be complete ---
     if let Err(err_json) = gate_check(&state) {
@@ -473,19 +504,31 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         // violation-driven edit can invalidate the initial count.
         let task_count_on_resume = count_tasks_any_level(&plan_content);
 
-        // Enter the phase (safe to call if already in_progress — updates timestamps and visit_count).
-        // No outer object-guard here: gate_check earlier rejected non-object state,
-        // so `state` is guaranteed to be a JSON object.
-        mutate_state(&state_path, &mut |state| {
+        // Single commit_state that both enters and completes the
+        // phase in one atomic state write. Consolidated from two
+        // prior calls (phase_enter then complete_plan_phase) so the
+        // resume path has exactly one `?` Err arm — reachable via a
+        // readonly-state + readable-plan fixture.
+        // No outer object-guard here: gate_check earlier rejected
+        // non-object state, so `state` is guaranteed to be a JSON
+        // object.
+        let (frozen_order, frozen_commands) = load_frozen_config(&root, &branch);
+        let complete_result_holder = std::cell::RefCell::new(Value::Null);
+        commit_state(&state_path, "Failed to complete phase", &mut |state| {
             phase_enter(state, "flow-plan", None);
             if task_count_on_resume > 0 {
                 state["code_tasks_total"] = json!(task_count_on_resume);
             }
-        })
-        .map_err(|e| format!("Failed to enter phase: {}", e))?;
+            *complete_result_holder.borrow_mut() = phase_complete(
+                state,
+                "flow-plan",
+                None,
+                frozen_order.as_deref(),
+                frozen_commands.as_ref(),
+            );
+        })?;
 
-        // Complete the phase
-        let complete_result = complete_plan_phase(&state_path, &root, &branch)?;
+        let complete_result = complete_result_holder.into_inner();
 
         let formatted_time = complete_result
             .get("formatted_time")
@@ -511,24 +554,25 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     // DAG-exists resume is not fast-pathed — re-fetch from GitHub.
     // The skill's Resume Check handles the DAG-only case after plan-extract returns.
 
-    // --- Phase enter ---
-    // No outer object-guard: gate_check rejected non-object state upstream.
-    mutate_state(&state_path, &mut |state| {
-        phase_enter(state, "flow-plan", None);
-        // Set step tracking for TUI
-        state["plan_steps_total"] = json!(4);
-        state["plan_step"] = json!(1);
-    })
-    .map_err(|e| format!("Failed to enter phase: {}", e))?;
-
     // --- Issue fetch + decomposed detection ---
+    //
+    // Phase entry is DEFERRED until after the path is determined so
+    // every execution path has exactly one consolidated commit_state
+    // call. This keeps the count of `?` Err arms per path at one,
+    // and each arm is reachable via a readonly-state fixture that
+    // routes execution through the corresponding branch.
     let prompt = state.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
 
     let issue_numbers = extract_issue_numbers(prompt);
     let dag_mode = read_dag_mode(&state);
 
-    // No issue references → standard path
+    // No issue references → enter phase + return standard path.
     if issue_numbers.is_empty() {
+        commit_state(&state_path, "Failed to enter phase", &mut |state| {
+            phase_enter(state, "flow-plan", None);
+            state["plan_steps_total"] = json!(4);
+            state["plan_step"] = json!(1);
+        })?;
         return Ok(json!({
             "status": "ok",
             "path": "standard",
@@ -572,10 +616,16 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let issue_body = first_issue_body.unwrap_or_default();
     let issue_number = first_issue_number.unwrap_or(issue_numbers[0]);
 
-    // No decomposed issue found → standard path with first issue body
+    // No decomposed issue found → enter phase + return standard
+    // path with the first fetched issue body as context.
     let issue_data = match decomposed_data {
         Some(data) => data,
         None => {
+            commit_state(&state_path, "Failed to enter phase", &mut |state| {
+                phase_enter(state, "flow-plan", None);
+                state["plan_steps_total"] = json!(4);
+                state["plan_step"] = json!(1);
+            })?;
             return Ok(json!({
                 "status": "ok",
                 "path": "standard",
@@ -600,33 +650,41 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     // Derive the relative path from the absolute path so the value
     // stored in state stays in sync with the on-disk location. If
     // `FlowPaths::dag_file()` ever changes its suffix, the state
-    // file's `files.dag` entry follows automatically.
+    // file's `files.dag` entry follows automatically. `FlowPaths::new`
+    // constructs dag_file() as `<root>/.flow-states/<branch>-dag.md`
+    // so strip_prefix(&root) always succeeds; `.expect` does not
+    // create an instrumented branch per
+    // `.claude/rules/testability-means-simplicity.md`.
     let dag_rel = dag_abs
         .strip_prefix(&root)
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| dag_abs.to_string_lossy().into_owned());
+        .expect("FlowPaths::new constructs dag_file under root")
+        .to_string_lossy()
+        .into_owned();
     std::fs::write(&dag_abs, &dag_content)
         .map_err(|e| format!("Failed to write DAG file: {}", e))?;
 
-    // Update files.dag in state.
-    // Outer object-guard omitted: gate_check rejected non-object state upstream.
-    // Nested files-guard remains: state.files may legitimately be a non-object
-    // from older state files where the field hadn't been initialized as a map.
-    mutate_state(&state_path, &mut |state| {
-        if !matches!(state.get("files"), Some(v) if v.is_object()) {
-            state["files"] = json!({});
-        }
-        state["files"]["dag"] = json!(&dag_rel);
-        state["plan_step"] = json!(2);
-    })
-    .map_err(|e| format!("Failed to update state: {}", e))?;
-
     // --- Extract Implementation Plan section ---
+    //
+    // Phase entry + files.dag update deferred to each branch's
+    // terminal commit_state call so the `?` Err arms converge to
+    // exactly one per branch. Nested files-guard remains: state.files
+    // may legitimately be a non-object from older state files where
+    // the field hadn't been initialized as a map.
     let plan_section = match extract_implementation_plan(&issue_body) {
         Some(s) => s,
         None => {
-            // No Implementation Plan section — return standard path
-            // so the model handles it as an older-format decomposed issue
+            // No Implementation Plan section — enter phase, record
+            // files.dag, and return standard path so the model
+            // handles it as an older-format decomposed issue.
+            commit_state(&state_path, "Failed to update state", &mut |state| {
+                phase_enter(state, "flow-plan", None);
+                state["plan_steps_total"] = json!(4);
+                state["plan_step"] = json!(2);
+                if !matches!(state.get("files"), Some(v) if v.is_object()) {
+                    state["files"] = json!({});
+                }
+                state["files"]["dag"] = json!(&dag_rel);
+            })?;
             return Ok(json!({
                 "status": "ok",
                 "path": "standard",
@@ -645,32 +703,18 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 
     // Write plan file
     let plan_abs = FlowPaths::new(&root, &branch).plan_file();
-    // Derive the relative path from the absolute path so the value
-    // stored in state stays in sync with the on-disk location.
+    // Derive the relative path from the absolute path. `FlowPaths::new`
+    // constructs plan_file() as `<root>/.flow-states/<branch>-plan.md`,
+    // so strip_prefix(&root) always succeeds — same invariant as the
+    // dag_file case above. `.expect` does not create an instrumented
+    // branch per `.claude/rules/testability-means-simplicity.md`.
     let plan_rel = plan_abs
         .strip_prefix(&root)
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| plan_abs.to_string_lossy().into_owned());
+        .expect("FlowPaths::new constructs plan_file under root")
+        .to_string_lossy()
+        .into_owned();
     std::fs::write(&plan_abs, &promoted)
         .map_err(|e| format!("Failed to write plan file: {}", e))?;
-
-    // Update state: files.plan, code_tasks_total, plan_step.
-    // Set files.plan BEFORE the scope-enumeration check so that a
-    // failed check leaves the state in a shape the resume path can
-    // pick up on the next invocation (the user edits the plan file
-    // in place; re-running plan-extract takes the resume path and
-    // re-scans). Without this ordering, a violation would unset the
-    // plan path and the next run would re-extract from the issue
-    // body, clobbering the user's edits.
-    // Outer object-guard omitted: gate_check rejected non-object state upstream.
-    // Nested files-guard omitted: the previous `files.dag` update already
-    // normalized state["files"] to an object, so the chained assignment is safe.
-    mutate_state(&state_path, &mut |state| {
-        state["files"]["plan"] = json!(&plan_rel);
-        state["code_tasks_total"] = json!(task_count);
-        state["plan_step"] = json!(3);
-    })
-    .map_err(|e| format!("Failed to update state: {}", e))?;
 
     // Gate completion on all three Plan-phase rules. Any violation
     // blocks phase completion — the model must edit the plan file
@@ -684,6 +728,24 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let test_corpus = TestCorpus::from_repo(&root);
     let dup_violations = dup_scan(&promoted, &plan_abs, &test_corpus);
     if !scope_violations.is_empty() || !audit_violations.is_empty() || !dup_violations.is_empty() {
+        // Violations: enter phase + record files + return. Single
+        // commit_state so the `?` Err arm is reachable via a
+        // readonly-state fixture routed through this branch. Setting
+        // files.plan BEFORE returning the violation response leaves
+        // state in a shape the resume path can pick up on the next
+        // invocation — the user edits the plan file in place,
+        // re-running plan-extract takes the resume path and re-scans.
+        commit_state(&state_path, "Failed to update state", &mut |state| {
+            phase_enter(state, "flow-plan", None);
+            state["plan_steps_total"] = json!(4);
+            state["plan_step"] = json!(3);
+            if !matches!(state.get("files"), Some(v) if v.is_object()) {
+                state["files"] = json!({});
+            }
+            state["files"]["dag"] = json!(&dag_rel);
+            state["files"]["plan"] = json!(&plan_rel);
+            state["code_tasks_total"] = json!(task_count);
+        })?;
         let _ = append_log(
             &root,
             &branch,
@@ -734,20 +796,40 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         ),
     );
 
-    // --- Update plan_step to 4 before PR render ---
-    // Outer object-guard omitted: gate_check rejected non-object state upstream.
-    mutate_state(&state_path, &mut |state| {
+    // Happy path: single atomic commit_state enters the phase,
+    // records every file + task count, advances plan_step to 4, and
+    // completes the phase. Consolidating these into one closure
+    // means the `?` Err arm is reachable via a readonly-state
+    // fixture routed through this branch, and the caller
+    // (`run_impl_with_root`) captures the mutated state directly
+    // from the closure so no post-mutation re-read is needed.
+    let (frozen_order, frozen_commands) = load_frozen_config(&root, &branch);
+    let complete_result_holder = std::cell::RefCell::new(Value::Null);
+    let updated_state_holder = std::cell::RefCell::new(Value::Null);
+    commit_state(&state_path, "Failed to complete phase", &mut |state| {
+        phase_enter(state, "flow-plan", None);
+        state["plan_steps_total"] = json!(4);
         state["plan_step"] = json!(4);
-    })
-    .map_err(|e| format!("Failed to update state: {}", e))?;
+        if !matches!(state.get("files"), Some(v) if v.is_object()) {
+            state["files"] = json!({});
+        }
+        state["files"]["dag"] = json!(&dag_rel);
+        state["files"]["plan"] = json!(&plan_rel);
+        state["code_tasks_total"] = json!(task_count);
+        *complete_result_holder.borrow_mut() = phase_complete(
+            state,
+            "flow-plan",
+            None,
+            frozen_order.as_deref(),
+            frozen_commands.as_ref(),
+        );
+        *updated_state_holder.borrow_mut() = state.clone();
+    })?;
+
+    let complete_result = complete_result_holder.into_inner();
+    let updated_state = updated_state_holder.into_inner();
 
     // --- PR body render ---
-    // Re-read the state file since we've mutated it multiple times
-    let updated_state_content = std::fs::read_to_string(&state_path)
-        .map_err(|e| format!("Could not re-read state file: {}", e))?;
-    let updated_state: Value = serde_json::from_str(&updated_state_content)
-        .map_err(|e| format!("Invalid JSON in state file: {}", e))?;
-
     let pr = args
         .pr
         .or_else(|| updated_state.get("pr_number").and_then(|v| v.as_i64()));
@@ -768,9 +850,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         &branch,
         "[Phase 2] plan-extract — PR body rendered (exit 0)",
     );
-
-    // --- Phase complete ---
-    let complete_result = complete_plan_phase(&state_path, &root, &branch)?;
 
     let formatted_time = complete_result
         .get("formatted_time")

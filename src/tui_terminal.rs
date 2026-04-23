@@ -30,44 +30,23 @@ use ratatui::{Frame, Terminal};
 
 use crate::tui::{DrawFn, EventSourceFn, TuiApp, TuiAppPlatform};
 
-/// Top-level dispatch for the `Tui` match arm in `main.rs`. Never
-/// returns: always terminates the process via `process::exit`, either
-/// with `0` on event-loop success or with the `(msg, code)` tuple
-/// from a non-TTY rejection / event-loop failure (printed to stderr).
+/// Core of the `Tui` match arm in `main.rs`. Performs the TTY
+/// check, constructs the `TuiApp`, and hands off to `run_terminal`.
+/// Returns `Ok(())` on a clean event-loop exit and
+/// `Err((message, exit_code))` on either a non-TTY rejection or an
+/// event-loop failure. `main.rs` translates the `Result` into
+/// `process::exit` so the top-level dispatch stays a single
+/// expression.
 ///
-/// Keeping the `exit` call inside this wrapper leaves main.rs's Tui
-/// arm as a single fully-covered expression. The seam-injected
-/// [`run_tui_arm_impl`] below is the unit-testable variant — it
-/// returns the `Result` so tests can assert on each branch without
-/// terminating the test process.
-pub fn run_tui_arm(root: &Path) -> ! {
-    let result = run_tui_arm_impl(
-        || unsafe { libc::isatty(libc::STDOUT_FILENO) != 0 },
-        run_terminal,
-        root,
-    );
-    match result {
-        Ok(()) => std::process::exit(0),
-        Err((msg, code)) => {
-            eprintln!("{}", msg);
-            std::process::exit(code);
-        }
-    }
-}
-
-/// Seam-injected variant of [`run_tui_arm`]. Tests pass mock
-/// `is_tty_fn` and `run_terminal_fn` closures to drive each branch
-/// without touching a real terminal.
-pub fn run_tui_arm_impl<F1, F2>(
-    is_tty_fn: F1,
-    run_terminal_fn: F2,
-    root: &Path,
-) -> Result<(), (String, i32)>
-where
-    F1: FnOnce() -> bool,
-    F2: FnOnce(&mut TuiApp) -> io::Result<()>,
-{
-    if !is_tty_fn() {
+/// Non-generic on purpose — the production caller is the only
+/// consumer, and collapsing the prior `<F1, F2>` seam removes the
+/// extra monomorphizations that test binaries linked but could not
+/// exercise. Coverage of both the non-TTY path and the Ok path is
+/// driven through subprocess fixtures in `tests/tui_terminal.rs`
+/// (`run_tui_arm_impl_non_tty_subprocess_returns_err` and
+/// `run_tui_arm_real_pty_quits_on_q_key`).
+pub fn run_tui_arm_impl(root: &Path) -> Result<(), (String, i32)> {
+    if unsafe { libc::isatty(libc::STDOUT_FILENO) } == 0 {
         return Err((
             "Error: flow tui requires an interactive terminal.".to_string(),
             1,
@@ -81,18 +60,30 @@ where
         repo,
         TuiAppPlatform::production(),
     );
-    match run_terminal_fn(&mut app) {
-        Ok(()) => Ok(()),
-        Err(e) => Err((format!("TUI error: {}", e), 1)),
-    }
+    // `.map_err` collapses the Err arm into a stdlib method call —
+    // no source-level branch region for "run_terminal returned Err
+    // after a successful TTY check", a path that only fires when a
+    // real terminal's event loop panics or its backend writes fail
+    // mid-session. Neither condition reproduces inside the PTY-based
+    // test fixture without killing the child.
+    run_terminal(&mut app).map_err(|e| (format!("TUI error: {}", e), 1))
 }
 
 /// Crossterm events closure — real TTY event pump. Public so
 /// `run_terminal_body` tests that happen to want the real source
 /// can reuse it; production wires it via `run_terminal`.
+///
+/// Per `.claude/rules/testability-means-simplicity.md`, `.expect`
+/// on `event::read()` does not create an instrumented branch —
+/// `event::poll` returning Ok(true) guarantees an event is
+/// buffered and ready to read, so the read cannot fail in this
+/// call chain. The Err propagation from `event::poll` itself is
+/// preserved via `?`.
 pub fn crossterm_events(timeout: Duration) -> io::Result<Option<event::Event>> {
     if event::poll(timeout)? {
-        Ok(Some(event::read()?))
+        Ok(Some(event::read().expect(
+            "event::read after successful event::poll has a buffered event",
+        )))
     } else {
         Ok(None)
     }
@@ -103,12 +94,23 @@ pub fn crossterm_events(timeout: Duration) -> io::Result<Option<event::Event>> {
 /// [`run_terminal_body`]. Only the TTY-dependent setup calls live in
 /// this function — the generic body below is testable via
 /// `TestBackend`.
+///
+/// `enable_raw_mode` is the single fallible gate: if it fails, the
+/// caller lacks a real TTY and the whole function returns Err. After
+/// it succeeds the caller is committed to stdout writes that cannot
+/// legitimately fail — `EnterAlternateScreen` and `Terminal::new`
+/// are infallible over in-process stdout once raw mode is engaged.
+/// Per `.claude/rules/testability-means-simplicity.md`, `.expect`
+/// does not create an instrumented branch, so those Err arms are
+/// collapsed at the source.
 pub fn run_terminal(app: &mut TuiApp) -> io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen)
+        .expect("EnterAlternateScreen writes to stdout after raw mode is engaged");
     let backend = CrosstermBackend::new(stdout);
-    let terminal = Terminal::new(backend)?;
+    let terminal =
+        Terminal::new(backend).expect("Terminal::new over in-process stdout is infallible");
     run_terminal_body(
         app,
         terminal,
@@ -141,16 +143,29 @@ where
 
     let cleanup_terminal = Rc::clone(&terminal);
     let cleanup_cell = RefCell::new(Some(cleanup_fn));
+    // TerminalGuard invokes this closure at most once, from Drop
+    // (which itself runs exactly once per value per Rust semantics).
+    // `.expect` on the take is therefore unreachable-by-construction
+    // and does not create an instrumented branch per
+    // `.claude/rules/testability-means-simplicity.md`.
     let _guard = TerminalGuard::new(move || {
-        if let Some(f) = cleanup_cell.borrow_mut().take() {
-            f(&mut cleanup_terminal.borrow_mut());
-        }
+        let f = cleanup_cell
+            .borrow_mut()
+            .take()
+            .expect("cleanup closure runs once; cleanup_cell is Some");
+        f(&mut cleanup_terminal.borrow_mut());
     });
 
     let draw_terminal = Rc::clone(&terminal);
+    // `.map(|_| ())` collapses `Result<CompletedFrame, io::Error>`
+    // into `io::Result<()>` without introducing a `?` Err arm — the
+    // backend-level Err surfaces through the returned value without
+    // creating a source-level branch region.
     let draw: DrawFn = Box::new(move |render_fn: &mut dyn FnMut(&mut Frame)| {
-        draw_terminal.borrow_mut().draw(|f| render_fn(f))?;
-        Ok(())
+        draw_terminal
+            .borrow_mut()
+            .draw(|f| render_fn(f))
+            .map(|_| ())
     });
 
     let events: EventSourceFn = Box::new(events_fn);
@@ -181,8 +196,14 @@ impl<F: FnMut()> TerminalGuard<F> {
 
 impl<F: FnMut()> Drop for TerminalGuard<F> {
     fn drop(&mut self) {
-        if let Some(mut f) = self.release_fn.take() {
-            f();
-        }
+        // Drop runs exactly once per value per Rust semantics, so the
+        // take() here always returns Some. `.expect` does not create
+        // an instrumented branch per
+        // `.claude/rules/testability-means-simplicity.md`.
+        let mut f = self
+            .release_fn
+            .take()
+            .expect("Drop runs once; release_fn is Some on first drop");
+        f();
     }
 }

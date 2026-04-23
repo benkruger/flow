@@ -111,6 +111,27 @@ fn test_detect_branch_not_in_worktree() {
     assert!(branch.is_none());
 }
 
+#[test]
+fn test_detect_branch_worktree_loop_exits_without_git_marker_and_git_spawn_fails() {
+    // Covers two otherwise-unreached regions of `detect_branch_from_path`:
+    //
+    //   * The `while` loop exits via its condition (no `.git` marker
+    //     found in any ancestor up to `worktrees_dir`) instead of
+    //     returning from inside the body.
+    //   * The `Err(_) => return None` arm when `Command::new("git")
+    //     .current_dir(cwd).output()` fails at spawn because `cwd`
+    //     is a path that doesn't exist on disk (ENOENT on chdir).
+    //
+    // A path containing the `.worktrees/` marker but pointing at a
+    // filesystem location that doesn't exist exercises both:
+    // the worktree-detection branch runs its walk and finds no
+    // `.git` file in any iteration, then the fallback git subprocess
+    // spawn fails because the cwd doesn't resolve.
+    let cwd = std::path::PathBuf::from("/tmp/flow-rs-does-not-exist-abcxyz-1337/.worktrees/feat");
+    let branch = hooks::detect_branch_from_path(&cwd);
+    assert_eq!(branch, None);
+}
+
 // === is_flow_active ===
 
 #[test]
@@ -199,6 +220,14 @@ fn test_permission_to_regex_non_bash() {
 }
 
 #[test]
+fn test_permission_to_regex_bash_prefix_without_closing_paren() {
+    // `Bash(` prefix matches but no `)` suffix — strip_suffix returns
+    // None, hitting the second `?` arm inside permission_to_regex.
+    assert!(hooks::permission_to_regex("Bash(git status").is_none());
+    assert!(hooks::permission_to_regex("Bash(").is_none());
+}
+
+#[test]
 fn test_permission_to_regex_escapes_special_chars() {
     let re = hooks::permission_to_regex("Bash(bin/ci;*)").unwrap();
     assert!(re.is_match("bin/ci;--verbose"));
@@ -253,8 +282,7 @@ fn test_build_permission_regexes_missing_key() {
 
 use flow_rs::flow_paths::FlowPaths;
 use flow_rs::hooks::{
-    detect_branch_from_cwd_with, detect_branch_from_path, find_settings_and_root_from,
-    find_settings_and_root_with, is_flow_active, resolve_main_root,
+    detect_branch_from_path, find_settings_and_root_from, is_flow_active, resolve_main_root,
 };
 
 /// Covers the `Err(_) => return (None, None)` arm on line 39 of
@@ -368,40 +396,12 @@ fn resolve_main_root_passthrough_without_marker() {
     );
 }
 
-/// Covers the Err arm of the cwd_fn match in `find_settings_and_root_with`.
-#[test]
-fn find_settings_and_root_with_cwd_err_returns_none_none() {
-    let (settings, root) =
-        find_settings_and_root_with(|| Err(std::io::Error::other("simulated current_dir failure")));
-    assert!(settings.is_none());
-    assert!(root.is_none());
-}
-
-/// Covers the Ok arm of the cwd_fn match in `find_settings_and_root_with`
-/// with a fixture dir that doesn't have `.claude/settings.json`.
-#[test]
-fn find_settings_and_root_with_cwd_ok_but_no_settings_returns_none_none() {
-    let dir = tempfile::tempdir().unwrap();
-    let dir_path = dir.path().to_path_buf();
-    let (settings, root) = find_settings_and_root_with(move || Ok(dir_path));
-    assert!(settings.is_none());
-    assert!(root.is_none());
-}
-
-/// Covers the Err arm of the cwd_fn match in `detect_branch_from_cwd_with`.
-#[test]
-fn detect_branch_from_cwd_with_cwd_err_returns_none() {
-    let result =
-        detect_branch_from_cwd_with(|| Err(std::io::Error::other("simulated current_dir failure")));
-    assert!(result.is_none());
-}
-
-/// Covers the Ok arm of the cwd_fn match in `detect_branch_from_cwd_with`.
-#[test]
-fn detect_branch_from_cwd_with_cwd_ok_delegates_to_path_variant() {
-    let dir = tempfile::tempdir().unwrap();
-    let dir_path = dir.path().to_path_buf();
-    // Non-git tempdir → detect_branch_from_path returns None.
-    let result = detect_branch_from_cwd_with(move || Ok(dir_path));
-    assert!(result.is_none());
-}
+// Previously `find_settings_and_root_with` / `detect_branch_from_cwd_with`
+// had mock-closure tests covering their Err arms. Those generic seams
+// were removed because their per-monomorphization Err arms were
+// unreachable through any production callsite; validate_pretool now
+// calls `env::current_dir().ok()` inline and routes through
+// `find_settings_and_root_from` / `detect_branch_from_path` with an
+// explicit &Path. The Err arm of the inline env::current_dir() call
+// is exercised by the stale-cwd subprocess test in
+// tests/adversarial_agent_block.rs::validate_pretool_with_stale_cwd_does_not_panic.

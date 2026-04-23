@@ -14,7 +14,7 @@ use regex::Regex;
 use serde_json::Value;
 
 use super::{
-    build_permission_regexes, detect_branch_from_cwd, find_settings_and_root, is_flow_active,
+    build_permission_regexes, detect_branch_from_path, find_settings_and_root_from, is_flow_active,
     read_hook_input, resolve_main_root, FILE_READ_COMMANDS,
 };
 
@@ -412,9 +412,22 @@ pub fn run() {
         None => std::process::exit(0),
     };
 
-    let (settings, project_root) = find_settings_and_root();
+    // Resolve cwd ONCE and reuse for both settings discovery and
+    // branch detection. env::current_dir() can fail when the cwd
+    // inode has been unlinked (e.g. the stale-cwd adversarial path);
+    // in that case both settings and branch fall through to None.
+    // Per `.claude/rules/testability-means-simplicity.md` the prior
+    // `find_settings_and_root`/`detect_branch_from_cwd` generic seams
+    // have been removed because their per-monomorphization Err arms
+    // were unreachable through any production callsite — the
+    // stale-cwd subprocess test covers the failure path here instead.
+    let cwd = std::env::current_dir().ok();
+    let (settings, project_root) = cwd
+        .as_deref()
+        .map(find_settings_and_root_from)
+        .unwrap_or((None, None));
     let branch = if settings.is_some() {
-        detect_branch_from_cwd()
+        cwd.as_deref().and_then(detect_branch_from_path)
     } else {
         None
     };

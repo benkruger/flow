@@ -591,7 +591,7 @@ fn main() {
             flow_rs::dispatch::dispatch_text(&msg, code);
         }
         Some(Commands::PrimeCheck(_args)) => {
-            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
             let (value, code) = prime_check::run_impl_main(&cwd, flow_rs::utils::plugin_root());
             flow_rs::dispatch::dispatch_json(value, code);
         }
@@ -796,7 +796,13 @@ fn main() {
         }
         Some(Commands::Tui) => {
             let root = project_root();
-            flow_rs::tui_terminal::run_tui_arm(&root);
+            match flow_rs::tui_terminal::run_tui_arm_impl(&root) {
+                Ok(()) => process::exit(0),
+                Err((msg, code)) => {
+                    eprintln!("{}", msg);
+                    process::exit(code);
+                }
+            }
         }
         Some(Commands::TuiData {
             load_all_flows,

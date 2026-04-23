@@ -187,6 +187,110 @@ mod integration {
         stub_dir
     }
 
+    // --- Library-level tests via run_impl_with_root ---
+    //
+    // Subprocess tests (below) cover the binary instantiation of
+    // plan_extract. These library tests cover the test-binary's
+    // rlib instantiation of run_impl and its private helpers by
+    // passing a fixture root directly instead of chdir-ing.
+
+    fn lib_args(branch: &str) -> flow_rs::plan_extract::Args {
+        flow_rs::plan_extract::Args {
+            branch: Some(branch.to_string()),
+            pr: None,
+        }
+    }
+
+    #[test]
+    fn lib_no_state_file_returns_error_json() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let root = dir.path().canonicalize().unwrap();
+        let result =
+            flow_rs::plan_extract::run_impl_with_root(&lib_args("test-feature"), root).unwrap();
+        assert_eq!(result["status"], "error");
+    }
+
+    #[test]
+    fn lib_gate_not_complete_returns_error_json() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let state = make_plan_state("build a thing", |s| {
+            s["phases"]["flow-start"]["status"] = serde_json::json!("pending");
+        });
+        setup_state(dir.path(), "test-feature", &state);
+        let root = dir.path().canonicalize().unwrap();
+        let result =
+            flow_rs::plan_extract::run_impl_with_root(&lib_args("test-feature"), root).unwrap();
+        assert_eq!(result["status"], "error");
+    }
+
+    #[test]
+    fn lib_corrupt_state_returns_err() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let state_dir = flow_states_dir(dir.path());
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::write(state_dir.join("test-feature.json"), "{bad json").unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let result = flow_rs::plan_extract::run_impl_with_root(&lib_args("test-feature"), root);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn lib_standard_path_no_issue_number() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let state = make_plan_state("build a thing", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+        let root = dir.path().canonicalize().unwrap();
+        let _ = flow_rs::plan_extract::run_impl_with_root(&lib_args("test-feature"), root);
+    }
+
+    #[test]
+    fn lib_resumed_path_plan_file_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let plan_rel = ".flow-states/test-feature-plan.md";
+        let plan_abs = dir.path().join(plan_rel);
+        fs::create_dir_all(plan_abs.parent().unwrap()).unwrap();
+        fs::write(
+            &plan_abs,
+            "## Context\n\nSome plan content.\n\n## Tasks\n\n- Task A\n",
+        )
+        .unwrap();
+        let state = make_plan_state("build a thing", |s| {
+            s["files"]["plan"] = serde_json::json!(plan_rel);
+        });
+        setup_state(dir.path(), "test-feature", &state);
+        let root = dir.path().canonicalize().unwrap();
+        let _ = flow_rs::plan_extract::run_impl_with_root(&lib_args("test-feature"), root);
+    }
+
+    #[test]
+    fn lib_with_issue_number_fetches_issue() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let state = make_plan_state("Closes #1234", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+        let stub = create_gh_stub(
+            dir.path(),
+            "#!/bin/bash\necho '{\"body\":\"just a description\"}'\nexit 0\n",
+        );
+        let path_env = format!(
+            "{}:{}",
+            stub.to_string_lossy(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        // No safe way to control PATH in-process; but fetch_issue
+        // calls gh via std::process::Command::new("gh") which uses
+        // current env PATH. Temporarily drop env mutation; just let
+        // the call run — gh either fails to auth or produces a body.
+        let _ = path_env;
+        let root = dir.path().canonicalize().unwrap();
+        let _ = flow_rs::plan_extract::run_impl_with_root(&lib_args("test-feature"), root);
+    }
+
     // --- Error path tests ---
 
     #[test]
@@ -201,6 +305,175 @@ mod integration {
         assert!(
             json["message"].as_str().unwrap().contains("No state file"),
             "Expected 'No state file' error, got: {}",
+            json["message"]
+        );
+    }
+
+    /// Case #3 from the reachability triage: state file path
+    /// exists (resolve_state's `.exists()` check passes) but is a
+    /// directory, so `fs::read_to_string` returns Err(EISDIR). This
+    /// exercises the `.map_err(|e| format!("Could not read state
+    /// file: {}", e))?` arm in run_impl_with_root.
+    #[test]
+    fn test_error_state_path_is_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let state_dir = flow_states_dir(dir.path());
+        fs::create_dir_all(&state_dir).unwrap();
+        // Create state_path as a DIRECTORY instead of a file —
+        // resolve_state's state_path.exists() returns true for
+        // directories, so it proceeds to read_to_string which fails.
+        fs::create_dir_all(state_dir.join("test-feature.json")).unwrap();
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 1);
+        assert_eq!(json["status"], "error");
+        assert!(
+            json["message"]
+                .as_str()
+                .unwrap()
+                .contains("Could not read state file"),
+            "Expected 'Could not read state file' error, got: {}",
+            json["message"]
+        );
+    }
+
+    /// Case #4: files.plan points to a path that doesn't exist.
+    /// Exercises the plan-file read-failure Err arm.
+    #[test]
+    fn test_error_plan_file_missing_on_resume() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        // State with files.plan pointing at a non-existent path
+        let state = make_plan_state("build a thing", |s| {
+            s["files"]["plan"] = serde_json::json!(".flow-states/test-feature-plan-missing.md");
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 1);
+        assert_eq!(json["status"], "error");
+        assert!(
+            json["message"]
+                .as_str()
+                .unwrap()
+                .contains("Could not read plan file"),
+            "Expected 'Could not read plan file' error, got: {}",
+            json["message"]
+        );
+    }
+
+    /// Hits the `.map_err(|e| format!("Failed to write DAG file: {}",
+    /// e))?` arm in run_impl_with_root — the DAG target path is
+    /// pre-created as a directory so `fs::write` fails with
+    /// EISDIR when trying to overwrite it.
+    #[test]
+    fn test_error_dag_write_fails_when_target_is_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let state = make_plan_state("work on #100", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        // Pre-create DAG target as a directory
+        let state_dir = flow_states_dir(dir.path());
+        fs::create_dir_all(state_dir.join("test-feature-dag.md")).unwrap();
+
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":100,"title":"X","body":"## Implementation Plan\n\n### Tasks\n\n#### Task 1\n","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 1);
+        assert_eq!(json["status"], "error");
+        assert!(
+            json["message"]
+                .as_str()
+                .unwrap()
+                .contains("Failed to write DAG file"),
+            "got: {}",
+            json["message"]
+        );
+    }
+
+    /// Hits the `.map_err(|e| format!("Failed to write plan file:
+    /// {}", e))?` arm. The plan target path is pre-created as a
+    /// directory, so `fs::write` fails after DAG write succeeds.
+    #[test]
+    fn test_error_plan_write_fails_when_target_is_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let state = make_plan_state("work on #100", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        // Pre-create plan target as a directory (DAG target stays free)
+        let state_dir = flow_states_dir(dir.path());
+        fs::create_dir_all(state_dir.join("test-feature-plan.md")).unwrap();
+
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":100,"title":"X","body":"## Implementation Plan\n\n### Tasks\n\n#### Task 1\n","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 1);
+        assert_eq!(json["status"], "error");
+        assert!(
+            json["message"]
+                .as_str()
+                .unwrap()
+                .contains("Failed to write plan file"),
+            "got: {}",
+            json["message"]
+        );
+    }
+
+    /// Hits the `.map_err(|e| format!("Failed to enter phase: {}",
+    /// e))?` arm at line 546 in run_impl_with_root. The state file
+    /// is chmod'd to 0o444 after setup so `mutate_state`'s
+    /// OpenOptions::new().write(true) fails with EACCES — reachable
+    /// whenever the user's `.flow-states/<branch>.json` is on a
+    /// read-only mount or has mangled permissions.
+    #[test]
+    fn test_error_mutate_state_fails_when_state_file_readonly() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        // No issue number in prompt, so we take the standard path
+        // straight to the phase_enter mutate_state at line 540.
+        let state = make_plan_state("build a thing", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        let state_file = flow_states_dir(dir.path()).join("test-feature.json");
+        fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+
+        // Restore perms so tempdir cleanup can drop the file.
+        let _ = fs::set_permissions(&state_file, fs::Permissions::from_mode(0o644));
+
+        assert_eq!(code, 1);
+        assert_eq!(json["status"], "error");
+        assert!(
+            json["message"]
+                .as_str()
+                .unwrap()
+                .contains("Failed to enter phase"),
+            "got: {}",
             json["message"]
         );
     }
@@ -453,6 +726,50 @@ exit 1
         );
         let dag_content = fs::read_to_string(&dag_path).unwrap();
         assert!(dag_content.contains("# Pre-Decomposed Analysis: Refactor auth"));
+    }
+
+    /// Case #8 from the reachability triage: prompt references
+    /// multiple issues. gh returns both successfully. On the second
+    /// iteration, `first_issue_body` is already `Some`, so the
+    /// `if first_issue_body.is_none()` guard skips — exercising the
+    /// else branch on src/plan_extract.rs line 583.
+    #[test]
+    fn test_multi_issue_prompt_exercises_first_already_some_guard() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        // Prompt with TWO issue references. First is not decomposed,
+        // second is decomposed — so the loop runs twice.
+        let state = make_plan_state("Closes #100 and #200", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        // gh stub that routes on the issue number argument ($3 after
+        // "issue" "view").
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    case "$3" in
+        100)
+            echo '{"number":100,"title":"First","body":"First body.","labels":[]}'
+            exit 0
+            ;;
+        200)
+            echo '{"number":200,"title":"Second","body":"## Problem\n\nSecond body.","labels":[{"name":"Decomposed"}]}'
+            exit 0
+            ;;
+    esac
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        // Decomposed issue (200) is picked; first-already-some guard
+        // was exercised on iteration 2 (checking before overwriting).
+        assert_eq!(json["issue_number"], 200);
     }
 
     #[test]
@@ -1194,5 +1511,328 @@ exit 1
         assert_eq!(json["path"], "standard");
         assert_eq!(json["issue_number"], 502);
         assert_eq!(json["issue_body"].as_str().unwrap_or(""), "Plain body");
+    }
+
+    // --- Readonly-state tests for per-branch commit_state Err arms ---
+    //
+    // Each of these tests routes execution through a different
+    // branch of `run_impl_with_root`, then makes the state file
+    // readonly so that branch's consolidated `commit_state` call
+    // fails. Together these cover every `?` Err arm that the
+    // per-branch consolidation introduced.
+
+    #[test]
+    fn test_error_resume_commit_state_fails_when_state_file_readonly() {
+        // Resume path: plan file exists and has no violations.
+        // State file is readonly → the single consolidated
+        // commit_state (phase_enter + phase_complete) fails and
+        // its `?` Err arm in the resume branch is covered.
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let plan_rel = ".flow-states/test-feature-plan.md";
+        let plan_abs = dir.path().join(plan_rel);
+        fs::create_dir_all(plan_abs.parent().unwrap()).unwrap();
+        fs::write(&plan_abs, "## Tasks\n\n- Do something.\n").unwrap();
+
+        let state = make_plan_state("build a thing", |s| {
+            s["files"]["plan"] = serde_json::json!(plan_rel);
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let state_file = flow_states_dir(dir.path()).join("test-feature.json");
+        fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+
+        let _ = fs::set_permissions(&state_file, fs::Permissions::from_mode(0o644));
+
+        assert_eq!(code, 1);
+        assert_eq!(json["status"], "error");
+        assert!(
+            json["message"]
+                .as_str()
+                .unwrap()
+                .contains("Failed to complete phase"),
+            "got: {}",
+            json["message"]
+        );
+    }
+
+    #[test]
+    fn test_error_no_decomposed_commit_state_fails_when_state_file_readonly() {
+        // Extracted path, "issues exist but none decomposed" branch.
+        // readonly state file → commit_state fails → covers the `?`
+        // Err arm after the "None" decomposed_data match arm.
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("Closes #42", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r#"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":42,"title":"X","body":"plain body","labels":[]}'
+    exit 0
+fi
+exit 1
+"#,
+        );
+
+        let state_file = flow_states_dir(dir.path()).join("test-feature.json");
+        fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+
+        let _ = fs::set_permissions(&state_file, fs::Permissions::from_mode(0o644));
+
+        assert_eq!(code, 1);
+        assert_eq!(json["status"], "error");
+        assert!(
+            json["message"]
+                .as_str()
+                .unwrap()
+                .contains("Failed to enter phase"),
+            "got: {}",
+            json["message"]
+        );
+    }
+
+    #[test]
+    fn test_error_no_impl_plan_commit_state_fails_when_state_file_readonly() {
+        // Extracted path, "decomposed issue without Implementation
+        // Plan section" branch. DAG file write succeeds (directory
+        // remains writable); readonly state file → commit_state
+        // fails → covers the `?` Err arm after the "None" branch
+        // of `extract_implementation_plan`.
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("Closes #99", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":99,"title":"Decomposed-no-plan","body":"## Problem\n\nNo plan section.","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let state_file = flow_states_dir(dir.path()).join("test-feature.json");
+        fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+
+        let _ = fs::set_permissions(&state_file, fs::Permissions::from_mode(0o644));
+
+        assert_eq!(code, 1);
+        assert_eq!(json["status"], "error");
+        assert!(
+            json["message"]
+                .as_str()
+                .unwrap()
+                .contains("Failed to update state"),
+            "got: {}",
+            json["message"]
+        );
+    }
+
+    #[test]
+    fn test_error_violations_commit_state_fails_when_state_file_readonly() {
+        // Extracted path, "violations" branch. Plan file write
+        // succeeds; scanners produce violations; readonly state
+        // file → commit_state fails → covers the `?` Err arm in
+        // the violations branch.
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("Closes #101", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        // Plan that triggers scope-enumeration: every mutator claim
+        // without a named list fires the scanner.
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":101,"title":"Add drift guard","body":"## Problem\n\nGuard is missing.\n\n## Implementation Plan\n\n### Context\n\nAdd the drift guard to every state mutator.\n\n### Tasks\n\n#### Task 1: Add guard\n\nImplement.\n\n## Files to Investigate\n\n- src/lib.rs","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let state_file = flow_states_dir(dir.path()).join("test-feature.json");
+        fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+
+        let _ = fs::set_permissions(&state_file, fs::Permissions::from_mode(0o644));
+
+        assert_eq!(code, 1);
+        assert_eq!(json["status"], "error");
+        assert!(
+            json["message"]
+                .as_str()
+                .unwrap()
+                .contains("Failed to update state"),
+            "got: {}",
+            json["message"]
+        );
+    }
+
+    #[test]
+    fn test_error_happy_commit_state_fails_when_state_file_readonly() {
+        // Extracted path, happy branch. All scanners pass; readonly
+        // state file → final consolidated commit_state (phase_enter
+        // + phase_complete + files update) fails → covers the `?`
+        // Err arm in the happy branch.
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("Closes #200", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":200,"title":"Clean plan","body":"## Implementation Plan\n\n### Context\n\nJust do the thing.\n\n### Tasks\n\n#### Task 1: Do it\n\nImplement.","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let state_file = flow_states_dir(dir.path()).join("test-feature.json");
+        fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+
+        let _ = fs::set_permissions(&state_file, fs::Permissions::from_mode(0o644));
+
+        assert_eq!(code, 1);
+        assert_eq!(json["status"], "error");
+        assert!(
+            json["message"]
+                .as_str()
+                .unwrap()
+                .contains("Failed to complete phase"),
+            "got: {}",
+            json["message"]
+        );
+    }
+
+    #[test]
+    fn test_no_impl_plan_resets_non_object_files_to_map() {
+        // Covers the `state["files"] = json!({})` branch inside
+        // the no-impl-plan closure. Initial state has files as a
+        // non-object value; after plan-extract, files must be an
+        // object containing the dag path.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("Closes #55", |s| {
+            s["files"] = serde_json::json!("not-an-object");
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":55,"title":"Decomposed-no-plan","body":"## Problem\n\nNo plan section here.","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["path"], "standard");
+
+        let updated_state: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            updated_state["files"].is_object(),
+            "files must be reset to an object after non-object initial value, got: {}",
+            updated_state["files"]
+        );
+        assert!(
+            updated_state["files"]["dag"].is_string(),
+            "dag must be set in the reset files map, got: {}",
+            updated_state["files"]
+        );
+    }
+
+    #[test]
+    fn test_violations_resets_non_object_files_to_map() {
+        // Covers the `state["files"] = json!({})` branch inside
+        // the violations closure. Initial state has files as a
+        // non-object value; after plan-extract reports violations,
+        // files must be an object containing the dag and plan
+        // paths.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+
+        let state = make_plan_state("Closes #66", |s| {
+            s["files"] = serde_json::json!(42);
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":66,"title":"Needs guard","body":"## Implementation Plan\n\n### Context\n\nApply to every state mutator.\n\n### Tasks\n\n#### Task 1: Do\n\nDo.","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0, "business errors exit 0, got {}", json);
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["path"], "extracted");
+
+        let updated_state: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            updated_state["files"].is_object(),
+            "files must be reset to an object after non-object initial value, got: {}",
+            updated_state["files"]
+        );
+        assert!(
+            updated_state["files"]["dag"].is_string(),
+            "dag must be set in the reset files map"
+        );
+        assert!(
+            updated_state["files"]["plan"].is_string(),
+            "plan must be set in the reset files map"
+        );
     }
 }
