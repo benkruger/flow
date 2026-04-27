@@ -417,11 +417,7 @@ fn test_set_tab_color_err_arm_via_setsid_subprocess() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
     fs::create_dir_all(&state_dir).unwrap();
-    fs::write(
-        state_dir.join("test.json"),
-        r#"{"repo": "owner/repo"}"#,
-    )
-    .unwrap();
+    fs::write(state_dir.join("test.json"), r#"{"repo": "owner/repo"}"#).unwrap();
 
     let test_exe = std::env::current_exe().expect("current_exe");
     let mut cmd = Command::new(&test_exe);

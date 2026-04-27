@@ -59,7 +59,8 @@
       "Read(//tmp/*.md)",
       "Read(~/.claude/projects/*/memory/*)",
       "Skill(decompose:decompose)",
-      "Agent(flow:ci-fixer)"
+      "Agent(flow:ci-fixer)",
+      "Bash(test -f *)"
     ],
     "additionalDirectories": [
       "/Users/ben/code/initech"
@@ -86,7 +87,31 @@
       "Bash(* ; *)",
       "Bash(* | *)",
       "Bash(cargo *)",
-      "Bash(rustc *)"
+      "Bash(rustc *)",
+      "Bash(go *)",
+      "Bash(bundle *)",
+      "Bash(rubocop *)",
+      "Bash(ruby *)",
+      "Bash(rails *)",
+      "Bash(xcodebuild *)",
+      "Bash(xcrun *)",
+      "Bash(swift *)",
+      "Bash(swiftlint *)",
+      "Bash(.venv/bin/*)",
+      "Bash(python3 -m pytest *)",
+      "Bash(pytest *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(yarn *)",
+      "Bash(pnpm *)",
+      "Bash(gradle *)",
+      "Bash(gradlew *)",
+      "Bash(./gradlew *)",
+      "Bash(mvn *)",
+      "Bash(./mvnw *)",
+      "Bash(mix *)",
+      "Bash(elixir *)",
+      "Bash(dotnet *)"
     ]
   },
   "attribution": {

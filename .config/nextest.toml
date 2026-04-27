@@ -22,7 +22,7 @@ leak-timeout = { period = "10s", result = "fail" }
 # The test's FAIL line carries its actual wall-clock duration,
 # which is the information the user needs to triage.
 #
-# Complementary to the full-suite wall-time gate (3 min) that
+# Complementary to the full-suite wall-time gate (6 min) that
 # `bin/test` enforces separately. No per-file gate — per-test
 # discipline at this granularity subsumes a file-level limit.
 #

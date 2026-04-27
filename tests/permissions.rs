@@ -1077,6 +1077,7 @@ fn settings_allow_list_ordered_by_category() {
         ("read", vec!["Read("]),
         ("skills", vec!["Skill("]),
         ("agents", vec!["Agent("]),
+        ("probe", vec!["Bash(test -f "]),
     ];
 
     let categorize = |entry: &str| -> Option<&str> {
