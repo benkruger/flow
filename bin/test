@@ -22,6 +22,17 @@ export RUSTFLAGS="${RUSTFLAGS:-} -D warnings"
 export LLVM_COV=/opt/homebrew/opt/llvm/bin/llvm-cov
 export LLVM_PROFDATA=/opt/homebrew/opt/llvm/bin/llvm-profdata
 
+# Cap nextest parallelism at floor(cores / 3) so up to 3 concurrent
+# FLOW worktrees on this machine don't oversubscribe CPU. With 10
+# cores: floor(10/3) = 3 threads/flow → 3 flows × 3 = 9 ≤ 10 cores.
+# Honor an explicit caller-supplied NEXTEST_TEST_THREADS.
+if [ -z "${NEXTEST_TEST_THREADS:-}" ]; then
+  cores="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 3)"
+  cap=$((cores / 3))
+  if [ "$cap" -lt 1 ]; then cap=1; fi
+  export NEXTEST_TEST_THREADS="$cap"
+fi
+
 # Full-suite wall time gate. Per-test gate lives in
 # .config/nextest.toml as `slow-timeout` with `terminate-after=1`
 # (currently 2s, temporarily relaxed from the 1s target while the
