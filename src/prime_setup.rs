@@ -12,11 +12,12 @@
 //!   Success: `{"status": "ok", "settings_merged": true, ...}`
 //!   Failure: `{"status": "error", "message": "..."}`
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use clap::Args as ClapArgs;
 use regex::Regex;
@@ -26,6 +27,34 @@ use crate::prime_check::{
     compute_config_hash, compute_setup_hash, EXCLUDE_ENTRIES, FLOW_DENY, UNIVERSAL_ALLOW,
 };
 use crate::utils::{permission_to_regex, plugin_root, read_version};
+
+/// Structural regex matching `<Type>(<inner>)`. Cached because `is_subsumed`
+/// invokes it once per candidate plus once per same-type entry in the
+/// existing set; with the FLOW universal allow list at ~80 Bash entries
+/// the merge inside `merge_settings` was performing thousands of fresh
+/// compiles per process invocation.
+fn outer_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"^(\w+)\((.+)\)$").expect("outer regex must compile"))
+}
+
+/// Process-level cache of compiled subsumption regexes for every entry in
+/// `UNIVERSAL_ALLOW`. The merge loop in `merge_settings` does an O(N²) walk
+/// where each pair of same-type entries needs a matching regex; without
+/// this cache the dynamic compile in `permission_to_regex` ran ~6400 times
+/// per `prime-setup` invocation, pushing the instrumented test binary past
+/// nextest's slow-timeout. `is_subsumed` falls back to a per-call compile
+/// for entries that originate from the user's existing `settings.json`
+/// rather than from the FLOW universal list.
+fn allow_regex_map() -> &'static HashMap<&'static str, Regex> {
+    static MAP: OnceLock<HashMap<&'static str, Regex>> = OnceLock::new();
+    MAP.get_or_init(|| {
+        UNIVERSAL_ALLOW
+            .iter()
+            .filter_map(|s| permission_to_regex(s).map(|r| (*s, r)))
+            .collect()
+    })
+}
 
 /// Pre-commit hook script content — installed at `.git/hooks/pre-commit`.
 /// Blocks direct `git commit` when a FLOW feature is active on the
@@ -83,7 +112,7 @@ exec "$plugin_root/bin/flow" "$@"
 /// `Agent(flow:ci-fixer)`). Only checks same-type entries (e.g. Agent vs
 /// Agent, Read vs Read); never matches across types (Agent vs Bash).
 pub fn is_subsumed(candidate: &str, existing_set: &HashSet<String>) -> bool {
-    let outer_re = Regex::new(r"^(\w+)\((.+)\)$").unwrap();
+    let outer_re = outer_regex();
     let cand_caps = match outer_re.captures(candidate) {
         Some(c) => c,
         None => return false,
@@ -92,6 +121,8 @@ pub fn is_subsumed(candidate: &str, existing_set: &HashSet<String>) -> bool {
     let cand_inner = &cand_caps[2];
     // Replace wildcards with literal text so regex tests structural coverage
     let test_string = cand_inner.replace('*', "XXXPLACEHOLDERXXX");
+
+    let allow_map = allow_regex_map();
 
     for existing in existing_set {
         if existing == candidate {
@@ -104,13 +135,20 @@ pub fn is_subsumed(candidate: &str, existing_set: &HashSet<String>) -> bool {
         if &ex_caps[1] != cand_type {
             continue;
         }
-        // `permission_to_regex` uses the same outer shape as the
-        // `outer_re` captures above — any entry that captures here
-        // is guaranteed to return Some from `permission_to_regex`.
-        // The `.expect` does not create an instrumented branch per
+        // Hot path: reuse the precompiled regex when `existing` is a
+        // FLOW universal allow entry — that covers the entire inner loop
+        // of `merge_settings`. Cold path: compile per call for entries
+        // sourced from the user's existing `settings.json`. The `.expect`
+        // on the cold path mirrors the original contract: any entry that
+        // captures with `outer_re` above is guaranteed to return `Some`
+        // from `permission_to_regex` (same outer shape), so `.expect`
+        // does not create an instrumented branch per
         // `.claude/rules/testability-means-simplicity.md`.
-        let regex = permission_to_regex(existing)
-            .expect("outer_re match implies permission_to_regex succeeds");
+        let regex = match allow_map.get(existing.as_str()) {
+            Some(r) => r.clone(),
+            None => permission_to_regex(existing)
+                .expect("outer_re match implies permission_to_regex succeeds"),
+        };
         if regex.is_match(&test_string) {
             return true;
         }
