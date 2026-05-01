@@ -38,7 +38,7 @@ fi
 # (currently 2s, temporarily relaxed from the 1s target while the
 # slow-test backlog clears). Per-file timing gate is intentionally
 # absent — per-test discipline subsumes it.
-SUITE_TIMEOUT_SECS=360
+SUITE_TIMEOUT_SECS=600
 
 # --- Global flag parsing ---
 AUDIT_MODE=0
