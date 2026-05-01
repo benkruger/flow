@@ -94,8 +94,8 @@ pub(crate) fn create_worktree(
 /// `base_branch` — the integration branch to target as the PR's base.
 /// Read from the state file by [`run_impl_with_paths`]; written there
 /// at flow-start by [`crate::commands::init_state`] via
-/// [`crate::git::default_branch_in`]. Falls back to `"main"` upstream
-/// when detection fails.
+/// [`crate::git::current_branch_in`] so it equals `git branch --show-current`
+/// at the moment `/flow:flow-start` was invoked.
 pub(crate) fn initial_commit_push_pr(
     wt_path: &std::path::Path,
     branch: &str,

@@ -88,6 +88,83 @@ fn happy_path_returns_ok_json() {
     assert_eq!(data["state_file"], ".flow-states/test-feature.json");
 }
 
+// --- base_branch detection ---
+
+#[test]
+fn base_branch_matches_current_branch_at_invocation() {
+    // Regression: init-state must record the user's actual current branch
+    // as base_branch, not the value of `git symbolic-ref refs/remotes/origin/HEAD`.
+    // On a clone whose origin/HEAD points at main but whose team works from
+    // `staging`, the previous detection wrote base_branch="main" and Code
+    // Review's `git diff origin/<base>...HEAD` then included the entire
+    // main..staging history. base_branch must equal `git branch --show-current`.
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "rails", None);
+
+    // Create a `staging` branch and switch to it. setup_project's `git init`
+    // + empty commit leaves us on whatever init.defaultBranch is set to;
+    // checking out a fresh branch makes the test deterministic regardless
+    // of host git config.
+    Command::new("git")
+        .args(["checkout", "-b", "staging"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    let output = run_init_state(dir.path(), &["staging branch test"]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let state = read_state_file(dir.path(), "staging-branch-test");
+    assert_eq!(
+        state["base_branch"], "staging",
+        "base_branch must equal `git branch --show-current` (got: {})",
+        state["base_branch"]
+    );
+}
+
+#[test]
+fn detect_base_branch_fails_when_not_on_a_branch() {
+    // When the cwd is not a git repository (or HEAD is detached),
+    // `current_branch_in` returns None and init-state must refuse to
+    // proceed with a structured error rather than silently picking the
+    // wrong trunk. This guards the new "no fallback" detection contract.
+    let dir = tempfile::tempdir().unwrap();
+    // Write .flow.json so we get past the read_flow_json gate, but do
+    // NOT `git init` — current_branch_in will fail and trigger the new
+    // error path.
+    fs::write(
+        dir.path().join(".flow.json"),
+        serde_json::to_string(&json!({"flow_version": "1.1.0"})).unwrap(),
+    )
+    .unwrap();
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let phases_src = std::path::PathBuf::from(manifest_dir).join("flow-phases.json");
+    fs::copy(&phases_src, dir.path().join("flow-phases.json")).unwrap();
+
+    let output = run_init_state(dir.path(), &["non-git test"]);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "init-state must refuse when current branch cannot be determined"
+    );
+    let data = parse_stdout(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "detect_base_branch");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("git branch"),
+        "error must mention the missing branch source: {}",
+        data["message"]
+    );
+}
+
 // --- State file fields ---
 
 #[test]
@@ -954,6 +1031,7 @@ fn lib_create_state_writes_valid_json() {
     create_state(
         dir.path(),
         "test-feature",
+        "main",
         None,
         "test prompt",
         None,
@@ -981,6 +1059,7 @@ fn lib_create_state_session_tty_serializes_option_string() {
     create_state(
         dir.path(),
         "tty-present",
+        "main",
         None,
         "prompt",
         None,
@@ -1005,7 +1084,18 @@ fn lib_create_state_session_tty_serializes_option_string() {
 #[test]
 fn lib_create_state_null_pr_fields() {
     let dir = tempfile::tempdir().unwrap();
-    create_state(dir.path(), "pr-null-test", None, "", None, None, None, "").unwrap();
+    create_state(
+        dir.path(),
+        "pr-null-test",
+        "main",
+        None,
+        "",
+        None,
+        None,
+        None,
+        "",
+    )
+    .unwrap();
     let state = read_state_direct(dir.path(), "pr-null-test");
     assert!(state["pr_number"].is_null());
     assert!(state["pr_url"].is_null());
@@ -1015,7 +1105,18 @@ fn lib_create_state_null_pr_fields() {
 #[test]
 fn lib_create_state_has_six_phases() {
     let dir = tempfile::tempdir().unwrap();
-    create_state(dir.path(), "six-phases", None, "", None, None, None, "").unwrap();
+    create_state(
+        dir.path(),
+        "six-phases",
+        "main",
+        None,
+        "",
+        None,
+        None,
+        None,
+        "",
+    )
+    .unwrap();
     let state = read_state_direct(dir.path(), "six-phases");
     let phases = state["phases"].as_object().unwrap();
     assert_eq!(phases.len(), 6);
@@ -1030,7 +1131,18 @@ fn lib_create_state_has_six_phases() {
 #[test]
 fn lib_create_state_first_phase_in_progress() {
     let dir = tempfile::tempdir().unwrap();
-    create_state(dir.path(), "phase-status", None, "", None, None, None, "").unwrap();
+    create_state(
+        dir.path(),
+        "phase-status",
+        "main",
+        None,
+        "",
+        None,
+        None,
+        None,
+        "",
+    )
+    .unwrap();
     let state = read_state_direct(dir.path(), "phase-status");
     let start = &state["phases"]["flow-start"];
     assert_eq!(start["status"], "in_progress");
@@ -1042,7 +1154,18 @@ fn lib_create_state_first_phase_in_progress() {
 #[test]
 fn lib_create_state_other_phases_pending() {
     let dir = tempfile::tempdir().unwrap();
-    create_state(dir.path(), "pending-test", None, "", None, None, None, "").unwrap();
+    create_state(
+        dir.path(),
+        "pending-test",
+        "main",
+        None,
+        "",
+        None,
+        None,
+        None,
+        "",
+    )
+    .unwrap();
     let state = read_state_direct(dir.path(), "pending-test");
     for key in [
         "flow-plan",
@@ -1083,6 +1206,7 @@ fn lib_create_state_skills_included() {
     create_state(
         dir.path(),
         "skills-test",
+        "main",
         Some(&skills),
         "",
         None,
@@ -1098,7 +1222,18 @@ fn lib_create_state_skills_included() {
 #[test]
 fn lib_create_state_skills_omitted_when_none() {
     let dir = tempfile::tempdir().unwrap();
-    create_state(dir.path(), "no-skills", None, "", None, None, None, "").unwrap();
+    create_state(
+        dir.path(),
+        "no-skills",
+        "main",
+        None,
+        "",
+        None,
+        None,
+        None,
+        "",
+    )
+    .unwrap();
     let state = read_state_direct(dir.path(), "no-skills");
     assert!(state.get("skills").is_none());
 }
@@ -1110,6 +1245,7 @@ fn lib_create_state_auto_skills_values() {
     create_state(
         dir.path(),
         "auto-test",
+        "main",
         Some(&skills),
         "",
         None,
@@ -1132,6 +1268,7 @@ fn lib_create_state_prompt_stored() {
     create_state(
         dir.path(),
         "prompt-test",
+        "main",
         None,
         "fix issue #42 with special chars: && | ;",
         None,
@@ -1150,6 +1287,7 @@ fn lib_create_state_start_step_fields() {
     create_state(
         dir.path(),
         "step-test",
+        "main",
         None,
         "",
         None,
@@ -1166,7 +1304,18 @@ fn lib_create_state_start_step_fields() {
 #[test]
 fn lib_create_state_start_step_absent_when_none() {
     let dir = tempfile::tempdir().unwrap();
-    create_state(dir.path(), "no-step", None, "", None, None, None, "").unwrap();
+    create_state(
+        dir.path(),
+        "no-step",
+        "main",
+        None,
+        "",
+        None,
+        None,
+        None,
+        "",
+    )
+    .unwrap();
     let state = read_state_direct(dir.path(), "no-step");
     assert!(state.get("start_step").is_none());
     assert!(state.get("start_steps_total").is_none());
@@ -1175,7 +1324,18 @@ fn lib_create_state_start_step_absent_when_none() {
 #[test]
 fn lib_create_state_files_block() {
     let dir = tempfile::tempdir().unwrap();
-    create_state(dir.path(), "files-test", None, "", None, None, None, "").unwrap();
+    create_state(
+        dir.path(),
+        "files-test",
+        "main",
+        None,
+        "",
+        None,
+        None,
+        None,
+        "",
+    )
+    .unwrap();
     let state = read_state_direct(dir.path(), "files-test");
     let files = &state["files"];
     assert!(files["plan"].is_null());
@@ -1190,6 +1350,7 @@ fn lib_create_state_required_fields() {
     create_state(
         dir.path(),
         "fields-test",
+        "main",
         None,
         "my prompt",
         None,
@@ -1217,6 +1378,7 @@ fn lib_create_state_key_order_matches_python() {
     create_state(
         dir.path(),
         "order-test",
+        "main",
         Some(&skills),
         "test",
         Some("full"),
@@ -1261,7 +1423,18 @@ fn lib_create_state_key_order_matches_python() {
 fn lib_create_state_creates_flow_states_dir() {
     let dir = tempfile::tempdir().unwrap();
     assert!(!dir.path().join(".flow-states").exists());
-    create_state(dir.path(), "dir-test", None, "", None, None, None, "").unwrap();
+    create_state(
+        dir.path(),
+        "dir-test",
+        "main",
+        None,
+        "",
+        None,
+        None,
+        None,
+        "",
+    )
+    .unwrap();
     assert!(dir.path().join(".flow-states").is_dir());
     assert!(dir.path().join(".flow-states/dir-test.json").exists());
 }
@@ -1272,6 +1445,7 @@ fn lib_create_state_commit_format_propagation() {
     create_state(
         dir.path(),
         "cf-test",
+        "main",
         None,
         "",
         Some("title-only"),
@@ -1287,7 +1461,18 @@ fn lib_create_state_commit_format_propagation() {
 #[test]
 fn lib_create_state_commit_format_absent_when_none() {
     let dir = tempfile::tempdir().unwrap();
-    create_state(dir.path(), "cf-none", None, "", None, None, None, "").unwrap();
+    create_state(
+        dir.path(),
+        "cf-none",
+        "main",
+        None,
+        "",
+        None,
+        None,
+        None,
+        "",
+    )
+    .unwrap();
     let state = read_state_direct(dir.path(), "cf-none");
     assert!(state.get("commit_format").is_none());
 }
@@ -1305,7 +1490,7 @@ fn lib_create_state_write_failure_returns_error() {
     let branch = "write-err";
     fs::create_dir_all(states.join(format!("{}.json", branch))).unwrap();
 
-    let err = create_state(dir.path(), branch, None, "", None, None, None, "").unwrap_err();
+    let err = create_state(dir.path(), branch, "main", None, "", None, None, None, "").unwrap_err();
     assert!(err.contains("Cannot write state file"), "got: {}", err);
 }
 
@@ -1317,7 +1502,18 @@ fn lib_create_state_dir_failure_returns_error() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join(".flow-states"), "not a directory").unwrap();
 
-    let err = create_state(dir.path(), "dir-err", None, "", None, None, None, "").unwrap_err();
+    let err = create_state(
+        dir.path(),
+        "dir-err",
+        "main",
+        None,
+        "",
+        None,
+        None,
+        None,
+        "",
+    )
+    .unwrap_err();
     assert!(err.contains("Cannot create .flow-states"), "got: {}", err);
 }
 
