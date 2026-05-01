@@ -1076,12 +1076,7 @@ fn walker_unreadable_subdir_silently_skipped() {
     // Sibling readable subdir with a .venv: walker continues to find it.
     fs::create_dir_all(repo.join("good").join(".venv").join("bin")).unwrap();
 
-    let output = run_start_workspace(
-        &repo,
-        "Unreadable Subdir",
-        "unreadable-subdir",
-        &stub_dir,
-    );
+    let output = run_start_workspace(&repo, "Unreadable Subdir", "unreadable-subdir", &stub_dir);
 
     fs::set_permissions(&blocked, blocked_orig).unwrap();
 
@@ -1196,11 +1191,7 @@ fn walker_accepts_symlink_to_dir_venv() {
     // A real venv directory at a side location; cortex/.venv -> it.
     fs::create_dir_all(repo.join("shared-venv").join("bin")).unwrap();
     fs::create_dir_all(repo.join("cortex")).unwrap();
-    symlink(
-        repo.join("shared-venv"),
-        repo.join("cortex").join(".venv"),
-    )
-    .unwrap();
+    symlink(repo.join("shared-venv"), repo.join("cortex").join(".venv")).unwrap();
 
     let output = run_start_workspace(&repo, "Symlink Dir", "symlink-dir-venv", &stub_dir);
     assert_eq!(
@@ -1321,12 +1312,7 @@ fn walker_does_not_follow_dir_symlinks() {
     // Self-loop: walker MUST NOT recurse into it forever.
     symlink(&repo, repo.join("loop")).unwrap();
 
-    let output = run_start_workspace(
-        &repo,
-        "No Follow Symlink",
-        "no-follow-symlink",
-        &stub_dir,
-    );
+    let output = run_start_workspace(&repo, "No Follow Symlink", "no-follow-symlink", &stub_dir);
     assert_eq!(
         output.status.code(),
         Some(0),
@@ -1530,11 +1516,7 @@ fn link_venvs_multi_subdir_full_harvest_shape() {
             app
         );
     }
-    assert_eq!(
-        count_venv_symlinks(&wt),
-        3,
-        "exactly three subdir symlinks"
-    );
+    assert_eq!(count_venv_symlinks(&wt), 3, "exactly three subdir symlinks");
 }
 
 /// L5: A pre-existing target in the worktree is not overwritten.
@@ -1560,10 +1542,7 @@ fn link_venvs_skips_pre_existing_target() {
     // branch worktree starts with this committed content.
     fs::create_dir_all(repo.join("cortex").join(".venv").join("bin")).unwrap();
     fs::write(
-        repo.join("cortex")
-            .join(".venv")
-            .join("bin")
-            .join("python"),
+        repo.join("cortex").join(".venv").join("bin").join("python"),
         "fake",
     )
     .unwrap();
@@ -1590,7 +1569,10 @@ fn link_venvs_skips_pre_existing_target() {
     let link = wt.join("cortex").join(".venv");
     // The path exists as the committed real directory, NOT as a
     // symlink — proving link_venvs hit the skip-existing branch.
-    assert!(link.is_dir(), "<wt>/cortex/.venv must exist (from checkout)");
+    assert!(
+        link.is_dir(),
+        "<wt>/cortex/.venv must exist (from checkout)"
+    );
     assert!(
         !link.is_symlink(),
         "<wt>/cortex/.venv must NOT be a symlink — link_venvs preserved the existing real dir"
@@ -1614,13 +1596,7 @@ fn link_venvs_packages_api_depth_2_link_correct() {
     create_state_file(&repo, "depth-two");
     create_lock_entry(&repo, "depth-two");
 
-    fs::create_dir_all(
-        repo.join("packages")
-            .join("api")
-            .join(".venv")
-            .join("bin"),
-    )
-    .unwrap();
+    fs::create_dir_all(repo.join("packages").join("api").join(".venv").join("bin")).unwrap();
 
     let output = run_start_workspace(&repo, "Depth Two", "depth-two", &stub_dir);
     assert_eq!(

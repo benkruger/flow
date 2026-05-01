@@ -116,6 +116,12 @@ fn find_venv_parents(root: &Path) -> Vec<PathBuf> {
 /// `.worktrees/<branch>/<parent>/` back to `<root>/<parent>/.venv` —
 /// `depth + 2` components: two for `.worktrees/<branch>/`, one per
 /// segment of `parent`.
+///
+/// Examples by depth:
+///
+/// - depth 0 (`parent_relpath` empty, root-level `.venv`): `../../.venv`
+/// - depth 1 (`cortex`): `../../../cortex/.venv`
+/// - depth 2 (`packages/api`): `../../../../packages/api/.venv`
 fn relative_venv_target(parent_relpath: &Path) -> PathBuf {
     let depth = parent_relpath.components().count();
     let mut up = PathBuf::new();
