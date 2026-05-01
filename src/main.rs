@@ -591,8 +591,12 @@ fn main() {
             flow_rs::dispatch::dispatch_text(&msg, code);
         }
         Some(Commands::PrimeCheck(_args)) => {
-            let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
-            let (value, code) = prime_check::run_impl_main(&cwd, flow_rs::utils::plugin_root());
+            // `.flow.json` lives at the project root, not at the user's
+            // current directory. Resolve project_root via git so that
+            // `bin/flow prime-check` works from a mono-repo subdirectory.
+            let project_root = flow_rs::git::project_root();
+            let (value, code) =
+                prime_check::run_impl_main(&project_root, flow_rs::utils::plugin_root());
             flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::PrimeSetup(args)) => {

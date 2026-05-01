@@ -156,7 +156,13 @@ fn run_impl(args: &Args, root: &Path, cwd: &Path) -> Result<Value, String> {
     // Step 2: Prime check. Err surfaces infrastructure failures
     // (malformed plugin.json, unreadable plugin.json) as a business
     // error released under the start lock.
-    let prime_result = prime_check::run_impl(cwd, &plug_root)
+    //
+    // Pass `root` (the project root containing `.flow.json`), not
+    // `cwd` — for a mono-repo flow started from inside `synapse/` or
+    // similar app subdirectory, cwd has no `.flow.json` and the prime
+    // check would otherwise report "FLOW not initialized" even though
+    // the project IS primed at the repo root.
+    let prime_result = prime_check::run_impl(root, &plug_root)
         .unwrap_or_else(|e| json!({"status": "error", "message": e}));
 
     let _ = append_log(

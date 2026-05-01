@@ -139,6 +139,70 @@ fn test_prime_check_failed() {
     );
 }
 
+/// Mono-repo subdirectory flow: user invokes /flow:flow-start from
+/// inside an app subdirectory of a primed monorepo (e.g. `synapse/`
+/// inside `full-harvest/`). The repo is primed at the root — there is
+/// no `.flow.json` inside the subdir, by design (each app has its own
+/// `bin/*` but the project's prime artifacts live at the root).
+///
+/// `prime_check::run_impl` must read `.flow.json` from the project
+/// root (`full-harvest/.flow.json`), not from the user's cwd
+/// (`full-harvest/synapse/.flow.json` — which doesn't exist). Without
+/// this, start-init returns `"FLOW not initialized"` and the entire
+/// mono-repo subdir flow is unusable.
+#[test]
+fn test_prime_check_passes_when_invoked_from_subdir() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+
+    // Mono-repo app subdirectory — no `.flow.json` here, only at the
+    // repo root. Mirrors the full-harvest layout where apps live at
+    // `synapse/`, `cortex/`, `supplier_pulse/` and prime targets the
+    // root.
+    let subdir = repo.join("synapse");
+    fs::create_dir_all(&subdir).unwrap();
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let path_env = format!(
+        "{}:{}",
+        stub_dir.to_string_lossy(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["start-init", "subdir-prime-feature"])
+        .current_dir(&subdir)
+        .env("PATH", &path_env)
+        .env("CLAUDE_PLUGIN_ROOT", &manifest_dir)
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .output()
+        .unwrap();
+
+    let data = parse_output(&output);
+    // `prime_check::run_impl` reads `.flow.json` from the project root,
+    // so a flow started inside `synapse/` (where no `.flow.json` exists)
+    // still finds the project's marker at `<root>/.flow.json` and the
+    // start proceeds. A regression in prime_check that re-routes the
+    // read back to cwd would surface here as `status: error` with
+    // message "FLOW not initialized."
+    assert_eq!(
+        data["status"], "ready",
+        "subdir flow must pass prime-check by reading .flow.json from \
+         project_root, not from the subdir cwd. Got: {}",
+        data
+    );
+    // relative_cwd captured correctly so downstream commands route
+    // back to the subdir after worktree creation.
+    let state_path = flow_states_dir(&repo).join(format!(
+        "{}.json",
+        data["branch"].as_str().expect("branch field")
+    ));
+    let state: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    assert_eq!(state["relative_cwd"], "synapse");
+}
+
 #[test]
 fn test_init_state_error() {
     let dir = tempfile::tempdir().unwrap();

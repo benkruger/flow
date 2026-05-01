@@ -323,16 +323,26 @@ fn run_impl_with_paths(args: &Args, root: &Path, cwd: &Path) -> Value {
     update_step(&state_path, 4);
 
     let wt_relative = format!(".worktrees/{}", branch);
-    // worktree_cwd is the directory the agent should cd into. For
-    // root-level flows it equals the worktree path; for flows started
-    // inside a subdirectory of a mono-repo (relative_cwd non-empty),
+    // worktree_cwd is the absolute directory the agent should cd into.
+    // For root-level flows it points at the worktree itself; for flows
+    // started inside a mono-repo subdirectory (relative_cwd non-empty),
     // it includes that suffix so the agent lands in the same subdir
     // it started from.
-    let worktree_cwd = if relative_cwd.is_empty() {
-        wt_relative.clone()
+    //
+    // Absolute, NOT relative — the skill's Step 3 substitutes this
+    // value directly into a `cd <worktree_cwd>` command, and the bash
+    // tool's cwd at that moment is whatever the user invoked the flow
+    // from (project root for a flat repo, or `synapse/`/`cortex/`/etc.
+    // for a mono-repo subdir flow). A relative path resolves against
+    // bash's current cwd and breaks for any cwd != project_root; an
+    // absolute path works from any cwd.
+    let wt_abs = root.join(".worktrees").join(branch);
+    let worktree_cwd_path = if relative_cwd.is_empty() {
+        wt_abs
     } else {
-        format!("{}/{}", wt_relative, relative_cwd)
+        wt_abs.join(&relative_cwd)
     };
+    let worktree_cwd = worktree_cwd_path.to_string_lossy().into_owned();
     json!({
         "status": "ok",
         "worktree": wt_relative,

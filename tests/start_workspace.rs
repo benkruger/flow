@@ -298,9 +298,9 @@ fn test_state_backfill_preserves_existing_fields() {
 
 #[test]
 fn test_worktree_cwd_root_when_relative_cwd_empty() {
-    // When relative_cwd is empty (root-level flow), worktree_cwd in the
-    // response equals worktree itself (no subdir suffix). The skill cds
-    // into this path; an empty relative_cwd means cd to .worktrees/<branch>.
+    // When relative_cwd is empty (root-level flow), worktree_cwd is the
+    // absolute path to the worktree directory. The skill cds into this
+    // path; absolute means it works regardless of bash's current cwd.
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -318,7 +318,23 @@ fn test_worktree_cwd_root_when_relative_cwd_empty() {
     let data = parse_output(&output);
     assert_eq!(data["status"], "ok");
     assert_eq!(data["worktree"], ".worktrees/root-flow");
-    assert_eq!(data["worktree_cwd"], ".worktrees/root-flow");
+    // Canonicalize the repo path: on macOS `tempfile::tempdir()` returns
+    // a `/var/folders/...` symlink path; production resolves project_root
+    // via `git worktree list --porcelain` which emits the canonical
+    // `/private/var/...` form. Without canonicalizing in the test, the
+    // expected and actual strings differ byte-wise even though they
+    // refer to the same directory. See
+    // .claude/rules/testing-gotchas.md "macOS Subprocess Path
+    // Canonicalization."
+    let expected_cwd = repo
+        .canonicalize()
+        .unwrap()
+        .join(".worktrees")
+        .join("root-flow");
+    assert_eq!(
+        data["worktree_cwd"],
+        expected_cwd.to_string_lossy().as_ref()
+    );
     assert_eq!(data["relative_cwd"], "");
 }
 
@@ -370,7 +386,26 @@ fn test_worktree_cwd_includes_relative_cwd_suffix() {
     let data = parse_output(&output);
     assert_eq!(data["status"], "ok");
     assert_eq!(data["worktree"], ".worktrees/subdir-flow");
-    assert_eq!(data["worktree_cwd"], ".worktrees/subdir-flow/api");
+    // worktree_cwd is absolute and includes the relative_cwd suffix so
+    // the skill's `cd <worktree_cwd>` lands the agent in the same subdir
+    // they invoked /flow:flow-start from, regardless of where the bash
+    // tool's cwd happens to be at the moment of the cd.
+    //
+    // Canonicalize the repo path: on macOS `tempfile::tempdir()` returns
+    // a `/var/folders/...` symlink path; production resolves project_root
+    // via `git worktree list --porcelain` which emits the canonical
+    // `/private/var/...` form. See .claude/rules/testing-gotchas.md
+    // "macOS Subprocess Path Canonicalization."
+    let expected_cwd = repo
+        .canonicalize()
+        .unwrap()
+        .join(".worktrees")
+        .join("subdir-flow")
+        .join("api");
+    assert_eq!(
+        data["worktree_cwd"],
+        expected_cwd.to_string_lossy().as_ref()
+    );
     assert_eq!(data["relative_cwd"], "api");
 }
 

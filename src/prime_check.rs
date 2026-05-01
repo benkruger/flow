@@ -368,12 +368,17 @@ fn hex_prefix(bytes: &[u8], n: usize) -> String {
     s
 }
 
-/// Read and parse `.flow.json` from the given directory. Returns
+/// Read and parse `.flow.json` from the project root. Returns
 /// `None` on any I/O or parse error so the caller decides whether
 /// the missing or malformed file is fatal — most callers treat it
 /// as "FLOW not initialized in this project".
-fn read_flow_json(cwd: &Path) -> Option<Value> {
-    let content = fs::read_to_string(cwd.join(".flow.json")).ok()?;
+///
+/// `.flow.json` lives at `<project_root>/.flow.json` regardless of
+/// the user's current working directory. Mono-repo subdirectory
+/// flows still find the project's marker because callers pass
+/// `project_root` here, not `cwd`.
+fn read_flow_json(project_root: &Path) -> Option<Value> {
+    let content = fs::read_to_string(project_root.join(".flow.json")).ok()?;
     serde_json::from_str(&content).ok()
 }
 
@@ -395,8 +400,14 @@ pub struct Args {}
 /// of whether the prime check passed. `Err` is reserved for
 /// infrastructure failures (plugin root not found, plugin.json
 /// unreadable) that should exit 1.
-pub fn run_impl(cwd: &Path, plugin_root: &Path) -> Result<Value, String> {
-    let init_data = match read_flow_json(cwd) {
+///
+/// `project_root` is the directory containing `.flow.json` — typically
+/// the git repo root. Callers must resolve this via `git::project_root()`
+/// (or equivalent) before invoking, so mono-repo subdirectory flows
+/// (cwd inside `synapse/`, `cortex/`, etc.) find the project's
+/// `.flow.json` instead of failing because the current dir lacks one.
+pub fn run_impl(project_root: &Path, plugin_root: &Path) -> Result<Value, String> {
+    let init_data = match read_flow_json(project_root) {
         Some(v) => v,
         None => {
             return Ok(json!({
@@ -447,7 +458,7 @@ pub fn run_impl(cwd: &Path, plugin_root: &Path) -> Result<Value, String> {
             // a serialization error would be a programmer bug.
             let serialized =
                 serde_json::to_string(&updated).expect("in-memory Value always serializes");
-            fs::write(cwd.join(".flow.json"), format!("{}\n", serialized))
+            fs::write(project_root.join(".flow.json"), format!("{}\n", serialized))
                 .map_err(|e| format!("Could not write .flow.json: {}", e))?;
 
             return Ok(json!({
@@ -473,10 +484,14 @@ pub fn run_impl(cwd: &Path, plugin_root: &Path) -> Result<Value, String> {
     }))
 }
 
-/// Main-arm dispatch: accepts a resolved `cwd` and `plugin_root`
-/// Option directly. Returns `(value, exit_code)` for the caller to
-/// print and exit.
-pub fn run_impl_main(cwd: &Path, plugin_root: Option<PathBuf>) -> (Value, i32) {
+/// Main-arm dispatch: accepts a resolved `project_root` and
+/// `plugin_root` Option directly. Returns `(value, exit_code)` for
+/// the caller to print and exit.
+///
+/// Callers must pass the project root (where `.flow.json` lives), not
+/// the user's current working directory. From a mono-repo subdirectory,
+/// the two are different and only the project root finds the marker.
+pub fn run_impl_main(project_root: &Path, plugin_root: Option<PathBuf>) -> (Value, i32) {
     let root = match plugin_root {
         Some(p) => p,
         None => {
@@ -489,7 +504,7 @@ pub fn run_impl_main(cwd: &Path, plugin_root: Option<PathBuf>) -> (Value, i32) {
             );
         }
     };
-    match run_impl(cwd, &root) {
+    match run_impl(project_root, &root) {
         Ok(value) => (value, 0),
         Err(msg) => (
             json!({
