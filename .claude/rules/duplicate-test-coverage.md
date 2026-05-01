@@ -162,6 +162,40 @@ than a new-test proposal, add the
 `<!-- duplicate-test-coverage: not-a-new-test -->` opt-out using
 the walk-back rule above.
 
+## Pre-Audit at Plan Authoring Time
+
+The mechanical scanner catches duplicates after the plan is
+already written, but a plan author writing test names by hand
+should pre-audit before naming the test — particularly when the
+plan is filed via `/flow:flow-create-issue` from an issue body
+the author drafted under one mental model of the codebase.
+
+When a plan task proposes writing tests in a file path that
+already exists, the Exploration section MUST list the existing
+test functions in that file before the Tasks section names new
+tests. The Plan author cross-checks every proposed test name
+against the enumerated existing list and either renames or
+deletes any collision before submitting the plan.
+
+The cheapest signal: in Exploration, when a "Files in scope"
+entry points at a `tests/` path, the author runs Glob+Read on
+that path and notes the test count and the section markers.
+A plan that lists "Files: tests/foo.rs" without acknowledging
+that foo.rs already contains 50+ tests is missing this audit
+step — the gate will catch the duplicates at phase-transition
+time but at the cost of a full plan-rewrite cycle.
+
+The pattern recurs most often with pre-decomposed issues
+(`/flow:flow-create-issue`) because the issue body is drafted
+ahead of plan-time codebase exploration. The
+`flow-create-issue` skill cannot afford to enumerate every test
+file in the repo at issue-filing time, so the discovery
+responsibility shifts to the Plan phase. Plan authors fed a
+pre-decomposed issue with a `## Implementation Plan` section
+must NOT trust the test names in the issue verbatim — they must
+re-validate against the current state of the test corpus before
+finalizing the plan.
+
 ## Vocabulary Extensibility
 
 The length-filter threshold (≥ 10 characters) and the two-item

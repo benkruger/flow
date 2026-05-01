@@ -60,7 +60,9 @@
       "Read(~/.claude/projects/*/memory/*)",
       "Skill(decompose:decompose)",
       "Agent(flow:ci-fixer)",
-      "Bash(test -f *)"
+      "Bash(test -f *)",
+      "Bash(jq *)",
+      "Bash(awk *)"
     ],
     "additionalDirectories": [
       "/Users/ben/code/initech"
