@@ -41,7 +41,10 @@ route through `bin/flow write-rule`:
 
 - `.flow-states/<branch>-dag.md` — the decompose-produced DAG file
 - `.flow-states/<branch>-plan.md` — the Plan-phase implementation plan
-- `.flow-commit-msg` — the commit skill's message file (project root)
+- `.flow-states/<branch>-commit-msg.txt` — the commit skill's message
+  file consumed by `bin/flow finalize-commit`. Branch-scoped so
+  concurrent flows in different worktrees of the same repo never
+  collide.
 - `.flow-issue-body` — the shared issue body file (project root)
 - `orchestrate-queue.json` — the machine-level orchestration queue
   (in `.flow-states/`)
@@ -85,9 +88,9 @@ Intermediate content files follow the pattern
 `.flow-states/<branch>-<purpose>-content.<ext>` where `<purpose>`
 matches the basename of the final target (e.g. `dag`, `plan`,
 `commit-msg`, `issue-body`, `orchestrate-queue`) and `<ext>` matches the
-target's extension (`.md`, `.json`). The `write-rule` subcommand deletes
-the intermediate file after a successful routing; on error the file is
-left in place so the user can diagnose the routing failure.
+target's extension (`.md`, `.json`, `.txt`). The `write-rule` subcommand
+deletes the intermediate file after a successful routing; on error the
+file is left in place so the user can diagnose the routing failure.
 
 Reference implementation: `src/write_rule.rs`.
 
@@ -135,7 +138,7 @@ the rule:
 Both scans use `write_path_is_bounded` to check BOTH prefix and suffix
 byte boundaries on every path match, rejecting longer paths that embed
 a monitored path as a substring (e.g. `my-orchestrate-queue.json`,
-`.flow-commit-msg.bak`).
+`.flow-states/<branch>-commit-msg.txt.bak`).
 
 When either test fails, the violation names the file and line. The fix
 is to adopt the Write-Rule Escape Pattern or the Edit Preamble Pattern

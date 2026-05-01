@@ -108,6 +108,22 @@ fn rule_content_has_rule_content_md_suffix() {
 }
 
 #[test]
+fn commit_msg_has_commit_msg_txt_suffix() {
+    assert_eq!(
+        paths().commit_msg(),
+        PathBuf::from("/tmp/project/.flow-states/my-feature-commit-msg.txt")
+    );
+}
+
+#[test]
+fn commit_msg_content_has_commit_msg_content_txt_suffix() {
+    assert_eq!(
+        paths().commit_msg_content(),
+        PathBuf::from("/tmp/project/.flow-states/my-feature-commit-msg-content.txt")
+    );
+}
+
+#[test]
 fn start_prompt_has_start_prompt_suffix() {
     assert_eq!(
         paths().start_prompt(),

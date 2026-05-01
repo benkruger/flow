@@ -59,14 +59,15 @@ fn allow_regex_map() -> &'static HashMap<&'static str, Regex> {
 /// Pre-commit hook script content — installed at `.git/hooks/pre-commit`.
 /// Blocks direct `git commit` when a FLOW feature is active on the
 /// current branch (detected by `.flow-states/<branch>.json` existence)
-/// unless `.flow-commit-msg` is present (set by `/flow:flow-commit`).
+/// unless `.flow-states/<branch>-commit-msg.txt` is present (set by
+/// `/flow:flow-commit` via `bin/flow write-rule`).
 pub const PRE_COMMIT_HOOK: &str = r#"#!/usr/bin/env bash
 # .git/hooks/pre-commit — installed by /flow:flow-prime
 # Only enforce when the current branch has an active FLOW feature
 branch=$(git symbolic-ref --short HEAD 2>/dev/null)
-if [ -n "$branch" ] && [ -f ".flow-states/${branch}.json" ] && [ ! -f .flow-commit-msg ]; then
+if [ -n "$branch" ] && [ -f ".flow-states/${branch}.json" ] && [ ! -f ".flow-states/${branch}-commit-msg.txt" ]; then
   echo "BLOCKED: FLOW feature in progress on ${branch}. Commits must go through /flow:flow-commit."
-  echo "The file .flow-commit-msg was not found — this looks like a direct git commit."
+  echo "The file .flow-states/${branch}-commit-msg.txt was not found — this looks like a direct git commit."
   exit 1
 fi
 "#;

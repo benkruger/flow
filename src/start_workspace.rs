@@ -91,28 +91,41 @@ pub(crate) fn create_worktree(
 
 /// Make empty commit, push, and create PR. Returns (pr_url, pr_number).
 ///
+/// `root` — the project root (main repo); `<root>/.flow-states/` is where
+/// the branch-scoped commit message file lives, alongside other
+/// branch-scoped state. Per `.claude/rules/file-tool-preflights.md`, the
+/// commit message lives at `<root>/.flow-states/<branch>-commit-msg.txt`
+/// so each worktree's flow has its own file (concurrency-safe) and abort
+/// /complete cleanup deletes it deterministically with the other
+/// branch-scoped state.
+///
 /// `base_branch` — the integration branch to target as the PR's base.
 /// Read from the state file by [`run_impl_with_paths`]; written there
 /// at flow-start by [`crate::commands::init_state`] via
 /// [`crate::git::current_branch_in`] so it equals `git branch --show-current`
 /// at the moment `/flow:flow-start` was invoked.
 pub(crate) fn initial_commit_push_pr(
+    root: &std::path::Path,
     wt_path: &std::path::Path,
     branch: &str,
     feature_title: &str,
     prompt: &str,
     base_branch: &str,
 ) -> Result<(String, u32), SetupError> {
-    let commit_msg_path = wt_path.join(".flow-commit-msg");
-    // `create_worktree` above succeeded, so `wt_path` exists and is
-    // writable. A failure here would indicate disk-full or read-only
-    // filesystem — neither is a FLOW-supported recovery state, so
-    // treat as an invariant via `.expect()`.
+    let commit_msg_path = FlowPaths::new(root, branch).commit_msg();
+    // `init-state` ran before `start-workspace` and created
+    // `<root>/.flow-states/<branch>.json`, so the directory exists. A
+    // failure here would indicate disk-full or read-only filesystem —
+    // neither is a FLOW-supported recovery state, so treat as an
+    // invariant via `.expect()`.
     std::fs::write(&commit_msg_path, format!("Start {} branch", branch))
-        .expect(".flow-commit-msg write must succeed in a freshly-created worktree");
+        .expect("commit-msg write must succeed when .flow-states/ already exists");
 
+    let commit_msg_arg = commit_msg_path
+        .to_str()
+        .expect("commit-msg path is valid UTF-8 (project_root + ASCII filename)");
     let result = run_cmd(
-        &["git", "commit", "--allow-empty", "-F", ".flow-commit-msg"],
+        &["git", "commit", "--allow-empty", "-F", commit_msg_arg],
         wt_path,
         "commit",
         None,
@@ -244,26 +257,32 @@ fn run_impl_with_paths(args: &Args, root: &Path, cwd: &Path) -> Value {
     );
 
     // Step 2: Commit, push, create PR
-    let (pr_url, pr_number) =
-        match initial_commit_push_pr(&wt_path, branch, &feature_title, &prompt, &base_branch) {
-            Ok(r) => r,
-            Err(e) => {
-                let _ = append_log(
-                    root,
-                    branch,
-                    &format!(
-                        "[Phase 1] start-workspace — PR creation failed: {}",
-                        e.message
-                    ),
-                );
-                release_lock(&args.branch);
-                return json!({
-                    "status": "error",
-                    "step": e.step,
-                    "message": e.message,
-                });
-            }
-        };
+    let (pr_url, pr_number) = match initial_commit_push_pr(
+        root,
+        &wt_path,
+        branch,
+        &feature_title,
+        &prompt,
+        &base_branch,
+    ) {
+        Ok(r) => r,
+        Err(e) => {
+            let _ = append_log(
+                root,
+                branch,
+                &format!(
+                    "[Phase 1] start-workspace — PR creation failed: {}",
+                    e.message
+                ),
+            );
+            release_lock(&args.branch);
+            return json!({
+                "status": "error",
+                "step": e.step,
+                "message": e.message,
+            });
+        }
+    };
     let _ = append_log(
         root,
         branch,

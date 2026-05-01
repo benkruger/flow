@@ -180,6 +180,24 @@ impl FlowPaths {
             .join(format!("{}-rule-content.md", self.branch))
     }
 
+    /// `<.flow-states>/<branch>-commit-msg.txt` — final commit message
+    /// file consumed by `bin/flow finalize-commit`. Branch-scoped under
+    /// `.flow-states/` so concurrent flows in different worktrees of the
+    /// same repo never share a single file, and so abort/complete cleanup
+    /// removes it deterministically alongside other branch-scoped state.
+    pub fn commit_msg(&self) -> PathBuf {
+        self.flow_states_dir
+            .join(format!("{}-commit-msg.txt", self.branch))
+    }
+
+    /// `<.flow-states>/<branch>-commit-msg-content.txt` — scratch file
+    /// the commit skill writes via the Write tool, then `bin/flow
+    /// write-rule` reads and routes to [`commit_msg`].
+    pub fn commit_msg_content(&self) -> PathBuf {
+        self.flow_states_dir
+            .join(format!("{}-commit-msg-content.txt", self.branch))
+    }
+
     /// `<.flow-states>/<branch>-start-prompt` — verbatim start prompt
     /// captured by `/flow:flow-start` for downstream phases.
     pub fn start_prompt(&self) -> PathBuf {

@@ -663,7 +663,7 @@ fn pre_commit_hook_content() {
     prime_setup::install_pre_commit_hook(tmp.path()).unwrap();
     let content =
         fs::read_to_string(tmp.path().join(".git").join("hooks").join("pre-commit")).unwrap();
-    assert!(content.contains(".flow-commit-msg"));
+    assert!(content.contains("-commit-msg.txt"));
     assert!(content.contains(".flow-states/"));
     assert!(content.contains("exit 1"));
 }

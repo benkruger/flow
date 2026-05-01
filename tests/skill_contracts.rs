@@ -3527,7 +3527,7 @@ fn phase_1_hard_gate_requires_rerun_with_arguments() {
 const WRITE_MONITORED_PATHS: &[&str] = &[
     ".flow-states/<branch>-dag.md",
     ".flow-states/<branch>-plan.md",
-    ".flow-commit-msg",
+    ".flow-states/<branch>-commit-msg.txt",
     ".flow-issue-body",
     "orchestrate-queue.json",
 ];
@@ -3560,7 +3560,7 @@ fn write_path_is_bounded(haystack: &str, path: &str, start: usize) -> bool {
     }
     // Suffix boundary check — file-extension suffixes are self-
     // terminating; otherwise reject byte-extensions into another path.
-    if path.ends_with(".md") || path.ends_with(".json") {
+    if path.ends_with(".md") || path.ends_with(".json") || path.ends_with(".txt") {
         return true;
     }
     let end = start + path.len();

@@ -59,18 +59,20 @@ task review shows diffs via `git diff HEAD`, which displays
 unstaged changes without staging them. The commit skill must
 always run `git add -A` before `git diff --cached`.
 
-Never run `git add -A` in commit Step 4. Files are already
-staged from Step 1. Running it again stages `.flow-commit-msg`
-itself, causing it to be tracked in the commit.
+The commit message lives at
+`<project_root>/.flow-states/<branch>-commit-msg.txt`, branch-
+scoped under `.flow-states/` alongside other branch-scoped
+state. The path is centralized in
+`FlowPaths::commit_msg()` so future layout changes (see issue
+#1045) flip in one place. `.flow-states/` is gitignored, so
+`git add -A` never picks the file up — there is no need for a
+`git restore --staged` step.
 
 Parent phases that invoke `/flow:flow-commit` must never write
-`.flow-commit-msg` themselves. The commit skill owns the file:
-it writes the message in Round 5 Step 1 and finalize-commit
-deletes it after the commit. When a parent phase writes the file
-before invoking the commit skill, Round 3's `git add -A` stages
-it, forcing a manual `git restore --staged .flow-commit-msg`
-after every commit to keep it out of the tracked tree. Let the
-commit skill own the message file end to end.
+the commit-msg file themselves. The commit skill owns the
+file: it routes the message through `bin/flow write-rule` in
+Round 5, and `finalize-commit` reads and deletes it after the
+git commit succeeds. The skill owns the file end to end.
 
 ## Sub-Agent Safety
 
