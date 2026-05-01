@@ -1501,3 +1501,256 @@ fn merge_settings_write_err_when_claude_dir_readonly() {
     let _ = fs::set_permissions(&claude_dir, fs::Permissions::from_mode(0o755));
     assert!(result.is_err(), "expected Err, got {:?}", result);
 }
+
+// ── merge_settings_with seam (synthetic fixtures) ──────────
+
+// Branch A: existing root is not an object (array, string, number) —
+// must reset to an empty object before merge proceeds.
+#[test]
+fn merge_with_non_object_root_resets_to_empty_object() {
+    let result = prime_setup::merge_settings_with(json!([1, 2, 3]), &[], &[]);
+    assert!(result.is_object(), "expected object, got {:?}", result);
+    assert!(result["permissions"].is_object());
+}
+
+// Branch B: existing has no `permissions` key — initialize it to an
+// empty object with empty allow/deny arrays.
+#[test]
+fn merge_with_missing_permissions_initializes_object() {
+    let result = prime_setup::merge_settings_with(json!({}), &[], &[]);
+    assert!(result["permissions"].is_object());
+    assert!(result["permissions"]["allow"].is_array());
+    assert!(result["permissions"]["deny"].is_array());
+}
+
+// Branch C: existing `permissions.allow` is not an array — reset to
+// an empty array before merging.
+#[test]
+fn merge_with_non_array_allow_resets_to_empty() {
+    let existing = json!({
+        "permissions": {"allow": "not-array", "deny": []}
+    });
+    let result = prime_setup::merge_settings_with(existing, &[], &[]);
+    assert!(result["permissions"]["allow"].is_array());
+    assert_eq!(
+        result["permissions"]["allow"].as_array().unwrap().len(),
+        0,
+        "non-array allow must reset to empty"
+    );
+}
+
+// Branch D: existing `permissions.deny` is not an array — reset to
+// an empty array before merging.
+#[test]
+fn merge_with_non_array_deny_resets_to_empty() {
+    let existing = json!({
+        "permissions": {"allow": [], "deny": "not-array"}
+    });
+    let result = prime_setup::merge_settings_with(existing, &[], &[]);
+    assert!(result["permissions"]["deny"].is_array());
+    assert_eq!(
+        result["permissions"]["deny"].as_array().unwrap().len(),
+        0,
+        "non-array deny must reset to empty"
+    );
+}
+
+// Branch E: empty existing settings — every flow_allow and flow_deny
+// entry is appended.
+#[test]
+fn merge_fresh_appends_all_flow_allow_and_deny() {
+    let result =
+        prime_setup::merge_settings_with(json!({}), &["Bash(echo *)"], &["Bash(rm -rf /*)"]);
+    let allow: Vec<String> = result["permissions"]["allow"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+    let deny: Vec<String> = result["permissions"]["deny"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+    assert!(allow.contains(&"Bash(echo *)".to_string()));
+    assert!(deny.contains(&"Bash(rm -rf /*)".to_string()));
+}
+
+// Branch F: re-running merge on an already-merged result produces
+// identical output.
+#[test]
+fn merge_idempotent_no_changes_on_second_run() {
+    let allow_list = &["Bash(echo *)"];
+    let deny_list = &["Bash(rm -rf /*)"];
+    let first = prime_setup::merge_settings_with(json!({}), allow_list, deny_list);
+    let second = prime_setup::merge_settings_with(first.clone(), allow_list, deny_list);
+    assert_eq!(first, second, "merge must be idempotent");
+}
+
+// Branch G: existing allow contains some but not all flow_allow
+// entries — only the missing ones are added, no duplicates.
+#[test]
+fn merge_subset_adds_only_missing_allow() {
+    let existing = json!({
+        "permissions": {"allow": ["Bash(echo *)"], "deny": []}
+    });
+    let result = prime_setup::merge_settings_with(existing, &["Bash(echo *)", "Bash(ls *)"], &[]);
+    let allow: Vec<String> = result["permissions"]["allow"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+    assert_eq!(
+        allow.iter().filter(|s| **s == "Bash(echo *)").count(),
+        1,
+        "no duplicate allow entry"
+    );
+    assert!(allow.contains(&"Bash(ls *)".to_string()));
+}
+
+// Branch H: a broader existing allow pattern (e.g. `Agent(*)`)
+// subsumes a narrower flow_allow entry (e.g. `Agent(flow:ci-fixer)`)
+// — the redundant entry is not added.
+#[test]
+fn merge_subsumption_blocks_redundant_agent_entry() {
+    let existing = json!({
+        "permissions": {"allow": ["Agent(*)"], "deny": []}
+    });
+    let result = prime_setup::merge_settings_with(existing, &["Agent(flow:ci-fixer)"], &[]);
+    let allow: Vec<String> = result["permissions"]["allow"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+    assert!(
+        !allow.contains(&"Agent(flow:ci-fixer)".to_string()),
+        "narrower entry must not be added when broader exists"
+    );
+}
+
+// Branch I: user has opted into a permission that flow_deny would
+// otherwise add — the deny addition is skipped (allow always wins).
+#[test]
+fn merge_user_allow_blocks_flow_deny_addition() {
+    let existing = json!({
+        "permissions": {"allow": ["Bash(rm -rf /*)"], "deny": []}
+    });
+    let result = prime_setup::merge_settings_with(existing, &[], &["Bash(rm -rf /*)"]);
+    let deny: Vec<String> = result["permissions"]["deny"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+    assert!(
+        !deny.contains(&"Bash(rm -rf /*)".to_string()),
+        "deny addition must be skipped when user already allows"
+    );
+}
+
+// Branch J (NEW behavior): existing settings.json has the same string
+// in both allow AND deny — the deny entry is removed because allow
+// always wins. Without this fix, the user's opt-in is silently
+// neutralized by the conflicting deny.
+#[test]
+fn merge_active_removes_existing_deny_matching_allow() {
+    let existing = json!({
+        "permissions": {
+            "allow": ["Bash(echo *)"],
+            "deny": ["Bash(echo *)", "Bash(other deny)"]
+        }
+    });
+    let result = prime_setup::merge_settings_with(existing, &[], &[]);
+    let deny: Vec<String> = result["permissions"]["deny"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+    assert!(
+        !deny.contains(&"Bash(echo *)".to_string()),
+        "deny matching allow must be removed"
+    );
+    assert!(
+        deny.contains(&"Bash(other deny)".to_string()),
+        "unrelated deny entries must be preserved"
+    );
+}
+
+// Branch K: a flow_deny entry with no conflict in allow is appended
+// in the default position.
+#[test]
+fn merge_flow_deny_appended_when_no_allow_conflict() {
+    let result = prime_setup::merge_settings_with(json!({}), &[], &["Bash(rm -rf /*)"]);
+    let deny: Vec<String> = result["permissions"]["deny"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+    assert!(deny.contains(&"Bash(rm -rf /*)".to_string()));
+}
+
+// Branch L: defaultMode existed as something non-default (e.g.
+// `prompt`) — overwrite to `acceptEdits` AND emit a stderr warning.
+// Subprocess test — stderr is only observable through a child
+// process per the plan's branch enumeration table.
+#[test]
+fn merge_overwrites_non_default_mode_with_warning() {
+    let tmp = tempfile::tempdir().unwrap();
+    make_git_repo(tmp.path());
+    write_settings(
+        tmp.path(),
+        &json!({
+            "permissions": {"allow": [], "deny": [], "defaultMode": "prompt"}
+        }),
+    );
+    let output = flow_rs()
+        .arg("prime-setup")
+        .arg(tmp.path())
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Warning: Overriding defaultMode"),
+        "expected warning in stderr, got: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("'prompt'"),
+        "expected previous mode named in stderr, got: {}",
+        stderr
+    );
+    let settings = read_settings(tmp.path());
+    assert_eq!(settings["permissions"]["defaultMode"], "acceptEdits");
+}
+
+// Branch M: defaultMode is missing — set to `acceptEdits` with no
+// warning.
+#[test]
+fn merge_sets_default_mode_when_missing() {
+    let result = prime_setup::merge_settings_with(json!({}), &[], &[]);
+    assert_eq!(result["permissions"]["defaultMode"], "acceptEdits");
+}
+
+// Branch N: existing has no `env` key — initialize as empty object
+// then add CLAUDE_AUTO_BACKGROUND_TASKS=false.
+#[test]
+fn merge_initializes_env_when_missing() {
+    let result = prime_setup::merge_settings_with(json!({}), &[], &[]);
+    assert!(result["env"].is_object());
+    assert_eq!(result["env"]["CLAUDE_AUTO_BACKGROUND_TASKS"], "false");
+}
+
+// Branch O: existing has an `env` object with other variables — add
+// CLAUDE_AUTO_BACKGROUND_TASKS=false while preserving existing keys.
+#[test]
+fn merge_preserves_env_adds_auto_background_false() {
+    let existing = json!({"env": {"OTHER_VAR": "value"}});
+    let result = prime_setup::merge_settings_with(existing, &[], &[]);
+    assert_eq!(result["env"]["OTHER_VAR"], "value");
+    assert_eq!(result["env"]["CLAUDE_AUTO_BACKGROUND_TASKS"], "false");
+}
