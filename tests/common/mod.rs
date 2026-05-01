@@ -227,13 +227,6 @@ pub fn load_hooks() -> Value {
     cached_read_json(&path)
 }
 
-/// Reads `.claude/settings.json` from the repo root.
-/// Cached per binary.
-pub fn load_settings() -> Value {
-    let path = repo_root().join(".claude").join("settings.json");
-    cached_read_json(&path)
-}
-
 // --- Markdown file collection ---
 
 /// Collects all `.md` files recursively under a directory.

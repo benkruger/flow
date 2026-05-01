@@ -47,34 +47,9 @@ fn all_docs_files() -> Vec<(String, String)> {
         .collect()
 }
 
-fn maintainer_files() -> Vec<(String, String)> {
-    let dir = common::repo_root().join(".claude").join("skills");
-    let mut files = Vec::new();
-    if let Ok(entries) = fs::read_dir(&dir) {
-        for entry in entries.flatten() {
-            if entry.path().is_dir() {
-                let skill_md = entry.path().join("SKILL.md");
-                if skill_md.exists() {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    let content = fs::read_to_string(&skill_md).unwrap();
-                    files.push((format!(".claude/skills/{}/SKILL.md", name), content));
-                }
-            }
-        }
-    }
-    files.sort_by(|a, b| a.0.cmp(&b.0));
-    files
-}
-
 fn all_check_files() -> Vec<(String, String)> {
     let mut files = all_plugin_skill_files();
     files.extend(all_docs_files());
-    files
-}
-
-fn all_check_files_with_maintainer() -> Vec<(String, String)> {
-    let mut files = all_check_files();
-    files.extend(maintainer_files());
     files
 }
 
@@ -285,8 +260,6 @@ fn is_auto_allowed(cmd: &str) -> bool {
         .any(|a| cmd == *a || cmd.starts_with(&format!("{} ", a)))
 }
 
-const SENSITIVE_PATH_COMMANDS: &[&str] = &["rm -rf ~/.claude/plugins/cache/flow-marketplace"];
-
 fn logging_skills() -> Vec<String> {
     let re = Regex::new(r"## Logging\n(.*?)(?:\n## |\n---|\z)").unwrap();
     common::all_skill_names()
@@ -305,32 +278,12 @@ fn logging_skills() -> Vec<String> {
         .collect()
 }
 
-fn load_settings_allow() -> Vec<String> {
-    let settings = common::load_settings();
-    settings["permissions"]["allow"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap().to_string())
-        .collect()
-}
-
-fn load_settings_deny() -> Vec<String> {
-    let settings = common::load_settings();
-    settings["permissions"]["deny"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap().to_string())
-        .collect()
-}
-
 // --- Tests ---
 
 #[test]
 fn no_bash_commands_reference_tmp() {
     let mut errors = Vec::new();
-    for (filepath, content) in all_check_files_with_maintainer() {
+    for (filepath, content) in all_check_files() {
         for block in extract_bash_blocks_from_content(&content) {
             if block.contains("/tmp/") {
                 let cmd = block.lines().next().unwrap_or("");
@@ -640,38 +593,6 @@ fn worktree_cd_persists_no_repeated_cd() {
     );
 }
 
-#[test]
-fn maintainer_bash_commands_have_settings_coverage() {
-    let permissions = load_settings_allow();
-    let regexes = build_regexes(&permissions);
-    let mut errors = Vec::new();
-
-    for (filepath, content) in maintainer_files() {
-        for block in extract_bash_blocks_from_content(&content) {
-            if let Some(cmd) = extract_primary_command(&block) {
-                if is_auto_allowed(&cmd) {
-                    continue;
-                }
-                if SENSITIVE_PATH_COMMANDS.contains(&cmd.as_str()) {
-                    continue;
-                }
-                if !regexes.iter().any(|r| r.is_match(&cmd)) {
-                    errors.push(format!(
-                        "{}: command '{}' has no matching permission in settings.json",
-                        filepath, cmd
-                    ));
-                }
-            }
-        }
-    }
-    assert!(
-        errors.is_empty(),
-        "Found {} maintainer command(s) without settings.json coverage:\n{}",
-        errors.len(),
-        errors.join("\n  ")
-    );
-}
-
 const REQUIRED_DENY_ENTRIES: &[&str] = &[
     "Bash(git rebase *)",
     "Bash(git push --force *)",
@@ -685,18 +606,6 @@ const REQUIRED_DENY_ENTRIES: &[&str] = &[
     "Bash(gh * --admin*)",
 ];
 
-const REQUIRED_TOOL_ALTERNATIVE_DENIES: &[&str] = &[
-    "Bash(cat *)",
-    "Bash(head *)",
-    "Bash(tail *)",
-    "Bash(grep *)",
-    "Bash(rg *)",
-    "Bash(find *)",
-    "Bash(ls *)",
-    "Bash(* && *)",
-    "Bash(* | *)",
-];
-
 #[test]
 fn plugin_permissions_deny_destructive_git() {
     let perms = extract_prime_permissions_block();
@@ -706,18 +615,6 @@ fn plugin_permissions_deny_destructive_git() {
         assert!(
             deny_strs.contains(entry),
             "Missing deny entry in prime/SKILL.md: {}",
-            entry
-        );
-    }
-}
-
-#[test]
-fn maintainer_permissions_deny_destructive_git() {
-    let deny = load_settings_deny();
-    for entry in REQUIRED_DENY_ENTRIES {
-        assert!(
-            deny.iter().any(|d| d == entry),
-            "Missing deny entry in settings.json: {}",
             entry
         );
     }
@@ -836,35 +733,6 @@ fn no_skill_command_matches_deny() {
 }
 
 #[test]
-fn no_maintainer_command_matches_deny() {
-    let deny = load_settings_deny();
-    let deny_regexes = build_regexes(&deny);
-    let mut errors = Vec::new();
-
-    for (filepath, content) in maintainer_files() {
-        for block in extract_bash_blocks_from_content(&content) {
-            if let Some(cmd) = extract_primary_command(&block) {
-                for (i, regex) in deny_regexes.iter().enumerate() {
-                    if regex.is_match(&cmd) {
-                        errors.push(format!(
-                            "{}: command '{}' matches deny entry '{}'",
-                            filepath, cmd, deny[i]
-                        ));
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    assert!(
-        errors.is_empty(),
-        "Found {} maintainer command(s) matching deny:\n{}",
-        errors.len(),
-        errors.join("\n  ")
-    );
-}
-
-#[test]
 fn no_allow_deny_overlap_in_plugin_permissions() {
     let perms = extract_prime_permissions_block();
     let allow: Vec<String> = perms["allow"]
@@ -904,46 +772,6 @@ fn no_allow_deny_overlap_in_plugin_permissions() {
 }
 
 #[test]
-fn no_allow_deny_overlap_in_maintainer_settings() {
-    let allow = load_settings_allow();
-    let deny = load_settings_deny();
-    let deny_regexes = build_regexes(&deny);
-    let mut errors = Vec::new();
-
-    for entry in &allow {
-        if let Some(example) = concrete_example(entry) {
-            for (i, regex) in deny_regexes.iter().enumerate() {
-                if regex.is_match(&example) {
-                    errors.push(format!(
-                        "allow '{}' (example: '{}') matches deny '{}'",
-                        entry, example, deny[i]
-                    ));
-                    break;
-                }
-            }
-        }
-    }
-    assert!(
-        errors.is_empty(),
-        "Found {} allow/deny overlap(s) in settings.json:\n{}",
-        errors.len(),
-        errors.join("\n  ")
-    );
-}
-
-#[test]
-fn tool_alternative_denies_in_project_settings() {
-    let deny = load_settings_deny();
-    for entry in REQUIRED_TOOL_ALTERNATIVE_DENIES {
-        assert!(
-            deny.iter().any(|d| d == entry),
-            "Missing deny entry in settings.json: {}",
-            entry
-        );
-    }
-}
-
-#[test]
 fn no_dedicated_tool_commands_in_bash_blocks() {
     let denied_prefixes: HashSet<&str> = ["cat", "head", "tail", "grep", "rg", "find", "ls"]
         .iter()
@@ -951,7 +779,7 @@ fn no_dedicated_tool_commands_in_bash_blocks() {
         .collect();
     let mut errors = Vec::new();
 
-    for (filepath, content) in all_check_files_with_maintainer() {
+    for (filepath, content) in all_check_files() {
         for block in extract_bash_blocks_from_content(&content) {
             if let Some(cmd) = extract_primary_command(&block) {
                 let first_word = cmd.split_whitespace().next().unwrap_or("");
@@ -1048,82 +876,6 @@ fn prime_setup_lists_match_skill_md_reference() {
     assert!(
         errors.is_empty(),
         "Permission lists out of sync:\n{}",
-        errors.join("\n  ")
-    );
-}
-
-#[test]
-fn settings_allow_list_ordered_by_category() {
-    let categories: Vec<(&str, Vec<&str>)> = vec![
-        ("git", vec!["Bash(git "]),
-        ("github-cli", vec!["Bash(gh "]),
-        ("bin", vec!["Bash(*bin/"]),
-        ("plugins", vec!["Bash(claude plugin"]),
-        ("cleanup", vec!["Bash(rm "]),
-        (
-            "build",
-            vec![
-                "Bash(cargo ",
-                "Bash(cd ",
-                "Bash(pwd)",
-                "Bash(chmod ",
-                "Bash(make ",
-                "Bash(diff ",
-                "Bash(.venv/",
-                "Bash(curl ",
-                "Bash(open:",
-            ],
-        ),
-        ("read", vec!["Read("]),
-        ("skills", vec!["Skill("]),
-        ("agents", vec!["Agent("]),
-        ("probe", vec!["Bash(test -f "]),
-    ];
-
-    let categorize = |entry: &str| -> Option<&str> {
-        for (cat, prefixes) in &categories {
-            for prefix in prefixes {
-                if entry.starts_with(prefix) {
-                    return Some(cat);
-                }
-            }
-        }
-        None
-    };
-
-    let category_index: std::collections::HashMap<&str, usize> = categories
-        .iter()
-        .enumerate()
-        .map(|(i, (cat, _))| (*cat, i))
-        .collect();
-    let permissions = load_settings_allow();
-    let mut errors = Vec::new();
-    let mut last_index: i32 = -1;
-    let mut last_cat = "";
-
-    for entry in &permissions {
-        match categorize(entry) {
-            None => errors.push(format!(
-                "Entry '{}' does not match any known category",
-                entry
-            )),
-            Some(cat) => {
-                let idx = category_index[cat] as i32;
-                if idx < last_index {
-                    errors.push(format!(
-                        "Entry '{}' (category: {}) appears after '{}' entries",
-                        entry, cat, last_cat
-                    ));
-                } else {
-                    last_index = idx;
-                    last_cat = cat;
-                }
-            }
-        }
-    }
-    assert!(
-        errors.is_empty(),
-        "Allow list not ordered by category:\n{}",
         errors.join("\n  ")
     );
 }

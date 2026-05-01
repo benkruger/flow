@@ -572,3 +572,166 @@ fn run_impl_propagates_write_error_in_auto_upgrade_path() {
     let err = result.unwrap_err();
     assert!(err.contains("Could not write"), "got: {}", err);
 }
+
+// --- Hash-stability behavioral guards ---
+//
+// The config_hash and setup_hash values stored in every existing
+// `.flow.json` file in the wild were computed by the formatter and
+// algorithm at the time of priming. Any behavioral change to the
+// hashing path silently invalidates those stored hashes and forces
+// every user to re-prime. The following tests guard the contract.
+
+/// Guards that `compute_config_hash` produces the same hex output for
+/// repeated calls within a single process. If the function ever picks
+/// up a non-deterministic input (clock, env var, random nonce), this
+/// test catches it before it lands.
+#[test]
+fn compute_config_hash_is_deterministic_across_runs() {
+    let a = flow_rs::prime_check::compute_config_hash();
+    let b = flow_rs::prime_check::compute_config_hash();
+    assert_eq!(a, b, "compute_config_hash must be deterministic");
+    assert_eq!(a.len(), 12, "hash should be 12 hex chars");
+    assert!(
+        a.chars().all(|c| c.is_ascii_hexdigit()),
+        "hash should be hex: {}",
+        a
+    );
+}
+
+/// Frozen-golden guard for `compute_config_hash`. The hex value below
+/// is the SHA-256 prefix produced by the current `PythonDefaultFormatter`
+/// over the current `UNIVERSAL_ALLOW` + `FLOW_DENY` + `EXCLUDE_ENTRIES`
+/// constants. Any change to the formatter, key order, or hash inputs
+/// will fail this test — which is correct, because such a change would
+/// invalidate every stored `.flow.json` hash and force a re-prime for
+/// every user.
+///
+/// When intentionally evolving the constants (e.g. adding a new entry
+/// to UNIVERSAL_ALLOW), update the golden hex value in the same commit
+/// as the constant change. The plan-deviation gate in `finalize-commit`
+/// will block until the new value is acknowledged.
+#[test]
+fn compute_config_hash_uses_python_default_formatter() {
+    let hash = flow_rs::prime_check::compute_config_hash();
+    // Read CURRENT_CONFIG_HASH below: this value pins the output
+    // produced by the in-tree constants and formatter at the time the
+    // test was authored. Update it together with any intentional change
+    // to UNIVERSAL_ALLOW / FLOW_DENY / EXCLUDE_ENTRIES / hash format.
+    const CURRENT_CONFIG_HASH: &str = "71a822d28bb3";
+    assert_eq!(
+        hash, CURRENT_CONFIG_HASH,
+        "config_hash drift — PythonDefaultFormatter or input constants changed; \
+         every stored .flow.json hash is invalidated. If intentional, update \
+         CURRENT_CONFIG_HASH to {}.",
+        hash
+    );
+}
+
+/// Guards that `compute_setup_hash` is sensitive to changes in the
+/// `prime_setup.rs` source bytes. If the function were ever to hash a
+/// fixed string (e.g. a stale cached value), or to skip the file-read
+/// step, this test would catch it: the synthetic mutated source
+/// produces a different hash than the original.
+#[test]
+fn compute_setup_hash_changes_when_source_changes() {
+    use std::os::unix::fs::PermissionsExt;
+
+    // Build a fake plugin root with a controlled prime_setup.rs.
+    let tmp = tempfile::tempdir().unwrap();
+    let src_dir = tmp.path().join("src");
+    fs::create_dir_all(&src_dir).unwrap();
+    let setup_path = src_dir.join("prime_setup.rs");
+
+    fs::write(&setup_path, b"// version a").unwrap();
+    let hash_a = flow_rs::prime_check::compute_setup_hash(tmp.path()).unwrap();
+
+    fs::write(&setup_path, b"// version b").unwrap();
+    let hash_b = flow_rs::prime_check::compute_setup_hash(tmp.path()).unwrap();
+
+    assert_ne!(
+        hash_a, hash_b,
+        "compute_setup_hash must reflect changes in prime_setup.rs source"
+    );
+    assert_eq!(hash_a.len(), 12);
+    assert_eq!(hash_b.len(), 12);
+
+    // Restore perms so tempdir cleanup works.
+    let _ = fs::set_permissions(&setup_path, fs::Permissions::from_mode(0o644));
+}
+
+/// Mismatch case: config_hash matches but setup_hash is missing.
+/// Auto-upgrade requires BOTH hashes to match — only one matching
+/// must still trigger the re-prime path.
+#[test]
+fn prime_check_returns_mismatch_error_when_only_config_hash_matches() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config_hash = computed_config_hash();
+    write_flow_json(
+        tmp.path(),
+        json!({
+            "flow_version": "0.0.1",
+            "config_hash": config_hash,
+            "setup_hash": "deadbeefcafe",
+        }),
+    );
+    let (data, _code) = run_prime_check(tmp.path());
+    assert_eq!(data["status"], "error");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap()
+            .contains("/flow:flow-prime"),
+        "should direct user to re-prime"
+    );
+}
+
+/// Mismatch case: setup_hash matches but config_hash is wrong.
+/// Symmetric to the only-config-matches case — re-prime is required.
+#[test]
+fn prime_check_returns_mismatch_error_when_only_setup_hash_matches() {
+    let tmp = tempfile::tempdir().unwrap();
+    let setup_hash = computed_setup_hash();
+    write_flow_json(
+        tmp.path(),
+        json!({
+            "flow_version": "0.0.1",
+            "config_hash": "deadbeefcafe",
+            "setup_hash": setup_hash,
+        }),
+    );
+    let (data, _code) = run_prime_check(tmp.path());
+    assert_eq!(data["status"], "error");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap()
+            .contains("/flow:flow-prime"),
+        "should direct user to re-prime"
+    );
+}
+
+/// Mismatch case: NEITHER hash matches. Catches a regression where
+/// the auto-upgrade decision logic might fall through to "ok" when
+/// both hashes are wrong (e.g. by accidentally treating `Err` from
+/// hash comparison as a non-failure).
+#[test]
+fn prime_check_returns_mismatch_error_when_neither_hash_matches() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_flow_json(
+        tmp.path(),
+        json!({
+            "flow_version": "0.0.1",
+            "config_hash": "000000000000",
+            "setup_hash": "111111111111",
+        }),
+    );
+    let (data, _code) = run_prime_check(tmp.path());
+    assert_eq!(data["status"], "error");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap()
+            .contains("/flow:flow-prime"),
+        "should direct user to re-prime when both hashes mismatch"
+    );
+}

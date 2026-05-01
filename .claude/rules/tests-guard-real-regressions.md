@@ -198,6 +198,69 @@ it is not actually exercising the line. Strengthen the assertion
 (check a value the line produces, not just that the function
 returns without panic) before committing.
 
+## Frozen-Golden Tests
+
+Some tests pin the exact output of a deterministic computation
+(SHA-256 prefix, JSON canonicalization, snapshot text, hash of
+constant inputs) so a future refactor cannot silently change the
+output's bytes. The frozen-golden test:
+
+- Calls the production function and asserts equality against a
+  hardcoded literal value
+- Treats any difference as a regression, including changes that
+  appear "intentional" — the author of the change must update the
+  golden value AND understand the downstream impact
+
+Frozen-golden tests guard a real regression path: any change to
+the function's algorithm, formatter, key order, or input
+constants invalidates downstream consumers (e.g., stored hash
+values in user config files, persisted snapshots, cross-version
+checksums). The named consumer is the persisted artifact whose
+correctness depends on byte-stability.
+
+### Bootstrapping the golden value safely
+
+Discovering the golden value by running the production code and
+copying its output into the test is the fastest path but
+provides ZERO regression protection if the code is wrong at
+authoring time. The test would assert the buggy output equals
+itself.
+
+The discipline:
+
+1. **Verify the value independently before pinning.** Compute the
+   expected output through a separate path — a reference
+   implementation, a spec-derived calculation, manual computation
+   on a small input, or cross-check against an existing
+   downstream artifact (e.g., a stored `.flow.json` hash from a
+   previous release). Document the verification path in the
+   test's doc comment.
+2. **If no independent path exists, pin the value but require a
+   second-source confirmation.** Add an inline comment naming the
+   environment, dependency versions, and reference inputs used to
+   compute the golden value, so a future maintainer trying to
+   reproduce can verify.
+3. **Document the update protocol.** The test's doc comment must
+   explain: when intentionally changing the function's output
+   (algorithm, format, inputs), the author updates the golden
+   value in the same commit and notes the migration impact in the
+   commit message.
+
+### Placement
+
+A frozen-golden test lives alongside the function it tests in
+`tests/<name>.rs`. Group with other tests for the same function
+under a section marker. Tag the golden constant with
+`CURRENT_<purpose>` (e.g., `CURRENT_CONFIG_HASH`) so a grep for
+the prefix surfaces every frozen value in the codebase.
+
+A reference implementation: `compute_config_hash_uses_python_default_formatter`
+in `tests/prime_check.rs` pins a 12-character SHA-256 prefix
+produced from `UNIVERSAL_ALLOW`/`FLOW_DENY`/`EXCLUDE_ENTRIES`
+through the `PythonDefaultFormatter`. The pinned value protects
+every stored `.flow.json` hash in the wild from silent
+invalidation.
+
 ## How to Apply
 
 **Plan phase.** When a plan task adds a test, the task description

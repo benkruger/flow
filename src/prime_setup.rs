@@ -43,15 +43,15 @@ fn outer_regex() -> &'static Regex {
 /// where each pair of same-type entries needs a matching regex; without
 /// this cache the dynamic compile in `permission_to_regex` ran ~6400 times
 /// per `prime-setup` invocation, pushing the instrumented test binary past
-/// nextest's slow-timeout. `is_subsumed` falls back to a per-call compile
+/// nextest's slow-timeout. `is_subsumed_in` falls back to a per-call compile
 /// for entries that originate from the user's existing `settings.json`
-/// rather than from the FLOW universal list.
-fn allow_regex_map() -> &'static HashMap<&'static str, Regex> {
-    static MAP: OnceLock<HashMap<&'static str, Regex>> = OnceLock::new();
+/// rather than from the supplied flow_allow list.
+fn allow_regex_map() -> &'static HashMap<String, Regex> {
+    static MAP: OnceLock<HashMap<String, Regex>> = OnceLock::new();
     MAP.get_or_init(|| {
         UNIVERSAL_ALLOW
             .iter()
-            .filter_map(|s| permission_to_regex(s).map(|r| (*s, r)))
+            .filter_map(|s| permission_to_regex(s).map(|r| (s.to_string(), r)))
             .collect()
     })
 }
@@ -112,7 +112,25 @@ exec "$plugin_root/bin/flow" "$@"
 /// (e.g. `Agent(*)`) matches the candidate's concrete form (e.g.
 /// `Agent(flow:ci-fixer)`). Only checks same-type entries (e.g. Agent vs
 /// Agent, Read vs Read); never matches across types (Agent vs Bash).
+///
+/// Production wrapper that delegates to `is_subsumed_in` with the cached
+/// `UNIVERSAL_ALLOW` regex map.
 pub fn is_subsumed(candidate: &str, existing_set: &HashSet<String>) -> bool {
+    is_subsumed_in(candidate, existing_set, allow_regex_map())
+}
+
+/// Seam variant of [`is_subsumed`] that accepts an injectable `regex_map`.
+///
+/// `merge_settings_with` builds a fresh map from its `flow_allow` argument
+/// so synthetic-fixture tests can drive subsumption against a 2-3 entry
+/// allow list without depending on `UNIVERSAL_ALLOW`. The map is consulted
+/// as a hot path; entries not present in the map fall back to a per-call
+/// `permission_to_regex` compile.
+pub fn is_subsumed_in(
+    candidate: &str,
+    existing_set: &HashSet<String>,
+    regex_map: &HashMap<String, Regex>,
+) -> bool {
     let outer_re = outer_regex();
     let cand_caps = match outer_re.captures(candidate) {
         Some(c) => c,
@@ -122,8 +140,6 @@ pub fn is_subsumed(candidate: &str, existing_set: &HashSet<String>) -> bool {
     let cand_inner = &cand_caps[2];
     // Replace wildcards with literal text so regex tests structural coverage
     let test_string = cand_inner.replace('*', "XXXPLACEHOLDERXXX");
-
-    let allow_map = allow_regex_map();
 
     for existing in existing_set {
         if existing == candidate {
@@ -136,16 +152,17 @@ pub fn is_subsumed(candidate: &str, existing_set: &HashSet<String>) -> bool {
         if &ex_caps[1] != cand_type {
             continue;
         }
-        // Hot path: reuse the precompiled regex when `existing` is a
-        // FLOW universal allow entry — that covers the entire inner loop
-        // of `merge_settings`. Cold path: compile per call for entries
-        // sourced from the user's existing `settings.json`. The `.expect`
-        // on the cold path mirrors the original contract: any entry that
-        // captures with `outer_re` above is guaranteed to return `Some`
-        // from `permission_to_regex` (same outer shape), so `.expect`
-        // does not create an instrumented branch per
+        // Hot path: reuse the precompiled regex when `existing` is in
+        // the supplied map — that covers the entire inner loop of
+        // `merge_settings_with` against `UNIVERSAL_ALLOW`. Cold path:
+        // compile per call for entries sourced from the user's existing
+        // `settings.json`. The `.expect` on the cold path mirrors the
+        // original contract: any entry that captures with `outer_re`
+        // above is guaranteed to return `Some` from `permission_to_regex`
+        // (same outer shape), so `.expect` does not create an
+        // instrumented branch per
         // `.claude/rules/testability-means-simplicity.md`.
-        let regex = match allow_map.get(existing.as_str()) {
+        let regex = match regex_map.get(existing) {
             Some(r) => r.clone(),
             None => permission_to_regex(existing)
                 .expect("outer_re match implies permission_to_regex succeeds"),
@@ -161,11 +178,15 @@ pub fn is_subsumed(candidate: &str, existing_set: &HashSet<String>) -> bool {
 ///
 /// Additive merge — only adds entries not already present or subsumed
 /// by broader patterns. Returns the merged settings dict as a JSON Value.
+///
+/// Production wrapper around the pure [`merge_settings_with`] seam — reads
+/// the existing `.claude/settings.json` from disk, calls the seam with
+/// `UNIVERSAL_ALLOW` and `FLOW_DENY`, then writes the merged value back.
 pub fn merge_settings(project_root: &Path) -> Result<Value, String> {
     let settings_dir = project_root.join(".claude");
     let settings_path = settings_dir.join("settings.json");
 
-    let mut settings: Value = if settings_path.exists() {
+    let existing: Value = if settings_path.exists() {
         let content = fs::read_to_string(&settings_path)
             .map_err(|e| format!("Could not read settings.json: {}", e))?;
         serde_json::from_str(&content)
@@ -174,7 +195,48 @@ pub fn merge_settings(project_root: &Path) -> Result<Value, String> {
         json!({})
     };
 
-    // Ensure structure exists — guard against non-object top level
+    let merged = merge_settings_with(existing, UNIVERSAL_ALLOW, FLOW_DENY);
+
+    fs::create_dir_all(&settings_dir)
+        .map_err(|e| format!("Could not create .claude directory: {}", e))?;
+    // `merged` is constructed from `json!` literals and merged-in
+    // String/Array Values — serialization cannot fail in practice.
+    // Surface any pathological internal error via `.expect` per
+    // `.claude/rules/testability-means-simplicity.md`.
+    let serialized = serde_json::to_string_pretty(&merged)
+        .expect("serde_json::to_string_pretty on a built settings Value cannot fail");
+    fs::write(&settings_path, format!("{}\n", serialized))
+        .map_err(|e| format!("Could not write settings.json: {}", e))?;
+
+    Ok(merged)
+}
+
+/// Pure seam variant of [`merge_settings`] — operates on JSON Values
+/// without filesystem IO.
+///
+/// Validates the structural shape of `existing` (resetting non-object
+/// roots, non-object `permissions`, and non-array `allow`/`deny` fields
+/// to their canonical empty forms), additive-merges `flow_allow` into
+/// `permissions.allow` (subsumption-aware), and additive-merges
+/// `flow_deny` into `permissions.deny` while honoring the active
+/// deny-removal contract:
+///
+/// 1. Any existing deny entry whose exact string also appears in the
+///    final allow set is removed. The user's allow opt-in always wins.
+/// 2. Any `flow_deny` entry whose exact string is in the final allow
+///    set is skipped — never appended.
+///
+/// Then sets `defaultMode` to `acceptEdits` (with a stderr warning
+/// when the existing value differed) and ensures
+/// `env.CLAUDE_AUTO_BACKGROUND_TASKS` is `"false"`.
+///
+/// `merge_settings` calls this with `UNIVERSAL_ALLOW` / `FLOW_DENY`;
+/// integration tests pass small synthetic 2-3 entry slices.
+pub fn merge_settings_with(existing: Value, flow_allow: &[&str], flow_deny: &[&str]) -> Value {
+    let mut settings = existing;
+
+    // Structural reset guards — every nested level must hold the
+    // expected JSON type before downstream IndexMut access.
     if !settings.is_object() {
         settings = json!({});
     }
@@ -188,7 +250,16 @@ pub fn merge_settings(project_root: &Path) -> Result<Value, String> {
         settings["permissions"]["deny"] = json!([]);
     }
 
-    // Additive merge — only add entries not already present or subsumed
+    // Build a regex map from `flow_allow` so subsumption checks reuse
+    // a per-call cache. Hot path during production with the full
+    // UNIVERSAL_ALLOW list; cold path during tests with 2-3 entries.
+    let regex_map: HashMap<String, Regex> = flow_allow
+        .iter()
+        .filter_map(|s| permission_to_regex(s).map(|r| (s.to_string(), r)))
+        .collect();
+
+    // Additive allow merge — skip entries already present or subsumed
+    // by a broader existing pattern.
     let mut existing_allow: HashSet<String> = settings["permissions"]["allow"]
         .as_array()
         .unwrap()
@@ -198,32 +269,53 @@ pub fn merge_settings(project_root: &Path) -> Result<Value, String> {
 
     let mut allow_array: Vec<Value> = settings["permissions"]["allow"].as_array().unwrap().clone();
 
-    for entry in UNIVERSAL_ALLOW {
+    for entry in flow_allow {
         let e = entry.to_string();
-        if !existing_allow.contains(&e) && !is_subsumed(&e, &existing_allow) {
+        if !existing_allow.contains(&e) && !is_subsumed_in(&e, &existing_allow, &regex_map) {
             allow_array.push(Value::String(e.clone()));
             existing_allow.insert(e);
         }
     }
 
-    let mut existing_deny: HashSet<String> = settings["permissions"]["deny"]
-        .as_array()
-        .unwrap()
+    // Active deny removal: build the final allow set from the merged
+    // allow_array, then drop any existing deny whose exact string is
+    // in the allow set. Allow always wins — a user who opts into a
+    // permission FLOW would otherwise deny gets the opt-in honored.
+    let final_allow_set: HashSet<String> = allow_array
         .iter()
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
 
-    let mut deny_array: Vec<Value> = settings["permissions"]["deny"].as_array().unwrap().clone();
+    let mut deny_array: Vec<Value> = settings["permissions"]["deny"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| {
+            v.as_str()
+                .map(|s| !final_allow_set.contains(s))
+                .unwrap_or(true)
+        })
+        .cloned()
+        .collect();
 
-    for entry in FLOW_DENY {
+    let mut existing_deny: HashSet<String> = deny_array
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+
+    // FLOW_DENY merge — append every entry not already present, but
+    // skip entries whose exact string is in the final allow set so the
+    // same conflict cannot reappear via the FLOW-side merge.
+    for entry in flow_deny {
         let e = entry.to_string();
-        if !existing_deny.contains(&e) {
+        if !existing_deny.contains(&e) && !final_allow_set.contains(&e) {
             deny_array.push(Value::String(e.clone()));
             existing_deny.insert(e);
         }
     }
 
-    // Always set defaultMode to acceptEdits
+    // Always set defaultMode to acceptEdits — warn on stderr when the
+    // user had configured a different value so they notice the override.
     let existing_mode = settings["permissions"]
         .get("defaultMode")
         .and_then(|v| v.as_str())
@@ -250,19 +342,7 @@ pub fn merge_settings(project_root: &Path) -> Result<Value, String> {
     }
     settings["env"]["CLAUDE_AUTO_BACKGROUND_TASKS"] = json!("false");
 
-    // Write back
-    fs::create_dir_all(&settings_dir)
-        .map_err(|e| format!("Could not create .claude directory: {}", e))?;
-    // `settings` is constructed from `json!` literals and merged-in
-    // String/Array Values — serialization cannot fail in practice.
-    // Surface any pathological internal error via `.expect` per
-    // `.claude/rules/testability-means-simplicity.md`.
-    let serialized = serde_json::to_string_pretty(&settings)
-        .expect("serde_json::to_string_pretty on a built settings Value cannot fail");
-    fs::write(&settings_path, format!("{}\n", serialized))
-        .map_err(|e| format!("Could not write settings.json: {}", e))?;
-
-    Ok(settings)
+    settings
 }
 
 /// Write `.flow.json` with the plugin version and optional fields.

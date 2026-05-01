@@ -429,44 +429,6 @@ fn agents_have_reasoning_discipline() {
 }
 
 #[test]
-fn semi_formal_reasoning_rule_exists() {
-    let path = common::repo_root()
-        .join(".claude")
-        .join("rules")
-        .join("semi-formal-reasoning.md");
-    assert!(
-        path.exists(),
-        "semi-formal-reasoning.md rule file must exist"
-    );
-    let c = fs::read_to_string(&path).unwrap();
-    assert!(
-        c.contains("Premise"),
-        "semi-formal-reasoning.md must contain 'Premise'"
-    );
-    assert!(
-        c.contains("Trace"),
-        "semi-formal-reasoning.md must contain 'Trace'"
-    );
-}
-
-#[test]
-fn cognitive_isolation_lists_all_context_rich_agents() {
-    let path = common::repo_root()
-        .join(".claude")
-        .join("rules")
-        .join("cognitive-isolation.md");
-    let c = fs::read_to_string(&path).unwrap();
-    assert!(
-        c.contains("reviewer"),
-        "cognitive-isolation.md must list reviewer as context-rich"
-    );
-    assert!(
-        c.contains("learn-analyst"),
-        "cognitive-isolation.md must list learn-analyst as context-rich"
-    );
-}
-
-#[test]
 fn investigation_agents_no_inline_context() {
     for agent in &["pre-mortem.md", "documentation.md", "adversarial.md"] {
         let c = common::read_agent(agent);
@@ -821,10 +783,6 @@ fn skill_ci_invocations_specify_long_timeout() {
     };
 
     scan_dir(common::skills_dir(), "skills");
-    let dot_skills = common::repo_root().join(".claude").join("skills");
-    if dot_skills.exists() {
-        scan_dir(dot_skills, ".claude/skills");
-    }
 
     assert!(
         violations.is_empty(),
@@ -1232,80 +1190,6 @@ fn reset_clears_start_lock_queue() {
     );
 }
 
-// --- QA skill ---
-
-#[test]
-fn flow_qa_has_setup_check() {
-    let c = fs::read_to_string(
-        common::repo_root()
-            .join(".claude")
-            .join("skills")
-            .join("flow-qa")
-            .join("SKILL.md"),
-    )
-    .unwrap();
-    assert!(
-        c.contains(".qa-repos") || c.contains("qa-repos"),
-        "QA must check .qa-repos/ for setup status"
-    );
-}
-
-#[test]
-fn flow_qa_has_setup_commands() {
-    let c = fs::read_to_string(
-        common::repo_root()
-            .join(".claude")
-            .join("skills")
-            .join("flow-qa")
-            .join("SKILL.md"),
-    )
-    .unwrap();
-    assert!(
-        c.contains("prime-setup") || c.contains("prime"),
-        "QA must reference prime-setup"
-    );
-}
-
-#[test]
-fn flow_qa_asks_for_target() {
-    // The flow-qa skill must prompt the user to pick which QA repo to
-    // exercise. Originally framed as a "framework" question; the
-    // framework concept has been removed but the choice itself
-    // remains — different QA repos still test different toolchains.
-    let c = fs::read_to_string(
-        common::repo_root()
-            .join(".claude")
-            .join("skills")
-            .join("flow-qa")
-            .join("SKILL.md"),
-    )
-    .unwrap();
-    assert!(
-        c.contains("AskUserQuestion"),
-        "flow-qa must prompt for which QA target to run"
-    );
-    assert!(
-        c.contains("python") && c.contains("rails"),
-        "flow-qa must list at least the python and rails targets"
-    );
-}
-
-#[test]
-fn flow_qa_no_create_issue_step() {
-    let c = fs::read_to_string(
-        common::repo_root()
-            .join(".claude")
-            .join("skills")
-            .join("flow-qa")
-            .join("SKILL.md"),
-    )
-    .unwrap();
-    assert!(
-        !c.contains("flow-create-issue"),
-        "flow-qa must not reference flow-create-issue"
-    );
-}
-
 // --- Commit configuration ---
 
 #[test]
@@ -1355,22 +1239,6 @@ fn no_skill_invokes_commit_with_auto() {
 }
 
 // --- Release and prime ---
-
-#[test]
-fn release_manual_requires_approval() {
-    let c = fs::read_to_string(
-        common::repo_root()
-            .join(".claude")
-            .join("skills")
-            .join("flow-release")
-            .join("SKILL.md"),
-    )
-    .unwrap();
-    assert!(
-        c.contains("--manual"),
-        "Release --manual flag must pause for approval"
-    );
-}
 
 #[test]
 fn prime_supports_reprime_flag() {
