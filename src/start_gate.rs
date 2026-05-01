@@ -24,6 +24,25 @@ use crate::commands::start_step::update_step;
 use crate::flow_paths::FlowPaths;
 use crate::update_deps::run_update_deps;
 
+/// Read the `base_branch` field from the state file, falling back to
+/// `"main"` when the file cannot be read, fails to parse, lacks the
+/// field, or stores it as a non-string. Used by `run_impl_main` to
+/// determine which integration branch to pull from, run CI against,
+/// and push the deps commit to. The fallback preserves behavior for
+/// state files written by older flow-rs versions and for test fixtures
+/// that hand-write minimal state JSON.
+fn read_base_branch(state_path: &Path) -> String {
+    std::fs::read_to_string(state_path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .and_then(|v| {
+            v.get("base_branch")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "main".to_string())
+}
+
 const DEPS_TIMEOUT_SECS: u64 = 300;
 
 #[derive(Parser, Debug)]
@@ -45,8 +64,15 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
     let state_path = FlowPaths::new(root, branch).state_file();
     update_step(&state_path, 2);
 
-    // Step 1: git pull origin main
-    let pull_result = git_pull(cwd);
+    // Read the integration branch the user is working off of (captured
+    // at flow-start time in init_state). All subsequent git pull/push,
+    // CI baseline, and deps-commit operations target this branch
+    // instead of a hardcoded "main", so repos whose default branch is
+    // e.g. `staging` coordinate against their actual integration branch.
+    let base_branch = read_base_branch(&state_path);
+
+    // Step 1: git pull origin <base_branch>
+    let pull_result = git_pull(cwd, &base_branch);
     let _ = append_log(
         root,
         branch,
@@ -70,7 +96,7 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
     let ci_args = ci::Args {
         force: false,
         retry: 3,
-        branch: Some("main".to_string()),
+        branch: Some(base_branch.clone()),
         simulate_branch: None,
         format: false,
         lint: false,
@@ -182,7 +208,7 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
     let post_ci_args = ci::Args {
         force: false,
         retry: 3,
-        branch: Some("main".to_string()),
+        branch: Some(base_branch.clone()),
         simulate_branch: None,
         format: false,
         lint: false,
@@ -241,8 +267,9 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
         }));
     }
 
-    // Commit dependency changes to main while holding the start lock
-    if let Err(e) = commit_deps(cwd) {
+    // Commit dependency changes to the integration branch while holding
+    // the start lock.
+    if let Err(e) = commit_deps(cwd, &base_branch) {
         let _ = append_log(
             root,
             branch,
@@ -275,14 +302,14 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
     (response, 0)
 }
 
-/// Commit dependency changes to main and push.
+/// Commit dependency changes to the integration branch and push.
 ///
-/// Runs `git add -A` → `git commit` → `git push origin main`.
+/// Runs `git add -A` → `git commit` → `git push origin <base_branch>`.
 /// Called after deps changed and post-deps CI passed. Must only be
 /// called while the start lock is held — this serializes all
-/// main-branch mutations per the concurrency model. Returns `Err`
+/// integration-branch mutations per the concurrency model. Returns `Err`
 /// if any git command fails (including "nothing to commit").
-fn commit_deps(cwd: &Path) -> Result<(), String> {
+fn commit_deps(cwd: &Path, base_branch: &str) -> Result<(), String> {
     // Spawning `git` cannot fail in practice on any supported target
     // — `git` is always on PATH and `Command::output()` only returns
     // Err when the binary cannot be executed at all. A failure there
@@ -313,7 +340,7 @@ fn commit_deps(cwd: &Path) -> Result<(), String> {
     }
 
     let push = Command::new("git")
-        .args(["push", "origin", "main"])
+        .args(["push", "origin", base_branch])
         .current_dir(cwd)
         .output()
         .expect("git push spawn");
@@ -327,12 +354,12 @@ fn commit_deps(cwd: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Run `git pull origin main`.
-fn git_pull(cwd: &Path) -> Result<(), String> {
+/// Run `git pull origin <base_branch>`.
+fn git_pull(cwd: &Path, base_branch: &str) -> Result<(), String> {
     // Spawning `git` and waiting for it cannot fail in practice on
     // any supported target.
     let child = Command::new("git")
-        .args(["pull", "origin", "main"])
+        .args(["pull", "origin", base_branch])
         .current_dir(cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

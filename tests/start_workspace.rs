@@ -374,6 +374,84 @@ fn test_worktree_cwd_includes_relative_cwd_suffix() {
     assert_eq!(data["relative_cwd"], "api");
 }
 
+/// Drive the `Some(str)` branch of base_branch state-file parsing in
+/// `run_impl_with_paths` and prove the value reaches
+/// `gh pr create --base <base_branch>`. State file declares
+/// `base_branch: "staging"`. The gh stub captures every argv to a
+/// recorder file so the test can assert `--base staging` was passed —
+/// proving the value flowed through from state file to `gh` instead
+/// of the hardcoded `"main"` fallback.
+#[test]
+fn test_base_branch_from_state_used_for_pr_base() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+
+    // Recorder gh stub: append every invocation to .gh-args, then emit
+    // the standard PR URL on stdout so the rest of the workflow proceeds.
+    let recorder_path = repo.join(".gh-args");
+    let stub_script = format!(
+        "#!/bin/bash\n\
+         echo \"$@\" >> \"{}\"\n\
+         echo \"https://github.com/test/repo/pull/42\"\n",
+        recorder_path.to_string_lossy()
+    );
+    let stub_dir = create_gh_stub(&repo, &stub_script);
+
+    // Pre-create state with non-default base_branch.
+    let state_dir = flow_states_dir(&repo);
+    fs::create_dir_all(&state_dir).unwrap();
+    let state = json!({
+        "schema_version": 1,
+        "branch": "staging-flow",
+        "base_branch": "staging",
+        "relative_cwd": "",
+        "started_at": "2026-01-01T00:00:00-08:00",
+        "current_phase": "flow-start",
+        "files": {
+            "plan": null,
+            "dag": null,
+            "log": ".flow-states/staging-flow.log",
+            "state": ".flow-states/staging-flow.json",
+        },
+        "phases": {},
+        "phase_transitions": [],
+        "notes": [],
+        "prompt": "test",
+    });
+    fs::write(
+        state_dir.join("staging-flow.json"),
+        serde_json::to_string_pretty(&state).unwrap(),
+    )
+    .unwrap();
+    create_lock_entry(&repo, "staging-flow");
+
+    let output = run_start_workspace(&repo, "Staging Flow", "staging-flow", &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+
+    // Verify the gh stub was called with `--base staging`. The recorder
+    // file aggregates every invocation; the PR-create call must include
+    // `--base staging` (not `--base main`).
+    let recorded = fs::read_to_string(&recorder_path).expect("gh recorder file must exist");
+    assert!(
+        recorded.contains("--base staging"),
+        "gh pr create must receive --base staging from state, got: {}",
+        recorded
+    );
+    assert!(
+        !recorded.contains("--base main"),
+        "gh pr create must NOT receive --base main when state has staging, got: {}",
+        recorded
+    );
+}
+
 #[test]
 fn test_worktree_partial_failure_recovery_after_cleanup() {
     // Simulates a partial failure where a directory exists at the worktree path

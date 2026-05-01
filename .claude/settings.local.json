@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(jq *)"
+      "Bash(jq *)",
+      "Bash(awk *)"
     ]
   }
 }

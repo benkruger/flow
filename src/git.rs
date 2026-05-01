@@ -104,6 +104,46 @@ fn current_branch_from_output(
     }
 }
 
+/// Detect the integration branch (the branch FLOW pulls from, runs CI on,
+/// pushes deps to, and targets with the PR `--base`).
+///
+/// Reads `git symbolic-ref --short refs/remotes/origin/HEAD` from the
+/// given cwd. When the symbolic-ref is set (the normal state after
+/// `git clone`), strips the `origin/` prefix and returns the branch
+/// name. Falls back to `"main"` on any failure (no remote, symbolic-ref
+/// unset, non-git directory).
+///
+/// Used by [`crate::commands::init_state`] at flow-start to capture the
+/// repo's default branch into the state file as `base_branch`. Downstream
+/// start-gate and start-workspace read that field so a repo whose default
+/// branch is not `main` (e.g. `staging`, `develop`) coordinates against
+/// its actual integration branch instead of crashing on a missing `main`
+/// remote ref.
+pub fn default_branch_in(cwd: &Path) -> String {
+    default_branch_from_output(
+        Command::new("git")
+            .args(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
+            .current_dir(cwd)
+            .output(),
+    )
+}
+
+/// Pure helper for [`default_branch_in`]. `git symbolic-ref --short`
+/// on a remote HEAD always emits `origin/<branch>` on success; any
+/// non-success exit (no remote, no symbolic-ref configured, non-git
+/// directory) falls back to `"main"`. The `trim_start_matches` is the
+/// strip — production output always has the `origin/` prefix, but the
+/// `_matches` form is safe (no-op) on the impossible "no prefix" case.
+fn default_branch_from_output(output: io::Result<Output>) -> String {
+    match output {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .trim()
+            .trim_start_matches("origin/")
+            .to_string(),
+        _ => "main".to_string(),
+    }
+}
+
 /// Resolve which branch's state file to use.
 ///
 /// Resolution order:

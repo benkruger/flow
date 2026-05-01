@@ -90,11 +90,18 @@ pub(crate) fn create_worktree(
 }
 
 /// Make empty commit, push, and create PR. Returns (pr_url, pr_number).
+///
+/// `base_branch` — the integration branch to target as the PR's base.
+/// Read from the state file by [`run_impl_with_paths`]; written there
+/// at flow-start by [`crate::commands::init_state`] via
+/// [`crate::git::default_branch_in`]. Falls back to `"main"` upstream
+/// when detection fails.
 pub(crate) fn initial_commit_push_pr(
     wt_path: &std::path::Path,
     branch: &str,
     feature_title: &str,
     prompt: &str,
+    base_branch: &str,
 ) -> Result<(String, u32), SetupError> {
     let commit_msg_path = wt_path.join(".flow-commit-msg");
     // `create_worktree` above succeeded, so `wt_path` exists and is
@@ -132,7 +139,7 @@ pub(crate) fn initial_commit_push_pr(
             "--body",
             &pr_body,
             "--base",
-            "main",
+            base_branch,
         ],
         wt_path,
         "pr_create",
@@ -156,6 +163,32 @@ fn run_impl_with_paths(args: &Args, root: &Path, cwd: &Path) -> Value {
     // Update TUI step counter
     let state_path = FlowPaths::new(root, branch).state_file();
     update_step(&state_path, 3);
+
+    // Read state file once: relative_cwd routes the agent into a
+    // subdirectory of the worktree (mono-repo flows); base_branch is
+    // the integration branch the PR will target as `--base`. Both were
+    // written by init_state before start-gate ran. Defaults preserve
+    // pre-existing behavior when the state file is unreadable, parse
+    // fails, or fields are absent (root-level flow against `main`).
+    let state_value = std::fs::read_to_string(&state_path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok());
+    let relative_cwd = state_value
+        .as_ref()
+        .and_then(|v| {
+            v.get("relative_cwd")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_default();
+    let base_branch = state_value
+        .as_ref()
+        .and_then(|v| {
+            v.get("base_branch")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "main".to_string());
 
     let queue_dir = queue_path(root);
 
@@ -212,7 +245,7 @@ fn run_impl_with_paths(args: &Args, root: &Path, cwd: &Path) -> Value {
 
     // Step 2: Commit, push, create PR
     let (pr_url, pr_number) =
-        match initial_commit_push_pr(&wt_path, branch, &feature_title, &prompt) {
+        match initial_commit_push_pr(&wt_path, branch, &feature_title, &prompt, &base_branch) {
             Ok(r) => r,
             Err(e) => {
                 let _ = append_log(
@@ -242,20 +275,6 @@ fn run_impl_with_paths(args: &Args, root: &Path, cwd: &Path) -> Value {
     let pr_url_clone = pr_url.clone();
     let prompt_clone = prompt.clone();
     let repo_clone = repo.clone();
-
-    // Read relative_cwd from state file (init_state wrote it earlier).
-    // Used below to construct the worktree_cwd response field so the
-    // skill can cd the agent into a subdirectory of the worktree when
-    // the flow was started inside a mono-repo subdir.
-    let relative_cwd = std::fs::read_to_string(&state_path)
-        .ok()
-        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-        .and_then(|v| {
-            v.get("relative_cwd")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_default();
 
     if state_path.exists() {
         match mutate_state(&state_path, &mut |state| {

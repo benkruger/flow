@@ -9,7 +9,8 @@ use std::path::Path;
 use std::process::Command;
 
 use flow_rs::git::{
-    current_branch, current_branch_in, project_root, resolve_branch, resolve_branch_in,
+    current_branch, current_branch_in, default_branch_in, project_root, resolve_branch,
+    resolve_branch_in,
 };
 
 /// Initialize a git repo in the given directory with an initial commit
@@ -154,4 +155,73 @@ fn resolve_branch_in_matches_state_file() {
 
     let branch = resolve_branch_in(None, repo.path(), root.path());
     assert_eq!(branch, Some("matched".to_string()));
+}
+
+// --- default_branch_in ---
+
+/// Configure `origin/HEAD` on a fixture repo to point at the named branch.
+/// Mirrors what `git clone` does automatically when cloning a remote whose
+/// default branch is `<branch>`.
+fn set_origin_head(repo: &Path, branch: &str) {
+    let target = format!("refs/remotes/origin/{}", branch);
+    let output = Command::new("git")
+        .args(["symbolic-ref", "refs/remotes/origin/HEAD", &target])
+        .current_dir(repo)
+        .output()
+        .expect("git symbolic-ref failed to spawn");
+    assert!(
+        output.status.success(),
+        "git symbolic-ref failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// Materialize a `refs/remotes/origin/<branch>` ref so symbolic-ref has
+/// a valid target. Uses git update-ref against the current HEAD SHA.
+fn create_remote_ref(repo: &Path, branch: &str) {
+    let sha = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(repo)
+        .output()
+        .expect("git rev-parse failed");
+    let sha = String::from_utf8_lossy(&sha.stdout).trim().to_string();
+    let ref_name = format!("refs/remotes/origin/{}", branch);
+    let output = Command::new("git")
+        .args(["update-ref", &ref_name, &sha])
+        .current_dir(repo)
+        .output()
+        .expect("git update-ref failed to spawn");
+    assert!(
+        output.status.success(),
+        "git update-ref failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn default_branch_in_reads_symbolic_ref_when_set() {
+    let dir = tempfile::tempdir().unwrap();
+    init_git_repo(dir.path(), "main");
+    create_remote_ref(dir.path(), "staging");
+    set_origin_head(dir.path(), "staging");
+
+    let branch = default_branch_in(dir.path());
+    assert_eq!(branch, "staging");
+}
+
+#[test]
+fn default_branch_in_returns_main_for_repo_with_no_origin_head() {
+    let dir = tempfile::tempdir().unwrap();
+    init_git_repo(dir.path(), "main");
+    // No origin/HEAD set — symbolic-ref will fail and we fall back to "main".
+    let branch = default_branch_in(dir.path());
+    assert_eq!(branch, "main");
+}
+
+#[test]
+fn default_branch_in_returns_main_for_non_git_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    // No `git init` — symbolic-ref errors out and the helper falls back.
+    let branch = default_branch_in(dir.path());
+    assert_eq!(branch, "main");
 }

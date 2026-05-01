@@ -110,6 +110,30 @@ fn create_state_file(repo: &Path, branch: &str) {
     .unwrap();
 }
 
+/// Set up a state file with a non-default `base_branch` so start-gate's
+/// `read_base_branch` helper returns the configured value (the
+/// `Some(str)` branch of the `as_str` chain) rather than falling back
+/// to `"main"`. Used to verify that integration-branch operations
+/// (git pull, CI baseline, deps push) target the value from state.
+fn create_state_file_with_base_branch(repo: &Path, branch: &str, base_branch: &str) {
+    let state_dir = flow_states_dir(repo);
+    fs::create_dir_all(&state_dir).unwrap();
+    let state = json!({
+        "schema_version": 1,
+        "branch": branch,
+        "base_branch": base_branch,
+        "current_phase": "flow-start",
+        "start_step": 1,
+        "start_steps_total": 5,
+        "phases": {}
+    });
+    fs::write(
+        state_dir.join(format!("{}.json", branch)),
+        serde_json::to_string_pretty(&state).unwrap(),
+    )
+    .unwrap();
+}
+
 /// Write a CI sentinel so ci::run_impl takes the fast skip path
 /// without spawning any bin/* scripts. Excludes `.flow-states/` from
 /// git so the sentinel itself doesn't change the tree snapshot
@@ -531,4 +555,30 @@ fn test_run_impl_main_always_exits_0() {
     let data = parse_output(&output);
     assert_eq!(data["status"], "error");
     assert_eq!(data["step"], "git_pull");
+}
+
+/// Drive the `Some(str)` branch of `read_base_branch` and prove the
+/// value reaches `git pull origin <base_branch>`. Bare repo has only
+/// `main`; state file declares `base_branch: "staging"`. start-gate
+/// pulls `origin/staging`, which doesn't exist, so the failure
+/// surfaces as `step: git_pull` — and the stderr returned in the
+/// `message` field names "staging", proving the state-file value
+/// flowed through to the git invocation rather than the hardcoded
+/// "main" fallback.
+#[test]
+fn test_base_branch_from_state_used_for_git_pull() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    create_state_file_with_base_branch(&repo, "feat-branch", "staging");
+
+    let output = run_start_gate(&repo, "feat-branch");
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "git_pull");
+    let msg = data["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("staging"),
+        "git pull error must reference 'staging' to prove base_branch flowed through, got: {}",
+        msg
+    );
 }

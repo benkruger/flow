@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 
 use crate::commands::log::append_log;
 use crate::flow_paths::FlowPaths;
-use crate::git::project_root;
+use crate::git::{default_branch_in, project_root};
 use crate::label_issues::LABEL;
 use crate::output::{json_error, json_ok};
 use crate::phase_config::{auto_skills, build_initial_phases, freeze_phases, read_flow_json};
@@ -32,6 +32,14 @@ use crate::utils::{
 /// `start_init` from the user's cwd at flow-start time so mono-repo
 /// flows started inside a subdirectory land back in the same subdirectory
 /// after worktree creation.
+///
+/// The state's `base_branch` field is detected internally via
+/// [`default_branch_in`] reading `git symbolic-ref refs/remotes/origin/HEAD`
+/// from `project_root`. Falls back to `"main"` when the detection fails
+/// (non-git directory, no remote, symbolic-ref unset). Downstream
+/// `start-gate` and `start-workspace` read this field so a repo whose
+/// integration branch is not `main` (e.g. `staging`, `develop`) still
+/// has FLOW coordinate against its actual default branch.
 #[allow(clippy::too_many_arguments)]
 pub fn create_state(
     project_root: &Path,
@@ -45,10 +53,12 @@ pub fn create_state(
 ) -> Result<(), String> {
     let current_time = now();
     let phases = build_initial_phases(&current_time);
+    let base_branch = default_branch_in(project_root);
 
     let mut state = serde_json::Map::new();
     state.insert("schema_version".into(), json!(1));
     state.insert("branch".into(), json!(branch));
+    state.insert("base_branch".into(), json!(base_branch));
     state.insert("relative_cwd".into(), json!(relative_cwd));
     state.insert("repo".into(), Value::Null);
     state.insert("pr_number".into(), Value::Null);

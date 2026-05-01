@@ -1231,6 +1231,7 @@ fn lib_create_state_key_order_matches_python() {
     let expected = vec![
         "schema_version",
         "branch",
+        "base_branch",
         "relative_cwd",
         "repo",
         "pr_number",
