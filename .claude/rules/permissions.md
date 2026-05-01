@@ -48,6 +48,32 @@ When an entry needs to be repositioned, add first in the new
 location, then remove the duplicate — and explain the two-step
 approach before starting.
 
+### Prime-Time Active Deny Removal Carve-Out
+
+`/flow:flow-prime` runs `merge_settings` during initial setup and
+re-prime. The merge enforces an "allow always wins" invariant:
+when an entry's exact string appears in BOTH the existing allow
+list AND the existing deny list, the deny entry is removed
+during the merge. The same exact-string match also blocks FLOW's
+own `FLOW_DENY` entries from being appended when the user has
+already opted into the same permission via allow.
+
+This is the one sanctioned exception to "never remove without
+explicit ask" — the user implicitly asks for it by running
+`/flow:flow-prime`, and the action targets only entries the user
+themselves placed in conflicting lists. The merge does not
+remove deny entries that have no allow-list counterpart, and
+`UNIVERSAL_ALLOW` / `FLOW_DENY` are validated against each other
+by the `no_allow_deny_overlap_in_plugin_permissions` test so
+FLOW never engineers a conflict that would silently strip a
+user's deny.
+
+The match is exact-string only. A user with `Bash(git push)` in
+their deny list and `Bash(git *)` (broader pattern) in their
+allow list keeps the deny — subsumption-based removal is out of
+scope. See `src/prime_setup.rs::merge_settings_with` for the
+implementation and the doc comment that records the contract.
+
 ## Never Edit Permissions Mid-Flow
 
 Never modify `.claude/settings.json` inside a worktree during an
