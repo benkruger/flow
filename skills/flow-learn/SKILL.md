@@ -145,10 +145,23 @@ read is needed.
 **Read rules files.** Use the Glob tool at
 `<worktree_path>/.claude/rules/*.md`, then read each file.
 
-**Get the branch diff.**
+**Resolve the integration branch.** Run `bin/flow base-branch` to
+retrieve the base branch the flow coordinates against (the
+integration branch captured at flow-start). Capture its stdout —
+call the value `<base_branch>` — and substitute it into the
+`git diff` command below. A repo whose default branch is `staging`
+produces `<base_branch> = staging`; a standard repo produces
+`<base_branch> = main`.
 
 ```bash
-git diff origin/main...HEAD
+${CLAUDE_PLUGIN_ROOT}/bin/flow base-branch
+```
+
+**Get the branch diff.** Substitute `<base_branch>` with the value
+you just captured.
+
+```bash
+git diff origin/<base_branch>...HEAD
 ```
 
 **Launch learn-analyst.** Launch the learn-analyst agent using the Agent

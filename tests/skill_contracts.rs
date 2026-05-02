@@ -2796,6 +2796,78 @@ fn documentation_agent_no_two_dot_diff() {
     );
 }
 
+// --- base_branch flows through to Phase 4/5 diff commands ---
+
+/// flow-code-review constructs the diff range from
+/// `bin/flow base-branch` rather than the hardcoded `origin/main`.
+/// Locks in the cross-skill contract: skills resolve the integration
+/// branch via the CLI subcommand, never via a literal.
+#[test]
+fn flow_code_review_diff_uses_base_branch_subcommand() {
+    let c = common::read_skill("flow-code-review");
+    assert!(
+        c.contains("bin/flow base-branch") || c.contains("bin/flow\" base-branch"),
+        "flow-code-review SKILL.md must invoke `bin/flow base-branch` to resolve the diff range"
+    );
+    assert!(
+        !c.contains("git diff origin/main...HEAD"),
+        "flow-code-review SKILL.md must not embed `git diff origin/main...HEAD` — \
+         resolve base_branch via `bin/flow base-branch` instead"
+    );
+}
+
+/// flow-learn constructs its diff range from `bin/flow base-branch`
+/// rather than the hardcoded `origin/main`. Same contract as
+/// `flow_code_review_diff_uses_base_branch_subcommand`.
+#[test]
+fn flow_learn_diff_uses_base_branch_subcommand() {
+    let c = common::read_skill("flow-learn");
+    assert!(
+        c.contains("bin/flow base-branch") || c.contains("bin/flow\" base-branch"),
+        "flow-learn SKILL.md must invoke `bin/flow base-branch` to resolve the diff range"
+    );
+    assert!(
+        !c.contains("git diff origin/main...HEAD"),
+        "flow-learn SKILL.md must not embed `git diff origin/main...HEAD` — \
+         resolve base_branch via `bin/flow base-branch` instead"
+    );
+}
+
+/// The four Code Review agent Input sections (reviewer, pre-mortem,
+/// adversarial, documentation) describe the diff in terms of the
+/// integration branch (`<base_branch>`) — not a hardcoded `origin/main`.
+/// Stale Input sections mislead the agent about the diff range it
+/// receives, per `.claude/rules/docs-with-behavior.md` "Agent Input
+/// Section Sync".
+#[test]
+fn agent_diff_input_sections_reference_base_branch_not_main() {
+    for agent in &[
+        "reviewer.md",
+        "pre-mortem.md",
+        "adversarial.md",
+        "documentation.md",
+    ] {
+        let c = common::read_agent(agent);
+        assert!(
+            !c.contains("git diff origin/main...HEAD"),
+            "agents/{} must not describe the diff range as `git diff origin/main...HEAD` — \
+             use `<base_branch>` (or equivalent placeholder) so the description matches \
+             what the skill constructs at runtime",
+            agent
+        );
+        assert!(
+            c.contains("<base_branch>")
+                || c.contains("base_branch")
+                || c.contains("${BASE}")
+                || c.contains("$BASE"),
+            "agents/{} must reference `<base_branch>` (or an equivalent placeholder) when \
+             describing the diff range so the Input section stays accurate when the \
+             integration branch is not `main`",
+            agent
+        );
+    }
+}
+
 // --- Git command consolidation tombstones ---
 
 #[test]
@@ -3220,8 +3292,9 @@ fn code_review_mentions_tombstone_audit() {
 fn code_review_collects_substantive_diff() {
     let c = common::read_skill("flow-code-review");
     assert!(
-        c.contains("git diff origin/main...HEAD -w"),
-        "Code Review Step 1 must collect a substantive diff (git diff -w) for context-sparse agents"
+        c.contains("git diff origin/<base_branch>...HEAD -w"),
+        "Code Review Step 1 must collect a substantive diff \
+         (`git diff origin/<base_branch>...HEAD -w`) for context-sparse agents"
     );
 }
 

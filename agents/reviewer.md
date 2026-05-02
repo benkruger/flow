@@ -16,7 +16,11 @@ know why any decision was made. You see only the result.
 
 Your prompt contains these labeled sections:
 
-- **DIFF** — the full `git diff origin/main...HEAD`
+- **DIFF** — the full `git diff origin/<base_branch>...HEAD`, where
+  `<base_branch>` is the integration branch the flow coordinates
+  against (resolved at runtime via `bin/flow base-branch` — usually
+  `main`, but `staging`/`develop`/etc. for repos whose default
+  branch is not `main`)
 - **PLAN** — the implementation plan the developer followed
 - **CLAUDE.MD** — the project conventions and architecture
 - **RULES** — all `.claude/rules/*.md` file contents
