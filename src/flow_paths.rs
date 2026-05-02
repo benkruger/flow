@@ -54,18 +54,37 @@ pub struct FlowPaths {
 }
 
 impl FlowPaths {
-    /// Returns true iff `branch` is a valid FLOW branch name — non-empty
-    /// and contains no '/'. FLOW branch-scoped files are flat filenames
-    /// under `.flow-states/`, so slashes would produce subdirectory paths
-    /// that discovery scanners iterating direct children cannot find.
+    /// Returns true iff `branch` is a valid FLOW branch name. The
+    /// branch is joined onto `.flow-states/` to construct the
+    /// branch-scoped subdirectory `<flow_states_dir>/<branch>/`, so
+    /// any value that would resolve outside that subdirectory must be
+    /// rejected here. Cleanup runs `fs::remove_dir_all(branch_dir())`,
+    /// so a path-traversal slip turns into arbitrary-directory
+    /// deletion (`--branch ..` would target the project root,
+    /// `--branch .` would target every sibling flow's subdirectory).
+    ///
+    /// Rejects:
+    /// - empty string (cannot identify a flow)
+    /// - `.` or `..` (path-traversal — `.flow-states/.` and
+    ///   `.flow-states/..` resolve to `.flow-states/` and the project
+    ///   root respectively, which cleanup would then `remove_dir_all`)
+    /// - any string containing `/` (would create a subdirectory under
+    ///   `.flow-states/<top>/...` that the discovery scanners cannot
+    ///   find)
+    /// - any string containing `\0` (NUL bytes round-trip through
+    ///   filesystem syscalls in implementation-defined ways)
     pub fn is_valid_branch(branch: &str) -> bool {
-        !branch.is_empty() && !branch.contains('/')
+        !branch.is_empty()
+            && branch != "."
+            && branch != ".."
+            && !branch.contains('/')
+            && !branch.contains('\0')
     }
 
     /// Construct a new `FlowPaths` rooted at `<project_root>/.flow-states`
     /// for the given branch.
     ///
-    /// Panics if `branch` is empty or contains '/'. Use this when you
+    /// Panics if `branch` fails `is_valid_branch`. Use this when you
     /// know the branch is valid (e.g., it came from state file keyspace
     /// or was already checked). Use `try_new` for branches sourced from
     /// git (`current_branch()`, `resolve_branch()`) — those can carry
@@ -74,12 +93,9 @@ impl FlowPaths {
     pub fn new(project_root: impl AsRef<Path>, branch: impl Into<String>) -> Self {
         let branch = branch.into();
         assert!(
-            !branch.is_empty(),
-            "FlowPaths::new: branch must be non-empty"
-        );
-        assert!(
-            !branch.contains('/'),
-            "FlowPaths::new: branch must not contain '/': {branch}"
+            Self::is_valid_branch(&branch),
+            "FlowPaths::new: invalid branch: {branch:?} (must be non-empty, \
+             not '.' or '..', no '/' or NUL)"
         );
         Self {
             flow_states_dir: project_root.as_ref().join(".flow-states"),

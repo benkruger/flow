@@ -171,13 +171,13 @@ fn debug_format_contains_branch() {
 }
 
 #[test]
-#[should_panic(expected = "non-empty")]
+#[should_panic(expected = "invalid branch")]
 fn new_panics_on_empty_branch() {
     let _ = FlowPaths::new("/p", "");
 }
 
 #[test]
-#[should_panic(expected = "must not contain")]
+#[should_panic(expected = "invalid branch")]
 fn new_panics_on_branch_with_single_slash() {
     let _ = FlowPaths::new("/p", "user/fix");
 }
@@ -301,6 +301,64 @@ fn try_new_returns_none_for_slash_branch() {
 #[test]
 fn try_new_returns_none_for_multi_slash_branch() {
     assert!(FlowPaths::try_new("/p", "a/b/c").is_none());
+}
+
+// --- Path-traversal rejection (PR #1258 security gate) ---
+//
+// `.` and `..` segments would resolve outside the per-branch
+// subdirectory once joined onto `.flow-states/`, turning
+// `cleanup`'s `remove_dir_all(branch_dir())` into arbitrary
+// directory deletion. NUL bytes survive into filesystem syscalls
+// in implementation-defined ways. All four rejections must hit
+// `is_valid_branch` so `try_new` returns None and the panicking
+// `new` constructor's assertion fires.
+
+#[test]
+fn is_valid_branch_rejects_dot() {
+    assert!(!FlowPaths::is_valid_branch("."));
+}
+
+#[test]
+fn is_valid_branch_rejects_dot_dot() {
+    assert!(!FlowPaths::is_valid_branch(".."));
+}
+
+#[test]
+fn is_valid_branch_rejects_nul_byte() {
+    assert!(!FlowPaths::is_valid_branch("foo\0bar"));
+}
+
+#[test]
+fn try_new_returns_none_for_dot_branch() {
+    assert!(FlowPaths::try_new("/p", ".").is_none());
+}
+
+#[test]
+fn try_new_returns_none_for_dot_dot_branch() {
+    assert!(FlowPaths::try_new("/p", "..").is_none());
+}
+
+#[test]
+fn try_new_returns_none_for_nul_branch() {
+    assert!(FlowPaths::try_new("/p", "branch\0name").is_none());
+}
+
+#[test]
+#[should_panic(expected = "invalid branch")]
+fn new_panics_on_dot_branch() {
+    let _ = FlowPaths::new("/p", ".");
+}
+
+#[test]
+#[should_panic(expected = "invalid branch")]
+fn new_panics_on_dot_dot_branch() {
+    let _ = FlowPaths::new("/p", "..");
+}
+
+#[test]
+#[should_panic(expected = "invalid branch")]
+fn new_panics_on_nul_branch() {
+    let _ = FlowPaths::new("/p", "with\0nul");
 }
 
 // --- FlowStatesDir ---

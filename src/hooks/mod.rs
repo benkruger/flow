@@ -103,15 +103,19 @@ pub fn detect_branch_from_path(cwd: &Path) -> Option<String> {
 
 /// Check if a FLOW feature is active for the given branch.
 ///
-/// Returns `true` when `.flow-states/<branch>/state.json` exists at the
-/// given root. Rejects branch names containing path separators to
-/// prevent traversal.
+/// Returns `true` when `.flow-states/<branch>/state.json` exists at
+/// the given root and the branch passes `FlowPaths::is_valid_branch`.
+/// Invalid branch names (empty, `.`, `..`, slash- or NUL-containing,
+/// or backslash-containing on Windows shells) return `false` —
+/// they cannot identify an active flow under the subdirectory layout.
 pub fn is_flow_active(branch: &str, root: &Path) -> bool {
-    if branch.is_empty() || branch.contains('/') || branch.contains('\\') {
+    if branch.contains('\\') {
         return false;
     }
-    let state_file = FlowPaths::new(root, branch).state_file();
-    state_file.is_file()
+    match FlowPaths::try_new(root, branch) {
+        Some(paths) => paths.state_file().is_file(),
+        None => false,
+    }
 }
 
 /// Resolve the main repo root when inside a worktree.
