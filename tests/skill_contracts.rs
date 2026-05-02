@@ -2796,6 +2796,55 @@ fn documentation_agent_no_two_dot_diff() {
     );
 }
 
+// --- base_branch flows through to Phase 6 prompt and success message ---
+
+/// flow-complete's Step 4 squash-merge prompt interpolates the
+/// integration branch from `bin/flow base-branch` rather than the
+/// literal `main`. A non-main-trunk repo asking the user
+/// "Squash-merge into main?" misleads them about which branch the
+/// merge actually targets.
+#[test]
+fn flow_complete_prompt_interpolates_base_branch() {
+    let c = common::read_skill("flow-complete");
+    assert!(
+        !c.contains("Squash-merge '<feature>' into main?"),
+        "flow-complete must not hardcode `Squash-merge '<feature>' into main?` — \
+         interpolate the integration branch via `<base_branch>`"
+    );
+    assert!(
+        c.contains("<base_branch>"),
+        "flow-complete must reference `<base_branch>` somewhere — \
+         the prompt resolves the integration branch from `bin/flow base-branch`"
+    );
+}
+
+/// flow-complete's Step 5 success message interpolates the
+/// integration branch via `<base_branch>` rather than the literal
+/// `main`, so a staging-trunked repo reports `merged into staging`
+/// after the merge — not a misleading `merged into main`.
+#[test]
+fn flow_complete_success_message_interpolates_base_branch() {
+    let c = common::read_skill("flow-complete");
+    assert!(
+        !c.contains("merged into main."),
+        "flow-complete must not hardcode `merged into main.` — \
+         interpolate the integration branch via `<base_branch>`"
+    );
+}
+
+/// flow-start prose generalizes "Main is broken" to a base-branch-
+/// neutral phrasing so a staging-trunked repo's Phase 1 messaging
+/// does not name the wrong branch when the start gate fails.
+#[test]
+fn flow_start_prose_no_universal_main() {
+    let c = common::read_skill("flow-start");
+    assert!(
+        !c.contains("Main is broken"),
+        "flow-start must not hardcode `Main is broken` — generalize to \
+         `the integration branch is broken` (or equivalent base-branch-neutral wording)"
+    );
+}
+
 // --- base_branch flows through to Phase 4/5 diff commands ---
 
 /// flow-code-review constructs the diff range from
