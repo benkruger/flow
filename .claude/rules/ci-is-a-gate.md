@@ -10,10 +10,10 @@ proceeds.
 A background call lets the caller move on before results return:
 the commit skill shows the diff, writes the message, and finalizes
 the commit before CI has finished. The gate is defeated. Bugs that
-CI would have caught land on main. The same applies to state
-mutations (`phase-transition`, `finalize-commit`, `phase-enter`)
-— backgrounding them creates race conditions with downstream
-actions that depend on the state change.
+CI would have caught land on the base branch. The same applies to
+state mutations (`phase-transition`, `finalize-commit`,
+`phase-enter`) — backgrounding them creates race conditions with
+downstream actions that depend on the state change.
 
 This applies everywhere `bin/flow` runs:
 
@@ -45,8 +45,9 @@ unrelated blocks.
 The CI-running subcommand family (as of issue #1182):
 
 - `bin/flow ci` — the direct CI runner
-- `bin/flow start-gate` — runs CI on main under the start lock per
-  CLAUDE.md "Start-Gate CI on Main as Serialization Point"
+- `bin/flow start-gate` — runs CI on the base branch under the start
+  lock per CLAUDE.md "Start-Gate CI on the Base Branch as
+  Serialization Point"
 - `bin/flow finalize-commit` — runs `ci::run_impl()` before
   `git commit` per CLAUDE.md "CI is enforced inside
   `finalize-commit` itself"
