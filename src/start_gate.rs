@@ -22,25 +22,16 @@ use crate::ci;
 use crate::commands::log::append_log;
 use crate::commands::start_step::update_step;
 use crate::flow_paths::FlowPaths;
+use crate::git::read_base_branch;
 use crate::update_deps::run_update_deps;
 
-/// Read the `base_branch` field from the state file, falling back to
-/// `"main"` when the file cannot be read, fails to parse, lacks the
-/// field, or stores it as a non-string. Used by `run_impl_main` to
-/// determine which integration branch to pull from, run CI against,
-/// and push the deps commit to. The fallback preserves behavior for
-/// state files written by older flow-rs versions and for test fixtures
-/// that hand-write minimal state JSON.
-fn read_base_branch(state_path: &Path) -> String {
-    std::fs::read_to_string(state_path)
-        .ok()
-        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-        .and_then(|v| {
-            v.get("base_branch")
-                .and_then(|x| x.as_str())
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_else(|| "main".to_string())
+/// Resolve the integration branch for `run_impl_main`. Routes through
+/// `git::read_base_branch` (the no-silent-fallback helper) and falls
+/// back to `"main"` when the read returns an error so legacy state
+/// files and minimal test fixtures keep working without re-encoding
+/// the fallback at every call site.
+fn resolve_base_branch(state_path: &Path) -> String {
+    read_base_branch(state_path).unwrap_or_else(|_| "main".to_string())
 }
 
 const DEPS_TIMEOUT_SECS: u64 = 300;
@@ -69,7 +60,7 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
     // CI baseline, and deps-commit operations target this branch
     // instead of a hardcoded "main", so repos whose default branch is
     // e.g. `staging` coordinate against their actual integration branch.
-    let base_branch = read_base_branch(&state_path);
+    let base_branch = resolve_base_branch(&state_path);
 
     // Step 1: git pull origin <base_branch>
     let pull_result = git_pull(cwd, &base_branch);

@@ -3,6 +3,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use serde_json::Value;
+
 use crate::flow_paths::FlowPaths;
 
 /// Find the main git repository root.
@@ -141,6 +143,44 @@ fn default_branch_from_output(output: io::Result<Output>) -> String {
             .trim_start_matches("origin/")
             .to_string(),
         _ => "main".to_string(),
+    }
+}
+
+/// Read the `base_branch` field from a FLOW state file.
+///
+/// Returns `Ok(value)` when the file exists, parses as a JSON object,
+/// and contains a string-valued `base_branch` key. Returns `Err(msg)`
+/// for every other case: missing file, empty file, parse failure,
+/// non-object root (per `.claude/rules/state-files.md` Corruption
+/// Resilience), missing `base_branch` key, or wrong value type.
+///
+/// The contract is no-silent-fallback: callers that want a default
+/// must apply it explicitly. This single source of truth backs both
+/// the Rust callsites that need the integration branch and the
+/// `bin/flow base-branch` CLI subcommand consumed by skills.
+pub fn read_base_branch(state_path: &Path) -> Result<String, String> {
+    let raw = std::fs::read_to_string(state_path)
+        .map_err(|e| format!("read state file {}: {}", state_path.display(), e))?;
+    if raw.is_empty() {
+        return Err(format!("state file {} is empty", state_path.display()));
+    }
+    let value: Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("parse state file {}: {}", state_path.display(), e))?;
+    let obj = value.as_object().ok_or_else(|| {
+        format!(
+            "state file {} root is not a JSON object",
+            state_path.display()
+        )
+    })?;
+    match obj.get("base_branch") {
+        Some(v) => v
+            .as_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| format!("base_branch in {} is not a string", state_path.display())),
+        None => Err(format!(
+            "base_branch missing from state file {}",
+            state_path.display()
+        )),
     }
 }
 

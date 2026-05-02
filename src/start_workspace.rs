@@ -288,6 +288,11 @@ fn run_impl_with_paths(args: &Args, root: &Path, cwd: &Path) -> Value {
     // written by init_state before start-gate ran. Defaults preserve
     // pre-existing behavior when the state file is unreadable, parse
     // fails, or fields are absent (root-level flow against `main`).
+    // Reading both fields from a single parse keeps the callsite
+    // atomic; routing base_branch through `git::read_base_branch`
+    // would re-read the file. The `git::read_base_branch` helper is
+    // the single source of truth for callers that need only the
+    // integration branch.
     let state_value = std::fs::read_to_string(&state_path)
         .ok()
         .and_then(|s| serde_json::from_str::<Value>(&s).ok());
