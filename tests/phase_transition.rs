@@ -62,9 +62,9 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> String {
 }
 
 fn setup_state(dir: &std::path::Path, branch: &str, state_json: &str) {
-    let state_dir = flow_states_dir(dir);
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join(format!("{}.json", branch)), state_json).unwrap();
+    let branch_dir = flow_states_dir(dir).join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), state_json).unwrap();
 }
 
 fn setup_git_repo(dir: &std::path::Path, branch: &str) {
@@ -184,9 +184,9 @@ fn error_corrupt_json() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
 
-    let state_dir = flow_states_dir(dir.path());
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join("test-feature.json"), "{bad json").unwrap();
+    let branch_dir = flow_states_dir(dir.path()).join("test-feature");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), "{bad json").unwrap();
 
     let (code, json) = run(dir.path(), "flow-plan", "enter", &[]);
     assert_eq!(code, 1);
@@ -222,7 +222,9 @@ fn frozen_phases_file_is_used() {
     // Copy flow-phases.json as frozen
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let source = std::path::PathBuf::from(manifest_dir).join("flow-phases.json");
-    let dest = flow_states_dir(dir.path()).join("test-feature-phases.json");
+    let dest = flow_states_dir(dir.path())
+        .join("test-feature")
+        .join("phases.json");
     fs::copy(source, dest).unwrap();
 
     // Enter
@@ -266,7 +268,7 @@ fn non_code_phase_no_diff_stats() {
     assert_eq!(code, 0);
 
     // Read state file to verify no diff_stats
-    let state_path = flow_states_dir(dir.path()).join("test-feature.json");
+    let state_path = flow_states_dir(dir.path()).join("test-feature").join("state.json");
     let content = fs::read_to_string(state_path).unwrap();
     let state: serde_json::Value = serde_json::from_str(&content).unwrap();
     assert!(
@@ -338,7 +340,7 @@ fn code_phase_completion_captures_diff_stats() {
     assert_eq!(json["status"], "ok");
 
     // Read state file to verify diff_stats
-    let state_path = flow_states_dir(dir.path()).join("my-feature.json");
+    let state_path = flow_states_dir(dir.path()).join("my-feature").join("state.json");
     let content = fs::read_to_string(state_path).unwrap();
     let updated: serde_json::Value = serde_json::from_str(&content).unwrap();
     assert!(
@@ -458,7 +460,7 @@ fn diff_stats_with_merge_commit_in_history() {
     assert_eq!(json["status"], "ok");
 
     // Verify diff_stats parsed correctly with merge in history
-    let state_path = flow_states_dir(dir.path()).join("my-feature.json");
+    let state_path = flow_states_dir(dir.path()).join("my-feature").join("state.json");
     let content = fs::read_to_string(state_path).unwrap();
     let updated: serde_json::Value = serde_json::from_str(&content).unwrap();
     let stats = &updated["diff_stats"];
@@ -1265,7 +1267,7 @@ fn diff_stats_no_main_branch_returns_zeros() {
     assert_eq!(code, 0);
     assert_eq!(json["status"], "ok");
 
-    let state_path = flow_states_dir(dir.path()).join("my-feature.json");
+    let state_path = flow_states_dir(dir.path()).join("my-feature").join("state.json");
     let content = fs::read_to_string(state_path).unwrap();
     let updated: serde_json::Value = serde_json::from_str(&content).unwrap();
     let stats = &updated["diff_stats"];
@@ -1304,7 +1306,7 @@ fn diff_stats_no_diff_returns_zeros() {
     assert_eq!(code, 0);
     assert_eq!(json["status"], "ok");
 
-    let state_path = flow_states_dir(dir.path()).join("my-feature.json");
+    let state_path = flow_states_dir(dir.path()).join("my-feature").join("state.json");
     let content = fs::read_to_string(state_path).unwrap();
     let updated: serde_json::Value = serde_json::from_str(&content).unwrap();
     let stats = &updated["diff_stats"];
@@ -1374,7 +1376,7 @@ fn diff_stats_deletion_only() {
     assert_eq!(code, 0);
     assert_eq!(json["status"], "ok");
 
-    let state_path = flow_states_dir(dir.path()).join("my-feature.json");
+    let state_path = flow_states_dir(dir.path()).join("my-feature").join("state.json");
     let content = fs::read_to_string(state_path).unwrap();
     let updated: serde_json::Value = serde_json::from_str(&content).unwrap();
     let stats = &updated["diff_stats"];
@@ -1447,9 +1449,9 @@ fn cli_no_branch_in_non_git_cwd_returns_error() {
 // ===== run_impl_main =====
 
 fn write_state(root: &std::path::Path, branch: &str, state: Value) {
-    let dir = root.join(".flow-states");
-    std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join(format!("{}.json", branch));
+    let branch_dir = root.join(".flow-states").join(branch);
+    std::fs::create_dir_all(&branch_dir).unwrap();
+    let path = branch_dir.join("state.json");
     std::fs::write(&path, state.to_string()).unwrap();
 }
 
@@ -1592,9 +1594,12 @@ fn run_impl_main_no_state_file_returns_error() {
 #[test]
 fn run_impl_main_unparseable_state_returns_error() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".flow-states")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".flow-states").join("test")).unwrap();
     std::fs::write(
-        dir.path().join(".flow-states").join("test.json"),
+        dir.path()
+            .join(".flow-states")
+            .join("test")
+            .join("state.json"),
         "not-json",
     )
     .unwrap();
@@ -1618,10 +1623,13 @@ fn run_impl_main_unparseable_state_returns_error() {
 #[test]
 fn run_impl_main_missing_phase_key_returns_error() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".flow-states")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".flow-states").join("test")).unwrap();
     let bare = json!({"branch": "test", "current_phase": "flow-start", "phases": {}});
     std::fs::write(
-        dir.path().join(".flow-states").join("test.json"),
+        dir.path()
+            .join(".flow-states")
+            .join("test")
+            .join("state.json"),
         bare.to_string(),
     )
     .unwrap();
@@ -1659,8 +1667,10 @@ fn run_impl_main_enter_success_returns_zero() {
     assert_eq!(out["status"], "ok");
     assert_eq!(out["phase"], "flow-plan");
     assert_eq!(out["action"], "enter");
-    let log_content = std::fs::read_to_string(dir.path().join(".flow-states").join("test.log"))
-        .expect("log file must exist after append_log");
+    let log_content = std::fs::read_to_string(
+        dir.path().join(".flow-states").join("test").join("log"),
+    )
+    .expect("log file must exist after append_log");
     assert!(log_content.contains("phase-transition --action enter --phase flow-plan"));
     assert!(log_content.contains("\"ok\""));
 }
@@ -1726,7 +1736,11 @@ fn run_impl_main_state_file_unreadable_returns_error() {
     // Covers the Err(_) branch of read_to_string at line 341 — state
     // path exists but is a directory so read fails.
     let dir = tempfile::tempdir().unwrap();
-    let state_dir_path = dir.path().join(".flow-states").join("test.json");
+    let state_dir_path = dir
+        .path()
+        .join(".flow-states")
+        .join("test")
+        .join("state.json");
     std::fs::create_dir_all(&state_dir_path).unwrap();
 
     let (out, code) = run_impl_main(
@@ -1778,7 +1792,11 @@ fn run_impl_main_mutate_state_failure_returns_error() {
     let state = make_state_value("flow-start", &[("flow-start", "complete")]);
     write_state(dir.path(), "test", state);
 
-    let state_file = dir.path().join(".flow-states").join("test.json");
+    let state_file = dir
+        .path()
+        .join(".flow-states")
+        .join("test")
+        .join("state.json");
     std::fs::set_permissions(&state_file, std::fs::Permissions::from_mode(0o444)).unwrap();
 
     let (out, code) = run_impl_main(

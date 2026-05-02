@@ -28,115 +28,115 @@ fn flow_states_dir_is_project_root_dot_flow_states() {
 }
 
 #[test]
-fn state_file_has_json_suffix() {
+fn state_file_lives_under_branch_dir() {
     assert_eq!(
         paths().state_file(),
-        PathBuf::from("/tmp/project/.flow-states/my-feature.json")
+        PathBuf::from("/tmp/project/.flow-states/my-feature/state.json")
     );
 }
 
 #[test]
-fn log_file_has_log_suffix() {
+fn log_file_lives_under_branch_dir() {
     assert_eq!(
         paths().log_file(),
-        PathBuf::from("/tmp/project/.flow-states/my-feature.log")
+        PathBuf::from("/tmp/project/.flow-states/my-feature/log")
     );
 }
 
 #[test]
-fn plan_file_has_plan_md_suffix() {
+fn plan_file_lives_under_branch_dir() {
     assert_eq!(
         paths().plan_file(),
-        PathBuf::from("/tmp/project/.flow-states/my-feature-plan.md")
+        PathBuf::from("/tmp/project/.flow-states/my-feature/plan.md")
     );
 }
 
 #[test]
-fn dag_file_has_dag_md_suffix() {
+fn dag_file_lives_under_branch_dir() {
     assert_eq!(
         paths().dag_file(),
-        PathBuf::from("/tmp/project/.flow-states/my-feature-dag.md")
+        PathBuf::from("/tmp/project/.flow-states/my-feature/dag.md")
     );
 }
 
 #[test]
-fn frozen_phases_has_phases_json_suffix() {
+fn frozen_phases_lives_under_branch_dir() {
     assert_eq!(
         paths().frozen_phases(),
-        PathBuf::from("/tmp/project/.flow-states/my-feature-phases.json")
+        PathBuf::from("/tmp/project/.flow-states/my-feature/phases.json")
     );
 }
 
 #[test]
-fn ci_sentinel_has_ci_passed_suffix() {
+fn ci_sentinel_lives_under_branch_dir() {
     assert_eq!(
         paths().ci_sentinel(),
-        PathBuf::from("/tmp/project/.flow-states/my-feature-ci-passed")
+        PathBuf::from("/tmp/project/.flow-states/my-feature/ci-passed")
     );
 }
 
 #[test]
-fn timings_file_has_timings_md_suffix() {
+fn timings_file_lives_under_branch_dir() {
     assert_eq!(
         paths().timings_file(),
-        PathBuf::from("/tmp/project/.flow-states/my-feature-timings.md")
+        PathBuf::from("/tmp/project/.flow-states/my-feature/timings.md")
     );
 }
 
 #[test]
-fn closed_issues_has_closed_issues_json_suffix() {
+fn closed_issues_lives_under_branch_dir() {
     assert_eq!(
         paths().closed_issues(),
-        PathBuf::from("/tmp/project/.flow-states/my-feature-closed-issues.json")
+        PathBuf::from("/tmp/project/.flow-states/my-feature/closed-issues.json")
     );
 }
 
 #[test]
-fn issues_file_has_issues_md_suffix() {
+fn issues_file_lives_under_branch_dir() {
     assert_eq!(
         paths().issues_file(),
-        PathBuf::from("/tmp/project/.flow-states/my-feature-issues.md")
+        PathBuf::from("/tmp/project/.flow-states/my-feature/issues.md")
     );
 }
 
 #[test]
-fn rule_content_has_rule_content_md_suffix() {
+fn rule_content_lives_under_branch_dir() {
     assert_eq!(
         paths().rule_content(),
-        PathBuf::from("/tmp/project/.flow-states/my-feature-rule-content.md")
+        PathBuf::from("/tmp/project/.flow-states/my-feature/rule-content.md")
     );
 }
 
 #[test]
-fn commit_msg_has_commit_msg_txt_suffix() {
+fn commit_msg_lives_under_branch_dir() {
     assert_eq!(
         paths().commit_msg(),
-        PathBuf::from("/tmp/project/.flow-states/my-feature-commit-msg.txt")
+        PathBuf::from("/tmp/project/.flow-states/my-feature/commit-msg.txt")
     );
 }
 
 #[test]
-fn commit_msg_content_has_commit_msg_content_txt_suffix() {
+fn commit_msg_content_lives_under_branch_dir() {
     assert_eq!(
         paths().commit_msg_content(),
-        PathBuf::from("/tmp/project/.flow-states/my-feature-commit-msg-content.txt")
+        PathBuf::from("/tmp/project/.flow-states/my-feature/commit-msg-content.txt")
     );
 }
 
 #[test]
-fn start_prompt_has_start_prompt_suffix() {
+fn start_prompt_lives_under_branch_dir() {
     assert_eq!(
         paths().start_prompt(),
-        PathBuf::from("/tmp/project/.flow-states/my-feature-start-prompt")
+        PathBuf::from("/tmp/project/.flow-states/my-feature/start-prompt")
     );
 }
 
 #[test]
 fn adversarial_test_prefix_ends_in_dot() {
-    assert_eq!(
-        paths().adversarial_test_prefix(),
-        "my-feature-adversarial_test."
-    );
+    // Branch isolation now comes from branch_dir(), so the prefix is
+    // a bare basename pattern. The trailing dot anchors the match on
+    // the extension separator.
+    assert_eq!(paths().adversarial_test_prefix(), "adversarial_test.");
 }
 
 #[test]
@@ -284,7 +284,7 @@ fn try_new_returns_some_for_valid_branch() {
     assert!(p.is_some());
     assert_eq!(
         p.unwrap().state_file(),
-        PathBuf::from("/p/.flow-states/my-feature.json")
+        PathBuf::from("/p/.flow-states/my-feature/state.json")
     );
 }
 

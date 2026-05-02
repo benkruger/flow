@@ -23,7 +23,7 @@ use serde_json::{json, Value};
 use crate::commands::log::append_log;
 use crate::commands::start_lock::{acquire, queue_path, release};
 use crate::commands::start_step::update_step;
-use crate::flow_paths::FlowStatesDir;
+use crate::flow_paths::{FlowPaths, FlowStatesDir};
 use crate::label_issues::{label_issues, LABEL};
 use crate::prime_check;
 use crate::upgrade_check::{self, GhResult};
@@ -283,8 +283,12 @@ fn run_impl(args: &Args, root: &Path, cwd: &Path) -> Result<Value, String> {
         return Ok(release_and_error(&msg, &step));
     }
 
-    // Update step counter for TUI (step 1 = init)
-    let state_path = state_dir.join(format!("{}.json", branch));
+    // Update step counter for TUI (step 1 = init). The state file
+    // lives at `.flow-states/<branch>/state.json` per FlowPaths; the
+    // pre-validated `branch_name(...)` output cannot fail
+    // is_valid_branch, so panicking-`new` is safe here.
+    let _ = state_dir; // kept above for the pre-init create_dir_all
+    let state_path = FlowPaths::new(root, &branch).state_file();
     update_step(&state_path, 1);
 
     // Step 5: Label issues (best-effort)
@@ -310,7 +314,7 @@ fn run_impl(args: &Args, root: &Path, cwd: &Path) -> Result<Value, String> {
     let mut response = json!({
         "status": "ready",
         "branch": branch,
-        "state_file": format!(".flow-states/{}.json", branch),
+        "state_file": format!(".flow-states/{}/state.json", branch),
     });
 
     if auto_upgraded {

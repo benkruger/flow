@@ -1045,10 +1045,10 @@ fn run_impl_cwd_scope_rejects_wrong_dir() {
     // Write a state file with relative_cwd = "sub" so enforce expects
     // cwd to be <root>/sub or deeper. Running from the repo root will
     // fail the drift check.
-    let states_dir = f.path.join(".flow-states");
-    fs::create_dir_all(&states_dir).unwrap();
+    let branch_dir = f.path.join(".flow-states").join(&f.branch);
+    fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
-        states_dir.join(format!("{}.json", f.branch)),
+        branch_dir.join("state.json"),
         r#"{"relative_cwd": "sub"}"#,
     )
     .unwrap();

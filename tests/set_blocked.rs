@@ -20,10 +20,10 @@ fn iso_pattern() -> Regex {
 
 fn setup_git_and_state(dir: &std::path::Path, branch: &str, state: &Value) {
     let _ = Command::new("git").args(["init"]).current_dir(dir).output();
-    let state_dir = flow_states_dir(dir);
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = flow_states_dir(dir).join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
-        state_dir.join(format!("{}.json", branch)),
+        branch_dir.join("state.json"),
         serde_json::to_string_pretty(state).unwrap(),
     )
     .unwrap();
@@ -52,8 +52,12 @@ fn test_hook_sets_blocked_exits_zero() {
     assert_eq!(output.status.code().unwrap(), 0);
     assert!(output.stdout.is_empty());
 
-    let content =
-        fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap();
+    let content = fs::read_to_string(
+        flow_states_dir(dir.path())
+            .join("test-feature")
+            .join("state.json"),
+    )
+    .unwrap();
     let on_disk: Value = serde_json::from_str(&content).unwrap();
     assert!(on_disk.get("_blocked").is_some());
     assert!(iso_pattern().is_match(on_disk["_blocked"].as_str().unwrap()));

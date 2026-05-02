@@ -83,7 +83,7 @@ fn test_ready_path_happy() {
 
     // State file should be created by init-state subprocess
     let branch = data["branch"].as_str().unwrap();
-    let state_path = flow_states_dir(&repo).join(format!("{}.json", branch));
+    let state_path = flow_states_dir(&repo).join(branch).join("state.json");
     assert!(
         state_path.exists(),
         "State file must be created by init-state"
@@ -194,10 +194,9 @@ fn test_prime_check_passes_when_invoked_from_subdir() {
     );
     // relative_cwd captured correctly so downstream commands route
     // back to the subdir after worktree creation.
-    let state_path = flow_states_dir(&repo).join(format!(
-        "{}.json",
-        data["branch"].as_str().expect("branch field")
-    ));
+    let state_path = flow_states_dir(&repo)
+        .join(data["branch"].as_str().expect("branch field"))
+        .join("state.json");
     let state: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["relative_cwd"], "synapse");
@@ -630,7 +629,7 @@ fn test_auto_flag_produces_auto_skill_config_in_state() {
     assert_eq!(data["status"], "ready");
 
     let branch = data["branch"].as_str().unwrap();
-    let state_path = flow_states_dir(&repo).join(format!("{}.json", branch));
+    let state_path = flow_states_dir(&repo).join(branch).join("state.json");
     let content = fs::read_to_string(&state_path).unwrap();
     let state: serde_json::Value = serde_json::from_str(&content).unwrap();
 
@@ -794,9 +793,9 @@ fn test_init_state_error_releases_lock_and_returns_error() {
 
     // Pre-create a DIRECTORY at the state file path. fs::write fails
     // because target is a directory, not a file.
-    let state_dir = flow_states_dir(&repo);
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::create_dir_all(state_dir.join("init-err-branch.json")).unwrap();
+    let branch_dir = flow_states_dir(&repo).join("init-err-branch");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::create_dir_all(branch_dir.join("state.json")).unwrap();
 
     let output = run_start_init(&repo, "init-err-branch", &[], &stub_dir);
     let data = parse_output(&output);

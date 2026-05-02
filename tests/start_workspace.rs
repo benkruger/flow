@@ -30,8 +30,8 @@ fn create_default_gh_stub(repo: &Path) -> PathBuf {
 
 /// Set up a pre-existing state file (simulating init-state already ran).
 fn create_state_file(repo: &Path, branch: &str) {
-    let state_dir = flow_states_dir(repo);
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = flow_states_dir(repo).join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
     let state = json!({
         "schema_version": 1,
         "branch": branch,
@@ -43,8 +43,8 @@ fn create_state_file(repo: &Path, branch: &str) {
         "files": {
             "plan": null,
             "dag": null,
-            "log": format!(".flow-states/{}.log", branch),
-            "state": format!(".flow-states/{}.json", branch)
+            "log": format!(".flow-states/{}/log", branch),
+            "state": format!(".flow-states/{}/state.json", branch)
         },
         "session_tty": null,
         "session_id": null,
@@ -57,7 +57,7 @@ fn create_state_file(repo: &Path, branch: &str) {
         "start_steps_total": 5
     });
     fs::write(
-        state_dir.join(format!("{}.json", branch)),
+        branch_dir.join("state.json"),
         serde_json::to_string_pretty(&state).unwrap(),
     )
     .unwrap();
@@ -128,7 +128,7 @@ fn test_happy_path() {
     );
 
     // State file should have PR fields backfilled
-    let state_path = flow_states_dir(&repo).join("test-branch.json");
+    let state_path = flow_states_dir(&repo).join("test-branch").join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert!(state["pr_number"].is_number());
     assert!(state["pr_url"].is_string());
@@ -286,7 +286,7 @@ fn test_state_backfill_preserves_existing_fields() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let state_path = flow_states_dir(&repo).join("backfill-branch.json");
+    let state_path = flow_states_dir(&repo).join("backfill-branch").join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     // Original fields preserved
     assert_eq!(state["started_at"], "2026-01-01T00:00:00-08:00");
@@ -350,8 +350,8 @@ fn test_worktree_cwd_includes_relative_cwd_suffix() {
     let stub_dir = create_default_gh_stub(&repo);
 
     // Pre-create state file with non-empty relative_cwd
-    let state_dir = flow_states_dir(&repo);
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = flow_states_dir(&repo).join("subdir-flow");
+    fs::create_dir_all(&branch_dir).unwrap();
     let state = json!({
         "schema_version": 1,
         "branch": "subdir-flow",
@@ -361,8 +361,8 @@ fn test_worktree_cwd_includes_relative_cwd_suffix() {
         "files": {
             "plan": null,
             "dag": null,
-            "log": ".flow-states/subdir-flow.log",
-            "state": ".flow-states/subdir-flow.json",
+            "log": ".flow-states/subdir-flow/log",
+            "state": ".flow-states/subdir-flow/state.json",
         },
         "phases": {},
         "phase_transitions": [],
@@ -370,7 +370,7 @@ fn test_worktree_cwd_includes_relative_cwd_suffix() {
         "prompt": "test",
     });
     fs::write(
-        state_dir.join("subdir-flow.json"),
+        branch_dir.join("state.json"),
         serde_json::to_string_pretty(&state).unwrap(),
     )
     .unwrap();
@@ -434,8 +434,8 @@ fn test_base_branch_from_state_used_for_pr_base() {
     let stub_dir = create_gh_stub(&repo, &stub_script);
 
     // Pre-create state with non-default base_branch.
-    let state_dir = flow_states_dir(&repo);
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = flow_states_dir(&repo).join("staging-flow");
+    fs::create_dir_all(&branch_dir).unwrap();
     let state = json!({
         "schema_version": 1,
         "branch": "staging-flow",
@@ -446,8 +446,8 @@ fn test_base_branch_from_state_used_for_pr_base() {
         "files": {
             "plan": null,
             "dag": null,
-            "log": ".flow-states/staging-flow.log",
-            "state": ".flow-states/staging-flow.json",
+            "log": ".flow-states/staging-flow/log",
+            "state": ".flow-states/staging-flow/state.json",
         },
         "phases": {},
         "phase_transitions": [],
@@ -455,7 +455,7 @@ fn test_base_branch_from_state_used_for_pr_base() {
         "prompt": "test",
     });
     fs::write(
-        state_dir.join("staging-flow.json"),
+        branch_dir.join("state.json"),
         serde_json::to_string_pretty(&state).unwrap(),
     )
     .unwrap();
@@ -587,8 +587,8 @@ fn test_backfill_with_repo_and_valid_prompt_file() {
         .unwrap();
 
     // Write state file with repo set to "Some" value.
-    let state_dir = flow_states_dir(&repo);
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = flow_states_dir(&repo).join("repo-set-branch");
+    fs::create_dir_all(&branch_dir).unwrap();
     let state = json!({
         "schema_version": 1,
         "branch": "repo-set-branch",
@@ -600,8 +600,8 @@ fn test_backfill_with_repo_and_valid_prompt_file() {
         "files": {
             "plan": null,
             "dag": null,
-            "log": ".flow-states/repo-set-branch.log",
-            "state": ".flow-states/repo-set-branch.json"
+            "log": ".flow-states/repo-set-branch/log",
+            "state": ".flow-states/repo-set-branch/state.json"
         },
         "session_tty": null,
         "session_id": null,
@@ -614,7 +614,7 @@ fn test_backfill_with_repo_and_valid_prompt_file() {
         "start_steps_total": 5
     });
     fs::write(
-        state_dir.join("repo-set-branch.json"),
+        branch_dir.join("state.json"),
         serde_json::to_string_pretty(&state).unwrap(),
     )
     .unwrap();
@@ -678,10 +678,10 @@ fn test_push_failure_propagates_error() {
         .output()
         .unwrap();
 
-    let state_dir = flow_states_dir(&repo);
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = flow_states_dir(&repo).join("push-fail-branch");
+    fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
-        state_dir.join("push-fail-branch.json"),
+        branch_dir.join("state.json"),
         serde_json::to_string(&json!({
             "schema_version": 1,
             "branch": "push-fail-branch",
@@ -789,9 +789,9 @@ fn test_backfill_non_object_state_guard() {
     let stub_dir = create_default_gh_stub(&repo);
 
     // Write array content as state file instead of the normal object
-    let state_dir = flow_states_dir(&repo);
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join("array-state-branch.json"), "[]").unwrap();
+    let branch_dir = flow_states_dir(&repo).join("array-state-branch");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), "[]").unwrap();
     create_lock_entry(&repo, "array-state-branch");
 
     let output = run_start_workspace(
@@ -809,7 +809,7 @@ fn test_backfill_non_object_state_guard() {
     );
 
     // State file should still be array (guard prevented IndexMut write)
-    let state_content = fs::read_to_string(state_dir.join("array-state-branch.json")).unwrap();
+    let state_content = fs::read_to_string(branch_dir.join("state.json")).unwrap();
     let state_val: Value = serde_json::from_str(&state_content).unwrap();
     assert!(
         state_val.is_array(),
@@ -831,13 +831,9 @@ fn start_workspace_corrupt_state_returns_backfill_error() {
 
     // Pre-seed corrupt JSON as the state file — mutate_state will fail
     // parsing it.
-    let state_dir = flow_states_dir(&repo);
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(
-        state_dir.join("corrupt-backfill-branch.json"),
-        "not json{{{",
-    )
-    .unwrap();
+    let branch_dir = flow_states_dir(&repo).join("corrupt-backfill-branch");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), "not json{{{").unwrap();
     create_lock_entry(&repo, "corrupt-backfill-branch");
 
     let output = run_start_workspace(

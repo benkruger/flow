@@ -33,9 +33,9 @@ fn make_repo_fixture(parent: &Path) -> PathBuf {
 }
 
 fn write_state_file(repo: &Path, branch: &str, learn_status: &str) -> PathBuf {
-    let state_dir = repo.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state_path = state_dir.join(format!("{}.json", branch));
+    let branch_dir = repo.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    let state_path = branch_dir.join("state.json");
     let state = json!({
         "schema_version": 1,
         "branch": branch,
@@ -386,9 +386,9 @@ fn corrupt_state_file_returns_error() {
     let dir = tempfile::tempdir().unwrap();
     let parent = dir.path().canonicalize().unwrap();
     let repo = make_repo_fixture(&parent);
-    let state_dir = repo.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join(format!("{}.json", BRANCH)), "{corrupt").unwrap();
+    let branch_dir = repo.join(".flow-states").join(BRANCH);
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), "{corrupt").unwrap();
     let flow_bin = parent.join("bin-flow-stub").join("flow");
     write_flow_stub(&flow_bin);
     let stubs = build_path_stubs(&parent);
@@ -408,9 +408,9 @@ fn state_path_is_directory_returns_read_error() {
     let dir = tempfile::tempdir().unwrap();
     let parent = dir.path().canonicalize().unwrap();
     let repo = make_repo_fixture(&parent);
-    let state_dir = repo.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::create_dir(state_dir.join(format!("{}.json", BRANCH))).unwrap();
+    let branch_dir = repo.join(".flow-states").join(BRANCH);
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::create_dir(branch_dir.join("state.json")).unwrap();
     let flow_bin = parent.join("bin-flow-stub").join("flow");
     write_flow_stub(&flow_bin);
     let stubs = build_path_stubs(&parent);

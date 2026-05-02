@@ -139,100 +139,94 @@ impl FlowPaths {
         fs::create_dir_all(self.branch_dir())
     }
 
-    /// `<.flow-states>/<branch>.json` — authoritative state file.
+    /// `<branch_dir>/state.json` — authoritative state file.
     pub fn state_file(&self) -> PathBuf {
-        self.flow_states_dir.join(format!("{}.json", self.branch))
+        self.branch_dir().join("state.json")
     }
 
-    /// `<.flow-states>/<branch>.log` — session log appended by skills
-    /// and Rust modules via `append_log`.
+    /// `<branch_dir>/log` — session log appended by skills and Rust
+    /// modules via `append_log`.
     pub fn log_file(&self) -> PathBuf {
-        self.flow_states_dir.join(format!("{}.log", self.branch))
+        self.branch_dir().join("log")
     }
 
-    /// `<.flow-states>/<branch>-plan.md` — Plan phase output.
+    /// `<branch_dir>/plan.md` — Plan phase output.
     pub fn plan_file(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-plan.md", self.branch))
+        self.branch_dir().join("plan.md")
     }
 
-    /// `<.flow-states>/<branch>-dag.md` — DAG decomposition output.
+    /// `<branch_dir>/dag.md` — DAG decomposition output.
     pub fn dag_file(&self) -> PathBuf {
-        self.flow_states_dir.join(format!("{}-dag.md", self.branch))
+        self.branch_dir().join("dag.md")
     }
 
-    /// `<.flow-states>/<branch>-phases.json` — frozen phase config
-    /// captured at flow-start time.
+    /// `<branch_dir>/phases.json` — frozen phase config captured at
+    /// flow-start time.
     pub fn frozen_phases(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-phases.json", self.branch))
+        self.branch_dir().join("phases.json")
     }
 
-    /// `<.flow-states>/<branch>-ci-passed` — CI sentinel; presence
-    /// means the last `bin/flow ci` invocation passed for the current
-    /// working tree.
+    /// `<branch_dir>/ci-passed` — CI sentinel; presence means the last
+    /// `bin/flow ci` invocation passed for the current working tree.
     pub fn ci_sentinel(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-ci-passed", self.branch))
+        self.branch_dir().join("ci-passed")
     }
 
-    /// `<.flow-states>/<branch>-timings.md` — phase timing report.
+    /// `<branch_dir>/timings.md` — phase timing report.
     pub fn timings_file(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-timings.md", self.branch))
+        self.branch_dir().join("timings.md")
     }
 
-    /// `<.flow-states>/<branch>-closed-issues.json` — issues closed
-    /// during the flow, persisted for the post-merge close step.
+    /// `<branch_dir>/closed-issues.json` — issues closed during the
+    /// flow, persisted for the post-merge close step.
     pub fn closed_issues(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-closed-issues.json", self.branch))
+        self.branch_dir().join("closed-issues.json")
     }
 
-    /// `<.flow-states>/<branch>-issues.md` — issues summary rendered
-    /// for PR body inclusion.
+    /// `<branch_dir>/issues.md` — issues summary rendered for PR body
+    /// inclusion.
     pub fn issues_file(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-issues.md", self.branch))
+        self.branch_dir().join("issues.md")
     }
 
-    /// `<.flow-states>/<branch>-rule-content.md` — scratch file for
-    /// rule-file edits routed through `bin/flow write-rule`.
+    /// `<branch_dir>/rule-content.md` — scratch file for rule-file
+    /// edits routed through `bin/flow write-rule`.
     pub fn rule_content(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-rule-content.md", self.branch))
+        self.branch_dir().join("rule-content.md")
     }
 
-    /// `<.flow-states>/<branch>-commit-msg.txt` — final commit message
-    /// file consumed by `bin/flow finalize-commit`. Branch-scoped under
-    /// `.flow-states/` so concurrent flows in different worktrees of the
-    /// same repo never share a single file, and so abort/complete cleanup
-    /// removes it deterministically alongside other branch-scoped state.
+    /// `<branch_dir>/commit-msg.txt` — final commit message file
+    /// consumed by `bin/flow finalize-commit`. Branch-scoped so
+    /// concurrent flows in different worktrees of the same repo never
+    /// share a single file, and so abort/complete cleanup removes it
+    /// deterministically alongside other branch-scoped state via the
+    /// single `remove_dir_all` over `branch_dir()`.
     pub fn commit_msg(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-commit-msg.txt", self.branch))
+        self.branch_dir().join("commit-msg.txt")
     }
 
-    /// `<.flow-states>/<branch>-commit-msg-content.txt` — scratch file
-    /// the commit skill writes via the Write tool, then `bin/flow
-    /// write-rule` reads and routes to [`commit_msg`].
+    /// `<branch_dir>/commit-msg-content.txt` — scratch file the commit
+    /// skill writes via the Write tool, then `bin/flow write-rule`
+    /// reads and routes to [`commit_msg`].
     pub fn commit_msg_content(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-commit-msg-content.txt", self.branch))
+        self.branch_dir().join("commit-msg-content.txt")
     }
 
-    /// `<.flow-states>/<branch>-start-prompt` — verbatim start prompt
-    /// captured by `/flow:flow-start` for downstream phases.
+    /// `<branch_dir>/start-prompt` — verbatim start prompt captured
+    /// by `/flow:flow-start` for downstream phases.
     pub fn start_prompt(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-start-prompt", self.branch))
+        self.branch_dir().join("start-prompt")
     }
 
-    /// Bare prefix `<branch>-adversarial_test.` used to glob Phase 4
-    /// adversarial test files. The agent chooses the extension at
-    /// runtime so callers filter `fs::read_dir` entries by this
-    /// prefix rather than addressing a fixed filename.
+    /// Bare prefix `adversarial_test.` used to filter `branch_dir()`
+    /// entries for Phase 4 adversarial test files. The agent chooses
+    /// the extension at runtime, so callers list `branch_dir()` and
+    /// match `entry.file_name().starts_with(prefix)`. The trailing
+    /// dot anchors the match on the extension separator so a sibling
+    /// file named `adversarial_test_other.rs` cannot match. Branch
+    /// isolation comes from the `branch_dir()` scope, so the prefix
+    /// no longer needs to encode the branch name.
     pub fn adversarial_test_prefix(&self) -> String {
-        format!("{}-adversarial_test.", self.branch)
+        "adversarial_test.".to_string()
     }
 }

@@ -493,9 +493,9 @@ fn multi_panel_lists_features() {
 // --- run_impl_main (main.rs FormatStatus arm driver) ---
 
 fn write_state_file(root: &std::path::Path, branch: &str, state: &Value) {
-    let dir = root.join(".flow-states");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join(format!("{}.json", branch)), state.to_string()).unwrap();
+    let branch_dir = root.join(".flow-states").join(branch);
+    std::fs::create_dir_all(&branch_dir).unwrap();
+    std::fs::write(branch_dir.join("state.json"), state.to_string()).unwrap();
 }
 
 #[test]
@@ -602,15 +602,15 @@ fn format_status_run_impl_main_no_state_files_returns_ok_empty_1() {
 fn format_status_run_impl_main_unknown_branch_falls_back_to_other_state_files() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    std::fs::create_dir_all(&state_dir).unwrap();
+    let sibling_dir = root.join(".flow-states").join("sibling-feature");
+    std::fs::create_dir_all(&sibling_dir).unwrap();
     let mut sibling = make_state(
         "flow-plan",
         &[("flow-start", "complete"), ("flow-plan", "in_progress")],
     );
     sibling["branch"] = json!("sibling-feature");
     std::fs::write(
-        state_dir.join("sibling-feature.json"),
+        sibling_dir.join("state.json"),
         serde_json::to_string(&sibling).unwrap(),
     )
     .unwrap();
@@ -662,14 +662,14 @@ fn format_status_run_impl_main_loads_frozen_phase_config() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     let branch = "test-frozen";
-    let state_dir = root.join(".flow-states");
-    std::fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = root.join(".flow-states").join(branch);
+    std::fs::create_dir_all(&branch_dir).unwrap();
     let state = make_state(
         "flow-plan",
         &[("flow-start", "complete"), ("flow-plan", "in_progress")],
     );
     std::fs::write(
-        state_dir.join(format!("{}.json", branch)),
+        branch_dir.join("state.json"),
         serde_json::to_string(&state).unwrap(),
     )
     .unwrap();
@@ -693,7 +693,7 @@ fn format_status_run_impl_main_loads_frozen_phase_config() {
         }
     });
     std::fs::write(
-        state_dir.join(format!("{}-phases.json", branch)),
+        branch_dir.join("phases.json"),
         serde_json::to_string(&frozen).unwrap(),
     )
     .unwrap();
@@ -892,13 +892,12 @@ fn run_impl_main_invalid_branch_json_falls_back_to_directory_scan() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     let state_dir = root.join(".flow-states");
-    std::fs::create_dir_all(&state_dir).unwrap();
+    let target_dir = state_dir.join("target-branch");
+    let sibling_dir = state_dir.join("sibling-branch");
+    std::fs::create_dir_all(&target_dir).unwrap();
+    std::fs::create_dir_all(&sibling_dir).unwrap();
     // Target branch has malformed JSON.
-    std::fs::write(
-        state_dir.join("target-branch.json"),
-        "this is not valid json",
-    )
-    .unwrap();
+    std::fs::write(target_dir.join("state.json"), "this is not valid json").unwrap();
     // Sibling branch has valid JSON. Use a distinctive branch
     // field so the rendered panel has a greppable signal the
     // fallback fired.
@@ -908,7 +907,7 @@ fn run_impl_main_invalid_branch_json_falls_back_to_directory_scan() {
     );
     sibling["branch"] = json!("fallback-sentinel");
     std::fs::write(
-        state_dir.join("sibling-branch.json"),
+        sibling_dir.join("state.json"),
         serde_json::to_string(&sibling).unwrap(),
     )
     .unwrap();

@@ -58,10 +58,10 @@ fn setup_flow_active_repo(dir: &Path, branch_name: &str, state: &Value) {
     .unwrap();
 
     // Create state file matching the branch name
-    let state_dir = flow_states_dir(dir);
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = flow_states_dir(dir).join(branch_name);
+    fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
-        state_dir.join(format!("{}.json", branch_name)),
+        branch_dir.join("state.json"),
         serde_json::to_string_pretty(state).unwrap(),
     )
     .unwrap();

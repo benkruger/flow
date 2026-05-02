@@ -215,9 +215,9 @@ fn last_json_line(stdout: &str) -> Value {
 /// (repo, state_file_path, flow_bin_path, path_stubs).
 fn setup(parent: &Path, state: Value) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     let repo = make_repo_fixture(parent);
-    let state_dir = repo.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state_path = state_dir.join(format!("{}.json", BRANCH));
+    let branch_dir = repo.join(".flow-states").join(BRANCH);
+    fs::create_dir_all(&branch_dir).unwrap();
+    let state_path = branch_dir.join("state.json");
     write_state_file_at(&state_path, &state);
     let flow_bin = parent.join("bin-flow-stub").join("flow");
     write_configurable_flow_stub(&flow_bin);
@@ -483,7 +483,8 @@ fn post_merge_close_issues_writes_file_and_populates() {
     assert_eq!(closed[0]["number"], 100);
     let closed_file = repo
         .join(".flow-states")
-        .join(format!("{}-closed-issues.json", BRANCH));
+        .join(BRANCH)
+        .join("closed-issues.json");
     assert!(closed_file.exists(), "closed-issues file should be written");
 }
 
@@ -809,12 +810,13 @@ fn post_merge_close_issues_file_write_failure_records_failure() {
     let dir = tempfile::tempdir().unwrap();
     let parent = dir.path().canonicalize().unwrap();
     let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
-    // Pre-create <branch>-closed-issues.json as a directory → write
+    // Pre-create <branch>/closed-issues.json as a directory → write
     // returns EISDIR.
     let blocker = repo
         .join(".flow-states")
-        .join(format!("{}-closed-issues.json", BRANCH));
-    fs::create_dir(&blocker).unwrap();
+        .join(BRANCH)
+        .join("closed-issues.json");
+    fs::create_dir_all(&blocker).unwrap();
 
     let (code, stdout) = run_post_merge_sub(
         &repo,

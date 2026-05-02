@@ -153,14 +153,18 @@ pub fn load_phase_config(path: &Path) -> Result<PhaseConfig, String> {
     })
 }
 
-/// Copy flow-phases.json to .flow-states/<branch>-phases.json.
+/// Copy flow-phases.json to `.flow-states/<branch>/phases.json`.
+/// Ensures the branch directory exists before the copy so the
+/// destination path is always writable; the file lives alongside
+/// `state.json` and the rest of the per-branch artifacts under the
+/// same `branch_dir()`.
 pub fn freeze_phases(
     phases_json_path: &Path,
     project_root: &Path,
     branch: &str,
 ) -> std::io::Result<()> {
     let paths = FlowPaths::new(project_root, branch);
-    std::fs::create_dir_all(paths.flow_states_dir())?;
+    paths.ensure_branch_dir()?;
     std::fs::copy(phases_json_path, paths.frozen_phases())?;
     Ok(())
 }
@@ -251,27 +255,31 @@ pub fn find_state_files(root: &Path, branch: &str) -> Vec<(PathBuf, Value, Strin
         return vec![];
     }
 
+    // Discovery: every branch-scoped subdirectory under `.flow-states/`
+    // that contains a readable `state.json`. Subdirectories without
+    // `state.json` (transient cleanup remnants, future per-machine
+    // tooling) and regular files at the root (e.g. `orchestrate.json`,
+    // the start lock, plain stale flat-layout artifacts left by older
+    // binaries) are skipped naturally because they fail the
+    // `state.json` filter.
     let mut results = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&state_dir) {
-        let mut paths: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-        paths.sort_by_key(|e| e.file_name());
+        let mut subdirs: Vec<_> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
+            .collect();
+        subdirs.sort_by_key(|e| e.file_name());
 
-        for entry in paths {
+        for entry in subdirs {
             let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if !name_str.ends_with(".json") {
+            let branch_name = name.to_string_lossy().into_owned();
+            let state_path = entry.path().join("state.json");
+            if !state_path.is_file() {
                 continue;
             }
-            if name_str.ends_with("-phases.json") {
-                continue;
-            }
-            if name_str == "orchestrate.json" {
-                continue;
-            }
-            if let Ok(content) = std::fs::read_to_string(entry.path()) {
+            if let Ok(content) = std::fs::read_to_string(&state_path) {
                 if let Ok(state) = serde_json::from_str::<Value>(&content) {
-                    let stem = name_str.trim_end_matches(".json").to_string();
-                    results.push((entry.path(), state, stem));
+                    results.push((state_path, state, branch_name));
                 }
             }
         }

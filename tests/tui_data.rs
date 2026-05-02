@@ -1111,7 +1111,7 @@ fn test_load_all_flows_empty() {
 fn test_load_all_flows_single() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    std::fs::create_dir(&state_dir).unwrap();
+    std::fs::create_dir_all(state_dir.join("test-feature")).unwrap();
     let state = make_state(
         "flow-code",
         &[
@@ -1121,7 +1121,7 @@ fn test_load_all_flows_single() {
         ],
     );
     std::fs::write(
-        state_dir.join("test-feature.json"),
+        state_dir.join("test-feature").join("state.json"),
         serde_json::to_string(&state).unwrap(),
     )
     .unwrap();
@@ -1136,10 +1136,11 @@ fn test_load_all_flows_multiple() {
     let state_dir = dir.path().join(".flow-states");
     std::fs::create_dir(&state_dir).unwrap();
     for name in ["charlie-feature", "alpha-feature", "bravo-feature"] {
+        std::fs::create_dir_all(state_dir.join(name)).unwrap();
         let mut state = make_state("flow-start", &[]);
         state["branch"] = json!(name);
         std::fs::write(
-            state_dir.join(format!("{}.json", name)),
+            state_dir.join(name).join("state.json"),
             serde_json::to_string(&state).unwrap(),
         )
         .unwrap();
@@ -1157,14 +1158,15 @@ fn test_load_all_flows_multiple() {
 fn test_load_all_flows_skips_corrupt_json() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    std::fs::create_dir(&state_dir).unwrap();
+    std::fs::create_dir_all(state_dir.join("good-feature")).unwrap();
+    std::fs::create_dir_all(state_dir.join("bad-feature")).unwrap();
     let state = make_state("flow-start", &[]);
     std::fs::write(
-        state_dir.join("good-feature.json"),
+        state_dir.join("good-feature").join("state.json"),
         serde_json::to_string(&state).unwrap(),
     )
     .unwrap();
-    std::fs::write(state_dir.join("bad-feature.json"), "{invalid json").unwrap();
+    std::fs::write(state_dir.join("bad-feature").join("state.json"), "{invalid json").unwrap();
     let result = load_all_flows(dir.path());
     assert_eq!(result.len(), 1);
 }
@@ -1173,15 +1175,15 @@ fn test_load_all_flows_skips_corrupt_json() {
 fn test_load_all_flows_skips_phases_json() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    std::fs::create_dir(&state_dir).unwrap();
+    std::fs::create_dir_all(state_dir.join("my-feature")).unwrap();
     let mut state = make_state("flow-start", &[]);
     state["branch"] = json!("my-feature");
     std::fs::write(
-        state_dir.join("my-feature.json"),
+        state_dir.join("my-feature").join("state.json"),
         serde_json::to_string(&state).unwrap(),
     )
     .unwrap();
-    std::fs::write(state_dir.join("my-feature-phases.json"), r#"{"order": []}"#).unwrap();
+    std::fs::write(state_dir.join("my-feature").join("phases.json"), r#"{"order": []}"#).unwrap();
     let result = load_all_flows(dir.path());
     assert_eq!(result.len(), 1);
 }
@@ -1197,17 +1199,67 @@ fn test_load_all_flows_no_state_dir() {
 fn test_load_all_flows_skips_json_without_branch() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    std::fs::create_dir(&state_dir).unwrap();
+    std::fs::create_dir_all(state_dir.join("real-feature")).unwrap();
+    // Subdir whose state.json lacks a "branch" field is skipped.
+    std::fs::create_dir_all(state_dir.join("no-branch-feature")).unwrap();
+    std::fs::write(
+        state_dir.join("no-branch-feature").join("state.json"),
+        r#"{"some": "data"}"#,
+    )
+    .unwrap();
+    // Loose .json file in .flow-states/ is also ignored — only branch
+    // subdirectories with state.json count as flows.
     std::fs::write(state_dir.join("no-branch.json"), r#"{"some": "data"}"#).unwrap();
     let state = make_state("flow-start", &[]);
     std::fs::write(
-        state_dir.join("real-feature.json"),
+        state_dir.join("real-feature").join("state.json"),
         serde_json::to_string(&state).unwrap(),
     )
     .unwrap();
     let result = load_all_flows(dir.path());
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].branch, "test-feature");
+}
+
+/// Empty subdirectory with no state.json must be skipped.
+#[test]
+fn test_load_all_flows_skips_subdir_without_state_json() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_dir = dir.path().join(".flow-states");
+    std::fs::create_dir_all(state_dir.join("empty-branch")).unwrap();
+    // No state.json written under empty-branch.
+    let result = load_all_flows(dir.path());
+    assert!(result.is_empty());
+}
+
+/// Subdirectory with an unreadable state.json — the `is_file()` check
+/// passes but `read_to_string` returns Err. The scanner skips the entry
+/// silently rather than aborting.
+#[cfg(unix)]
+#[test]
+fn test_load_all_flows_skips_unreadable_state_json() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let state_dir = dir.path().join(".flow-states");
+    std::fs::create_dir_all(state_dir.join("good-feature")).unwrap();
+    let state = make_state("flow-start", &[]);
+    std::fs::write(
+        state_dir.join("good-feature").join("state.json"),
+        serde_json::to_string(&state).unwrap(),
+    )
+    .unwrap();
+
+    std::fs::create_dir_all(state_dir.join("unreadable-feature")).unwrap();
+    let unreadable_path = state_dir.join("unreadable-feature").join("state.json");
+    std::fs::write(&unreadable_path, r#"{"branch":"unreadable-feature"}"#).unwrap();
+    std::fs::set_permissions(&unreadable_path, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+    let result = load_all_flows(dir.path());
+
+    let _ = std::fs::set_permissions(&unreadable_path, std::fs::Permissions::from_mode(0o644));
+
+    let branches: Vec<&str> = result.iter().map(|f| f.branch.as_str()).collect();
+    assert_eq!(branches, vec!["test-feature"]);
 }
 
 // --- load_orchestration ---
@@ -1518,6 +1570,9 @@ fn test_load_all_flows_sorted_by_phase_then_feature() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
     std::fs::create_dir(&state_dir).unwrap();
+    for name in ["alpha-feature", "beta-feature", "gamma-feature", "delta-feature"] {
+        std::fs::create_dir_all(state_dir.join(name)).unwrap();
+    }
 
     // Flow in Code phase (phase 3) — branch "alpha" sorts first alphabetically
     let mut code_state = make_state(
@@ -1530,7 +1585,7 @@ fn test_load_all_flows_sorted_by_phase_then_feature() {
     );
     code_state["branch"] = json!("alpha-feature");
     std::fs::write(
-        state_dir.join("alpha-feature.json"),
+        state_dir.join("alpha-feature").join("state.json"),
         serde_json::to_string(&code_state).unwrap(),
     )
     .unwrap();
@@ -1539,7 +1594,7 @@ fn test_load_all_flows_sorted_by_phase_then_feature() {
     let mut start_state = make_state("flow-start", &[("flow-start", "in_progress")]);
     start_state["branch"] = json!("beta-feature");
     std::fs::write(
-        state_dir.join("beta-feature.json"),
+        state_dir.join("beta-feature").join("state.json"),
         serde_json::to_string(&start_state).unwrap(),
     )
     .unwrap();
@@ -1551,7 +1606,7 @@ fn test_load_all_flows_sorted_by_phase_then_feature() {
     );
     plan_state["branch"] = json!("gamma-feature");
     std::fs::write(
-        state_dir.join("gamma-feature.json"),
+        state_dir.join("gamma-feature").join("state.json"),
         serde_json::to_string(&plan_state).unwrap(),
     )
     .unwrap();
@@ -1560,7 +1615,7 @@ fn test_load_all_flows_sorted_by_phase_then_feature() {
     let mut start_state2 = make_state("flow-start", &[("flow-start", "in_progress")]);
     start_state2["branch"] = json!("delta-feature");
     std::fs::write(
-        state_dir.join("delta-feature.json"),
+        state_dir.join("delta-feature").join("state.json"),
         serde_json::to_string(&start_state2).unwrap(),
     )
     .unwrap();
@@ -1583,11 +1638,14 @@ fn test_load_all_flows_unknown_phase_sorts_last() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
     std::fs::create_dir(&state_dir).unwrap();
+    for name in ["known-feature", "unknown-feature"] {
+        std::fs::create_dir_all(state_dir.join(name)).unwrap();
+    }
 
     let mut start_state = make_state("flow-start", &[("flow-start", "in_progress")]);
     start_state["branch"] = json!("known-feature");
     std::fs::write(
-        state_dir.join("known-feature.json"),
+        state_dir.join("known-feature").join("state.json"),
         serde_json::to_string(&start_state).unwrap(),
     )
     .unwrap();
@@ -1595,7 +1653,7 @@ fn test_load_all_flows_unknown_phase_sorts_last() {
     let mut unknown_state = make_state("flow-nonexistent", &[]);
     unknown_state["branch"] = json!("unknown-feature");
     std::fs::write(
-        state_dir.join("unknown-feature.json"),
+        state_dir.join("unknown-feature").join("state.json"),
         serde_json::to_string(&unknown_state).unwrap(),
     )
     .unwrap();

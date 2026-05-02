@@ -11,9 +11,9 @@ use flow_rs::commands::start_step::{resolve_flow_bin, update_step};
 use serde_json::{json, Value};
 
 fn write_state(repo: &Path, branch: &str, state: &Value) -> std::path::PathBuf {
-    let state_dir = repo.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let path = state_dir.join(format!("{}.json", branch));
+    let branch_dir = repo.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    let path = branch_dir.join("state.json");
     fs::write(&path, serde_json::to_string_pretty(state).unwrap()).unwrap();
     path
 }
@@ -113,10 +113,10 @@ fn start_step_preserves_other_state_fields() {
 fn start_step_handles_corrupt_state_without_crash() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    let state_dir = repo.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = repo.join(".flow-states").join("bad");
+    fs::create_dir_all(&branch_dir).unwrap();
     // Non-JSON content — update_step should fail gracefully and report skipped.
-    fs::write(state_dir.join("bad.json"), "not json").unwrap();
+    fs::write(branch_dir.join("state.json"), "not json").unwrap();
 
     let output = run_start_step(&repo, &["--step", "1", "--branch", "bad"]);
 
@@ -166,8 +166,8 @@ fn make_state_lib() -> Value {
         "files": {
             "plan": null,
             "dag": null,
-            "log": ".flow-states/test-feature.log",
-            "state": ".flow-states/test-feature.json"
+            "log": ".flow-states/test-feature/log",
+            "state": ".flow-states/test-feature/state.json"
         },
         "phases": {}
     })

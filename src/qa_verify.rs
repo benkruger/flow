@@ -36,8 +36,12 @@ pub struct Args {
     pub project_root: String,
 }
 
-/// Find all .flow-states/*.json files, excluding non-state files
-/// (orchestrate* and *-phases.json).
+/// Find every `.flow-states/<branch>/state.json` file. Discovery
+/// iterates subdirectories of `.flow-states/` and selects each one
+/// that contains a `state.json`. Regular files at the root of
+/// `.flow-states/` (such as `orchestrate.json`, the start lock, or
+/// stale flat-layout artifacts) are skipped naturally because they
+/// fail the subdirectory filter.
 fn find_state_files(project_root: &Path) -> Vec<PathBuf> {
     let state_dir = FlowStatesDir::new(project_root).path().to_path_buf();
     let mut results = Vec::new();
@@ -46,18 +50,19 @@ fn find_state_files(project_root: &Path) -> Vec<PathBuf> {
         Err(_) => return results,
     };
     for entry in entries.flatten() {
-        let file_name = entry.file_name();
-        // Skip dot-prefixed entries — `*.json` follows the fnmatch
-        // convention where `*` does not match a leading dot, so a
-        // stray `.local.json` from another tool does not get treated
-        // as a flow state file.
-        let name = file_name.to_string_lossy();
-        if name.ends_with(".json")
-            && !name.starts_with('.')
-            && !name.starts_with("orchestrate")
-            && !name.ends_with("-phases.json")
-        {
-            results.push(entry.path());
+        if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        // Skip dot-prefixed subdirectories so unrelated tooling that
+        // writes under `.flow-states/.local/` (or similar) does not
+        // get treated as a flow.
+        let name = entry.file_name();
+        if name.to_string_lossy().starts_with('.') {
+            continue;
+        }
+        let state_path = entry.path().join("state.json");
+        if state_path.is_file() {
+            results.push(state_path);
         }
     }
     results

@@ -63,7 +63,8 @@ fn create_state(
     skills: Option<Value>,
 ) {
     let state_dir = flow_states_dir(repo);
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = state_dir.join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
 
     let skills_val = skills.unwrap_or(json!({}));
 
@@ -150,7 +151,7 @@ fn create_state(
         "skills": skills_val,
     });
     fs::write(
-        state_dir.join(format!("{}.json", branch)),
+        branch_dir.join("state.json"),
         serde_json::to_string_pretty(&state).unwrap(),
     )
     .unwrap();
@@ -206,7 +207,7 @@ fn test_code_phase_happy_path() {
     assert_eq!(data["mode"]["continue"], "manual");
 
     // State should be updated — phase entered
-    let state_path = flow_states_dir(&repo).join(format!("{}.json", branch));
+    let state_path = flow_states_dir(&repo).join(branch).join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-code"]["status"], "in_progress");
     assert_eq!(state["current_phase"], "flow-code");
@@ -240,7 +241,7 @@ fn test_code_review_phase_happy_path() {
     assert_eq!(data["phase"], "flow-code-review");
 
     // State should have step counters set
-    let state_path = flow_states_dir(&repo).join(format!("{}.json", branch));
+    let state_path = flow_states_dir(&repo).join(branch).join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-code-review"]["status"], "in_progress");
     assert_eq!(state["code_review_steps_total"], 4);
@@ -271,7 +272,7 @@ fn test_learn_phase_happy_path() {
     assert_eq!(data["phase"], "flow-learn");
 
     // State should have step counters set
-    let state_path = flow_states_dir(&repo).join(format!("{}.json", branch));
+    let state_path = flow_states_dir(&repo).join(branch).join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-learn"]["status"], "in_progress");
     assert_eq!(state["learn_steps_total"], 7);
@@ -426,7 +427,12 @@ fn test_step_counter_field_names() {
     );
     assert_eq!(parse_output(&output)["status"], "ok");
     let state: Value = serde_json::from_str(
-        &fs::read_to_string(flow_states_dir(&repo).join(format!("{}.json", branch))).unwrap(),
+        &fs::read_to_string(
+            flow_states_dir(&repo)
+                .join(branch)
+                .join("state.json"),
+        )
+        .unwrap(),
     )
     .unwrap();
     assert_eq!(state["code_review_steps_total"], 4);
@@ -451,7 +457,13 @@ fn test_step_counter_field_names() {
     );
     assert_eq!(parse_output(&output2)["status"], "ok");
     let state2: Value = serde_json::from_str(
-        &fs::read_to_string(repo2.join(".flow-states").join(format!("{}.json", branch2))).unwrap(),
+        &fs::read_to_string(
+            repo2
+                .join(".flow-states")
+                .join(branch2)
+                .join("state.json"),
+        )
+        .unwrap(),
     )
     .unwrap();
     assert_eq!(state2["learn_steps_total"], 7);
@@ -470,7 +482,12 @@ fn test_no_steps_total_flag() {
     assert_eq!(parse_output(&output)["status"], "ok");
 
     let state: Value = serde_json::from_str(
-        &fs::read_to_string(flow_states_dir(&repo).join(format!("{}.json", branch))).unwrap(),
+        &fs::read_to_string(
+            flow_states_dir(&repo)
+                .join(branch)
+                .join("state.json"),
+        )
+        .unwrap(),
     )
     .unwrap();
     // No step counter fields should be set
@@ -486,9 +503,9 @@ fn test_corrupt_json_state_file_returns_error() {
     let dir = tempfile::tempdir().unwrap();
     let branch = "corrupt-state";
     let repo = create_git_repo(dir.path(), branch);
-    let state_dir = flow_states_dir(&repo);
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join(format!("{}.json", branch)), "not valid json").unwrap();
+    let branch_dir = flow_states_dir(&repo).join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), "not valid json").unwrap();
 
     let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
     assert_ne!(
@@ -534,7 +551,7 @@ fn test_mutate_state_failure_returns_error() {
     let repo = create_git_repo(dir.path(), branch);
     create_state(&repo, branch, "flow-plan", "complete", None);
 
-    let state_file = flow_states_dir(&repo).join(format!("{}.json", branch));
+    let state_file = flow_states_dir(&repo).join(branch).join("state.json");
     fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
 
     let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
@@ -743,10 +760,11 @@ fn phase_enter_with_relative_cwd_mismatch_returns_cwd_drift_error() {
         .output()
         .unwrap();
     let state_dir = flow_states_dir(&repo);
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = state_dir.join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
     // Force relative_cwd to "api" so cwd-scope expects `<repo>/api`.
     fs::write(
-        state_dir.join(format!("{}.json", branch)),
+        branch_dir.join("state.json"),
         serde_json::to_string(&json!({
             "branch": branch,
             "relative_cwd": "api",
@@ -785,10 +803,11 @@ fn phase_enter_state_path_is_directory_errors() {
     let _repo = create_git_repo(dir.path(), branch);
     let repo = &_repo;
     let state_dir = flow_states_dir(repo);
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = state_dir.join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
     // Create a DIRECTORY at the state file path. exists() returns
     // true, but read_to_string returns Err(EISDIR).
-    fs::create_dir_all(state_dir.join(format!("{}.json", branch))).unwrap();
+    fs::create_dir_all(branch_dir.join("state.json")).unwrap();
 
     let output = run_phase_enter(repo, &["--phase", "flow-code", "--branch", branch]);
     // Infrastructure-level Err is routed through
@@ -822,7 +841,8 @@ fn phase_enter_legacy_plan_file_fallback_covered() {
     let _repo = create_git_repo(dir.path(), branch);
     let repo = &_repo;
     let state_dir = flow_states_dir(repo);
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = state_dir.join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
     // Legacy state: no `files.plan`, has top-level `plan_file`.
     let state = json!({
         "branch": branch,
@@ -841,7 +861,7 @@ fn phase_enter_legacy_plan_file_fallback_covered() {
         "phase_transitions": [],
     });
     fs::write(
-        state_dir.join(format!("{}.json", branch)),
+        branch_dir.join("state.json"),
         serde_json::to_string_pretty(&state).unwrap(),
     )
     .unwrap();
@@ -872,7 +892,8 @@ fn phase_enter_response_omits_absent_optional_fields() {
     let _repo = create_git_repo(dir.path(), branch);
     let repo = &_repo;
     let state_dir = flow_states_dir(repo);
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = state_dir.join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
     // Minimal state: no pr_number, no pr_url, no feature, no
     // slack_thread_ts, no files.plan, no top-level plan_file. All
     // five optional response fields are absent.
@@ -886,7 +907,7 @@ fn phase_enter_response_omits_absent_optional_fields() {
         "phase_transitions": [],
     });
     fs::write(
-        state_dir.join(format!("{}.json", branch)),
+        branch_dir.join("state.json"),
         serde_json::to_string_pretty(&state).unwrap(),
     )
     .unwrap();

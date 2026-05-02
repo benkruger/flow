@@ -18,9 +18,9 @@ use flow_rs::utils::now;
 use serde_json::{json, Value};
 
 fn write_state(repo: &Path, branch: &str, state: &Value) -> std::path::PathBuf {
-    let state_dir = repo.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let path = state_dir.join(format!("{}.json", branch));
+    let branch_dir = repo.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    let path = branch_dir.join("state.json");
     fs::write(&path, serde_json::to_string_pretty(state).unwrap()).unwrap();
     path
 }
@@ -245,9 +245,9 @@ fn add_issue_no_branch_no_git_returns_branch_resolution_error() {
 fn add_issue_corrupt_state_returns_error() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    let state_dir = repo.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join("bad.json"), "{corrupt").unwrap();
+    let branch_dir = repo.join(".flow-states").join("bad");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), "{corrupt").unwrap();
 
     let output = run_add_issue(
         &repo,
@@ -289,9 +289,9 @@ fn make_state_lib(branch: &str) -> Value {
 }
 
 fn write_state_lib(dir: &Path, branch: &str, state: &Value) -> std::path::PathBuf {
-    let state_dir = dir.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let path = state_dir.join(format!("{}.json", branch));
+    let branch_dir = dir.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    let path = branch_dir.join("state.json");
     fs::write(&path, serde_json::to_string_pretty(state).unwrap()).unwrap();
     path
 }
@@ -363,9 +363,9 @@ fn add_issue_preserves_existing_lib() {
 fn add_issue_creates_array_if_missing_lib() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let path = state_dir.join("test-feature.json");
+    let branch_dir = root.join(".flow-states").join("test-feature");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let path = branch_dir.join("state.json");
     fs::write(&path, r#"{"current_phase": "flow-learn"}"#).unwrap();
 
     let args = Args {
@@ -389,9 +389,9 @@ fn add_issue_creates_array_if_missing_lib() {
 fn add_issue_array_root_state_noop_lib() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let path = state_dir.join("test-feature.json");
+    let branch_dir = root.join(".flow-states").join("test-feature");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let path = branch_dir.join("state.json");
     fs::write(&path, "[1, 2, 3]").unwrap();
 
     let args = Args {
@@ -427,10 +427,10 @@ fn add_issue_run_impl_main_no_state_returns_no_state_tuple() {
 fn add_issue_run_impl_main_success_returns_issue_count_tuple() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = root.join(".flow-states").join("present-branch");
+    fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
-        state_dir.join("present-branch.json"),
+        branch_dir.join("state.json"),
         r#"{"current_phase":"flow-learn","issues_filed":[]}"#,
     )
     .unwrap();
@@ -445,9 +445,9 @@ fn add_issue_run_impl_main_success_returns_issue_count_tuple() {
 fn add_issue_run_impl_main_mutate_state_failure_returns_error_tuple() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join("present-branch.json"), "{not json").unwrap();
+    let branch_dir = root.join(".flow-states").join("present-branch");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), "{not json").unwrap();
     let args = make_args(Some("present-branch"));
     let (value, code) = run_impl_main(args, &root);
     assert_eq!(value["status"], "error");
@@ -462,10 +462,11 @@ fn add_issue_run_impl_main_mutate_state_failure_returns_error_tuple() {
 fn add_issue_run_impl_main_unknown_phase_falls_back_to_phase_string() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = root.join(".flow-states").join("unknown-phase");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let state_path = branch_dir.join("state.json");
     fs::write(
-        state_dir.join("unknown-phase.json"),
+        &state_path,
         r#"{"current_phase":"flow-learn","issues_filed":[]}"#,
     )
     .unwrap();
@@ -475,8 +476,7 @@ fn add_issue_run_impl_main_unknown_phase_falls_back_to_phase_string() {
     assert_eq!(value["status"], "ok");
     assert_eq!(code, 0);
     let on_disk: Value =
-        serde_json::from_str(&fs::read_to_string(state_dir.join("unknown-phase.json")).unwrap())
-            .unwrap();
+        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(
         on_disk["issues_filed"][0]["phase_name"],
         "custom-unknown-phase"
@@ -487,10 +487,10 @@ fn add_issue_run_impl_main_unknown_phase_falls_back_to_phase_string() {
 fn add_issue_run_impl_main_wrong_type_resets_to_array() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = root.join(".flow-states").join("wrong-type");
+    fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
-        state_dir.join("wrong-type.json"),
+        branch_dir.join("state.json"),
         r#"{"current_phase":"flow-learn","issues_filed":"not-an-array"}"#,
     )
     .unwrap();

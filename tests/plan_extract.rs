@@ -48,9 +48,9 @@ mod integration {
     }
 
     fn setup_state(dir: &std::path::Path, branch: &str, state_json: &str) {
-        let state_dir = flow_states_dir(dir);
-        fs::create_dir_all(&state_dir).unwrap();
-        fs::write(state_dir.join(format!("{}.json", branch)), state_json).unwrap();
+        let branch_dir = flow_states_dir(dir).join(branch);
+        fs::create_dir_all(&branch_dir).unwrap();
+        fs::write(branch_dir.join("state.json"), state_json).unwrap();
     }
 
     /// Build a plan-extract-ready state JSON with flow-start complete.
@@ -229,9 +229,9 @@ mod integration {
     fn lib_corrupt_state_returns_err() {
         let dir = tempfile::tempdir().unwrap();
         setup_git_repo(dir.path(), "test-feature");
-        let state_dir = flow_states_dir(dir.path());
-        fs::create_dir_all(&state_dir).unwrap();
-        fs::write(state_dir.join("test-feature.json"), "{bad json").unwrap();
+        let branch_dir = flow_states_dir(dir.path()).join("test-feature");
+        fs::create_dir_all(&branch_dir).unwrap();
+        fs::write(branch_dir.join("state.json"), "{bad json").unwrap();
         let root = dir.path().canonicalize().unwrap();
         let result = flow_rs::plan_extract::run_impl_with_root(&lib_args("test-feature"), root);
         assert!(result.is_err());
@@ -251,7 +251,7 @@ mod integration {
     fn lib_resumed_path_plan_file_exists() {
         let dir = tempfile::tempdir().unwrap();
         setup_git_repo(dir.path(), "test-feature");
-        let plan_rel = ".flow-states/test-feature-plan.md";
+        let plan_rel = ".flow-states/test-feature/plan.md";
         let plan_abs = dir.path().join(plan_rel);
         fs::create_dir_all(plan_abs.parent().unwrap()).unwrap();
         fs::write(
@@ -318,12 +318,12 @@ mod integration {
     fn test_error_state_path_is_directory() {
         let dir = tempfile::tempdir().unwrap();
         setup_git_repo(dir.path(), "test-feature");
-        let state_dir = flow_states_dir(dir.path());
-        fs::create_dir_all(&state_dir).unwrap();
-        // Create state_path as a DIRECTORY instead of a file —
+        let branch_dir = flow_states_dir(dir.path()).join("test-feature");
+        fs::create_dir_all(&branch_dir).unwrap();
+        // Create state.json as a DIRECTORY instead of a file —
         // resolve_state's state_path.exists() returns true for
         // directories, so it proceeds to read_to_string which fails.
-        fs::create_dir_all(state_dir.join("test-feature.json")).unwrap();
+        fs::create_dir_all(branch_dir.join("state.json")).unwrap();
 
         let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
         assert_eq!(code, 1);
@@ -346,7 +346,7 @@ mod integration {
         setup_git_repo(dir.path(), "test-feature");
         // State with files.plan pointing at a non-existent path
         let state = make_plan_state("build a thing", |s| {
-            s["files"]["plan"] = serde_json::json!(".flow-states/test-feature-plan-missing.md");
+            s["files"]["plan"] = serde_json::json!(".flow-states/test-feature/plan-missing.md");
         });
         setup_state(dir.path(), "test-feature", &state);
 
@@ -375,8 +375,8 @@ mod integration {
         setup_state(dir.path(), "test-feature", &state);
 
         // Pre-create DAG target as a directory
-        let state_dir = flow_states_dir(dir.path());
-        fs::create_dir_all(state_dir.join("test-feature-dag.md")).unwrap();
+        let branch_dir = flow_states_dir(dir.path()).join("test-feature");
+        fs::create_dir_all(branch_dir.join("dag.md")).unwrap();
 
         let stub_dir = create_gh_stub(
             dir.path(),
@@ -414,8 +414,8 @@ exit 1
         setup_state(dir.path(), "test-feature", &state);
 
         // Pre-create plan target as a directory (DAG target stays free)
-        let state_dir = flow_states_dir(dir.path());
-        fs::create_dir_all(state_dir.join("test-feature-plan.md")).unwrap();
+        let branch_dir = flow_states_dir(dir.path()).join("test-feature");
+        fs::create_dir_all(branch_dir.join("plan.md")).unwrap();
 
         let stub_dir = create_gh_stub(
             dir.path(),
@@ -458,7 +458,7 @@ exit 1
         let state = make_plan_state("build a thing", |_| {});
         setup_state(dir.path(), "test-feature", &state);
 
-        let state_file = flow_states_dir(dir.path()).join("test-feature.json");
+        let state_file = flow_states_dir(dir.path()).join("test-feature").join("state.json");
         fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
 
         let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
@@ -483,9 +483,9 @@ exit 1
         let dir = tempfile::tempdir().unwrap();
         setup_git_repo(dir.path(), "test-feature");
 
-        let state_dir = flow_states_dir(dir.path());
-        fs::create_dir_all(&state_dir).unwrap();
-        fs::write(state_dir.join("test-feature.json"), "{bad json").unwrap();
+        let branch_dir = flow_states_dir(dir.path()).join("test-feature");
+        fs::create_dir_all(&branch_dir).unwrap();
+        fs::write(branch_dir.join("state.json"), "{bad json").unwrap();
 
         let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
         assert_eq!(code, 1);
@@ -573,7 +573,7 @@ exit 1
         setup_git_repo(dir.path(), "test-feature");
 
         let plan_content = "## Context\n\nTest plan.\n\n## Tasks\n\n### Task 1: Do something\n";
-        let plan_rel = ".flow-states/test-feature-plan.md";
+        let plan_rel = ".flow-states/test-feature/plan.md";
 
         // State with files.plan set (creates .flow-states/ directory)
         let state = make_plan_state("build a feature", |s| {
@@ -606,7 +606,7 @@ exit 1
 
         // Verify state file was updated: flow-plan should be complete
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap(),
+            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
         )
         .unwrap();
         assert_eq!(
@@ -620,7 +620,7 @@ exit 1
         let dir = tempfile::tempdir().unwrap();
         setup_git_repo(dir.path(), "test-feature");
 
-        let plan_rel = ".flow-states/test-feature-plan.md";
+        let plan_rel = ".flow-states/test-feature/plan.md";
 
         // State with files.plan set but NO plan file on disk
         let state = make_plan_state("build a feature", |s| {
@@ -647,7 +647,7 @@ exit 1
 
         // Critical: state file must NOT be corrupted with "complete"
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap(),
+            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
         )
         .unwrap();
         assert_ne!(
@@ -719,7 +719,7 @@ exit 1
         assert_eq!(json["issue_number"], 99);
 
         // DAG file should have been created
-        let dag_path = flow_states_dir(dir.path()).join("test-feature-dag.md");
+        let dag_path = flow_states_dir(dir.path()).join("test-feature").join("dag.md");
         assert!(
             dag_path.exists(),
             "DAG file should be created for decomposed issues"
@@ -807,15 +807,15 @@ exit 1
         assert!(json["continue_action"].is_string());
 
         // Verify DAG and plan files created on disk
-        let dag_path = flow_states_dir(dir.path()).join("test-feature-dag.md");
+        let dag_path = flow_states_dir(dir.path()).join("test-feature").join("dag.md");
         assert!(dag_path.exists(), "DAG file should exist");
 
-        let plan_path = flow_states_dir(dir.path()).join("test-feature-plan.md");
+        let plan_path = flow_states_dir(dir.path()).join("test-feature").join("plan.md");
         assert!(plan_path.exists(), "Plan file should exist");
 
         // Verify state file shows flow-plan complete
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap(),
+            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
         )
         .unwrap();
         assert_eq!(
@@ -871,7 +871,7 @@ exit 1
         );
 
         // Plan file MUST exist on disk so the user can edit it in place.
-        let plan_path = flow_states_dir(dir.path()).join("test-feature-plan.md");
+        let plan_path = flow_states_dir(dir.path()).join("test-feature").join("plan.md");
         assert!(
             plan_path.exists(),
             "plan file must be written to disk even on violation"
@@ -879,7 +879,7 @@ exit 1
 
         // Phase must NOT be marked complete.
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap(),
+            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
         )
         .unwrap();
         assert_ne!(
@@ -891,7 +891,7 @@ exit 1
         // resume path (which re-scans the file the user edited).
         assert_eq!(
             updated_state["files"]["plan"].as_str().unwrap(),
-            ".flow-states/test-feature-plan.md",
+            ".flow-states/test-feature/plan.md",
             "files.plan must be set so resume path can pick up the edited file"
         );
     }
@@ -906,7 +906,7 @@ exit 1
         setup_git_repo(dir.path(), "test-feature");
 
         let plan_content = "## Context\n\nAdd the drift guard to every state mutator.\n";
-        let plan_rel = ".flow-states/test-feature-plan.md";
+        let plan_rel = ".flow-states/test-feature/plan.md";
 
         let state = make_plan_state("build a feature", |s| {
             s["files"]["plan"] = serde_json::json!(plan_rel);
@@ -928,7 +928,7 @@ exit 1
 
         // Phase must not be marked complete.
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap(),
+            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
         )
         .unwrap();
         assert_ne!(
@@ -947,7 +947,7 @@ exit 1
 
         let plan_content = "## Approach\n\n\
             Tighten the existing FlowPaths::new to panic on empty branches.\n";
-        let plan_rel = ".flow-states/test-feature-plan.md";
+        let plan_rel = ".flow-states/test-feature/plan.md";
 
         let state = make_plan_state("build a feature", |s| {
             s["files"]["plan"] = serde_json::json!(plan_rel);
@@ -989,7 +989,7 @@ exit 1
             (`site_a`, `site_b`, `site_c`, `site_d`, `site_e`).\n\n\
             ## Tasks\n\n\
             ### Task 1: Add guard at site_a\n";
-        let plan_rel = ".flow-states/test-feature-plan.md";
+        let plan_rel = ".flow-states/test-feature/plan.md";
 
         let state = make_plan_state("build a feature", |s| {
             s["files"]["plan"] = serde_json::json!(plan_rel);
@@ -1023,7 +1023,7 @@ exit 1
             Add the drift guard to every state mutator \
             (`phase-enter`, `phase-finalize`, `phase-transition`, \
             `set-timestamp`, `add-finding`).\n";
-        let plan_rel = ".flow-states/test-feature-plan.md";
+        let plan_rel = ".flow-states/test-feature/plan.md";
 
         let state = make_plan_state("build a feature", |s| {
             s["files"]["plan"] = serde_json::json!(plan_rel);
@@ -1039,7 +1039,7 @@ exit 1
         assert_eq!(json["path"], "resumed");
 
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap(),
+            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
         )
         .unwrap();
         assert_eq!(
@@ -1192,7 +1192,7 @@ exit 1
         setup_git_repo(dir.path(), "test-feature");
 
         let plan_content = "## Context\n\nBackground.\n\n## Tasks\n\n### Task 1: Real\n\n```\n### Task 2: Fake inside code\n```\n\n### Task 3: Another real\n";
-        let plan_rel = ".flow-states/test-feature-plan.md";
+        let plan_rel = ".flow-states/test-feature/plan.md";
 
         let state = make_plan_state("build a feature", |s| {
             s["files"]["plan"] = serde_json::json!(plan_rel);
@@ -1209,7 +1209,7 @@ exit 1
 
         // code_tasks_total should be 2 (Task 1 and Task 3), not 3.
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap(),
+            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
         )
         .unwrap();
         assert_eq!(updated_state["code_tasks_total"], 2);
@@ -1342,7 +1342,7 @@ exit 1
         setup_git_repo(dir.path(), "test-feature");
 
         let plan_content = "## Context\n\nBoring plan.\n\n## Tasks\n\n### Task 1: Do\n";
-        let plan_rel = ".flow-states/test-feature-plan.md";
+        let plan_rel = ".flow-states/test-feature/plan.md";
 
         let state = make_plan_state("build a feature", |s| {
             s["files"]["plan"] = serde_json::json!(plan_rel);
@@ -1355,7 +1355,7 @@ exit 1
         // Write a frozen-phases config that honors load_phase_config's
         // expected shape. This file's presence triggers load_frozen_config's
         // `if frozen_path.exists()` true branch.
-        let frozen_path = flow_states_dir(dir.path()).join("test-feature-phases.json");
+        let frozen_path = flow_states_dir(dir.path()).join("test-feature").join("phases.json");
         fs::write(
             &frozen_path,
             r#"{"order":["flow-start","flow-plan","flow-code","flow-code-review","flow-learn","flow-complete"],"phases":{"flow-start":{"name":"Start","command":"/flow:flow-start"},"flow-plan":{"name":"Plan","command":"/flow:flow-plan"},"flow-code":{"name":"Code","command":"/flow:flow-code"},"flow-code-review":{"name":"Code Review","command":"/flow:flow-code-review"},"flow-learn":{"name":"Learn","command":"/flow:flow-learn"},"flow-complete":{"name":"Complete","command":"/flow:flow-complete"}}}"#,
@@ -1393,7 +1393,7 @@ exit 1
             ```rust\n\
             fn plan_extract_sample_regression_collision() {}\n\
             ```\n";
-        let plan_rel = ".flow-states/test-feature-plan.md";
+        let plan_rel = ".flow-states/test-feature/plan.md";
 
         let state = make_plan_state("build a feature", |s| {
             s["files"]["plan"] = serde_json::json!(plan_rel);
@@ -1467,7 +1467,7 @@ exit 1
         assert_eq!(json["status"], "ok");
         // Post-run, state.files should be an object (reset by the nested guard).
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap(),
+            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
         )
         .unwrap();
         assert!(
@@ -1531,7 +1531,7 @@ exit 1
         let dir = tempfile::tempdir().unwrap();
         setup_git_repo(dir.path(), "test-feature");
 
-        let plan_rel = ".flow-states/test-feature-plan.md";
+        let plan_rel = ".flow-states/test-feature/plan.md";
         let plan_abs = dir.path().join(plan_rel);
         fs::create_dir_all(plan_abs.parent().unwrap()).unwrap();
         fs::write(&plan_abs, "## Tasks\n\n- Do something.\n").unwrap();
@@ -1541,7 +1541,7 @@ exit 1
         });
         setup_state(dir.path(), "test-feature", &state);
 
-        let state_file = flow_states_dir(dir.path()).join("test-feature.json");
+        let state_file = flow_states_dir(dir.path()).join("test-feature").join("state.json");
         fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
 
         let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
@@ -1583,7 +1583,7 @@ exit 1
 "#,
         );
 
-        let state_file = flow_states_dir(dir.path()).join("test-feature.json");
+        let state_file = flow_states_dir(dir.path()).join("test-feature").join("state.json");
         fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
 
         let (code, json) =
@@ -1628,7 +1628,7 @@ exit 1
 "###,
         );
 
-        let state_file = flow_states_dir(dir.path()).join("test-feature.json");
+        let state_file = flow_states_dir(dir.path()).join("test-feature").join("state.json");
         fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
 
         let (code, json) =
@@ -1674,7 +1674,7 @@ exit 1
 "###,
         );
 
-        let state_file = flow_states_dir(dir.path()).join("test-feature.json");
+        let state_file = flow_states_dir(dir.path()).join("test-feature").join("state.json");
         fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
 
         let (code, json) =
@@ -1718,7 +1718,7 @@ exit 1
 "###,
         );
 
-        let state_file = flow_states_dir(dir.path()).join("test-feature.json");
+        let state_file = flow_states_dir(dir.path()).join("test-feature").join("state.json");
         fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
 
         let (code, json) =
@@ -1770,7 +1770,7 @@ exit 1
         assert_eq!(json["path"], "standard");
 
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap(),
+            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
         )
         .unwrap();
         assert!(
@@ -1818,7 +1818,7 @@ exit 1
         assert_eq!(json["path"], "extracted");
 
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap(),
+            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
         )
         .unwrap();
         assert!(

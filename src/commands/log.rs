@@ -1,9 +1,9 @@
-//! Append timestamped log lines to `.flow-states/<branch>.log`.
+//! Append timestamped log lines to `.flow-states/<branch>/log`.
 //!
 //! Tests live at tests/logging.rs per .claude/rules/test-placement.md —
 //! no inline #[cfg(test)] in this file.
 
-use std::fs::{self, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
 use std::process;
@@ -14,17 +14,17 @@ use crate::flow_paths::FlowPaths;
 use crate::git;
 use crate::utils;
 
-/// Append a timestamped message to `.flow-states/<branch>.log`.
+/// Append a timestamped message to `.flow-states/<branch>/log`.
 ///
-/// Creates the `.flow-states/` directory if it does not exist.
-/// Acquires an exclusive advisory lock before writing (best-effort —
-/// on rare lock-acquisition failures, the O_APPEND open still
-/// guarantees torn-write-free small appends on POSIX filesystems).
-/// Write errors from `writeln!` are ignored for the same reason;
-/// callers treat log failures as non-fatal.
+/// Creates the branch-scoped subdirectory (and therefore `.flow-states/`)
+/// if it does not exist. Acquires an exclusive advisory lock before
+/// writing (best-effort — on rare lock-acquisition failures, the
+/// O_APPEND open still guarantees torn-write-free small appends on
+/// POSIX filesystems). Write errors from `writeln!` are ignored for
+/// the same reason; callers treat log failures as non-fatal.
 pub fn append_log(root: &Path, branch: &str, message: &str) -> Result<(), std::io::Error> {
     let paths = FlowPaths::new(root, branch);
-    fs::create_dir_all(paths.flow_states_dir())?;
+    paths.ensure_branch_dir()?;
     let log_path = paths.log_file();
     let timestamp = utils::now();
 

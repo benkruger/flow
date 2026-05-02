@@ -103,8 +103,9 @@ pub fn detect_branch_from_path(cwd: &Path) -> Option<String> {
 
 /// Check if a FLOW feature is active for the given branch.
 ///
-/// Returns `true` when `.flow-states/<branch>.json` exists at the given root.
-/// Rejects branch names containing path separators to prevent traversal.
+/// Returns `true` when `.flow-states/<branch>/state.json` exists at the
+/// given root. Rejects branch names containing path separators to
+/// prevent traversal.
 pub fn is_flow_active(branch: &str, root: &Path) -> bool {
     if branch.is_empty() || branch.contains('/') || branch.contains('\\') {
         return false;

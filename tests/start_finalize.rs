@@ -49,8 +49,8 @@ fn create_git_repo(parent: &Path) -> PathBuf {
 }
 
 fn create_state_file(repo: &Path, branch: &str, skills_continue: &str) {
-    let state_dir = flow_states_dir(repo);
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = flow_states_dir(repo).join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
     let state = json!({
         "schema_version": 1,
         "branch": branch,
@@ -62,8 +62,8 @@ fn create_state_file(repo: &Path, branch: &str, skills_continue: &str) {
         "files": {
             "plan": null,
             "dag": null,
-            "log": format!(".flow-states/{}.log", branch),
-            "state": format!(".flow-states/{}.json", branch)
+            "log": format!(".flow-states/{}/log", branch),
+            "state": format!(".flow-states/{}/state.json", branch)
         },
         "session_tty": null,
         "session_id": null,
@@ -136,7 +136,7 @@ fn create_state_file(repo: &Path, branch: &str, skills_continue: &str) {
         "start_steps_total": 5
     });
     fs::write(
-        state_dir.join(format!("{}.json", branch)),
+        branch_dir.join("state.json"),
         serde_json::to_string_pretty(&state).unwrap(),
     )
     .unwrap();
@@ -189,8 +189,8 @@ fn run_start_finalize_subprocess(
 fn seed_state_library(branch: &str, skills_continue: &str) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = root.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
     let state = json!({
         "schema_version": 1,
         "branch": branch,
@@ -217,7 +217,7 @@ fn seed_state_library(branch: &str, skills_continue: &str) -> (tempfile::TempDir
         "notifications": [],
     });
     fs::write(
-        state_dir.join(format!("{}.json", branch)),
+        branch_dir.join("state.json"),
         serde_json::to_string_pretty(&state).unwrap(),
     )
     .unwrap();
@@ -244,7 +244,7 @@ fn test_happy_path_no_slack() {
     assert!(data["formatted_time"].is_string());
     assert!(data["continue_action"].is_string());
 
-    let state_path = flow_states_dir(&repo).join("finalize-branch.json");
+    let state_path = flow_states_dir(&repo).join("finalize-branch").join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-start"]["status"], "complete");
     assert_eq!(state["current_phase"], "flow-plan");
@@ -319,7 +319,7 @@ fn test_slack_success_stores_thread_ts() {
     assert!(data.get("slack").is_some());
     assert_eq!(data["slack"]["status"], "ok");
 
-    let state_path = flow_states_dir(&repo).join("slack-ok-branch.json");
+    let state_path = flow_states_dir(&repo).join("slack-ok-branch").join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["slack_thread_ts"], "1234567890.123456");
     let notifications = state["notifications"].as_array().unwrap();
@@ -350,7 +350,7 @@ fn test_slack_ok_without_ts_falls_back_to_empty() {
     let data = parse_output(&output);
     assert_eq!(data["slack"]["status"], "ok");
 
-    let state_path = flow_states_dir(&repo).join("no-ts-branch.json");
+    let state_path = flow_states_dir(&repo).join("no-ts-branch").join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["slack_thread_ts"], "");
 }
@@ -378,7 +378,7 @@ fn test_slack_error_continues_best_effort() {
     assert_eq!(data["status"], "ok");
     assert_eq!(data["slack"]["status"], "error");
 
-    let state_path = flow_states_dir(&repo).join("slack-err-branch.json");
+    let state_path = flow_states_dir(&repo).join("slack-err-branch").join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert!(state.get("slack_thread_ts").is_none());
 }
@@ -391,7 +391,7 @@ fn test_slack_success_heals_wrong_notifications_type() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo(dir.path());
     create_state_file(&repo, "heal-branch", "auto");
-    let state_path = flow_states_dir(&repo).join("heal-branch.json");
+    let state_path = flow_states_dir(&repo).join("heal-branch").join("state.json");
     let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     state["notifications"] = json!("not-an-array");
     fs::write(&state_path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
@@ -439,9 +439,9 @@ fn test_finalize_missing_state_file() {
 fn test_finalize_corrupt_state_returns_error() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join("corrupt-branch.json"), "not json{{{").unwrap();
+    let branch_dir = root.join(".flow-states").join("corrupt-branch");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), "not json{{{").unwrap();
 
     let args = Args {
         branch: "corrupt-branch".to_string(),
@@ -472,7 +472,7 @@ fn test_finalize_no_pr_url_skips_slack() {
     assert_eq!(value["status"], "ok");
     assert!(value.get("slack").is_none());
 
-    let state_path = root.join(".flow-states/no-url-branch.json");
+    let state_path = root.join(".flow-states/no-url-branch/state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert!(state.get("slack_thread_ts").is_none());
 }
@@ -494,7 +494,7 @@ fn test_finalize_happy_wraps_with_exit_zero() {
 #[test]
 fn test_finalize_with_invalid_frozen_phases_falls_back() {
     let (_dir, root) = seed_state_library("invalid-frozen-branch", "auto");
-    let frozen_path = root.join(".flow-states/invalid-frozen-branch-phases.json");
+    let frozen_path = root.join(".flow-states/invalid-frozen-branch/phases.json");
     fs::write(&frozen_path, r#"{"order": []}"#).unwrap();
 
     let args = Args {
@@ -511,7 +511,7 @@ fn test_finalize_with_invalid_frozen_phases_falls_back() {
 #[test]
 fn test_finalize_with_frozen_phases_loads_config() {
     let (_dir, root) = seed_state_library("frozen-branch", "auto");
-    let frozen_path = root.join(".flow-states/frozen-branch-phases.json");
+    let frozen_path = root.join(".flow-states/frozen-branch/phases.json");
     let frozen = json!({
         "order": ["flow-start", "flow-plan", "flow-code", "flow-code-review", "flow-learn", "flow-complete"],
         "phases": {

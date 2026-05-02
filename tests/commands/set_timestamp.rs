@@ -374,9 +374,9 @@ fn run_impl_main_no_state_file_returns_error() {
 fn run_impl_main_invalid_set_arg_returns_error_and_preserves_state() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state_path = state_dir.join("set-ts-invalid.json");
+    let branch_dir = root.join(".flow-states").join("set-ts-invalid");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let state_path = branch_dir.join("state.json");
     let original = r#"{"branch":"set-ts-invalid","existing":"value"}"#;
     fs::write(&state_path, original).unwrap();
 
@@ -405,15 +405,15 @@ fn run_impl_main_invalid_set_arg_returns_error_and_preserves_state() {
 fn run_impl_main_non_json_mutate_error_returns_raw_message() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = root.join(".flow-states").join("set-ts-io");
+    fs::create_dir_all(&branch_dir).unwrap();
     // Create a DIRECTORY where the state file is expected. `exists()`
     // returns true so run_impl_main proceeds to mutate_state, which
     // then fails with an I/O error from OpenOptions::open on a
     // directory — MutateError::Io(...), Display "I/O error: ...".
     // The caller's "Invalid JSON" / "JSON error" substring check
     // misses, so the message passes through as-is.
-    fs::create_dir(state_dir.join("set-ts-io.json")).unwrap();
+    fs::create_dir(branch_dir.join("state.json")).unwrap();
 
     let (value, code) = run_impl_main(&["foo=bar".to_string()], Some("set-ts-io"), &root, &root);
     assert_eq!(code, 1);
@@ -439,9 +439,9 @@ fn run_impl_main_non_json_mutate_error_returns_raw_message() {
 fn run_impl_main_corrupt_state_file_returns_could_not_read_error() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state_path = state_dir.join("set-ts-corrupt.json");
+    let branch_dir = root.join(".flow-states").join("set-ts-corrupt");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let state_path = branch_dir.join("state.json");
     fs::write(&state_path, "{not-json").unwrap();
 
     let (value, code) = run_impl_main(
@@ -464,9 +464,9 @@ fn run_impl_main_corrupt_state_file_returns_could_not_read_error() {
 fn run_impl_main_success_returns_updates() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state_path = state_dir.join("set-ts-happy.json");
+    let branch_dir = root.join(".flow-states").join("set-ts-happy");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let state_path = branch_dir.join("state.json");
     fs::write(
         &state_path,
         r#"{"branch":"set-ts-happy","design":{"status":"pending"}}"#,
@@ -514,10 +514,10 @@ fn run_impl_main_cwd_drift_returns_error() {
         assert!(out.status.success(), "git {:?} failed: {:?}", args, out);
     }
 
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = root.join(".flow-states").join("main");
+    fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
-        state_dir.join("main.json"),
+        branch_dir.join("state.json"),
         r#"{"branch":"main","relative_cwd":"sub"}"#,
     )
     .unwrap();
@@ -545,8 +545,8 @@ fn make_cli_state() -> Value {
         "files": {
             "plan": null,
             "dag": null,
-            "log": ".flow-states/test-feature.log",
-            "state": ".flow-states/test-feature.json"
+            "log": ".flow-states/test-feature/log",
+            "state": ".flow-states/test-feature/state.json"
         },
         "phases": {
             "flow-start": {"name": "Start", "status": "complete", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
@@ -557,9 +557,9 @@ fn make_cli_state() -> Value {
 }
 
 fn setup_cli_state(dir: &std::path::Path, branch: &str, state: &Value) -> std::path::PathBuf {
-    let state_dir = flow_states_dir(dir);
-    fs::create_dir_all(&state_dir).unwrap();
-    let path = state_dir.join(format!("{}.json", branch));
+    let branch_dir = flow_states_dir(dir).join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    let path = branch_dir.join("state.json");
     fs::write(&path, serde_json::to_string_pretty(state).unwrap()).unwrap();
     path
 }
@@ -599,8 +599,12 @@ fn test_cli_happy_path() {
     assert_eq!(output["status"], "ok");
     assert_eq!(output["updates"][0]["value"], "approved");
 
-    let content =
-        fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap();
+    let content = fs::read_to_string(
+        flow_states_dir(dir.path())
+            .join("test-feature")
+            .join("state.json"),
+    )
+    .unwrap();
     let on_disk: Value = serde_json::from_str(&content).unwrap();
     assert_eq!(on_disk["design"]["status"], "approved");
 }
@@ -677,8 +681,12 @@ fn test_cli_integer_coercion() {
     assert_eq!(code, 0);
     assert_eq!(output["updates"][0]["value"], 1);
 
-    let content =
-        fs::read_to_string(flow_states_dir(dir.path()).join("test-feature.json")).unwrap();
+    let content = fs::read_to_string(
+        flow_states_dir(dir.path())
+            .join("test-feature")
+            .join("state.json"),
+    )
+    .unwrap();
     let on_disk: Value = serde_json::from_str(&content).unwrap();
     assert_eq!(on_disk["code_review_step"], 1);
     assert!(on_disk["code_review_step"].is_i64());
@@ -821,9 +829,9 @@ fn test_cli_error_invalid_format() {
 #[test]
 fn test_cli_error_corrupt_json() {
     let dir = tempfile::tempdir().unwrap();
-    let state_dir = flow_states_dir(dir.path());
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join("test-feature.json"), "{bad json").unwrap();
+    let branch_dir = flow_states_dir(dir.path()).join("test-feature");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), "{bad json").unwrap();
 
     let (code, output) = run_cli(dir.path(), &["--set", "design.approved_at=NOW"]);
     assert_eq!(code, 1);

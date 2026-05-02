@@ -532,34 +532,38 @@ pub fn flow_summary(state: &Value, now: Option<DateTime<FixedOffset>>) -> FlowSu
     }
 }
 
-/// Read all .flow-states/*.json state files and return flow summaries.
+/// Read every `.flow-states/<branch>/state.json` file and return flow
+/// summaries sorted by phase number (ascending), then by feature name
+/// (alphabetical) as a tiebreaker.
 ///
-/// Returns a list of FlowSummary sorted by phase number (ascending),
-/// then by feature name (alphabetical) as a tiebreaker.
-/// Skips corrupt JSON and non-state files (e.g., *-phases.json).
+/// Discovery iterates subdirectories of `.flow-states/` and selects
+/// each one that contains a readable `state.json` whose JSON has a
+/// `branch` field. Subdirectories without `state.json` and regular
+/// files at the root of `.flow-states/` (such as `orchestrate.json`,
+/// the start lock, or stale flat-layout artifacts left by older
+/// binaries) are skipped naturally.
 pub fn load_all_flows(root: &Path) -> Vec<FlowSummary> {
     let state_dir = FlowStatesDir::new(root).path().to_path_buf();
     if !state_dir.is_dir() {
         return vec![];
     }
 
-    let mut entries: Vec<_> = match std::fs::read_dir(&state_dir) {
-        Ok(iter) => iter.filter_map(|e| e.ok()).collect(),
+    let mut subdirs: Vec<_> = match std::fs::read_dir(&state_dir) {
+        Ok(iter) => iter
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
+            .collect(),
         Err(_) => return vec![],
     };
-    entries.sort_by_key(|e| e.file_name());
+    subdirs.sort_by_key(|e| e.file_name());
 
     let mut flows = Vec::new();
-    for entry in entries {
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy();
-        if !name_str.ends_with(".json") {
+    for entry in subdirs {
+        let state_path = entry.path().join("state.json");
+        if !state_path.is_file() {
             continue;
         }
-        if name_str.ends_with("-phases.json") {
-            continue;
-        }
-        if let Ok(content) = std::fs::read_to_string(entry.path()) {
+        if let Ok(content) = std::fs::read_to_string(&state_path) {
             if let Ok(state) = serde_json::from_str::<Value>(&content) {
                 if state.get("branch").and_then(|b| b.as_str()).is_none() {
                     continue;

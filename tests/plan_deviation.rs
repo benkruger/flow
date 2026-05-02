@@ -841,19 +841,23 @@ fn run_impl_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
 }
 
 fn write_state(root: &Path, branch: &str, contents: &str) {
-    let state_path = root.join(".flow-states").join(format!("{}.json", branch));
+    let branch_dir = root.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).expect("create branch dir");
+    let state_path = branch_dir.join("state.json");
     fs::write(&state_path, contents).expect("write state file");
 }
 
 fn write_plan(root: &Path, branch: &str, contents: &str) {
-    let plan_path = root
-        .join(".flow-states")
-        .join(format!("{}-plan.md", branch));
+    let branch_dir = root.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).expect("create branch dir");
+    let plan_path = branch_dir.join("plan.md");
     fs::write(&plan_path, contents).expect("write plan file");
 }
 
 fn write_log(root: &Path, branch: &str, contents: &str) {
-    let log_path = root.join(".flow-states").join(format!("{}.log", branch));
+    let branch_dir = root.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).expect("create branch dir");
+    let log_path = branch_dir.join("log");
     fs::write(&log_path, contents).expect("write log file");
 }
 
@@ -930,7 +934,7 @@ fn run_impl_plan_path_set_but_file_missing_returns_ok() {
     write_state(
         &root,
         RUN_IMPL_BRANCH,
-        r#"{"branch":"devtest","files":{"plan":".flow-states/devtest-plan.md"}}"#,
+        r#"{"branch":"devtest","files":{"plan":".flow-states/devtest/plan.md"}}"#,
     );
     let result = run_impl(&root, RUN_IMPL_BRANCH, DRIFTING_DIFF);
     assert_eq!(result, Ok(()));
@@ -945,7 +949,7 @@ fn run_impl_legacy_plan_file_key_honored() {
     write_state(
         &root,
         RUN_IMPL_BRANCH,
-        r#"{"branch":"devtest","plan_file":".flow-states/devtest-plan.md"}"#,
+        r#"{"branch":"devtest","plan_file":".flow-states/devtest/plan.md"}"#,
     );
     write_plan(&root, RUN_IMPL_BRANCH, DRIFTING_PLAN);
     let result = run_impl(&root, RUN_IMPL_BRANCH, DRIFTING_DIFF);
@@ -961,7 +965,7 @@ fn run_impl_no_deviations_returns_ok() {
     write_state(
         &root,
         RUN_IMPL_BRANCH,
-        r#"{"branch":"devtest","files":{"plan":".flow-states/devtest-plan.md"}}"#,
+        r#"{"branch":"devtest","files":{"plan":".flow-states/devtest/plan.md"}}"#,
     );
     write_plan(&root, RUN_IMPL_BRANCH, DRIFTING_PLAN);
     let result = run_impl(&root, RUN_IMPL_BRANCH, MATCHING_DIFF);
@@ -974,7 +978,7 @@ fn run_impl_deviations_all_acknowledged_returns_ok() {
     write_state(
         &root,
         RUN_IMPL_BRANCH,
-        r#"{"branch":"devtest","files":{"plan":".flow-states/devtest-plan.md"}}"#,
+        r#"{"branch":"devtest","files":{"plan":".flow-states/devtest/plan.md"}}"#,
     );
     write_plan(&root, RUN_IMPL_BRANCH, DRIFTING_PLAN);
     write_log(
@@ -992,7 +996,7 @@ fn run_impl_unacknowledged_deviations_returns_err() {
     write_state(
         &root,
         RUN_IMPL_BRANCH,
-        r#"{"branch":"devtest","files":{"plan":".flow-states/devtest-plan.md"}}"#,
+        r#"{"branch":"devtest","files":{"plan":".flow-states/devtest/plan.md"}}"#,
     );
     write_plan(&root, RUN_IMPL_BRANCH, DRIFTING_PLAN);
     let result = run_impl(&root, RUN_IMPL_BRANCH, DRIFTING_DIFF);
@@ -1019,7 +1023,7 @@ fn run_impl_unreadable_log_treated_as_empty() {
     write_state(
         &root,
         RUN_IMPL_BRANCH,
-        r#"{"branch":"devtest","files":{"plan":".flow-states/devtest-plan.md"}}"#,
+        r#"{"branch":"devtest","files":{"plan":".flow-states/devtest/plan.md"}}"#,
     );
     write_plan(&root, RUN_IMPL_BRANCH, DRIFTING_PLAN);
     let result = run_impl(&root, RUN_IMPL_BRANCH, DRIFTING_DIFF);

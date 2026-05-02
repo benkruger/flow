@@ -37,7 +37,8 @@ fn setup_git_repo(dir: &Path) {
         .unwrap();
 }
 
-/// Create a worktree and state file for testing cleanup.
+/// Create a worktree and seed the branch directory with a state.json
+/// and log file. Returns the worktree's relative path.
 fn setup_feature(git_repo: &Path, branch: &str) -> String {
     let wt_rel = format!(".worktrees/{}", branch);
     StdCommand::new("git")
@@ -46,14 +47,14 @@ fn setup_feature(git_repo: &Path, branch: &str) -> String {
         .output()
         .unwrap();
 
-    let state_dir = git_repo.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = git_repo.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
-        state_dir.join(format!("{}.json", branch)),
+        branch_dir.join("state.json"),
         json!({"branch": branch}).to_string(),
     )
     .unwrap();
-    fs::write(state_dir.join(format!("{}.log", branch)), "test log\n").unwrap();
+    fs::write(branch_dir.join("log"), "test log\n").unwrap();
 
     wt_rel
 }
@@ -195,343 +196,58 @@ fn cleanup_removes_worktree() {
 }
 
 #[test]
-fn cleanup_deletes_state_file() {
+fn cleanup_removes_branch_dir_with_seeded_artifacts() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path());
     let wt_rel = setup_feature(dir.path(), "test-feature");
+    let branch_dir = dir.path().join(".flow-states/test-feature");
 
-    let (value, code) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    assert_eq!(code, 0);
-    let steps = steps_from(&value);
-    assert_eq!(steps["state_file"], "deleted");
-    assert!(!dir.path().join(".flow-states/test-feature.json").exists());
-}
-
-#[test]
-fn cleanup_deletes_log_file() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
+    // Seed every per-branch artifact the production layout supports
+    // so the single recursive remove is exercised across the full set.
+    fs::write(branch_dir.join("plan.md"), "# Plan\n").unwrap();
+    fs::write(branch_dir.join("dag.md"), "# DAG\n").unwrap();
+    fs::write(branch_dir.join("phases.json"), r#"{"phases":{},"order":[]}"#).unwrap();
+    fs::write(branch_dir.join("ci-passed"), "snapshot\n").unwrap();
+    fs::write(branch_dir.join("timings.md"), "| Phase | Duration |\n").unwrap();
+    fs::write(branch_dir.join("closed-issues.json"), r#"[{"number":42}]"#).unwrap();
+    fs::write(branch_dir.join("issues.md"), "| Label | Title |\n").unwrap();
+    fs::write(branch_dir.join("commit-msg.txt"), "Subject\n").unwrap();
+    fs::write(branch_dir.join("adversarial_test.rs"), "// rs\n").unwrap();
+    fs::write(branch_dir.join("adversarial_test.py"), "# py\n").unwrap();
 
     let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
     let steps = steps_from(&value);
-    assert_eq!(steps["log_file"], "deleted");
-    assert!(!dir.path().join(".flow-states/test-feature.log").exists());
+    assert_eq!(steps["branch_dir"], "deleted");
+    assert!(!branch_dir.exists());
 }
 
 #[test]
-fn cleanup_deletes_plan_file() {
+fn cleanup_branch_dir_skipped_when_already_missing() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path());
     let wt_rel = setup_feature(dir.path(), "test-feature");
-    let plan = dir.path().join(".flow-states/test-feature-plan.md");
-    fs::write(&plan, "# Plan\n").unwrap();
+    fs::remove_dir_all(dir.path().join(".flow-states/test-feature")).unwrap();
 
     let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
     let steps = steps_from(&value);
-    assert_eq!(steps["plan_file"], "deleted");
-    assert!(!plan.exists());
+    assert_eq!(steps["branch_dir"], "skipped");
 }
 
 #[test]
-fn cleanup_skips_missing_plan_file() {
+fn cleanup_branch_dir_idempotent_across_repeated_calls() {
+    // The cleanup may run twice (abort-then-complete in adjacent
+    // sessions, or a retry after a partial failure). The second call
+    // must report `skipped` rather than failing because the directory
+    // was already removed by the first.
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path());
     let wt_rel = setup_feature(dir.path(), "test-feature");
 
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["plan_file"], "skipped");
-}
+    let (value1, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
+    assert_eq!(steps_from(&value1)["branch_dir"], "deleted");
 
-#[test]
-fn cleanup_deletes_dag_file() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    let dag = dir.path().join(".flow-states/test-feature-dag.md");
-    fs::write(&dag, "# DAG\n").unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["dag_file"], "deleted");
-    assert!(!dag.exists());
-}
-
-#[test]
-fn cleanup_skips_missing_dag_file() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["dag_file"], "skipped");
-}
-
-#[test]
-fn cleanup_deletes_frozen_phases_file() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    let frozen = dir.path().join(".flow-states/test-feature-phases.json");
-    fs::write(&frozen, r#"{"phases": {}, "order": []}"#).unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["frozen_phases"], "deleted");
-    assert!(!frozen.exists());
-}
-
-#[test]
-fn cleanup_skips_missing_frozen_phases() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["frozen_phases"], "skipped");
-}
-
-#[test]
-fn cleanup_deletes_ci_sentinel() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    let sentinel = dir.path().join(".flow-states/test-feature-ci-passed");
-    fs::write(&sentinel, "snapshot\n").unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["ci_sentinel"], "deleted");
-    assert!(!sentinel.exists());
-}
-
-#[test]
-fn cleanup_skips_missing_ci_sentinel() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["ci_sentinel"], "skipped");
-}
-
-#[test]
-fn cleanup_deletes_timings_file() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    let timings = dir.path().join(".flow-states/test-feature-timings.md");
-    fs::write(&timings, "| Phase | Duration |\n").unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["timings_file"], "deleted");
-    assert!(!timings.exists());
-}
-
-#[test]
-fn cleanup_skips_missing_timings_file() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["timings_file"], "skipped");
-}
-
-#[test]
-fn cleanup_deletes_closed_issues_file() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    let closed = dir
-        .path()
-        .join(".flow-states/test-feature-closed-issues.json");
-    fs::write(&closed, r#"[{"number": 42}]"#).unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["closed_issues_file"], "deleted");
-    assert!(!closed.exists());
-}
-
-#[test]
-fn cleanup_skips_missing_closed_issues_file() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["closed_issues_file"], "skipped");
-}
-
-#[test]
-fn cleanup_deletes_issues_file() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    let issues = dir.path().join(".flow-states/test-feature-issues.md");
-    fs::write(&issues, "| Label | Title |\n").unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["issues_file"], "deleted");
-    assert!(!issues.exists());
-}
-
-#[test]
-fn cleanup_skips_missing_issues_file() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["issues_file"], "skipped");
-}
-
-#[test]
-fn cleanup_deletes_adversarial_test_rs() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    let adv = dir
-        .path()
-        .join(".flow-states/test-feature-adversarial_test.rs");
-    fs::write(&adv, "// adversarial test\n").unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["adversarial_test"], "deleted");
-    assert!(!adv.exists());
-}
-
-#[test]
-fn cleanup_skips_missing_adversarial_test() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["adversarial_test"], "skipped");
-}
-
-#[test]
-fn cleanup_deletes_adversarial_test_multiple_extensions() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    let adv_rs = dir
-        .path()
-        .join(".flow-states/test-feature-adversarial_test.rs");
-    let adv_py = dir
-        .path()
-        .join(".flow-states/test-feature-adversarial_test.py");
-    fs::write(&adv_rs, "// rs\n").unwrap();
-    fs::write(&adv_py, "# py\n").unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["adversarial_test"], "deleted");
-    assert!(!adv_rs.exists());
-    assert!(!adv_py.exists());
-}
-
-#[test]
-fn abort_path_deletes_adversarial_test() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    let adv = dir
-        .path()
-        .join(".flow-states/test-feature-adversarial_test.rs");
-    fs::write(&adv, "// adversarial\n").unwrap();
-
-    let (value, _) = run_impl_main(&args_for(
-        dir.path(),
-        "test-feature",
-        &wt_rel,
-        Some(999),
-        false,
-    ));
-    let steps = steps_from(&value);
-    assert_eq!(steps["adversarial_test"], "deleted");
-    assert!(!adv.exists());
-}
-
-#[test]
-fn cleanup_adversarial_test_respects_branch_prefix() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    let other = dir
-        .path()
-        .join(".flow-states/other-branch-adversarial_test.rs");
-    fs::write(&other, "// other branch\n").unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["adversarial_test"], "skipped");
-    assert!(other.exists());
-}
-
-#[test]
-fn cleanup_adversarial_test_trailing_dot_precision() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    let other = dir
-        .path()
-        .join(".flow-states/test-feature-adversarial_test_other.rs");
-    fs::write(&other, "// sibling\n").unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["adversarial_test"], "skipped");
-    assert!(other.exists());
-}
-
-#[test]
-fn cleanup_skips_adversarial_test_when_flow_states_missing() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    fs::remove_dir_all(dir.path().join(".flow-states")).unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["adversarial_test"], "skipped");
-}
-
-#[test]
-fn cleanup_adversarial_test_skips_directory_and_deletes_files() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    let states = dir.path().join(".flow-states");
-    let bad_dir = states.join("test-feature-adversarial_test.d");
-    fs::create_dir_all(&bad_dir).unwrap();
-    let adv_rs = states.join("test-feature-adversarial_test.rs");
-    let adv_py = states.join("test-feature-adversarial_test.py");
-    let adv_go = states.join("test-feature-adversarial_test.go");
-    fs::write(&adv_rs, "// rs\n").unwrap();
-    fs::write(&adv_py, "# py\n").unwrap();
-    fs::write(&adv_go, "// go\n").unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["adversarial_test"], "deleted");
-    assert!(!adv_rs.exists());
-    assert!(!adv_py.exists());
-    assert!(!adv_go.exists());
-    assert!(bad_dir.exists());
+    let (value2, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
+    assert_eq!(steps_from(&value2)["branch_dir"], "skipped");
 }
 
 #[test]
@@ -623,30 +339,6 @@ fn cleanup_skips_missing_worktree() {
 }
 
 #[test]
-fn cleanup_skips_missing_state_file() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    fs::remove_file(dir.path().join(".flow-states/test-feature.json")).unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["state_file"], "skipped");
-}
-
-#[test]
-fn cleanup_skips_missing_log_file() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    fs::remove_file(dir.path().join(".flow-states/test-feature.log")).unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["log_file"], "skipped");
-}
-
-#[test]
 fn cleanup_full_happy_path() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path());
@@ -660,20 +352,13 @@ fn cleanup_full_happy_path() {
     assert_eq!(steps["worktree"], "removed");
     assert_eq!(steps["remote_branch"], "skipped");
     assert_eq!(steps["local_branch"], "deleted");
-    assert_eq!(steps["state_file"], "deleted");
-    assert_eq!(steps["plan_file"], "skipped");
-    assert_eq!(steps["dag_file"], "skipped");
-    assert_eq!(steps["log_file"], "deleted");
-    assert_eq!(steps["frozen_phases"], "skipped");
-    assert_eq!(steps["ci_sentinel"], "skipped");
-    assert_eq!(steps["timings_file"], "skipped");
-    assert_eq!(steps["closed_issues_file"], "skipped");
-    assert_eq!(steps["issues_file"], "skipped");
-    assert_eq!(steps["adversarial_test"], "skipped");
+    assert_eq!(steps["branch_dir"], "deleted");
 
     assert!(!dir.path().join(&wt_rel).exists());
-    assert!(!dir.path().join(".flow-states/test-feature.json").exists());
-    assert!(!dir.path().join(".flow-states/test-feature.log").exists());
+    assert!(!dir
+        .path()
+        .join(".flow-states/test-feature")
+        .exists());
 }
 
 #[test]
@@ -758,16 +443,7 @@ fn step_key_order_matches_expected() {
             "worktree",
             "remote_branch",
             "local_branch",
-            "state_file",
-            "plan_file",
-            "dag_file",
-            "log_file",
-            "frozen_phases",
-            "ci_sentinel",
-            "timings_file",
-            "closed_issues_file",
-            "issues_file",
-            "adversarial_test",
+            "branch_dir",
         ]
     );
 }
@@ -790,16 +466,7 @@ fn step_key_order_with_pull() {
             "worktree",
             "remote_branch",
             "local_branch",
-            "state_file",
-            "plan_file",
-            "dag_file",
-            "log_file",
-            "frozen_phases",
-            "ci_sentinel",
-            "timings_file",
-            "closed_issues_file",
-            "issues_file",
-            "adversarial_test",
+            "branch_dir",
             "git_pull",
         ]
     );
@@ -834,35 +501,10 @@ fn cleanup_worktree_tmp_remove_fails_reports_error() {
 }
 
 #[test]
-fn try_delete_adversarial_test_files_all_fail_returns_failed() {
-    // Seed MULTIPLE adversarial-test files so the loop encounters the
-    // second error after the first one is already recorded — exercises
-    // the `!first_error.is_empty()` branch in the inner error recorder.
-    use std::os::unix::fs::PermissionsExt;
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    let states = dir.path().join(".flow-states");
-    fs::write(states.join("test-feature-adversarial_test.rs"), "x").unwrap();
-    fs::write(states.join("test-feature-adversarial_test.py"), "y").unwrap();
-    fs::set_permissions(&states, fs::Permissions::from_mode(0o500)).unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-
-    fs::set_permissions(&states, fs::Permissions::from_mode(0o755)).unwrap();
-
-    let steps = steps_from(&value);
-    assert!(
-        steps["adversarial_test"].starts_with("failed:"),
-        "expected failed, got: {}",
-        steps["adversarial_test"]
-    );
-}
-
-#[test]
-fn try_delete_file_permission_denied_returns_failed() {
-    // A state file in a directory whose permissions prevent unlinking
-    // exercises the Err branch of fs::remove_file inside try_delete_file.
+fn cleanup_branch_dir_permission_denied_returns_failed() {
+    // A `.flow-states/` whose permissions prevent unlinking children
+    // exercises the Err(IO) arm of `fs::remove_dir_all` on a populated
+    // branch directory.
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path());
@@ -876,16 +518,16 @@ fn try_delete_file_permission_denied_returns_failed() {
 
     let steps = steps_from(&value);
     assert!(
-        steps["state_file"].starts_with("failed:"),
-        "expected failed for state_file, got: {}",
-        steps["state_file"]
+        steps["branch_dir"].starts_with("failed:"),
+        "expected failed for branch_dir, got: {}",
+        steps["branch_dir"]
     );
 }
 
 // --- Invalid branch ---
 
 #[test]
-fn cleanup_invalid_branch_skips_path_dependent_steps() {
+fn cleanup_invalid_branch_skips_branch_dir() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path());
 
@@ -897,7 +539,10 @@ fn cleanup_invalid_branch_skips_path_dependent_steps() {
         false,
     ));
     let steps = steps_from(&value);
-    for key in [
+    assert_eq!(steps["branch_dir"], "skipped: invalid branch");
+    // The path-dependent enumeration collapsed to a single entry —
+    // legacy per-suffix keys must not appear.
+    for legacy_key in [
         "state_file",
         "plan_file",
         "dag_file",
@@ -909,7 +554,10 @@ fn cleanup_invalid_branch_skips_path_dependent_steps() {
         "issues_file",
         "adversarial_test",
     ] {
-        assert_eq!(steps[key], "skipped: invalid branch");
+        assert!(
+            !steps.contains_key(legacy_key),
+            "legacy per-suffix key {legacy_key} must not appear after consolidation"
+        );
     }
 }
 
@@ -994,7 +642,6 @@ fn cli_run_cmd_nonzero_exit_empty_stderr_returns_stdout() {
     let last_line = stdout.trim().lines().last().unwrap_or("");
     let data: Value = serde_json::from_str(last_line).expect("json");
     let steps = data["steps"].as_object().unwrap();
-    // pr_close must report the fake gh's stdout in the failed message.
     let pr_close = steps["pr_close"].as_str().unwrap();
     assert!(
         pr_close.starts_with("failed:"),
@@ -1009,11 +656,6 @@ fn cli_run_cmd_nonzero_exit_empty_stderr_returns_stdout() {
 }
 
 // --- run_cmd error branch (spawn failure) ---
-//
-// Spawn a subprocess with PATH that doesn't contain `gh`/`git` so the
-// run_cmd internal spawn fails. This exercises the `Err(e)` arm of
-// Command::output(). We run a FULL cleanup (so multiple run_cmd calls
-// fail) to ensure the branch is hit.
 
 #[test]
 fn cli_run_cmd_spawn_err_produces_failed_step() {
@@ -1033,18 +675,14 @@ fn cli_run_cmd_spawn_err_produces_failed_step() {
             "--pr",
             "999",
         ])
-        // Restrict PATH so gh/git spawn fails with Err from Command::output.
         .env("PATH", "/nonexistent-path-for-flow-test")
         .env("HOME", &root)
         .output()
         .unwrap();
-    // Command ran — verify it didn't panic and produced JSON output.
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // Last line is JSON.
     let last_line = stdout.trim().lines().last().unwrap_or("");
     let data: Value = serde_json::from_str(last_line).expect("json");
     let steps = data["steps"].as_object().unwrap();
-    // At least one step should have "failed:" prefix from spawn failure.
     let any_failed = steps
         .values()
         .any(|v| v.as_str().unwrap_or("").starts_with("failed:"));

@@ -25,10 +25,10 @@ fn make_repo_fixture(parent: &Path) -> PathBuf {
 }
 
 fn write_state_file(repo: &Path, branch: &str, create_flow_states_dir: bool) -> PathBuf {
-    let state_dir = repo.join(".flow-states");
-    let state_path = state_dir.join(format!("{}.json", branch));
+    let branch_dir = repo.join(".flow-states").join(branch);
+    let state_path = branch_dir.join("state.json");
     if create_flow_states_dir {
-        fs::create_dir_all(&state_dir).unwrap();
+        fs::create_dir_all(&branch_dir).unwrap();
         let state = common::make_complete_state(branch, "complete", None);
         fs::write(&state_path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
     }
@@ -230,7 +230,7 @@ fn finalize_log_closure_writes_when_flow_states_dir_exists() {
     );
 
     assert_eq!(code, 0);
-    let log_path = repo.join(".flow-states").join(format!("{}.log", BRANCH));
+    let log_path = repo.join(".flow-states").join(BRANCH).join("log");
     assert!(
         log_path.exists(),
         "log closure must write to {} when .flow-states/ exists",
@@ -272,7 +272,7 @@ fn finalize_log_closure_skips_when_flow_states_dir_missing() {
     // complete-finalize's log file should NOT exist. complete_post_merge
     // may have created .flow-states/ when writing its own artifacts, but
     // the log FILE is the specific assertion.
-    let log_path = repo.join(".flow-states").join(format!("{}.log", BRANCH));
+    let log_path = repo.join(".flow-states").join(BRANCH).join("log");
     assert!(
         !log_path.exists(),
         "log closure must skip logging when .flow-states/ is missing at entry; found: {}",

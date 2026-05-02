@@ -158,7 +158,7 @@ fn log_append_under_contention() {
         handle.join().expect("Worker thread panicked");
     }
 
-    let log_file = flow_states_dir(&repo).join("test-branch.log");
+    let log_file = flow_states_dir(&repo).join("test-branch").join("log");
     assert!(log_file.exists(), "Log file was not created");
 
     let content = fs::read_to_string(&log_file).expect("Failed to read log file");
@@ -394,7 +394,10 @@ fn parallel_state_file_creation() {
                 barrier.wait();
                 let branch = format!("branch-{}", id);
                 let state = json!({"branch": branch, "status": "created"});
-                let path = state_dir.join(format!("{}.json", branch));
+                let branch_dir = state_dir.join(&branch);
+                fs::create_dir_all(&branch_dir)
+                    .unwrap_or_else(|e| panic!("Failed to create dir for {}: {}", branch, e));
+                let path = branch_dir.join("state.json");
                 fs::write(&path, serde_json::to_string_pretty(&state).unwrap())
                     .unwrap_or_else(|e| panic!("Failed to write state for {}: {}", branch, e));
             })
@@ -407,7 +410,7 @@ fn parallel_state_file_creation() {
 
     for id in 0..5 {
         let branch = format!("branch-{}", id);
-        let path = state_dir.join(format!("{}.json", branch));
+        let path = state_dir.join(&branch).join("state.json");
         assert!(path.exists(), "State file for {} was not created", branch);
 
         let content = fs::read_to_string(&path)
@@ -439,10 +442,13 @@ fn cleanup_isolation() {
     let repo = tmp.path().to_path_buf();
     init_git_repo(&repo);
     let state_dir = flow_states_dir(&repo);
-    fs::create_dir_all(&state_dir).expect("Failed to create .flow-states");
+    let dir_a = state_dir.join("branch-a");
+    let dir_b = state_dir.join("branch-b");
+    fs::create_dir_all(&dir_a).expect("Failed to create branch-a dir");
+    fs::create_dir_all(&dir_b).expect("Failed to create branch-b dir");
 
-    let state_a = state_dir.join("branch-a.json");
-    let state_b = state_dir.join("branch-b.json");
+    let state_a = dir_a.join("state.json");
+    let state_b = dir_b.join("state.json");
     fs::write(&state_a, r#"{"branch": "branch-a", "count": 0}"#)
         .expect("Failed to write branch-a state");
     fs::write(&state_b, r#"{"branch": "branch-b", "count": 0}"#)
