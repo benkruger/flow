@@ -206,6 +206,49 @@ fn new_panics_on_leading_slash() {
     let _ = FlowPaths::new("/p", "/a");
 }
 
+// --- branch_dir + ensure_branch_dir ---
+
+#[test]
+fn branch_dir_returns_branch_subdirectory_under_flow_states_dir() {
+    let p = FlowPaths::new("/tmp/project", "feature-foo");
+    assert_eq!(
+        p.branch_dir(),
+        PathBuf::from("/tmp/project/.flow-states/feature-foo")
+    );
+}
+
+#[test]
+fn ensure_branch_dir_creates_directory_when_missing() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let p = FlowPaths::new(tmp.path(), "feature-foo");
+    assert!(!p.branch_dir().exists());
+    p.ensure_branch_dir().expect("ensure_branch_dir succeeds");
+    assert!(p.branch_dir().is_dir());
+}
+
+#[test]
+fn ensure_branch_dir_idempotent_on_existing_directory() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let p = FlowPaths::new(tmp.path(), "feature-foo");
+    p.ensure_branch_dir().expect("first call succeeds");
+    p.ensure_branch_dir().expect("second call is idempotent");
+    assert!(p.branch_dir().is_dir());
+}
+
+#[test]
+fn ensure_branch_dir_propagates_io_error() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let flow_states = tmp.path().join(".flow-states");
+    std::fs::create_dir_all(&flow_states).expect("create .flow-states");
+    let collision = flow_states.join("feature-foo");
+    std::fs::write(&collision, b"blocking file").expect("write blocking file");
+    let p = FlowPaths::new(tmp.path(), "feature-foo");
+    let err = p
+        .ensure_branch_dir()
+        .expect_err("ensure_branch_dir must fail when path is a regular file");
+    let _ = err.kind();
+}
+
 // --- is_valid_branch + try_new ---
 
 #[test]

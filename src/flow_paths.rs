@@ -18,6 +18,8 @@
 //! Filename suffixes live here so the on-disk layout can change by
 //! editing this module alone.
 
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 /// Directory-only handle for the `.flow-states/` directory. Use this
@@ -114,6 +116,27 @@ impl FlowPaths {
     /// just to reach the directory.
     pub fn flow_states_dir(&self) -> PathBuf {
         self.flow_states_dir.clone()
+    }
+
+    /// `<.flow-states>/<branch>/` — branch-scoped subdirectory that
+    /// houses every per-branch artifact (state file, log, plan, DAG,
+    /// commit message, etc.). Cleanup walks this directory, and flow
+    /// discovery scans the `.flow-states/` directory for subdirectories
+    /// containing a `state.json` rather than enumerating per-suffix
+    /// filenames.
+    pub fn branch_dir(&self) -> PathBuf {
+        self.flow_states_dir.join(&self.branch)
+    }
+
+    /// Create `<.flow-states>/<branch>/` if it does not already exist.
+    /// Idempotent — wraps `fs::create_dir_all`. Callers that write
+    /// branch-scoped files (init_state, start_init writing
+    /// `start_prompt`) must call this before the first `fs::write` so
+    /// the parent directory exists. Errors propagate so callers can
+    /// surface filesystem failures (e.g., a regular file blocking the
+    /// branch path) instead of silently swallowing them.
+    pub fn ensure_branch_dir(&self) -> io::Result<()> {
+        fs::create_dir_all(self.branch_dir())
     }
 
     /// `<.flow-states>/<branch>.json` — authoritative state file.
