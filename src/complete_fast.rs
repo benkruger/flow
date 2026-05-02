@@ -413,8 +413,25 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         }));
     }
 
-    // --- Merge main into branch ---
-    let (merge_status, merge_data) = merge_main();
+    // --- Merge origin/<base_branch> into branch ---
+    // Read base_branch from state (captured at flow-start by
+    // init_state). Fall back to "main" for legacy state files
+    // written before base_branch was tracked.
+    //
+    // This reads `state` directly rather than routing through
+    // `git::read_base_branch`. `state` is already loaded and validated
+    // as a JSON object by `read_state` above; the validation contract
+    // in `git::read_base_branch` is for callsites that hold only a
+    // path and need to read the file from disk. Re-reading the same
+    // file just to re-parse JSON would be wasteful, so the caller
+    // here applies the same `as_str().unwrap_or("main")` fallback
+    // shape inline.
+    let base_branch = state
+        .get("base_branch")
+        .and_then(|v| v.as_str())
+        .unwrap_or("main")
+        .to_string();
+    let (merge_status, merge_data) = merge_main(&base_branch);
     let tree_changed = merge_status == "merged";
 
     if merge_status == "conflict" {

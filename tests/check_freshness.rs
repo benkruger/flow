@@ -225,6 +225,55 @@ fn run_impl_main_up_to_date_exits_0() {
     assert_eq!(value["status"], "up_to_date");
 }
 
+/// Drive the `Some(str)` branch of `read_base_branch` through
+/// `check_freshness` and prove the state-file value reaches
+/// `git fetch origin <base_branch>`. The bare remote has only
+/// `main`; the state file declares `base_branch: "staging"`. After
+/// the helper plumbing, `check_freshness` issues
+/// `git fetch origin staging` against the bare remote, which fails
+/// with "couldn't find remote ref staging" — surfaces as
+/// `status: "error"` with a `message` carrying "staging".
+#[test]
+fn check_freshness_uses_base_branch_from_state() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = make_repo(tmp.path());
+    attach_bare_remote(tmp.path(), &repo);
+
+    let state_file = tmp.path().join("state.json");
+    fs::write(
+        &state_file,
+        json!({
+            "branch": "main",
+            "base_branch": "staging",
+            "freshness_retries": 0,
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let raw_args = vec![
+        "--state-file".to_string(),
+        state_file.to_string_lossy().to_string(),
+    ];
+    let (value, code) = run_impl_main(&raw_args, &repo);
+    assert_eq!(
+        code, 1,
+        "expected non-zero exit when origin/staging missing, got: {}",
+        value
+    );
+    assert_eq!(
+        value["status"], "error",
+        "expected error status when origin/staging missing, got: {}",
+        value
+    );
+    let msg = value["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("staging"),
+        "fetch error must reference 'staging' to prove base_branch flowed through, got: {}",
+        msg
+    );
+}
+
 #[test]
 fn run_impl_main_merged_with_state_file_increments_retries() {
     let tmp = tempfile::tempdir().unwrap();

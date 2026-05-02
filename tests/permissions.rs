@@ -113,6 +113,7 @@ fn concrete_example(perm: &str) -> Option<String> {
 const PLACEHOLDER_SUBS: &[(&str, &str)] = &[
     ("<feature-name>", "test-feature"),
     ("<branch>", "test-branch"),
+    ("<base_branch>", "main"),
     ("<project_root>", "/tmp/test"),
     ("<worktree_path>", ".worktrees/test-branch"),
     ("<worktree_cwd>", ".worktrees/test-branch"),

@@ -4,6 +4,7 @@ pub mod add_notification;
 pub mod analyze_issues;
 pub mod append_note;
 pub mod auto_close_parent;
+pub mod base_branch_cmd;
 pub mod bump_version;
 pub mod check_freshness;
 pub mod check_phase;

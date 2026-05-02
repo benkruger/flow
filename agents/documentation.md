@@ -28,12 +28,16 @@ Your job is to identify two categories of issues:
 
 ## Input
 
-The substantive diff (`git diff origin/main...HEAD -w`) is provided in
-your prompt — whitespace-only changes are filtered out so your turn
-budget is spent on behavioral analysis, not formatting noise. The paths
-to the project CLAUDE.md and `.claude/rules/` directory are also
-provided. Use Read, Glob, and Grep tools to investigate the
-surrounding codebase and read documentation files.
+The substantive diff (`git diff origin/<base_branch>...HEAD -w`) is
+provided in your prompt — whitespace-only changes are filtered out so
+your turn budget is spent on behavioral analysis, not formatting
+noise. `<base_branch>` is the integration branch the flow coordinates
+against (resolved at runtime via `bin/flow base-branch` — usually
+`main`, but `staging`/`develop`/etc. for repos whose default branch
+is not `main`). The paths to the project CLAUDE.md and
+`.claude/rules/` directory are also provided. Use Read, Glob, and
+Grep tools to investigate the surrounding codebase and read
+documentation files.
 
 ## Workflow
 

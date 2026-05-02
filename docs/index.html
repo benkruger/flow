@@ -524,7 +524,7 @@
       <div class="cool-card-front">
         <span class="cool-mono">$_</span>
         <div class="cool-headline">Safe for Local Env</div>
-        <p class="cool-desc">No containers. Native tools only &mdash; git, gh, linter, test runner. Every command pre-approved during flows &mdash; zero permission prompts. Outside flows, Claude Code&rsquo;s native prompts handle approval. Worktree isolation protects main.</p>
+        <p class="cool-desc">No containers. Native tools only &mdash; git, gh, linter, test runner. Every command pre-approved during flows &mdash; zero permission prompts. Outside flows, Claude Code&rsquo;s native prompts handle approval. Worktree isolation protects your team&rsquo;s trunk (main, staging, or whatever your repo&rsquo;s default branch is).</p>
       </div>
     </div>
   </section>
@@ -538,7 +538,7 @@
       <div class="pipeline-step">
         <div class="step-num">1</div>
         <span class="step-label">Start</span>
-        <span class="step-detail">Lock, CI baseline, dependencies on main, CI post-deps, worktree + PR</span>
+        <span class="step-detail">Lock, CI baseline, dependencies on the integration branch, CI post-deps, worktree + PR</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">2</div>
@@ -620,7 +620,7 @@
       </div>
       <div class="feature">
         <h4>Pre-merge freshness</h4>
-        <p>Complete fetches main and merges it into the feature branch before squash-merging. Stale branches are updated automatically.</p>
+        <p>Complete fetches the integration branch (main, staging, or whatever your repo&rsquo;s default branch is) and merges it into the feature branch before squash-merging. Stale branches are updated automatically.</p>
       </div>
       <div class="feature">
         <h4>Hook-based enforcement</h4>
@@ -831,7 +831,7 @@ Duration: <span class="t-accent">6h 27m</span>
         <tr><th>Command</th><th>Phase</th><th>What it does</th></tr>
       </thead>
       <tbody>
-        <tr><td><code>/flow-start</code></td><td>1</td><td>Lock, CI baseline on main, upgrade dependencies, CI post-deps, commit to main, create worktree + PR</td></tr>
+        <tr><td><code>/flow-start</code></td><td>1</td><td>Lock, CI baseline on the integration branch, upgrade dependencies, CI post-deps, commit to the integration branch, create worktree + PR</td></tr>
         <tr><td><code>/flow-plan</code></td><td>2</td><td>DAG decompose for dependency analysis, explore codebase, produce ordered tasks</td></tr>
         <tr><td><code>/flow-code</code></td><td>3</td><td>TDD task by task, diff review, <code>bin/ci</code> gate before each commit</td></tr>
         <tr><td><code>/flow-code-review</code></td><td>4</td><td>Six tenants via four agents (reviewer, pre-mortem, adversarial, documentation) &mdash; gather, launch, triage, fix</td></tr>

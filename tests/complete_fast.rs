@@ -59,6 +59,7 @@ fn write_state_file(
     let state = json!({
         "schema_version": 1,
         "branch": branch,
+        "base_branch": "main",
         "repo": "test/test",
         "pr_number": 42,
         "pr_url": "https://github.com/test/test/pull/42",

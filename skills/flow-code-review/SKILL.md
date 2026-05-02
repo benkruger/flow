@@ -149,18 +149,31 @@ CLAUDE.md at `<worktree_path>/CLAUDE.md`. Use the Glob tool to find all
 `.claude/rules/*.md` files at `<worktree_path>/.claude/rules/*.md`, then
 read each file.
 
-**Get the full branch diff.**
+**Resolve the integration branch.** Before constructing the diff
+ranges, run `bin/flow base-branch` to retrieve the base branch the
+flow coordinates against (the integration branch captured at
+flow-start). Capture its stdout — call the value `<base_branch>` —
+and substitute it into the diff commands below. A repo whose
+default branch is `staging` produces `<base_branch> = staging`; a
+standard repo produces `<base_branch> = main`.
 
 ```bash
-git diff origin/main...HEAD
+${CLAUDE_PLUGIN_ROOT}/bin/flow base-branch
+```
+
+**Get the full branch diff.** Substitute `<base_branch>` with the
+value you just captured.
+
+```bash
+git diff origin/<base_branch>...HEAD
 ```
 
 This is the **full diff** — used by the reviewer agent (context-rich).
 
-**Get the substantive diff.**
+**Get the substantive diff.** Same `<base_branch>` substitution.
 
 ```bash
-git diff origin/main...HEAD -w
+git diff origin/<base_branch>...HEAD -w
 ```
 
 This is the **substantive diff** — whitespace-only changes filtered out.

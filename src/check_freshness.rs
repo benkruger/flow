@@ -75,7 +75,13 @@ fn run_git(args: &[&str], timeout_secs: u64, cwd: &Path) -> (i32, String, String
 }
 
 /// Core freshness logic: fetch, check ancestry, merge if behind.
-fn check_freshness(state_file: Option<&Path>, cwd: &Path) -> Value {
+///
+/// `base_branch` is the integration branch (read from the state
+/// file by the caller); the function targets `origin/<base_branch>`
+/// for fetch/merge-base/merge so a repo whose default branch is
+/// `staging` exercises the right remote ref instead of the
+/// hardcoded `main`.
+fn check_freshness(state_file: Option<&Path>, cwd: &Path, base_branch: &str) -> Value {
     if let Some(path) = state_file {
         let retries = read_retries(path);
         if retries >= MAX_RETRIES {
@@ -83,7 +89,13 @@ fn check_freshness(state_file: Option<&Path>, cwd: &Path) -> Value {
         }
     }
 
-    let (code, _, stderr) = run_git(&["git", "fetch", "origin", "main"], NETWORK_TIMEOUT, cwd);
+    let origin_ref = format!("origin/{}", base_branch);
+
+    let (code, _, stderr) = run_git(
+        &["git", "fetch", "origin", base_branch],
+        NETWORK_TIMEOUT,
+        cwd,
+    );
     if code != 0 {
         return json!({
             "status": "error",
@@ -93,7 +105,7 @@ fn check_freshness(state_file: Option<&Path>, cwd: &Path) -> Value {
     }
 
     let (mb_code, _, _) = run_git(
-        &["git", "merge-base", "--is-ancestor", "origin/main", "HEAD"],
+        &["git", "merge-base", "--is-ancestor", &origin_ref, "HEAD"],
         LOCAL_TIMEOUT,
         cwd,
     );
@@ -102,7 +114,7 @@ fn check_freshness(state_file: Option<&Path>, cwd: &Path) -> Value {
     }
 
     let (merge_code, _, merge_stderr) =
-        run_git(&["git", "merge", "origin/main"], NETWORK_TIMEOUT, cwd);
+        run_git(&["git", "merge", &origin_ref], NETWORK_TIMEOUT, cwd);
     if merge_code == 0 {
         let mut out = json!({"status": "merged"});
         if let Some(path) = state_file {
@@ -147,6 +159,12 @@ fn exit_code_for_status(result: &Value) -> i32 {
 /// Inherits CWD from the calling process — git commands run in the
 /// feature worktree (the shell's current directory), not the main
 /// repo root.
+///
+/// When `--state-file` is provided and the state file declares
+/// `base_branch`, the freshness check targets `origin/<base_branch>`;
+/// otherwise it falls back to `"main"` so legacy state files (and
+/// the no-state-file invocation path) preserve pre-existing
+/// behavior.
 pub fn run_impl_main(raw_args: &[String], cwd: &Path) -> (Value, i32) {
     let mut state_file: Option<PathBuf> = None;
     let mut i = 0;
@@ -159,7 +177,12 @@ pub fn run_impl_main(raw_args: &[String], cwd: &Path) -> (Value, i32) {
         }
     }
 
-    let result = check_freshness(state_file.as_deref(), cwd);
+    let base_branch = state_file
+        .as_deref()
+        .and_then(|p| crate::git::read_base_branch(p).ok())
+        .unwrap_or_else(|| "main".to_string());
+
+    let result = check_freshness(state_file.as_deref(), cwd, &base_branch);
     let code = exit_code_for_status(&result);
     (result, code)
 }

@@ -8,6 +8,7 @@ use flow_rs::add_notification;
 use flow_rs::analyze_issues;
 use flow_rs::append_note;
 use flow_rs::auto_close_parent;
+use flow_rs::base_branch_cmd;
 use flow_rs::bump_version;
 use flow_rs::check_freshness;
 use flow_rs::check_phase;
@@ -317,6 +318,14 @@ enum Commands {
     /// Format the FLOW status panel for display.
     #[command(name = "format-status")]
     FormatStatus {
+        /// Override branch for state file lookup
+        #[arg(long)]
+        branch: Option<String>,
+    },
+
+    /// Print the integration branch this flow coordinates against.
+    #[command(name = "base-branch")]
+    BaseBranch {
         /// Override branch for state file lookup
         #[arg(long)]
         branch: Option<String>,
@@ -726,6 +735,16 @@ fn main() {
         Some(Commands::FormatStatus { branch }) => {
             let root = project_root();
             match format_status::run_impl_main(branch.as_deref(), &root) {
+                Ok((text, code)) => flow_rs::dispatch::dispatch_text(&text, code),
+                Err((msg, code)) => {
+                    eprintln!("{}", msg);
+                    process::exit(code);
+                }
+            }
+        }
+        Some(Commands::BaseBranch { branch }) => {
+            let root = project_root();
+            match base_branch_cmd::run_impl_main(branch.as_deref(), &root) {
                 Ok((text, code)) => flow_rs::dispatch::dispatch_text(&text, code),
                 Err((msg, code)) => {
                     eprintln!("{}", msg);

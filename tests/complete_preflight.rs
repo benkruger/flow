@@ -866,7 +866,7 @@ fn merge_main_library_call_with_git_absent() {
     // git), merge_main would Err. Called with git present, it
     // succeeds/fails based on git's actual state. We just verify the
     // return-shape contract stays stable.
-    let (status, _) = merge_main();
+    let (status, _) = merge_main("main");
     assert!(
         matches!(status.as_str(), "clean" | "merged" | "conflict" | "error"),
         "unexpected merge_main status: {}",
@@ -888,4 +888,87 @@ fn manual_flag_resolves_manual_mode() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
     assert_eq!(json["mode"], "manual");
+}
+
+/// Drive the `Some(str)` branch of `read_base_branch` through
+/// `complete-preflight`'s `merge_main` invocation and prove the
+/// state-file value reaches `git fetch origin <base_branch>`. The
+/// fixture's bare remote has only `main`; the state file declares
+/// `base_branch: "staging"`. With the PR `OPEN` and no merge-base
+/// shortcut, `merge_main` issues `git fetch origin staging`, which
+/// the gh-only stub set passes through to real git — real git fails
+/// because `origin/staging` doesn't exist on the bare remote, and
+/// the stderr (carrying "staging") surfaces as the JSON `message`
+/// proving base_branch flowed through rather than the hardcoded
+/// "main".
+#[test]
+fn complete_preflight_merge_base_uses_base_branch_from_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = make_repo_fixture(&parent);
+
+    // Hand-write a state file with base_branch=staging (the helper
+    // does not set this field).
+    let branch_dir = repo.join(".flow-states").join(BRANCH);
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(
+        branch_dir.join("state.json"),
+        json!({
+            "schema_version": 1,
+            "branch": BRANCH,
+            "base_branch": "staging",
+            "pr_number": 42,
+            "pr_url": "https://github.com/test/test/pull/42",
+            "phases": {"flow-learn": {"status": "complete"}},
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    // gh-only stub: returns OPEN PR. git stays the real binary so
+    // `git fetch origin staging` against the bare remote produces a
+    // genuine "couldn't find remote ref staging" stderr.
+    let flow_bin = parent.join("bin-flow-stub").join("flow");
+    write_flow_stub(&flow_bin);
+    let stubs = parent.join("gh-stubs");
+    fs::create_dir_all(&stubs).unwrap();
+    let gh_script = r#"#!/bin/sh
+case "$1 $2" in
+    "pr view") printf '%s' 'OPEN'; exit 0 ;;
+    *) exit 0 ;;
+esac
+"#;
+    let gh_path = stubs.join("gh");
+    fs::write(&gh_path, gh_script).unwrap();
+    fs::set_permissions(&gh_path, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let path = format!(
+        "{}:{}",
+        stubs.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .arg("complete-preflight")
+        .arg("--branch")
+        .arg(BRANCH)
+        .arg("--auto")
+        .current_dir(&repo)
+        .env("PATH", path)
+        .env("FLOW_BIN_PATH", &flow_bin)
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .expect("spawn flow-rs");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json = last_json_line(&stdout);
+    assert_eq!(
+        json["status"], "error",
+        "expected error status from missing origin/staging, got: {}",
+        stdout
+    );
+    let msg = json["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("staging"),
+        "merge_main error must reference 'staging' to prove base_branch flowed through, got: {}",
+        msg
+    );
 }

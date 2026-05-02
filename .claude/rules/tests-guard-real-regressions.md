@@ -62,6 +62,54 @@ name.
   `tests/external_input_audit.rs`. Broader scans without a named
   incident or vocabulary are speculative.
 
+### Multi-file contract tests
+
+A contract test that asserts content invariants across more than
+one file (e.g. a skill change requiring synchronized updates to
+four agent `## Input` sections) is valid under this rule **only
+when each file's assertion guards a distinct regression**. Each
+file's regression must be named individually; "the agents were
+updated together" is not a named regression — the test must
+explain what specifically breaks if any one of the files drifts.
+
+**Default shape: per-file siblings.** Rather than a single
+`multi_file_contract` test asserting "all four agents reference
+the new diff range," write four separate tests — one per file —
+each naming the agent and the regression
+(`reviewer_agent_input_describes_substantive_diff`,
+`pre_mortem_agent_input_describes_substantive_diff`, etc.).
+Per-file tests give failure output that names the drifted file
+immediately, instead of forcing the maintainer to read assertion
+internals to find which file regressed.
+
+**Single-test shape: only when coordination is the invariant.**
+When the assertion is genuinely a single coordinated invariant
+across files (e.g. "all four agents reference the same diff
+range string, and the string must match the skill's invocation"),
+a single multi-file test is acceptable. Its doc comment MUST
+state:
+
+1. Why splitting the assertions would lose the coordination
+   property the test guards.
+2. What regression each file's branch of the assertion guards
+   individually (one short sentence per file).
+3. The canonical example file a maintainer should read first
+   when the test fails (so failure triage starts at the right
+   place).
+
+A multi-file test that lists "many files updated together"
+without per-file regression statements is speculation — split
+into per-file siblings or strengthen the doc comment per the
+single-test shape requirements.
+
+**Plan-phase requirement.** When a plan task proposes a contract
+test that spans multiple files, the plan's Tasks section must
+state which shape applies (per-file siblings vs. single
+coordinated test) and, if single, must include the three
+doc-comment items above as part of the task description. Code
+Review's reviewer agent flags multi-file tests that arrive
+without this discipline as Real findings.
+
 ### Corpus-scan viability check
 
 When a PR proposes a new corpus contract test (scanning the

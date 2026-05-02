@@ -3,6 +3,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use serde_json::Value;
+
 use crate::flow_paths::FlowPaths;
 
 /// Find the main git repository root.
@@ -142,6 +144,93 @@ fn default_branch_from_output(output: io::Result<Output>) -> String {
             .to_string(),
         _ => "main".to_string(),
     }
+}
+
+/// Marker prefix for the `base_branch missing from state file` error
+/// class returned by [`read_base_branch`]. Callers that want to
+/// distinguish "legacy state file without the field" (a flow that
+/// started before `base_branch` was tracked) from genuine corruption
+/// (parse failure, wrong root type, wrong value type) match the
+/// returned `Err(msg)` against this prefix. The
+/// `bin/flow base-branch` subcommand uses it to fall back to `"main"`
+/// silently for legacy in-flight flows while still surfacing real
+/// corruption as an error.
+pub const BASE_BRANCH_MISSING_PREFIX: &str = "base_branch missing from state file";
+
+/// Read the `base_branch` field from a FLOW state file.
+///
+/// Returns `Ok(value)` when the file exists, parses as a JSON object,
+/// contains a string-valued `base_branch` key, and the value passes
+/// validation: trimmed (leading/trailing whitespace stripped), non-empty
+/// after trim, no leading dash (which would be misread as a CLI flag
+/// when interpolated into `git fetch origin <value>` etc.), no control
+/// characters (NUL, newline, carriage return, tab — which would
+/// truncate paths or inject extra subprocess arguments), and not the
+/// path-traversal segments `.` or `..`.
+///
+/// Returns `Err(msg)` for every other case: missing file, empty file,
+/// parse failure, non-object root (per `.claude/rules/state-files.md`
+/// Corruption Resilience), missing `base_branch` key (the error message
+/// starts with [`BASE_BRANCH_MISSING_PREFIX`]), wrong value type, or
+/// failed validation.
+///
+/// The contract is no-silent-fallback: callers that want a default
+/// must apply it explicitly. This single source of truth backs both
+/// the Rust callsites that need the integration branch and the
+/// `bin/flow base-branch` CLI subcommand consumed by skills.
+pub fn read_base_branch(state_path: &Path) -> Result<String, String> {
+    let raw = std::fs::read_to_string(state_path)
+        .map_err(|e| format!("read state file {}: {}", state_path.display(), e))?;
+    if raw.is_empty() {
+        return Err(format!("state file {} is empty", state_path.display()));
+    }
+    let value: Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("parse state file {}: {}", state_path.display(), e))?;
+    let obj = value.as_object().ok_or_else(|| {
+        format!(
+            "state file {} root is not a JSON object",
+            state_path.display()
+        )
+    })?;
+    let raw_value = match obj.get("base_branch") {
+        Some(v) => v
+            .as_str()
+            .ok_or_else(|| format!("base_branch in {} is not a string", state_path.display()))?,
+        None => {
+            return Err(format!(
+                "{} {}",
+                BASE_BRANCH_MISSING_PREFIX,
+                state_path.display()
+            ));
+        }
+    };
+    let trimmed = raw_value.trim();
+    if trimmed.is_empty() {
+        return Err(format!(
+            "base_branch in {} is empty after trim",
+            state_path.display()
+        ));
+    }
+    if trimmed.starts_with('-') {
+        return Err(format!(
+            "base_branch in {} starts with '-' (would be misread as a CLI flag)",
+            state_path.display()
+        ));
+    }
+    if trimmed.contains(['\0', '\n', '\r', '\t']) {
+        return Err(format!(
+            "base_branch in {} contains a control character (NUL, newline, carriage return, or tab)",
+            state_path.display()
+        ));
+    }
+    if trimmed == "." || trimmed == ".." {
+        return Err(format!(
+            "base_branch in {} is the path-traversal segment '{}'",
+            state_path.display(),
+            trimmed
+        ));
+    }
+    Ok(trimmed.to_string())
 }
 
 /// Resolve which branch's state file to use.

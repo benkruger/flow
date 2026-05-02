@@ -18,13 +18,17 @@ it. Only failures matter.
 
 ## Input
 
-The substantive diff (`git diff origin/main...HEAD -w`) is provided in
-your prompt — whitespace-only changes are filtered out so your turn
-budget is spent on behavioral analysis, not formatting noise. The branch
-name, project CLAUDE.md path, temp test file path (`<temp_test_file>`),
-and test command (`<test_command>`) are also provided. Use the
-Read tool to read the CLAUDE.md for test conventions and patterns. Use
-Read, Glob, and Grep to investigate the codebase.
+The substantive diff (`git diff origin/<base_branch>...HEAD -w`) is
+provided in your prompt — whitespace-only changes are filtered out so
+your turn budget is spent on behavioral analysis, not formatting
+noise. `<base_branch>` is the integration branch the flow coordinates
+against (resolved at runtime via `bin/flow base-branch` — usually
+`main`, but `staging`/`develop`/etc. for repos whose default branch
+is not `main`). The branch name, project CLAUDE.md path, temp test
+file path (`<temp_test_file>`), and test command (`<test_command>`)
+are also provided. Use the Read tool to read the CLAUDE.md for test
+conventions and patterns. Use Read, Glob, and Grep to investigate the
+codebase.
 
 ## Temp File
 

@@ -54,15 +54,17 @@ still Real findings and still get fixed in Step 4. A new rule
 without a sweep of the codebase is incomplete — see
 `.claude/rules/scope-expansion.md` for the decision tree.
 
-## Rules or Skills Landed on Main Mid-Flow
+## Rules or Skills Landed on the Base Branch Mid-Flow
 
 The same retroactive-fix discipline applies when a rule update OR a
-skill update lands on **main** during an active Code or Code Review
-phase on an already-started branch. Both rule files
-(`.claude/rules/*.md`) and skill files (`skills/**/SKILL.md` and
-`.claude/skills/**/SKILL.md`) flow into the current session via the
-auto-inserted `system-reminder` that surfaces edited files — the
-Code phase sees the updated text even though the feature branch
+skill update lands on **the base branch** (the integration branch
+the flow coordinates against — `main` for standard repos,
+`staging`/`develop`/etc. for non-main-trunk repos) during an active
+Code or Code Review phase on an already-started branch. Both rule
+files (`.claude/rules/*.md`) and skill files (`skills/**/SKILL.md`
+and `.claude/skills/**/SKILL.md`) flow into the current session via
+the auto-inserted `system-reminder` that surfaces edited files —
+the Code phase sees the updated text even though the feature branch
 forked before it was written.
 
 Skills are the same drift surface as rules: both are dynamic
@@ -111,11 +113,12 @@ Defer to Code Review when the violation class is:
 
 **Whichever path you take, log the decision** via
 `bin/flow log <branch> "[Phase N] <Rule | Skill> drift: <file> landed
-on main. Decision: <proactive sweep | defer to Code Review>. Reason:
-<criterion>"`. The log entry is what distinguishes "Claude noticed
-the change and consciously chose a path" from "Claude ignored the
-change". The Learn phase analyst reads the log when auditing
-compliance and treats an undocumented decision as a process gap.
+on the base branch. Decision: <proactive sweep | defer to Code Review>.
+Reason: <criterion>"`. The log entry is what distinguishes "Claude
+noticed the change and consciously chose a path" from "Claude
+ignored the change". The Learn phase analyst reads the log when
+auditing compliance and treats an undocumented decision as a
+process gap.
 
 ### Motivating incident
 

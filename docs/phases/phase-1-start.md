@@ -15,7 +15,7 @@ This is always the first phase, for every feature without exception. It establis
 
 ## Steps
 
-Four consolidated Rust commands handle the Start phase. Steps 1-3 serialize all main-branch work behind a lock — only one flow-start runs at a time. Concurrent starts poll via `/loop` until the lock is released.
+Four consolidated Rust commands handle the Start phase. Steps 1-3 serialize all integration-branch work (the `base_branch` captured at flow-start — `main` for standard repos, `staging`/`develop`/etc. for non-main-trunk repos) behind a lock — only one flow-start runs at a time. Concurrent starts poll via `/loop` until the lock is released.
 
 ### 1. Initialize (`start-init`)
 
@@ -23,7 +23,7 @@ Acquires a queue-based lock, runs version gate and upgrade check, creates the ea
 
 ### 2. CI and dependency gate (`start-gate`)
 
-Pulls latest main, runs `bin/flow ci` baseline with retry (up to 3 attempts), updates dependencies via `bin/dependencies`, and runs post-deps CI with retry if deps changed. When dependencies change and CI passes, commits and pushes the updated lock file to main before proceeding. Files Flaky Test issues for intermittent failures. Falls back to the ci-fixer sub-agent for consistent dep-induced breakage.
+Pulls the latest integration branch (the `base_branch` from state), runs `bin/flow ci` baseline with retry (up to 3 attempts), updates dependencies via `bin/dependencies`, and runs post-deps CI with retry if deps changed. When dependencies change and CI passes, commits and pushes the updated lock file to the integration branch before proceeding. Files Flaky Test issues for intermittent failures. Falls back to the ci-fixer sub-agent for consistent dep-induced breakage.
 
 ### 3. Create workspace (`start-workspace`)
 

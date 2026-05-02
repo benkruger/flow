@@ -37,12 +37,11 @@ to write the same updates you could write now.
   is effectively invisible until a later PR rediscovers it.
 - **Changed type signatures or module architecture → the module-
   level doc comment and every affected item's doc comment in the
-  same source file.** This is where PR #1054 missed: splitting
-  `FlowPaths` into two types changed the architecture of
-  `src/flow_paths.rs`, but the module doc still described the
-  single-type model until Code Review caught the drift.
-  Source-local doc comments are documentation too — they bind
-  the type to its purpose for future readers who arrive via
+  same source file.** Splitting one type into two changes the
+  module's architecture; the module doc and every affected item's
+  doc comment must be updated in the same source file in the same
+  commit. Source-local doc comments are documentation too — they
+  bind the type to its purpose for future readers who arrive via
   grep or rustdoc rather than through the module's external docs.
 
 ## Agent Input Section Sync
@@ -53,8 +52,93 @@ a sub-agent (e.g. switching from full diff to substantive diff),
 update the agent's Input section in the same commit. Stale Input
 sections mislead the agent about available context and produce
 incorrect reasoning. CI cannot enforce this (agent Input sections
-are prose), so the Plan phase must enumerate all affected agent
-files when a skill modifies agent invocations.
+are prose).
+
+**Plan-phase enumeration requirement.** When a plan task modifies
+a skill that invokes one or more sub-agents, the plan's Exploration
+table MUST enumerate every affected agent file by path — not "the
+four review agents" or "the agents that take the diff," but each
+one by name (e.g. `agents/reviewer.md`, `agents/pre-mortem.md`,
+`agents/adversarial.md`, `agents/documentation.md`). The
+enumeration is the same discipline as
+`.claude/rules/scope-enumeration.md` "Vocabulary": a universal
+quantifier on a code family must carry a named list. The Code
+Review reviewer agent cross-checks plan Exploration against the
+agents whose Input sections appear in the staged diff and flags
+any agent that was modified but not enumerated as a Real finding.
+
+**Code-phase atomicity.** The skill's invocation change and every
+listed agent's Input section update must land in the same commit
+per `.claude/rules/plan-commit-atomicity.md`. A plan that splits
+the skill update from the agent update across commits is a
+Plan-phase gap that must be marked as an atomic group, or merged
+into a single task.
+
+## Feature-Configurable Prose Generalization
+
+When a code change introduces support for a configurable parameter
+(integration branch, project root, default mode, default channel,
+etc.) where prior code hardcoded a single value, every prose
+surface that mentions the old hardcoded value must be generalized
+in the same PR. Skipping the generalization produces self-referential
+drift: the code accepts the configurable input but the docs still
+tell users the only valid value is the original hardcoded one.
+
+**The trigger.** A plan task that adds a parameter, state field,
+or configuration axis where prior code hardcoded the value. Symptom
+language in the plan: "now reads X from Y," "previously hardcoded,"
+"plumb through," "honor the configured value." When such language
+appears in a plan task, the same plan must enumerate every prose
+surface that mentions the old hardcoded value.
+
+**The enumeration.** Grep the entire prose corpus for the old
+hardcoded value before Code phase begins:
+
+```text
+grep -r "<old-value>" CLAUDE.md skills/ docs/ README.md .claude/rules/ agents/
+```
+
+Every matching file is in-scope. Group findings by classification:
+
+- **Universal prose** (rule applies to every project) — generalize
+  to `<configurable-name>` placeholder or paraphrase that does not
+  name a specific value. Example: "Start-Gate CI on Main" →
+  "Start-Gate CI on the Base Branch" because the rule applies to
+  every repo regardless of whether its trunk is `main`,
+  `staging`, `develop`, etc.
+- **Self-referential prose** (rule describes THIS repo, where the
+  hardcoded value happens to be the only valid value) — leave
+  alone. Example: a CLAUDE.md sentence that describes the FLOW
+  repo's own release path and references `main` because FLOW's
+  own trunk is `main`.
+
+The distinguishing test: would the prose still be correct if it
+were applied to a target project where the configurable parameter
+holds a different value? If yes → universal → generalize. If no →
+self-referential → leave alone. Mixed-mode files (CLAUDE.md often
+contains both) are common; identify each section's classification
+individually.
+
+**Plan-phase task template.** A plan that introduces a
+configurable parameter must include a "Generalize universal prose"
+task with these subtasks:
+
+1. Enumerate prose corpus matches via the grep above.
+2. Classify each match as universal or self-referential.
+3. List universal matches in the Exploration table with
+   "generalize to `<placeholder>`" notes.
+4. Mark the universal-prose task as atomic with the
+   implementation task per
+   `.claude/rules/plan-commit-atomicity.md` so the prose lands
+   in the same PR as the code (the inverse of "self-referential
+   prose drift": code change without prose update produces
+   exactly that drift).
+
+**Code-phase verification.** Before committing the
+implementation, re-run the grep to confirm no universal-prose
+matches remain. Self-referential matches are expected to remain;
+add a one-line note in the commit message body listing the
+self-referential paths as deliberately preserved.
 
 ## Multi-Task Plans
 

@@ -19,11 +19,13 @@
 use clap::Parser;
 use serde_json::{json, Map, Value};
 
+use std::path::Path;
+
 use crate::cleanup;
 use crate::commands::log::append_log;
 use crate::complete_post_merge;
 use crate::flow_paths::FlowPaths;
-use crate::git::project_root;
+use crate::git::{project_root, read_base_branch};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -95,8 +97,16 @@ pub fn run_impl(args: &Args) -> Value {
         .unwrap_or("")
         .to_string();
 
-    // Cleanup
-    let cleanup_steps = cleanup::cleanup(&root, branch, &args.worktree, None, args.pull);
+    // Cleanup. Resolve base_branch from the state file referenced by
+    // --state-file (the path the post-merge step just consumed) so
+    // the optional --pull step targets origin/<base_branch> instead
+    // of the hardcoded "main". Falls back to "main" when the field
+    // is missing or the file is unreadable, preserving pre-existing
+    // behavior on legacy state files.
+    let base_branch =
+        read_base_branch(Path::new(&args.state_file)).unwrap_or_else(|_| "main".to_string());
+    let cleanup_steps =
+        cleanup::cleanup(&root, branch, &args.worktree, None, args.pull, &base_branch);
     let cleanup_map: Map<String, Value> = cleanup_steps
         .into_iter()
         .map(|(k, v)| (k, Value::String(v)))

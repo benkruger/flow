@@ -232,10 +232,10 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flaky Test" --title "<issue_ti
 Then continue to Step 3.
 
 **If `"status": "ci_failed"`** — all retry attempts failed consistently.
-Hold the lock and stop. Main is broken — the next queued flow would hit
-the same failure. Report to the user that CI is consistently failing on
-pristine main. The 30-minute stale timeout releases the lock if the user
-does not act.
+Hold the lock and stop. The integration branch is broken — the next
+queued flow would hit the same failure. Report to the user that CI is
+consistently failing on the pristine integration branch. The 30-minute
+stale timeout releases the lock if the user does not act.
 
 **If `"status": "deps_ci_failed"`** — dependencies were updated but
 post-deps CI failed consistently. Launch the `ci-fixer` sub-agent to
@@ -249,8 +249,8 @@ sub-agent knows what failed.
 
 Wait for the sub-agent to return.
 
-- **Fixed** — commit CI fixes to main via `/flow:flow-commit`, then continue to Step 3
-- **Not fixed** — hold the lock and stop. Main has uncommitted dep-induced breakage. Report to the user.
+- **Fixed** — commit CI fixes to the integration branch via `/flow:flow-commit`, then continue to Step 3
+- **Not fixed** — hold the lock and stop. The integration branch has uncommitted dep-induced breakage. Report to the user.
 
 **If `"status": "error"`** — show the error message and stop.
 

@@ -138,7 +138,13 @@ fn create_state_file_with_base_branch(repo: &Path, branch: &str, base_branch: &s
 /// without spawning any bin/* scripts. Excludes `.flow-states/` from
 /// git so the sentinel itself doesn't change the tree snapshot
 /// (chicken-and-egg problem).
-fn write_ci_sentinel(repo: &Path) {
+///
+/// `branch` is the branch the sentinel is keyed under — `flow_rs::ci::sentinel_path`
+/// uses it to derive the per-branch sentinel filename. Existing
+/// fixtures pass `"main"` (the bare remote's only branch); future
+/// staging-trunked fixtures pass `"staging"` to exercise the
+/// branch-keyed sentinel path the parameterization unlocks.
+fn write_ci_sentinel(repo: &Path, branch: &str) {
     // Exclude .flow-states/ from untracked file list
     let exclude_dir = repo.join(".git").join("info");
     fs::create_dir_all(&exclude_dir).unwrap();
@@ -148,7 +154,7 @@ fn write_ci_sentinel(repo: &Path) {
         fs::write(&exclude_file, format!("{}.flow-states/\n", existing)).unwrap();
     }
     let snapshot = flow_rs::ci::tree_snapshot(repo, None);
-    let sentinel = flow_rs::ci::sentinel_path(repo, "main");
+    let sentinel = flow_rs::ci::sentinel_path(repo, branch);
     fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
     fs::write(&sentinel, &snapshot).unwrap();
 }
@@ -166,12 +172,39 @@ fn run_start_gate(repo: &Path, branch: &str) -> Output {
 
 // --- Tests ---
 
+/// Regression test for `write_ci_sentinel`'s `branch` parameter.
+/// Drives the helper with `branch="staging"` and asserts the
+/// sentinel lands under `sentinel_path(repo, "staging")` rather
+/// than the previously hardcoded `"main"` path. Locks in the
+/// parameterization that unblocks future tests against
+/// non-main-trunk fixtures.
+#[test]
+fn test_write_ci_sentinel_writes_under_supplied_branch_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+
+    write_ci_sentinel(&repo, "staging");
+
+    let staging_sentinel = flow_rs::ci::sentinel_path(&repo, "staging");
+    let main_sentinel = flow_rs::ci::sentinel_path(&repo, "main");
+    assert!(
+        staging_sentinel.exists(),
+        "expected sentinel at {} after write_ci_sentinel(repo, \"staging\")",
+        staging_sentinel.display()
+    );
+    assert!(
+        !main_sentinel.exists(),
+        "main-keyed sentinel must not exist after write_ci_sentinel(repo, \"staging\"); got {}",
+        main_sentinel.display()
+    );
+}
+
 #[test]
 fn test_clean_path() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     create_state_file(&repo, "test-branch");
-    write_ci_sentinel(&repo);
+    write_ci_sentinel(&repo, "main");
 
     let output = run_start_gate(&repo, "test-branch");
     assert_eq!(
@@ -249,7 +282,7 @@ fn test_ci_baseline_non_consistent_returns_error_step_ci_baseline() {
 fn test_deps_changed_ci_passes() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    write_ci_sentinel(&repo);
+    write_ci_sentinel(&repo, "main");
     // Provide the 4 bin/* stubs (all passing) so post-deps CI has tools
     // to invoke after bin/dependencies modifies the tree.
     create_bin_tools(&repo, 0);
@@ -269,7 +302,7 @@ fn test_deps_skipped() {
     let repo = create_git_repo_with_remote(dir.path());
     // No bin/dependencies — deps step is skipped
     create_state_file(&repo, "no-deps-branch");
-    write_ci_sentinel(&repo);
+    write_ci_sentinel(&repo, "main");
 
     let output = run_start_gate(&repo, "no-deps-branch");
     let data = parse_output(&output);
@@ -282,7 +315,7 @@ fn test_deps_error() {
     let repo = create_git_repo_with_remote(dir.path());
     create_bin_deps(&repo, "exit 1"); // deps fails
     create_state_file(&repo, "deps-error-branch");
-    write_ci_sentinel(&repo);
+    write_ci_sentinel(&repo, "main");
 
     let output = run_start_gate(&repo, "deps-error-branch");
     let data = parse_output(&output);

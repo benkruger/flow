@@ -18,23 +18,27 @@ Ask: "What happens when two flows hit this at the same time?"
   updates, and issue comments may race with another flow.
   Design for last-write-wins or check-before-write.
 - **Locks** — are only for serializing operations on shared
-  resources (like `start.lock` for main-branch operations).
+  resources (like `start.lock` for base-branch operations).
   Most operations should not need locks because they operate
   on branch-scoped resources.
-- **Main branch** — is the only shared local resource. Any
-  operation on main (pull, commit, push) must be serialized
-  via the start lock or avoided entirely.
-- **Start-gate runs CI on main under the start lock as a
-  coordination surface**, not a sandboxable safety check. The
-  first flow-start repairs dependency breakage once via
+- **Base branch (the integration branch the flow coordinates
+  against — `main` for standard repos, `staging`/`develop`/etc.
+  for non-main-trunk repos)** — is the only shared local
+  resource. Any operation on the base branch (pull, commit,
+  push) must be serialized via the start lock or avoided
+  entirely.
+- **Start-gate runs CI on the base branch under the start lock
+  as a coordination surface**, not a sandboxable safety check.
+  The first flow-start repairs dependency breakage once via
   `ci-fixer`; subsequent flows inherit the fix via the CI
   sentinel. Moving the CI check to a disposable worktree would
   force every concurrent flow to rediscover and independently
   repair the same breakage — O(N) work instead of O(1). Tools
-  that write artifacts under main's `target/` must stay coherent
-  across the many source generations that long-lived target dir
-  sees. See CLAUDE.md "Start-Gate CI on Main as Serialization
-  Point" for the full architecture.
+  that write artifacts under the base branch's `target/` must
+  stay coherent across the many source generations that
+  long-lived target dir sees. See CLAUDE.md "Start-Gate CI on
+  the Base Branch as Serialization Point" for the full
+  architecture.
 
 ## Completed Flow State File Leftovers
 
@@ -60,13 +64,15 @@ Pattern: resolve the canonical name first (issue fetch, label
 guard, duplicate check), then `acquire(&canonical_name)`. All
 error paths before the lock return without touching the lock queue.
 
-## Never Edit Source on Main
+## Never Edit Source on the Base Branch
 
-Never edit source files directly on main. Every change — including
-critical bug fixes that block the current workflow — must go through
-the FLOW lifecycle on a branch. If a bug blocks flow-start with
-issue references, start the flow without issue references to get on
-a branch first, then fix the bug there.
+Never edit source files directly on the base branch (the
+integration branch the flow coordinates against). Every change —
+including critical bug fixes that block the current workflow — must
+go through the FLOW lifecycle on a feature branch. If a bug blocks
+flow-start with issue references, start the flow without issue
+references to get on a feature branch first, then fix the bug
+there.
 
 ## Common Mistakes
 
@@ -74,7 +80,7 @@ a branch first, then fix the bug there.
 - Using `git checkout` or `git switch` (changes HEAD for all
   worktrees sharing the same repo)
 - Writing to a fixed temp file without branch scoping
-- Reading main branch state without holding the start lock
+- Reading base-branch state without holding the start lock
 - Assuming a GitHub label or issue state hasn't changed since
   last check
 - Acquiring a lock under one name and releasing under another

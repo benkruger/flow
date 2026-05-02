@@ -389,17 +389,28 @@ Skip this step if mode is **auto** — proceed directly to Step 5.
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
 ```
 
+**Resolve the integration branch.** Before composing the prompt,
+run `bin/flow base-branch` to retrieve the integration branch the
+flow coordinates against. Capture its stdout — call the value
+`<base_branch>` — and substitute it into the prompt below. A repo
+whose default branch is `staging` produces `<base_branch> =
+staging`; a standard repo produces `<base_branch> = main`.
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow base-branch
+```
+
 <HARD-GATE>
 If mode is **manual**, use AskUserQuestion. If the preflight recorded
 warnings, include them:
 
-> "PR #<pr_number> is green and ready to merge. Squash-merge '<feature>' into main?
+> "PR #<pr_number> is green and ready to merge. Squash-merge '<feature>' into <base_branch>?
 > <pr_url>"
 > ⚠ <any warnings from the preflight>
 
 If no warnings:
 
-> "PR #<pr_number> is green and ready to merge. Squash-merge '<feature>' into main?
+> "PR #<pr_number> is green and ready to merge. Squash-merge '<feature>' into <base_branch>?
 > <pr_url>"
 
 Options:
@@ -451,6 +462,17 @@ after this invocation.
 Skip this step if the PR was already merged in Step 1 (complete-fast
 returned `"merged"` or `"already_merged"`).
 
+**Resolve the integration branch.** Before running the merge command,
+run `bin/flow base-branch` to retrieve the integration branch the
+flow coordinates against. Capture its stdout — call the value
+`<base_branch>` — and use it in the success message below. A repo
+whose default branch is `staging` produces `<base_branch> =
+staging`; a standard repo produces `<base_branch> = main`.
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow base-branch
+```
+
 For manual mode (after Step 4 confirmation), run the merge command:
 
 ```bash
@@ -459,8 +481,11 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow complete-merge --pr <pr_number> --state-file <pro
 
 Parse the JSON output and handle each status:
 
-**If `"status": "merged"`** — the PR is merged. Report to the user:
-> "PR #<pr_number> merged into main."
+**If `"status": "merged"`** — the PR is merged. Report to the user
+using the `<base_branch>` value resolved at the top of this step:
+
+> "PR #<pr_number> merged into <base_branch>."
+
 Continue to Step 6.
 
 **If `"status": "ci_rerun"`** — main had new commits that were merged

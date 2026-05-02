@@ -107,12 +107,18 @@ fn try_remove_branch_dir(branch_dir: &Path) -> String {
 /// Perform cleanup steps. Returns an ordered map of step results.
 /// Called cross-module from `complete_finalize::run_impl_with_deps` as
 /// well as from `run_impl_main` below.
+///
+/// `base_branch` is the integration branch the optional `--pull`
+/// step targets via `git pull origin <base_branch>`; the caller
+/// resolves it from the state file (or falls back to `"main"` for
+/// legacy state files / the abort path with no state file).
 pub fn cleanup(
     project_root: &Path,
     branch: &str,
     worktree: &str,
     pr_number: Option<i64>,
     pull: bool,
+    base_branch: &str,
 ) -> IndexMap<String, String> {
     let mut steps = IndexMap::new();
 
@@ -186,7 +192,7 @@ pub fn cleanup(
                 "skipped: invalid branch".to_string(),
             );
             if pull {
-                let (ok, output) = run_cmd(&["git", "pull", "origin", "main"], project_root);
+                let (ok, output) = run_cmd(&["git", "pull", "origin", base_branch], project_root);
                 steps.insert("git_pull".to_string(), label_result(ok, "pulled", &output));
             }
             return steps;
@@ -225,9 +231,11 @@ pub fn cleanup(
         try_remove_branch_dir(&paths.branch_dir()),
     );
 
-    // Pull latest main (after worktree removal — ordering matters)
+    // Pull latest origin/<base_branch> (after worktree removal —
+    // ordering matters). `base_branch` flows in from the caller's
+    // state-file read (defaulting to "main" for legacy state files).
     if pull {
-        let (ok, output) = run_cmd(&["git", "pull", "origin", "main"], project_root);
+        let (ok, output) = run_cmd(&["git", "pull", "origin", base_branch], project_root);
         steps.insert("git_pull".to_string(), label_result(ok, "pulled", &output));
     }
 
@@ -236,6 +244,13 @@ pub fn cleanup(
 
 /// Main-arm dispatch: validate args.project_root and run cleanup.
 /// Returns (JSON value, exit code).
+///
+/// `base_branch` is resolved from the per-branch state file via
+/// `git::read_base_branch` and falls back to `"main"` when the
+/// state file is missing, malformed, or omits the field — both
+/// the abort path (state file may be present but partially
+/// initialized) and legacy state files written before the field
+/// was tracked are covered by the same fallback.
 pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
     let root = Path::new(&args.project_root);
     if !root.is_dir() {
@@ -244,7 +259,18 @@ pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
         return (serde_json::from_str(&err_str).unwrap(), 1);
     }
 
-    let steps = cleanup(root, &args.branch, &args.worktree, args.pr, args.pull);
+    let base_branch = FlowPaths::try_new(root, &args.branch)
+        .and_then(|paths| crate::git::read_base_branch(&paths.state_file()).ok())
+        .unwrap_or_else(|| "main".to_string());
+
+    let steps = cleanup(
+        root,
+        &args.branch,
+        &args.worktree,
+        args.pr,
+        args.pull,
+        &base_branch,
+    );
     let steps_map: indexmap::IndexMap<String, serde_json::Value> = steps
         .into_iter()
         .map(|(k, v)| (k, serde_json::Value::String(v)))
