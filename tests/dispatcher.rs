@@ -55,7 +55,7 @@ fn log_exits_0_and_writes_file() {
 
     assert_eq!(output.status.code(), Some(0), "log should exit 0");
 
-    let log_file = state_dir.join("test-branch.log");
+    let log_file = state_dir.join("test-branch").join("log");
     assert!(log_file.exists(), "Log file should exist");
     let content = std::fs::read_to_string(&log_file).unwrap();
     assert!(
@@ -291,8 +291,8 @@ fn format_status_valid_state_exits_0() {
         .trim()
         .to_string();
 
-    let state_dir = flow_states_dir(dir.path());
-    std::fs::create_dir(&state_dir).unwrap();
+    let branch_dir = flow_states_dir(dir.path()).join(&branch);
+    std::fs::create_dir_all(&branch_dir).unwrap();
     let state = serde_json::json!({
         "branch": branch,
         "pr_url": "https://github.com/test/test/pull/1",
@@ -309,7 +309,7 @@ fn format_status_valid_state_exits_0() {
         }
     });
     std::fs::write(
-        state_dir.join(format!("{}.json", branch)),
+        branch_dir.join("state.json"),
         serde_json::to_string_pretty(&state).unwrap(),
     )
     .unwrap();
@@ -357,8 +357,8 @@ fn format_status_branch_flag() {
         .output()
         .unwrap();
 
-    let state_dir = flow_states_dir(dir.path());
-    std::fs::create_dir(&state_dir).unwrap();
+    let branch_dir = flow_states_dir(dir.path()).join("other-feature");
+    std::fs::create_dir_all(&branch_dir).unwrap();
     let state = serde_json::json!({
         "branch": "other-feature",
         "pr_url": "https://github.com/test/test/pull/2",
@@ -375,7 +375,7 @@ fn format_status_branch_flag() {
         }
     });
     std::fs::write(
-        state_dir.join("other-feature.json"),
+        branch_dir.join("state.json"),
         serde_json::to_string_pretty(&state).unwrap(),
     )
     .unwrap();
@@ -417,9 +417,9 @@ fn format_status_corrupt_json_exits_1() {
         .trim()
         .to_string();
 
-    let state_dir = flow_states_dir(dir.path());
-    std::fs::create_dir(&state_dir).unwrap();
-    std::fs::write(state_dir.join(format!("{}.json", branch)), "{bad json").unwrap();
+    let branch_dir = flow_states_dir(dir.path()).join(&branch);
+    std::fs::create_dir_all(&branch_dir).unwrap();
+    std::fs::write(branch_dir.join("state.json"), "{bad json").unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .arg("format-status")

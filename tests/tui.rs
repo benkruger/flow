@@ -793,17 +793,14 @@ fn test_render_metrics_suppressed_stale_when_viewport_too_narrow() {
 
 #[test]
 fn test_render_log_view_with_entries() {
-    // Write a valid log file at .flow-states/<branch>.log so the Log
+    // Write a valid log file at .flow-states/<branch>/log so the Log
     // view hits the entries-iteration branch.
     let tmp = tempfile::TempDir::new().unwrap();
     let root = tmp.path();
-    std::fs::create_dir_all(root.join(".flow-states")).unwrap();
+    let branch_dir = root.join(".flow-states").join("test-feature");
+    std::fs::create_dir_all(&branch_dir).unwrap();
     let log_content = "2026-01-01T12:34:56-08:00 [Phase 1] start-init — initializing (ok)\n";
-    std::fs::write(
-        root.join(".flow-states").join("test-feature.log"),
-        log_content,
-    )
-    .unwrap();
+    std::fs::write(branch_dir.join("log"), log_content).unwrap();
 
     let mut app = TuiApp::new(
         root.to_path_buf(),
@@ -1096,8 +1093,10 @@ fn test_refresh_data_with_selected_in_range_skips_clamp() {
             },
             "prompt": "test",
         });
+        let branch_dir = root.join(".flow-states").join(branch);
+        std::fs::create_dir_all(&branch_dir).unwrap();
         std::fs::write(
-            root.join(".flow-states").join(format!("{branch}.json")),
+            branch_dir.join("state.json"),
             serde_json::to_string(&state_json).unwrap(),
         )
         .unwrap();
@@ -1155,8 +1154,10 @@ fn test_refresh_data_populates_flows_orch_and_metrics_and_clamps_indices() {
         },
         "prompt": "work on it",
     });
+    let branch_dir = root.join(".flow-states").join("test-feature");
+    std::fs::create_dir_all(&branch_dir).unwrap();
     std::fs::write(
-        root.join(".flow-states").join("test-feature.json"),
+        branch_dir.join("state.json"),
         serde_json::to_string_pretty(&state_json).unwrap(),
     )
     .unwrap();

@@ -546,9 +546,9 @@ fn main_add_issue_slash_branch_exits_1_with_invalid_branch_error() {
 fn main_add_issue_array_root_state_exits_0_with_zero_count() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().canonicalize().expect("canonicalize tempdir");
-    let state_dir = root.join(".flow-states");
-    std::fs::create_dir_all(&state_dir).expect("create state dir");
-    std::fs::write(state_dir.join("array-root.json"), "[1, 2, 3]").expect("write array-root state");
+    let branch_dir = root.join(".flow-states").join("array-root");
+    std::fs::create_dir_all(&branch_dir).expect("create branch dir");
+    std::fs::write(branch_dir.join("state.json"), "[1, 2, 3]").expect("write array-root state");
     let output = flow_rs_no_recursion()
         .args([
             "add-issue",
@@ -635,10 +635,10 @@ fn main_add_notification_slash_branch_exits_1_with_invalid_branch_error() {
 fn main_add_notification_unknown_phase_exits_0_with_ok_status() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().canonicalize().expect("canonicalize tempdir");
-    let state_dir = root.join(".flow-states");
-    std::fs::create_dir_all(&state_dir).expect("create state dir");
+    let branch_dir = root.join(".flow-states").join("unknown-phase");
+    std::fs::create_dir_all(&branch_dir).expect("create branch dir");
     std::fs::write(
-        state_dir.join("unknown-phase.json"),
+        branch_dir.join("state.json"),
         r#"{"current_phase":"flow-code","slack_notifications":[]}"#,
     )
     .expect("write state");
@@ -684,9 +684,9 @@ fn main_add_notification_unknown_phase_exits_0_with_ok_status() {
 fn main_add_notification_array_root_state_exits_0_with_zero_count() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().canonicalize().expect("canonicalize tempdir");
-    let state_dir = root.join(".flow-states");
-    std::fs::create_dir_all(&state_dir).expect("create state dir");
-    std::fs::write(state_dir.join("array-root.json"), "[1, 2, 3]").expect("write array-root state");
+    let branch_dir = root.join(".flow-states").join("array-root");
+    std::fs::create_dir_all(&branch_dir).expect("create branch dir");
+    std::fs::write(branch_dir.join("state.json"), "[1, 2, 3]").expect("write array-root state");
     let output = flow_rs_no_recursion()
         .args([
             "add-notification",
@@ -759,9 +759,9 @@ fn main_append_note_slash_branch_exits_1_with_invalid_branch_error() {
 fn main_append_note_array_root_state_exits_0_with_zero_count() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().canonicalize().expect("canonicalize tempdir");
-    let state_dir = root.join(".flow-states");
-    std::fs::create_dir_all(&state_dir).expect("create state dir");
-    std::fs::write(state_dir.join("array-root.json"), "[1, 2, 3]").expect("write array-root state");
+    let branch_dir = root.join(".flow-states").join("array-root");
+    std::fs::create_dir_all(&branch_dir).expect("create branch dir");
+    std::fs::write(branch_dir.join("state.json"), "[1, 2, 3]").expect("write array-root state");
     let output = flow_rs_no_recursion()
         .args(["append-note", "--note", "x", "--branch", "array-root"])
         .current_dir(&root)
@@ -795,9 +795,9 @@ fn main_append_note_readonly_state_exits_1_with_failed_to_append_note() {
     use std::os::unix::fs::PermissionsExt;
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().canonicalize().expect("canonicalize tempdir");
-    let state_dir = root.join(".flow-states");
-    std::fs::create_dir_all(&state_dir).expect("create state dir");
-    let state_path = state_dir.join("readonly.json");
+    let branch_dir = root.join(".flow-states").join("readonly");
+    std::fs::create_dir_all(&branch_dir).expect("create branch dir");
+    let state_path = branch_dir.join("state.json");
     std::fs::write(&state_path, r#"{"current_phase":"flow-plan","notes":[]}"#)
         .expect("write state");
     let mut perms = std::fs::metadata(&state_path)

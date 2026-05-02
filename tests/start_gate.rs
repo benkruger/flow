@@ -93,8 +93,8 @@ fn create_bin_deps(repo: &Path, script_body: &str) {
 
 /// Set up a state file so start-gate can find the branch.
 fn create_state_file(repo: &Path, branch: &str) {
-    let state_dir = flow_states_dir(repo);
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = flow_states_dir(repo).join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
     let state = json!({
         "schema_version": 1,
         "branch": branch,
@@ -104,7 +104,7 @@ fn create_state_file(repo: &Path, branch: &str) {
         "phases": {}
     });
     fs::write(
-        state_dir.join(format!("{}.json", branch)),
+        branch_dir.join("state.json"),
         serde_json::to_string_pretty(&state).unwrap(),
     )
     .unwrap();
@@ -116,8 +116,8 @@ fn create_state_file(repo: &Path, branch: &str) {
 /// to `"main"`. Used to verify that integration-branch operations
 /// (git pull, CI baseline, deps push) target the value from state.
 fn create_state_file_with_base_branch(repo: &Path, branch: &str, base_branch: &str) {
-    let state_dir = flow_states_dir(repo);
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = flow_states_dir(repo).join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
     let state = json!({
         "schema_version": 1,
         "branch": branch,
@@ -128,7 +128,7 @@ fn create_state_file_with_base_branch(repo: &Path, branch: &str, base_branch: &s
         "phases": {}
     });
     fs::write(
-        state_dir.join(format!("{}.json", branch)),
+        branch_dir.join("state.json"),
         serde_json::to_string_pretty(&state).unwrap(),
     )
     .unwrap();

@@ -217,13 +217,14 @@ pub(crate) fn initial_commit_push_pr(
     base_branch: &str,
 ) -> Result<(String, u32), SetupError> {
     let commit_msg_path = FlowPaths::new(root, branch).commit_msg();
-    // `init-state` ran before `start-workspace` and created
-    // `<root>/.flow-states/<branch>.json`, so the directory exists. A
-    // failure here would indicate disk-full or read-only filesystem —
-    // neither is a FLOW-supported recovery state, so treat as an
-    // invariant via `.expect()`.
+    // `init-state` ran before `start-workspace` and called
+    // `paths.ensure_branch_dir()` while writing `state.json`, so
+    // `<root>/.flow-states/<branch>/` exists. A failure here would
+    // indicate disk-full or read-only filesystem — neither is a
+    // FLOW-supported recovery state, so treat as an invariant via
+    // `.expect()`.
     std::fs::write(&commit_msg_path, format!("Start {} branch", branch))
-        .expect("commit-msg write must succeed when .flow-states/ already exists");
+        .expect("commit-msg write must succeed when branch_dir already exists");
 
     let commit_msg_arg = commit_msg_path
         .to_str()

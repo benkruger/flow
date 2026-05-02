@@ -64,7 +64,7 @@ fn parse_stdout(output: &std::process::Output) -> Value {
 }
 
 fn read_state_file(dir: &std::path::Path, branch: &str) -> Value {
-    let path = flow_states_dir(dir).join(format!("{}.json", branch));
+    let path = flow_states_dir(dir).join(branch).join("state.json");
     let content = fs::read_to_string(&path).unwrap();
     serde_json::from_str(&content).unwrap()
 }
@@ -85,7 +85,7 @@ fn happy_path_returns_ok_json() {
     let data = parse_stdout(&output);
     assert_eq!(data["status"], "ok");
     assert_eq!(data["branch"], "test-feature");
-    assert_eq!(data["state_file"], ".flow-states/test-feature.json");
+    assert_eq!(data["state_file"], ".flow-states/test-feature/state.json");
 }
 
 // --- base_branch detection ---
@@ -466,7 +466,7 @@ fn log_file_created() {
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
     run_init_state(dir.path(), &["log test"]);
-    let log_path = flow_states_dir(dir.path()).join("log-test.log");
+    let log_path = flow_states_dir(dir.path()).join("log-test").join("log");
     assert!(log_path.exists());
     let log = fs::read_to_string(&log_path).unwrap();
     assert!(log.contains("[Phase 1]"));
@@ -479,7 +479,9 @@ fn frozen_phases_file_created() {
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
     run_init_state(dir.path(), &["frozen phases"]);
-    let frozen = flow_states_dir(dir.path()).join("frozen-phases-phases.json");
+    let frozen = flow_states_dir(dir.path())
+        .join("frozen-phases")
+        .join("phases.json");
     assert!(frozen.exists());
 }
 
@@ -488,7 +490,9 @@ fn frozen_phases_file_matches_source() {
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
     run_init_state(dir.path(), &["phases match"]);
-    let frozen = flow_states_dir(dir.path()).join("phases-match-phases.json");
+    let frozen = flow_states_dir(dir.path())
+        .join("phases-match")
+        .join("phases.json");
     let frozen_data: Value = serde_json::from_str(&fs::read_to_string(&frozen).unwrap()).unwrap();
     let source_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("flow-phases.json");
     let source_data: Value =
@@ -507,8 +511,8 @@ fn state_file_has_files_block() {
     let files = &state["files"];
     assert!(files["plan"].is_null());
     assert!(files["dag"].is_null());
-    assert_eq!(files["log"], ".flow-states/files-block-test.log");
-    assert_eq!(files["state"], ".flow-states/files-block-test.json");
+    assert_eq!(files["log"], ".flow-states/files-block-test/log");
+    assert_eq!(files["state"], ".flow-states/files-block-test/state.json");
 }
 
 // --- Required top-level fields ---
@@ -745,7 +749,9 @@ fn flow_in_progress_label_absent_allows_start() {
     assert_eq!(data["status"], "ok");
     assert_eq!(data["branch"], "some-issue");
 
-    let state_path = flow_states_dir(dir.path()).join("some-issue.json");
+    let state_path = flow_states_dir(dir.path())
+        .join("some-issue")
+        .join("state.json");
     assert!(
         state_path.exists(),
         "state file should be created when label is absent"
@@ -903,7 +909,7 @@ fn branch_override_skips_derivation() {
         "Branch must match --branch override, not derived from feature name"
     );
     assert_eq!(
-        data["state_file"], ".flow-states/my-custom-branch.json",
+        data["state_file"], ".flow-states/my-custom-branch/state.json",
         "State file path must use the overridden branch name"
     );
 
@@ -1020,7 +1026,7 @@ use flow_rs::state::SkillConfig;
 use indexmap::IndexMap;
 
 fn read_state_direct(root: &std::path::Path, branch: &str) -> Value {
-    let path = root.join(".flow-states").join(format!("{}.json", branch));
+    let path = root.join(".flow-states").join(branch).join("state.json");
     let content = fs::read_to_string(&path).unwrap();
     serde_json::from_str(&content).unwrap()
 }
@@ -1340,8 +1346,8 @@ fn lib_create_state_files_block() {
     let files = &state["files"];
     assert!(files["plan"].is_null());
     assert!(files["dag"].is_null());
-    assert_eq!(files["log"], ".flow-states/files-test.log");
-    assert_eq!(files["state"], ".flow-states/files-test.json");
+    assert_eq!(files["log"], ".flow-states/files-test/log");
+    assert_eq!(files["state"], ".flow-states/files-test/state.json");
 }
 
 #[test]
@@ -1387,7 +1393,8 @@ fn lib_create_state_key_order_matches_python() {
         "",
     )
     .unwrap();
-    let content = fs::read_to_string(dir.path().join(".flow-states/order-test.json")).unwrap();
+    let content =
+        fs::read_to_string(dir.path().join(".flow-states/order-test/state.json")).unwrap();
     let state: Value = serde_json::from_str(&content).unwrap();
     let keys: Vec<&String> = state.as_object().unwrap().keys().collect();
     let expected = vec![
@@ -1436,7 +1443,7 @@ fn lib_create_state_creates_flow_states_dir() {
     )
     .unwrap();
     assert!(dir.path().join(".flow-states").is_dir());
-    assert!(dir.path().join(".flow-states/dir-test.json").exists());
+    assert!(dir.path().join(".flow-states/dir-test/state.json").exists());
 }
 
 #[test]
@@ -1480,15 +1487,14 @@ fn lib_create_state_commit_format_absent_when_none() {
 #[test]
 fn lib_create_state_write_failure_returns_error() {
     // Exercise the `fs::write` Err branch: make the target state file
-    // path a directory so fs::write fails with EISDIR. fs::create_dir_all
-    // on `.flow-states/` sees the dir already exists and skips, so we
-    // reach the fs::write call with a bad target.
+    // path a directory so fs::write fails with EISDIR. ensure_branch_dir
+    // already creates `.flow-states/<branch>/`, so the bad target is
+    // `<branch_dir>/state.json` as a directory.
     let dir = tempfile::tempdir().unwrap();
-    let states = dir.path().join(".flow-states");
-    fs::create_dir_all(&states).unwrap();
-    // Create the branch's "state file" path as a directory.
     let branch = "write-err";
-    fs::create_dir_all(states.join(format!("{}.json", branch))).unwrap();
+    let branch_dir = dir.path().join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::create_dir_all(branch_dir.join("state.json")).unwrap();
 
     let err = create_state(dir.path(), branch, "main", None, "", None, None, None, "").unwrap_err();
     assert!(err.contains("Cannot write state file"), "got: {}", err);
@@ -1514,21 +1520,25 @@ fn lib_create_state_dir_failure_returns_error() {
         "",
     )
     .unwrap_err();
-    assert!(err.contains("Cannot create .flow-states"), "got: {}", err);
+    assert!(
+        err.contains("Cannot create branch state directory"),
+        "got: {}",
+        err
+    );
 }
 
 #[test]
 fn freeze_phases_failure_returns_error() {
-    // Make `.flow-states/<branch>-phases.json` a directory so
+    // Make `.flow-states/<branch>/phases.json` a directory so
     // `fs::copy` inside freeze_phases fails. create_state still
-    // succeeds (it writes `.flow-states/<branch>.json` which is a
-    // different path).
+    // succeeds (it writes `.flow-states/<branch>/state.json` which
+    // is a different path inside the same branch directory).
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
-    let states = dir.path().join(".flow-states");
-    fs::create_dir_all(&states).unwrap();
     let branch = "freeze-err";
-    fs::create_dir_all(states.join(format!("{}-phases.json", branch))).unwrap();
+    let branch_dir = dir.path().join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::create_dir_all(branch_dir.join("phases.json")).unwrap();
 
     // Pass the branch via --branch so init-state uses our chosen name.
     let output = run_init_state(dir.path(), &["--branch", branch, "anything"]);

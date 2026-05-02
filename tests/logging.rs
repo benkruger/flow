@@ -83,7 +83,7 @@ fn bin_flow_log_success_exits_zero_and_writes_line() {
     assert_eq!(output.status.code().unwrap(), 0);
     assert!(output.stdout.is_empty());
 
-    let log = fs::read_to_string(repo.join(".flow-states/my-feature.log")).unwrap();
+    let log = fs::read_to_string(repo.join(".flow-states/my-feature/log")).unwrap();
     assert!(log.contains("hello world"), "log missing message: {}", log);
 }
 
@@ -123,9 +123,9 @@ fn bin_flow_log_exits_nonzero_on_create_dir_failure() {
 fn bin_flow_log_exits_nonzero_when_log_path_is_directory() {
     let dir = tempfile::tempdir().unwrap();
     let repo = common::create_git_repo_with_remote(dir.path());
-    // Create .flow-states/my-feature.log AS A DIRECTORY. The open call
+    // Create .flow-states/my-feature/log AS A DIRECTORY. The open call
     // then errors with "Is a directory".
-    fs::create_dir_all(repo.join(".flow-states/my-feature.log")).unwrap();
+    fs::create_dir_all(repo.join(".flow-states/my-feature/log")).unwrap();
 
     let output = flow_rs()
         .args(["log", "my-feature", "hi"])
@@ -142,9 +142,9 @@ fn bin_flow_log_exits_nonzero_when_log_path_is_directory() {
 #[test]
 fn appends_to_existing_log() {
     let dir = tempfile::tempdir().unwrap();
-    let log_dir = dir.path().join(".flow-states");
-    fs::create_dir(&log_dir).unwrap();
-    let log_file = log_dir.join("my-feature.log");
+    let branch_dir = dir.path().join(".flow-states").join("my-feature");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let log_file = branch_dir.join("log");
     fs::write(&log_file, "existing line\n").unwrap();
 
     append_log(dir.path(), "my-feature", "[Phase 1] Step 5 — test (exit 0)").unwrap();
@@ -165,7 +165,7 @@ fn creates_new_log_file() {
 
     append_log(dir.path(), "feat-branch", "[Phase 1] test message").unwrap();
 
-    let log_file = log_dir.join("feat-branch.log");
+    let log_file = log_dir.join("feat-branch").join("log");
     assert!(log_file.exists());
     let content = fs::read_to_string(&log_file).unwrap();
     assert!(content.contains("[Phase 1] test message"));
@@ -178,7 +178,12 @@ fn creates_directory_if_missing() {
     append_log(dir.path(), "branch", "message").unwrap();
 
     assert!(dir.path().join(".flow-states").is_dir());
-    assert!(dir.path().join(".flow-states").join("branch.log").exists());
+    assert!(dir
+        .path()
+        .join(".flow-states")
+        .join("branch")
+        .join("log")
+        .exists());
 }
 
 #[test]
@@ -190,7 +195,7 @@ fn multiple_appends() {
     append_log(dir.path(), "branch", "first").unwrap();
     append_log(dir.path(), "branch", "second").unwrap();
 
-    let content = fs::read_to_string(log_dir.join("branch.log")).unwrap();
+    let content = fs::read_to_string(log_dir.join("branch").join("log")).unwrap();
     let lines: Vec<&str> = content.trim().lines().collect();
     assert_eq!(lines.len(), 2);
     assert!(lines[0].ends_with("first"));
@@ -221,7 +226,7 @@ fn timestamp_is_included() {
 
     append_log(dir.path(), "branch", "test").unwrap();
 
-    let content = fs::read_to_string(dir.path().join(".flow-states/branch.log")).unwrap();
+    let content = fs::read_to_string(dir.path().join(".flow-states/branch/log")).unwrap();
     let line = content.trim();
     // Should have format: "YYYY-MM-DDTHH:MM:SS-HH:MM test"
     assert!(line.contains('T'), "Timestamp should contain 'T': {}", line);

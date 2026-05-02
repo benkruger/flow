@@ -66,19 +66,15 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
 }
 
 fn write_state(root: &Path, branch: &str, state: Value) {
-    let dir = root.join(".flow-states");
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join(format!("{}.json", branch)), state.to_string()).unwrap();
+    let branch_dir = root.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), state.to_string()).unwrap();
 }
 
 fn setup_state(dir: &Path, branch: &str, state_json: &Value) {
-    let state_dir = flow_states_dir(dir);
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(
-        state_dir.join(format!("{}.json", branch)),
-        state_json.to_string(),
-    )
-    .unwrap();
+    let branch_dir = flow_states_dir(dir).join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), state_json.to_string()).unwrap();
 }
 
 fn setup_git_repo(dir: &Path, branch: &str) {
@@ -247,7 +243,9 @@ fn frozen_phases_file_is_loaded() {
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let source = std::path::PathBuf::from(manifest_dir).join("flow-phases.json");
-    let dest = flow_states_dir(dir.path()).join("test-feature-phases.json");
+    let dest = flow_states_dir(dir.path())
+        .join("test-feature")
+        .join("phases.json");
     fs::copy(source, dest).unwrap();
 
     let output = flow_rs()
@@ -309,15 +307,15 @@ fn run_impl_main_no_state_file_returns_blocked() {
 fn run_impl_main_loads_frozen_phase_config_when_present() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();
-    let states = root.join(".flow-states");
-    fs::create_dir_all(&states).unwrap();
     let branch = "test-frozen-load";
+    let branch_dir = root.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
     let state = make_state(
         "flow-plan",
         &[("flow-start", "complete"), ("flow-plan", "in_progress")],
     );
     fs::write(
-        states.join(format!("{}.json", branch)),
+        branch_dir.join("state.json"),
         serde_json::to_string(&state).unwrap(),
     )
     .unwrap();
@@ -334,7 +332,7 @@ fn run_impl_main_loads_frozen_phase_config_when_present() {
         }
     });
     fs::write(
-        states.join(format!("{}-phases.json", branch)),
+        branch_dir.join("phases.json"),
         serde_json::to_string(&frozen).unwrap(),
     )
     .unwrap();
@@ -348,9 +346,10 @@ fn run_impl_main_loads_frozen_phase_config_when_present() {
 fn run_impl_main_state_file_is_directory_returns_blocked() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();
-    let states = root.join(".flow-states");
-    fs::create_dir_all(&states).unwrap();
-    fs::create_dir(states.join("test-feature.json")).unwrap();
+    let branch_dir = root.join(".flow-states").join("test-feature");
+    fs::create_dir_all(&branch_dir).unwrap();
+    // Make state.json a directory so reading it fails.
+    fs::create_dir(branch_dir.join("state.json")).unwrap();
 
     let (output, code) = run_impl_main("flow-plan", Some("test-feature"), &root);
     assert_eq!(code, 1);
@@ -360,12 +359,9 @@ fn run_impl_main_state_file_is_directory_returns_blocked() {
 #[test]
 fn run_impl_main_unparseable_state_file_returns_blocked() {
     let dir = tempfile::tempdir().unwrap();
-    fs::create_dir_all(dir.path().join(".flow-states")).unwrap();
-    fs::write(
-        dir.path().join(".flow-states").join("test.json"),
-        "not-valid-json",
-    )
-    .unwrap();
+    let branch_dir = dir.path().join(".flow-states").join("test");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), "not-valid-json").unwrap();
     let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
     assert_eq!(code, 1);
     assert!(out.contains("BLOCKED"));
@@ -567,12 +563,12 @@ fn run_impl_main_invalid_phase_returns_json_error() {
 fn run_impl_main_frozen_config_missing_names_and_commands_falls_back() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();
-    let states = root.join(".flow-states");
-    fs::create_dir_all(&states).unwrap();
     let branch = "fx";
+    let branch_dir = root.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
     let state = make_state("flow-plan", &[("flow-start", "pending")]);
     fs::write(
-        states.join(format!("{}.json", branch)),
+        branch_dir.join("state.json"),
         serde_json::to_string(&state).unwrap(),
     )
     .unwrap();
@@ -587,7 +583,7 @@ fn run_impl_main_frozen_config_missing_names_and_commands_falls_back() {
         }
     });
     fs::write(
-        states.join(format!("{}-phases.json", branch)),
+        branch_dir.join("phases.json"),
         serde_json::to_string(&frozen).unwrap(),
     )
     .unwrap();
@@ -608,13 +604,13 @@ fn run_impl_main_frozen_config_missing_names_and_commands_falls_back() {
 fn run_impl_main_frozen_first_phase_different_from_default() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();
-    let states = root.join(".flow-states");
-    fs::create_dir_all(&states).unwrap();
     let branch = "fxfirst";
+    let branch_dir = root.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
 
     let state = make_state("flow-plan", &[]);
     fs::write(
-        states.join(format!("{}.json", branch)),
+        branch_dir.join("state.json"),
         serde_json::to_string(&state).unwrap(),
     )
     .unwrap();
@@ -632,7 +628,7 @@ fn run_impl_main_frozen_first_phase_different_from_default() {
         }
     });
     fs::write(
-        states.join(format!("{}-phases.json", branch)),
+        branch_dir.join("phases.json"),
         serde_json::to_string(&frozen).unwrap(),
     )
     .unwrap();

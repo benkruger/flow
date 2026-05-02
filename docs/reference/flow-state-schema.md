@@ -6,20 +6,20 @@ parent: Reference
 
 # FLOW State Schema
 
-State files live in `.flow-states/` at the project root, named after the branch:
+State files live under `.flow-states/<branch>/` at the project root, one subdirectory per active feature:
 
 ```text
-.flow-states/app-payment-webhooks.json
-.flow-states/app-payment-webhooks.log
-.flow-states/app-payment-webhooks-phases.json
-.flow-states/app-payment-webhooks-ci-passed
-.flow-states/user-profile-redesign.json
-.flow-states/user-profile-redesign.log
-.flow-states/user-profile-redesign-phases.json
-.flow-states/user-profile-redesign-ci-passed
+.flow-states/app-payment-webhooks/state.json
+.flow-states/app-payment-webhooks/log
+.flow-states/app-payment-webhooks/phases.json
+.flow-states/app-payment-webhooks/ci-passed
+.flow-states/user-profile-redesign/state.json
+.flow-states/user-profile-redesign/log
+.flow-states/user-profile-redesign/phases.json
+.flow-states/user-profile-redesign/ci-passed
 ```
 
-Each feature has up to four files: the state file (`.json`), the log file (`.log`), a frozen copy of `flow-phases.json` (`-phases.json`), and a CI sentinel (`-ci-passed`). The CI sentinel caches the last passing `bin/flow ci` snapshot so subsequent runs skip automatically when nothing changed (use `--force` to bypass). The sentinel is also automatically refreshed after `finalize-commit` when `git pull` does not introduce new content, preserving the optimization across commits. Multiple features can run simultaneously with no conflicts. The directory is added to `.git/info/exclude` by `/flow-start` (per-repo, not committed). Created by `/flow-start`, deleted by `/flow-complete`.
+Each feature has up to four files inside its subdirectory: the state file (`state.json`), the log file (`log`), a frozen copy of `flow-phases.json` (`phases.json`), and a CI sentinel (`ci-passed`). The CI sentinel caches the last passing `bin/flow ci` snapshot so subsequent runs skip automatically when nothing changed (use `--force` to bypass). The sentinel is also automatically refreshed after `finalize-commit` when `git pull` does not introduce new content, preserving the optimization across commits. Multiple features can run simultaneously with no conflicts. The `.flow-states/` directory is added to `.git/info/exclude` by `/flow-start` (per-repo, not committed). Created by `/flow-start`, deleted by `/flow-complete` in a single `remove_dir_all(branch_dir)` call.
 
 **State files are local to each machine.** In a multi-engineer team, each engineer's `.flow-states/` directory only contains their own features. GitHub (issues, PRs, labels) is the shared coordination layer visible to all engineers. The "Flow In-Progress" label on issues is the mechanism for cross-engineer WIP detection — see `/flow-issues`.
 
@@ -44,8 +44,8 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
   "files": {
     "plan": null,
     "dag": null,
-    "log": ".flow-states/app-payment-webhooks.log",
-    "state": ".flow-states/app-payment-webhooks.json"
+    "log": ".flow-states/app-payment-webhooks/log",
+    "state": ".flow-states/app-payment-webhooks/state.json"
   },
   "plan_file": null,
   "session_id": null,
@@ -203,10 +203,10 @@ Updated by `/flow-plan` via `set-timestamp --set files.plan=<path>` and
 
 ```json
 "files": {
-  "plan": ".flow-states/app-payment-webhooks-plan.md",
-  "dag": ".flow-states/app-payment-webhooks-dag.md",
-  "log": ".flow-states/app-payment-webhooks.log",
-  "state": ".flow-states/app-payment-webhooks.json"
+  "plan": ".flow-states/app-payment-webhooks/plan.md",
+  "dag": ".flow-states/app-payment-webhooks/dag.md",
+  "log": ".flow-states/app-payment-webhooks/log",
+  "state": ".flow-states/app-payment-webhooks/state.json"
 }
 ```
 
@@ -362,7 +362,7 @@ Populated by `bin/flow add-notification` when a phase skill sends a Slack messag
 
 ## Plan File
 
-The plan lives at `.flow-states/<branch>-plan.md` alongside other feature artifacts. The state file stores the relative path in `files.plan`. The plan file includes:
+The plan lives at `.flow-states/<branch>/plan.md` alongside other feature artifacts. The state file stores the relative path in `files.plan`. The plan file includes:
 
 - **Context** — what the user wants to build and why
 - **Exploration** — what exists in the codebase, affected files, patterns

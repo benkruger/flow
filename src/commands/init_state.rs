@@ -71,8 +71,8 @@ pub fn create_state(
         json!({
             "plan": null,
             "dag": null,
-            "log": format!(".flow-states/{}.log", branch),
-            "state": format!(".flow-states/{}.json", branch),
+            "log": format!(".flow-states/{}/log", branch),
+            "state": format!(".flow-states/{}/state.json", branch),
         }),
     );
     // `json!(Option<String>)` serializes Some(t) as `"t"` and None as
@@ -107,9 +107,8 @@ pub fn create_state(
     }
 
     let paths = FlowPaths::new(project_root, branch);
-    let state_dir = paths.flow_states_dir();
-    if let Err(e) = fs::create_dir_all(&state_dir) {
-        return Err(format!("Cannot create .flow-states: {}", e));
+    if let Err(e) = paths.ensure_branch_dir() {
+        return Err(format!("Cannot create branch state directory: {}", e));
     }
     let state_path = paths.state_file();
     // The state Map we just built contains only json!() literals plus
@@ -272,7 +271,10 @@ pub fn run(
     let _ = append_log(
         &root,
         &branch,
-        &format!("[Phase 1] create .flow-states/{}.json (exit 0)", branch),
+        &format!(
+            "[Phase 1] create .flow-states/{}/state.json (exit 0)",
+            branch
+        ),
     );
 
     // `plugin_root()` walks up from the binary path looking for a
@@ -297,13 +299,16 @@ pub fn run(
         &root,
         &branch,
         &format!(
-            "[Phase 1] freeze .flow-states/{}-phases.json (exit 0)",
+            "[Phase 1] freeze .flow-states/{}/phases.json (exit 0)",
             branch
         ),
     );
 
     json_ok(&[
         ("branch", json!(branch)),
-        ("state_file", json!(format!(".flow-states/{}.json", branch))),
+        (
+            "state_file",
+            json!(format!(".flow-states/{}/state.json", branch)),
+        ),
     ]);
 }

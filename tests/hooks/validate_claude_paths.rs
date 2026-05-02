@@ -214,12 +214,9 @@ fn test_error_message_mentions_write_rule() {
 // --- run_impl_main tests (drive find_project_root_in branches) ---
 
 fn seed_active_flow_fixture(root: &Path, branch: &str) -> std::path::PathBuf {
-    std::fs::create_dir_all(root.join(".flow-states")).unwrap();
-    std::fs::write(
-        root.join(".flow-states").join(format!("{}.json", branch)),
-        "{}",
-    )
-    .unwrap();
+    let branch_dir = root.join(".flow-states").join(branch);
+    std::fs::create_dir_all(&branch_dir).unwrap();
+    std::fs::write(branch_dir.join("state.json"), "{}").unwrap();
     let worktree = root.join(".worktrees").join(branch);
     std::fs::create_dir_all(&worktree).unwrap();
     std::fs::write(worktree.join(".git"), "gitdir: fake\n").unwrap();

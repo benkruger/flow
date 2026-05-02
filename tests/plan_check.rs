@@ -67,10 +67,10 @@ fn setup_git_repo(dir: &std::path::Path, branch: &str) {
         .unwrap();
 }
 
-/// Write the state file under `.flow-states/<branch>.json`.
+/// Write the state file under `.flow-states/<branch>/state.json`.
 fn write_state(dir: &std::path::Path, branch: &str, plan_rel: Option<&str>) {
-    let state_dir = flow_states_dir(dir);
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = flow_states_dir(dir).join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
     let state = serde_json::json!({
         "branch": branch,
         "current_phase": "flow-plan",
@@ -93,11 +93,7 @@ fn write_state(dir: &std::path::Path, branch: &str, plan_rel: Option<&str>) {
             }
         }
     });
-    fs::write(
-        state_dir.join(format!("{}.json", branch)),
-        state.to_string(),
-    )
-    .unwrap();
+    fs::write(branch_dir.join("state.json"), state.to_string()).unwrap();
 }
 
 /// Write a plan file at the given relative path under `dir`.
@@ -460,13 +456,9 @@ fn plan_check_accepts_plan_file_override() {
 fn plan_check_invalid_json_state_exits_with_code_1() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
-    let state_dir = flow_states_dir(dir.path());
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(
-        state_dir.join("test-feature.json"),
-        "{not valid json at all",
-    )
-    .unwrap();
+    let branch_dir = flow_states_dir(dir.path()).join("test-feature");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), "{not valid json at all").unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["plan-check", "--branch", "test-feature"])
@@ -646,9 +638,9 @@ fn resolve_plan_file_from_state_legacy_plan_file_fallback() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     let branch = "test-legacy-fallback-lib";
-    let flow_states = root.join(".flow-states");
-    std::fs::create_dir_all(&flow_states).unwrap();
-    let state_path = flow_states.join(format!("{}.json", branch));
+    let branch_dir = root.join(".flow-states").join(branch);
+    std::fs::create_dir_all(&branch_dir).unwrap();
+    let state_path = branch_dir.join("state.json");
     std::fs::write(&state_path, r#"{"plan_file": "legacy-plan.md"}"#).unwrap();
 
     let result = resolve_plan_file_from_state(root, Some(branch));
@@ -663,9 +655,9 @@ fn resolve_plan_file_from_state_invalid_json() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     let branch = "test-invalid-json-lib";
-    let flow_states = root.join(".flow-states");
-    std::fs::create_dir_all(&flow_states).unwrap();
-    let state_path = flow_states.join(format!("{}.json", branch));
+    let branch_dir = root.join(".flow-states").join(branch);
+    std::fs::create_dir_all(&branch_dir).unwrap();
+    let state_path = branch_dir.join("state.json");
     std::fs::write(&state_path, "{not valid json").unwrap();
 
     let result = resolve_plan_file_from_state(root, Some(branch));
@@ -678,9 +670,9 @@ fn resolve_plan_file_from_state_unreadable() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     let branch = "test-unreadable-lib";
-    let flow_states = root.join(".flow-states");
-    std::fs::create_dir_all(&flow_states).unwrap();
-    let state_path = flow_states.join(format!("{}.json", branch));
+    let branch_dir = root.join(".flow-states").join(branch);
+    std::fs::create_dir_all(&branch_dir).unwrap();
+    let state_path = branch_dir.join("state.json");
     std::fs::write(&state_path, r#"{"valid": true}"#).unwrap();
 
     use std::os::unix::fs::PermissionsExt;

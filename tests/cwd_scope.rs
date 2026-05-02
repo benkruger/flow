@@ -25,17 +25,13 @@ fn init_git_repo(dir: &Path, branch: &str) {
 }
 
 fn write_state(root: &Path, branch: &str, relative_cwd: &str) {
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = root.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
     let state = serde_json::json!({
         "branch": branch,
         "relative_cwd": relative_cwd,
     });
-    fs::write(
-        state_dir.join(format!("{}.json", branch)),
-        state.to_string(),
-    )
-    .unwrap();
+    fs::write(branch_dir.join("state.json"), state.to_string()).unwrap();
 }
 
 #[test]
@@ -162,9 +158,10 @@ fn enforce_missing_relative_cwd_field_treats_as_empty() {
 fn enforce_state_path_is_directory_returns_ok() {
     let dir = tempfile::tempdir().unwrap();
     init_git_repo(dir.path(), "feature-x");
-    let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::create_dir(state_dir.join("feature-x.json")).unwrap();
+    let branch_dir = dir.path().join(".flow-states").join("feature-x");
+    fs::create_dir_all(&branch_dir).unwrap();
+    // state.json as a directory: read fails, enforce treats as no state.
+    fs::create_dir(branch_dir.join("state.json")).unwrap();
     let result = enforce(dir.path(), dir.path());
     assert!(result.is_ok(), "expected ok, got: {:?}", result);
 }

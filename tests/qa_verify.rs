@@ -81,9 +81,9 @@ fn qa_verify_cli_exits_zero_and_reports_check_failures() {
 fn qa_verify_cli_reports_leftover_state_file_failure() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir(&state_dir).unwrap();
-    fs::write(state_dir.join("leftover.json"), r#"{"branch":"x"}"#).unwrap();
+    let branch_dir = root.join(".flow-states").join("leftover");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), r#"{"branch":"x"}"#).unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args([
@@ -131,9 +131,9 @@ fn test_verify_all_pass() {
 fn test_verify_leftover_state_file() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir(&state_dir).unwrap();
-    fs::write(state_dir.join("leftover.json"), r#"{"branch":"leftover"}"#).unwrap();
+    let branch_dir = root.join(".flow-states").join("leftover");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), r#"{"branch":"leftover"}"#).unwrap();
     let fake = install_fake_gh(&root, r#"[{"number": 1}]"#, 0);
 
     let output = run_impl_with_fake_gh(&fake, "owner/repo", &root)
@@ -286,6 +286,53 @@ fn test_verify_excludes_dot_prefixed_json() {
     let state_dir = root.join(".flow-states");
     fs::create_dir(&state_dir).unwrap();
     fs::write(state_dir.join(".hidden-state.json"), "{}").unwrap();
+    let fake = install_fake_gh(&root, r#"[{"number": 1}]"#, 0);
+
+    let output = run_impl_with_fake_gh(&fake, "owner/repo", &root)
+        .output()
+        .expect("spawn");
+    let data = parse_last_json(&output);
+    let checks = data["checks"].as_array().unwrap();
+    let state_check = checks
+        .iter()
+        .find(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
+        .expect("state check");
+    assert_eq!(state_check["passed"], true);
+}
+
+/// A dot-prefixed subdirectory under `.flow-states/` (e.g. transient
+/// per-machine tooling under `.flow-states/.local/`) is skipped by
+/// the scanner so the state-cleanup check still passes.
+#[test]
+fn test_verify_excludes_dot_prefixed_subdir() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let local_dir = root.join(".flow-states").join(".local");
+    fs::create_dir_all(&local_dir).unwrap();
+    fs::write(local_dir.join("state.json"), r#"{"branch":".local"}"#).unwrap();
+    let fake = install_fake_gh(&root, r#"[{"number": 1}]"#, 0);
+
+    let output = run_impl_with_fake_gh(&fake, "owner/repo", &root)
+        .output()
+        .expect("spawn");
+    let data = parse_last_json(&output);
+    let checks = data["checks"].as_array().unwrap();
+    let state_check = checks
+        .iter()
+        .find(|c| c["name"].as_str().unwrap().to_lowercase().contains("state"))
+        .expect("state check");
+    assert_eq!(state_check["passed"], true);
+}
+
+/// A subdirectory under `.flow-states/` without `state.json` (e.g.
+/// transient cleanup remnant) is skipped by the scanner so the
+/// state-cleanup check still passes.
+#[test]
+fn test_verify_excludes_subdir_without_state_json() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let empty_dir = root.join(".flow-states").join("empty-branch");
+    fs::create_dir_all(&empty_dir).unwrap();
     let fake = install_fake_gh(&root, r#"[{"number": 1}]"#, 0);
 
     let output = run_impl_with_fake_gh(&fake, "owner/repo", &root)

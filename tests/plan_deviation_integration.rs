@@ -70,7 +70,7 @@ const UNRELATED_RS: &str = concat!(
 const STATE_WITH_PLAN: &str = r#"{
     "branch": "devtest-branch",
     "current_phase": "flow-code",
-    "files": {"plan": ".flow-states/devtest-branch-plan.md"}
+    "files": {"plan": ".flow-states/devtest-branch/plan.md"}
 }"#;
 
 /// State file with no `files.plan` key — branch A.
@@ -137,14 +137,14 @@ fn make_repo_fixture(parent: &Path) -> PathBuf {
 /// `None`). Writes a `.flow-commit-msg` file for
 /// `finalize-commit`'s `git commit -F` step.
 fn seed_flow_state(repo: &Path, state: &str, plan: Option<&str>, test_rs: &str, log: Option<&str>) {
-    let flow_states = repo.join(".flow-states");
-    fs::create_dir_all(&flow_states).expect("create flow-states");
-    fs::write(flow_states.join(format!("{}.json", BRANCH)), state).expect("write state");
+    let branch_dir = repo.join(".flow-states").join(BRANCH);
+    fs::create_dir_all(&branch_dir).expect("create branch dir");
+    fs::write(branch_dir.join("state.json"), state).expect("write state");
     if let Some(plan) = plan {
-        fs::write(flow_states.join(format!("{}-plan.md", BRANCH)), plan).expect("write plan");
+        fs::write(branch_dir.join("plan.md"), plan).expect("write plan");
     }
     if let Some(log) = log {
-        fs::write(flow_states.join(format!("{}.log", BRANCH)), log).expect("write log");
+        fs::write(branch_dir.join("log"), log).expect("write log");
     }
 
     let test_dir = repo.join("tests");
@@ -309,7 +309,7 @@ fn finalize_commit_diff_diverges_without_log_blocks() {
     assert_eq!(code, 1);
 
     // Verify the gate recorded the block in the durable log.
-    let log_path = repo.join(".flow-states").join(format!("{}.log", BRANCH));
+    let log_path = repo.join(".flow-states").join(BRANCH).join("log");
     let log_content = fs::read_to_string(&log_path).unwrap_or_default();
     assert!(
         log_content.contains("plan_deviation (blocked"),

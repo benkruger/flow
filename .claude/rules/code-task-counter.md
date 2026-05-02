@@ -1,6 +1,6 @@
 # Code Task Counter Convention
 
-The `code_task` field in `.flow-states/<branch>.json` tracks the
+The `code_task` field in `.flow-states/<branch>/state.json` tracks the
 plan task counter during Phase 3 (Code). It is incremented via
 `bin/flow set-timestamp --set code_task=<n>` after each task
 completes and before the commit.

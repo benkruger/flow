@@ -18,6 +18,8 @@
 //! Filename suffixes live here so the on-disk layout can change by
 //! editing this module alone.
 
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 /// Directory-only handle for the `.flow-states/` directory. Use this
@@ -52,18 +54,37 @@ pub struct FlowPaths {
 }
 
 impl FlowPaths {
-    /// Returns true iff `branch` is a valid FLOW branch name — non-empty
-    /// and contains no '/'. FLOW branch-scoped files are flat filenames
-    /// under `.flow-states/`, so slashes would produce subdirectory paths
-    /// that discovery scanners iterating direct children cannot find.
+    /// Returns true iff `branch` is a valid FLOW branch name. The
+    /// branch is joined onto `.flow-states/` to construct the
+    /// branch-scoped subdirectory `<flow_states_dir>/<branch>/`, so
+    /// any value that would resolve outside that subdirectory must be
+    /// rejected here. Cleanup runs `fs::remove_dir_all(branch_dir())`,
+    /// so a path-traversal slip turns into arbitrary-directory
+    /// deletion (`--branch ..` would target the project root,
+    /// `--branch .` would target every sibling flow's subdirectory).
+    ///
+    /// Rejects:
+    /// - empty string (cannot identify a flow)
+    /// - `.` or `..` (path-traversal — `.flow-states/.` and
+    ///   `.flow-states/..` resolve to `.flow-states/` and the project
+    ///   root respectively, which cleanup would then `remove_dir_all`)
+    /// - any string containing `/` (would create a subdirectory under
+    ///   `.flow-states/<top>/...` that the discovery scanners cannot
+    ///   find)
+    /// - any string containing `\0` (NUL bytes round-trip through
+    ///   filesystem syscalls in implementation-defined ways)
     pub fn is_valid_branch(branch: &str) -> bool {
-        !branch.is_empty() && !branch.contains('/')
+        !branch.is_empty()
+            && branch != "."
+            && branch != ".."
+            && !branch.contains('/')
+            && !branch.contains('\0')
     }
 
     /// Construct a new `FlowPaths` rooted at `<project_root>/.flow-states`
     /// for the given branch.
     ///
-    /// Panics if `branch` is empty or contains '/'. Use this when you
+    /// Panics if `branch` fails `is_valid_branch`. Use this when you
     /// know the branch is valid (e.g., it came from state file keyspace
     /// or was already checked). Use `try_new` for branches sourced from
     /// git (`current_branch()`, `resolve_branch()`) — those can carry
@@ -72,12 +93,9 @@ impl FlowPaths {
     pub fn new(project_root: impl AsRef<Path>, branch: impl Into<String>) -> Self {
         let branch = branch.into();
         assert!(
-            !branch.is_empty(),
-            "FlowPaths::new: branch must be non-empty"
-        );
-        assert!(
-            !branch.contains('/'),
-            "FlowPaths::new: branch must not contain '/': {branch}"
+            Self::is_valid_branch(&branch),
+            "FlowPaths::new: invalid branch: {branch:?} (must be non-empty, \
+             not '.' or '..', no '/' or NUL)"
         );
         Self {
             flow_states_dir: project_root.as_ref().join(".flow-states"),
@@ -116,100 +134,115 @@ impl FlowPaths {
         self.flow_states_dir.clone()
     }
 
-    /// `<.flow-states>/<branch>.json` — authoritative state file.
+    /// `<.flow-states>/<branch>/` — branch-scoped subdirectory that
+    /// houses every per-branch artifact (state file, log, plan, DAG,
+    /// commit message, etc.). Cleanup walks this directory, and flow
+    /// discovery scans the `.flow-states/` directory for subdirectories
+    /// containing a `state.json` rather than enumerating per-suffix
+    /// filenames.
+    pub fn branch_dir(&self) -> PathBuf {
+        self.flow_states_dir.join(&self.branch)
+    }
+
+    /// Create `<.flow-states>/<branch>/` if it does not already exist.
+    /// Idempotent — wraps `fs::create_dir_all`. Callers that write
+    /// branch-scoped files (init_state, start_init writing
+    /// `start_prompt`) must call this before the first `fs::write` so
+    /// the parent directory exists. Errors propagate so callers can
+    /// surface filesystem failures (e.g., a regular file blocking the
+    /// branch path) instead of silently swallowing them.
+    pub fn ensure_branch_dir(&self) -> io::Result<()> {
+        fs::create_dir_all(self.branch_dir())
+    }
+
+    /// `<branch_dir>/state.json` — authoritative state file.
     pub fn state_file(&self) -> PathBuf {
-        self.flow_states_dir.join(format!("{}.json", self.branch))
+        self.branch_dir().join("state.json")
     }
 
-    /// `<.flow-states>/<branch>.log` — session log appended by skills
-    /// and Rust modules via `append_log`.
+    /// `<branch_dir>/log` — session log appended by skills and Rust
+    /// modules via `append_log`.
     pub fn log_file(&self) -> PathBuf {
-        self.flow_states_dir.join(format!("{}.log", self.branch))
+        self.branch_dir().join("log")
     }
 
-    /// `<.flow-states>/<branch>-plan.md` — Plan phase output.
+    /// `<branch_dir>/plan.md` — Plan phase output.
     pub fn plan_file(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-plan.md", self.branch))
+        self.branch_dir().join("plan.md")
     }
 
-    /// `<.flow-states>/<branch>-dag.md` — DAG decomposition output.
+    /// `<branch_dir>/dag.md` — DAG decomposition output.
     pub fn dag_file(&self) -> PathBuf {
-        self.flow_states_dir.join(format!("{}-dag.md", self.branch))
+        self.branch_dir().join("dag.md")
     }
 
-    /// `<.flow-states>/<branch>-phases.json` — frozen phase config
-    /// captured at flow-start time.
+    /// `<branch_dir>/phases.json` — frozen phase config captured at
+    /// flow-start time.
     pub fn frozen_phases(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-phases.json", self.branch))
+        self.branch_dir().join("phases.json")
     }
 
-    /// `<.flow-states>/<branch>-ci-passed` — CI sentinel; presence
-    /// means the last `bin/flow ci` invocation passed for the current
-    /// working tree.
+    /// `<branch_dir>/ci-passed` — CI sentinel; presence means the last
+    /// `bin/flow ci` invocation passed for the current working tree.
     pub fn ci_sentinel(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-ci-passed", self.branch))
+        self.branch_dir().join("ci-passed")
     }
 
-    /// `<.flow-states>/<branch>-timings.md` — phase timing report.
+    /// `<branch_dir>/timings.md` — phase timing report.
     pub fn timings_file(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-timings.md", self.branch))
+        self.branch_dir().join("timings.md")
     }
 
-    /// `<.flow-states>/<branch>-closed-issues.json` — issues closed
-    /// during the flow, persisted for the post-merge close step.
+    /// `<branch_dir>/closed-issues.json` — issues closed during the
+    /// flow, persisted for the post-merge close step.
     pub fn closed_issues(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-closed-issues.json", self.branch))
+        self.branch_dir().join("closed-issues.json")
     }
 
-    /// `<.flow-states>/<branch>-issues.md` — issues summary rendered
-    /// for PR body inclusion.
+    /// `<branch_dir>/issues.md` — issues summary rendered for PR body
+    /// inclusion.
     pub fn issues_file(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-issues.md", self.branch))
+        self.branch_dir().join("issues.md")
     }
 
-    /// `<.flow-states>/<branch>-rule-content.md` — scratch file for
-    /// rule-file edits routed through `bin/flow write-rule`.
+    /// `<branch_dir>/rule-content.md` — scratch file for rule-file
+    /// edits routed through `bin/flow write-rule`.
     pub fn rule_content(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-rule-content.md", self.branch))
+        self.branch_dir().join("rule-content.md")
     }
 
-    /// `<.flow-states>/<branch>-commit-msg.txt` — final commit message
-    /// file consumed by `bin/flow finalize-commit`. Branch-scoped under
-    /// `.flow-states/` so concurrent flows in different worktrees of the
-    /// same repo never share a single file, and so abort/complete cleanup
-    /// removes it deterministically alongside other branch-scoped state.
+    /// `<branch_dir>/commit-msg.txt` — final commit message file
+    /// consumed by `bin/flow finalize-commit`. Branch-scoped so
+    /// concurrent flows in different worktrees of the same repo never
+    /// share a single file, and so abort/complete cleanup removes it
+    /// deterministically alongside other branch-scoped state via the
+    /// single `remove_dir_all` over `branch_dir()`.
     pub fn commit_msg(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-commit-msg.txt", self.branch))
+        self.branch_dir().join("commit-msg.txt")
     }
 
-    /// `<.flow-states>/<branch>-commit-msg-content.txt` — scratch file
-    /// the commit skill writes via the Write tool, then `bin/flow
-    /// write-rule` reads and routes to [`commit_msg`].
+    /// `<branch_dir>/commit-msg-content.txt` — scratch file the commit
+    /// skill writes via the Write tool, then `bin/flow write-rule`
+    /// reads and routes to [`commit_msg`].
     pub fn commit_msg_content(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-commit-msg-content.txt", self.branch))
+        self.branch_dir().join("commit-msg-content.txt")
     }
 
-    /// `<.flow-states>/<branch>-start-prompt` — verbatim start prompt
-    /// captured by `/flow:flow-start` for downstream phases.
+    /// `<branch_dir>/start-prompt` — verbatim start prompt captured
+    /// by `/flow:flow-start` for downstream phases.
     pub fn start_prompt(&self) -> PathBuf {
-        self.flow_states_dir
-            .join(format!("{}-start-prompt", self.branch))
+        self.branch_dir().join("start-prompt")
     }
 
-    /// Bare prefix `<branch>-adversarial_test.` used to glob Phase 4
-    /// adversarial test files. The agent chooses the extension at
-    /// runtime so callers filter `fs::read_dir` entries by this
-    /// prefix rather than addressing a fixed filename.
+    /// Bare prefix `adversarial_test.` used to filter `branch_dir()`
+    /// entries for Phase 4 adversarial test files. The agent chooses
+    /// the extension at runtime, so callers list `branch_dir()` and
+    /// match `entry.file_name().starts_with(prefix)`. The trailing
+    /// dot anchors the match on the extension separator so a sibling
+    /// file named `adversarial_test_other.rs` cannot match. Branch
+    /// isolation comes from the `branch_dir()` scope, so the prefix
+    /// no longer needs to encode the branch name.
     pub fn adversarial_test_prefix(&self) -> String {
-        format!("{}-adversarial_test.", self.branch)
+        "adversarial_test.".to_string()
     }
 }

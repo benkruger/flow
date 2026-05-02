@@ -823,10 +823,10 @@ fn run_validate_rejection_exits_two() {
 
 /// Covers the Agent-tool block path (eprintln + exit 2) when
 /// flow_active is true. Builds a fake worktree layout under a tempdir:
-///   root/.claude/settings.json         — satisfies find_settings_and_root
-///   root/.flow-states/<branch>.json    — makes is_flow_active return true
-///   root/.worktrees/<branch>/.git      — makes detect_branch_from_path
-///                                        identify the branch from cwd
+///   root/.claude/settings.json              — satisfies find_settings_and_root
+///   root/.flow-states/<branch>/state.json   — makes is_flow_active return true
+///   root/.worktrees/<branch>/.git           — makes detect_branch_from_path
+///                                             identify the branch from cwd
 /// Then spawns the hook with cwd=root/.worktrees/<branch>/ and a
 /// general-purpose subagent payload, which must exit 2 with a BLOCKED
 /// message.
@@ -839,9 +839,9 @@ fn run_agent_path_blocked_exits_two_when_flow_active() {
     std::fs::create_dir_all(&claude_dir).unwrap();
     std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
 
-    let flow_states = root_path.join(".flow-states");
-    std::fs::create_dir_all(&flow_states).unwrap();
-    std::fs::write(flow_states.join("feat.json"), "{}").unwrap();
+    let branch_dir = root_path.join(".flow-states").join("feat");
+    std::fs::create_dir_all(&branch_dir).unwrap();
+    std::fs::write(branch_dir.join("state.json"), "{}").unwrap();
 
     let worktree = root_path.join(".worktrees").join("feat");
     std::fs::create_dir_all(&worktree).unwrap();

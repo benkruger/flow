@@ -16,9 +16,9 @@ use flow_rs::utils::now;
 use serde_json::{json, Value};
 
 fn write_state(repo: &Path, branch: &str, state: &Value) -> std::path::PathBuf {
-    let state_dir = repo.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let path = state_dir.join(format!("{}.json", branch));
+    let branch_dir = repo.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    let path = branch_dir.join("state.json");
     fs::write(&path, serde_json::to_string_pretty(state).unwrap()).unwrap();
     path
 }
@@ -215,9 +215,9 @@ fn append_note_missing_current_phase_defaults_to_flow_start() {
 fn append_note_corrupt_state_file_errors() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    let state_dir = repo.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join("bad.json"), "not json").unwrap();
+    let branch_dir = repo.join(".flow-states").join("bad");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), "not json").unwrap();
 
     let output = run_append_note(
         &repo,
@@ -245,9 +245,9 @@ fn make_state_lib(branch: &str) -> Value {
 }
 
 fn write_state_lib(dir: &Path, branch: &str, state: &Value) -> std::path::PathBuf {
-    let state_dir = dir.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let path = state_dir.join(format!("{}.json", branch));
+    let branch_dir = dir.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    let path = branch_dir.join("state.json");
     fs::write(&path, serde_json::to_string_pretty(state).unwrap()).unwrap();
     path
 }
@@ -318,9 +318,9 @@ fn append_note_multiple_accumulate_lib() {
 fn append_note_creates_array_if_missing_lib() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let path = state_dir.join("test-feature.json");
+    let branch_dir = root.join(".flow-states").join("test-feature");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let path = branch_dir.join("state.json");
     fs::write(&path, r#"{"current_phase": "flow-code"}"#).unwrap();
 
     let args = Args {
@@ -392,9 +392,9 @@ fn read_current_phase_corrupt_json_lib() {
 fn append_note_array_root_state_noop_lib() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let path = state_dir.join("test-feature.json");
+    let branch_dir = root.join(".flow-states").join("test-feature");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let path = branch_dir.join("state.json");
     fs::write(&path, "[1, 2, 3]").unwrap();
 
     let args = Args {
@@ -428,10 +428,10 @@ fn append_note_run_impl_main_no_state_returns_no_state_tuple_lib() {
 fn append_note_run_impl_main_success_returns_note_count_tuple_lib() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = root.join(".flow-states").join("present-branch");
+    fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
-        state_dir.join("present-branch.json"),
+        branch_dir.join("state.json"),
         r#"{"current_phase":"flow-plan","notes":[]}"#,
     )
     .unwrap();
@@ -446,9 +446,9 @@ fn append_note_run_impl_main_success_returns_note_count_tuple_lib() {
 fn append_note_run_impl_main_state_read_failure_returns_error_tuple_lib() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join("present-branch.json"), "{not json").unwrap();
+    let branch_dir = root.join(".flow-states").join("present-branch");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), "{not json").unwrap();
     let args = make_args(Some("present-branch"));
     let (value, code) = run_impl_main(args, &root);
     assert_eq!(value["status"], "error");
@@ -464,9 +464,9 @@ fn append_note_run_impl_main_mutate_state_failure_returns_error_tuple_lib() {
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state_path = state_dir.join("present-branch.json");
+    let branch_dir = root.join(".flow-states").join("present-branch");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let state_path = branch_dir.join("state.json");
     fs::write(&state_path, r#"{"current_phase":"flow-plan","notes":[]}"#).unwrap();
     let mut perms = fs::metadata(&state_path).unwrap().permissions();
     perms.set_mode(0o444);
@@ -491,10 +491,11 @@ fn append_note_run_impl_main_mutate_state_failure_returns_error_tuple_lib() {
 fn append_note_run_impl_main_unknown_phase_falls_back_to_phase_string_lib() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = root.join(".flow-states").join("unknown-phase");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let state_path = branch_dir.join("state.json");
     fs::write(
-        state_dir.join("unknown-phase.json"),
+        &state_path,
         r#"{"current_phase":"custom-unknown-phase","notes":[]}"#,
     )
     .unwrap();
@@ -502,9 +503,7 @@ fn append_note_run_impl_main_unknown_phase_falls_back_to_phase_string_lib() {
     let (value, code) = run_impl_main(args, &root);
     assert_eq!(value["status"], "ok");
     assert_eq!(code, 0);
-    let on_disk: Value =
-        serde_json::from_str(&fs::read_to_string(state_dir.join("unknown-phase.json")).unwrap())
-            .unwrap();
+    let on_disk: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(on_disk["notes"][0]["phase_name"], "custom-unknown-phase");
 }
 
@@ -512,10 +511,10 @@ fn append_note_run_impl_main_unknown_phase_falls_back_to_phase_string_lib() {
 fn append_note_run_impl_main_wrong_type_resets_to_array_lib() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = root.join(".flow-states").join("wrong-type");
+    fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
-        state_dir.join("wrong-type.json"),
+        branch_dir.join("state.json"),
         r#"{"current_phase":"flow-plan","notes":"not-an-array"}"#,
     )
     .unwrap();

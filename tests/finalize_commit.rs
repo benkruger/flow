@@ -193,9 +193,9 @@ fn write_ci_sentinel(clone_path: &std::path::Path, branch: &str) {
 }
 
 fn write_state_with_continue_pending(clone_path: &std::path::Path, branch: &str) {
-    let flow_states = clone_path.join(".flow-states");
-    fs::create_dir_all(&flow_states).unwrap();
-    let state_file = flow_states.join(format!("{}.json", branch));
+    let branch_dir = clone_path.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    let state_file = branch_dir.join("state.json");
     let state = json!({
         "branch": branch,
         "current_phase": "flow-code",
@@ -208,7 +208,8 @@ fn write_state_with_continue_pending(clone_path: &std::path::Path, branch: &str)
 fn read_state(clone_path: &std::path::Path, branch: &str) -> Value {
     let state_file = clone_path
         .join(".flow-states")
-        .join(format!("{}.json", branch));
+        .join(branch)
+        .join("state.json");
     let content = fs::read_to_string(&state_file).unwrap();
     serde_json::from_str(&content).unwrap()
 }
@@ -823,8 +824,8 @@ fn staged_diff_fallback_when_git_diff_fails() {
     let root = dir.path().canonicalize().unwrap();
 
     // No git init — every `git -C <root>` call returns exit 128.
-    // But we still need a .flow-states dir for the CI sentinel.
-    fs::create_dir_all(root.join(".flow-states")).unwrap();
+    // But we still need the branch directory for the CI sentinel.
+    fs::create_dir_all(root.join(".flow-states").join("main")).unwrap();
 
     // Write the CI sentinel matching the snapshot so ci::run_impl
     // takes the fast skip path (no bin/* scripts invoked).
@@ -864,9 +865,9 @@ fn error_state_wrong_type_guard_fires() {
     // Overwrite state file with a JSON ARRAY (not an object). mutate_state's
     // closure in run_impl will see state.is_array() and return early via
     // the type guard — no mutation applied, no panic.
-    let flow_states = clone_path.join(".flow-states");
-    fs::create_dir_all(&flow_states).unwrap();
-    let state_path = flow_states.join("main.json");
+    let branch_dir = clone_path.join(".flow-states").join("main");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let state_path = branch_dir.join("state.json");
     fs::write(&state_path, "[1, 2, 3]").unwrap();
 
     // Configure CI to fail so run_impl hits the error-cleanup path.
@@ -913,9 +914,9 @@ fn plan_deviation_blocks_commit() {
     let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
     let clone_path = clone_dir.path();
 
-    let flow_states = clone_path.join(".flow-states");
-    fs::create_dir_all(&flow_states).unwrap();
-    let plan_path = flow_states.join("main-plan.md");
+    let branch_dir = clone_path.join(".flow-states").join("main");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let plan_path = branch_dir.join("plan.md");
     let plan_content = r#"# Plan
 
 ## Tasks
@@ -930,11 +931,11 @@ fn test_foo() {
 "#;
     fs::write(&plan_path, plan_content).unwrap();
 
-    let state_file = flow_states.join("main.json");
+    let state_file = branch_dir.join("state.json");
     let state = json!({
         "branch": "main",
         "current_phase": "flow-code",
-        "files": {"plan": ".flow-states/main-plan.md"}
+        "files": {"plan": ".flow-states/main/plan.md"}
     });
     fs::write(&state_file, serde_json::to_string_pretty(&state).unwrap()).unwrap();
 
@@ -995,9 +996,9 @@ fn plan_deviation_two_deviations_plural_message() {
     let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
     let clone_path = clone_dir.path();
 
-    let flow_states = clone_path.join(".flow-states");
-    fs::create_dir_all(&flow_states).unwrap();
-    let plan_path = flow_states.join("main-plan.md");
+    let branch_dir = clone_path.join(".flow-states").join("main");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let plan_path = branch_dir.join("plan.md");
     let plan_content = r#"# Plan
 
 ## Tasks
@@ -1015,11 +1016,11 @@ fn test_beta() {
 "#;
     fs::write(&plan_path, plan_content).unwrap();
 
-    let state_file = flow_states.join("main.json");
+    let state_file = branch_dir.join("state.json");
     let state = json!({
         "branch": "main",
         "current_phase": "flow-code",
-        "files": {"plan": ".flow-states/main-plan.md"}
+        "files": {"plan": ".flow-states/main/plan.md"}
     });
     fs::write(&state_file, serde_json::to_string_pretty(&state).unwrap()).unwrap();
 

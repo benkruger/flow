@@ -87,7 +87,7 @@ use the opt-out comment instead of a forced list.
 
 ## Where This Applies
 
-- **Plan files** (`.flow-states/<branch>-plan.md`) — scanned at Plan
+- **Plan files** (`.flow-states/<branch>/plan.md`) — scanned at Plan
   phase completion by `bin/flow plan-check`. Gated in the standard
   path by `skills/flow-plan/SKILL.md` Step 4 and in the pre-planned
   path by `src/plan_extract.rs` extracted and resume paths.

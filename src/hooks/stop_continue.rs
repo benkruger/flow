@@ -44,18 +44,21 @@ fn log_diag(root: Option<&Path>, branch: Option<&str>, message: &str) {
 }
 
 /// Derive `(root, branch)` from a state file path of the form
-/// `<root>/.flow-states/<branch>.json`, so diagnostic logging can
-/// locate `<root>/.flow-states/<branch>.log` without callers having
-/// to pass both pieces separately.
+/// `<root>/.flow-states/<branch>/state.json`, so diagnostic logging
+/// can locate `<root>/.flow-states/<branch>/log` without callers
+/// having to pass both pieces separately.
 ///
 /// Returns `(None, None)` when the path shape does not match
 /// (e.g., test fixtures that place the state file outside a
-/// `.flow-states/` directory). Callers should pass the resulting
-/// options to `log_diag` directly — when either is None, the file
-/// write is skipped and only stderr is used.
+/// `.flow-states/<branch>/` directory). Callers should pass the
+/// resulting options to `log_diag` directly — when either is None,
+/// the file write is skipped and only stderr is used.
 fn derive_root_branch(state_path: &Path) -> (Option<&Path>, Option<&str>) {
-    let branch = state_path.file_stem().and_then(|s| s.to_str());
-    let root = state_path.parent().and_then(|p| {
+    let branch_dir = state_path.parent();
+    let branch = branch_dir
+        .and_then(|d| d.file_name())
+        .and_then(|n| n.to_str());
+    let root = branch_dir.and_then(|d| d.parent()).and_then(|p| {
         if p.file_name().and_then(|n| n.to_str()) == Some(".flow-states") {
             p.parent()
         } else {

@@ -31,7 +31,7 @@ Shows all active flows with a detail panel for the selected flow:
 ### Log View
 
 Shows the last entries from the selected flow's session log, parsed
-from `.flow-states/<branch>.log`.
+from `.flow-states/<branch>/log`.
 
 ## Keyboard Actions
 
@@ -61,7 +61,7 @@ All data is local — no network calls:
 | Elapsed time | `state["started_at"]` |
 | Code progress | `state["code_task"]`, `state["diff_stats"]` |
 | Notes/issues | `state["notes"]`, `state["issues_filed"]` |
-| Log entries | `.flow-states/<branch>.log` |
+| Log entries | `.flow-states/<branch>/log` |
 | PR info | `state["pr_url"]`, `state["pr_number"]` |
 
 ## Auto-Refresh

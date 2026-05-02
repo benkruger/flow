@@ -148,7 +148,10 @@ fn freeze_phases_copies_file() {
 
     freeze_phases(&src, &project, "my-feature").unwrap();
 
-    let dest = project.join(".flow-states").join("my-feature-phases.json");
+    let dest = project
+        .join(".flow-states")
+        .join("my-feature")
+        .join("phases.json");
     assert!(dest.exists());
     let content = fs::read_to_string(&dest).unwrap();
     assert!(content.contains("order"));
@@ -257,12 +260,9 @@ fn auto_skills_preserves_insertion_order() {
 fn find_state_files_exact_match() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir(&state_dir).unwrap();
-    fs::write(
-        state_dir.join("my-feature.json"),
-        r#"{"branch": "my-feature"}"#,
-    )
-    .unwrap();
+    let real_dir = state_dir.join("my-feature");
+    fs::create_dir_all(&real_dir).unwrap();
+    fs::write(real_dir.join("state.json"), r#"{"branch": "my-feature"}"#).unwrap();
 
     let results = find_state_files(dir.path(), "my-feature");
     assert_eq!(results.len(), 1);
@@ -280,12 +280,9 @@ fn find_state_files_no_state_dir() {
 fn find_state_files_fallback_scan() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir(&state_dir).unwrap();
-    fs::write(
-        state_dir.join("feature-xyz.json"),
-        r#"{"branch": "feature-xyz"}"#,
-    )
-    .unwrap();
+    let real_dir = state_dir.join("feature-xyz");
+    fs::create_dir_all(&real_dir).unwrap();
+    fs::write(real_dir.join("state.json"), r#"{"branch": "feature-xyz"}"#).unwrap();
 
     let results = find_state_files(dir.path(), "main");
     assert_eq!(results.len(), 1);
@@ -293,16 +290,17 @@ fn find_state_files_fallback_scan() {
 }
 
 #[test]
-fn find_state_files_skips_phases_files() {
+fn find_state_files_skips_subdir_with_only_phases_json() {
+    // A branch directory with only phases.json (no state.json) is
+    // skipped — the subdir scan requires a readable state.json.
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir(&state_dir).unwrap();
-    fs::write(
-        state_dir.join("feature-x.json"),
-        r#"{"branch": "feature-x"}"#,
-    )
-    .unwrap();
-    fs::write(state_dir.join("feature-x-phases.json"), r#"{"order": []}"#).unwrap();
+    let real_dir = state_dir.join("feature-x");
+    fs::create_dir_all(&real_dir).unwrap();
+    fs::write(real_dir.join("state.json"), r#"{"branch": "feature-x"}"#).unwrap();
+    let phases_only = state_dir.join("phases-only");
+    fs::create_dir_all(&phases_only).unwrap();
+    fs::write(phases_only.join("phases.json"), r#"{"order": []}"#).unwrap();
 
     let results = find_state_files(dir.path(), "main");
     assert_eq!(results.len(), 1);
@@ -310,15 +308,14 @@ fn find_state_files_skips_phases_files() {
 }
 
 #[test]
-fn find_state_files_skips_orchestrate() {
+fn find_state_files_skips_orchestrate_at_root() {
+    // orchestrate.json is a regular file at .flow-states/ root and
+    // never participates in branch discovery.
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir(&state_dir).unwrap();
-    fs::write(
-        state_dir.join("feature-x.json"),
-        r#"{"branch": "feature-x"}"#,
-    )
-    .unwrap();
+    let real_dir = state_dir.join("feature-x");
+    fs::create_dir_all(&real_dir).unwrap();
+    fs::write(real_dir.join("state.json"), r#"{"branch": "feature-x"}"#).unwrap();
     fs::write(
         state_dir.join("orchestrate.json"),
         r#"{"status": "in_progress"}"#,
@@ -334,9 +331,12 @@ fn find_state_files_skips_orchestrate() {
 fn find_state_files_skips_corrupt() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir(&state_dir).unwrap();
-    fs::write(state_dir.join("bad.json"), "{corrupt").unwrap();
-    fs::write(state_dir.join("good.json"), r#"{"branch": "good"}"#).unwrap();
+    let bad_dir = state_dir.join("bad");
+    fs::create_dir_all(&bad_dir).unwrap();
+    fs::write(bad_dir.join("state.json"), "{corrupt").unwrap();
+    let good_dir = state_dir.join("good");
+    fs::create_dir_all(&good_dir).unwrap();
+    fs::write(good_dir.join("state.json"), r#"{"branch": "good"}"#).unwrap();
 
     let results = find_state_files(dir.path(), "main");
     assert_eq!(results.len(), 1);
@@ -347,9 +347,12 @@ fn find_state_files_skips_corrupt() {
 fn find_state_files_corrupt_exact_no_fallthrough() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir(&state_dir).unwrap();
-    fs::write(state_dir.join("main.json"), "{corrupt").unwrap();
-    fs::write(state_dir.join("other.json"), r#"{"branch": "other"}"#).unwrap();
+    let main_dir = state_dir.join("main");
+    fs::create_dir_all(&main_dir).unwrap();
+    fs::write(main_dir.join("state.json"), "{corrupt").unwrap();
+    let other_dir = state_dir.join("other");
+    fs::create_dir_all(&other_dir).unwrap();
+    fs::write(other_dir.join("state.json"), r#"{"branch": "other"}"#).unwrap();
 
     let results = find_state_files(dir.path(), "main");
     assert!(results.is_empty());
@@ -359,9 +362,10 @@ fn find_state_files_corrupt_exact_no_fallthrough() {
 fn find_state_files_empty_branch_scans_directory() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir(&state_dir).unwrap();
-    fs::write(state_dir.join("a.json"), r#"{"branch": "a"}"#).unwrap();
-    fs::write(state_dir.join("b.json"), r#"{"branch": "b"}"#).unwrap();
+    fs::create_dir_all(state_dir.join("a")).unwrap();
+    fs::write(state_dir.join("a").join("state.json"), r#"{"branch": "a"}"#).unwrap();
+    fs::create_dir_all(state_dir.join("b")).unwrap();
+    fs::write(state_dir.join("b").join("state.json"), r#"{"branch": "b"}"#).unwrap();
 
     let results = find_state_files(dir.path(), "");
     let mut branches: Vec<_> = results.iter().map(|(_, _, b)| b.clone()).collect();
@@ -373,9 +377,10 @@ fn find_state_files_empty_branch_scans_directory() {
 fn find_state_files_slash_branch_does_not_panic() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir(&state_dir).unwrap();
+    let real_dir = state_dir.join("other-feature");
+    fs::create_dir_all(&real_dir).unwrap();
     fs::write(
-        state_dir.join("other-feature.json"),
+        real_dir.join("state.json"),
         r#"{"branch": "other-feature"}"#,
     )
     .unwrap();
@@ -472,33 +477,51 @@ fn load_phase_config_key_not_in_phases_continues() {
 }
 
 #[test]
-fn find_state_files_skips_non_json_phases_and_orchestrate() {
+fn find_state_files_skips_files_at_root_and_subdirs_without_state_json() {
+    // Subdir scan: regular files at `.flow-states/` root (orchestrate.json,
+    // README.md, stale flat-layout artifacts) and subdirectories that
+    // lack a `state.json` are all skipped. Only `<branch>/state.json`
+    // entries that parse cleanly contribute to the result.
     let dir = tempfile::tempdir().unwrap();
     let state_dir = FlowStatesDir::new(dir.path()).path().to_path_buf();
     fs::create_dir_all(&state_dir).unwrap();
+    // Regular files at .flow-states/ root — must all be ignored.
     fs::write(state_dir.join("README.md"), "not a state").unwrap();
-    fs::write(state_dir.join("feat-a-phases.json"), r#"{"order":[]}"#).unwrap();
     fs::write(state_dir.join("orchestrate.json"), r#"{"batch":[]}"#).unwrap();
-    fs::write(
-        state_dir.join("real-branch.json"),
-        r#"{"branch":"real-branch"}"#,
-    )
-    .unwrap();
-    fs::write(state_dir.join("broken.json"), "not json").unwrap();
+    // Subdir without state.json — must be ignored.
+    fs::create_dir_all(state_dir.join("empty-branch")).unwrap();
+    // Subdir with unparseable state.json — must be ignored.
+    let broken_dir = state_dir.join("broken");
+    fs::create_dir_all(&broken_dir).unwrap();
+    fs::write(broken_dir.join("state.json"), "not json").unwrap();
+    // Valid subdir — must be returned.
+    let real_dir = state_dir.join("real-branch");
+    fs::create_dir_all(&real_dir).unwrap();
+    fs::write(real_dir.join("state.json"), r#"{"branch":"real-branch"}"#).unwrap();
 
     let results = find_state_files(dir.path(), "nonexistent-branch");
-    let stems: Vec<&str> = results.iter().map(|(_, _, s)| s.as_str()).collect();
-    assert!(stems.contains(&"real-branch"), "got stems: {:?}", stems);
+    let branches: Vec<&str> = results.iter().map(|(_, _, b)| b.as_str()).collect();
     assert!(
-        !stems.iter().any(|s| s.contains("phases")),
-        "must skip -phases.json"
+        branches.contains(&"real-branch"),
+        "got branches: {:?}",
+        branches
     );
     assert!(
-        !stems.contains(&"orchestrate"),
-        "must skip orchestrate.json"
+        !branches.contains(&"empty-branch"),
+        "subdir without state.json must be skipped"
     );
-    assert!(!stems.contains(&"README"), "must skip non-json");
-    assert!(!stems.contains(&"broken"), "must skip unparseable");
+    assert!(
+        !branches.contains(&"broken"),
+        "subdir with unparseable state.json must be skipped"
+    );
+    assert!(
+        !branches.contains(&"orchestrate"),
+        "regular files at root must be skipped"
+    );
+    assert!(
+        !branches.contains(&"README"),
+        "regular files at root must be skipped"
+    );
 }
 
 #[test]
@@ -521,17 +544,24 @@ fn find_state_files_exact_match_is_directory_returns_empty() {
 }
 
 #[test]
-fn find_state_files_dir_entry_read_failure_is_skipped() {
+fn find_state_files_subdir_with_state_json_directory_is_skipped() {
+    // A subdirectory whose state.json is itself a directory cannot be
+    // read as a file, so it must be skipped without affecting siblings.
     let dir = tempfile::tempdir().unwrap();
     let state_dir = FlowStatesDir::new(dir.path()).path().to_path_buf();
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::create_dir_all(state_dir.join("broken.json")).unwrap();
-    fs::write(state_dir.join("real.json"), r#"{"branch":"real"}"#).unwrap();
+    let broken_dir = state_dir.join("broken");
+    fs::create_dir_all(broken_dir.join("state.json")).unwrap();
+    let real_dir = state_dir.join("real");
+    fs::create_dir_all(&real_dir).unwrap();
+    fs::write(real_dir.join("state.json"), r#"{"branch":"real"}"#).unwrap();
 
     let results = find_state_files(dir.path(), "nonexistent-branch");
-    let stems: Vec<&str> = results.iter().map(|(_, _, s)| s.as_str()).collect();
-    assert!(stems.contains(&"real"), "stems: {:?}", stems);
-    assert!(!stems.contains(&"broken"), "unreadable dir must be skipped");
+    let branches: Vec<&str> = results.iter().map(|(_, _, b)| b.as_str()).collect();
+    assert!(branches.contains(&"real"), "branches: {:?}", branches);
+    assert!(
+        !branches.contains(&"broken"),
+        "unreadable state.json must be skipped"
+    );
 }
 
 #[test]
@@ -564,6 +594,34 @@ fn find_state_files_read_dir_failure_returns_empty_list() {
     let results = find_state_files(dir.path(), "nonexistent-branch");
     let _ = fs::set_permissions(&state_dir, fs::Permissions::from_mode(0o755));
     assert!(results.is_empty());
+}
+
+/// Subdirectory with an unreadable `state.json` (mode 0o000) — the
+/// `is_file()` check passes but `read_to_string` returns Err. The
+/// scanner skips the entry and returns the remaining valid flows.
+#[test]
+fn find_state_files_unreadable_state_json_is_skipped() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let state_dir = FlowStatesDir::new(dir.path()).path().to_path_buf();
+    fs::create_dir_all(state_dir.join("good-branch")).unwrap();
+    fs::write(
+        state_dir.join("good-branch").join("state.json"),
+        r#"{"branch":"good-branch"}"#,
+    )
+    .unwrap();
+    let unreadable_dir = state_dir.join("unreadable-branch");
+    fs::create_dir_all(&unreadable_dir).unwrap();
+    let unreadable_path = unreadable_dir.join("state.json");
+    fs::write(&unreadable_path, r#"{"branch":"unreadable-branch"}"#).unwrap();
+    fs::set_permissions(&unreadable_path, fs::Permissions::from_mode(0o000)).unwrap();
+
+    let results = find_state_files(dir.path(), "nonexistent-branch");
+
+    let _ = fs::set_permissions(&unreadable_path, fs::Permissions::from_mode(0o644));
+
+    let branches: Vec<&str> = results.iter().map(|(_, _, b)| b.as_str()).collect();
+    assert_eq!(branches, vec!["good-branch"]);
 }
 
 // --- MIR region coverage tests ---

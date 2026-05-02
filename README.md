@@ -18,7 +18,7 @@ Claude Code is powerful, but undisciplined by default. FLOW imposes structure. N
 
 ### Unobtrusive
 
-Zero dependencies — pure Markdown skills with a Rust dispatcher. Prime commits `.claude/settings.json` and the four `bin/*` delegation stubs (`bin/format`, `bin/lint`, `bin/build`, `bin/test`) as project config. Each project owns its own toolchain inside those scripts; FLOW provides only the orchestration layer. `.flow.json` and `.flow-states/` are git-excluded. During active development, a single gitignored JSON state file exists at `.flow-states/<branch>.json`. When the feature completes, that file is deleted too. Three commands to set up. One file while you work. Zero when you're done.
+Zero dependencies — pure Markdown skills with a Rust dispatcher. Prime commits `.claude/settings.json` and the four `bin/*` delegation stubs (`bin/format`, `bin/lint`, `bin/build`, `bin/test`) as project config. Each project owns its own toolchain inside those scripts; FLOW provides only the orchestration layer. `.flow.json` and `.flow-states/` are git-excluded. During active development, a single gitignored JSON state file exists at `.flow-states/<branch>/state.json`. When the feature completes, that file is deleted too. Three commands to set up. One file while you work. Zero when you're done.
 
 ### Autonomous or Manual
 
@@ -224,7 +224,7 @@ Phase 1 uses the **ci-fixer sub-agent** when `bin/ci` fails — at the baseline 
 
 ### State File Persistence
 
-Every feature has a state file at `.flow-states/<branch>.json`. Key fields include:
+Every feature has a state file at `.flow-states/<branch>/state.json`. Key fields include:
 
 - **Identity** — `branch`, `relative_cwd`, `repo`, `pr_number`, `pr_url`, `prompt`
 - **Phase tracking** — `current_phase`, per-phase `status`/`started_at`/`completed_at`/`cumulative_seconds`/`visit_count`, `phase_transitions` history
@@ -286,7 +286,7 @@ A global `PreToolUse` hook (`bin/flow hook validate-pretool`) fires on every Bas
 5. **File-read commands** — blocks `cat`, `head`, `tail`, `grep`, `rg`, `find`, `ls` (use dedicated tools)
 6. **Whitelist** — command must match a `Bash(...)` allow pattern in `.claude/settings.json`
 
-Layers 1–5 are always enforced. Layer 6 (whitelist) is **flow-aware**: it only enforces during an active flow (when `.flow-states/<branch>.json` exists). Outside of flows, unlisted commands fall through to Claude Code's native permission system so users can still run `npm test`, `docker compose up`, or any other command by approving the prompt.
+Layers 1–5 are always enforced. Layer 6 (whitelist) is **flow-aware**: it only enforces during an active flow (when `.flow-states/<branch>/state.json` exists). Outside of flows, unlisted commands fall through to Claude Code's native permission system so users can still run `npm test`, `docker compose up`, or any other command by approving the prompt.
 
 ### Phase Back-Navigation
 

@@ -307,8 +307,8 @@ fn test_check_qa_pending_unreadable_file() {
 fn test_set_tab_color_with_state_file() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state_path = state_dir.join("test.json");
+    fs::create_dir_all(state_dir.join("test")).unwrap();
+    let state_path = state_dir.join("test").join("state.json");
     fs::write(&state_path, r#"{"repo": "owner/repo"}"#).unwrap();
 
     set_tab_color(dir.path(), "test", &state_path);
@@ -318,8 +318,8 @@ fn test_set_tab_color_with_state_file() {
 fn test_set_tab_color_without_state_file() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state_path = state_dir.join("test.json");
+    fs::create_dir_all(state_dir.join("test")).unwrap();
+    let state_path = state_dir.join("test").join("state.json");
 
     set_tab_color(dir.path(), "test", &state_path);
 }
@@ -328,8 +328,8 @@ fn test_set_tab_color_without_state_file() {
 fn test_set_tab_color_corrupt_state_file() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state_path = state_dir.join("test.json");
+    fs::create_dir_all(state_dir.join("test")).unwrap();
+    let state_path = state_dir.join("test").join("state.json");
     fs::write(&state_path, "{bad json").unwrap();
 
     set_tab_color(dir.path(), "test", &state_path);
@@ -342,17 +342,17 @@ fn test_set_tab_color_corrupt_state_file() {
 fn test_set_tab_color_finds_other_active_feature() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    fs::create_dir_all(state_dir.join("other-branch")).unwrap();
     // Other feature's state file with a repo field.
     fs::write(
-        state_dir.join("other-branch.json"),
+        state_dir.join("other-branch").join("state.json"),
         r#"{"repo": "owner/repo", "branch": "other-branch"}"#,
     )
     .unwrap();
 
     // Requested state path does NOT exist — triggers the else arm
     // with find_state_files fallback, which locates other-branch.json.
-    let state_path = state_dir.join("test.json");
+    let state_path = state_dir.join("test").join("state.json");
     set_tab_color(dir.path(), "test", &state_path);
 }
 
@@ -361,8 +361,8 @@ fn test_set_tab_color_unreadable_state_file() {
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state_path = state_dir.join("test.json");
+    fs::create_dir_all(state_dir.join("test")).unwrap();
+    let state_path = state_dir.join("test").join("state.json");
     fs::write(&state_path, r#"{"repo": "owner/repo"}"#).unwrap();
     fs::set_permissions(&state_path, fs::Permissions::from_mode(0o000)).unwrap();
     let _guard = PermissionGuard {
@@ -406,7 +406,7 @@ fn test_set_tab_color_err_arm_via_setsid_subprocess() {
     if std::env::var("FLOW_TEST_SET_TAB_COLOR_ERR_WORKER").is_ok() {
         let dir = std::env::var("FLOW_TEST_WORKER_DIR").expect("worker dir");
         let root = std::path::PathBuf::from(&dir);
-        let state_path = root.join(".flow-states").join("test.json");
+        let state_path = root.join(".flow-states").join("test").join("state.json");
         // set_tab_color swallows errors via log_diag — no assertion
         // needed, the profdata's count on the Err arm is the signal.
         set_tab_color(&root, "test", &state_path);
@@ -416,8 +416,12 @@ fn test_set_tab_color_err_arm_via_setsid_subprocess() {
     // Harness branch: set up fixture, spawn worker in a new session.
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join("test.json"), r#"{"repo": "owner/repo"}"#).unwrap();
+    fs::create_dir_all(state_dir.join("test")).unwrap();
+    fs::write(
+        state_dir.join("test").join("state.json"),
+        r#"{"repo": "owner/repo"}"#,
+    )
+    .unwrap();
 
     let test_exe = std::env::current_exe().expect("current_exe");
     let mut cmd = Command::new(&test_exe);
@@ -506,12 +510,12 @@ fn test_format_block_output_empty_skill_name() {
 fn test_capture_session_id_log_file_path_is_directory() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state_path = state_dir.join("branch-x.json");
+    fs::create_dir_all(state_dir.join("branch-x")).unwrap();
+    let state_path = state_dir.join("branch-x").join("state.json");
     fs::write(&state_path, "{bad json").unwrap();
-    // Pre-create `branch-x.log` as a directory — OpenOptions::open
+    // Pre-create `log` as a directory — OpenOptions::open
     // cannot open a directory as a writable file.
-    fs::create_dir(state_dir.join("branch-x.log")).unwrap();
+    fs::create_dir(state_dir.join("branch-x").join("log")).unwrap();
 
     // Must not panic; log_diag swallows the open Err silently.
     capture_session_id(&json!({"session_id": "abc"}), &state_path);
@@ -538,8 +542,8 @@ fn test_capture_session_id_corrupt_state_outside_flow_states() {
 fn test_check_continue_block_writes_log_file() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state_path = state_dir.join("test-branch.json");
+    fs::create_dir_all(state_dir.join("test-branch")).unwrap();
+    let state_path = state_dir.join("test-branch").join("state.json");
     let initial = json!({
         "_continue_pending": "commit",
         "_continue_context": "Next step"
@@ -549,7 +553,7 @@ fn test_check_continue_block_writes_log_file() {
     let result = check_continue(&json!({}), &state_path);
     assert!(result.should_block);
 
-    let log_path = state_dir.join("test-branch.log");
+    let log_path = state_dir.join("test-branch").join("log");
     assert!(
         log_path.exists(),
         "log file must be written after blocking decision"
@@ -563,8 +567,8 @@ fn test_check_continue_block_writes_log_file() {
 fn test_check_continue_session_mismatch_writes_log_file() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state_path = state_dir.join("test-branch.json");
+    fs::create_dir_all(state_dir.join("test-branch")).unwrap();
+    let state_path = state_dir.join("test-branch").join("state.json");
     let initial = json!({
         "_continue_pending": "commit",
         "_continue_context": "stale",
@@ -575,7 +579,7 @@ fn test_check_continue_session_mismatch_writes_log_file() {
     let result = check_continue(&json!({"session_id": "new-session"}), &state_path);
     assert!(!result.should_block);
 
-    let log_path = state_dir.join("test-branch.log");
+    let log_path = state_dir.join("test-branch").join("log");
     assert!(log_path.exists());
     let log_content = fs::read_to_string(&log_path).unwrap();
     assert!(log_content.contains("session mismatch"));
@@ -586,13 +590,13 @@ fn test_check_continue_session_mismatch_writes_log_file() {
 fn test_check_continue_no_pending_does_not_write_log_file() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state_path = state_dir.join("test-branch.json");
+    fs::create_dir_all(state_dir.join("test-branch")).unwrap();
+    let state_path = state_dir.join("test-branch").join("state.json");
     fs::write(&state_path, r#"{"branch": "test"}"#).unwrap();
 
     check_continue(&json!({}), &state_path);
 
-    let log_path = state_dir.join("test-branch.log");
+    let log_path = state_dir.join("test-branch").join("log");
     assert!(!log_path.exists());
 }
 
@@ -602,13 +606,13 @@ fn test_check_continue_no_pending_does_not_write_log_file() {
 fn test_capture_session_id_corrupt_state_logs_error() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state_path = state_dir.join("test-branch.json");
+    fs::create_dir_all(state_dir.join("test-branch")).unwrap();
+    let state_path = state_dir.join("test-branch").join("state.json");
     fs::write(&state_path, "{bad json").unwrap();
 
     capture_session_id(&json!({"session_id": "abc123"}), &state_path);
 
-    let log_path = state_dir.join("test-branch.log");
+    let log_path = state_dir.join("test-branch").join("log");
     assert!(log_path.exists(), "corrupt-state errors must be logged");
     let log_content = fs::read_to_string(&log_path).unwrap();
     assert!(log_content.contains("capture_session_id error"));
@@ -1084,14 +1088,14 @@ fn run_subprocess_with_pending_blocks_and_writes_stdout() {
         .unwrap();
 
     let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    fs::create_dir_all(state_dir.join("main")).unwrap();
     let state = json!({
         "branch": "main",
         "_continue_pending": "commit",
         "_continue_context": "Next step"
     });
     fs::write(
-        state_dir.join("main.json"),
+        state_dir.join("main").join("state.json"),
         serde_json::to_string_pretty(&state).unwrap(),
     )
     .unwrap();
@@ -1216,7 +1220,7 @@ fn run_subprocess_qa_pending_fallback_blocks() {
         .unwrap();
 
     let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    fs::create_dir_all(state_dir.join("main")).unwrap();
     // State that allows check_first_stop to fall through (already
     // instructed, no pending) and check_continue to also fall through
     // (no pending).
@@ -1225,7 +1229,7 @@ fn run_subprocess_qa_pending_fallback_blocks() {
         "_stop_instructed": true,
     });
     fs::write(
-        state_dir.join("main.json"),
+        state_dir.join("main").join("state.json"),
         serde_json::to_string_pretty(&state).unwrap(),
     )
     .unwrap();

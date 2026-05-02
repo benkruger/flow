@@ -24,7 +24,7 @@ from any phase, no prerequisites.
 
 This flow is one of potentially many running simultaneously — on this
 machine (multiple worktrees) and across machines (multiple engineers).
-Your state file (`.flow-states/<branch>.json`) is yours alone. Never
+Your state file (`.flow-states/<branch>/state.json`) is yours alone. Never
 read or write another branch's state. All local artifacts (logs, plan
 files, temp files) are scoped by branch name. GitHub state (PRs, issues,
 labels) is shared across all engineers — operations that create or modify
@@ -34,7 +34,7 @@ shared state must be idempotent.
 
 1. If `--auto` was passed → mode is **auto**
 2. If `--manual` was passed → mode is **manual**
-3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>.json`. Use `skills.flow-abort` value.
+3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>/state.json`. Use `skills.flow-abort` value.
 4. If the state file has no `skills` key → use built-in default: **auto**
 
 ## Entry Check
@@ -46,7 +46,7 @@ Run this entry check as your very first action.
    whose path matches your current working directory — the
    `branch refs/heads/<name>` line in that entry is the current branch
    (strip the `refs/heads/` prefix).
-2. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
+2. Use the Read tool to read `<project_root>/.flow-states/<branch>/state.json`.
    - If the file exists: extract `feature`, `branch`, `worktree`,
      `pr_number`, and `pr_url`. Print the feature name, branch, PR URL,
      and current phase.
@@ -102,7 +102,7 @@ label from any issues referenced in the prompt. Best-effort — continue to
 cleanup even if removal fails. Skip this step if no state file exists.
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-states/<branch>.json --remove
+${CLAUDE_PLUGIN_ROOT}/bin/flow label-issues --state-file <project_root>/.flow-states/<branch>/state.json --remove
 ```
 
 ### Steps 3–8 — Run cleanup script
@@ -115,7 +115,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow cleanup <project_root> --branch <branch> --worktr
 
 If `pr_number` is unknown, omit `--pr`. The cleanup script deletes local branches and attempts remote branch deletion when `--pr` is provided.
 
-The script outputs JSON with a `steps` dict showing what happened to each resource (pr\_close, worktree\_tmp, worktree, remote\_branch, local\_branch, state\_file, plan\_file, dag\_file, log\_file, frozen\_phases, ci\_sentinel, timings\_file, closed\_issues\_file, issues\_file, adversarial\_test). Each step reports "closed"/"removed"/"deleted", "skipped", or "failed: reason". The `adversarial_test` step matches `.flow-states/<branch>-adversarial_test.*` so the Phase 4 adversarial agent's temp file is removed regardless of the runtime-chosen extension.
+The script outputs JSON with a `steps` dict showing what happened to each resource (pr\_close, worktree\_tmp, worktree, remote\_branch, local\_branch, state\_file, plan\_file, dag\_file, log\_file, frozen\_phases, ci\_sentinel, timings\_file, closed\_issues\_file, issues\_file, adversarial\_test). Each step reports "closed"/"removed"/"deleted", "skipped", or "failed: reason". The `adversarial_test` step matches `.flow-states/<branch>/adversarial_test.*` so the Phase 4 adversarial agent's temp file is removed regardless of the runtime-chosen extension.
 
 ### Done
 

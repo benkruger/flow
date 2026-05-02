@@ -81,7 +81,7 @@ brittle to future additions.
 ## Fail Closed When State Is Unreliable
 
 When a gate reads state from a file (e.g., `current_phase` from
-`.flow-states/<branch>.json`), distinguish three input states:
+`.flow-states/<branch>/state.json`), distinguish three input states:
 
 1. **No file / empty content** → pass. The command is running
    outside an active flow. This is legitimate usage.

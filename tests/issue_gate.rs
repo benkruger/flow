@@ -38,19 +38,19 @@ fn init_git(dir: &Path, branch: &str) {
 }
 
 fn write_state(dir: &Path, branch: &str, state: &Value) {
-    let state_dir = flow_states_dir(dir);
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = flow_states_dir(dir).join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
-        state_dir.join(format!("{}.json", branch)),
+        branch_dir.join("state.json"),
         serde_json::to_string_pretty(state).unwrap(),
     )
     .unwrap();
 }
 
 fn write_raw_state(dir: &Path, branch: &str, bytes: &[u8]) {
-    let state_dir = flow_states_dir(dir);
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join(format!("{}.json", branch)), bytes).unwrap();
+    let branch_dir = flow_states_dir(dir).join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), bytes).unwrap();
 }
 
 fn run_issue(dir: &Path, args: &[&str]) -> (i32, String) {

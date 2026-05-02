@@ -77,7 +77,7 @@ best-effort call:
   local branch deletion, and deletion of the state file, plan file,
   DAG file, log file, frozen-phases file, CI sentinel, timings
   file, closed-issues file, issues file, and adversarial test file
-  (glob-matched as `.flow-states/<branch>-adversarial_test.*`),
+  (glob-matched as `.flow-states/<branch>/adversarial_test.*`),
   followed by `git pull origin main`
 
 Each cleanup step is best-effort — if one fails, the rest still run.

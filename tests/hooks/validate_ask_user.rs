@@ -9,9 +9,9 @@ use flow_rs::hooks::validate_ask_user::{set_blocked, validate};
 use serde_json::{json, Value};
 
 fn write_state(dir: &Path, branch: &str, state: &Value) -> std::path::PathBuf {
-    let state_dir = dir.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let path = state_dir.join(format!("{}.json", branch));
+    let branch_dir = dir.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    let path = branch_dir.join("state.json");
     fs::write(&path, serde_json::to_string_pretty(state).unwrap()).unwrap();
     path
 }

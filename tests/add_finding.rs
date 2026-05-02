@@ -20,9 +20,9 @@ use flow_rs::add_finding::{
 use serde_json::{json, Value};
 
 fn write_state(repo: &Path, branch: &str, state: &Value) -> std::path::PathBuf {
-    let state_dir = repo.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let path = state_dir.join(format!("{}.json", branch));
+    let branch_dir = repo.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    let path = branch_dir.join("state.json");
     fs::write(&path, serde_json::to_string_pretty(state).unwrap()).unwrap();
     path
 }
@@ -368,9 +368,9 @@ fn add_finding_no_branch_no_git_returns_branch_resolution_error() {
 fn add_finding_array_root_state_returns_ok_zero() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    let state_dir = repo.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join("test-feature.json"), "[1, 2, 3]").unwrap();
+    let branch_dir = repo.join(".flow-states").join("test-feature");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), "[1, 2, 3]").unwrap();
 
     let output = run_add_finding(
         &repo,
@@ -411,9 +411,9 @@ fn make_state_lib(branch: &str) -> Value {
 }
 
 fn write_state_lib(dir: &Path, branch: &str, state: &Value) -> std::path::PathBuf {
-    let state_dir = dir.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let path = state_dir.join(format!("{}.json", branch));
+    let branch_dir = dir.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    let path = branch_dir.join("state.json");
     fs::write(&path, serde_json::to_string_pretty(state).unwrap()).unwrap();
     path
 }
@@ -468,9 +468,9 @@ fn add_finding_happy_path_lib() {
 fn add_finding_creates_array_if_missing_lib() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let path = state_dir.join("test-feature.json");
+    let branch_dir = root.join(".flow-states").join("test-feature");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let path = branch_dir.join("state.json");
     // State file with no `findings` key — exercises the closure's
     // auto-create branch.
     fs::write(&path, r#"{"current_phase": "flow-code-review"}"#).unwrap();
@@ -636,9 +636,9 @@ fn embedded_nul_phase_rejected_for_code_review_lib() {
 fn add_finding_array_root_state_noop_lib() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let path = state_dir.join("test-feature.json");
+    let branch_dir = root.join(".flow-states").join("test-feature");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let path = branch_dir.join("state.json");
     fs::write(&path, "[1, 2, 3]").unwrap();
 
     let args = Args {
@@ -701,10 +701,10 @@ fn add_finding_run_impl_main_no_state_returns_no_state_tuple() {
 fn add_finding_run_impl_main_success_returns_finding_count_tuple() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = root.join(".flow-states").join("present-branch");
+    fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
-        state_dir.join("present-branch.json"),
+        branch_dir.join("state.json"),
         r#"{"current_phase":"flow-learn","findings":[]}"#,
     )
     .unwrap();
@@ -719,10 +719,11 @@ fn add_finding_run_impl_main_success_returns_finding_count_tuple() {
 fn add_finding_run_impl_main_success_with_issue_url_writes_field() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = root.join(".flow-states").join("with-url");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let state_path = branch_dir.join("state.json");
     fs::write(
-        state_dir.join("with-url.json"),
+        &state_path,
         r#"{"current_phase":"flow-learn","findings":[]}"#,
     )
     .unwrap();
@@ -738,9 +739,7 @@ fn add_finding_run_impl_main_success_with_issue_url_writes_field() {
     let (value, code) = run_impl_main(args, &root, &root);
     assert_eq!(value["status"], "ok");
     assert_eq!(code, 0);
-    let on_disk: Value =
-        serde_json::from_str(&fs::read_to_string(state_dir.join("with-url.json")).unwrap())
-            .unwrap();
+    let on_disk: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(
         on_disk["findings"][0]["issue_url"],
         "https://github.com/test/test/issues/42"
@@ -751,10 +750,11 @@ fn add_finding_run_impl_main_success_with_issue_url_writes_field() {
 fn add_finding_run_impl_main_success_with_path_writes_field() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = root.join(".flow-states").join("with-path");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let state_path = branch_dir.join("state.json");
     fs::write(
-        state_dir.join("with-path.json"),
+        &state_path,
         r#"{"current_phase":"flow-learn","findings":[]}"#,
     )
     .unwrap();
@@ -770,9 +770,7 @@ fn add_finding_run_impl_main_success_with_path_writes_field() {
     let (value, code) = run_impl_main(args, &root, &root);
     assert_eq!(value["status"], "ok");
     assert_eq!(code, 0);
-    let on_disk: Value =
-        serde_json::from_str(&fs::read_to_string(state_dir.join("with-path.json")).unwrap())
-            .unwrap();
+    let on_disk: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(on_disk["findings"][0]["path"], ".claude/rules/x.md");
 }
 
@@ -780,10 +778,11 @@ fn add_finding_run_impl_main_success_with_path_writes_field() {
 fn add_finding_run_impl_main_unknown_phase_falls_back_to_phase_string() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = root.join(".flow-states").join("custom-phase");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let state_path = branch_dir.join("state.json");
     fs::write(
-        state_dir.join("custom-phase.json"),
+        &state_path,
         r#"{"current_phase":"flow-learn","findings":[]}"#,
     )
     .unwrap();
@@ -791,9 +790,7 @@ fn add_finding_run_impl_main_unknown_phase_falls_back_to_phase_string() {
     let (value, code) = run_impl_main(args, &root, &root);
     assert_eq!(value["status"], "ok");
     assert_eq!(code, 0);
-    let on_disk: Value =
-        serde_json::from_str(&fs::read_to_string(state_dir.join("custom-phase.json")).unwrap())
-            .unwrap();
+    let on_disk: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(
         on_disk["findings"][0]["phase_name"], "custom-unknown-phase",
         "phase_name should fall back to the raw phase string"
@@ -804,10 +801,10 @@ fn add_finding_run_impl_main_unknown_phase_falls_back_to_phase_string() {
 fn add_finding_run_impl_main_no_findings_field_creates_array() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = root.join(".flow-states").join("no-findings");
+    fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
-        state_dir.join("no-findings.json"),
+        branch_dir.join("state.json"),
         r#"{"current_phase":"flow-learn"}"#,
     )
     .unwrap();
@@ -822,10 +819,10 @@ fn add_finding_run_impl_main_no_findings_field_creates_array() {
 fn add_finding_run_impl_main_findings_wrong_type_resets_to_array() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = root.join(".flow-states").join("wrong-type");
+    fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
-        state_dir.join("wrong-type.json"),
+        branch_dir.join("state.json"),
         r#"{"current_phase":"flow-learn","findings":"not-an-array"}"#,
     )
     .unwrap();
@@ -854,10 +851,10 @@ fn add_finding_run_impl_main_cwd_drift_returns_error() {
     run_git(&["config", "commit.gpgsign", "false"]);
     run_git(&["commit", "--allow-empty", "-m", "init"]);
 
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = root.join(".flow-states").join("drift-feature");
+    fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
-        state_dir.join("drift-feature.json"),
+        branch_dir.join("state.json"),
         r#"{"current_phase":"flow-learn","findings":[],"relative_cwd":"api"}"#,
     )
     .unwrap();
@@ -881,9 +878,11 @@ fn add_finding_run_impl_main_cwd_drift_returns_error() {
 fn add_finding_run_impl_main_mutate_state_failure_returns_error() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let state_dir = root.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::create_dir(state_dir.join("bad-state.json")).unwrap();
+    let branch_dir = root.join(".flow-states").join("bad-state");
+    fs::create_dir_all(&branch_dir).unwrap();
+    // Make state.json a directory so mutate_state fails when it tries
+    // to read the file.
+    fs::create_dir(branch_dir.join("state.json")).unwrap();
     let args = make_args("fixed", "flow-learn", Some("bad-state"));
     let (value, code) = run_impl_main(args, &root, &root);
     assert_eq!(value["status"], "error");

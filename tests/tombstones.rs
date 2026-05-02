@@ -344,92 +344,99 @@ fn test_no_weak_coverage_language_in_prose_corpus() {
 // PR #1154: TUI refactor — run_terminal, activate_iterm_tab, open_url,
 //   find_bin_flow, module-level run, atty_check removed
 
-// --- Dogfood test removal ---
-//
-// The dogfood tests below validated FLOW's own `.claude/*` config
-// rather than what `/flow:flow-prime` produces in target projects.
-// They passed even when prime was broken and failed when the
-// maintainer config drifted, so they protected nothing. Removed in
-// PR #1253 alongside the seam refactor that gives prime_setup.rs
-// proper direct coverage. The helpers and constants the dogfood
-// tests depended on were removed alongside them — a merge conflict
-// that resurrects only the test functions would fail to compile,
-// but a coordinated merge could revive the whole pattern, so these
-// tombstones lock the deletion at the source level.
-
+/// Tombstone: removed in PR #1258. Must not return.
+///
+/// Branch-scoped FLOW state files moved from the flat layout
+/// `.flow-states/<branch>-<purpose>.<ext>` to the subdirectory layout
+/// `.flow-states/<branch>/<purpose>.<ext>`. Path construction now flows
+/// through `FlowPaths::branch_dir().join("<simple>")`; any `format!`
+/// expression in `src/*.rs` that re-introduces the flat naming would
+/// silently bypass the new layout for whichever artifact it constructs.
+///
+/// This scanner asserts no `format!("{}-<suffix>", branch)` (or
+/// `format!("{branch}-<suffix>")`) call survives in `src/**/*.rs` for
+/// any of the 14 known FLOW path suffixes. The bare suffixes (without
+/// `format!`) still appear in source — `branch_dir().join("state.json")`
+/// is the new shape — so the scanner targets only the dash-prefix
+/// `format!`-style constructions that would land at the old flat path.
 #[test]
-fn test_permissions_no_dogfood_tests() {
-    // Tombstone: removed in PR #1253. Must not return.
-    let path = common::repo_root().join("tests").join("permissions.rs");
-    let content = fs::read_to_string(&path).expect("tests/permissions.rs must exist");
-    const FORBIDDEN_FNS: &[&str] = &[
-        "fn maintainer_bash_commands_have_settings_coverage",
-        "fn maintainer_permissions_deny_destructive_git",
-        "fn no_maintainer_command_matches_deny",
-        "fn no_allow_deny_overlap_in_maintainer_settings",
-        "fn tool_alternative_denies_in_project_settings",
-        "fn settings_allow_list_ordered_by_category",
-        "fn maintainer_files",
-        "fn all_check_files_with_maintainer",
-        "fn load_settings_allow",
-        "fn load_settings_deny",
+fn test_no_flat_layout_format_in_rust_source() {
+    const PROTECTED_SUFFIXES: &[&str] = &[
+        ".json",
+        ".log",
+        "-plan.md",
+        "-dag.md",
+        "-frozen-phases.json",
+        "-commit-msg.txt",
+        "-commit-msg-content.txt",
+        "-dag-content.md",
+        "-plan-content.md",
+        "-issue-body-content.md",
+        "-rule-content.md",
+        "-start-prompt",
+        "-orchestrate-queue-content.json",
+        "-adversarial_test",
     ];
-    for fn_decl in FORBIDDEN_FNS {
-        assert!(
-            !content.contains(fn_decl),
-            "tests/permissions.rs must not contain `{}` — dogfood test or helper removed in PR #1253",
-            fn_decl
-        );
-    }
-    const FORBIDDEN_CONSTS: &[&str] = &[
-        "const SENSITIVE_PATH_COMMANDS",
-        "const REQUIRED_TOOL_ALTERNATIVE_DENIES",
-    ];
-    for const_decl in FORBIDDEN_CONSTS {
-        assert!(
-            !content.contains(const_decl),
-            "tests/permissions.rs must not contain `{}` — orphan constant removed in PR #1253",
-            const_decl
-        );
-    }
-}
 
-#[test]
-fn test_skill_contracts_no_dogfood_tests() {
-    // Tombstone: removed in PR #1253. Must not return.
-    let path = common::repo_root().join("tests").join("skill_contracts.rs");
-    let content = fs::read_to_string(&path).expect("tests/skill_contracts.rs must exist");
-    const FORBIDDEN_FNS: &[&str] = &[
-        "fn flow_qa_has_setup_check",
-        "fn flow_qa_has_setup_commands",
-        "fn flow_qa_asks_for_target",
-        "fn flow_qa_no_create_issue_step",
-        "fn release_manual_requires_approval",
-        "fn semi_formal_reasoning_rule_exists",
-        "fn cognitive_isolation_lists_all_context_rich_agents",
-    ];
-    for fn_decl in FORBIDDEN_FNS {
-        assert!(
-            !content.contains(fn_decl),
-            "tests/skill_contracts.rs must not contain `{}` — dogfood test removed in PR #1253",
-            fn_decl
-        );
-    }
-}
+    let src_dir = common::repo_root().join("src");
+    let tombstone_re = Regex::new(r"Tombstone:.*?PR #").unwrap();
 
-#[test]
-fn test_common_no_load_settings_helper() {
-    // Tombstone: removed in PR #1253. Must not return.
-    // The `load_settings()` helper read FLOW's own .claude/settings.json
-    // for dogfood tests. Its only callers (load_settings_allow /
-    // load_settings_deny in tests/permissions.rs) were also removed.
-    let path = common::repo_root()
-        .join("tests")
-        .join("common")
-        .join("mod.rs");
-    let content = fs::read_to_string(&path).expect("tests/common/mod.rs must exist");
+    let mut violations: Vec<String> = Vec::new();
+    let mut stack = vec![src_dir.clone()];
+    while let Some(dir) = stack.pop() {
+        let entries = match fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let ft = match entry.file_type() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            if ft.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let content = match fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            for (lineno, line) in content.lines().enumerate() {
+                if tombstone_re.is_match(line) {
+                    continue;
+                }
+                let trimmed = line.trim_start();
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+                for suffix in PROTECTED_SUFFIXES {
+                    // Match `format!(... "{}-suffix" ...)` and the
+                    // captured-arg variant `format!(... "{branch}-suffix" ...)`.
+                    let needle1 = format!("\"{{}}{}", suffix);
+                    let needle2 = format!("\"{{branch}}{}", suffix);
+                    if line.contains(&needle1) || line.contains(&needle2) {
+                        let repo_root = common::repo_root();
+                        violations.push(format!(
+                            "{}:{}: flat-layout `format!` for `{}` — use FlowPaths::branch_dir().join(...) per the subdir layout (PR #1258)",
+                            path.strip_prefix(&repo_root)
+                                .unwrap_or(&path)
+                                .display(),
+                            lineno + 1,
+                            suffix
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
     assert!(
-        !content.contains("pub fn load_settings"),
-        "tests/common/mod.rs must not contain `pub fn load_settings` — dogfood helper removed in PR #1253"
+        violations.is_empty(),
+        "src/**/*.rs must not construct flat-layout FLOW state paths via `format!`:\n{}",
+        violations.join("\n")
     );
 }

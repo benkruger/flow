@@ -137,9 +137,9 @@ fn test_detect_branch_worktree_loop_exits_without_git_marker_and_git_spawn_fails
 #[test]
 fn test_is_flow_active_with_state_file() {
     let dir = tempfile::tempdir().unwrap();
-    let state_dir = flow_states_dir(dir.path());
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join("my-feature.json"), "{}").unwrap();
+    let branch_dir = flow_states_dir(dir.path()).join("my-feature");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), "{}").unwrap();
 
     assert!(hooks::is_flow_active("my-feature", dir.path()));
 }

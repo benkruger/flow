@@ -23,7 +23,7 @@ Exempt (historical by nature):
 
 - Commit messages
 - GitHub issue bodies
-- Session logs (`.flow-states/<branch>.log`)
+- Session logs (`.flow-states/<branch>/log`)
 - State-file `findings[]` `reason` fields that record per-PR
   triage rationale and are not re-read as future guidance
 - Tombstone test comments (follow the `Tombstone: ... PR #<N>`

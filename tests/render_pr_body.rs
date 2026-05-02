@@ -30,8 +30,8 @@ fn make_test_state() -> Value {
         "files": {
             "plan": null,
             "dag": null,
-            "log": ".flow-states/test-feature.log",
-            "state": ".flow-states/test-feature.json"
+            "log": ".flow-states/test-feature/log",
+            "state": ".flow-states/test-feature/state.json"
         },
         "session_tty": null,
         "session_id": null,
@@ -72,9 +72,9 @@ fn minimal_complete_state(feature: &str) -> Value {
 }
 
 fn write_state(repo: &Path, name: &str, state: &Value) -> std::path::PathBuf {
-    let state_dir = repo.join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let path = state_dir.join(format!("{}.json", name));
+    let branch_dir = repo.join(".flow-states").join(name);
+    fs::create_dir_all(&branch_dir).unwrap();
+    let path = branch_dir.join("state.json");
     fs::write(&path, serde_json::to_string_pretty(state).unwrap()).unwrap();
     path
 }
@@ -298,9 +298,9 @@ fn full_state() {
     fs::write(&plan_file, "Plan content").unwrap();
     let dag_file = dir.path().join("dag.md");
     fs::write(&dag_file, "DAG content").unwrap();
-    let log_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&log_dir).unwrap();
-    let log_file = log_dir.join("test-feature.log");
+    let branch_dir = dir.path().join(".flow-states").join("test-feature");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let log_file = branch_dir.join("log");
     fs::write(&log_file, "2026-01-01 [Phase 1] Step 1 — done").unwrap();
 
     state["plan_file"] = json!(plan_file.to_string_lossy().to_string());
@@ -346,11 +346,11 @@ fn with_issues() {
 fn plan_from_files_block() {
     let mut state = make_test_state();
     let dir = tempfile::tempdir().unwrap();
-    let plan_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&plan_dir).unwrap();
-    let plan_file = plan_dir.join("test-feature-plan.md");
+    let branch_dir = dir.path().join(".flow-states").join("test-feature");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let plan_file = branch_dir.join("plan.md");
     fs::write(&plan_file, "# Plan from files block").unwrap();
-    state["files"]["plan"] = json!(".flow-states/test-feature-plan.md");
+    state["files"]["plan"] = json!(".flow-states/test-feature/plan.md");
 
     let body = render_body(&state, dir.path()).unwrap();
 
@@ -362,11 +362,11 @@ fn plan_from_files_block() {
 fn dag_from_files_block() {
     let mut state = make_test_state();
     let dir = tempfile::tempdir().unwrap();
-    let dag_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&dag_dir).unwrap();
-    let dag_file = dag_dir.join("test-feature-dag.md");
+    let branch_dir = dir.path().join(".flow-states").join("test-feature");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let dag_file = branch_dir.join("dag.md");
     fs::write(&dag_file, "# DAG from files block").unwrap();
-    state["files"]["dag"] = json!(".flow-states/test-feature-dag.md");
+    state["files"]["dag"] = json!(".flow-states/test-feature/dag.md");
 
     let body = render_body(&state, dir.path()).unwrap();
 
@@ -377,17 +377,17 @@ fn dag_from_files_block() {
 #[test]
 fn artifacts_table_from_files_block() {
     let mut state = make_test_state();
-    state["files"]["plan"] = json!(".flow-states/test-feature-plan.md");
-    state["files"]["dag"] = json!(".flow-states/test-feature-dag.md");
+    state["files"]["plan"] = json!(".flow-states/test-feature/plan.md");
+    state["files"]["dag"] = json!(".flow-states/test-feature/dag.md");
 
     let dir = tempfile::tempdir().unwrap();
     let body = render_body(&state, dir.path()).unwrap();
 
     assert!(body.contains("| File | Path |"));
-    assert!(body.contains(".flow-states/test-feature-plan.md"));
-    assert!(body.contains(".flow-states/test-feature-dag.md"));
-    assert!(body.contains(".flow-states/test-feature.log"));
-    assert!(body.contains(".flow-states/test-feature.json"));
+    assert!(body.contains(".flow-states/test-feature/plan.md"));
+    assert!(body.contains(".flow-states/test-feature/dag.md"));
+    assert!(body.contains(".flow-states/test-feature/log"));
+    assert!(body.contains(".flow-states/test-feature/state.json"));
 }
 
 #[test]
@@ -501,9 +501,9 @@ fn section_order() {
     fs::write(&plan_file, "Plan").unwrap();
     let dag_file = dir.path().join("dag.md");
     fs::write(&dag_file, "DAG").unwrap();
-    let log_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&log_dir).unwrap();
-    fs::write(log_dir.join("test-feature.log"), "log entry").unwrap();
+    let branch_log_dir = dir.path().join(".flow-states").join("test-feature");
+    fs::create_dir_all(&branch_log_dir).unwrap();
+    fs::write(branch_log_dir.join("log"), "log entry").unwrap();
     state["plan_file"] = json!(plan_file.to_string_lossy().to_string());
     state["dag_file"] = json!(dag_file.to_string_lossy().to_string());
     state["transcript_path"] = json!("/path/to/session.jsonl");
@@ -598,7 +598,7 @@ fn what_section_no_double_period() {
 #[test]
 fn artifacts_files_block_empty_transcript_skipped() {
     let mut state = make_test_state();
-    state["files"]["plan"] = json!(".flow-states/test-feature-plan.md");
+    state["files"]["plan"] = json!(".flow-states/test-feature/plan.md");
     state["transcript_path"] = json!("");
 
     let dir = tempfile::tempdir().unwrap();

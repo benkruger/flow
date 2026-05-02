@@ -11,7 +11,7 @@ Review all pending changes as a diff before committing.
 
 This flow is one of potentially many running simultaneously — on this
 machine (multiple worktrees) and across machines (multiple engineers).
-Your state file (`.flow-states/<branch>.json`) is yours alone. Never
+Your state file (`.flow-states/<branch>/state.json`) is yours alone. Never
 read or write another branch's state. All local artifacts (logs, plan
 files, temp files) are scoped by branch name. GitHub state (PRs, issues,
 labels) is shared across all engineers — operations that create or modify
@@ -31,7 +31,7 @@ Keep the project root and branch in context for the rest of this skill.
 
 **Step 1.** Use the Glob tool: pattern `*.json`, path `<project_root>/.flow-states` — if any results, a FLOW phase is active (used for banner selection only).
 
-**Step 2.** If any `.flow-states/*.json` results exist, use the Read tool to read the state file for the current branch at `<project_root>/.flow-states/<branch>.json`.
+**Step 2.** If any `.flow-states/*.json` results exist, use the Read tool to read the state file for the current branch at `<project_root>/.flow-states/<branch>/state.json`.
 
 - Parse `commit_format`: `"title-only"` or `"full"`.
 - If no state file exists or the state file has no `commit_format` key → use `"full"`.
@@ -215,7 +215,7 @@ Display the full message under the heading **Commit Message**.
 Files are already staged from Round 3. No need to `git add -A` again.
 
 Use the Write tool to write the commit message content to
-`<project_root>/.flow-states/<branch>-commit-msg-content.txt` — a
+`<project_root>/.flow-states/<branch>/commit-msg-content.txt` — a
 branch-scoped temp path, not the final commit-msg file. This avoids
 Claude Code's Write-tool preflight tripping on a pre-existing final
 file from a prior commit retry (see
@@ -231,14 +231,14 @@ Route the content to the final commit-msg file via `bin/flow
 write-rule`:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-states/<branch>-commit-msg.txt --content-file <project_root>/.flow-states/<branch>-commit-msg-content.txt
+${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-states/<branch>/commit-msg.txt --content-file <project_root>/.flow-states/<branch>/commit-msg-content.txt
 ```
 
-Both files are branch-scoped under `.flow-states/` (alongside
-`<branch>.json`, `<branch>-plan.md`, etc.) so concurrent flows in
-different worktrees of the same repo never collide on a single shared
-file, and `flow-abort`/`flow-complete` cleanup deletes them
-deterministically with the rest of the branch-scoped state.
+Both files live inside the per-branch subdirectory
+`.flow-states/<branch>/` (alongside `state.json`, `plan.md`, etc.) so
+concurrent flows in different worktrees of the same repo never collide
+on a single shared file, and `flow-abort`/`flow-complete` cleanup
+removes the whole subdirectory in one `remove_dir_all` call.
 `finalize-commit` reads and deletes the final commit-msg file
 unchanged by this routing.
 

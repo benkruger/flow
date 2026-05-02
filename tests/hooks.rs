@@ -39,10 +39,10 @@ fn flow_rs() -> Command {
 /// resolution deterministic (same pattern as `tests/clear_blocked.rs`).
 fn setup_git_and_state(dir: &Path, branch: &str, state: &Value) {
     let _ = Command::new("git").args(["init"]).current_dir(dir).output();
-    let state_dir = flow_states_dir(dir);
-    fs::create_dir_all(&state_dir).unwrap();
+    let branch_dir = flow_states_dir(dir).join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
-        state_dir.join(format!("{}.json", branch)),
+        branch_dir.join("state.json"),
         serde_json::to_string_pretty(state).unwrap(),
     )
     .unwrap();
@@ -57,7 +57,7 @@ fn setup_git_and_state(dir: &Path, branch: &str, state: &Value) {
 /// risk that a branch-name typo in the path diverges from the
 /// `setup_git_and_state` call.
 fn read_state(dir: &Path, branch: &str) -> Value {
-    let path = flow_states_dir(dir).join(format!("{}.json", branch));
+    let path = flow_states_dir(dir).join(branch).join("state.json");
     serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
 }
 
@@ -922,10 +922,10 @@ fn setup_worktree_fixture(dir: &Path, branch: &str, with_state_file: bool) -> st
     fs::create_dir_all(&worktree).unwrap();
     fs::write(worktree.join(".git"), "gitdir: fake\n").unwrap();
     if with_state_file {
-        let state_dir = flow_states_dir(dir);
-        fs::create_dir_all(&state_dir).unwrap();
+        let branch_dir = flow_states_dir(dir).join(branch);
+        fs::create_dir_all(&branch_dir).unwrap();
         fs::write(
-            state_dir.join(format!("{}.json", branch)),
+            branch_dir.join("state.json"),
             serde_json::to_string(&json!({"current_phase": "flow-code"})).unwrap(),
         )
         .unwrap();

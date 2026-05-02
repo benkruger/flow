@@ -118,7 +118,7 @@ Replace `PREV` with the previous phase number and `PREV_NAME` with its name:
    whose path matches your current working directory — the
    `branch refs/heads/<name>` line in that entry is the current branch
    (strip the `refs/heads/` prefix).
-2. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
+2. Use the Read tool to read `<project_root>/.flow-states/<branch>/state.json`.
    - If the file does not exist: STOP. "BLOCKED: No FLOW feature in progress.
      Run /flow-start first."
 3. Check `phases.PREV.status` in the JSON.

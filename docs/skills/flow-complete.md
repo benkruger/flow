@@ -50,7 +50,7 @@ SOFT-GATE and dispatches via the Resume Check.
 
 ## Why State File Deletion Matters
 
-Deleting `.flow-states/<branch>.json` is the clean exit from the
+Deleting `.flow-states/<branch>/state.json` is the clean exit from the
 FLOW workflow. It removes the branch-scoped state that other FLOW
 commands (phase gates, status, TUI) rely on to detect an active flow.
 

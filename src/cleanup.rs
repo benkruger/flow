@@ -86,87 +86,21 @@ fn label_result(ok: bool, ok_label: &str, output: &str) -> String {
     }
 }
 
-fn try_delete_file(path: &Path) -> String {
-    if path.exists() {
-        match fs::remove_file(path) {
-            Ok(()) => "deleted".to_string(),
-            Err(e) => format!("failed: {}", e),
-        }
-    } else {
-        "skipped".to_string()
-    }
-}
-
-/// Remove every `{branch}-adversarial_test.*` file under `.flow-states/`.
-///
-/// The Phase 4 adversarial agent writes a single test file whose extension
-/// it chooses at runtime from the diff's language (`.rs`, `.py`, `.go`,
-/// `.swift`, `.ts`, `.rb`, etc.). Cleanup cannot know the extension ahead
-/// of time, so it matches every entry whose file name starts with the
-/// literal prefix `{branch}-adversarial_test.`.
-///
-/// The trailing dot in the prefix is load-bearing: without it, a file named
-/// `{branch}-adversarial_test_other.rs` would match. The dot anchors the
-/// match on the extension separator so only real adversarial test files
-/// are deleted. Other concurrent flows' files (e.g.
-/// `other-branch-adversarial_test.rs`) are prefixed with a different branch
-/// name and are untouched.
-///
-/// Directory entries that happen to match the prefix are skipped — only
-/// regular files and symlinks are candidates for deletion. `fs::remove_file`
-/// on a symlink removes the link itself, not its target.
-///
-/// The loop continues past individual deletion errors so a single failure
-/// (permission denied, directory entry, transient I/O error) does not
-/// leave the remaining matching files on disk. The function returns
-/// "skipped" if `.flow-states/` is missing or no regular-file entries
-/// matched, "deleted" if at least one regular file was successfully
-/// removed, or "failed: <reason>" when every matching regular file's
-/// deletion failed (reporting the first error encountered).
-fn try_delete_adversarial_test_files(flow_states: &Path, branch: &str) -> String {
-    let entries = match fs::read_dir(flow_states) {
-        Ok(iter) => iter,
-        Err(_) => return "skipped".to_string(),
-    };
-
-    let prefix = format!("{}-adversarial_test.", branch);
-    let mut any_matched = false;
-    let mut any_deleted = false;
-    let mut first_error = String::new();
-    for entry in entries.flatten() {
-        let file_name = entry.file_name();
-        let name = file_name.to_string_lossy();
-        if !name.starts_with(&prefix) {
-            continue;
-        }
-        // Skip directory entries whose name happens to match the prefix
-        // (e.g. a scratch folder created by an engineer or a future
-        // feature). `path().is_dir()` follows symlinks so symlinks to
-        // files are still eligible; bare symlinks (dangling) are also
-        // eligible because `fs::remove_file` unlinks the link itself.
-        let path = entry.path();
-        if path.is_dir() {
-            continue;
-        }
-        any_matched = true;
-        match fs::remove_file(&path) {
-            Ok(()) => {
-                any_deleted = true;
-            }
-            Err(e) => {
-                if first_error.is_empty() {
-                    first_error = format!("{}", e);
-                }
-            }
-        }
-    }
-
-    if any_deleted {
-        "deleted".to_string()
-    } else if any_matched {
-        format!("failed: {}", first_error)
-    } else {
-        "skipped".to_string()
+/// Recursively remove `<.flow-states>/<branch>/` and everything inside
+/// it. The branch directory holds every per-branch artifact (state
+/// file, log, plan, DAG, frozen phases, CI sentinel, timings,
+/// closed-issues record, issues summary, scratch rule content, commit
+/// message, start prompt, adversarial test files of any extension), so
+/// a single recursive remove replaces the previous per-suffix
+/// enumeration and the bespoke adversarial-test glob. Idempotent —
+/// `NotFound` is treated as success because cleanup may run twice
+/// (abort-then-complete in adjacent sessions, or a retry after a
+/// partial failure).
+fn try_remove_branch_dir(branch_dir: &Path) -> String {
+    match fs::remove_dir_all(branch_dir) {
+        Ok(()) => "deleted".to_string(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "skipped".to_string(),
+        Err(e) => format!("failed: {}", e),
     }
 }
 
@@ -240,27 +174,17 @@ pub fn cleanup(
     // External-input audit: `branch` reaches cleanup directly from
     // complete-finalize's `--branch` CLI arg per
     // `.claude/rules/external-input-validation.md`. Slash-containing
-    // or empty branches cannot address flat `.flow-states/` paths —
-    // use `try_new` and skip all path-dependent cleanup steps when
-    // the branch is invalid. `--pull` still runs because it does
-    // not depend on FlowPaths.
+    // or empty branches cannot address `.flow-states/<branch>/` —
+    // use `try_new` and skip the branch-dir removal when the branch
+    // is invalid. `--pull` still runs because it does not depend on
+    // FlowPaths.
     let paths = match FlowPaths::try_new(project_root, branch) {
         Some(p) => p,
         None => {
-            for key in [
-                "state_file",
-                "plan_file",
-                "dag_file",
-                "log_file",
-                "frozen_phases",
-                "ci_sentinel",
-                "timings_file",
-                "closed_issues_file",
-                "issues_file",
-                "adversarial_test",
-            ] {
-                steps.insert(key.to_string(), "skipped: invalid branch".to_string());
-            }
+            steps.insert(
+                "branch_dir".to_string(),
+                "skipped: invalid branch".to_string(),
+            );
             if pull {
                 let (ok, output) = run_cmd(&["git", "pull", "origin", "main"], project_root);
                 steps.insert("git_pull".to_string(), label_result(ok, "pulled", &output));
@@ -268,74 +192,37 @@ pub fn cleanup(
             return steps;
         }
     };
-    let flow_states = paths.flow_states_dir();
-    steps.insert(
-        "state_file".to_string(),
-        try_delete_file(&paths.state_file()),
-    );
 
-    // Delete plan file
-    steps.insert("plan_file".to_string(), try_delete_file(&paths.plan_file()));
-
-    // Delete DAG file
-    steps.insert("dag_file".to_string(), try_delete_file(&paths.dag_file()));
-
-    // Log cleanup progress before the log file is deleted.
-    // Only log if the log file already exists — append_log creates the file
-    // if missing, which would cause try_delete_file to return "deleted" instead
-    // of "skipped" for test fixtures that intentionally remove the log file.
-    // This entry is written mid-cleanup (before file deletions), so it cannot
-    // report a total step count — the JSON output has the full step results.
+    // Log cleanup progress before the branch directory (and therefore
+    // the log file inside it) is removed. Only log if the log file
+    // already exists — `append_log` creates the file if missing, which
+    // would otherwise cause `try_remove_branch_dir` to remove a freshly
+    // created file instead of a missing one and produce surprising
+    // results in test fixtures that intentionally omit the log. This
+    // entry is written mid-cleanup (before the dir removal), so it
+    // cannot report a total step count — the JSON output has the full
+    // step results.
     let log_path = paths.log_file();
     if log_path.exists() {
         let _ = append_log(
             project_root,
             branch,
-            "[Phase 6] cleanup — in progress (log file will be deleted next)",
+            "[Phase 6] cleanup — in progress (branch directory will be removed next)",
         );
     }
 
-    // Delete log file
-    steps.insert("log_file".to_string(), try_delete_file(&paths.log_file()));
-
-    // Delete frozen phases file
+    // Single recursive remove replaces the previous per-suffix delete
+    // enumeration and the bespoke adversarial-test glob. Every
+    // per-branch artifact (`state.json`, `log`, `plan.md`, `dag.md`,
+    // `phases.json`, `ci-passed`, `timings.md`, `closed-issues.json`,
+    // `issues.md`, `rule-content.md`, `commit-msg.txt`,
+    // `commit-msg-content.txt`, `start-prompt`, `adversarial_test.*`)
+    // lives under `branch_dir()`, so a single `remove_dir_all` is
+    // sufficient and naturally handles future per-branch additions
+    // without code changes.
     steps.insert(
-        "frozen_phases".to_string(),
-        try_delete_file(&paths.frozen_phases()),
-    );
-
-    // Delete CI sentinel
-    steps.insert(
-        "ci_sentinel".to_string(),
-        try_delete_file(&paths.ci_sentinel()),
-    );
-
-    // Delete timings file
-    steps.insert(
-        "timings_file".to_string(),
-        try_delete_file(&paths.timings_file()),
-    );
-
-    // Delete closed issues file
-    steps.insert(
-        "closed_issues_file".to_string(),
-        try_delete_file(&paths.closed_issues()),
-    );
-
-    // Delete issues file
-    steps.insert(
-        "issues_file".to_string(),
-        try_delete_file(&paths.issues_file()),
-    );
-
-    // Delete adversarial test file(s) produced by the Phase 4 adversarial
-    // agent. The agent chooses the extension at runtime from the diff's
-    // language, so cleanup globs by the branch-scoped prefix instead of a
-    // fixed filename. Covers both complete (pr_number=None) and abort
-    // (pr_number=Some) paths since they share this function.
-    steps.insert(
-        "adversarial_test".to_string(),
-        try_delete_adversarial_test_files(&flow_states, branch),
+        "branch_dir".to_string(),
+        try_remove_branch_dir(&paths.branch_dir()),
     );
 
     // Pull latest main (after worktree removal — ordering matters)
