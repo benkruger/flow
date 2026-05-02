@@ -82,6 +82,7 @@ fn all_subcommands_have_working_help() {
         "start-init",
         "start-workspace",
         "format-status",
+        "base-branch",
         "session-context",
         "label-issues",
         "format-issues-summary",
