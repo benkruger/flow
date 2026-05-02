@@ -10,7 +10,7 @@ use std::process::Command;
 
 use flow_rs::git::{
     current_branch, current_branch_in, default_branch_in, project_root, read_base_branch,
-    resolve_branch, resolve_branch_in,
+    resolve_branch, resolve_branch_in, BASE_BRANCH_MISSING_PREFIX,
 };
 
 /// Initialize a git repo in the given directory with an initial commit
@@ -289,10 +289,103 @@ fn read_base_branch_errs_when_field_missing() {
 }
 
 #[test]
+fn read_base_branch_field_missing_uses_marker_prefix() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state.json");
+    fs::write(&state, r#"{"branch": "main"}"#).unwrap();
+    let err = read_base_branch(&state).unwrap_err();
+    assert!(
+        err.starts_with(BASE_BRANCH_MISSING_PREFIX),
+        "expected err to start with marker prefix, got: {}",
+        err
+    );
+}
+
+#[test]
 fn read_base_branch_errs_when_field_wrong_type() {
     let dir = tempfile::tempdir().unwrap();
     let state = dir.path().join("state.json");
     fs::write(&state, r#"{"base_branch": 42}"#).unwrap();
     let result = read_base_branch(&state);
     assert!(result.is_err(), "expected Err, got {:?}", result);
+}
+
+#[test]
+fn read_base_branch_errs_when_value_empty_after_trim() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state.json");
+    fs::write(&state, r#"{"base_branch": "   "}"#).unwrap();
+    let result = read_base_branch(&state);
+    assert!(result.is_err(), "expected Err, got {:?}", result);
+}
+
+#[test]
+fn read_base_branch_errs_when_value_starts_with_dash() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state.json");
+    fs::write(&state, r#"{"base_branch": "-rf"}"#).unwrap();
+    let result = read_base_branch(&state);
+    assert!(result.is_err(), "expected Err, got {:?}", result);
+}
+
+#[test]
+fn read_base_branch_errs_when_value_contains_nul() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state.json");
+    fs::write(&state, "{\"base_branch\": \"main\\u0000evil\"}").unwrap();
+    let result = read_base_branch(&state);
+    assert!(result.is_err(), "expected Err, got {:?}", result);
+}
+
+#[test]
+fn read_base_branch_errs_when_value_contains_newline() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state.json");
+    fs::write(&state, "{\"base_branch\": \"main\\nevil\"}").unwrap();
+    let result = read_base_branch(&state);
+    assert!(result.is_err(), "expected Err, got {:?}", result);
+}
+
+#[test]
+fn read_base_branch_errs_when_value_contains_carriage_return() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state.json");
+    fs::write(&state, "{\"base_branch\": \"main\\revil\"}").unwrap();
+    let result = read_base_branch(&state);
+    assert!(result.is_err(), "expected Err, got {:?}", result);
+}
+
+#[test]
+fn read_base_branch_errs_when_value_contains_tab() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state.json");
+    fs::write(&state, "{\"base_branch\": \"main\\tevil\"}").unwrap();
+    let result = read_base_branch(&state);
+    assert!(result.is_err(), "expected Err, got {:?}", result);
+}
+
+#[test]
+fn read_base_branch_errs_when_value_is_dot() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state.json");
+    fs::write(&state, r#"{"base_branch": "."}"#).unwrap();
+    let result = read_base_branch(&state);
+    assert!(result.is_err(), "expected Err, got {:?}", result);
+}
+
+#[test]
+fn read_base_branch_errs_when_value_is_dotdot() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state.json");
+    fs::write(&state, r#"{"base_branch": ".."}"#).unwrap();
+    let result = read_base_branch(&state);
+    assert!(result.is_err(), "expected Err, got {:?}", result);
+}
+
+#[test]
+fn read_base_branch_trims_whitespace() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state.json");
+    fs::write(&state, r#"{"base_branch": "  staging  "}"#).unwrap();
+    assert_eq!(read_base_branch(&state), Ok("staging".to_string()));
 }

@@ -2830,6 +2830,25 @@ fn flow_complete_success_message_interpolates_base_branch() {
         "flow-complete must not hardcode `merged into main.` — \
          interpolate the integration branch via `<base_branch>`"
     );
+
+    // Bound the assertion scope to Step 5 so a stray
+    // `<base_branch>` mention elsewhere cannot satisfy the check —
+    // see `.claude/rules/testing-gotchas.md` Subsection-Local
+    // Assertions in Contract Tests.
+    let tail_at_heading = c
+        .split_once("### Step 5 — Merge PR")
+        .map(|(_, tail)| tail)
+        .expect("Step 5 heading must exist in flow-complete SKILL.md");
+    let step5 = tail_at_heading
+        .split_once("\n### ")
+        .map(|(section, _)| section)
+        .unwrap_or(tail_at_heading);
+    assert!(
+        step5.contains("merged into <base_branch>."),
+        "Step 5 must contain the literal `merged into <base_branch>.` \
+         success message so a future edit cannot drop the placeholder \
+         while the negative assertion above still passes"
+    );
 }
 
 /// flow-start prose generalizes "Main is broken" to a base-branch-

@@ -27,6 +27,7 @@
 //! fixture's remote.
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -283,4 +284,107 @@ fn staging_lifecycle_cleanup_pull_targets_staging() {
     // Lock-in.
     assert_no_origin_main(&stdout, "cleanup stdout");
     assert_no_origin_main(&stderr, "cleanup stderr");
+}
+
+/// Drive `bin/flow complete-preflight` on the staging-trunked fixture
+/// with `gh pr view` stubbed to return `OPEN`. The OPEN arm dispatches
+/// to `merge_main(base_branch)` which runs `git fetch origin
+/// <base_branch>` and `git merge-base --is-ancestor origin/<base_branch>
+/// HEAD`. Both must operate on `origin/staging` — never `origin/main`
+/// — and the JSON response must report `"merge": "clean"` because the
+/// fixture's HEAD is already at origin/staging. Locks in the
+/// complete-preflight read-side after the issue #1275 architecture
+/// landed; complements the per-component
+/// `tests/complete_preflight.rs::complete_preflight_merge_base_uses_base_branch_from_state`
+/// with a real-git lifecycle assertion.
+#[test]
+fn staging_lifecycle_complete_preflight_targets_staging() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = create_staging_trunked_repo(&parent);
+    write_staging_state(&repo);
+
+    // Stub gh on PATH so `gh pr view` returns OPEN. Real git runs;
+    // git fetch / merge-base operate against the staging-keyed bare
+    // remote created above.
+    let stubs = parent.join("stubs");
+    fs::create_dir_all(&stubs).unwrap();
+    let gh_script = "#!/bin/sh\n\
+        case \"$1 $2\" in\n\
+            \"pr view\")\n\
+                printf '%s' 'OPEN'\n\
+                exit 0\n\
+                ;;\n\
+            *)\n\
+                exit 0\n\
+                ;;\n\
+        esac\n";
+    let gh_path = stubs.join("gh");
+    fs::write(&gh_path, gh_script).unwrap();
+    fs::set_permissions(&gh_path, fs::Permissions::from_mode(0o755)).unwrap();
+
+    // Stub bin/flow phase-transition so the preflight's internal
+    // recursion call returns success without spawning the test
+    // binary again under different env conditions.
+    let flow_stub_dir = parent.join("bin-flow-stub");
+    fs::create_dir_all(&flow_stub_dir).unwrap();
+    let flow_stub = flow_stub_dir.join("flow");
+    let flow_script = "#!/bin/sh\n\
+        case \"$1\" in\n\
+            phase-transition)\n\
+                printf '%s' '{\"status\":\"ok\"}'\n\
+                exit 0\n\
+                ;;\n\
+            *)\n\
+                exit 0\n\
+                ;;\n\
+        esac\n";
+    fs::write(&flow_stub, flow_script).unwrap();
+    fs::set_permissions(&flow_stub, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{}", stubs.display(), path);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["complete-preflight", "--branch", BRANCH, "--auto"])
+        .current_dir(&repo)
+        .env("PATH", new_path)
+        .env("FLOW_BIN_PATH", &flow_stub)
+        .env("HOME", &repo)
+        .env_remove("FLOW_CI_RUNNING")
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .output()
+        .expect("spawn flow-rs");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    let last_json = stdout
+        .lines()
+        .rfind(|l| l.trim_start().starts_with('{'))
+        .unwrap_or_else(|| panic!("no JSON line in stdout; stdout={}", stdout));
+    let value: Value = serde_json::from_str(last_json)
+        .unwrap_or_else(|e| panic!("JSON parse failed: {} (line: {:?})", e, last_json));
+
+    // Fixture's HEAD already points at origin/staging — git merge-base
+    // succeeds, so merge_main returns "clean". A "merged" result would
+    // mean origin had advanced (it can't on this fixture); a
+    // "conflict"/"error" would mean fetch/merge-base targeted the
+    // wrong ref.
+    assert_eq!(
+        value["status"], "ok",
+        "complete-preflight on staging-trunked fixture must report ok; \
+         got: {}",
+        value
+    );
+    assert_eq!(
+        value["merge"], "clean",
+        "complete-preflight must report merge=clean (HEAD == \
+         origin/staging on the fixture); got: {}",
+        value
+    );
+
+    // Lock-in: nothing in stdout/stderr references origin/main.
+    assert_no_origin_main(&stdout, "complete-preflight stdout");
+    assert_no_origin_main(&stderr, "complete-preflight stderr");
 }

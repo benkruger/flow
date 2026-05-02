@@ -257,3 +257,94 @@ fn base_branch_subcommand_errs_when_branch_flag_is_empty() {
         stderr
     );
 }
+
+/// Path-traversal segment `--branch .` must produce a structured error
+/// without panicking. `FlowPaths::try_new` rejects this input per
+/// `.claude/rules/branch-path-safety.md`.
+#[test]
+fn base_branch_subcommand_errs_when_branch_flag_is_dot() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().canonicalize().unwrap();
+    init_git_repo(&repo, "feature");
+
+    let output = run_base_branch(&repo, Some("."));
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "expected non-zero exit on '--branch .', got {:?}",
+        output.status.code()
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked at"),
+        "'--branch .' must not panic; stderr: {}",
+        stderr
+    );
+}
+
+/// Path-traversal segment `--branch ..` must produce a structured error
+/// without panicking. `FlowPaths::try_new` rejects this input per
+/// `.claude/rules/branch-path-safety.md`.
+#[test]
+fn base_branch_subcommand_errs_when_branch_flag_is_dotdot() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().canonicalize().unwrap();
+    init_git_repo(&repo, "feature");
+
+    let output = run_base_branch(&repo, Some(".."));
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "expected non-zero exit on '--branch ..', got {:?}",
+        output.status.code()
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked at"),
+        "'--branch ..' must not panic; stderr: {}",
+        stderr
+    );
+}
+
+/// NUL-containing branch validation is exercised at the library
+/// surface — `Command::arg` in std panics on embedded NULs before
+/// the child process even starts, so a subprocess test with
+/// `--branch "main\0evil"` is impossible. The library-level
+/// coverage lives in `tests/flow_paths.rs::is_valid_branch_rejects_nul_byte`,
+/// `try_new_returns_none_for_nul_branch`, and
+/// `new_panics_on_nul_branch`. The base-branch subcommand routes
+/// `--branch` overrides through `FlowPaths::try_new` which calls
+/// `is_valid_branch`, so any NUL the kernel does manage to deliver
+/// is rejected before path construction. The dot, dotdot, and
+/// empty-string subprocess tests above cover the practical
+/// branch-path-safety surface that `Command::arg` does allow.
+#[test]
+fn base_branch_subcommand_nul_rejected_at_library_surface() {
+    use flow_rs::flow_paths::FlowPaths;
+    assert!(!FlowPaths::is_valid_branch("main\0evil"));
+    assert!(FlowPaths::try_new("/tmp/p", "main\0evil").is_none());
+}
+
+/// Legacy in-flight flow: state file exists and parses cleanly but
+/// lacks the `base_branch` field. The subcommand falls back to "main"
+/// and exits 0 so skills running against pre-tracking flows don't
+/// break mid-lifecycle. Distinguishes from genuine corruption (parse
+/// failure, wrong type, validation failure) which still exits 1.
+#[test]
+fn base_branch_subcommand_legacy_state_falls_back_to_main() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().canonicalize().unwrap();
+    init_git_repo(&repo, "feature");
+    write_state(&repo, "feature", r#"{"branch": "feature"}"#);
+
+    let output = run_base_branch(&repo, None);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "expected exit 0 on legacy state without base_branch, got {:?} / stderr: {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout, "main\n");
+}

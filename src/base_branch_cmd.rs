@@ -15,23 +15,32 @@
 //! Returns the value to stdout with a trailing newline and exits 0
 //! on success. On any error (no current branch, invalid `--branch`
 //! input per `FlowPaths::try_new`, missing or corrupt state file,
-//! field absent or wrong type) the message lands on stderr and the
-//! process exits non-zero — never silently substitutes `"main"`.
+//! wrong value type, failed validation) the message lands on stderr
+//! and the process exits non-zero. The one explicit fallback is the
+//! legacy in-flight flow case: when the state file exists and parses
+//! cleanly but lacks a `base_branch` field (a flow started before
+//! the field was tracked), the subcommand returns `"main"` and exits
+//! 0 so skills running against in-flight legacy flows don't break
+//! mid-lifecycle. Genuine corruption (parse failure, wrong root type,
+//! validation failure) still surfaces as an error.
+//!
 //! Tests live at `tests/base_branch_cmd.rs` and drive the binary
 //! through `CARGO_BIN_EXE_flow-rs`.
 
 use std::path::Path;
 
 use crate::flow_paths::FlowPaths;
-use crate::git::{read_base_branch, resolve_branch};
+use crate::git::{read_base_branch, resolve_branch, BASE_BRANCH_MISSING_PREFIX};
 
 /// Main-arm dispatcher for `bin/flow base-branch`. Returns
 /// `Ok((value, 0))` with the base-branch value (no trailing newline —
 /// `dispatch::dispatch_text` adds one via `println!`) when the read
-/// succeeds, or `Err((msg, code))` for every failure class. `code`
+/// succeeds OR when the state file exists but lacks the
+/// `base_branch` field (legacy in-flight flow → `"main"` fallback).
+/// Returns `Err((msg, code))` for every other failure class. `code`
 /// is `2` for input-resolution failures (no current branch, invalid
 /// `--branch` override) and `1` for state-file failures (missing,
-/// empty, parse error, missing field, wrong type).
+/// empty, parse error, wrong type, validation failure).
 ///
 /// Per `.claude/rules/external-input-validation.md` and
 /// `.claude/rules/branch-path-safety.md`, `--branch` overrides come
@@ -61,6 +70,12 @@ pub fn run_impl_main(
     };
     match read_base_branch(&paths.state_file()) {
         Ok(value) => Ok((value, 0)),
+        // Legacy in-flight fallback: a state file written before
+        // `base_branch` was tracked at flow-start has no field. Returning
+        // `"main"` keeps mid-lifecycle skills from breaking on those
+        // flows. Other error classes (file missing, parse error, wrong
+        // type, validation failure) still surface as exit-1 errors.
+        Err(msg) if msg.starts_with(BASE_BRANCH_MISSING_PREFIX) => Ok(("main".to_string(), 0)),
         Err(msg) => Err((msg, 1)),
     }
 }

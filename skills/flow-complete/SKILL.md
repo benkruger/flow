@@ -462,6 +462,17 @@ after this invocation.
 Skip this step if the PR was already merged in Step 1 (complete-fast
 returned `"merged"` or `"already_merged"`).
 
+**Resolve the integration branch.** Before running the merge command,
+run `bin/flow base-branch` to retrieve the integration branch the
+flow coordinates against. Capture its stdout — call the value
+`<base_branch>` — and use it in the success message below. A repo
+whose default branch is `staging` produces `<base_branch> =
+staging`; a standard repo produces `<base_branch> = main`.
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow base-branch
+```
+
 For manual mode (after Step 4 confirmation), run the merge command:
 
 ```bash
@@ -471,10 +482,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow complete-merge --pr <pr_number> --state-file <pro
 Parse the JSON output and handle each status:
 
 **If `"status": "merged"`** — the PR is merged. Report to the user
-using the `<base_branch>` value resolved in Step 4 (or, when
-arriving here directly from auto-mode Step 1 without Step 4 having
-run, capture the value via a fresh `${CLAUDE_PLUGIN_ROOT}/bin/flow
-base-branch` call before composing the message):
+using the `<base_branch>` value resolved at the top of this step:
 
 > "PR #<pr_number> merged into <base_branch>."
 
