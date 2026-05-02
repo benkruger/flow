@@ -7,9 +7,11 @@ nav_order: 7
 
 **Command:** `/flow-complete` or `/flow-complete --manual`
 
-The final phase. Merges the PR into main, removes the git worktree,
-and deletes the state file and log file. This is what fully closes out
-a feature and resets the environment for the next one.
+The final phase. Merges the PR into the integration branch (the
+`base_branch` captured at flow-start — `main` for standard repos,
+`staging`/`develop`/etc. for non-main-trunk repos), removes the git
+worktree, and deletes the state file and log file. This is what fully
+closes out a feature and resets the environment for the next one.
 
 By default, skips confirmation and proceeds directly to merge and cleanup.
 Use `--manual` to prompt for confirmation before the irreversible merge.
@@ -23,8 +25,8 @@ Phase 5 is incomplete.
 ### 1. Run complete-fast
 
 `complete-fast` consolidates phase entry, state detection, PR status
-check, merge main, local CI dirty check, GitHub CI check, and squash
-merge into a single call. Returns a `path` field for dispatch:
+check, merge of the integration branch into the feature branch, local
+CI dirty check, GitHub CI check, and squash merge into a single call. Returns a `path` field for dispatch:
 `"merged"` (auto happy path), `"already_merged"`, `"confirm"` (manual
 mode), `"ci_stale"`, `"ci_failed"`, `"ci_pending"`, `"conflict"`, or
 `"max_retries"`. If the PR is already merged, skips to finalize
@@ -33,7 +35,8 @@ to continue.
 
 ### 2. Run local CI gate
 
-Runs `bin/flow ci` locally to catch test failures after merging main.
+Runs `bin/flow ci` locally to catch test failures after merging the
+integration branch into the feature branch.
 If it fails, launch the ci-fixer sub-agent to diagnose and fix.
 
 ### 3. Check GitHub CI status
@@ -52,9 +55,10 @@ included in the confirmation message. Skipped by default.
 ### 5. Merge PR
 
 `complete-merge` handles the freshness check and squash merge in a
-single script call. Verifies the branch is up-to-date with main
-before merging. If main has moved, merges the new commits and loops
-back to step 2 (CI gate) to re-test. A retry limit of 3 prevents
+single script call. Verifies the branch is up-to-date with the
+integration branch before merging. If the integration branch has
+moved, merges the new commits and loops back to step 2 (CI gate) to
+re-test. A retry limit of 3 prevents
 infinite loops under high contention. Once up-to-date, squash-merges
 via `gh pr merge --squash`. Detects branch protection policy blocks
 and returns for CI wait.
@@ -78,7 +82,7 @@ best-effort call:
   DAG file, log file, frozen-phases file, CI sentinel, timings
   file, closed-issues file, issues file, and adversarial test file
   (glob-matched as `.flow-states/<branch>/adversarial_test.*`),
-  followed by `git pull origin main`
+  followed by `git pull origin <base_branch>` (the integration branch)
 
 Each cleanup step is best-effort — if one fails, the rest still run.
 
@@ -93,7 +97,7 @@ removed, what was already gone, and what failed.
 
 By the end of Phase 6:
 
-- PR squash-merged into main
+- PR squash-merged into the integration branch
 - Referenced GitHub issues closed (extracted from the start prompt)
 - Remote branch auto-deleted by GitHub after merge
 - Worktree and all its contents removed
@@ -102,7 +106,7 @@ By the end of Phase 6:
 - PR link displayed in Done banner for quick access
 - State file deleted — no more session hook injection for this feature
 - Log file deleted — no stale logs left behind
-- Local main pulled up to date with the merged feature code
+- Local integration branch pulled up to date with the merged feature code
 - Local environment clean and ready for the next feature
 
 ---

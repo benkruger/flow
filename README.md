@@ -26,7 +26,7 @@ Every skill has two independent axes — **commit** (show diffs or auto-commit) 
 
 ### Safe for Local Env
 
-No containers. No external dependencies. Native tools only — git, gh, your linter, your test runner. Every command is pre-approved in `.claude/settings.json` so you never see a permission prompt. Worktree isolation protects main — multiple features run in parallel without touching your working branch.
+No containers. No external dependencies. Native tools only — git, gh, your linter, your test runner. Every command is pre-approved in `.claude/settings.json` so you never see a permission prompt. Worktree isolation protects your team's trunk (`main`, `staging`, or whatever your repo's default branch is) — multiple features run in parallel without touching it.
 
 ### Slack Notifications
 
@@ -43,7 +43,7 @@ Start → Plan → Code → Code Review → Learn → Complete
 
 | Phase | Command | What happens |
 |-------|---------|-------------|
-| **1: Start** | `/flow-start <prompt>` | Lock, pull main, `bin/ci` baseline, upgrade dependencies, `bin/ci` post-deps, commit to main, unlock, new worktree + PR — ci-fixer sub-agent handles failures |
+| **1: Start** | `/flow-start <prompt>` | Lock, pull the integration branch, `bin/ci` baseline, upgrade dependencies, `bin/ci` post-deps, commit to the integration branch, unlock, new worktree + PR — ci-fixer sub-agent handles failures |
 | **2: Plan** | `/flow-plan` | Reads the start prompt, invokes DAG decompose plugin for dependency analysis, explores codebase, produces ordered tasks with dependency graph |
 | **3: Code** | `/flow-code` | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
 | **4: Code Review** | `/flow-code-review` | Four steps — gather artifacts, launch four cognitively isolated agents in parallel (reviewer, pre-mortem, adversarial, documentation), triage findings, fix in-scope issues |
@@ -58,7 +58,7 @@ Start → Plan → Code → Code Review → Learn → Complete
 - **100% test coverage required** — Code phase cannot advance to Code Review without it.
 - **TDD always** — test must fail before implementation is written; test must pass before commit.
 - **No lint suppression** — fix the code, not the linter. No exclusions, no suppression comments.
-- **Worktree isolation** — main is never touched directly; multiple features run in parallel.
+- **Worktree isolation** — your team's trunk (`main`/`staging`/whatever your repo's default branch is) is never touched directly; multiple features run in parallel.
 - **Commit discipline** — imperative verb + tl;dr + per-file breakdown, every commit.
 
 ---
@@ -130,7 +130,7 @@ Start a new Claude Code session so permissions take effect, then start a feature
 /flow-start invoice pdf export
 ```
 
-This acquires a start lock (serializing concurrent starts), pulls main, runs `bin/ci` for a clean baseline, upgrades dependencies on main, runs `bin/ci` again to catch dep-induced breakage, commits everything to main, then creates branch `invoice-pdf-export` with a worktree at `.worktrees/invoice-pdf-export` and opens a GitHub PR. You land in Phase 2: Plan.
+This acquires a start lock (serializing concurrent starts), pulls the integration branch (`main`/`staging`/whatever your repo's default branch is), runs `bin/ci` for a clean baseline, upgrades dependencies on the integration branch, runs `bin/ci` again to catch dep-induced breakage, commits everything to the integration branch, then creates branch `invoice-pdf-export` with a worktree at `.worktrees/invoice-pdf-export` and opens a GitHub PR. You land in Phase 2: Plan.
 
 ---
 
