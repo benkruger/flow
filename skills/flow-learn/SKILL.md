@@ -73,7 +73,7 @@ Findings that do not map to a tenant are dropped.
 
 This flow is one of potentially many running simultaneously — on this
 machine (multiple worktrees) and across machines (multiple engineers).
-Your state file (`.flow-states/<branch>.json`) is yours alone. Never
+Your state file (`.flow-states/<branch>/state.json`) is yours alone. Never
 read or write another branch's state. All local artifacts (logs, plan
 files, temp files) are scoped by branch name. GitHub state (PRs, issues,
 labels) is shared across all engineers — operations that create or modify
@@ -136,7 +136,7 @@ global CLAUDE.md is already loaded in conversation context — no separate
 read is needed.
 
 **Read state file data.** Read the state file at
-`<project_root>/.flow-states/<branch>.json`. Extract: `notes`, phase
+`<project_root>/.flow-states/<branch>/state.json`. Extract: `notes`, phase
 `visit_count` and `cumulative_seconds` for each phase.
 
 **Read the plan file.** Read the plan file at
@@ -304,13 +304,13 @@ existing content — do not duplicate.
 **Compose** the full updated CLAUDE.md content with the learning
 applied.
 
-**Write** the full content to `.flow-states/<branch>-rule-content.md`
+**Write** the full content to `.flow-states/<branch>/rule-content.md`
 using the Write tool.
 
 **Apply** the change:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <worktree_path>/CLAUDE.md --content-file .flow-states/<branch>-rule-content.md
+${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <worktree_path>/CLAUDE.md --content-file .flow-states/<branch>/rule-content.md
 ```
 
 After each CLAUDE.md write, record the finding. Use outcome `rule_written` when adding new content, `rule_clarified` when updating existing content:
@@ -335,13 +335,13 @@ rule or an update to an existing rule.
 updated content with the rule applied. **If new**, compose the full
 content with a markdown heading matching the topic name.
 
-**Write** the content to `.flow-states/<branch>-rule-content.md` using
+**Write** the content to `.flow-states/<branch>/rule-content.md` using
 the Write tool.
 
 **Apply** the change:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <worktree_path>/.claude/rules/<topic>.md --content-file .flow-states/<branch>-rule-content.md
+${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <worktree_path>/.claude/rules/<topic>.md --content-file .flow-states/<branch>/rule-content.md
 ```
 
 After each rules file write, record the finding. Use outcome `rule_written` for new files, `rule_clarified` for updates to existing files:
@@ -457,13 +457,13 @@ is insufficient.
 
 ### Filing process
 
-Write the issue body to `.flow-states/<branch>-issue-body-content.md` using
+Write the issue body to `.flow-states/<branch>/issue-body-content.md` using
 the Write tool, then route it to `.flow-issue-body` in the project root
 via `bin/flow write-rule` (avoids Claude Code's Write-tool preflight on a
 pre-existing body file — see `.claude/rules/file-tool-preflights.md`):
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-issue-body --content-file .flow-states/<branch>-issue-body-content.md
+${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-issue-body --content-file .flow-states/<branch>/issue-body-content.md
 ```
 
 Then file:

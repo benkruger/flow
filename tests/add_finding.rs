@@ -739,8 +739,7 @@ fn add_finding_run_impl_main_success_with_issue_url_writes_field() {
     let (value, code) = run_impl_main(args, &root, &root);
     assert_eq!(value["status"], "ok");
     assert_eq!(code, 0);
-    let on_disk: Value =
-        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    let on_disk: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(
         on_disk["findings"][0]["issue_url"],
         "https://github.com/test/test/issues/42"
@@ -771,8 +770,7 @@ fn add_finding_run_impl_main_success_with_path_writes_field() {
     let (value, code) = run_impl_main(args, &root, &root);
     assert_eq!(value["status"], "ok");
     assert_eq!(code, 0);
-    let on_disk: Value =
-        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    let on_disk: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(on_disk["findings"][0]["path"], ".claude/rules/x.md");
 }
 
@@ -792,8 +790,7 @@ fn add_finding_run_impl_main_unknown_phase_falls_back_to_phase_string() {
     let (value, code) = run_impl_main(args, &root, &root);
     assert_eq!(value["status"], "ok");
     assert_eq!(code, 0);
-    let on_disk: Value =
-        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    let on_disk: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(
         on_disk["findings"][0]["phase_name"], "custom-unknown-phase",
         "phase_name should fall back to the raw phase string"

@@ -1,6 +1,6 @@
 ---
 name: flow-status
-description: "Show current SDLC phase, PR link, timing, and what comes next. Reads .flow-states/<branch>.json. Use any time you want to know where you are in the workflow."
+description: "Show current SDLC phase, PR link, timing, and what comes next. Reads .flow-states/<branch>/state.json. Use any time you want to know where you are in the workflow."
 ---
 
 # FLOW Status
@@ -12,7 +12,7 @@ prints a status panel. Read-only — never modifies anything.
 
 This flow is one of potentially many running simultaneously — on this
 machine (multiple worktrees) and across machines (multiple engineers).
-Your state file (`.flow-states/<branch>.json`) is yours alone. Never
+Your state file (`.flow-states/<branch>/state.json`) is yours alone. Never
 read or write another branch's state. All local artifacts (logs, plan
 files, temp files) are scoped by branch name.
 

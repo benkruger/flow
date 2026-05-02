@@ -25,7 +25,7 @@ description: "Phase 6: Complete — merge the PR, remove the worktree, and delet
 
 This flow is one of potentially many running simultaneously — on this
 machine (multiple worktrees) and across machines (multiple engineers).
-Your state file (`.flow-states/<branch>.json`) is yours alone. Never
+Your state file (`.flow-states/<branch>/state.json`) is yours alone. Never
 read or write another branch's state. All local artifacts (logs, plan
 files, temp files) are scoped by branch name. GitHub state (PRs, issues,
 labels) is shared across all engineers — operations that create or modify
@@ -35,7 +35,7 @@ shared state must be idempotent.
 
 1. If `--auto` was passed → mode is **auto**
 2. If `--manual` was passed → mode is **manual**
-3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>.json`. Use `skills.flow-complete` value.
+3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>/state.json`. Use `skills.flow-complete` value.
 4. If the state file has no `skills` key → use built-in default: **auto**
 
 ## Self-Invocation Check
@@ -50,7 +50,7 @@ whose path matches your current working directory — the
 `branch refs/heads/<name>` line in that entry is the current branch
 (strip the `refs/heads/` prefix).
 
-Use the Read tool to read `<project_root>/.flow-states/<branch>.json`
+Use the Read tool to read `<project_root>/.flow-states/<branch>/state.json`
 to get the state data (`feature`, `branch`, `worktree`, `pr_number`,
 `pr_url`). Proceed directly to the Resume Check section.
 
@@ -63,7 +63,7 @@ blocks — it records warnings for the confirmation step.
    whose path matches your current working directory — the
    `branch refs/heads/<name>` line in that entry is the current branch
    (strip the `refs/heads/` prefix).
-2. Use the Read tool to read `<project_root>/.flow-states/<branch>.json`.
+2. Use the Read tool to read `<project_root>/.flow-states/<branch>/state.json`.
    - If the file exists: extract `feature`, `branch`, `worktree`, `pr_number`,
      `pr_url`, and `cumulative_seconds`. Check `phases.flow-learn.status` — if
      not `"complete"`, record warning "Phase 5 not complete (status: <actual status>)."
@@ -454,7 +454,7 @@ returned `"merged"` or `"already_merged"`).
 For manual mode (after Step 4 confirmation), run the merge command:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow complete-merge --pr <pr_number> --state-file <project_root>/.flow-states/<branch>.json
+${CLAUDE_PLUGIN_ROOT}/bin/flow complete-merge --pr <pr_number> --state-file <project_root>/.flow-states/<branch>/state.json
 ```
 
 Parse the JSON output and handle each status:
@@ -549,7 +549,7 @@ Session Log, and Issues Filed — from the state file and available
 artifact files. Sections with missing data are omitted automatically.
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow complete-finalize --pr <pr_number> --state-file <project_root>/.flow-states/<branch>.json --branch <branch> --worktree <worktree_path> --pull
+${CLAUDE_PLUGIN_ROOT}/bin/flow complete-finalize --pr <pr_number> --state-file <project_root>/.flow-states/<branch>/state.json --branch <branch> --worktree <worktree_path> --pull
 ```
 
 Parse the JSON output. Keep `formatted_time`, `cumulative_seconds`,
@@ -574,7 +574,7 @@ closed\_issues\_file, issues\_file, adversarial\_test — plus
 git\_pull when the Complete path runs with `--pull`).
 Each step reports "closed"/"removed"/"deleted"/"pulled", "skipped", or
 "failed: reason". The `adversarial_test` step matches
-`.flow-states/<branch>-adversarial_test.*` so the Phase 4 adversarial
+`.flow-states/<branch>/adversarial_test.*` so the Phase 4 adversarial
 agent's temp file is removed regardless of the runtime-chosen extension.
 
 Report the results to the user: what was cleaned, what was already gone,

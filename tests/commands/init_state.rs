@@ -1443,10 +1443,7 @@ fn lib_create_state_creates_flow_states_dir() {
     )
     .unwrap();
     assert!(dir.path().join(".flow-states").is_dir());
-    assert!(dir
-        .path()
-        .join(".flow-states/dir-test/state.json")
-        .exists());
+    assert!(dir.path().join(".flow-states/dir-test/state.json").exists());
 }
 
 #[test]

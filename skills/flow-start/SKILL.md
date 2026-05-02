@@ -1,6 +1,6 @@
 ---
 name: flow-start
-description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrades dependencies, opens a PR, creates .flow-states/<branch>.json, and configures the workspace. Usage: /flow:flow-start <feature name words>"
+description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrades dependencies, opens a PR, creates .flow-states/<branch>/state.json, and configures the workspace. Usage: /flow:flow-start <feature name words>"
 ---
 
 # FLOW Start — Phase 1: Start
@@ -69,7 +69,7 @@ the Start phase steps.
 
 This flow is one of potentially many running simultaneously — on this
 machine (multiple worktrees) and across machines (multiple engineers).
-Your state file (`.flow-states/<branch>.json`) is yours alone. Never
+Your state file (`.flow-states/<branch>/state.json`) is yours alone. Never
 read or write another branch's state. All local artifacts (logs, plan
 files, temp files) are scoped by branch name. GitHub state (PRs, issues,
 labels) is shared across all engineers — operations that create or modify
@@ -79,7 +79,7 @@ shared state must be idempotent.
 
 1. If `--auto` was passed → continue=auto AND override ALL skills to fully autonomous (all commits auto, all continues auto). The `--auto` flag is passed through to `start-init`, which writes the autonomous preset to the state file. All downstream phases inherit the override automatically.
 2. If `--manual` was passed → continue=manual
-3. Otherwise → resolved in the Done section by reading `skills.flow-start.continue` from `.flow-states/<branch>.json` (which exists after Step 1)
+3. Otherwise → resolved in the Done section by reading `skills.flow-start.continue` from `.flow-states/<branch>/state.json` (which exists after Step 1)
 
 ## Announce
 
@@ -97,7 +97,7 @@ At the very start, output the following banner in your response (not via Bash) i
 
 All four consolidated commands (`start-init`, `start-gate`, `start-workspace`,
 `phase-finalize`) handle logging internally via `append_log()` to
-`.flow-states/<branch>.log`. No model-level logging calls are needed.
+`.flow-states/<branch>/log`. No model-level logging calls are needed.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 1] ..."
@@ -208,13 +208,13 @@ Parse the JSON output and branch on `status`:
 File a "Flaky Test" issue with reproduction data from the `first_failure_output`
 and `attempts` fields, using the `flaky_context` field for the issue body context.
 
-Write the issue body to `.flow-states/<branch>-issue-body-content.md` using
+Write the issue body to `.flow-states/<branch>/issue-body-content.md` using
 the Write tool, then route it to `.flow-issue-body` in the project root
 via `bin/flow write-rule` (avoids Claude Code's Write-tool preflight on a
 pre-existing body file — see `.claude/rules/file-tool-preflights.md`):
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-issue-body --content-file .flow-states/<branch>-issue-body-content.md
+${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-issue-body --content-file .flow-states/<branch>/issue-body-content.md
 ```
 
 Then file:
@@ -257,11 +257,11 @@ Wait for the sub-agent to return.
 ### Step 3 — Create workspace (worktree, PR, lock release)
 
 Write the user's original start prompt (verbatim, including `#N` issue references
-and any special characters) to `.flow-states/<branch>-start-prompt` using the
+and any special characters) to `.flow-states/<branch>/start-prompt` using the
 Write tool. Then run start-workspace:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-workspace "<feature-name>" --branch <branch> --prompt-file .flow-states/<branch>-start-prompt
+${CLAUDE_PLUGIN_ROOT}/bin/flow start-workspace "<feature-name>" --branch <branch> --prompt-file .flow-states/<branch>/start-prompt
 ```
 
 The command creates the worktree, opens a PR, backfills the state file with

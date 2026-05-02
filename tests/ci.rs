@@ -1047,11 +1047,7 @@ fn run_impl_cwd_scope_rejects_wrong_dir() {
     // fail the drift check.
     let branch_dir = f.path.join(".flow-states").join(&f.branch);
     fs::create_dir_all(&branch_dir).unwrap();
-    fs::write(
-        branch_dir.join("state.json"),
-        r#"{"relative_cwd": "sub"}"#,
-    )
-    .unwrap();
+    fs::write(branch_dir.join("state.json"), r#"{"relative_cwd": "sub"}"#).unwrap();
     fs::create_dir_all(f.path.join("sub")).unwrap();
 
     let args = Args {

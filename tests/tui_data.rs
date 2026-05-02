@@ -1166,7 +1166,11 @@ fn test_load_all_flows_skips_corrupt_json() {
         serde_json::to_string(&state).unwrap(),
     )
     .unwrap();
-    std::fs::write(state_dir.join("bad-feature").join("state.json"), "{invalid json").unwrap();
+    std::fs::write(
+        state_dir.join("bad-feature").join("state.json"),
+        "{invalid json",
+    )
+    .unwrap();
     let result = load_all_flows(dir.path());
     assert_eq!(result.len(), 1);
 }
@@ -1183,7 +1187,11 @@ fn test_load_all_flows_skips_phases_json() {
         serde_json::to_string(&state).unwrap(),
     )
     .unwrap();
-    std::fs::write(state_dir.join("my-feature").join("phases.json"), r#"{"order": []}"#).unwrap();
+    std::fs::write(
+        state_dir.join("my-feature").join("phases.json"),
+        r#"{"order": []}"#,
+    )
+    .unwrap();
     let result = load_all_flows(dir.path());
     assert_eq!(result.len(), 1);
 }
@@ -1570,7 +1578,12 @@ fn test_load_all_flows_sorted_by_phase_then_feature() {
     let dir = tempfile::tempdir().unwrap();
     let state_dir = dir.path().join(".flow-states");
     std::fs::create_dir(&state_dir).unwrap();
-    for name in ["alpha-feature", "beta-feature", "gamma-feature", "delta-feature"] {
+    for name in [
+        "alpha-feature",
+        "beta-feature",
+        "gamma-feature",
+        "delta-feature",
+    ] {
         std::fs::create_dir_all(state_dir.join(name)).unwrap();
     }
 

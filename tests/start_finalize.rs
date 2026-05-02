@@ -244,7 +244,9 @@ fn test_happy_path_no_slack() {
     assert!(data["formatted_time"].is_string());
     assert!(data["continue_action"].is_string());
 
-    let state_path = flow_states_dir(&repo).join("finalize-branch").join("state.json");
+    let state_path = flow_states_dir(&repo)
+        .join("finalize-branch")
+        .join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-start"]["status"], "complete");
     assert_eq!(state["current_phase"], "flow-plan");
@@ -319,7 +321,9 @@ fn test_slack_success_stores_thread_ts() {
     assert!(data.get("slack").is_some());
     assert_eq!(data["slack"]["status"], "ok");
 
-    let state_path = flow_states_dir(&repo).join("slack-ok-branch").join("state.json");
+    let state_path = flow_states_dir(&repo)
+        .join("slack-ok-branch")
+        .join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["slack_thread_ts"], "1234567890.123456");
     let notifications = state["notifications"].as_array().unwrap();
@@ -350,7 +354,9 @@ fn test_slack_ok_without_ts_falls_back_to_empty() {
     let data = parse_output(&output);
     assert_eq!(data["slack"]["status"], "ok");
 
-    let state_path = flow_states_dir(&repo).join("no-ts-branch").join("state.json");
+    let state_path = flow_states_dir(&repo)
+        .join("no-ts-branch")
+        .join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["slack_thread_ts"], "");
 }
@@ -378,7 +384,9 @@ fn test_slack_error_continues_best_effort() {
     assert_eq!(data["status"], "ok");
     assert_eq!(data["slack"]["status"], "error");
 
-    let state_path = flow_states_dir(&repo).join("slack-err-branch").join("state.json");
+    let state_path = flow_states_dir(&repo)
+        .join("slack-err-branch")
+        .join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert!(state.get("slack_thread_ts").is_none());
 }
@@ -391,7 +399,9 @@ fn test_slack_success_heals_wrong_notifications_type() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo(dir.path());
     create_state_file(&repo, "heal-branch", "auto");
-    let state_path = flow_states_dir(&repo).join("heal-branch").join("state.json");
+    let state_path = flow_states_dir(&repo)
+        .join("heal-branch")
+        .join("state.json");
     let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     state["notifications"] = json!("not-an-array");
     fs::write(&state_path, serde_json::to_string_pretty(&state).unwrap()).unwrap();

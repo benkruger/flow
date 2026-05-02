@@ -206,7 +206,11 @@ fn cleanup_removes_branch_dir_with_seeded_artifacts() {
     // so the single recursive remove is exercised across the full set.
     fs::write(branch_dir.join("plan.md"), "# Plan\n").unwrap();
     fs::write(branch_dir.join("dag.md"), "# DAG\n").unwrap();
-    fs::write(branch_dir.join("phases.json"), r#"{"phases":{},"order":[]}"#).unwrap();
+    fs::write(
+        branch_dir.join("phases.json"),
+        r#"{"phases":{},"order":[]}"#,
+    )
+    .unwrap();
     fs::write(branch_dir.join("ci-passed"), "snapshot\n").unwrap();
     fs::write(branch_dir.join("timings.md"), "| Phase | Duration |\n").unwrap();
     fs::write(branch_dir.join("closed-issues.json"), r#"[{"number":42}]"#).unwrap();
@@ -355,10 +359,7 @@ fn cleanup_full_happy_path() {
     assert_eq!(steps["branch_dir"], "deleted");
 
     assert!(!dir.path().join(&wt_rel).exists());
-    assert!(!dir
-        .path()
-        .join(".flow-states/test-feature")
-        .exists());
+    assert!(!dir.path().join(".flow-states/test-feature").exists());
 }
 
 #[test]

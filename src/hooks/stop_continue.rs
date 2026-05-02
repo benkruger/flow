@@ -55,7 +55,9 @@ fn log_diag(root: Option<&Path>, branch: Option<&str>, message: &str) {
 /// the file write is skipped and only stderr is used.
 fn derive_root_branch(state_path: &Path) -> (Option<&Path>, Option<&str>) {
     let branch_dir = state_path.parent();
-    let branch = branch_dir.and_then(|d| d.file_name()).and_then(|n| n.to_str());
+    let branch = branch_dir
+        .and_then(|d| d.file_name())
+        .and_then(|n| n.to_str());
     let root = branch_dir.and_then(|d| d.parent()).and_then(|p| {
         if p.file_name().and_then(|n| n.to_str()) == Some(".flow-states") {
             p.parent()

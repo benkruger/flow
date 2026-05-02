@@ -74,11 +74,7 @@ fn write_state(root: &Path, branch: &str, state: Value) {
 fn setup_state(dir: &Path, branch: &str, state_json: &Value) {
     let branch_dir = flow_states_dir(dir).join(branch);
     fs::create_dir_all(&branch_dir).unwrap();
-    fs::write(
-        branch_dir.join("state.json"),
-        state_json.to_string(),
-    )
-    .unwrap();
+    fs::write(branch_dir.join("state.json"), state_json.to_string()).unwrap();
 }
 
 fn setup_git_repo(dir: &Path, branch: &str) {

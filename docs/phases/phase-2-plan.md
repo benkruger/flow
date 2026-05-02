@@ -31,7 +31,7 @@ skipped.
 1. `plan-extract` enters the phase and returns the issue context
 2. Claude invokes `/decompose:decompose` for structured DAG analysis
    (nodes, dependencies, topological ordering)
-3. The DAG output is stored to `.flow-states/<branch>-dag.md`
+3. The DAG output is stored to `.flow-states/<branch>/dag.md`
 4. Claude explores the codebase to validate the DAG against reality
 5. For pre-produced DAGs, Claude verifies that files referenced in the
    DAG still match the DAG's assumptions at their current worktree state
@@ -61,7 +61,7 @@ DAG decomposition is configurable via `skills.flow-plan.dag` in
 
 ## The Plan File
 
-The plan lives at `.flow-states/<branch>-plan.md`. It includes:
+The plan lives at `.flow-states/<branch>/plan.md`. It includes:
 
 - **Context** — what the user wants to build and why
 - **Exploration** — what exists in the codebase, affected files, patterns

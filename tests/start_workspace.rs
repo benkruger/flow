@@ -128,7 +128,9 @@ fn test_happy_path() {
     );
 
     // State file should have PR fields backfilled
-    let state_path = flow_states_dir(&repo).join("test-branch").join("state.json");
+    let state_path = flow_states_dir(&repo)
+        .join("test-branch")
+        .join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert!(state["pr_number"].is_number());
     assert!(state["pr_url"].is_string());
@@ -286,7 +288,9 @@ fn test_state_backfill_preserves_existing_fields() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let state_path = flow_states_dir(&repo).join("backfill-branch").join("state.json");
+    let state_path = flow_states_dir(&repo)
+        .join("backfill-branch")
+        .join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     // Original fields preserved
     assert_eq!(state["started_at"], "2026-01-01T00:00:00-08:00");

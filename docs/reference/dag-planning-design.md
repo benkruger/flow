@@ -59,7 +59,7 @@ A 3-step workflow inside Claude Code's native plan mode:
 3. **Store and complete** — saves plan file path in state, completes
    phase, exits plan mode
 
-The plan file is Markdown at `.flow-states/<branch>-plan.md`. The Code
+The plan file is Markdown at `.flow-states/<branch>/plan.md`. The Code
 phase reads it and executes tasks one at a time with TDD cycles and CI
 gates.
 

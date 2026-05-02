@@ -39,9 +39,9 @@ files with a unique `-<id>` suffix are excluded because the id makes
 cross-invocation collision unlikely. Writes to the monitored set must
 route through `bin/flow write-rule`:
 
-- `.flow-states/<branch>-dag.md` — the decompose-produced DAG file
-- `.flow-states/<branch>-plan.md` — the Plan-phase implementation plan
-- `.flow-states/<branch>-commit-msg.txt` — the commit skill's message
+- `.flow-states/<branch>/dag.md` — the decompose-produced DAG file
+- `.flow-states/<branch>/plan.md` — the Plan-phase implementation plan
+- `.flow-states/<branch>/commit-msg.txt` — the commit skill's message
   file consumed by `bin/flow finalize-commit`. Branch-scoped so
   concurrent flows in different worktrees of the same repo never
   collide.
@@ -55,7 +55,7 @@ prevents cross-invocation collision.
 
 Intermediate content files that the model Writes as input to
 `bin/flow write-rule` (for example
-`.flow-states/<branch>-dag-content.md`) are also not monitored — they
+`.flow-states/<branch>/dag-content.md`) are also not monitored — they
 are the Write-tool input, not a persistent target. The `write-rule`
 subcommand reads and deletes them unconditionally.
 
@@ -70,7 +70,7 @@ Write-tool instructions adjacent to any entry in that constant.
 The pattern `flow-learn` uses for `.claude/` writes also applies to all
 monitored paths:
 
-1. The model Writes content to `.flow-states/<branch>-<purpose>-content.md`
+1. The model Writes content to `.flow-states/<branch>/<purpose>-content.md`
    using the Write tool. The content file has a unique name per write
    (branch + purpose), so pre-existence is rare.
 2. The model invokes `bin/flow write-rule --path <final_target>
@@ -85,7 +85,7 @@ on the final target.
 ### Intermediate Content File Naming and Lifecycle
 
 Intermediate content files follow the pattern
-`.flow-states/<branch>-<purpose>-content.<ext>` where `<purpose>`
+`.flow-states/<branch>/<purpose>-content.<ext>` where `<purpose>`
 matches the basename of the final target (e.g. `dag`, `plan`,
 `commit-msg`, `issue-body`, `orchestrate-queue`) and `<ext>` matches the
 target's extension (`.md`, `.json`, `.txt`). The `write-rule` subcommand
@@ -96,7 +96,7 @@ Reference implementation: `src/write_rule.rs`.
 
 ## The Edit Preamble Pattern
 
-Edit-tool instructions on named `.flow-states/<branch>-*.md` files must
+Edit-tool instructions on named `.flow-states/<branch>/*.md` files must
 be preceded by an explicit Read-tool instruction on the same file. The
 preamble ensures the Edit preflight is satisfied even when the model
 has not naturally read the file in the current turn (for example,
@@ -104,7 +104,7 @@ re-entering the plan-check fix loop after `--continue-step`).
 
 Canonical wording:
 
-> Use the Read tool on the plan file at `.flow-states/<branch>-plan.md`
+> Use the Read tool on the plan file at `.flow-states/<branch>/plan.md`
 > first to satisfy Claude Code's Edit-tool preflight, then use the Edit
 > tool to ...
 
@@ -138,7 +138,7 @@ the rule:
 Both scans use `write_path_is_bounded` to check BOTH prefix and suffix
 byte boundaries on every path match, rejecting longer paths that embed
 a monitored path as a substring (e.g. `my-orchestrate-queue.json`,
-`.flow-states/<branch>-commit-msg.txt.bak`).
+`.flow-states/<branch>/commit-msg.txt.bak`).
 
 When either test fails, the violation names the file and line. The fix
 is to adopt the Write-Rule Escape Pattern or the Edit Preamble Pattern

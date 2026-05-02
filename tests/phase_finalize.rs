@@ -309,7 +309,8 @@ fn test_code_phase() {
     let output = run_phase_finalize(&repo, &["--phase", "flow-code", "--branch", branch]);
     let data = parse_output(&output);
     assert_eq!(
-        data["status"], "ok",
+        data["status"],
+        "ok",
         "stdout: {}, stderr: {}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)

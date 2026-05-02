@@ -28,7 +28,7 @@ banner. See the Plan Extract section below.
 
 This flow is one of potentially many running simultaneously — on this
 machine (multiple worktrees) and across machines (multiple engineers).
-Your state file (`.flow-states/<branch>.json`) is yours alone. Never
+Your state file (`.flow-states/<branch>/state.json`) is yours alone. Never
 read or write another branch's state. All local artifacts (logs, plan
 files, temp files) are scoped by branch name.
 
@@ -36,7 +36,7 @@ files, temp files) are scoped by branch name.
 
 1. If `--auto` was passed → continue=auto
 2. If `--manual` was passed → continue=manual
-3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>.json`. Use `skills.flow-plan.continue`.
+3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>/state.json`. Use `skills.flow-plan.continue`.
 4. If the state file has no `skills` key → use built-in default: continue=manual
 
 ## DAG Mode Resolution
@@ -96,7 +96,7 @@ Show the error message and stop.
 
 ## Logging
 
-After every Bash command in Steps 2–4, log it to `.flow-states/<branch>.log`
+After every Bash command in Steps 2–4, log it to `.flow-states/<branch>/log`
 using `bin/flow log`.
 
 Run the command first, then log the result. Pipeline the log call with the
@@ -135,7 +135,7 @@ project root). Find the `worktree` entry whose path matches your current
 working directory — the `branch refs/heads/<name>` line in that entry is
 the current branch (strip the `refs/heads/` prefix). Then read the state
 file at
-`<project_root>/.flow-states/<branch>.json`. Note `pr_number`, `prompt`,
+`<project_root>/.flow-states/<branch>/state.json`. Note `pr_number`, `prompt`,
 and `branch` from the state file — you will need them for Steps 2–4.
 Keep the project root, branch, state data, and `pr_number` in context.
 
@@ -170,7 +170,7 @@ issue body with a markdown heading and route it through `bin/flow write-rule`
 so Claude Code's Write-tool preflight cannot fire on a pre-existing DAG file
 (see `.claude/rules/file-tool-preflights.md`).
 
-Write the wrapped content to `.flow-states/<branch>-dag-content.md` using the Write tool:
+Write the wrapped content to `.flow-states/<branch>/dag-content.md` using the Write tool:
 
 ```text
 # Pre-Decomposed Analysis: <feature description>
@@ -181,7 +181,7 @@ Write the wrapped content to `.flow-states/<branch>-dag-content.md` using the Wr
 Then route it to the final DAG path via `bin/flow write-rule`:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-states/<branch>-dag.md --content-file .flow-states/<branch>-dag-content.md
+${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-states/<branch>/dag.md --content-file .flow-states/<branch>/dag-content.md
 ```
 
 Store the path in the state file:
@@ -190,7 +190,7 @@ Store the path in the state file:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.dag=<dag_file_path>
 ```
 
-Replace `<dag_file_path>` with the relative path `.flow-states/<branch>-dag.md`.
+Replace `<dag_file_path>` with the relative path `.flow-states/<branch>/dag.md`.
 
 Proceed directly to Step 3. Do not set `_continue_pending` or
 `_continue_context`. Do not self-invoke. Execution continues in the
@@ -223,7 +223,7 @@ The decompose plugin will produce structured DAG output:
 an impact preview, an XML DAG plan with nodes and dependencies,
 node-by-node reasoning, and a synthesis.
 
-After the decompose plugin returns, save the complete decompose output. The DAG file at `.flow-states/<branch>-dag.md` may pre-exist from a prior attempt, context compaction, or `--continue-step` re-entry, which would trip Claude Code's Write-tool preflight ("if this is an existing file, you MUST use the Read tool first"). Route the write through `bin/flow write-rule` — it does `fs::write` unconditionally in Rust so the preflight cannot fire. See `.claude/rules/file-tool-preflights.md`.
+After the decompose plugin returns, save the complete decompose output. The DAG file at `.flow-states/<branch>/dag.md` may pre-exist from a prior attempt, context compaction, or `--continue-step` re-entry, which would trip Claude Code's Write-tool preflight ("if this is an existing file, you MUST use the Read tool first"). Route the write through `bin/flow write-rule` — it does `fs::write` unconditionally in Rust so the preflight cannot fire. See `.claude/rules/file-tool-preflights.md`.
 
 Build the full content to write — the XML DAG plan, all node executions with quality scores, and the synthesis block exactly as the plugin produced it. Do not summarize, condense, reorganize, or rewrite any part of the decompose output. Wrap with a markdown heading:
 
@@ -233,12 +233,12 @@ Build the full content to write — the XML DAG plan, all node executions with q
 <complete output from decompose plugin>
 ```
 
-Write the content to `.flow-states/<branch>-dag-content.md` using the Write tool.
+Write the content to `.flow-states/<branch>/dag-content.md` using the Write tool.
 
 Apply the write to the final DAG path via `bin/flow write-rule`:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-states/<branch>-dag.md --content-file .flow-states/<branch>-dag-content.md
+${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-states/<branch>/dag.md --content-file .flow-states/<branch>/dag-content.md
 ```
 
 Store the path in the state file:
@@ -247,7 +247,7 @@ Store the path in the state file:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.dag=<dag_file_path>
 ```
 
-Replace `<dag_file_path>` with the relative path `.flow-states/<branch>-dag.md`.
+Replace `<dag_file_path>` with the relative path `.flow-states/<branch>/dag.md`.
 
 Self-invoke `flow:flow-plan --continue-step` using the Skill tool as your
 final action. Do not output anything else after this invocation.
@@ -277,13 +277,13 @@ in the content.
 - Promote all headings by one level: `###` becomes `##`, `####` becomes
   `###`. This converts the issue's nested headings into the plan file's
   top-level structure.
-- Write the promoted content to `.flow-states/<branch>-plan-content.md`
+- Write the promoted content to `.flow-states/<branch>/plan-content.md`
   using the Write tool, then route it to the final plan path via
   `bin/flow write-rule` so the Write-tool preflight cannot fire on a
   pre-existing plan file (see `.claude/rules/file-tool-preflights.md`):
 
   ```bash
-  ${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-states/<branch>-plan.md --content-file .flow-states/<branch>-plan-content.md
+  ${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-states/<branch>/plan.md --content-file .flow-states/<branch>/plan-content.md
   ```
 - Light validation: use Glob and Read to verify that files referenced in
   the Tasks section exist. Note any missing files (they may need to be
@@ -590,14 +590,14 @@ Always include TDD order — test task before every implementation task.
 
 ### Plan file structure
 
-Write the plan to `.flow-states/<branch>-plan-content.md` using the
+Write the plan to `.flow-states/<branch>/plan-content.md` using the
 Write tool, then route it to the final plan path at
-`<project_root>/.flow-states/<branch>-plan.md` via `bin/flow write-rule`
+`<project_root>/.flow-states/<branch>/plan.md` via `bin/flow write-rule`
 so Claude Code's Write-tool preflight cannot fire on a pre-existing
 plan file (see `.claude/rules/file-tool-preflights.md`):
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-states/<branch>-plan.md --content-file .flow-states/<branch>-plan-content.md
+${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-states/<branch>/plan.md --content-file .flow-states/<branch>/plan-content.md
 ```
 
 `<branch>` is the feature branch name. This keeps the plan alongside
@@ -644,7 +644,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set plan_step=4
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set files.plan=<plan_file_path>
 ```
 
-Replace `<plan_file_path>` with the relative path `.flow-states/<branch>-plan.md`.
+Replace `<plan_file_path>` with the relative path `.flow-states/<branch>/plan.md`.
 
 ### Plan-check gate
 
@@ -683,7 +683,7 @@ Parse the JSON output:
   array with `file`, `line`, `phrase`, `context`, and `rule` fields.
   Render the violations inline in your response so the user can see
   each flagged phrase and which rule fired. Use the Read tool on the
-  plan file at `.flow-states/<branch>-plan.md` first to satisfy Claude
+  plan file at `.flow-states/<branch>/plan.md` first to satisfy Claude
   Code's Edit-tool preflight ("You must use your Read tool at least
   once in the conversation before editing" — see
   `.claude/rules/file-tool-preflights.md`), then use the Edit tool
@@ -777,7 +777,7 @@ the timing calculation.
 ### Render Plan
 
 Use the Read tool to read the plan file at
-`<project_root>/.flow-states/<branch>-plan.md`. Render the full plan
+`<project_root>/.flow-states/<branch>/plan.md`. Render the full plan
 content inline in your response text — the complete Context, Exploration,
 Risks, Approach, Dependency Graph, and Tasks sections. Do not summarize
 or truncate. The user must be able to review the plan before the phase
@@ -854,7 +854,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 ## Hard Rules
 
 - Never write implementation code during Plan — task descriptions only
-- The plan file lives in `.flow-states/<branch>-plan.md` alongside other feature artifacts
+- The plan file lives in `.flow-states/<branch>/plan.md` alongside other feature artifacts
 - Store the plan file path in state before completing the phase
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep

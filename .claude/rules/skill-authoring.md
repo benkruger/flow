@@ -60,7 +60,7 @@ unstaged changes without staging them. The commit skill must
 always run `git add -A` before `git diff --cached`.
 
 The commit message lives at
-`<project_root>/.flow-states/<branch>-commit-msg.txt`, branch-
+`<project_root>/.flow-states/<branch>/commit-msg.txt`, branch-
 scoped under `.flow-states/` alongside other branch-scoped
 state. The path is centralized in
 `FlowPaths::commit_msg()` so future layout changes (see issue
@@ -175,7 +175,7 @@ path pass through `.worktrees/<branch>/`?" If yes, it must precede
 Similarly, any SKILL.md command that reads `.flow-states/` files
 (state file, log, CI sentinel) must be placed in a numbered step
 BEFORE the cleanup step. The Done section runs after cleanup — by
-that point, `.flow-states/<branch>.json` has been deleted and any
+that point, `.flow-states/<branch>/state.json` has been deleted and any
 command that reads it will fail.
 
 ## Numbered Lists With Fenced Code Blocks
@@ -509,9 +509,9 @@ must be the EXACT path the code eventually writes, reads, or removes
 ### Why this matters
 
 A placeholder that represents a conceptual file (`<temp_test_file>` =
-`.flow-states/<branch>-adversarial_test` without extension) while the
+`.flow-states/<branch>/adversarial_test` without extension) while the
 producing code actually writes a concrete file with an additional
-suffix (`.flow-states/<branch>-adversarial_test.rs`) creates a silent
+suffix (`.flow-states/<branch>/adversarial_test.rs`) creates a silent
 cleanup gap: `rm <temp_test_file>` targets a path that never exists,
 succeeds with no effect, and the real file orphans. Issue #1037
 documents this class of bug — the adversarial agent writes

@@ -31,11 +31,7 @@ fn write_state(root: &Path, branch: &str, relative_cwd: &str) {
         "branch": branch,
         "relative_cwd": relative_cwd,
     });
-    fs::write(
-        branch_dir.join("state.json"),
-        state.to_string(),
-    )
-    .unwrap();
+    fs::write(branch_dir.join("state.json"), state.to_string()).unwrap();
 }
 
 #[test]

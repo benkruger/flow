@@ -69,7 +69,7 @@ The Plan phase optionally invokes the
 [decompose plugin](https://github.com/matt-k-wong/mkw-DAG-architect)
 to decompose the feature into a Directed Acyclic Graph with explicit
 dependencies, node types, and topological ordering. The DAG output is
-stored to `.flow-states/<branch>-dag.md` and used to inform the plan
+stored to `.flow-states/<branch>/dag.md` and used to inform the plan
 file's Dependency Graph and task ordering.
 
 ### DAG Capture
@@ -78,7 +78,7 @@ Before invoking decompose, the skill sets `_continue_pending` and
 `_continue_context` so the stop-continue hook forces continuation after
 the plugin returns. After the decompose plugin returns, the complete
 output — XML DAG plan, node executions with quality scores, and
-synthesis block — is captured verbatim to `.flow-states/<branch>-dag.md`
+synthesis block — is captured verbatim to `.flow-states/<branch>/dag.md`
 with a markdown heading. The path is stored in `files.dag` in the state
 file. The skill then self-invokes with `--continue-step` to dispatch to
 the plan writing step via the Resume Check.
@@ -108,7 +108,7 @@ start for model-driven plan writing.
 
 ## Plan File Structure
 
-The plan file lives at `.flow-states/<branch>-plan.md` and includes:
+The plan file lives at `.flow-states/<branch>/plan.md` and includes:
 
 - **Context** — what the user wants to build and why
 - **Exploration** — what exists in the codebase, affected files, patterns

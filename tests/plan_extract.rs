@@ -458,7 +458,9 @@ exit 1
         let state = make_plan_state("build a thing", |_| {});
         setup_state(dir.path(), "test-feature", &state);
 
-        let state_file = flow_states_dir(dir.path()).join("test-feature").join("state.json");
+        let state_file = flow_states_dir(dir.path())
+            .join("test-feature")
+            .join("state.json");
         fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
 
         let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
@@ -606,7 +608,12 @@ exit 1
 
         // Verify state file was updated: flow-plan should be complete
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
+            &fs::read_to_string(
+                flow_states_dir(dir.path())
+                    .join("test-feature")
+                    .join("state.json"),
+            )
+            .unwrap(),
         )
         .unwrap();
         assert_eq!(
@@ -647,7 +654,12 @@ exit 1
 
         // Critical: state file must NOT be corrupted with "complete"
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
+            &fs::read_to_string(
+                flow_states_dir(dir.path())
+                    .join("test-feature")
+                    .join("state.json"),
+            )
+            .unwrap(),
         )
         .unwrap();
         assert_ne!(
@@ -719,7 +731,9 @@ exit 1
         assert_eq!(json["issue_number"], 99);
 
         // DAG file should have been created
-        let dag_path = flow_states_dir(dir.path()).join("test-feature").join("dag.md");
+        let dag_path = flow_states_dir(dir.path())
+            .join("test-feature")
+            .join("dag.md");
         assert!(
             dag_path.exists(),
             "DAG file should be created for decomposed issues"
@@ -807,15 +821,24 @@ exit 1
         assert!(json["continue_action"].is_string());
 
         // Verify DAG and plan files created on disk
-        let dag_path = flow_states_dir(dir.path()).join("test-feature").join("dag.md");
+        let dag_path = flow_states_dir(dir.path())
+            .join("test-feature")
+            .join("dag.md");
         assert!(dag_path.exists(), "DAG file should exist");
 
-        let plan_path = flow_states_dir(dir.path()).join("test-feature").join("plan.md");
+        let plan_path = flow_states_dir(dir.path())
+            .join("test-feature")
+            .join("plan.md");
         assert!(plan_path.exists(), "Plan file should exist");
 
         // Verify state file shows flow-plan complete
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
+            &fs::read_to_string(
+                flow_states_dir(dir.path())
+                    .join("test-feature")
+                    .join("state.json"),
+            )
+            .unwrap(),
         )
         .unwrap();
         assert_eq!(
@@ -871,7 +894,9 @@ exit 1
         );
 
         // Plan file MUST exist on disk so the user can edit it in place.
-        let plan_path = flow_states_dir(dir.path()).join("test-feature").join("plan.md");
+        let plan_path = flow_states_dir(dir.path())
+            .join("test-feature")
+            .join("plan.md");
         assert!(
             plan_path.exists(),
             "plan file must be written to disk even on violation"
@@ -879,7 +904,12 @@ exit 1
 
         // Phase must NOT be marked complete.
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
+            &fs::read_to_string(
+                flow_states_dir(dir.path())
+                    .join("test-feature")
+                    .join("state.json"),
+            )
+            .unwrap(),
         )
         .unwrap();
         assert_ne!(
@@ -928,7 +958,12 @@ exit 1
 
         // Phase must not be marked complete.
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
+            &fs::read_to_string(
+                flow_states_dir(dir.path())
+                    .join("test-feature")
+                    .join("state.json"),
+            )
+            .unwrap(),
         )
         .unwrap();
         assert_ne!(
@@ -1039,7 +1074,12 @@ exit 1
         assert_eq!(json["path"], "resumed");
 
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
+            &fs::read_to_string(
+                flow_states_dir(dir.path())
+                    .join("test-feature")
+                    .join("state.json"),
+            )
+            .unwrap(),
         )
         .unwrap();
         assert_eq!(
@@ -1209,7 +1249,12 @@ exit 1
 
         // code_tasks_total should be 2 (Task 1 and Task 3), not 3.
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
+            &fs::read_to_string(
+                flow_states_dir(dir.path())
+                    .join("test-feature")
+                    .join("state.json"),
+            )
+            .unwrap(),
         )
         .unwrap();
         assert_eq!(updated_state["code_tasks_total"], 2);
@@ -1355,7 +1400,9 @@ exit 1
         // Write a frozen-phases config that honors load_phase_config's
         // expected shape. This file's presence triggers load_frozen_config's
         // `if frozen_path.exists()` true branch.
-        let frozen_path = flow_states_dir(dir.path()).join("test-feature").join("phases.json");
+        let frozen_path = flow_states_dir(dir.path())
+            .join("test-feature")
+            .join("phases.json");
         fs::write(
             &frozen_path,
             r#"{"order":["flow-start","flow-plan","flow-code","flow-code-review","flow-learn","flow-complete"],"phases":{"flow-start":{"name":"Start","command":"/flow:flow-start"},"flow-plan":{"name":"Plan","command":"/flow:flow-plan"},"flow-code":{"name":"Code","command":"/flow:flow-code"},"flow-code-review":{"name":"Code Review","command":"/flow:flow-code-review"},"flow-learn":{"name":"Learn","command":"/flow:flow-learn"},"flow-complete":{"name":"Complete","command":"/flow:flow-complete"}}}"#,
@@ -1467,7 +1514,12 @@ exit 1
         assert_eq!(json["status"], "ok");
         // Post-run, state.files should be an object (reset by the nested guard).
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
+            &fs::read_to_string(
+                flow_states_dir(dir.path())
+                    .join("test-feature")
+                    .join("state.json"),
+            )
+            .unwrap(),
         )
         .unwrap();
         assert!(
@@ -1541,7 +1593,9 @@ exit 1
         });
         setup_state(dir.path(), "test-feature", &state);
 
-        let state_file = flow_states_dir(dir.path()).join("test-feature").join("state.json");
+        let state_file = flow_states_dir(dir.path())
+            .join("test-feature")
+            .join("state.json");
         fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
 
         let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
@@ -1583,7 +1637,9 @@ exit 1
 "#,
         );
 
-        let state_file = flow_states_dir(dir.path()).join("test-feature").join("state.json");
+        let state_file = flow_states_dir(dir.path())
+            .join("test-feature")
+            .join("state.json");
         fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
 
         let (code, json) =
@@ -1628,7 +1684,9 @@ exit 1
 "###,
         );
 
-        let state_file = flow_states_dir(dir.path()).join("test-feature").join("state.json");
+        let state_file = flow_states_dir(dir.path())
+            .join("test-feature")
+            .join("state.json");
         fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
 
         let (code, json) =
@@ -1674,7 +1732,9 @@ exit 1
 "###,
         );
 
-        let state_file = flow_states_dir(dir.path()).join("test-feature").join("state.json");
+        let state_file = flow_states_dir(dir.path())
+            .join("test-feature")
+            .join("state.json");
         fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
 
         let (code, json) =
@@ -1718,7 +1778,9 @@ exit 1
 "###,
         );
 
-        let state_file = flow_states_dir(dir.path()).join("test-feature").join("state.json");
+        let state_file = flow_states_dir(dir.path())
+            .join("test-feature")
+            .join("state.json");
         fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
 
         let (code, json) =
@@ -1770,7 +1832,12 @@ exit 1
         assert_eq!(json["path"], "standard");
 
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
+            &fs::read_to_string(
+                flow_states_dir(dir.path())
+                    .join("test-feature")
+                    .join("state.json"),
+            )
+            .unwrap(),
         )
         .unwrap();
         assert!(
@@ -1818,7 +1885,12 @@ exit 1
         assert_eq!(json["path"], "extracted");
 
         let updated_state: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(flow_states_dir(dir.path()).join("test-feature").join("state.json")).unwrap(),
+            &fs::read_to_string(
+                flow_states_dir(dir.path())
+                    .join("test-feature")
+                    .join("state.json"),
+            )
+            .unwrap(),
         )
         .unwrap();
         assert!(

@@ -165,7 +165,7 @@ Determine outcome:
 
 - Command succeeds and `mergedAt` is not null → **completed**
 - Command succeeds and state is "CLOSED" → **failed**
-- Command fails (no PR for that branch) → check if a `.flow-states/<branch>.json` exists using the Glob tool. If it does, the feature is stuck — record as **failed** with reason "Feature did not complete"
+- Command fails (no PR for that branch) → check if a `.flow-states/<branch>/state.json` exists using the Glob tool. If it does, the feature is stuck — record as **failed** with reason "Feature did not complete"
 
 **Record outcome:**
 

@@ -79,7 +79,7 @@ comments that no longer reflect the code's actual behavior.
 
 This flow is one of potentially many running simultaneously — on this
 machine (multiple worktrees) and across machines (multiple engineers).
-Your state file (`.flow-states/<branch>.json`) is yours alone. Never
+Your state file (`.flow-states/<branch>/state.json`) is yours alone. Never
 read or write another branch's state. All local artifacts (logs, plan
 files, temp files) are scoped by branch name. GitHub state (PRs, issues,
 labels) is shared across all engineers — operations that create or modify
@@ -113,7 +113,7 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ## Logging
 
-After every Bash command completes, log it to `.flow-states/<branch>.log`
+After every Bash command completes, log it to `.flow-states/<branch>/log`
 using `bin/flow log`.
 
 Run the command first, then log the result. Pipeline the log call with the
@@ -173,7 +173,7 @@ analysis.
 **Derive adversarial test setup.**
 
 The adversarial agent writes a single test file under
-`.flow-states/<branch>-adversarial_test.<ext>` and runs it via the
+`.flow-states/<branch>/adversarial_test.<ext>` and runs it via the
 project's `bin/test --file <path>`. The agent picks the extension
 itself by looking at the diff (`.rs`, `.py`, `.rb`, `.go`, `.swift`,
 `.ts`, etc.) — FLOW no longer dispatches by language, so the choice
@@ -182,7 +182,7 @@ contents the agent is reviewing.
 
 Capture these two values for Step 2:
 
-- `<temp_test_file>` = `.flow-states/<branch>-adversarial_test` (the
+- `<temp_test_file>` = `.flow-states/<branch>/adversarial_test` (the
   agent appends the extension)
 - `<test_command>` = `${CLAUDE_PLUGIN_ROOT}/bin/flow ci --test --file <temp_test_file>`
 

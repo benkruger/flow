@@ -46,7 +46,7 @@ internally.
 
 This flow is one of potentially many running simultaneously — on this
 machine (multiple worktrees) and across machines (multiple engineers).
-Your state file (`.flow-states/<branch>.json`) is yours alone. Never
+Your state file (`.flow-states/<branch>/state.json`) is yours alone. Never
 read or write another branch's state. All local artifacts (logs, plan
 files, temp files) are scoped by branch name. GitHub state (PRs, issues,
 labels) is shared across all engineers — operations that create or modify
@@ -92,7 +92,7 @@ documents its conventions in CLAUDE.md. Follow those conventions for:
 
 ## Logging
 
-After every Bash command completes, log it to `.flow-states/<branch>.log`
+After every Bash command completes, log it to `.flow-states/<branch>/log`
 using `bin/flow log`.
 
 Run the command first, then log the result. Pipeline the log call with the
@@ -383,13 +383,13 @@ subsequent attempt without any code changes, it is flaky. File a
 The issue body must include: the test name, the failure message, how many
 attempts it took to pass, and the task being worked on.
 
-Write the issue body to `.flow-states/<branch>-issue-body-content.md` using
+Write the issue body to `.flow-states/<branch>/issue-body-content.md` using
 the Write tool, then route it to `.flow-issue-body` in the project root
 via `bin/flow write-rule` (avoids Claude Code's Write-tool preflight on a
 pre-existing body file — see `.claude/rules/file-tool-preflights.md`):
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-issue-body --content-file .flow-states/<branch>-issue-body-content.md
+${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-issue-body --content-file .flow-states/<branch>/issue-body-content.md
 ```
 
 Then file:

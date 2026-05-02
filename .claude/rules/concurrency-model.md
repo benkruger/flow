@@ -10,7 +10,7 @@ Ask: "What happens when two flows hit this at the same time?"
 
 - **File paths** — must be scoped by branch or worktree. Never
   use a fixed path like `/tmp/flow-output` or a repo-root
-  singleton. Use `.flow-states/<branch>-*` or worktree-local
+  singleton. Use `.flow-states/<branch>/*` or worktree-local
   paths.
 - **State mutations** — must be isolated to the current flow's
   state file. Never read or write another flow's state.
@@ -38,7 +38,7 @@ Ask: "What happens when two flows hit this at the same time?"
 
 ## Completed Flow State File Leftovers
 
-Cleanup normally deletes `.flow-states/<branch>.json` at Complete.
+Cleanup normally deletes `.flow-states/<branch>/state.json` at Complete.
 If cleanup fails (kill signal, filesystem error), a state file may
 survive with `phases.flow-complete.status == "complete"`. Functions
 that scan `.flow-states/` for active flows (e.g. duplicate issue

@@ -282,11 +282,7 @@ fn find_state_files_fallback_scan() {
     let state_dir = dir.path().join(".flow-states");
     let real_dir = state_dir.join("feature-xyz");
     fs::create_dir_all(&real_dir).unwrap();
-    fs::write(
-        real_dir.join("state.json"),
-        r#"{"branch": "feature-xyz"}"#,
-    )
-    .unwrap();
+    fs::write(real_dir.join("state.json"), r#"{"branch": "feature-xyz"}"#).unwrap();
 
     let results = find_state_files(dir.path(), "main");
     assert_eq!(results.len(), 1);

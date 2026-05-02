@@ -24,7 +24,7 @@ file is missing.
 
 ## What It Does
 
-1. Reads `.flow-states/<branch>.json` for feature details
+1. Reads `.flow-states/<branch>/state.json` for feature details
    (or infers from git state if the file is missing)
 2. Removes the "Flow In-Progress" label from any issues referenced in the prompt (if state file exists)
 3. Confirms with the user before any destructive action, including any
@@ -34,7 +34,7 @@ file is missing.
 6. Removes the worktree with `git worktree remove --force`
 7. Deletes the remote branch with `git push origin --delete`
 8. Deletes the local branch with `git branch -D`
-9. Deletes `.flow-states/<branch>.json` and CI sentinel
+9. Deletes `.flow-states/<branch>/state.json` and CI sentinel
 
 Steps 4–9 follow a mix of abort-specific actions and cleanup operations.
 Every step after confirmation is best-effort — if one fails (e.g., PR

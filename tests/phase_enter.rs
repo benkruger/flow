@@ -427,12 +427,7 @@ fn test_step_counter_field_names() {
     );
     assert_eq!(parse_output(&output)["status"], "ok");
     let state: Value = serde_json::from_str(
-        &fs::read_to_string(
-            flow_states_dir(&repo)
-                .join(branch)
-                .join("state.json"),
-        )
-        .unwrap(),
+        &fs::read_to_string(flow_states_dir(&repo).join(branch).join("state.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(state["code_review_steps_total"], 4);
@@ -457,13 +452,7 @@ fn test_step_counter_field_names() {
     );
     assert_eq!(parse_output(&output2)["status"], "ok");
     let state2: Value = serde_json::from_str(
-        &fs::read_to_string(
-            repo2
-                .join(".flow-states")
-                .join(branch2)
-                .join("state.json"),
-        )
-        .unwrap(),
+        &fs::read_to_string(repo2.join(".flow-states").join(branch2).join("state.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(state2["learn_steps_total"], 7);
@@ -482,12 +471,7 @@ fn test_no_steps_total_flag() {
     assert_eq!(parse_output(&output)["status"], "ok");
 
     let state: Value = serde_json::from_str(
-        &fs::read_to_string(
-            flow_states_dir(&repo)
-                .join(branch)
-                .join("state.json"),
-        )
-        .unwrap(),
+        &fs::read_to_string(flow_states_dir(&repo).join(branch).join("state.json")).unwrap(),
     )
     .unwrap();
     // No step counter fields should be set

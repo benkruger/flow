@@ -433,3 +433,100 @@ fn test_common_no_load_settings_helper() {
         "tests/common/mod.rs must not contain `pub fn load_settings` — dogfood helper removed in PR #1253"
     );
 }
+
+/// Tombstone: removed in PR #1258. Must not return.
+///
+/// Branch-scoped FLOW state files moved from the flat layout
+/// `.flow-states/<branch>-<purpose>.<ext>` to the subdirectory layout
+/// `.flow-states/<branch>/<purpose>.<ext>`. Path construction now flows
+/// through `FlowPaths::branch_dir().join("<simple>")`; any `format!`
+/// expression in `src/*.rs` that re-introduces the flat naming would
+/// silently bypass the new layout for whichever artifact it constructs.
+///
+/// This scanner asserts no `format!("{}-<suffix>", branch)` (or
+/// `format!("{branch}-<suffix>")`) call survives in `src/**/*.rs` for
+/// any of the 14 known FLOW path suffixes. The bare suffixes (without
+/// `format!`) still appear in source — `branch_dir().join("state.json")`
+/// is the new shape — so the scanner targets only the dash-prefix
+/// `format!`-style constructions that would land at the old flat path.
+#[test]
+fn test_no_flat_layout_format_in_rust_source() {
+    const PROTECTED_SUFFIXES: &[&str] = &[
+        ".json",
+        ".log",
+        "-plan.md",
+        "-dag.md",
+        "-frozen-phases.json",
+        "-commit-msg.txt",
+        "-commit-msg-content.txt",
+        "-dag-content.md",
+        "-plan-content.md",
+        "-issue-body-content.md",
+        "-rule-content.md",
+        "-start-prompt",
+        "-orchestrate-queue-content.json",
+        "-adversarial_test",
+    ];
+
+    let src_dir = common::repo_root().join("src");
+    let tombstone_re = Regex::new(r"Tombstone:.*?PR #").unwrap();
+
+    let mut violations: Vec<String> = Vec::new();
+    let mut stack = vec![src_dir.clone()];
+    while let Some(dir) = stack.pop() {
+        let entries = match fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let ft = match entry.file_type() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            if ft.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let content = match fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            for (lineno, line) in content.lines().enumerate() {
+                if tombstone_re.is_match(line) {
+                    continue;
+                }
+                let trimmed = line.trim_start();
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+                for suffix in PROTECTED_SUFFIXES {
+                    // Match `format!(... "{}-suffix" ...)` and the
+                    // captured-arg variant `format!(... "{branch}-suffix" ...)`.
+                    let needle1 = format!("\"{{}}{}", suffix);
+                    let needle2 = format!("\"{{branch}}{}", suffix);
+                    if line.contains(&needle1) || line.contains(&needle2) {
+                        let repo_root = common::repo_root();
+                        violations.push(format!(
+                            "{}:{}: flat-layout `format!` for `{}` — use FlowPaths::branch_dir().join(...) per the subdir layout (PR #1258)",
+                            path.strip_prefix(&repo_root)
+                                .unwrap_or(&path)
+                                .display(),
+                            lineno + 1,
+                            suffix
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "src/**/*.rs must not construct flat-layout FLOW state paths via `format!`:\n{}",
+        violations.join("\n")
+    );
+}

@@ -489,8 +489,7 @@ fn add_notification_run_impl_main_unknown_phase_falls_back_to_phase_string_lib()
     let (value, code) = run_impl_main(args, &root);
     assert_eq!(value["status"], "ok");
     assert_eq!(code, 0);
-    let on_disk: Value =
-        serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    let on_disk: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(
         on_disk["slack_notifications"][0]["phase_name"],
         "custom-unknown-phase"

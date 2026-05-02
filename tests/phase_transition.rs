@@ -268,7 +268,9 @@ fn non_code_phase_no_diff_stats() {
     assert_eq!(code, 0);
 
     // Read state file to verify no diff_stats
-    let state_path = flow_states_dir(dir.path()).join("test-feature").join("state.json");
+    let state_path = flow_states_dir(dir.path())
+        .join("test-feature")
+        .join("state.json");
     let content = fs::read_to_string(state_path).unwrap();
     let state: serde_json::Value = serde_json::from_str(&content).unwrap();
     assert!(
@@ -340,7 +342,9 @@ fn code_phase_completion_captures_diff_stats() {
     assert_eq!(json["status"], "ok");
 
     // Read state file to verify diff_stats
-    let state_path = flow_states_dir(dir.path()).join("my-feature").join("state.json");
+    let state_path = flow_states_dir(dir.path())
+        .join("my-feature")
+        .join("state.json");
     let content = fs::read_to_string(state_path).unwrap();
     let updated: serde_json::Value = serde_json::from_str(&content).unwrap();
     assert!(
@@ -460,7 +464,9 @@ fn diff_stats_with_merge_commit_in_history() {
     assert_eq!(json["status"], "ok");
 
     // Verify diff_stats parsed correctly with merge in history
-    let state_path = flow_states_dir(dir.path()).join("my-feature").join("state.json");
+    let state_path = flow_states_dir(dir.path())
+        .join("my-feature")
+        .join("state.json");
     let content = fs::read_to_string(state_path).unwrap();
     let updated: serde_json::Value = serde_json::from_str(&content).unwrap();
     let stats = &updated["diff_stats"];
@@ -1267,7 +1273,9 @@ fn diff_stats_no_main_branch_returns_zeros() {
     assert_eq!(code, 0);
     assert_eq!(json["status"], "ok");
 
-    let state_path = flow_states_dir(dir.path()).join("my-feature").join("state.json");
+    let state_path = flow_states_dir(dir.path())
+        .join("my-feature")
+        .join("state.json");
     let content = fs::read_to_string(state_path).unwrap();
     let updated: serde_json::Value = serde_json::from_str(&content).unwrap();
     let stats = &updated["diff_stats"];
@@ -1306,7 +1314,9 @@ fn diff_stats_no_diff_returns_zeros() {
     assert_eq!(code, 0);
     assert_eq!(json["status"], "ok");
 
-    let state_path = flow_states_dir(dir.path()).join("my-feature").join("state.json");
+    let state_path = flow_states_dir(dir.path())
+        .join("my-feature")
+        .join("state.json");
     let content = fs::read_to_string(state_path).unwrap();
     let updated: serde_json::Value = serde_json::from_str(&content).unwrap();
     let stats = &updated["diff_stats"];
@@ -1376,7 +1386,9 @@ fn diff_stats_deletion_only() {
     assert_eq!(code, 0);
     assert_eq!(json["status"], "ok");
 
-    let state_path = flow_states_dir(dir.path()).join("my-feature").join("state.json");
+    let state_path = flow_states_dir(dir.path())
+        .join("my-feature")
+        .join("state.json");
     let content = fs::read_to_string(state_path).unwrap();
     let updated: serde_json::Value = serde_json::from_str(&content).unwrap();
     let stats = &updated["diff_stats"];
@@ -1667,10 +1679,9 @@ fn run_impl_main_enter_success_returns_zero() {
     assert_eq!(out["status"], "ok");
     assert_eq!(out["phase"], "flow-plan");
     assert_eq!(out["action"], "enter");
-    let log_content = std::fs::read_to_string(
-        dir.path().join(".flow-states").join("test").join("log"),
-    )
-    .expect("log file must exist after append_log");
+    let log_content =
+        std::fs::read_to_string(dir.path().join(".flow-states").join("test").join("log"))
+            .expect("log file must exist after append_log");
     assert!(log_content.contains("phase-transition --action enter --phase flow-plan"));
     assert!(log_content.contains("\"ok\""));
 }
