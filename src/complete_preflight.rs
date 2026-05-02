@@ -191,18 +191,26 @@ pub fn check_pr_status(pr_number: Option<i64>, branch: &str) -> Result<String, S
     }
 }
 
-/// Merge origin/main into the current branch.
+/// Merge `origin/<base_branch>` into the current branch.
+///
+/// `base_branch` is the integration branch the flow coordinates
+/// against (read from the state file by the caller via
+/// `git::read_base_branch`); a repo whose default branch is
+/// `staging` passes `"staging"` here so `git fetch / merge-base /
+/// merge` operate on the correct remote ref instead of the hardcoded
+/// `main`.
 ///
 /// Returns one of:
 ///   ("clean", None) — already up to date
 ///   ("merged", None) — merged successfully (new commits)
 ///   ("conflict", Some(files_array)) — merge conflicts
 ///   ("error", Some(message_string)) — unexpected error
-pub fn merge_main() -> (String, Option<Value>) {
+pub fn merge_main(base_branch: &str) -> (String, Option<Value>) {
+    let origin_ref = format!("origin/{}", base_branch);
     // First git call probes binary availability. Err (spawn/timeout)
     // surfaces directly. Subsequent calls `.expect()` on Ok because
     // git was proven alive here; per `.claude/rules/testability-means-simplicity.md`.
-    match run_cmd_with_timeout(&["git", "fetch", "origin", "main"], NETWORK_TIMEOUT) {
+    match run_cmd_with_timeout(&["git", "fetch", "origin", base_branch], NETWORK_TIMEOUT) {
         Err(e) => return ("error".to_string(), Some(json!(e))),
         Ok((code, _, stderr)) if code != 0 => {
             return ("error".to_string(), Some(json!(stderr.trim())));
@@ -211,7 +219,7 @@ pub fn merge_main() -> (String, Option<Value>) {
     }
 
     let (mb_code, _, _) = run_cmd_with_timeout(
-        &["git", "merge-base", "--is-ancestor", "origin/main", "HEAD"],
+        &["git", "merge-base", "--is-ancestor", &origin_ref, "HEAD"],
         LOCAL_TIMEOUT,
     )
     .expect("git located by earlier fetch call");
@@ -220,7 +228,7 @@ pub fn merge_main() -> (String, Option<Value>) {
     }
 
     let (m_code, _, m_stderr) =
-        run_cmd_with_timeout(&["git", "merge", "origin/main"], NETWORK_TIMEOUT)
+        run_cmd_with_timeout(&["git", "merge", &origin_ref], NETWORK_TIMEOUT)
             .expect("git located by earlier fetch call");
     if m_code == 0 {
         let (push_code, _, push_stderr) = run_cmd_with_timeout(&["git", "push"], NETWORK_TIMEOUT)
@@ -396,7 +404,17 @@ fn preflight(branch: Option<&str>, auto: bool, manual: bool, root: &Path) -> Val
             Value::Object(out)
         }
         "OPEN" => {
-            let (merge_status, merge_data) = merge_main();
+            // Resolve base_branch from state — in inferred mode (no
+            // state file) and in legacy state files written before
+            // base_branch was captured at flow-start, fall back to
+            // "main" so existing behavior is preserved.
+            let base_branch = state
+                .as_ref()
+                .and_then(|s| s.get("base_branch"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("main")
+                .to_string();
+            let (merge_status, merge_data) = merge_main(&base_branch);
             let mut out = serde_json::Map::new();
             match merge_status.as_str() {
                 "conflict" => {

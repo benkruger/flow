@@ -11,6 +11,9 @@ use std::process::Command as StdCommand;
 use flow_rs::cleanup::{run_impl_main, Args};
 use serde_json::{json, Value};
 
+#[path = "common/mod.rs"]
+mod common;
+
 fn flow_rs_no_recursion() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
     cmd.env_remove("FLOW_CI_RUNNING");
@@ -181,6 +184,58 @@ fn cleanup_empty_tempdir_does_not_panic() {
 }
 
 // --- Library-level tests via run_impl_main ---
+
+/// Drive the `Some(str)` branch of `read_base_branch` through
+/// `cleanup --pull` and prove the state-file value reaches
+/// `git pull origin <base_branch>`. The fixture creates a bare
+/// remote with only `main`; the state file declares
+/// `base_branch: "staging"`. After the helper plumbing,
+/// `cleanup` issues `git pull origin staging` against the bare
+/// remote, which fails — the failure stderr (carrying "staging")
+/// surfaces as the `steps.git_pull` value, proving the value
+/// flowed through rather than the hardcoded "main".
+#[test]
+fn cleanup_pulls_base_branch_from_state() {
+    let tmp = tempfile::tempdir().unwrap();
+    let parent = tmp.path().canonicalize().unwrap();
+    // create_git_repo_with_remote sets up bare main + working repo
+    // with origin pointing at it.
+    let repo = common::create_git_repo_with_remote(&parent);
+
+    // Worktree on a feature branch.
+    let wt_rel = ".worktrees/test-feature".to_string();
+    StdCommand::new("git")
+        .args(["worktree", "add", &wt_rel, "-b", "test-feature"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+
+    // State file with base_branch=staging.
+    let branch_dir = repo.join(".flow-states").join("test-feature");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(
+        branch_dir.join("state.json"),
+        json!({
+            "branch": "test-feature",
+            "base_branch": "staging",
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let (value, code) = run_impl_main(&args_for(&repo, "test-feature", &wt_rel, None, true));
+    assert_eq!(code, 0, "cleanup should report ok overall, got: {}", value);
+    let steps = steps_from(&value);
+    let pull_result = steps
+        .get("git_pull")
+        .cloned()
+        .unwrap_or_else(|| "<missing>".to_string());
+    assert!(
+        pull_result.contains("staging"),
+        "git_pull step must reference 'staging' to prove base_branch flowed through, got: {}",
+        pull_result
+    );
+}
 
 #[test]
 fn cleanup_removes_worktree() {

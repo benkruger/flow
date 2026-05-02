@@ -413,8 +413,16 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         }));
     }
 
-    // --- Merge main into branch ---
-    let (merge_status, merge_data) = merge_main();
+    // --- Merge origin/<base_branch> into branch ---
+    // Read base_branch from state (captured at flow-start by
+    // init_state). Fall back to "main" for legacy state files
+    // written before base_branch was tracked.
+    let base_branch = state
+        .get("base_branch")
+        .and_then(|v| v.as_str())
+        .unwrap_or("main")
+        .to_string();
+    let (merge_status, merge_data) = merge_main(&base_branch);
     let tree_changed = merge_status == "merged";
 
     if merge_status == "conflict" {
