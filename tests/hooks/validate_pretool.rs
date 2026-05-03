@@ -1590,3 +1590,151 @@ fn t21_unknown_launcher_finalize_commit_allows() {
         "unknown-launcher finalize-commit must allow; stderr={stderr}"
     );
 }
+
+#[test]
+fn t7_git_dash_c_key_value_commit_on_main_blocks() {
+    // `git -c user.email=x commit -m x` slips a config override
+    // between `git` and the subcommand. The matcher must skip past
+    // `-c <value>` and find `commit` as the effective subcommand.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "git -c user.email=x commit -m \"x\""}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 2,
+        "git -c k=v commit on main must block; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("BLOCKED"),
+        "stderr should contain BLOCKED; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("main"),
+        "stderr should name 'main'; got: {stderr}"
+    );
+}
+
+#[test]
+fn t8_git_dash_c_to_main_from_worktree_blocks() {
+    // Adversarial: hook cwd is a feature-branch worktree, but the
+    // command uses `git -C <main_repo_path>` to redirect git's
+    // effective cwd onto the integration branch. Layer 10 must
+    // resolve the branch from BOTH the hook cwd AND the `-C` path
+    // and block when EITHER matches the integration branch.
+    let (_main_dir, main_root) = setup_repo_on_branch("main");
+    let (_feat_dir, feat_root) = setup_repo_on_branch("feat-x");
+    let main_path = main_root.to_str().expect("utf-8 main path");
+    let cmd = format!(
+        r#"{{"tool_input": {{"command": "git -C {} commit -m \"x\""}}}}"#,
+        main_path
+    );
+    let (code, _stdout, stderr) = run_hook_with_input(&cmd, Some(&feat_root));
+    assert_eq!(
+        code, 2,
+        "git -C <main_path> commit from feat-x must block; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("BLOCKED"),
+        "stderr should contain BLOCKED; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("main"),
+        "stderr should name 'main' (the -C target's branch); got: {stderr}"
+    );
+}
+
+#[test]
+fn t15_quoted_git_commit_on_main_blocks() {
+    // `'git' commit -m x` quotes the command name. Bash dequotes it
+    // before exec, so the matcher must dequote the first token before
+    // comparing it to "git".
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "'git' commit -m \"x\""}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 2,
+        "'git' commit on main must block (dequoted); stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("BLOCKED"),
+        "stderr should contain BLOCKED; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("main"),
+        "stderr should name 'main'; got: {stderr}"
+    );
+}
+
+#[test]
+fn t16_bash_dash_c_git_commit_on_main_blocks() {
+    // `bash -c '<inner>'` runs `<inner>` as a shell script. The
+    // matcher must unwrap the `-c` argument and re-evaluate the
+    // inner command. The inner is `git commit -m "x"` → matches.
+    let (_dir, root) = setup_repo_on_branch("main");
+    // Outer JSON encodes a shell command whose `-c` argument is a
+    // single-quoted shell string containing `git commit -m "x"`.
+    let input = r#"{"tool_input": {"command": "bash -c 'git commit -m \"x\"'"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 2,
+        "bash -c 'git commit ...' on main must block; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("BLOCKED"),
+        "stderr should contain BLOCKED; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("main"),
+        "stderr should name 'main'; got: {stderr}"
+    );
+}
+
+#[test]
+fn t23_sh_dash_c_git_commit_on_main_blocks() {
+    // Sibling of T16 — `sh` and `bash` are both POSIX-compatible
+    // shells that take `-c <script>`. The matcher must handle both.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "sh -c 'git commit -m \"x\"'"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 2,
+        "sh -c 'git commit ...' on main must block; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("BLOCKED"),
+        "stderr should contain BLOCKED; got: {stderr}"
+    );
+}
+
+#[test]
+fn t24_git_dash_c_with_no_value_allows() {
+    // Boundary: `git -c` with no value (or no subcommand after the
+    // value) — the matcher consumes `-c` plus the next token (None
+    // here), the loop exhausts without finding a subcommand, and
+    // returns Some(_) == "commit" → false. Layer 10 doesn't fire.
+    // Pins the "next_git_subcommand returns None on exhaustion"
+    // branch so a refactor that loses the loop-end fallback fails CI.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "git -c"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 0,
+        "bare 'git -c' with no value must allow; stderr={stderr}"
+    );
+}
+
+#[test]
+fn t25_git_dash_uppercase_c_with_no_path_allows() {
+    // Boundary: `git -C` with no path — extract_dash_c_path's
+    // `tokens.next()` after `-C` returns None, so the function
+    // returns None and check_commit_on_integration only checks the
+    // hook cwd (which is `main`). is_commit_invocation also returns
+    // false because next_git_subcommand exhausts without finding a
+    // subcommand → Layer 10 does not fire → allow.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "git -C"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 0,
+        "bare 'git -C' with no path must allow; stderr={stderr}"
+    );
+}
