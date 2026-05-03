@@ -246,11 +246,11 @@ pub fn cleanup(
 /// Returns (JSON value, exit code).
 ///
 /// `base_branch` is resolved from the per-branch state file via
-/// `git::read_base_branch` and falls back to `"main"` when the
-/// state file is missing, malformed, or omits the field — both
-/// the abort path (state file may be present but partially
-/// initialized) and legacy state files written before the field
-/// was tracked are covered by the same fallback.
+/// `git::read_base_branch` and falls back to git's integration
+/// branch (origin/HEAD) when the state file is missing, malformed,
+/// or omits the field — both the abort path (state file may be
+/// present but partially initialized) and pre-`base_branch`-field
+/// state files are covered by the same fallback.
 pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
     let root = Path::new(&args.project_root);
     if !root.is_dir() {
@@ -261,7 +261,7 @@ pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
 
     let base_branch = FlowPaths::try_new(root, &args.branch)
         .and_then(|paths| crate::git::read_base_branch(&paths.state_file()).ok())
-        .unwrap_or_else(|| "main".to_string());
+        .unwrap_or_else(|| crate::git::default_branch_in(root));
 
     let steps = cleanup(
         root,

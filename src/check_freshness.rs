@@ -162,9 +162,8 @@ fn exit_code_for_status(result: &Value) -> i32 {
 ///
 /// When `--state-file` is provided and the state file declares
 /// `base_branch`, the freshness check targets `origin/<base_branch>`;
-/// otherwise it falls back to `"main"` so legacy state files (and
-/// the no-state-file invocation path) preserve pre-existing
-/// behavior.
+/// otherwise it queries git for the integration branch
+/// (origin/HEAD) so non-main-trunk repos resolve correctly.
 pub fn run_impl_main(raw_args: &[String], cwd: &Path) -> (Value, i32) {
     let mut state_file: Option<PathBuf> = None;
     let mut i = 0;
@@ -180,7 +179,7 @@ pub fn run_impl_main(raw_args: &[String], cwd: &Path) -> (Value, i32) {
     let base_branch = state_file
         .as_deref()
         .and_then(|p| crate::git::read_base_branch(p).ok())
-        .unwrap_or_else(|| "main".to_string());
+        .unwrap_or_else(|| crate::git::default_branch_in(cwd));
 
     let result = check_freshness(state_file.as_deref(), cwd, &base_branch);
     let code = exit_code_for_status(&result);

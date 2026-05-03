@@ -415,22 +415,23 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 
     // --- Merge origin/<base_branch> into branch ---
     // Read base_branch from state (captured at flow-start by
-    // init_state). Fall back to "main" for legacy state files
-    // written before base_branch was tracked.
+    // init_state). When the field is missing — only possible for
+    // state files written before base_branch existed — query git
+    // for the integration branch (origin/HEAD) so non-main-trunk
+    // repos resolve correctly.
     //
     // This reads `state` directly rather than routing through
     // `git::read_base_branch`. `state` is already loaded and validated
     // as a JSON object by `read_state` above; the validation contract
     // in `git::read_base_branch` is for callsites that hold only a
     // path and need to read the file from disk. Re-reading the same
-    // file just to re-parse JSON would be wasteful, so the caller
-    // here applies the same `as_str().unwrap_or("main")` fallback
-    // shape inline.
+    // file just to re-parse JSON would be wasteful.
     let base_branch = state
         .get("base_branch")
         .and_then(|v| v.as_str())
-        .unwrap_or("main")
-        .to_string();
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| crate::git::default_branch_in(&root));
     let (merge_status, merge_data) = merge_main(&base_branch);
     let tree_changed = merge_status == "merged";
 
@@ -479,7 +480,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         return Ok(json!({
             "status": "ok",
             "path": "ci_stale",
-            "reason": "main merged into branch — tree changed, CI must re-run",
+            "reason": format!("{} merged into branch — tree changed, CI must re-run", base_branch),
             "mode": mode,
             "pr_number": pr_number,
             "pr_url": pr_url,

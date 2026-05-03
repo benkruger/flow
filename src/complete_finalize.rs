@@ -99,12 +99,11 @@ pub fn run_impl(args: &Args) -> Value {
 
     // Cleanup. Resolve base_branch from the state file referenced by
     // --state-file (the path the post-merge step just consumed) so
-    // the optional --pull step targets origin/<base_branch> instead
-    // of the hardcoded "main". Falls back to "main" when the field
-    // is missing or the file is unreadable, preserving pre-existing
-    // behavior on legacy state files.
-    let base_branch =
-        read_base_branch(Path::new(&args.state_file)).unwrap_or_else(|_| "main".to_string());
+    // the optional --pull step targets origin/<base_branch>. Falls
+    // back to git's integration branch (origin/HEAD) when the field
+    // is missing or the file is unreadable.
+    let base_branch = read_base_branch(Path::new(&args.state_file))
+        .unwrap_or_else(|_| crate::git::default_branch_in(&root));
     let cleanup_steps =
         cleanup::cleanup(&root, branch, &args.worktree, None, args.pull, &base_branch);
     let cleanup_map: Map<String, Value> = cleanup_steps

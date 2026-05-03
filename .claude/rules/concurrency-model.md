@@ -64,15 +64,24 @@ Pattern: resolve the canonical name first (issue fetch, label
 guard, duplicate check), then `acquire(&canonical_name)`. All
 error paths before the lock return without touching the lock queue.
 
-## Never Edit Source on the Base Branch
+## Editing Source on the Base Branch
 
-Never edit source files directly on the base branch (the
-integration branch the flow coordinates against). Every change —
-including critical bug fixes that block the current workflow — must
-go through the FLOW lifecycle on a feature branch. If a bug blocks
-flow-start with issue references, start the flow without issue
-references to get on a feature branch first, then fix the bug
+Default: never edit source files directly on the base branch (the
+integration branch the flow coordinates against). Every change
+should go through the FLOW lifecycle on a feature branch. If a bug
+blocks flow-start with issue references, start the flow without
+issue references to get on a feature branch first, then fix the bug
 there.
+
+Exception: when the maintainer explicitly directs a fix on the base
+branch in the current session — "do this on main", "fix it directly
+on main" — edit on the base branch is permitted. The default
+protects against drive-by edits the model rationalizes on its own;
+explicit user direction is a different category.
+
+The commit itself ALWAYS goes through `/flow:flow-commit`. The
+exception unlocks where the diff lives, never how it lands.
+Flow-commit runs CI and is never bypassed regardless of phrasing.
 
 ## Common Mistakes
 

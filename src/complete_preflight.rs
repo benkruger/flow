@@ -404,16 +404,18 @@ fn preflight(branch: Option<&str>, auto: bool, manual: bool, root: &Path) -> Val
             Value::Object(out)
         }
         "OPEN" => {
-            // Resolve base_branch from state — in inferred mode (no
-            // state file) and in legacy state files written before
-            // base_branch was captured at flow-start, fall back to
-            // "main" so existing behavior is preserved.
+            // Resolve base_branch from state. In inferred mode (no
+            // state file) or when the field is absent, query git for
+            // the integration branch (origin/HEAD) so non-main-trunk
+            // repos resolve correctly instead of receiving a literal
+            // "main".
             let base_branch = state
                 .as_ref()
                 .and_then(|s| s.get("base_branch"))
                 .and_then(|v| v.as_str())
-                .unwrap_or("main")
-                .to_string();
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| crate::git::default_branch_in(root));
             let (merge_status, merge_data) = merge_main(&base_branch);
             let mut out = serde_json::Map::new();
             match merge_status.as_str() {
