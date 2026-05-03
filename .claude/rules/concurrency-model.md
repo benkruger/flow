@@ -83,6 +83,56 @@ The commit itself ALWAYS goes through `/flow:flow-commit`. The
 exception unlocks where the diff lives, never how it lands.
 Flow-commit runs CI and is never bypassed regardless of phrasing.
 
+### Mechanical Enforcement
+
+The `validate-pretool` PreToolUse hook's Layer 10 mechanically
+rejects direct commit invocations whose effective cwd resolves to
+the integration branch. The hook checks two pathways: `git ...
+commit` and `bin/flow ... finalize-commit` (recognized by
+basename suffix so absolute paths like
+`/Users/.../bin/flow finalize-commit` block the same way as bare
+`bin/flow`). The matcher is robust to a curated set of bypasses:
+
+- **Quoted command names** — `'git'` and `"git"` are dequoted
+  before comparison, so the matcher cannot be defeated by a stray
+  quote pair around the launcher.
+- **`git -c key=value commit ...`** and **`git -C path commit ...`** —
+  the matcher walks past these flag pairs to find the effective
+  subcommand, so config overrides and explicit-cwd flags do not
+  hide the `commit`.
+- **`bash -c '<inner>'` and `sh -c '<inner>'`** — one level of
+  shell wrapping is unwrapped, and the inner script is
+  re-evaluated through the same matcher.
+- **`git -C <other_repo> commit ...`** — branch resolution reads
+  from BOTH the hook's process cwd AND the `-C` argument's path,
+  and Layer 10 blocks if EITHER resolves to its own integration
+  branch. So redirecting git's effective cwd onto a different
+  repo on `main` does not bypass the gate when the hook is
+  running from a feature-branch worktree.
+
+Documented v1 gaps (allowed today, captured by tests so a future
+widening is a deliberate decision):
+
+- **Env-var indirection.** `GIT_DIR=/path git commit` and
+  `GIT_WORK_TREE=...` redirect git's view of the repo via env
+  vars rather than CLI flags. Env vars are not visible to the
+  matcher in the simple form.
+- **User-defined git aliases.** `git ci -m x` (with
+  `alias.ci = commit` configured) shows `ci` to the matcher, not
+  `commit`. Git resolves aliases internally after the hook fires.
+- **Command-construction launchers.** `xargs git commit`,
+  `node finalize-commit`, and similar shapes hide the commit
+  invocation behind another binary. The matcher only fires on
+  recognized first tokens (`git`, `bin/flow`, `bash`, `sh`).
+- **Nested shell wrappers.** `bash -c 'bash -c "..."'` is
+  unwrapped at most one level — a deeper nesting falls through.
+
+These gaps are not security holes — they are documented v1
+boundaries. The default-no-edit-on-the-base-branch discipline
+above remains the primary instrument; Layer 10 is the
+merge-conflict trip-wire for the four shapes Claude is most
+likely to produce by accident.
+
 ## Common Mistakes
 
 - Assuming only one `.flow-states/*.json` file exists
