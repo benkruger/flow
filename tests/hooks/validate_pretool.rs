@@ -1240,3 +1240,253 @@ fn test_allows_ampersand_in_flag_name() {
     let (allowed, msg) = validate("mysql -u root -p'p&w0rd'", None, true);
     assert!(allowed, "& inside single quotes must be inert; got: {msg}");
 }
+
+// --- commit_on_integration_branch ---
+//
+// Layer 10: block direct commit invocations when the hook's effective
+// cwd resolves to the integration branch (the value `default_branch_in`
+// returns — `main` for the test fixtures below, since no remote HEAD is
+// configured and the helper falls back to `"main"`).
+//
+// The fixture pattern mirrors the existing `run_agent_path_blocked_*`
+// tests: `tempfile::tempdir()` + `canonicalize()` per
+// `.claude/rules/testing-gotchas.md` "macOS Subprocess Path
+// Canonicalization", `git init --initial-branch <name>`, configure
+// identity, and a single empty commit so `git branch --show-current`
+// returns the named branch.
+
+/// Initialize a tempdir as a git repo on the named branch, with a
+/// single empty commit so `git branch --show-current` returns the
+/// branch name. Returns the `TempDir` (drop-on-cleanup) and the
+/// canonical root path the test must use as cwd and in any
+/// `tool_input` paths it builds.
+fn setup_repo_on_branch(branch: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().canonicalize().expect("canonicalize");
+    let init = Command::new("git")
+        .args(["init", "--initial-branch", branch])
+        .current_dir(&root)
+        .output()
+        .expect("git init");
+    assert!(init.status.success(), "git init failed: {init:?}");
+    Command::new("git")
+        .args(["config", "user.email", "test@example.com"])
+        .current_dir(&root)
+        .output()
+        .expect("git config email");
+    Command::new("git")
+        .args(["config", "user.name", "Test"])
+        .current_dir(&root)
+        .output()
+        .expect("git config name");
+    let commit = Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(&root)
+        .output()
+        .expect("git commit init");
+    assert!(
+        commit.status.success(),
+        "empty init commit failed: {commit:?}"
+    );
+    (dir, root)
+}
+
+#[test]
+fn t1_bare_git_commit_on_main_blocks() {
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "git commit -m \"x\""}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(code, 2, "git commit on main must block; stderr={stderr}");
+    assert!(
+        stderr.contains("BLOCKED"),
+        "stderr should contain BLOCKED; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("main"),
+        "stderr should name the branch 'main'; got: {stderr}"
+    );
+}
+
+#[test]
+fn t5_git_commit_dash_f_on_main_blocks() {
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "git commit -F /tmp/msg"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(code, 2, "git commit -F on main must block; stderr={stderr}");
+    assert!(
+        stderr.contains("BLOCKED"),
+        "stderr should contain BLOCKED; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("main"),
+        "stderr should name the branch 'main'; got: {stderr}"
+    );
+}
+
+#[test]
+fn t6_git_commit_amend_on_main_blocks() {
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "git commit --amend"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 2,
+        "git commit --amend on main must block; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("BLOCKED"),
+        "stderr should contain BLOCKED; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("main"),
+        "stderr should name the branch 'main'; got: {stderr}"
+    );
+}
+
+#[test]
+fn t2_git_commit_on_feature_branch_in_worktree_allows() {
+    // Fixture branch `feat-x` differs from default_branch_in's "main"
+    // fallback (no remote configured). Layer 10 does not fire.
+    let (_dir, root) = setup_repo_on_branch("feat-x");
+    let input = r#"{"tool_input": {"command": "git commit -m \"x\""}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 0,
+        "git commit on feature branch must allow; stderr={stderr}"
+    );
+}
+
+#[test]
+fn t3_git_commit_on_feature_branch_in_main_repo_allows() {
+    // The hook does not distinguish a worktree from a main repo —
+    // only the resolved branch matters.
+    let (_dir, root) = setup_repo_on_branch("feat-x");
+    let input = r#"{"tool_input": {"command": "git commit -m \"y\""}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 0,
+        "git commit on feature branch must allow; stderr={stderr}"
+    );
+}
+
+#[test]
+fn t4_git_commit_on_staging_default_repo_blocks() {
+    // Configure `origin/HEAD` to `origin/staging` so default_branch_in
+    // returns "staging" rather than the hardcoded fallback. The block
+    // message names the staging branch — proving Layer 10 honours the
+    // actual integration branch.
+    let (_dir, root) = setup_repo_on_branch("staging");
+    let _ = Command::new("git")
+        .args(["remote", "add", "origin", root.to_str().unwrap()])
+        .current_dir(&root)
+        .output()
+        .expect("git remote add");
+    let _ = Command::new("git")
+        .args(["update-ref", "refs/remotes/origin/staging", "HEAD"])
+        .current_dir(&root)
+        .output()
+        .expect("git update-ref");
+    let _ = Command::new("git")
+        .args([
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/staging",
+        ])
+        .current_dir(&root)
+        .output()
+        .expect("git symbolic-ref");
+    let input = r#"{"tool_input": {"command": "git commit -m \"x\""}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(code, 2, "git commit on staging must block; stderr={stderr}");
+    assert!(
+        stderr.contains("BLOCKED"),
+        "stderr should contain BLOCKED; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("staging"),
+        "stderr should name the branch 'staging' (not 'main'); got: {stderr}"
+    );
+}
+
+#[test]
+fn t14_git_status_on_main_allows() {
+    // Layer 10 only fires on `git ... commit`. `git status` is a
+    // different subcommand → is_commit_invocation returns false →
+    // the hook does not check the branch.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "git status"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(code, 0, "git status on main must allow; stderr={stderr}");
+}
+
+#[test]
+fn t17_git_commit_detached_head_allows() {
+    // Detached HEAD: `git branch --show-current` returns empty,
+    // current_branch_in reports None, the `?` in
+    // check_commit_on_integration short-circuits → no block.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let rev = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(&root)
+        .output()
+        .expect("git rev-parse");
+    let sha = String::from_utf8_lossy(&rev.stdout).trim().to_string();
+    let _ = Command::new("git")
+        .args(["update-ref", "--no-deref", "HEAD", &sha])
+        .current_dir(&root)
+        .output()
+        .expect("detach HEAD");
+    let input = r#"{"tool_input": {"command": "git commit -m \"x\""}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 0,
+        "git commit on detached HEAD must allow; stderr={stderr}"
+    );
+}
+
+#[test]
+fn t18_git_commit_in_non_git_tempdir_allows() {
+    // Cwd is not a git repo. current_branch_in reports None → no
+    // block. The hook never blocks when it cannot resolve a branch
+    // because that scenario also can never produce a real commit on
+    // the integration branch.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().canonicalize().expect("canonicalize");
+    let input = r#"{"tool_input": {"command": "git commit -m \"x\""}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 0,
+        "git commit in non-git dir must allow; stderr={stderr}"
+    );
+}
+
+#[test]
+fn t19_git_ci_alias_on_main_allows_in_v1() {
+    // Documented v1 gap: `git ci -m x` (alias) shows `ci` as the
+    // second token, not `commit`. is_commit_invocation returns false
+    // → allow. This test pins the boundary so a future widening of
+    // the matcher is a deliberate decision.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let _ = Command::new("git")
+        .args(["config", "alias.ci", "commit"])
+        .current_dir(&root)
+        .output()
+        .expect("git config alias");
+    let input = r#"{"tool_input": {"command": "git ci -m \"x\""}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 0,
+        "git ci alias on main allows in v1; stderr={stderr}"
+    );
+}
+
+#[test]
+fn t20_xargs_git_commit_on_main_allows_in_v1() {
+    // Documented v1 gap: `xargs git commit` hides commit behind
+    // another binary. is_commit_invocation matches only when the
+    // FIRST token is `git` (later tasks add `bin/flow`). With
+    // `xargs` as the first token, the matcher returns false → allow.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "xargs git commit"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(code, 0, "xargs git commit allows in v1; stderr={stderr}");
+}

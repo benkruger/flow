@@ -10,6 +10,8 @@
 //! Exit 0 — allow (command passes through to normal permission system)
 //! Exit 2 — block (error message on stderr is fed back to the sub-agent)
 
+use std::path::Path;
+
 use regex::Regex;
 use serde_json::Value;
 
@@ -17,6 +19,7 @@ use super::{
     build_permission_regexes, detect_branch_from_path, find_settings_and_root_from, is_flow_active,
     read_hook_input, resolve_main_root, FILE_READ_COMMANDS,
 };
+use crate::git::{current_branch_in, default_branch_in};
 
 /// Validate a Bash command string.
 ///
@@ -300,6 +303,53 @@ fn redirect_predicate(bytes: &[u8], i: usize) -> Option<&'static str> {
     Some(">")
 }
 
+/// Recognize a direct commit invocation that Layer 10 must block when
+/// the effective cwd is on the integration branch. v1 only matches
+/// the bare `git ... commit` shape (first token `git`, subcommand
+/// `commit` immediately after). Subsequent tasks extend this matcher
+/// to recognize `bin/flow finalize-commit`, `git -c k=v commit`,
+/// `bash -c '...'`, and quoted/dequoted first tokens.
+fn is_commit_invocation(stripped: &str) -> bool {
+    let mut tokens = stripped.split_whitespace();
+    matches!(
+        (tokens.next(), tokens.next()),
+        (Some("git"), Some("commit"))
+    )
+}
+
+/// Compose the Layer 10 block message naming the integration branch.
+/// The message is a fixed-shape string the contract tests assert on
+/// (must contain `BLOCKED` and the branch name) and the user-facing
+/// guidance directing the engineer at `/flow:flow-commit`.
+fn commit_block_message(branch: &str) -> String {
+    format!(
+        "BLOCKED: direct commits on the integration branch '{}' are not allowed. \
+         Run /flow:flow-commit from a feature worktree instead. \
+         This block is mechanical (Layer 10).",
+        branch
+    )
+}
+
+/// Run Layer 10's commit-on-integration-branch check against the
+/// effective cwd. Returns `Some(message)` when the check fires (the
+/// command is a commit invocation AND the cwd resolves to the
+/// integration branch); the caller eprintlns the message and exits 2.
+/// Returns `None` when Layer 10 does not block — either the command
+/// is not a commit invocation, the cwd is not in a git repo, or the
+/// current branch differs from the integration branch.
+fn check_commit_on_integration(command: &str, cwd: &Path) -> Option<String> {
+    if !is_commit_invocation(command) {
+        return None;
+    }
+    let current = current_branch_in(cwd)?;
+    let integration = default_branch_in(cwd);
+    if current == integration {
+        Some(commit_block_message(&current))
+    } else {
+        None
+    }
+}
+
 /// Determine whether a command should be blocked from run_in_background.
 ///
 /// `bin/flow` (any subcommand) and `bin/ci` are always blocked — every
@@ -471,6 +521,19 @@ pub fn run() {
     if !allowed {
         eprintln!("{}", message);
         std::process::exit(2);
+    }
+
+    // Layer 10: block direct commit invocations when the hook's
+    // effective cwd resolves to the integration branch. Layered after
+    // validate() returns Ok because validate() does not receive cwd —
+    // logically equivalent to inserting a layer between the deny list
+    // and the file-read check, but without expanding validate()'s
+    // signature across every existing caller.
+    if let Some(cwd_path) = cwd.as_deref() {
+        if let Some(msg) = check_commit_on_integration(command, cwd_path) {
+            eprintln!("{}", msg);
+            std::process::exit(2);
+        }
     }
 
     std::process::exit(0);
