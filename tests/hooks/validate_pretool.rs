@@ -1490,3 +1490,103 @@ fn t20_xargs_git_commit_on_main_allows_in_v1() {
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
     assert_eq!(code, 0, "xargs git commit allows in v1; stderr={stderr}");
 }
+
+#[test]
+fn t9_bin_flow_finalize_commit_on_main_blocks() {
+    // The other commit pathway: `bin/flow finalize-commit` runs the
+    // commit machinery from inside FLOW's binary. On the integration
+    // branch the hook must block it the same way it blocks
+    // `git commit`.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 2,
+        "bin/flow finalize-commit on main must block; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("BLOCKED"),
+        "stderr should contain BLOCKED; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("main"),
+        "stderr should name the branch 'main'; got: {stderr}"
+    );
+}
+
+#[test]
+fn t10_absolute_path_bin_flow_finalize_commit_on_main_blocks() {
+    // The first token can be an absolute path to bin/flow when a
+    // skill invokes the launcher via ${CLAUDE_PLUGIN_ROOT}/bin/flow.
+    // The matcher must recognize the suffix `*/bin/flow` so absolute
+    // paths block the same way as bare `bin/flow`.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "/Users/ben/code/flow/bin/flow finalize-commit"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 2,
+        "absolute /Users/.../bin/flow finalize-commit on main must block; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("BLOCKED"),
+        "stderr should contain BLOCKED; got: {stderr}"
+    );
+}
+
+#[test]
+fn t11_bin_flow_finalize_commit_in_worktree_allows() {
+    // From a feature-branch fixture (representing a worktree),
+    // bin/flow finalize-commit allows because current_branch
+    // (feat-x) differs from default_branch_in's "main" fallback.
+    let (_dir, root) = setup_repo_on_branch("feat-x");
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 0,
+        "bin/flow finalize-commit on feature branch must allow; stderr={stderr}"
+    );
+}
+
+#[test]
+fn t12_bin_flow_start_gate_on_main_allows() {
+    // start-gate is a sibling bin/flow subcommand that does NOT
+    // perform a commit through Claude's Bash tool path. Layer 10
+    // must not match it. This pins the boundary so the matcher
+    // doesn't over-fire on every bin/flow invocation.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "bin/flow start-gate --branch feat-x"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 0,
+        "bin/flow start-gate on main must allow; stderr={stderr}"
+    );
+}
+
+#[test]
+fn t13_bin_flow_start_workspace_on_main_allows() {
+    // Sibling case: start-workspace also runs from the start lock on
+    // main and must not be blocked by Layer 10.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "bin/flow start-workspace feat-x --branch feat-x"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 0,
+        "bin/flow start-workspace on main must allow; stderr={stderr}"
+    );
+}
+
+#[test]
+fn t21_unknown_launcher_finalize_commit_allows() {
+    // Boundary: an unrelated launcher with `finalize-commit` as the
+    // second token must NOT match. is_bin_flow_token rejects the
+    // first token (neither bare `bin/flow` nor a `*/bin/flow` suffix)
+    // → arm returns false → allow. Pins the matcher's launcher
+    // surface so it cannot widen accidentally.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "node finalize-commit"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 0,
+        "unknown-launcher finalize-commit must allow; stderr={stderr}"
+    );
+}

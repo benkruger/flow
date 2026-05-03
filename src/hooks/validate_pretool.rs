@@ -303,18 +303,33 @@ fn redirect_predicate(bytes: &[u8], i: usize) -> Option<&'static str> {
     Some(">")
 }
 
+/// Whether the first token is a `bin/flow` launcher invocation —
+/// either bare `bin/flow` or any absolute path ending in `/bin/flow`.
+/// Mirrors the suffix-match used by `is_flow_command` further below
+/// so the two matchers stay in lockstep on the same family of paths.
+fn is_bin_flow_token(token: &str) -> bool {
+    token == "bin/flow" || token.ends_with("/bin/flow")
+}
+
 /// Recognize a direct commit invocation that Layer 10 must block when
-/// the effective cwd is on the integration branch. v1 only matches
-/// the bare `git ... commit` shape (first token `git`, subcommand
-/// `commit` immediately after). Subsequent tasks extend this matcher
-/// to recognize `bin/flow finalize-commit`, `git -c k=v commit`,
+/// the effective cwd is on the integration branch. v1 matches two
+/// shapes: `git ... commit` (subcommand `commit` immediately after
+/// `git`) and `bin/flow ... finalize-commit` (subcommand
+/// `finalize-commit` immediately after the `bin/flow` launcher,
+/// matched by basename suffix so absolute paths work). Subsequent
+/// tasks extend this matcher to recognize `git -c k=v commit`,
 /// `bash -c '...'`, and quoted/dequoted first tokens.
 fn is_commit_invocation(stripped: &str) -> bool {
     let mut tokens = stripped.split_whitespace();
-    matches!(
-        (tokens.next(), tokens.next()),
-        (Some("git"), Some("commit"))
-    )
+    let first = tokens.next().unwrap_or("");
+    let second = tokens.next();
+    if first == "git" {
+        return second == Some("commit");
+    }
+    if is_bin_flow_token(first) {
+        return second == Some("finalize-commit");
+    }
+    false
 }
 
 /// Compose the Layer 10 block message naming the integration branch.
