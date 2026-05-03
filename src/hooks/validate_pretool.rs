@@ -10,7 +10,7 @@
 //! Exit 0 — allow (command passes through to normal permission system)
 //! Exit 2 — block (error message on stderr is fed back to the sub-agent)
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use regex::Regex;
 use serde_json::Value;
@@ -311,11 +311,16 @@ fn is_bin_flow_token(token: &str) -> bool {
     token == "bin/flow" || token.ends_with("/bin/flow")
 }
 
-/// Strip a single layer of surrounding single or double quotes from
-/// a shell token. Returns the inner string when quotes match on both
-/// sides; otherwise returns the input unchanged. Bash dequotes
-/// command names before exec, so `'git' commit` runs the same as
-/// `git commit` — Layer 10 must too.
+/// Strip leading and trailing single quotes, then leading and
+/// trailing double quotes, from a shell token. Bash dequotes command
+/// names before exec, so `'git' commit` runs the same as `git
+/// commit` — Layer 10 must too. The `trim_matches` chain strips ALL
+/// leading and trailing quote characters of each kind, not a
+/// matched pair, which is a permissive v1 heuristic: the worst case
+/// is over-stripping a malformed token (e.g. `'git` becomes `git`
+/// even though the trailing quote is missing), which can only widen
+/// the matcher's recognition surface for adversarial inputs and
+/// cannot under-block a legitimate `git commit`.
 fn dequote_token(s: &str) -> &str {
     s.trim_matches('\'').trim_matches('"')
 }
@@ -324,8 +329,12 @@ fn dequote_token(s: &str) -> &str {
 /// return the inner script string with one layer of surrounding
 /// quotes removed. Otherwise return None. Used to re-evaluate the
 /// inner command through the same matcher one level deeper. v1 does
-/// not recurse a second time — `bash -c 'bash -c "..."'` falls
-/// through to allow.
+/// not recurse a second time (`bash -c 'bash -c "..."'` falls
+/// through to allow), does not handle env-var-indirected launchers
+/// (`SHELL=bash $SHELL -c '...'`), and does not handle bash flags
+/// before `-c` (`bash --norc -c '...'`) — these shapes pass through
+/// to the standard first-token check, which sees `bash` as the
+/// first token and returns false from `is_commit_invocation_inner`.
 fn unwrap_bash_c(stripped: &str) -> Option<String> {
     let after = stripped
         .strip_prefix("bash -c ")
@@ -390,7 +399,16 @@ fn is_commit_invocation_inner(stripped: &str) -> bool {
         return next_git_subcommand(&mut tokens) == Some("commit");
     }
     if is_bin_flow_token(first) {
-        return tokens.next() == Some("finalize-commit");
+        // bin/flow today exposes no global flags between launcher
+        // and subcommand, but a future addition (`--verbose`,
+        // `--log-level <value>`, etc.) must not bypass Layer 10.
+        // Match `finalize-commit` as any subsequent token rather
+        // than the immediate next token. False-positive risk is
+        // negligible: split_whitespace tokenization preserves
+        // surrounding quotes, so a literal `finalize-commit`
+        // appearing inside a quoted argument string keeps its
+        // quote characters and never compares equal.
+        return tokens.any(|t| t == "finalize-commit");
     }
     false
 }
@@ -426,19 +444,29 @@ fn check_commit_on_integration(command: &str, cwd: &Path) -> Option<String> {
     if !is_commit_invocation(command) {
         return None;
     }
-    let mut candidates: Vec<PathBuf> = vec![cwd.to_path_buf()];
-    if let Some(p) = extract_dash_c_path(command) {
-        candidates.push(PathBuf::from(p));
+    if let Some(msg) = match_branch_at(cwd) {
+        return Some(msg);
     }
-    for candidate in &candidates {
-        if let Some(current) = current_branch_in(candidate) {
-            let integration = default_branch_in(candidate);
-            if current == integration {
-                return Some(commit_block_message(&current));
-            }
+    if let Some(p) = extract_dash_c_path(command) {
+        if let Some(msg) = match_branch_at(Path::new(p)) {
+            return Some(msg);
         }
     }
     None
+}
+
+/// Resolve the current branch and integration branch from the given
+/// path; return the block message when they match (commit on
+/// integration), otherwise None. Factored out so the cwd check and
+/// the `-C path` check share one block-decision shape.
+fn match_branch_at(path: &Path) -> Option<String> {
+    let current = current_branch_in(path)?;
+    let integration = default_branch_in(path);
+    if current == integration {
+        Some(commit_block_message(&current))
+    } else {
+        None
+    }
 }
 
 /// Determine whether a command should be blocked from run_in_background.
@@ -616,10 +644,13 @@ pub fn run() {
 
     // Layer 10: block direct commit invocations when the hook's
     // effective cwd resolves to the integration branch. Layered after
-    // validate() returns Ok because validate() does not receive cwd —
-    // logically equivalent to inserting a layer between the deny list
-    // and the file-read check, but without expanding validate()'s
-    // signature across every existing caller.
+    // validate() returns Ok rather than as another layer inside
+    // validate() because validate() does not receive cwd — adding it
+    // would expand the function's signature across every existing
+    // caller. Commands blocked by Layers 1-9 never reach this point;
+    // Layer 10 fires only when the command passes all preceding
+    // structural gates AND is a commit invocation on the integration
+    // branch.
     if let Some(cwd_path) = cwd.as_deref() {
         if let Some(msg) = check_commit_on_integration(command, cwd_path) {
             eprintln!("{}", msg);

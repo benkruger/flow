@@ -1248,6 +1248,22 @@ fn test_allows_ampersand_in_flag_name() {
 // returns — `main` for the test fixtures below, since no remote HEAD is
 // configured and the helper falls back to `"main"`).
 //
+// Test naming follows a `t<N>_<description>` convention where N is a
+// logical group identifier (NOT sequential):
+//   - t1, t5, t6           — basic git commit blocking (Task 1)
+//   - t2, t3, t4, t14      — feature branch and non-commit allow paths
+//                            (Task 3); t4 covers staging integration
+//   - t9-t13, t21          — bin/flow finalize-commit recognition and
+//                            sibling subcommand allow (Task 5+6),
+//                            unknown launcher boundary (Task 6 follow-up)
+//   - t7, t8, t15, t16,
+//     t23, t24, t25        — adversarial bypasses (Task 7+8): -c k=v,
+//                            -C path, quoted command, bash/sh -c,
+//                            empty -c/-C values
+//   - t17-t20              — documented v1 boundaries (Task 9):
+//                            detached HEAD, non-git, alias, xargs
+//   - t26                  — bin/flow flag-skip bypass (Code Review)
+//
 // The fixture pattern mirrors the existing `run_agent_path_blocked_*`
 // tests: `tempfile::tempdir()` + `canonicalize()` per
 // `.claude/rules/testing-gotchas.md` "macOS Subprocess Path
@@ -1736,5 +1752,49 @@ fn t25_git_dash_uppercase_c_with_no_path_allows() {
     assert_eq!(
         code, 0,
         "bare 'git -C' with no path must allow; stderr={stderr}"
+    );
+}
+
+#[test]
+fn t26_bin_flow_with_flag_before_finalize_commit_blocks() {
+    // The `bin/flow` arm of `is_commit_invocation_inner` matches
+    // `finalize-commit` as ANY subsequent token (not just the
+    // immediate next one). bin/flow today has no global flags, but
+    // a future addition like `--verbose` or `--log-level <value>`
+    // must not bypass the gate. Pin the defensive matcher so the
+    // bypass cannot regress.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "bin/flow --verbose finalize-commit"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 2,
+        "bin/flow --verbose finalize-commit on main must block; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("BLOCKED"),
+        "stderr should contain BLOCKED; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("main"),
+        "stderr should name the branch 'main'; got: {stderr}"
+    );
+}
+
+#[test]
+fn t27_git_dash_c_to_nonexistent_path_from_feature_branch_allows() {
+    // Boundary: hook cwd is a feature branch, command uses
+    // `git -C /nonexistent commit`. match_branch_at(cwd) returns
+    // None (current=feat-x ≠ integration=main, the "current !=
+    // integration" branch); extract_dash_c_path returns Some, but
+    // match_branch_at(non-git path) also returns None (no current
+    // branch). check_commit_on_integration falls through to
+    // None → allow. Pins the path-pair "both candidates miss"
+    // branch in the dispatcher.
+    let (_dir, root) = setup_repo_on_branch("feat-x");
+    let input = r#"{"tool_input": {"command": "git -C /nonexistent/path commit -m \"x\""}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 0,
+        "feat-x cwd + non-git -C path must allow; stderr={stderr}"
     );
 }

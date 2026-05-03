@@ -109,9 +109,19 @@ basename suffix so absolute paths like
   branch. So redirecting git's effective cwd onto a different
   repo on `main` does not bypass the gate when the hook is
   running from a feature-branch worktree.
+- **`bin/flow <flag> finalize-commit`** — the `bin/flow` arm
+  matches `finalize-commit` as any subsequent token, not just
+  the immediate next one, so a future global flag (e.g.
+  `--verbose`, `--log-level <value>`) cannot slip the
+  subcommand past the matcher.
 
-Documented v1 gaps (allowed today, captured by tests so a future
-widening is a deliberate decision):
+### Known Limitations in v1
+
+The current matcher does not defend against the following shapes.
+Each is captured by an explicit test (or, where the test would be
+contrived, by the absence of a matching shape in normal session
+flow) so future widening of the matcher is a deliberate decision
+rather than an accident:
 
 - **Env-var indirection.** `GIT_DIR=/path git commit` and
   `GIT_WORK_TREE=...` redirect git's view of the repo via env
@@ -126,9 +136,18 @@ widening is a deliberate decision):
   recognized first tokens (`git`, `bin/flow`, `bash`, `sh`).
 - **Nested shell wrappers.** `bash -c 'bash -c "..."'` is
   unwrapped at most one level — a deeper nesting falls through.
+- **Bash with flags before `-c`.** `bash --norc -c '...'` does
+  not match the literal `bash -c ` prefix the unwrapper looks
+  for, so the inner script is not re-evaluated.
+- **Repos with no configured `origin/HEAD`.** `default_branch_in`
+  falls back to `"main"` when `git symbolic-ref --short
+  refs/remotes/origin/HEAD` fails. A user committing on a
+  branch literally named `main` in a remote-less repository
+  will be blocked — a documented false-positive that the
+  remote-aware path covers correctly.
 
-These gaps are not security holes — they are documented v1
-boundaries. The default-no-edit-on-the-base-branch discipline
+These limitations are not security holes — they are documented
+v1 boundaries. The default-no-edit-on-the-base-branch discipline
 above remains the primary instrument; Layer 10 is the
 merge-conflict trip-wire for the four shapes Claude is most
 likely to produce by accident.
