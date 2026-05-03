@@ -83,6 +83,19 @@ The commit itself ALWAYS goes through `/flow:flow-commit`. The
 exception unlocks where the diff lives, never how it lands.
 Flow-commit runs CI and is never bypassed regardless of phrasing.
 
+The exception above is rule-level. The hook described in
+"Mechanical Enforcement" below is stricter: Layer 10 mechanically
+blocks any `git ... commit` or `bin/flow ... finalize-commit`
+invocation whose effective cwd resolves to the integration
+branch, even when the maintainer has explicitly directed an
+on-main fix in the current session. A user direction that lifts
+the rule-level default does NOT lift the hook-level gate. To
+commit a maintainer carve-out fix, work on a feature branch and
+merge through the standard PR path. This intentional strictness
+keeps the hook unambiguous: a single, mechanical answer for "is
+this commit allowed?" rather than a context-sensitive predicate
+the model could rationalize past.
+
 ### Mechanical Enforcement
 
 The `validate-pretool` PreToolUse hook's Layer 10 mechanically

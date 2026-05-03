@@ -68,6 +68,52 @@ mutating in-memory state — each +1 step is validated in order
 within the call. This avoids N separate CLI invocations while
 preserving the +1 invariant.
 
+## Non-Linear Execution
+
+When a coverage requirement on Task M forces a later test task
+(say Task N where N > M) to land in the same commit as Task M,
+the counter must STILL advance monotonically — not jump.
+
+Example: Task 2 lands its implementation, but the new code
+introduces an `Option::None` branch in `check_X` that only Task
+9's edge-case tests exercise. Coverage gate is 100/100/100. To
+land Task 2's commit green, Task 9's tests must already exist in
+the diff. The Code phase writes Tasks 9's test code in the same
+commit as Tasks 1-4.
+
+The counter rule still requires +1 per task. Apply this shape:
+
+1. **Advance only through the contiguously executed prefix.**
+   In the example above, advance to `code_task=4` at commit
+   time, even though Task 9's tests are also in the diff. The
+   counter records "the latest task in the planned sequence
+   that has fully landed", not "the highest task whose code is
+   present somewhere in the diff."
+2. **Log the early-landed task explicitly.** Use
+   `bin/flow log <branch> "[Phase 3] Plan deviation: Task 9
+   tests landed early in commit 1 (alongside Tasks 1-4) because
+   Task 2's coverage requires Task 9's tests to satisfy
+   100/100/100. Counter advances to 4 in this commit; Task 9's
+   advance to 9 happens when subsequent tasks reach Task 9 in
+   the planned sequence."
+3. **Catch up the counter when execution reaches the early
+   task in the planned sequence.** When the Code phase reaches
+   Task 9 in the planned order, run the verification (the test
+   already exists, run `bin/flow ci` to confirm green) and
+   advance the counter normally — `--set code_task=9`.
+
+Why monotonic-only advances: the resume check uses `code_task`
+as "the next task to execute is `code_task + 1` in plan order."
+A non-monotonic counter would tell the resume check "go back to
+fix Task 5" when the session intended to skip past Task 5
+because Task 9's work landed early. Keeping the counter pinned
+to the contiguous prefix preserves the resume invariant.
+
+The Learn-phase audit reads the counter together with the log.
+A counter at N + a log entry naming "Task M landed early
+alongside Task K (K < M)" reads as a documented, intentional
+non-linearity — not a process gap.
+
 ## Enforcement
 
 `bin/flow set-timestamp --set code_task=<n>` enforces the
