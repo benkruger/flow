@@ -18,7 +18,7 @@ use regex::Regex;
 use serde_json::{json, Value};
 
 use flow_rs::commands::set_timestamp::{
-    apply_updates, run_impl_main, set_nested, validate_code_task,
+    apply_updates, is_step_counter_field, run_impl_main, set_nested, validate_code_task,
 };
 
 fn iso_pattern() -> Regex {
@@ -27,6 +27,33 @@ fn iso_pattern() -> Regex {
 
 fn flow_rs() -> Command {
     Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+}
+
+// --- is_step_counter_field ---
+
+/// Each of the five named step counters returns `true` from the
+/// helper. Locks the closed enumeration that Task 11 reads when
+/// deciding whether to capture a `StepSnapshot` after a
+/// `set-timestamp` mutation.
+#[test]
+fn is_step_counter_field_returns_true_for_each_named_field() {
+    assert!(is_step_counter_field("plan_step"));
+    assert!(is_step_counter_field("code_task"));
+    assert!(is_step_counter_field("code_review_step"));
+    assert!(is_step_counter_field("learn_step"));
+    assert!(is_step_counter_field("complete_step"));
+}
+
+/// Non-step-counter fields return `false`, including dotted /
+/// nested paths and other state fields written via set-timestamp.
+#[test]
+fn is_step_counter_field_returns_false_for_non_step_fields() {
+    assert!(!is_step_counter_field(""));
+    assert!(!is_step_counter_field("code_task_name"));
+    assert!(!is_step_counter_field("files.plan"));
+    assert!(!is_step_counter_field("_continue_pending"));
+    assert!(!is_step_counter_field("Plan_Step"));
+    assert!(!is_step_counter_field("plan_steps_total"));
 }
 
 // --- set_nested unit tests ---

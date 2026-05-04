@@ -73,7 +73,9 @@ impl DeltaReport {
     /// counters add. Pct deltas Option-add — `None` is sticky so a
     /// reset in any folded report propagates to the total.
     fn add(&mut self, other: &Self) {
-        self.input_tokens_delta = self.input_tokens_delta.saturating_add(other.input_tokens_delta);
+        self.input_tokens_delta = self
+            .input_tokens_delta
+            .saturating_add(other.input_tokens_delta);
         self.output_tokens_delta = self
             .output_tokens_delta
             .saturating_add(other.output_tokens_delta);
@@ -236,8 +238,12 @@ fn pair_delta(start: &WindowSnapshot, end: &WindowSnapshot) -> DeltaReport {
             ModelTokens {
                 input: end_tokens.input.saturating_sub(start_tokens.input),
                 output: end_tokens.output.saturating_sub(start_tokens.output),
-                cache_create: end_tokens.cache_create.saturating_sub(start_tokens.cache_create),
-                cache_read: end_tokens.cache_read.saturating_sub(start_tokens.cache_read),
+                cache_create: end_tokens
+                    .cache_create
+                    .saturating_sub(start_tokens.cache_create),
+                cache_read: end_tokens
+                    .cache_read
+                    .saturating_sub(start_tokens.cache_read),
             },
         );
     }
