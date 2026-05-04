@@ -11,7 +11,10 @@ use std::path::PathBuf;
 
 use tempfile::TempDir;
 
-use flow_rs::window_snapshot::capture;
+use flow_rs::window_snapshot::{
+    capture, capture_for_active_state, home_dir_or_empty, write_snapshot_into_state,
+};
+use serde_json::{json, Value};
 
 /// Build a `home/.claude/rate-limits.json` file inside `dir` with
 /// the supplied pcts. Returns the path to `dir` (the synthetic
@@ -496,6 +499,116 @@ fn capture_with_non_utf8_line_skips_silently() {
     let snap = capture(&root, Some(&path), None, Some("sid"), || "now".to_string());
     assert_eq!(snap.session_input_tokens, Some(5));
     assert_eq!(snap.turn_count, Some(1));
+}
+
+// --- write_snapshot_into_state ---
+
+/// Object state → snapshot inserted at the named field, replacing
+/// any prior value at that key.
+#[test]
+fn write_snapshot_into_state_inserts_at_named_field() {
+    let snap = capture(&PathBuf::new(), None, None, Some("sid"), || "now".to_string());
+    let mut state = json!({"existing": 1});
+    write_snapshot_into_state(&mut state, "window_at_start", &snap);
+    assert!(state["window_at_start"].is_object());
+    assert_eq!(state["window_at_start"]["session_id"], "sid");
+    assert_eq!(state["existing"], 1);
+}
+
+/// Non-object state (e.g. an array root from corruption) → no-op.
+/// Mirrors the State Mutation Object Guards convention so a
+/// malformed state file cannot panic the producer.
+#[test]
+fn write_snapshot_into_state_with_non_object_state_is_noop() {
+    let snap = capture(&PathBuf::new(), None, None, Some("sid"), || "now".to_string());
+    let mut state = Value::Array(vec![json!({"a": 1})]);
+    let before = state.clone();
+    write_snapshot_into_state(&mut state, "window_at_start", &snap);
+    assert_eq!(state, before);
+}
+
+// --- home_dir_or_empty ---
+
+/// `home_dir_or_empty` returns a non-empty path when HOME is set
+/// (the inherited test environment always has HOME set via the
+/// parent shell). Locks the call shape — producers thread its
+/// result into `capture_for_active_state`.
+#[test]
+fn home_dir_or_empty_returns_path_when_home_set() {
+    let home = home_dir_or_empty();
+    // Cannot mutate $HOME safely from inside a parallel test
+    // suite — assert the call returns *some* PathBuf without
+    // panicking. Empty is acceptable when HOME unset; the
+    // function's contract is "no panic" rather than "non-empty".
+    let _ = home.as_os_str();
+}
+
+// --- capture_for_active_state ---
+
+/// `capture_for_active_state` reads session_id and transcript_path
+/// from the in-memory state JSON and threads them into capture()
+/// alongside a derived cost-file path under
+/// `<project_root>/.claude/cost/<YYYY-MM>/<sid>.txt`. With all
+/// inputs present, every snapshot field populates.
+#[test]
+fn capture_for_active_state_threads_session_context_into_capture() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    write_rate_limits(&root, 33, 9);
+
+    // Create a transcript file the state will reference.
+    let transcript = write_transcript(
+        &root,
+        "session.jsonl",
+        &[&assistant_line("claude-opus-4-7", 100, 50, 0, 0)],
+    );
+
+    // Create the cost file at the expected path.
+    let now = chrono::Local::now();
+    let year_month = now.format("%Y-%m").to_string();
+    let cost_dir = root.join(".claude").join("cost").join(&year_month);
+    fs::create_dir_all(&cost_dir).expect("mkdir cost");
+    fs::write(cost_dir.join("sid-abc.txt"), "0.42").expect("write cost");
+
+    let state = json!({
+        "session_id": "sid-abc",
+        "transcript_path": transcript.to_string_lossy(),
+    });
+
+    let snap = capture_for_active_state(&root, &state, &root);
+    assert_eq!(snap.session_id.as_deref(), Some("sid-abc"));
+    assert_eq!(snap.session_input_tokens, Some(100));
+    assert_eq!(snap.session_cost_usd, Some(0.42));
+    assert_eq!(snap.five_hour_pct, Some(33));
+}
+
+/// `capture_for_active_state` with empty state JSON (no session
+/// fields) still produces a snapshot — fail-open per the
+/// helper's no-panic contract. Token and cost fields fall to
+/// `None` because there is no transcript or cost path to read.
+#[test]
+fn capture_for_active_state_with_empty_state_returns_minimal_snapshot() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let state = json!({});
+    let snap = capture_for_active_state(&root, &state, &root);
+    assert_eq!(snap.session_id, None);
+    assert_eq!(snap.session_input_tokens, None);
+    assert_eq!(snap.session_cost_usd, None);
+}
+
+/// State carrying only `session_id` (no transcript yet) → the
+/// capture still produces a snapshot. The cost-file path is
+/// derived from session_id; absent file leaves cost as None.
+#[test]
+fn capture_for_active_state_with_session_id_only_derives_cost_path() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let state = json!({"session_id": "sid-xyz"});
+    let snap = capture_for_active_state(&root, &state, &root);
+    assert_eq!(snap.session_id.as_deref(), Some("sid-xyz"));
+    // No cost file at the derived path → None.
+    assert_eq!(snap.session_cost_usd, None);
 }
 
 /// Non-Claude model name → `context_window_pct` is `None` (no

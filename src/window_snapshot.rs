@@ -19,13 +19,13 @@
 
 use std::fs;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
 use serde_json::Value;
 
 use crate::state::{ModelTokens, WindowSnapshot};
-use crate::utils::tolerant_i64_opt;
+use crate::utils::{now, tolerant_i64_opt};
 
 /// Capture an account-window snapshot.
 ///
@@ -83,6 +83,78 @@ pub fn capture(
         context_at_last_turn_tokens: agg.context_at_last_turn,
         context_window_pct,
     }
+}
+
+/// Production binder around `capture` for the six producer call
+/// sites. Reads `session_id` and `transcript_path` from the
+/// in-memory state JSON, derives the per-session cost-file path
+/// under `<project_root>/.claude/cost/<YYYY-MM>/<session_id>.txt`,
+/// and invokes `capture` with `home` plus those paths.
+///
+/// Producers call this from inside `mutate_state` closures (the
+/// state JSON is already in memory) and write the returned
+/// snapshot into the appropriate state field. `home` is supplied
+/// by the producer (typically `$HOME`) so this helper takes no
+/// process-env dependency.
+pub fn capture_for_active_state(home: &Path, state: &Value, project_root: &Path) -> WindowSnapshot {
+    let session_id = state
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let transcript_path = state
+        .get("transcript_path")
+        .and_then(|v| v.as_str())
+        .map(PathBuf::from);
+    let cost_path = session_id
+        .as_ref()
+        .map(|sid| cost_file_path(project_root, sid));
+    capture(
+        home,
+        transcript_path.as_deref(),
+        cost_path.as_deref(),
+        session_id.as_deref(),
+        now,
+    )
+}
+
+/// Write a `WindowSnapshot` into the named top-level field of a
+/// state JSON value. No-op when `state` is not an object — the
+/// guard mirrors the project-wide convention from
+/// `.claude/rules/rust-patterns.md` "State Mutation Object Guards"
+/// for `mutate_state` closures. Producers call this from inside a
+/// `mutate_state` closure so the field write is atomic with the
+/// state-file lock.
+pub fn write_snapshot_into_state(state: &mut Value, field: &str, snapshot: &WindowSnapshot) {
+    if let Some(obj) = state.as_object_mut() {
+        let value = serde_json::to_value(snapshot).unwrap_or(Value::Null);
+        obj.insert(field.to_string(), value);
+    }
+}
+
+/// Read `$HOME` as a `PathBuf`, falling back to an empty path
+/// when the env var is unset. Producers call this once per
+/// transition to thread the home dir into `capture_for_active_state`.
+/// Empty home is harmless — `capture` reads
+/// `<home>/.claude/rate-limits.json` and the open fails gracefully.
+pub fn home_dir_or_empty() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default()
+}
+
+/// Resolve the per-session cost-file path
+/// `<project_root>/.claude/cost/<YYYY-MM>/<session_id>.txt`. The
+/// month folder mirrors `tui_data::load_account_metrics` so the
+/// snapshot reads the same file that account-monthly aggregation
+/// already reads.
+fn cost_file_path(project_root: &Path, session_id: &str) -> PathBuf {
+    let now_local = chrono::Local::now();
+    let year_month = now_local.format("%Y-%m").to_string();
+    project_root
+        .join(".claude")
+        .join("cost")
+        .join(year_month)
+        .join(format!("{}.txt", session_id))
 }
 
 /// Read `~/.claude/rate-limits.json` and extract the two pct fields.

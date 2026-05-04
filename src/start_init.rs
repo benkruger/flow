@@ -291,6 +291,19 @@ fn run_impl(args: &Args, root: &Path, cwd: &Path) -> Result<Value, String> {
     let state_path = FlowPaths::new(root, &branch).state_file();
     update_step(&state_path, 1);
 
+    // Capture account-window snapshot at flow-start. Fail-open per
+    // `.claude/rules/external-input-validation.md` — missing inputs
+    // (no rate-limits file, no transcript yet, no cost file) leave
+    // the relevant snapshot fields as `None` but the snapshot is
+    // still produced and written so downstream phases have an
+    // anchor for delta math. Helpers in `window_snapshot` carry
+    // both branches (HOME unset, state-not-object) for coverage.
+    let home = crate::window_snapshot::home_dir_or_empty();
+    let _ = crate::lock::mutate_state(&state_path, &mut |state| {
+        let snap = crate::window_snapshot::capture_for_active_state(&home, state, root);
+        crate::window_snapshot::write_snapshot_into_state(state, "window_at_start", &snap);
+    });
+
     // Step 5: Label issues (best-effort)
     // issue_numbers already derived in the pre-lock section
     let mut labels_result = json!({});
