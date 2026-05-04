@@ -19,10 +19,7 @@ use flow_rs::window_snapshot::capture;
 fn write_rate_limits(dir: &std::path::Path, five: i64, seven: i64) {
     let claude_dir = dir.join(".claude");
     fs::create_dir_all(&claude_dir).expect("mkdir .claude");
-    let body = format!(
-        r#"{{"five_hour_pct":{},"seven_day_pct":{}}}"#,
-        five, seven
-    );
+    let body = format!(r#"{{"five_hour_pct":{},"seven_day_pct":{}}}"#, five, seven);
     fs::write(claude_dir.join("rate-limits.json"), body).expect("write rate-limits");
 }
 
@@ -41,7 +38,13 @@ fn write_cost(dir: &std::path::Path, name: &str, content: &str) -> PathBuf {
 }
 
 /// Helper for an assistant-message JSON line.
-fn assistant_line(model: &str, input: i64, output: i64, cache_create: i64, cache_read: i64) -> String {
+fn assistant_line(
+    model: &str,
+    input: i64,
+    output: i64,
+    cache_create: i64,
+    cache_read: i64,
+) -> String {
     format!(
         r#"{{"type":"assistant","message":{{"model":"{model}","role":"assistant","content":[{{"type":"text","text":"hi"}}],"usage":{{"input_tokens":{input},"output_tokens":{output},"cache_creation_input_tokens":{cache_create},"cache_read_input_tokens":{cache_read}}}}}}}"#
     )
@@ -115,13 +118,9 @@ fn capture_with_missing_rate_limits_sets_pcts_none() {
         &[&assistant_line("claude-opus-4-7", 100, 50, 0, 0)],
     );
 
-    let snap = capture(
-        &root,
-        Some(&transcript),
-        None,
-        Some("sid"),
-        || "now".to_string(),
-    );
+    let snap = capture(&root, Some(&transcript), None, Some("sid"), || {
+        "now".to_string()
+    });
 
     assert_eq!(snap.five_hour_pct, None);
     assert_eq!(snap.seven_day_pct, None);
@@ -208,19 +207,18 @@ fn capture_with_multi_model_transcript_splits_by_model() {
         ],
     );
 
-    let snap = capture(
-        &root,
-        Some(&transcript),
-        None,
-        Some("sid"),
-        || "now".to_string(),
-    );
+    let snap = capture(&root, Some(&transcript), None, Some("sid"), || {
+        "now".to_string()
+    });
 
     assert_eq!(snap.by_model.len(), 2);
     let opus = snap.by_model.get("claude-opus-4-7").expect("opus entry");
     assert_eq!(opus.input, 300);
     assert_eq!(opus.output, 150);
-    let sonnet = snap.by_model.get("claude-sonnet-4-6").expect("sonnet entry");
+    let sonnet = snap
+        .by_model
+        .get("claude-sonnet-4-6")
+        .expect("sonnet entry");
     assert_eq!(sonnet.input, 10);
     assert_eq!(sonnet.output, 5);
     // Aggregate session totals match summed by_model
@@ -249,13 +247,9 @@ fn capture_with_malformed_jsonl_skips_bad_lines_and_continues() {
         ],
     );
 
-    let snap = capture(
-        &root,
-        Some(&transcript),
-        None,
-        Some("sid"),
-        || "now".to_string(),
-    );
+    let snap = capture(&root, Some(&transcript), None, Some("sid"), || {
+        "now".to_string()
+    });
 
     // 7 + 5 = 12 input tokens from the two well-formed assistant lines.
     assert_eq!(snap.session_input_tokens, Some(12));
@@ -278,13 +272,9 @@ fn capture_with_no_assistant_messages_returns_zero_counters() {
         ],
     );
 
-    let snap = capture(
-        &root,
-        Some(&transcript),
-        None,
-        Some("sid"),
-        || "now".to_string(),
-    );
+    let snap = capture(&root, Some(&transcript), None, Some("sid"), || {
+        "now".to_string()
+    });
 
     assert_eq!(snap.session_input_tokens, None);
     assert_eq!(snap.session_output_tokens, None);
@@ -309,13 +299,9 @@ fn capture_records_last_turn_context_from_most_recent_assistant_message() {
         ],
     );
 
-    let snap = capture(
-        &root,
-        Some(&transcript),
-        None,
-        Some("sid"),
-        || "now".to_string(),
-    );
+    let snap = capture(&root, Some(&transcript), None, Some("sid"), || {
+        "now".to_string()
+    });
 
     // Most recent message: 1000 + 500 + 100 + 200 = 1800
     assert_eq!(snap.context_at_last_turn_tokens, Some(1800));
@@ -340,13 +326,9 @@ fn capture_counts_tool_use_blocks_across_assistant_messages() {
         ],
     );
 
-    let snap = capture(
-        &root,
-        Some(&transcript),
-        None,
-        Some("sid"),
-        || "now".to_string(),
-    );
+    let snap = capture(&root, Some(&transcript), None, Some("sid"), || {
+        "now".to_string()
+    });
 
     assert_eq!(snap.tool_call_count, Some(5));
     assert_eq!(snap.turn_count, Some(3));
@@ -423,7 +405,9 @@ fn capture_with_assistant_missing_usage_contributes_zero_tokens() {
     let root = tmp.path().canonicalize().expect("canonicalize");
     let line = r#"{"type":"assistant","message":{"model":"claude-opus-4-7","role":"assistant","content":[]}}"#;
     let transcript = write_transcript(&root, "session.jsonl", &[line]);
-    let snap = capture(&root, Some(&transcript), None, Some("sid"), || "now".to_string());
+    let snap = capture(&root, Some(&transcript), None, Some("sid"), || {
+        "now".to_string()
+    });
     assert_eq!(snap.session_input_tokens, Some(0));
     assert_eq!(snap.turn_count, Some(1));
     assert_eq!(snap.context_at_last_turn_tokens, Some(0));
@@ -437,7 +421,9 @@ fn capture_with_assistant_missing_message_is_skipped() {
     let root = tmp.path().canonicalize().expect("canonicalize");
     let line = r#"{"type":"assistant"}"#;
     let transcript = write_transcript(&root, "session.jsonl", &[line]);
-    let snap = capture(&root, Some(&transcript), None, Some("sid"), || "now".to_string());
+    let snap = capture(&root, Some(&transcript), None, Some("sid"), || {
+        "now".to_string()
+    });
     assert_eq!(snap.turn_count, None);
 }
 
@@ -449,7 +435,9 @@ fn capture_with_assistant_missing_model_skips_by_model() {
     let root = tmp.path().canonicalize().expect("canonicalize");
     let line = r#"{"type":"assistant","message":{"role":"assistant","content":[],"usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}"#;
     let transcript = write_transcript(&root, "session.jsonl", &[line]);
-    let snap = capture(&root, Some(&transcript), None, Some("sid"), || "now".to_string());
+    let snap = capture(&root, Some(&transcript), None, Some("sid"), || {
+        "now".to_string()
+    });
     assert_eq!(snap.session_input_tokens, Some(10));
     assert!(snap.by_model.is_empty());
     assert_eq!(snap.context_window_pct, None);
@@ -463,9 +451,13 @@ fn capture_with_1m_context_model_uses_million_token_window() {
     let root = tmp.path().canonicalize().expect("canonicalize");
     let line = assistant_line("claude-opus-4-7[1m]", 100_000, 0, 0, 0);
     let transcript = write_transcript(&root, "session.jsonl", &[&line]);
-    let snap = capture(&root, Some(&transcript), None, Some("sid"), || "now".to_string());
+    let snap = capture(&root, Some(&transcript), None, Some("sid"), || {
+        "now".to_string()
+    });
     // 100_000 / 1_000_000 * 100 = 10.0
-    let pct = snap.context_window_pct.expect("pct populated for known model");
+    let pct = snap
+        .context_window_pct
+        .expect("pct populated for known model");
     assert!((pct - 10.0).abs() < 1e-6, "expected ~10.0, got {}", pct);
 }
 
@@ -478,7 +470,9 @@ fn capture_with_assistant_content_not_array_skips_tool_count() {
     let root = tmp.path().canonicalize().expect("canonicalize");
     let line = r#"{"type":"assistant","message":{"model":"claude-opus-4-7","content":"plain string","usage":{"input_tokens":3,"output_tokens":2,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}"#;
     let transcript = write_transcript(&root, "session.jsonl", &[line]);
-    let snap = capture(&root, Some(&transcript), None, Some("sid"), || "now".to_string());
+    let snap = capture(&root, Some(&transcript), None, Some("sid"), || {
+        "now".to_string()
+    });
     assert_eq!(snap.session_input_tokens, Some(3));
     assert_eq!(snap.tool_call_count, Some(0));
 }
@@ -512,7 +506,9 @@ fn capture_with_unknown_model_returns_none_context_window_pct() {
     let root = tmp.path().canonicalize().expect("canonicalize");
     let line = assistant_line("custom-model-xyz", 100, 0, 0, 0);
     let transcript = write_transcript(&root, "session.jsonl", &[&line]);
-    let snap = capture(&root, Some(&transcript), None, Some("sid"), || "now".to_string());
+    let snap = capture(&root, Some(&transcript), None, Some("sid"), || {
+        "now".to_string()
+    });
     assert_eq!(snap.context_window_pct, None);
     assert_eq!(snap.context_at_last_turn_tokens, Some(100));
 }
