@@ -1,0 +1,239 @@
+//! Pure capture function reading the three account-window inputs:
+//! the rate-limits JSON in `~/.claude`, the session transcript JSONL,
+//! and the per-session cost file under `.claude/cost/<YYYY-MM>/`.
+//!
+//! The helper is invoked by every state-mutating transition in
+//! `phase_enter`, `phase_finalize`, `phase_transition`, `set_timestamp`
+//! (when the mutated field names a step counter), `start_init`, and
+//! `complete_finalize` — so it MUST never panic and MUST never block
+//! on input that does not exist. Each input source is read with a
+//! fail-open guard: a missing file leaves the corresponding fields
+//! as `None` but the snapshot is still produced. `captured_at` is
+//! always populated because it comes from the caller-supplied
+//! `now_fn` closure.
+//!
+//! The capture function is pure given its inputs (paths + closure
+//! values) — every effectful read is funnelled through `home`,
+//! `transcript_path`, and `cost_path` so tests can supply tempdir
+//! fixtures that drive every branch without mocking the filesystem.
+
+use std::fs;
+use std::io::{BufRead, BufReader};
+use std::path::Path;
+
+use indexmap::IndexMap;
+use serde_json::Value;
+
+use crate::state::{ModelTokens, WindowSnapshot};
+use crate::utils::tolerant_i64_opt;
+
+/// Capture an account-window snapshot.
+///
+/// `home` — directory holding `.claude/rate-limits.json`. Pass the
+/// real `$HOME` in production; tests pass a tempdir.
+///
+/// `transcript_path` — optional path to the session transcript
+/// JSONL. `None` skips the read entirely; missing or malformed
+/// JSONL contributes nothing rather than failing.
+///
+/// `cost_path` — optional path to the per-session cost file (a
+/// single floating-point number on a single line). `None` or
+/// missing file leaves `session_cost_usd` as `None`.
+///
+/// `session_id` — the active session UUID copied through to the
+/// snapshot for downstream multi-session delta math.
+///
+/// `now_fn` — wall-clock closure. Production passes
+/// `crate::utils::now`; tests pass a fixed string so assertions
+/// are deterministic.
+pub fn capture(
+    home: &Path,
+    transcript_path: Option<&Path>,
+    cost_path: Option<&Path>,
+    session_id: Option<&str>,
+    now_fn: impl FnOnce() -> String,
+) -> WindowSnapshot {
+    let captured_at = now_fn();
+
+    let (five_hour_pct, seven_day_pct) = read_rate_limits(home);
+    let cost = cost_path.and_then(read_cost);
+    let agg = transcript_path.map(read_transcript).unwrap_or_default();
+
+    let context_window_pct = agg.context_at_last_turn.and_then(|tokens| {
+        agg.last_model
+            .as_deref()
+            .and_then(context_window_size)
+            .map(|window| (tokens as f64) * 100.0 / (window as f64))
+    });
+
+    WindowSnapshot {
+        captured_at,
+        session_id: session_id.map(|s| s.to_string()),
+        model: agg.last_model,
+        five_hour_pct,
+        seven_day_pct,
+        session_input_tokens: agg.totals_present.then_some(agg.input_tokens),
+        session_output_tokens: agg.totals_present.then_some(agg.output_tokens),
+        session_cache_creation_tokens: agg.totals_present.then_some(agg.cache_creation_tokens),
+        session_cache_read_tokens: agg.totals_present.then_some(agg.cache_read_tokens),
+        session_cost_usd: cost,
+        by_model: agg.by_model,
+        turn_count: agg.totals_present.then_some(agg.turn_count),
+        tool_call_count: agg.totals_present.then_some(agg.tool_call_count),
+        context_at_last_turn_tokens: agg.context_at_last_turn,
+        context_window_pct,
+    }
+}
+
+/// Read `~/.claude/rate-limits.json` and extract the two pct fields.
+/// Missing file or malformed JSON returns `(None, None)`.
+fn read_rate_limits(home: &Path) -> (Option<i64>, Option<i64>) {
+    let path = home.join(".claude").join("rate-limits.json");
+    let content = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return (None, None),
+    };
+    let value: Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return (None, None),
+    };
+    let five = value.get("five_hour_pct").and_then(tolerant_i64_opt);
+    let seven = value.get("seven_day_pct").and_then(tolerant_i64_opt);
+    (five, seven)
+}
+
+/// Read a per-session cost file (a single floating-point number).
+/// Missing file, malformed content, or non-finite parse returns `None`.
+fn read_cost(path: &Path) -> Option<f64> {
+    let content = fs::read_to_string(path).ok()?;
+    let parsed: f64 = content.trim().parse().ok()?;
+    if parsed.is_finite() {
+        Some(parsed)
+    } else {
+        None
+    }
+}
+
+/// Aggregate state derived from a single transcript scan.
+#[derive(Default)]
+struct TranscriptAgg {
+    /// Whether at least one assistant message contributed counters.
+    /// When false the snapshot leaves token / turn / tool counts as
+    /// `None` rather than reporting structurally-zero values that
+    /// could be confused with "session ran but used no tokens".
+    totals_present: bool,
+    input_tokens: i64,
+    output_tokens: i64,
+    cache_creation_tokens: i64,
+    cache_read_tokens: i64,
+    turn_count: i64,
+    tool_call_count: i64,
+    last_model: Option<String>,
+    context_at_last_turn: Option<i64>,
+    by_model: IndexMap<String, ModelTokens>,
+}
+
+/// Line-stream the transcript JSONL accumulating assistant-message
+/// usage. Lines that fail to parse as JSON are skipped silently —
+/// transcripts can include partial writes at the tail when a
+/// session is in flight.
+fn read_transcript(path: &Path) -> TranscriptAgg {
+    let mut agg = TranscriptAgg::default();
+    let file = match fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return agg,
+    };
+    let reader = BufReader::new(file);
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+        if line.trim().is_empty() {
+            continue;
+        }
+        let value: Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if value.get("type").and_then(|v| v.as_str()) != Some("assistant") {
+            continue;
+        }
+        let message = match value.get("message") {
+            Some(m) => m,
+            None => continue,
+        };
+
+        agg.totals_present = true;
+        agg.turn_count = agg.turn_count.saturating_add(1);
+
+        let model = message.get("model").and_then(|m| m.as_str());
+        if let Some(m) = model {
+            agg.last_model = Some(m.to_string());
+        }
+
+        let usage = message.get("usage");
+        let input = usage
+            .and_then(|u| u.get("input_tokens"))
+            .and_then(tolerant_i64_opt)
+            .unwrap_or(0);
+        let output = usage
+            .and_then(|u| u.get("output_tokens"))
+            .and_then(tolerant_i64_opt)
+            .unwrap_or(0);
+        let cache_create = usage
+            .and_then(|u| u.get("cache_creation_input_tokens"))
+            .and_then(tolerant_i64_opt)
+            .unwrap_or(0);
+        let cache_read = usage
+            .and_then(|u| u.get("cache_read_input_tokens"))
+            .and_then(tolerant_i64_opt)
+            .unwrap_or(0);
+
+        agg.input_tokens = agg.input_tokens.saturating_add(input);
+        agg.output_tokens = agg.output_tokens.saturating_add(output);
+        agg.cache_creation_tokens = agg.cache_creation_tokens.saturating_add(cache_create);
+        agg.cache_read_tokens = agg.cache_read_tokens.saturating_add(cache_read);
+
+        agg.context_at_last_turn = Some(
+            input
+                .saturating_add(output)
+                .saturating_add(cache_create)
+                .saturating_add(cache_read),
+        );
+
+        if let Some(m) = model {
+            let entry = agg.by_model.entry(m.to_string()).or_default();
+            entry.input = entry.input.saturating_add(input);
+            entry.output = entry.output.saturating_add(output);
+            entry.cache_create = entry.cache_create.saturating_add(cache_create);
+            entry.cache_read = entry.cache_read.saturating_add(cache_read);
+        }
+
+        if let Some(content) = message.get("content").and_then(|c| c.as_array()) {
+            for block in content {
+                if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
+                    agg.tool_call_count = agg.tool_call_count.saturating_add(1);
+                }
+            }
+        }
+    }
+    agg
+}
+
+/// Lookup table for known Claude model context-window sizes.
+///
+/// Returns `Some(n)` when the model name matches a known family;
+/// `None` for unknown models so `context_window_pct` defaults to
+/// `None` rather than presenting a misleading percentage based on a
+/// guessed window size. The `[1m]` suffix marks the 1M-context
+/// variant of Opus 4.7; standard Claude models fall back to 200K.
+fn context_window_size(model: &str) -> Option<i64> {
+    if model.contains("[1m]") {
+        return Some(1_000_000);
+    }
+    if model.starts_with("claude-") {
+        return Some(200_000);
+    }
+    None
+}

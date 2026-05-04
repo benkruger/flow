@@ -4,9 +4,7 @@
 
 use indexmap::IndexMap;
 
-use flow_rs::state::{
-    ModelTokens, Phase, PhaseStatus, SkillConfig, StepSnapshot, WindowSnapshot,
-};
+use flow_rs::state::{ModelTokens, Phase, PhaseStatus, SkillConfig, StepSnapshot, WindowSnapshot};
 
 #[test]
 fn phase_serialize_all_variants() {

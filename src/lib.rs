@@ -72,4 +72,5 @@ pub mod update_deps;
 pub mod update_pr_body;
 pub mod upgrade_check;
 pub mod utils;
+pub mod window_snapshot;
 pub mod write_rule;
