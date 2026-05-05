@@ -2901,6 +2901,44 @@ fn flow_learn_diff_uses_base_branch_subcommand() {
     );
 }
 
+/// flow-code-review Step 1 derives the adversarial probe path by
+/// shelling out to `bin/test --adversarial-path` and halts on
+/// exit 2. The skill must NOT hardcode the canonical
+/// `.flow-states/<branch>/adversarial_test` location — that location
+/// lives outside the project's test tree and language test runners
+/// cannot discover it, which is the underlying reason cluster B
+/// (#1284 et al.) kept producing escaped probe files. The exit-2
+/// halt is the fail-closed gate that stops the agent from running
+/// against an unconfigured path.
+#[test]
+fn flow_code_review_step1_derives_adversarial_path_via_bin_test() {
+    let c = common::read_skill("flow-code-review");
+    // Bound the assertion to Step 1 so a future Step that
+    // legitimately mentions the canonical path (e.g. a migration
+    // note) does not silently satisfy the negative assertion.
+    let after = c
+        .split_once("## Step 1")
+        .map(|(_, t)| t)
+        .expect("Step 1 must exist");
+    let step1 = after
+        .split_once("\n## Step 2")
+        .map(|(s, _)| s)
+        .unwrap_or(after);
+
+    assert!(
+        step1.contains("bin/test --adversarial-path"),
+        "Step 1 must invoke `bin/test --adversarial-path` to derive the probe path"
+    );
+    assert!(
+        !step1.contains(".flow-states/<branch>/adversarial_test"),
+        "Step 1 must not hardcode the canonical .flow-states/<branch>/adversarial_test path"
+    );
+    assert!(
+        step1.contains("exit 2") || step1.contains("exits 2"),
+        "Step 1 prose must name the exit-2 halt behavior"
+    );
+}
+
 /// The four Code Review agent Input sections (reviewer, pre-mortem,
 /// adversarial, documentation) describe the diff in terms of the
 /// integration branch (`<base_branch>`) — not a hardcoded `origin/main`.

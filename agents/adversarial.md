@@ -25,19 +25,26 @@ noise. `<base_branch>` is the integration branch the flow coordinates
 against (resolved at runtime via `bin/flow base-branch` — usually
 `main`, but `staging`/`develop`/etc. for repos whose default branch
 is not `main`). The branch name, project CLAUDE.md path, temp test
-file path (`<temp_test_file>`), and test command (`<test_command>`)
-are also provided. Use the Read tool to read the CLAUDE.md for test
+file path (`<temp_test_file>`, including its file extension), and
+test command (`<test_command>`) are also provided. The path was
+chosen by the project's `bin/test --adversarial-path` and points
+inside the project's test tree so the language test runner can
+discover and execute the probe — you do not pick the path or the
+extension. Use the Read tool to read the CLAUDE.md for test
 conventions and patterns. Use Read, Glob, and Grep to investigate the
 codebase.
 
 ## Temp File
 
-Write all adversarial tests to a single file. The file path is provided
-in your prompt as `<temp_test_file>`. Use the Write tool to create this
-file. You may overwrite it between rounds to refine tests.
+Write all adversarial tests to the single file at `<temp_test_file>`.
+The path (including extension) is provided in your prompt verbatim —
+the project owns the choice through `bin/test --adversarial-path`.
+Use the Write tool to create the file. You may overwrite it between
+rounds to refine tests.
 
-Do NOT write to any other path. Do NOT use the Edit tool — it is not
-available to you. Do NOT modify any existing file.
+Do NOT write to any other path. Do NOT change the file extension or
+relocate the file. Do NOT use the Edit tool — it is not available to
+you. Do NOT modify any existing file.
 
 ## Workflow
 

@@ -134,6 +134,7 @@ pub const UNIVERSAL_ALLOW: &[&str] = &[
     "Bash(gh release create *)",
     "Bash(gh -C *)",
     "Bash(*bin/flow *)",
+    "Bash(bin/test --adversarial-path)",
     "Bash(rm .flow-*)",
     "Bash(test -f *)",
     "Bash(claude plugin list)",
@@ -248,12 +249,27 @@ pub const FLOW_DENY: &[&str] = &[
 
 /// Excluded paths — canonical source for git exclude entries.
 /// Shared with `prime_setup.rs` via pub import.
+///
+/// The first five entries cover FLOW's own per-machine state
+/// (`.flow-states/`, `.worktrees/`), the priming marker
+/// (`.flow.json`), and ambient cost/lock state under `.claude/`.
+///
+/// The two adversarial-probe basename globs land per-language probe
+/// files (e.g. `tests/test_adversarial_flow.py`,
+/// `test/foo_adversarial_flow_test.rb`) in `.git/info/exclude` so
+/// `git status` inside the worktree does not surface the throwaway
+/// probe alongside intentional changes. The probe lives inside the
+/// project's test tree so the language test runner can discover and
+/// execute it; worktree removal at Phase 6 Complete then disposes of
+/// the file as a side effect of removing the worktree directory.
 pub const EXCLUDE_ENTRIES: &[&str] = &[
     ".flow-states/",
     ".worktrees/",
     ".flow.json",
     ".claude/cost/",
     ".claude/scheduled_tasks.lock",
+    "test_adversarial_flow.*",
+    "*_adversarial_flow_test.rb",
 ];
 
 /// Custom `serde_json` formatter that emits `(", ", ": ")` separators

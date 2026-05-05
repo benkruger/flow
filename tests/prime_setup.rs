@@ -766,6 +766,45 @@ fn install_bin_stubs_skips_existing() {
     );
 }
 
+/// `bin/test --adversarial-path` on a freshly-primed project must
+/// fail closed: exit code 2, a stderr message naming the
+/// configuration step, and empty stdout. The Code Review skill
+/// halts on exit 2, so the contract is what stops the adversarial
+/// agent from running with an unconfigured probe path.
+#[test]
+fn bin_test_adversarial_path_unconfigured_exits_two() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plugin_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let installed = prime_setup::install_bin_stubs(tmp.path(), plugin_root);
+    assert!(installed.contains(&"test".to_string()));
+
+    let bin_test = tmp.path().join("bin").join("test");
+    let output = Command::new(&bin_test)
+        .arg("--adversarial-path")
+        .current_dir(tmp.path())
+        .output()
+        .expect("spawn bin/test --adversarial-path");
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "exit code must be 2 (got {:?}); stderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "stdout must be empty (got {:?})",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("bin/test: --adversarial-path not configured"),
+        "stderr must name the configuration step (got {:?})",
+        stderr
+    );
+}
+
 // ── CLI via subprocess ──────────────────────────────────────
 
 fn flow_rs() -> Command {

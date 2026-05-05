@@ -185,24 +185,37 @@ analysis.
 
 **Derive adversarial test setup.**
 
-The adversarial agent writes a single test file under
-`.flow-states/<branch>/adversarial_test.<ext>` and runs it via the
-project's `bin/test --file <path>`. The agent picks the extension
-itself by looking at the diff (`.rs`, `.py`, `.rb`, `.go`, `.swift`,
-`.ts`, etc.) — FLOW no longer dispatches by language, so the choice
-lives where the language information actually lives: in the file
-contents the agent is reviewing.
+The adversarial agent writes a single probe test file inside the
+project's test tree so the language test runner can discover and
+execute it. The exact path is owned by the project — declared via
+the project's `bin/test --adversarial-path` invocation — the same
+way each project owns the four `bin/{format,lint,build,test}`
+toolchain decisions. Worktree removal at Phase 6 Complete disposes
+of the probe as a side effect of removing the worktree directory,
+so no separate cleanup hook is needed.
 
-Capture these two values for Step 2:
+Run this from the worktree root and capture stdout:
 
-- `<temp_test_file>` = `.flow-states/<branch>/adversarial_test` (the
-  agent appends the extension)
+```bash
+bin/test --adversarial-path
+```
+
+If `bin/test` exits 2, surface the stderr message and halt — the
+project must configure `bin/test --adversarial-path` (uncomment the
+runner block and set the matching path comment in `bin/test`)
+before Code Review can run. Do NOT proceed to Step 2.
+
+Capture these two values for Step 2 (use the path verbatim,
+including extension — the project's `bin/test` owns both):
+
+- `<temp_test_file>` = (output of `bin/test --adversarial-path`)
 - `<test_command>` = `${CLAUDE_PLUGIN_ROOT}/bin/flow ci --test --file <temp_test_file>`
 
-The adversarial agent always launches. If the project's `bin/test`
-does not support a `--file` flag (or cannot compile a single file in
-isolation), the agent will surface that as a finding rather than
-silently skipping.
+The adversarial agent always launches when `bin/test
+--adversarial-path` returns a configured path. If the project's
+`bin/test` does not support a `--file` flag (or cannot compile a
+single file in isolation), the agent will surface that as a finding
+rather than silently skipping.
 
 **Audit tombstone staleness.**
 
@@ -290,6 +303,9 @@ Provide the substantive diff output in the prompt, prefixed with:
 file path, test command, CLAUDE.md path, branch name). Always launch.
 
 Use the `<temp_test_file>` and `<test_command>` derived in Step 1.
+The path is supplied verbatim — the project's `bin/test
+--adversarial-path` already chose it (including the file
+extension), so the agent does not pick a path or extension itself.
 
 Use the Agent tool with:
 
@@ -298,7 +314,7 @@ Use the Agent tool with:
 
 Provide the substantive diff output in the prompt, along with:
 
-- The temp test file path (`<temp_test_file>`)
+- The temp test file path (`<temp_test_file>`, including extension)
 - The test command (`<test_command>`)
 - The path to the project CLAUDE.md
 - The branch name
@@ -324,7 +340,7 @@ Prefix the prompt with:
 
 Wait for all agents to return.
 
-The Phase 6 complete/abort cleanup (`src/cleanup.rs::try_delete_adversarial_test_files`) deletes the adversarial test file by prefix match, so no mid-phase cleanup is needed here.
+The probe file lives inside the worktree's test tree, so worktree removal at Phase 6 Complete (or `/flow:flow-abort`) disposes of it automatically as a side effect of `git worktree remove`. The basename glob is also pre-listed in `.git/info/exclude` (`test_adversarial_flow.*`, `*_adversarial_flow_test.rb`) so the throwaway probe never appears in a user's `git status` output alongside intentional changes.
 
 Record step completion:
 
