@@ -552,9 +552,7 @@ fn append_step_snapshot_extends_existing_array() {
 /// panic the producer).
 #[test]
 fn append_step_snapshot_with_non_object_state_is_noop() {
-    let snap = capture(&PathBuf::new(), None, None, Some("sid"), || {
-        "t".to_string()
-    });
+    let snap = capture(&PathBuf::new(), None, None, Some("sid"), || "t".to_string());
     let mut state = Value::Array(vec![json!(1)]);
     let before = state.clone();
     append_step_snapshot(&mut state, "flow-code", 1, "code_task", snap);

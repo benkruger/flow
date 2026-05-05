@@ -257,9 +257,8 @@ pub fn run_impl_main(
                             continue;
                         }
                         let step = update.value.as_i64().unwrap_or(0);
-                        let snap = crate::window_snapshot::capture_for_active_state(
-                            &home, state, root,
-                        );
+                        let snap =
+                            crate::window_snapshot::capture_for_active_state(&home, state, root);
                         crate::window_snapshot::append_step_snapshot(
                             state,
                             &current_phase,
