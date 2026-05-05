@@ -46,10 +46,17 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
     }
 
     json!({
+        "schema_version": 1,
         "branch": "test-feature",
         "pr_url": "https://github.com/test/test/pull/1",
         "started_at": "2026-01-01T00:00:00-08:00",
         "current_phase": current_phase,
+        "files": {
+            "plan": "",
+            "dag": "",
+            "log": "",
+            "state": ""
+        },
         "notes": [],
         "phases": phases,
     })
@@ -918,6 +925,238 @@ fn run_impl_main_invalid_branch_json_falls_back_to_directory_scan() {
         text.contains("fallback-sentinel"),
         "expected sibling branch sentinel in fallback panel, got: {}",
         text
+    );
+}
+
+// --- Tokens block ---
+
+/// Build a snapshot Value for fixtures. `n` scales each numeric
+/// field so callers can produce monotonically-increasing snapshots
+/// from a single shared session.
+fn snapshot_value(session: &str, n: i64, model: &str) -> Value {
+    json!({
+        "captured_at": format!("2026-01-01T0{}:00:00-08:00", n.min(9)),
+        "session_id": session,
+        "model": model,
+        "five_hour_pct": n,
+        "seven_day_pct": n / 2,
+        "session_input_tokens": n * 100,
+        "session_output_tokens": n * 50,
+        "session_cache_creation_tokens": 0,
+        "session_cache_read_tokens": 0,
+        "session_cost_usd": n as f64 * 0.01,
+        "by_model": {
+            model: {"input": n * 100, "output": n * 50, "cache_create": 0, "cache_read": 0}
+        },
+        "turn_count": n,
+        "tool_call_count": n * 2,
+        "context_at_last_turn_tokens": n * 100,
+        "context_window_pct": (n * 100) as f64 / 200_000.0 * 100.0,
+    })
+}
+
+fn add_phase_snapshots(state: &mut Value, key: &str, enter_n: i64, complete_n: i64) {
+    state["phases"][key]["window_at_enter"] = snapshot_value("S1", enter_n, "claude-opus-4-7");
+    state["phases"][key]["window_at_complete"] =
+        snapshot_value("S1", complete_n, "claude-opus-4-7");
+}
+
+/// Full data: every phase carries enter+complete snapshots → the
+/// Tokens line appears in the in-progress panel with a non-zero total.
+#[test]
+fn tokens_block_with_full_data_renders_in_in_progress_panel() {
+    let mut state = make_state(
+        "flow-code",
+        &[
+            ("flow-start", "complete"),
+            ("flow-plan", "complete"),
+            ("flow-code", "in_progress"),
+        ],
+    );
+    add_phase_snapshots(&mut state, "flow-start", 0, 5);
+    add_phase_snapshots(&mut state, "flow-plan", 5, 10);
+    add_phase_snapshots(&mut state, "flow-code", 10, 20);
+    let panel = format_panel(&state, VERSION, None, false, None);
+    assert!(panel.contains("Tokens  :"), "Panel:\n{}", panel);
+    // Every snapshot pair contributes input+output tokens; total > 0
+    // so the formatted token count and cost both render.
+    assert!(panel.contains("$"), "Panel:\n{}", panel);
+}
+
+/// No snapshots anywhere → the Tokens line is omitted entirely so an
+/// empty block does not pollute the panel.
+#[test]
+fn tokens_block_with_no_snapshots_is_omitted() {
+    let state = make_state("flow-start", &[("flow-start", "in_progress")]);
+    let panel = format_panel(&state, VERSION, None, false, None);
+    assert!(
+        !panel.contains("Tokens  :"),
+        "Tokens line must be omitted when no snapshots exist:\n{}",
+        panel
+    );
+}
+
+/// Partial data: only some phases have snapshots → other phases are
+/// silently skipped from the rollup but the Tokens line still renders.
+#[test]
+fn tokens_block_with_partial_data_still_renders() {
+    let mut state = make_state(
+        "flow-code",
+        &[
+            ("flow-start", "complete"),
+            ("flow-plan", "complete"),
+            ("flow-code", "in_progress"),
+        ],
+    );
+    // Only flow-code has snapshots.
+    add_phase_snapshots(&mut state, "flow-code", 0, 50);
+    let panel = format_panel(&state, VERSION, None, false, None);
+    assert!(panel.contains("Tokens  :"), "Panel:\n{}", panel);
+}
+
+/// In-progress phase (no complete snapshot, only enter) → still
+/// reports the enter snapshot in flow_total via the latest step
+/// snapshot fallback in window_deltas.
+#[test]
+fn tokens_block_renders_for_in_progress_phase_with_step_snapshots() {
+    let mut state = make_state("flow-code", &[("flow-code", "in_progress")]);
+    state["phases"]["flow-code"]["window_at_enter"] =
+        snapshot_value("S1", 0, "claude-opus-4-7");
+    let mut step_snap = snapshot_value("S1", 5, "claude-opus-4-7");
+    step_snap["step"] = json!(1);
+    step_snap["field"] = json!("code_task");
+    state["phases"]["flow-code"]["step_snapshots"] = json!([step_snap]);
+    let panel = format_panel(&state, VERSION, None, false, None);
+    assert!(panel.contains("Tokens  :"), "Panel:\n{}", panel);
+}
+
+/// Window reset observed mid-flow (pct decreases between snapshots) →
+/// the Tokens line carries the ↻ reset marker so the user knows the
+/// rate-limit window rolled over.
+#[test]
+fn tokens_block_with_reset_marker_when_window_resets() {
+    let mut state = make_state("flow-code", &[("flow-code", "in_progress")]);
+    let mut enter = snapshot_value("S1", 80, "claude-opus-4-7");
+    let mut complete = snapshot_value("S1", 5, "claude-opus-4-7");
+    // Force token growth so the row contains data
+    enter["session_input_tokens"] = json!(100);
+    complete["session_input_tokens"] = json!(500);
+    state["phases"]["flow-code"]["window_at_enter"] = enter;
+    state["phases"]["flow-code"]["window_at_complete"] = complete;
+    let panel = format_panel(&state, VERSION, None, false, None);
+    assert!(panel.contains("Tokens  :"), "Panel:\n{}", panel);
+    assert!(
+        panel.contains("↻"),
+        "Reset marker must appear when pct drops mid-flow:\n{}",
+        panel
+    );
+}
+
+/// All-complete panel also surfaces the Tokens line so users see
+/// the final cost on a finished flow.
+#[test]
+fn tokens_block_renders_in_all_complete_panel() {
+    let all_phases = [
+        "flow-start",
+        "flow-plan",
+        "flow-code",
+        "flow-code-review",
+        "flow-learn",
+        "flow-complete",
+    ];
+    let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
+    let mut state = make_state("flow-complete", &statuses);
+    add_phase_snapshots(&mut state, "flow-code", 0, 100);
+    let panel = format_all_complete(&state, VERSION, false, None);
+    assert!(panel.contains("Tokens  :"), "Panel:\n{}", panel);
+}
+
+/// All-complete panel with no snapshots → Tokens line omitted.
+#[test]
+fn tokens_block_in_all_complete_panel_omitted_when_no_snapshots() {
+    let all_phases = [
+        "flow-start",
+        "flow-plan",
+        "flow-code",
+        "flow-code-review",
+        "flow-learn",
+        "flow-complete",
+    ];
+    let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
+    let state = make_state("flow-complete", &statuses);
+    let panel = format_all_complete(&state, VERSION, false, None);
+    assert!(
+        !panel.contains("Tokens  :"),
+        "Tokens line must be omitted when no snapshots exist:\n{}",
+        panel
+    );
+}
+
+/// State with `phases` set to a non-object value (corruption) → the
+/// rollup short-circuits gracefully and the panel renders nothing
+/// rather than panicking. The `format_panel` early-return for missing
+/// `phases` already handles the non-object case so the panel is
+/// empty; this test guards that the Tokens block does not regress
+/// the behavior.
+#[test]
+fn tokens_block_with_non_object_phases_value_is_safe() {
+    let mut state = make_state("flow-start", &[("flow-start", "in_progress")]);
+    state["phases"] = json!("not an object");
+    let panel = format_panel(&state, VERSION, None, false, None);
+    assert!(panel.is_empty(), "Panel:\n{}", panel);
+}
+
+/// Million-scale token totals render with the `M` suffix. This drives
+/// the `n >= 1_000_000` branch of `format_tokens`.
+#[test]
+fn tokens_block_with_million_scale_total_renders_with_m_suffix() {
+    let mut state = make_state(
+        "flow-code",
+        &[("flow-code", "in_progress")],
+    );
+    let mut enter = snapshot_value("S1", 0, "claude-opus-4-7");
+    let mut complete = snapshot_value("S1", 0, "claude-opus-4-7");
+    enter["session_input_tokens"] = json!(0);
+    complete["session_input_tokens"] = json!(2_500_000);
+    state["phases"]["flow-code"]["window_at_enter"] = enter;
+    state["phases"]["flow-code"]["window_at_complete"] = complete;
+    let panel = format_panel(&state, VERSION, None, false, None);
+    assert!(panel.contains("Tokens  :"), "Panel:\n{}", panel);
+    assert!(
+        panel.contains("2.5M"),
+        "Million-scale token total must format with M suffix:\n{}",
+        panel
+    );
+}
+
+/// State that fails the FlowState parse (e.g. missing required
+/// `schema_version`) returns no Tokens line. Production state files
+/// always include the schema field; this test guards the fail-open
+/// path that protects the panel from corrupted state.
+#[test]
+fn tokens_block_with_unparseable_state_omits_line() {
+    let state = json!({
+        "branch": "test-feature",
+        "current_phase": "flow-start",
+        "phases": {
+            "flow-start": {
+                "status": "in_progress",
+                "name": "Start",
+                "started_at": null,
+                "completed_at": null,
+                "session_started_at": null,
+                "cumulative_seconds": 0,
+                "visit_count": 0
+            }
+        }
+    });
+    // Missing schema_version, started_at, files — FlowState parse
+    // fails and tokens_line returns None.
+    let panel = format_panel(&state, VERSION, None, false, None);
+    assert!(
+        !panel.contains("Tokens  :"),
+        "Tokens line must be omitted when FlowState parse fails:\n{}",
+        panel
     );
 }
 
