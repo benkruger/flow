@@ -540,3 +540,247 @@ fn validate_plain_repo_no_op() {
     assert!(allowed);
     assert!(msg.is_empty());
 }
+
+// --- subprocess matrix: .flow-states/ canonicalization per tool ---
+
+/// Spawn the hook with stdin matching `tool_name` + `path_field`,
+/// targeted at `file_path`, with cwd set to `worktree_cwd`.
+///
+/// Per `.claude/rules/subprocess-test-hygiene.md`: removes
+/// `FLOW_CI_RUNNING` (the `bin/flow hook` family inherits the parent's
+/// CI guard) and pins `HOME` to a tempdir so the child reads no user
+/// dotfiles. Returns `(exit_code, stdout, stderr)`.
+fn spawn_hook_with_cwd(
+    worktree_cwd: &std::path::Path,
+    home: &std::path::Path,
+    tool_name: &str,
+    path_field: &str,
+    file_path: &str,
+) -> (i32, String, String) {
+    let stdin_input = format!(
+        r#"{{"tool_name":"{}","tool_input":{{"{}":"{}"}}}}"#,
+        tool_name, path_field, file_path
+    );
+    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["hook", "validate-worktree-paths"])
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", home)
+        .current_dir(worktree_cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn flow-rs");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(stdin_input.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().expect("wait");
+    (
+        output.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        String::from_utf8_lossy(&output.stderr).to_string(),
+    )
+}
+
+/// Build a fixture worktree at `<canonical_tmp>/.worktrees/feat` and
+/// return `(root, worktree_cwd)`. Per
+/// `.claude/rules/testing-gotchas.md` "macOS Subprocess Path
+/// Canonicalization": canonicalize the tempdir root before any
+/// descendant `join()` so the child's `current_dir()` and the
+/// production `starts_with` prefix check agree.
+fn worktree_fixture(tmp: &tempfile::TempDir) -> (std::path::PathBuf, std::path::PathBuf) {
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let worktree_cwd = root.join(".worktrees").join("feat");
+    std::fs::create_dir_all(&worktree_cwd).expect("mkdir worktree");
+    (root, worktree_cwd)
+}
+
+#[test]
+fn validate_subprocess_rejects_worktree_flow_states_write() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (root, worktree_cwd) = worktree_fixture(&tmp);
+    let target = worktree_cwd.join(".flow-states/plan.md");
+    let canonical = root.join(".flow-states/plan.md");
+    let (code, _, stderr) = spawn_hook_with_cwd(
+        &worktree_cwd,
+        &root,
+        "Write",
+        "file_path",
+        target.to_str().unwrap(),
+    );
+    assert_eq!(code, 2, "stderr: {}", stderr);
+    assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
+    assert!(stderr.contains(".flow-states/"), "stderr: {}", stderr);
+    assert!(
+        stderr.contains(canonical.to_str().unwrap()),
+        "stderr: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_subprocess_rejects_worktree_flow_states_read() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (root, worktree_cwd) = worktree_fixture(&tmp);
+    let target = worktree_cwd.join(".flow-states/plan.md");
+    let canonical = root.join(".flow-states/plan.md");
+    let (code, _, stderr) = spawn_hook_with_cwd(
+        &worktree_cwd,
+        &root,
+        "Read",
+        "file_path",
+        target.to_str().unwrap(),
+    );
+    assert_eq!(code, 2, "stderr: {}", stderr);
+    assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
+    assert!(
+        stderr.contains(canonical.to_str().unwrap()),
+        "stderr: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_subprocess_rejects_worktree_flow_states_edit() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (root, worktree_cwd) = worktree_fixture(&tmp);
+    let target = worktree_cwd.join(".flow-states/plan.md");
+    let canonical = root.join(".flow-states/plan.md");
+    let (code, _, stderr) = spawn_hook_with_cwd(
+        &worktree_cwd,
+        &root,
+        "Edit",
+        "file_path",
+        target.to_str().unwrap(),
+    );
+    assert_eq!(code, 2, "stderr: {}", stderr);
+    assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
+    assert!(
+        stderr.contains(canonical.to_str().unwrap()),
+        "stderr: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_subprocess_rejects_worktree_flow_states_glob() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (root, worktree_cwd) = worktree_fixture(&tmp);
+    // Glob/Grep use the `path` field rather than `file_path`.
+    let target = worktree_cwd.join(".flow-states/plan.md");
+    let canonical = root.join(".flow-states/plan.md");
+    let (code, _, stderr) = spawn_hook_with_cwd(
+        &worktree_cwd,
+        &root,
+        "Glob",
+        "path",
+        target.to_str().unwrap(),
+    );
+    assert_eq!(code, 2, "stderr: {}", stderr);
+    assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
+    assert!(
+        stderr.contains(canonical.to_str().unwrap()),
+        "stderr: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_subprocess_rejects_worktree_flow_states_grep() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (root, worktree_cwd) = worktree_fixture(&tmp);
+    let target = worktree_cwd.join(".flow-states/plan.md");
+    let canonical = root.join(".flow-states/plan.md");
+    let (code, _, stderr) = spawn_hook_with_cwd(
+        &worktree_cwd,
+        &root,
+        "Grep",
+        "path",
+        target.to_str().unwrap(),
+    );
+    assert_eq!(code, 2, "stderr: {}", stderr);
+    assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
+    assert!(
+        stderr.contains(canonical.to_str().unwrap()),
+        "stderr: {}",
+        stderr
+    );
+}
+
+#[test]
+fn validate_subprocess_accepts_main_repo_flow_states_write() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (root, worktree_cwd) = worktree_fixture(&tmp);
+    let target = root.join(".flow-states/feat/plan.md");
+    let (code, _, stderr) = spawn_hook_with_cwd(
+        &worktree_cwd,
+        &root,
+        "Write",
+        "file_path",
+        target.to_str().unwrap(),
+    );
+    assert_eq!(code, 0, "stderr: {}", stderr);
+}
+
+#[test]
+fn validate_subprocess_accepts_main_repo_flow_states_read() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (root, worktree_cwd) = worktree_fixture(&tmp);
+    let target = root.join(".flow-states/feat/plan.md");
+    let (code, _, stderr) = spawn_hook_with_cwd(
+        &worktree_cwd,
+        &root,
+        "Read",
+        "file_path",
+        target.to_str().unwrap(),
+    );
+    assert_eq!(code, 0, "stderr: {}", stderr);
+}
+
+#[test]
+fn validate_subprocess_accepts_main_repo_flow_states_edit() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (root, worktree_cwd) = worktree_fixture(&tmp);
+    let target = root.join(".flow-states/feat/plan.md");
+    let (code, _, stderr) = spawn_hook_with_cwd(
+        &worktree_cwd,
+        &root,
+        "Edit",
+        "file_path",
+        target.to_str().unwrap(),
+    );
+    assert_eq!(code, 0, "stderr: {}", stderr);
+}
+
+#[test]
+fn validate_subprocess_accepts_main_repo_flow_states_glob() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (root, worktree_cwd) = worktree_fixture(&tmp);
+    let target = root.join(".flow-states/feat/plan.md");
+    let (code, _, stderr) = spawn_hook_with_cwd(
+        &worktree_cwd,
+        &root,
+        "Glob",
+        "path",
+        target.to_str().unwrap(),
+    );
+    assert_eq!(code, 0, "stderr: {}", stderr);
+}
+
+#[test]
+fn validate_subprocess_accepts_main_repo_flow_states_grep() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (root, worktree_cwd) = worktree_fixture(&tmp);
+    let target = root.join(".flow-states/feat/plan.md");
+    let (code, _, stderr) = spawn_hook_with_cwd(
+        &worktree_cwd,
+        &root,
+        "Grep",
+        "path",
+        target.to_str().unwrap(),
+    );
+    assert_eq!(code, 0, "stderr: {}", stderr);
+}
