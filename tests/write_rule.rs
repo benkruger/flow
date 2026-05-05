@@ -454,10 +454,7 @@ fn write_rule_subprocess_canonical_path_succeeds_plan_md() {
     let repo = setup_branch_repo(dir.path(), "feat-x");
     let content_file = repo.join("content.md");
     fs::write(&content_file, "plan body").unwrap();
-    let canonical = repo
-        .join(".flow-states")
-        .join("feat-x")
-        .join("plan.md");
+    let canonical = repo.join(".flow-states").join("feat-x").join("plan.md");
 
     let output = run_wr_canon(
         &repo,
@@ -708,9 +705,7 @@ fn write_rule_subprocess_canonical_path_succeeds_orchestrate_queue() {
     let repo = repo.canonicalize().unwrap();
     let content_file = repo.join("content.json");
     fs::write(&content_file, "{}").unwrap();
-    let canonical = repo
-        .join(".flow-states")
-        .join("orchestrate-queue.json");
+    let canonical = repo.join(".flow-states").join("orchestrate-queue.json");
 
     let output = run_wr_canon(
         &repo,
@@ -880,7 +875,10 @@ fn write_rule_subprocess_detached_head_no_op_for_branch_scoped() {
         .current_dir(&repo)
         .output()
         .unwrap();
-    let sha = String::from_utf8(sha_out.stdout).unwrap().trim().to_string();
+    let sha = String::from_utf8(sha_out.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
     Command::new("git")
         .args(["checkout", &sha])
         .current_dir(&repo)

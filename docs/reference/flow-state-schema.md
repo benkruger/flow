@@ -222,6 +222,8 @@ Updated by `/flow-plan` via `set-timestamp --set files.plan=<path>` and
 | `log` | string | Relative path to the session log file — set at creation |
 | `state` | string | Relative path to this state file — set at creation |
 
+These entries are **descriptive** — they record where the artifacts live so consumers (e.g., the Plan-phase resume check, `format-status`) can read them. They are NOT the source of truth for write destinations. The canonical destination for every managed FLOW artifact is computed by `FlowPaths` (`src/flow_paths.rs`) as a pure function of `(project_root, branch)`. `bin/flow write-rule` enforces this at the CLI layer: when `--path` names a managed artifact (`plan.md`, `dag.md`, `commit-msg.txt`, `.flow-issue-body`, `orchestrate-queue.json`), any value that doesn't lexically normalize to the `FlowPaths`-computed destination is rejected with `step: "path_canonicalization"`. The commit-message file (`<branch_dir>/commit-msg.txt`, via `FlowPaths::commit_msg`) is intentionally absent from `files.*` for this reason — its path is recoverable from `(project_root, branch)` alone, so persisting it in state would only invite drift. See `.claude/rules/file-tool-preflights.md` "Managed-Artifact Canonicalization Gate (CLI Layer)".
+
 ---
 
 ## Notes Array
