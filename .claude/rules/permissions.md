@@ -38,6 +38,76 @@ Add Read(//tmp/*.diff) permission for code-review plugin
 This makes the allow list auditable — any pattern can be traced
 back to why it was added and what breaks if it is removed.
 
+## Plan-Phase Enumeration of Skill-Added Bash Commands
+
+When a plan modifies a skill (`skills/**/SKILL.md` or
+`.claude/skills/**/SKILL.md`) to invoke a new bash command, the
+plan's Tasks section MUST enumerate the command and confirm one of:
+
+1. The command's first whitespace-separated token already matches
+   an existing entry in `UNIVERSAL_ALLOW`
+   (`src/prime_check.rs::UNIVERSAL_ALLOW`), so no allow-list change
+   is needed.
+2. The plan adds the matching `Bash(<pattern>)` entry to BOTH
+   `UNIVERSAL_ALLOW` (the canonical Rust source) and
+   `skills/flow-prime/SKILL.md` (the prime permissions JSON block —
+   the source `tests/permissions.rs::all_bash_commands_have_permission_coverage`
+   reads at test time).
+
+Forgetting either side breaks `bin/flow ci`: the contract test in
+`tests/permissions.rs` walks every SKILL.md bash block, extracts the
+command, and asserts it matches at least one allow-list entry. A
+new skill bash command without a matching entry fails CI in Code
+phase. Without Plan-time enumeration, the gap surfaces as a
+mid-Code permission failure that triggers an unplanned plan
+deviation log + a `CURRENT_CONFIG_HASH` bump (the allow-list
+addition changes the config-hash inputs).
+
+### What counts as a new bash command
+
+A bash block in a SKILL.md introduces a "new" command when its
+first token (the program name, modulo `${CLAUDE_PLUGIN_ROOT}/`
+prefix) is not already covered by an existing `UNIVERSAL_ALLOW`
+entry under the project's permission-pattern matching. Examples:
+
+- A skill that adds `bin/test --adversarial-path` introduces a new
+  command — `Bash(bin/test --adversarial-path)` is the matching
+  entry (or `Bash(bin/test *)` if the project wants to broaden).
+- A skill that adds `${CLAUDE_PLUGIN_ROOT}/bin/flow custom-subcmd`
+  is covered by the existing `Bash(*bin/flow *)` entry — no
+  permission change needed.
+- A skill that adds `gh release upload <tag> <file>` is covered by
+  existing `Bash(gh release create *)` only if patterns subsume —
+  most likely a new `Bash(gh release upload *)` entry is needed.
+
+### How to apply
+
+**Plan phase.** For every plan task that modifies a SKILL.md to
+add a bash block, the task description must include a "Permission
+coverage" subsection naming:
+
+1. The command's first token (e.g., `bin/test --adversarial-path`,
+   `${CLAUDE_PLUGIN_ROOT}/bin/flow <new-subcmd>`).
+2. The matching existing `UNIVERSAL_ALLOW` entry, OR the new
+   `Bash(<pattern>)` entry the plan will add to both
+   `src/prime_check.rs::UNIVERSAL_ALLOW` and
+   `skills/flow-prime/SKILL.md`.
+3. An acknowledgement that adding to `UNIVERSAL_ALLOW` will bump
+   `compute_config_hash`, requiring a `CURRENT_CONFIG_HASH` update
+   in `tests/prime_check.rs::compute_config_hash_uses_python_default_formatter`.
+
+**Code phase.** When implementing the SKILL.md change, the same
+commit must include the matching allow-list addition + the
+`CURRENT_CONFIG_HASH` bump. Discovering the gap mid-Code is a
+plan-deviation event per
+`.claude/rules/plan-commit-atomicity.md` and must be logged via
+`bin/flow log` before the commit lands.
+
+**Code Review phase.** The reviewer agent cross-checks every new
+SKILL.md bash command in the diff against the diff's allow-list
+changes. A SKILL.md bash command without a matching allow-list
+entry is a Real finding fixed in Step 4.
+
 ## Never Remove Without Explicit Ask
 
 When editing `.claude/settings.json`, only add entries — never
@@ -209,3 +279,8 @@ existing `validate-worktree-paths` entries for Edit and Write in
   Load From Flaky Tests" — the test-side discipline that
   prevents shared-config edits from being used to paper over
   environmental load events.
+- `.claude/rules/cli-output-contracts.md` — when a new skill
+  bash command is also a new consumed-output subcommand or stub
+  flag, the Plan-phase enumeration here couples with the
+  output-contract discipline there. The plan must specify both
+  the permission entry AND the output contract before Code phase.
