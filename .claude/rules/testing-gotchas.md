@@ -46,6 +46,51 @@ to accommodate a change that is itself the bug produces a green CI
 that hides the real problem. Only update the test after confirming
 the change is correct.
 
+## Distinguish Environmental Load From Flaky Tests
+
+When a test fails or times out, the first question is whether the
+machine is under unusual external load (video call, screen
+recording, large parallel build, OS update, antivirus scan, etc.).
+Test timing under `cargo-llvm-cov` instrumentation is sensitive to
+CPU contention; subprocess-spawning tests are sensitive to fork/exec
+lock contention. Heavy single-machine load can push a healthy test
+past a tight `slow-timeout` boundary in `.config/nextest.toml`.
+That is environmental noise — not a defect, not a regression, not a
+flaky test.
+
+**Never file a "Flaky Test" issue based on a single failure during
+known-heavy machine load, period.** No exceptions. The right
+response is to wait for load to return to normal and re-run the
+test. A test that fails consistently across multiple runs under
+**different** load conditions is genuinely flaky; one that fails
+under documented heavy load and passes when isolated is
+environmental.
+
+**Never modify shared infrastructure (`.config/nextest.toml`,
+`.config/*`, test-group overrides, parallelism limits) to paper
+over single-machine load events.** That expands the PR's diff into
+shared territory the user has not approved and conflates an
+environmental incident with a real config change. Every engineer
+running CI inherits the change.
+
+**Investigation steps before classifying as flaky:**
+
+1. Re-run the test in isolation
+   (`bin/flow ci --test -- <test_name>`). If it passes within a
+   second of expected runtime, the failure was environmental.
+2. Re-run the full CI suite when the machine is idle (no video
+   calls, no parallel builds, no other heavy workloads). If it
+   passes, the failure was environmental.
+3. Only after multiple consecutive failures across different load
+   conditions — say, three back-to-back failures spanning two
+   different days or load profiles — does the test merit a "flaky
+   test" classification.
+
+The Phase 3 `flow-code` SKILL.md "Flaky test detection" instruction
+that authorizes filing Flaky Test issues based on a single
+failure-then-pass pattern is overridden by this rule: investigate
+load before filing.
+
 ## Ambiguous Check Name Filters
 
 When filtering a list of check results by name substring, verify the

@@ -65,6 +65,41 @@ add it to this list AND to `WRITE_MONITORED_PATHS` in
 `tests/skill_contracts.rs`. The contract test scans every SKILL.md for
 Write-tool instructions adjacent to any entry in that constant.
 
+## Canonical Location for `.flow-states/`
+
+The `.flow-states/` directory is the shared state surface for FLOW
+flows and lives ONLY at `<project_root>/.flow-states/`. Tool-call
+writes to `<project_root>/.worktrees/<branch>/.flow-states/...` (the
+worktree-internal copy at the worktree root) or
+`<project_root>/.worktrees/<branch>/<service>/.flow-states/...` (the
+mono-repo service-subdirectory variant) would create a misplaced state
+copy that the readers (cleanup, discovery scanners, hooks) cannot see
+because they only scan the canonical location.
+
+The `validate-worktree-paths` PreToolUse hook
+(`src/hooks/validate_worktree_paths.rs`) enforces the canonical
+location at the tool-call layer. The
+`detect_misplaced_flow_states(file_path, project_root)` helper detects
+the misplacement via pure string operations (no `Path` construction
+or filesystem reads, so untrusted model output cannot cause a path-
+traversal sink) and returns the canonical destination. When the helper
+matches, `validate()` returns `(false, message)` with a `BLOCKED`
+message naming the canonical path the caller should use instead.
+
+The check fires on every Edit, Write, Read, Glob, and Grep tool call
+the hook is registered for in `hooks/hooks.json`. Both `file_path`
+(Edit/Write/Read) and `path` (Glob/Grep) input shapes resolve through
+`get_file_path` before the helper runs.
+
+This complements the CLI-layer canonicalization that `bin/flow
+write-rule` enforces internally: write-rule canonicalizes its `--path`
+argument before `fs::write`, and the validate-worktree-paths hook
+canonicalizes the tool-call layer before either Write or write-rule
+runs. Together they cover both surfaces — the model invoking the
+Write tool directly with a worktree-internal path, and the model
+invoking write-rule with one — so the canonical-only invariant holds
+regardless of which entry point a future skill picks.
+
 ## The Write-Rule Escape Pattern
 
 The pattern `flow-learn` uses for `.claude/` writes also applies to all
@@ -163,5 +198,8 @@ fails CI.
   requiring every test to guard a named regression and name its
   consumer.
 - `src/write_rule.rs` — the reference Rust subcommand.
+- `src/hooks/validate_worktree_paths.rs` — the reference hook with the
+  `detect_misplaced_flow_states` helper that enforces the canonical
+  `.flow-states/` location at the tool-call layer.
 - `skills/flow-learn/SKILL.md` — the reference SKILL.md pattern that
   routes through `write-rule` for CLAUDE.md and `.claude/rules/` writes.
