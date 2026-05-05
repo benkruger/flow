@@ -10,7 +10,12 @@ use clap::Parser;
 use serde_json::{json, Value};
 
 use crate::phase_config::{self, PHASE_ORDER};
+use crate::state::PhaseState;
 use crate::utils::{derive_feature, format_time, read_version, short_issue_ref};
+use crate::window_deltas::phase_delta;
+use indexmap::IndexMap;
+
+use crate::state::ModelTokens;
 
 /// Maximum prompt length before truncation.
 const MAX_PROMPT_LENGTH: usize = 80;
@@ -53,6 +58,124 @@ fn outcome_label(outcome: &str) -> &'static str {
         "rule_clarified" => "Rule clarified",
         _ => "Unknown",
     }
+}
+
+/// Format an integer token count as a compact string: `1.2K`, `3.4M`,
+/// or the raw integer when below 1000. Stable formatting so test
+/// assertions can pin specific values.
+fn format_tokens(n: i64) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{:.1}K", n as f64 / 1_000.0)
+    } else {
+        n.to_string()
+    }
+}
+
+/// Render the Token Cost section from `state.phases.<phase>.window_at_*`
+/// snapshots via `window_deltas::phase_delta`. Returns an empty Vec
+/// when no phase has populated snapshots — the renderer skips the
+/// section entirely rather than rendering a header with no rows.
+fn token_cost_section(state: &Value) -> Vec<String> {
+    let names = phase_config::phase_names();
+
+    let mut phase_rows: Vec<(String, i64, f64, bool)> = Vec::new();
+    let mut total_tokens: i64 = 0;
+    let mut total_cost: f64 = 0.0;
+    let mut combined_by_model: IndexMap<String, ModelTokens> = IndexMap::new();
+    let mut reset_observed_anywhere = false;
+
+    for &key in PHASE_ORDER {
+        let Some(phase_v) = state.get("phases").and_then(|p| p.get(key)) else {
+            continue;
+        };
+        let Ok(phase_state) = serde_json::from_value::<PhaseState>(phase_v.clone()) else {
+            continue;
+        };
+        let Some(report) = phase_delta(&phase_state) else {
+            continue;
+        };
+        let tokens = report
+            .input_tokens_delta
+            .saturating_add(report.output_tokens_delta)
+            .saturating_add(report.cache_creation_tokens_delta)
+            .saturating_add(report.cache_read_tokens_delta);
+        // Skip phases that contributed nothing — the section is for
+        // surface-able token activity, not a per-phase placeholder.
+        if tokens == 0 && report.cost_delta_usd.abs() < f64::EPSILON {
+            continue;
+        }
+        let name = names
+            .get(key)
+            .cloned()
+            .expect("phase_config::phase_names is keyed by PHASE_ORDER");
+        phase_rows.push((
+            name,
+            tokens,
+            report.cost_delta_usd,
+            report.window_reset_observed,
+        ));
+        total_tokens = total_tokens.saturating_add(tokens);
+        total_cost += report.cost_delta_usd;
+        if report.window_reset_observed {
+            reset_observed_anywhere = true;
+        }
+        for (model, mt) in &report.by_model_delta {
+            let entry = combined_by_model.entry(model.clone()).or_default();
+            entry.input = entry.input.saturating_add(mt.input);
+            entry.output = entry.output.saturating_add(mt.output);
+            entry.cache_create = entry.cache_create.saturating_add(mt.cache_create);
+            entry.cache_read = entry.cache_read.saturating_add(mt.cache_read);
+        }
+    }
+
+    if phase_rows.is_empty() {
+        return Vec::new();
+    }
+
+    let mut lines = Vec::new();
+    lines.push("  Token Cost".to_string());
+    lines.push(format!("  {}", "─".repeat(28)));
+    for (name, tokens, cost, reset) in &phase_rows {
+        let marker = if *reset { " ↻" } else { "" };
+        lines.push(format!(
+            "  {:<16} {:>8}  ${:.3}{}",
+            format!("{}:", name),
+            format_tokens(*tokens),
+            cost,
+            marker
+        ));
+    }
+    lines.push(format!("  {}", "─".repeat(28)));
+    lines.push(format!(
+        "  {:<16} {:>8}  ${:.3}",
+        "Total:",
+        format_tokens(total_tokens),
+        total_cost
+    ));
+    if combined_by_model.len() >= 2 {
+        lines.push(String::new());
+        lines.push("  By Model".to_string());
+        for (model, mt) in &combined_by_model {
+            let total_model = mt
+                .input
+                .saturating_add(mt.output)
+                .saturating_add(mt.cache_create)
+                .saturating_add(mt.cache_read);
+            lines.push(format!(
+                "    {:<24} {:>8}",
+                model,
+                format_tokens(total_model)
+            ));
+        }
+    }
+    if reset_observed_anywhere {
+        lines.push(String::new());
+        lines.push("  ↻ rate-limit window reset observed mid-flow".to_string());
+    }
+    lines.push(String::new());
+    lines
 }
 
 /// Render a findings section for a single phase.
@@ -170,6 +293,12 @@ pub fn format_complete_summary(state: &Value, closed_issues: Option<&[Value]>) -
         let learn_lines = phase_findings_section(findings_arr, "flow-learn", "Learn Findings");
         lines.extend(learn_lines);
     }
+
+    // Token Cost section (between Findings and Artifacts) — empty
+    // when no phase carries window snapshot data per
+    // `docs/reference/flow-state-schema.md` "Window Snapshot".
+    let token_lines = token_cost_section(state);
+    lines.extend(token_lines);
 
     // Artifacts section
     let issues_count = issues.map(|i| i.len()).unwrap_or(0);

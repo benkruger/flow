@@ -58,6 +58,230 @@ fn write_state_file(dir: &Path) -> PathBuf {
     state_file
 }
 
+// --- Token Cost section ---
+
+/// Build a snapshot Value for fixtures. `n` scales each numeric
+/// field so callers can produce monotonically-increasing snapshots.
+fn snapshot_value(session: &str, n: i64, model: &str) -> Value {
+    json!({
+        "captured_at": format!("2026-01-01T0{}:00:00-08:00", n.min(9)),
+        "session_id": session,
+        "model": model,
+        "five_hour_pct": n,
+        "seven_day_pct": n / 2,
+        "session_input_tokens": n * 100,
+        "session_output_tokens": n * 50,
+        "session_cache_creation_tokens": 0,
+        "session_cache_read_tokens": 0,
+        "session_cost_usd": n as f64 * 0.01,
+        "by_model": {
+            model: {"input": n * 100, "output": n * 50, "cache_create": 0, "cache_read": 0}
+        },
+        "turn_count": n,
+        "tool_call_count": n * 2,
+        "context_at_last_turn_tokens": n * 100,
+        "context_window_pct": (n * 100) as f64 / 200_000.0 * 100.0,
+    })
+}
+
+fn add_phase_snapshots(state: &mut Value, key: &str, enter_n: i64, complete_n: i64) {
+    state["phases"][key]["window_at_enter"] = snapshot_value("S1", enter_n, "claude-opus-4-7");
+    state["phases"][key]["window_at_complete"] =
+        snapshot_value("S1", complete_n, "claude-opus-4-7");
+}
+
+/// Full data: every phase carries enter+complete snapshots.
+/// The Token Cost section renders header + per-phase rows + total.
+#[test]
+fn token_cost_section_with_full_data_renders_per_phase_and_total() {
+    let mut state = all_complete_state();
+    add_phase_snapshots(&mut state, "flow-start", 0, 5);
+    add_phase_snapshots(&mut state, "flow-plan", 5, 10);
+    add_phase_snapshots(&mut state, "flow-code", 10, 50);
+
+    let result = format_complete_summary(&state, None);
+    assert!(result.summary.contains("Token Cost"), "section header");
+    assert!(result.summary.contains("Total:"));
+    // 5 -> tokens grew by (5*100 + 5*50) = 750 from enter=0 to complete=5
+    // for Start phase. Across 3 phases the combined Total should be > 0.
+}
+
+/// Empty state (no snapshots anywhere) → section is omitted entirely.
+#[test]
+fn token_cost_section_with_no_snapshots_returns_empty() {
+    let state = all_complete_state();
+    let result = format_complete_summary(&state, None);
+    assert!(
+        !result.summary.contains("Token Cost"),
+        "Token Cost header must not appear when no phases have snapshots"
+    );
+}
+
+/// Partial data: only some phases have snapshots → other phases are
+/// silently skipped from the per-phase rows.
+#[test]
+fn token_cost_section_with_partial_data_skips_unpopulated_phases() {
+    let mut state = all_complete_state();
+    // Only flow-code has snapshots.
+    add_phase_snapshots(&mut state, "flow-code", 10, 50);
+    let result = format_complete_summary(&state, None);
+    assert!(result.summary.contains("Token Cost"));
+    // Plan and Start phases must NOT appear in the Token Cost rows.
+    let token_section_start = result.summary.find("Token Cost").expect("section");
+    let after_token = &result.summary[token_section_start..];
+    let next_section = after_token.find("\n\n").unwrap_or(after_token.len());
+    let token_block = &after_token[..next_section];
+    assert!(token_block.contains("Code:"));
+    assert!(!token_block.contains("Start:"));
+    assert!(!token_block.contains("Plan:"));
+}
+
+/// Window reset observed: pct delta drops between enter and complete
+/// for a phase → reset marker (↻) appears next to that phase row and
+/// a footer note explains the marker.
+#[test]
+fn token_cost_section_with_window_reset_marks_observed() {
+    let mut state = all_complete_state();
+    let mut enter = snapshot_value("S1", 80, "claude-opus-4-7");
+    let mut complete = snapshot_value("S1", 5, "claude-opus-4-7");
+    // Force token growth so the row isn't filtered out
+    enter["session_input_tokens"] = json!(100);
+    complete["session_input_tokens"] = json!(500);
+    state["phases"]["flow-code"]["window_at_enter"] = enter;
+    state["phases"]["flow-code"]["window_at_complete"] = complete;
+    let result = format_complete_summary(&state, None);
+    assert!(result.summary.contains("Token Cost"));
+    assert!(
+        result.summary.contains("↻"),
+        "reset marker must appear when window_reset_observed is true"
+    );
+    assert!(
+        result.summary.contains("rate-limit window reset"),
+        "footer note must explain the marker"
+    );
+}
+
+/// Single-model flow: by_model rollup has one entry → the By Model
+/// table is suppressed (no point showing a one-row breakdown).
+#[test]
+fn token_cost_section_single_model_skips_by_model_table() {
+    let mut state = all_complete_state();
+    add_phase_snapshots(&mut state, "flow-code", 10, 50);
+    let result = format_complete_summary(&state, None);
+    assert!(result.summary.contains("Token Cost"));
+    assert!(
+        !result.summary.contains("By Model"),
+        "single-model rollup should suppress the By Model table"
+    );
+}
+
+/// Multi-model flow: by_model rollup has 2+ entries → the By Model
+/// table is rendered with one row per model.
+#[test]
+fn token_cost_section_multi_model_renders_by_model_table() {
+    let mut state = all_complete_state();
+    state["phases"]["flow-code"]["window_at_enter"] = snapshot_value("S1", 0, "claude-opus-4-7");
+    let mut complete_v = snapshot_value("S1", 50, "claude-opus-4-7");
+    // Add a second model's bucket to the by_model map.
+    complete_v["by_model"]["claude-sonnet-4-6"] = json!({
+        "input": 1000, "output": 500, "cache_create": 0, "cache_read": 0
+    });
+    state["phases"]["flow-code"]["window_at_complete"] = complete_v;
+    let result = format_complete_summary(&state, None);
+    assert!(result.summary.contains("By Model"));
+    assert!(result.summary.contains("claude-opus-4-7"));
+    assert!(result.summary.contains("claude-sonnet-4-6"));
+}
+
+/// `state.phases` is null → no phase entries to walk; section
+/// short-circuits via the `state.get("phases").and_then` chain.
+#[test]
+fn token_cost_section_with_null_phases_value_returns_empty() {
+    let mut state = all_complete_state();
+    state["phases"] = json!(null);
+    let result = format_complete_summary(&state, None);
+    assert!(!result.summary.contains("Token Cost"));
+}
+
+/// Phase has snapshots but every counter field is zero → the
+/// delta is all-zero and the row is skipped from the section.
+#[test]
+fn token_cost_section_with_zero_delta_phase_is_skipped() {
+    let mut state = all_complete_state();
+    // enter=0 and complete=0 → all numeric snapshot fields zero,
+    // so the delta is zero across the board.
+    add_phase_snapshots(&mut state, "flow-code", 0, 0);
+    let result = format_complete_summary(&state, None);
+    // Section should NOT render — the only phase with snapshots
+    // contributed nothing.
+    assert!(!result.summary.contains("Token Cost"));
+}
+
+/// Phase has snapshots with cost but no token delta → the row is
+/// kept (the cost arm of the AND-skip branch fires false).
+#[test]
+fn token_cost_section_with_cost_but_no_token_delta_renders_row() {
+    let mut state = all_complete_state();
+    let mut enter = snapshot_value("S1", 0, "claude-opus-4-7");
+    let mut complete = snapshot_value("S1", 0, "claude-opus-4-7");
+    // Force cost to differ between enter and complete while
+    // keeping every token counter at zero.
+    enter["session_cost_usd"] = json!(0.0);
+    complete["session_cost_usd"] = json!(0.50);
+    state["phases"]["flow-code"]["window_at_enter"] = enter;
+    state["phases"]["flow-code"]["window_at_complete"] = complete;
+    let result = format_complete_summary(&state, None);
+    assert!(result.summary.contains("Token Cost"));
+    assert!(result.summary.contains("$0.500") || result.summary.contains("$0.5"));
+}
+
+/// Phases value missing from state → token_cost_section short-
+/// circuits per phase via the `let Some(phase_v) = ...` else-arm.
+/// Coverage of the None branch.
+#[test]
+fn token_cost_section_with_missing_phases_object_returns_empty() {
+    let mut state = all_complete_state();
+    // Drop the entire phases object so each PHASE_ORDER lookup fails.
+    state.as_object_mut().unwrap().remove("phases");
+    let result = format_complete_summary(&state, None);
+    assert!(!result.summary.contains("Token Cost"));
+}
+
+/// Phase value with a malformed `window_at_enter` shape (wrong type)
+/// → from_value::<PhaseState> returns Err and the phase is skipped.
+#[test]
+fn token_cost_section_with_unparseable_phase_skips_silently() {
+    let mut state = all_complete_state();
+    // Replace one phase entry with a non-object value so PhaseState
+    // deserialization fails.
+    state["phases"]["flow-code"] = json!("not an object");
+    // Plus add a real snapshot pair on a different phase so the
+    // section renders for that phase but skips flow-code.
+    add_phase_snapshots(&mut state, "flow-plan", 5, 10);
+    let result = format_complete_summary(&state, None);
+    assert!(result.summary.contains("Token Cost"));
+    assert!(result.summary.contains("Plan:"));
+}
+
+/// `format_tokens` boundary cases: < 1000 (raw integer), >= 1M
+/// (megaformat). Drives both branches via crafted snapshots that
+/// produce token counts in those ranges.
+#[test]
+fn token_cost_section_format_tokens_covers_small_and_million_ranges() {
+    let mut state = all_complete_state();
+    // Tiny token delta (< 1000): enter=0 → complete=1 produces
+    // 100 input + 50 output = 150 tokens.
+    add_phase_snapshots(&mut state, "flow-start", 0, 1);
+    // Million-range delta: scale `n` so n*100 + n*50 > 1_000_000.
+    // n=10000 → 1_500_000 tokens.
+    add_phase_snapshots(&mut state, "flow-code", 0, 10000);
+    let result = format_complete_summary(&state, None);
+    // Raw integer for the small phase.
+    assert!(result.summary.contains("150"));
+    // M suffix for the million-range phase.
+    assert!(result.summary.contains("M"));
+}
+
 // --- basic summary ---
 
 #[test]

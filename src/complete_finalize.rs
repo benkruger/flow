@@ -80,11 +80,7 @@ pub fn run_impl(args: &Args) -> Value {
     if state_path.exists() {
         let _ = crate::lock::mutate_state(state_path, &mut |state| {
             let snap = crate::window_snapshot::capture_for_active_state(&home, state, &root);
-            crate::window_snapshot::write_snapshot_into_state(
-                state,
-                "window_at_complete",
-                &snap,
-            );
+            crate::window_snapshot::write_snapshot_into_state(state, "window_at_complete", &snap);
         });
     }
 
