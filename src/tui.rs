@@ -24,6 +24,7 @@ use serde_json::Value;
 
 use crate::flow_paths::FlowPaths;
 use crate::tui_data::{self, AccountMetrics, FlowSummary, OrchestrationSummary};
+use crate::utils::format_tokens;
 
 /// Auto-refresh interval.
 const REFRESH_MS: u64 = 2000;
@@ -844,6 +845,57 @@ impl TuiApp {
         }
 
         row += 1;
+
+        // Per-phase token cost table — rendered when at least one
+        // phase carries non-zero token activity, cost, or a window
+        // reset. Empty otherwise so legacy state without snapshots
+        // preserves the existing detail panel layout.
+        if row < max_y.saturating_sub(2) {
+            let token_rows = tui_data::phase_token_table(&flow.state);
+            let active_rows: Vec<&tui_data::PhaseTokenRow> = token_rows
+                .iter()
+                .filter(|r| {
+                    r.tokens > 0
+                        || r.cost_usd.abs() > f64::EPSILON
+                        || r.window_reset_observed
+                })
+                .collect();
+            if !active_rows.is_empty() {
+                let header = Paragraph::new(Line::from(Span::styled(
+                    "  Tokens".to_string(),
+                    Style::default().add_modifier(Modifier::BOLD),
+                )));
+                frame.render_widget(
+                    header,
+                    Rect::new(area.x, area.y + row as u16, area.width, 1),
+                );
+                row += 1;
+                for r in active_rows {
+                    if row >= max_y.saturating_sub(2) {
+                        break;
+                    }
+                    let marker = if r.window_reset_observed {
+                        " \u{21bb}"
+                    } else {
+                        ""
+                    };
+                    let line_text = format!(
+                        "    {}: {}  ${:.3}{}",
+                        r.phase_name,
+                        format_tokens(r.tokens),
+                        r.cost_usd,
+                        marker
+                    );
+                    let line = Paragraph::new(Line::from(line_text));
+                    frame.render_widget(
+                        line,
+                        Rect::new(area.x, area.y + row as u16, area.width, 1),
+                    );
+                    row += 1;
+                }
+                row += 1;
+            }
+        }
 
         // Notes and issues
         if row < max_y.saturating_sub(2) {

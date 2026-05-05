@@ -2107,11 +2107,7 @@ fn phase_token_table_handles_missing_snapshots() {
             "phase {} cost",
             row.phase_key
         );
-        assert!(
-            !row.window_reset_observed,
-            "phase {} reset",
-            row.phase_key
-        );
+        assert!(!row.window_reset_observed, "phase {} reset", row.phase_key);
     }
 }
 
@@ -2197,7 +2193,11 @@ fn phase_token_table_includes_phase_name_and_number() {
             .get(row.phase_key.as_str())
             .cloned()
             .unwrap_or_default();
-        assert_eq!(row.phase_name, expected_name, "phase {} name", row.phase_key);
+        assert_eq!(
+            row.phase_name, expected_name,
+            "phase {} name",
+            row.phase_key
+        );
         let expected_number = numbers.get(row.phase_key.as_str()).copied().unwrap_or(0);
         assert_eq!(
             row.phase_number, expected_number,
@@ -2231,10 +2231,7 @@ fn phase_token_table_with_non_object_phases_value_returns_empty() {
 /// row layout, only to compute deltas.
 #[test]
 fn phase_token_table_with_unparseable_state_returns_zero_data_rows() {
-    let mut state = make_state(
-        "flow-code",
-        &[("flow-code", "in_progress")],
-    );
+    let mut state = make_state("flow-code", &[("flow-code", "in_progress")]);
     // Remove fields that FlowState requires.
     state.as_object_mut().unwrap().remove("started_at");
     let rows = phase_token_table(&state);

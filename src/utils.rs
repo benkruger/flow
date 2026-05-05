@@ -337,6 +337,20 @@ pub fn format_time(seconds: i64) -> String {
     "<1m".to_string()
 }
 
+/// Format an integer token count as a compact string: `1.2K`, `3.4M`,
+/// or the raw integer when below 1000. Stable formatting so test
+/// assertions can pin specific values. Used by `format_complete_summary`,
+/// `format_status`, and `tui` to render Token Cost / Tokens panels.
+pub fn format_tokens(n: i64) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{:.1}K", n as f64 / 1_000.0)
+    } else {
+        n.to_string()
+    }
+}
+
 /// Calculate elapsed seconds from an ISO timestamp to now (or a given time).
 ///
 /// Returns 0 if started_at is None or empty. Never returns negative.

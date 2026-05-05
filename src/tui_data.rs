@@ -352,8 +352,7 @@ pub fn phase_token_table(state: &Value) -> Vec<PhaseTokenRow> {
     // Parse the state as FlowState for delta computation. Fail-open:
     // rows still render when parse fails (older state files, missing
     // required fields), just with zero token data.
-    let flow_state: Option<crate::state::FlowState> =
-        serde_json::from_value(state.clone()).ok();
+    let flow_state: Option<crate::state::FlowState> = serde_json::from_value(state.clone()).ok();
 
     let mut rows = Vec::new();
     for &key in PHASE_ORDER {

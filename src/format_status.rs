@@ -7,24 +7,13 @@ use crate::flow_paths::FlowPaths;
 use crate::git::resolve_branch;
 use crate::phase_config::{self, find_state_files, load_phase_config, PhaseConfig, PHASE_ORDER};
 use crate::state::FlowState;
-use crate::utils::{derive_feature, detect_dev_mode, elapsed_since, format_time, read_version};
+use crate::utils::{
+    derive_feature, detect_dev_mode, elapsed_since, format_time, format_tokens, read_version,
+};
 use crate::window_deltas::flow_total;
 
 /// Column width for phase name alignment.
 const NAME_WIDTH: usize = 12;
-
-/// Format an integer token count as a compact string: `1.2K`, `3.4M`,
-/// or the raw integer when below 1000. Stable formatting so test
-/// assertions can pin specific values.
-fn format_tokens(n: i64) -> String {
-    if n >= 1_000_000 {
-        format!("{:.1}M", n as f64 / 1_000_000.0)
-    } else if n >= 1_000 {
-        format!("{:.1}K", n as f64 / 1_000.0)
-    } else {
-        n.to_string()
-    }
-}
 
 /// Render the Tokens line from `state.window_at_*` snapshots and the
 /// per-phase snapshots via `window_deltas::flow_total`. Returns `None`

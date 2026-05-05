@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 
 use crate::phase_config::{self, PHASE_ORDER};
 use crate::state::PhaseState;
-use crate::utils::{derive_feature, format_time, read_version, short_issue_ref};
+use crate::utils::{derive_feature, format_time, format_tokens, read_version, short_issue_ref};
 use crate::window_deltas::phase_delta;
 use indexmap::IndexMap;
 
@@ -57,19 +57,6 @@ fn outcome_label(outcome: &str) -> &'static str {
         "rule_written" => "Rule written",
         "rule_clarified" => "Rule clarified",
         _ => "Unknown",
-    }
-}
-
-/// Format an integer token count as a compact string: `1.2K`, `3.4M`,
-/// or the raw integer when below 1000. Stable formatting so test
-/// assertions can pin specific values.
-fn format_tokens(n: i64) -> String {
-    if n >= 1_000_000 {
-        format!("{:.1}M", n as f64 / 1_000_000.0)
-    } else if n >= 1_000 {
-        format!("{:.1}K", n as f64 / 1_000.0)
-    } else {
-        n.to_string()
     }
 }
 
