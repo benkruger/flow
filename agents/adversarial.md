@@ -27,10 +27,13 @@ against (resolved at runtime via `bin/flow base-branch` — usually
 is not `main`). The branch name, project CLAUDE.md path, temp test
 file path (`<temp_test_file>`, including its file extension), and
 test command (`<test_command>`) are also provided. The path was
-chosen by the project's `bin/test --adversarial-path` and points
+chosen by the project's `bin/test --adversarial-path`, normalized
+by the calling skill (trailing whitespace stripped), and points
 inside the project's test tree so the language test runner can
 discover and execute the probe — you do not pick the path or the
-extension. Use the Read tool to read the CLAUDE.md for test
+extension. The path may be absolute or relative; both forms resolve
+inside the worktree (relative is interpreted against the calling
+skill's cwd). Use the Read tool to read the CLAUDE.md for test
 conventions and patterns. Use Read, Glob, and Grep to investigate the
 codebase.
 
@@ -40,7 +43,10 @@ Write all adversarial tests to the single file at `<temp_test_file>`.
 The path (including extension) is provided in your prompt verbatim —
 the project owns the choice through `bin/test --adversarial-path`.
 Use the Write tool to create the file. You may overwrite it between
-rounds to refine tests.
+rounds to refine tests. If the Write tool is blocked by
+`validate-worktree-paths` (the path resolved outside the worktree),
+report that as a finding and stop — do not attempt to relocate the
+file or rewrite the path.
 
 Do NOT write to any other path. Do NOT change the file extension or
 relocate the file. Do NOT use the Edit tool — it is not available to

@@ -581,27 +581,40 @@ fn run_impl_propagates_write_error_in_auto_upgrade_path() {
 // hashing path silently invalidates those stored hashes and forces
 // every user to re-prime. The following tests guard the contract.
 
-/// `EXCLUDE_ENTRIES` carries the basename glob patterns that match
-/// the Code Review adversarial agent's probe test files inside the
-/// project's test tree. The patterns land in `.git/info/exclude` at
-/// prime time so user `git status` output does not surface the
-/// throwaway probe alongside intentional changes. The two basenames
-/// are `test_adversarial_flow.*` (covers Rust, Python, JS/TS, and
-/// any other language whose test runner discovers a leading
-/// `test_` prefix) and `*_adversarial_flow_test.rb` (Rails/Minitest
-/// trailing-suffix convention).
+/// `EXCLUDE_ENTRIES` carries the per-language basename patterns
+/// that match the Code Review adversarial agent's probe test files
+/// inside the project's test tree. The patterns land in
+/// `.git/info/exclude` at prime time so user `git status` output
+/// does not surface the throwaway probe alongside intentional
+/// changes. Each pattern matches exactly one of the per-language
+/// probe basenames the `assets/bin-stubs/test.sh` examples
+/// recommend; together they cover Rust, Python, JS/TS, Go, Rails
+/// Minitest, RSpec, and Swift. None of the patterns use a leading
+/// wildcard, so a user-named legitimate test cannot be silently
+/// excluded.
 #[test]
 fn exclude_entries_includes_adversarial_basenames() {
     use flow_rs::prime_check::EXCLUDE_ENTRIES;
+    let expected = [
+        "test_adversarial_flow.*",    // Rust, Python, JS/TS
+        "adversarial_flow_test.go",   // Go
+        "adversarial_flow_test.rb",   // Rails Minitest
+        "adversarial_flow_spec.rb",   // RSpec
+        "AdversarialFlowTests.swift", // Swift XCTestCase
+    ];
+    for pat in &expected {
+        assert!(
+            EXCLUDE_ENTRIES.contains(pat),
+            "EXCLUDE_ENTRIES must contain {pat:?} — got {:?}",
+            EXCLUDE_ENTRIES
+        );
+    }
     assert!(
-        EXCLUDE_ENTRIES.contains(&"test_adversarial_flow.*"),
-        "EXCLUDE_ENTRIES must contain test_adversarial_flow.* — got {:?}",
-        EXCLUDE_ENTRIES
-    );
-    assert!(
-        EXCLUDE_ENTRIES.contains(&"*_adversarial_flow_test.rb"),
-        "EXCLUDE_ENTRIES must contain *_adversarial_flow_test.rb — got {:?}",
-        EXCLUDE_ENTRIES
+        !EXCLUDE_ENTRIES.contains(&"*_adversarial_flow_test.rb"),
+        "EXCLUDE_ENTRIES must not contain the leading-wildcard pattern \
+         *_adversarial_flow_test.rb — replaced by exact basename \
+         adversarial_flow_test.rb to prevent silent exclusion of \
+         user-named legitimate tests"
     );
 }
 
@@ -641,7 +654,7 @@ fn compute_config_hash_uses_python_default_formatter() {
     // produced by the in-tree constants and formatter at the time the
     // test was authored. Update it together with any intentional change
     // to UNIVERSAL_ALLOW / FLOW_DENY / EXCLUDE_ENTRIES / hash format.
-    const CURRENT_CONFIG_HASH: &str = "6417b614a3f1";
+    const CURRENT_CONFIG_HASH: &str = "a634c4685bae";
     assert_eq!(
         hash, CURRENT_CONFIG_HASH,
         "config_hash drift — PythonDefaultFormatter or input constants changed; \

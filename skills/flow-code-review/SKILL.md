@@ -194,28 +194,51 @@ toolchain decisions. Worktree removal at Phase 6 Complete disposes
 of the probe as a side effect of removing the worktree directory,
 so no separate cleanup hook is needed.
 
-Run this from the worktree root and capture stdout:
+Run this from the current working directory (the agent's
+`worktree_cwd` captured at flow-start — the worktree root for
+project-root flows, or the service subdirectory
+`.worktrees/<branch>/<service>/` for mono-repo flows) and capture
+stdout:
 
 ```bash
 bin/test --adversarial-path
 ```
 
+Strip trailing whitespace (newline, spaces, tabs) from the
+captured stdout before using the value — `bin/test` is project-
+owned bash that may print the path via `echo` (which appends a
+newline) or include trailing whitespace from line-continuation
+quoting. The contract is a single-line path; the skill normalizes
+defensively.
+
 If `bin/test` exits 2, surface the stderr message and halt — the
-project must configure `bin/test --adversarial-path` (uncomment the
-runner block and set the matching path comment in `bin/test`)
+project must configure `bin/test --adversarial-path` (uncomment
+the runner block and set the matching path comment in `bin/test`)
 before Code Review can run. Do NOT proceed to Step 2.
 
-Capture these two values for Step 2 (use the path verbatim,
-including extension — the project's `bin/test` owns both):
+The returned path may be absolute or relative. A relative path is
+resolved against the cwd you ran `bin/test --adversarial-path`
+from (the `worktree_cwd`), so it lands inside the worktree. An
+absolute path must already point inside the worktree — the
+`validate-worktree-paths` hook will block the adversarial agent's
+Write tool call otherwise; surface that rejection as a finding if
+it happens. The recommended convention is a path relative to the
+cwd, matching the `assets/bin-stubs/test.sh` examples
+(`tests/test_adversarial_flow.rs`,
+`test/adversarial_flow_test.rb`, etc.).
 
-- `<temp_test_file>` = (output of `bin/test --adversarial-path`)
+Capture these two values for Step 2 (use the trimmed path
+verbatim, including extension — the project's `bin/test` owns
+both):
+
+- `<temp_test_file>` = (trimmed output of `bin/test --adversarial-path`)
 - `<test_command>` = `${CLAUDE_PLUGIN_ROOT}/bin/flow ci --test --file <temp_test_file>`
 
 The adversarial agent always launches when `bin/test
 --adversarial-path` returns a configured path. If the project's
 `bin/test` does not support a `--file` flag (or cannot compile a
-single file in isolation), the agent will surface that as a finding
-rather than silently skipping.
+single file in isolation), the agent will surface that as a
+finding rather than silently skipping.
 
 **Audit tombstone staleness.**
 
