@@ -84,9 +84,49 @@ if [ "${1:-}" = "--show" ]; then
   shift
   file="$1"
   shift
-  exec cargo llvm-cov report --text --show-instantiations \
-    --ignore-filename-regex "^(?!.*${file//./\\.}$).*$" \
-    "$@"
+  # llvm-cov's --ignore-filename-regex uses POSIX regex without
+  # lookaround, so the previously-attempted "match everything BUT
+  # target" pattern silently matched nothing and the entire codebase
+  # was dumped (12MB+ for a single-file query). Generate the full
+  # annotated report and post-filter via awk to the section for the
+  # target file. Sections begin with a header of the form
+  # `/abs/path/to/file.rs:` and end at the next such header.
+  #
+  # Accepts either a basename (`start_init.rs`) or a path
+  # (`src/start_init.rs`); matches `/<arg>:` at end of header line.
+  esc_file="$(printf '%s' "$file" | sed 's/[.]/\\./g')"
+  cargo llvm-cov report --text --show-instantiations "$@" \
+    | awk -v needle="$esc_file" '
+        BEGIN { in_target = 0 }
+        /^\/.*\.rs:$/ {
+          if ($0 ~ ("/" needle ":$")) {
+            in_target = 1
+            print
+            next
+          }
+          in_target = 0
+          next
+        }
+        in_target == 1 { print }
+      '
+  exit
+fi
+
+if [ "${1:-}" = "--funcs" ]; then
+  shift
+  file="$1"
+  shift
+  # Per-function coverage breakdown for ONE source file via JSON output.
+  # cargo-llvm-cov's --show-functions exists but its filename filter
+  # doesn't support negative lookahead either, so post-process JSON.
+  cargo llvm-cov report --json "$@" 2>/dev/null \
+    | jq -r --arg f "$file" '
+        .data[].functions[]
+        | select(.filenames[0] | test("/src/" + $f + "$"))
+        | "\(.count // 0)\t\(.name)"
+      ' \
+    | sort -n
+  exit
 fi
 
 if [ "${1:-}" = "--module" ]; then

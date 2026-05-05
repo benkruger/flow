@@ -371,6 +371,40 @@ fn finalize_has_failures_ok_status_absent_failures() {
     assert!(json.get("post_merge_failures").is_none());
 }
 
+/// Covers the `if state_path.exists() { ... }` false branch in
+/// run_impl. The --state-file points at a path that doesn't exist on
+/// disk, so the snap-capture mutate_state call is skipped. Without
+/// this test, line 85's close brace shows count 0 and the file
+/// stays at <100% per-region/per-line coverage.
+#[test]
+fn finalize_state_file_missing_skips_snapshot_capture() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = make_repo_fixture(&parent);
+    // state_file points at a path that does NOT exist on disk.
+    let state_path = parent.join("nonexistent-state.json");
+    assert!(!state_path.exists());
+    let flow_bin = parent.join("bin-flow-stub").join("flow");
+    write_success_flow_stub(&flow_bin);
+    let stubs = path_stub_dir(&parent);
+
+    let (code, _stdout, _) = run_complete_finalize(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        ".worktrees/test-feature",
+        false,
+        Some(&flow_bin),
+        Some(&stubs),
+    );
+
+    // Subprocess exits 0 — missing state file is not an error here;
+    // run_impl just skips the snapshot capture and proceeds with
+    // post_merge + cleanup using whatever fallbacks they have.
+    assert_eq!(code, 0);
+}
+
 #[test]
 fn finalize_result_includes_empty_banner_and_issues_links_on_bare_state() {
     // The state file omits slack thread and has no prompt → various

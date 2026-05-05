@@ -865,6 +865,76 @@ fn phase_enter_legacy_plan_file_fallback_covered() {
     );
 }
 
+/// Subprocess: phase-enter with HOME set to a directory that has a
+/// `.claude/rate-limits.json` file. Exercises the "HOME populated"
+/// path through `window_snapshot::capture_for_active_state` invoked
+/// from inside the mutate_state closure.
+#[test]
+fn phase_enter_with_home_set_exercises_snapshot_capture() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "home-set";
+    let repo = create_git_repo(dir.path(), branch);
+    create_state(&repo, branch, "flow-plan", "complete", None);
+
+    // Create a fake $HOME with a rate-limits.json so capture_for_active_state
+    // takes the populated path.
+    let home_dir = dir.path().join("home");
+    let claude_dir = home_dir.join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    fs::write(
+        claude_dir.join("rate-limits.json"),
+        r#"{"five_hour_pct": 12, "seven_day_pct": 34}"#,
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["phase-enter", "--phase", "flow-code", "--branch", branch])
+        .current_dir(&repo)
+        .env("HOME", &home_dir)
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let last = stdout.trim().lines().last().unwrap_or("");
+    let data: Value = serde_json::from_str(last).unwrap_or(json!({}));
+    assert_eq!(data["status"], "ok");
+}
+
+/// Cover Args's clap-derive trait methods so all derived
+/// methods get executed instantiations in the test binary.
+#[test]
+fn phase_enter_args_clap_derives_covered() {
+    use clap::{Args as _ClapArgsTrait, CommandFactory, FromArgMatches, Parser};
+    use flow_rs::phase_enter::Args;
+    let args =
+        Args::try_parse_from(["phase-enter", "--phase", "flow-code"]).expect("clap should parse");
+    let _ = format!("{:?}", args);
+    let _ = format!("{:#?}", args);
+    let _cmd = Args::command();
+    let _cmd_upd = Args::command_for_update();
+    // augment_args / augment_args_for_update via the clap::Args trait
+    let base = clap::Command::new("test-augment");
+    let _augmented = <Args as _ClapArgsTrait>::augment_args(base.clone());
+    let _augmented2 = <Args as _ClapArgsTrait>::augment_args_for_update(base);
+    let _gid = <Args as _ClapArgsTrait>::group_id();
+    // Exercise FromArgMatches paths (every variant)
+    let mut matches = Args::command().get_matches_from(["phase-enter", "--phase", "flow-learn"]);
+    let mut a2 = Args::from_arg_matches(&matches).expect("from_arg_matches");
+    let _ = a2.update_from_arg_matches(&matches);
+    let _ = Args::from_arg_matches_mut(&mut matches);
+    let _ = a2.update_from_arg_matches_mut(&mut matches);
+    // Exercise Parser methods that don't already get exercised
+    let _ = Args::try_parse_from(["phase-enter", "--phase", "flow-x"]);
+    let _ = Args::parse_from(["phase-enter", "--phase", "flow-y"]);
+    let _ = a2.try_update_from(["phase-enter", "--phase", "flow-z"].iter().copied());
+    let _ = a2.update_from(["phase-enter", "--phase", "flow-w"].iter().copied());
+    assert_eq!(args.phase, "flow-code");
+    assert!(args.branch.is_none());
+    assert!(args.steps_total.is_none());
+}
+
 /// Covers the implicit `None` arm of all five `if let Some(x) = field`
 /// blocks that build the response (pr_number, pr_url, feature,
 /// slack_thread_ts, plan_file). State has none of the optional fields

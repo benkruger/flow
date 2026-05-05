@@ -15,7 +15,7 @@ use flow_rs::utils::{
     bin_flow_path, bin_flow_path_with, branch_name, check_duplicate_issue, check_ps_output,
     classify_output, derive_feature, derive_worktree, detect_dev_mode, detect_tty, detect_tty_with,
     elapsed_since, extract_issue_numbers, fetch_issue_info, fetch_issue_info_with_cmd,
-    format_tab_color, format_time, now, parse_conflict_files, parse_issue_info,
+    format_tab_color, format_time, format_tokens, now, parse_conflict_files, parse_issue_info,
     permission_to_regex, pinned_color, plugin_root, plugin_root_with, read_prompt_file,
     read_version, read_version_from, read_version_with, run_cmd, run_ps_for_pid, short_issue_ref,
     tolerant_i64, tolerant_i64_opt, write_tab_sequences, DuplicateInfo, IssueInfo, SetupError,
@@ -1781,4 +1781,27 @@ fn fetch_issue_info_subprocess_with_stub_gh() {
         .output()
         .expect("spawn flow-rs");
     let _ = output;
+}
+
+// --- format_tokens ---
+
+#[test]
+fn format_tokens_below_thousand_returns_raw_integer() {
+    assert_eq!(format_tokens(0), "0");
+    assert_eq!(format_tokens(1), "1");
+    assert_eq!(format_tokens(999), "999");
+}
+
+#[test]
+fn format_tokens_thousand_range_uses_k_suffix() {
+    assert_eq!(format_tokens(1_000), "1.0K");
+    assert_eq!(format_tokens(1_500), "1.5K");
+    assert_eq!(format_tokens(999_999), "1000.0K");
+}
+
+#[test]
+fn format_tokens_million_range_uses_m_suffix() {
+    assert_eq!(format_tokens(1_000_000), "1.0M");
+    assert_eq!(format_tokens(2_500_000), "2.5M");
+    assert_eq!(format_tokens(10_000_000), "10.0M");
 }

@@ -67,7 +67,7 @@ into a filesystem path or file open:
    comment.** Name the rejected character classes, the
    prefix-containment requirement, and the byte cap. Future
    sessions reading the function must see the contract without
-   tracing every callsite.
+   tracing callers.
 5. **Validate env-var-derived paths as absolute.** When a
    module reads `$HOME` (or any env var) and joins it with a
    relative suffix, an unset or relative env var produces a
@@ -149,9 +149,10 @@ state-derived string and uses it in path construction:
 1. Write the validator helper FIRST — its doc comment names
    the rejection classes and the prefix-containment
    requirement.
-2. Call the validator at every entry point that accepts the
-   value from outside the function. `.filter(is_safe_*)` on
-   `Option<&str>` extracted from JSON is the canonical pattern.
+2. Call the validator at the boundary where the untrusted value
+   enters the function — typically a public parameter or a JSON
+   field extraction. `.filter(is_safe_*)` on `Option<&str>`
+   extracted from JSON is the canonical pattern.
 3. For file reads, declare the byte cap as a module-level
    `const` with a doc comment, then wrap the reader in
    `BufReader::new(file.take(THAT_CAP))`.
