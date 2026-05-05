@@ -5,7 +5,21 @@
 //!
 //! Output (JSON to stdout):
 //!   Success: {"status": "ok", "path": "<target_path>"}
-//!   Error:   {"status": "error", "message": "..."}
+//!   Error:   {"status": "error", "message": "..."}             — content-file read failure or fs::write failure
+//!   Error:   {"status": "error", "step": "path_canonicalization",
+//!             "message": "...", "provided": "...",
+//!             "canonical": "...", "artifact_kind": "..."}      — managed-artifact path mismatch (see canonicalization gate)
+//!
+//! When `--path` names a FLOW-managed artifact (`plan.md`, `dag.md`,
+//! `commit-msg.txt`, `.flow-issue-body`, `orchestrate-queue.json`),
+//! `run_impl_main` rejects any value that doesn't normalize to the
+//! `(project_root, branch)`-derived canonical destination. The gate
+//! runs BEFORE `read_content_file` so a rejection does not destroy
+//! the caller's input file. When the gate fires and accepts, the
+//! actual `fs::write` call uses the resolved absolute path so a
+//! relative `--path` cannot silently re-resolve against the process
+//! cwd at write time. See `.claude/rules/file-tool-preflights.md`
+//! "Managed-Artifact Canonicalization Gate (CLI Layer)".
 //!
 //! Tests live at tests/write_rule.rs per .claude/rules/test-placement.md —
 //! no inline #[cfg(test)] in this file.
@@ -148,21 +162,29 @@ fn normalize_lexical(path: &Path) -> PathBuf {
 }
 
 pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
-    let content = match read_content_file(&args.content_file) {
-        Ok(c) => c,
-        Err(e) => return (json!({"status": "error", "message": e}), 1),
-    };
+    let provided = Path::new(&args.path);
 
     // Canonicalization gate per .claude/rules/file-tool-preflights.md
-    // "Canonical Location for `.flow-states/`". When --path names a
-    // managed artifact by basename, the canonical destination is
-    // computed from (project_root, current_branch) via FlowPaths and
+    // "Managed-Artifact Canonicalization Gate (CLI Layer)". When --path
+    // names a managed artifact by basename, the canonical destination
+    // is computed from (project_root, current_branch) via FlowPaths and
     // any provided path that doesn't normalize to that destination is
     // rejected. Branch-unavailable cases (detached HEAD, slash branch)
     // produce a None canonical and the gate stays silent — that's
     // pass-through behavior, not a reject.
-    let provided = Path::new(&args.path);
-    if let Some(art) = classify_path(provided) {
+    //
+    // Two ordering invariants the gate must honor:
+    //   1. The gate runs BEFORE `read_content_file` so a rejection does
+    //      not destroy the caller's input — `read_content_file` deletes
+    //      the source as part of its normal contract.
+    //   2. When the gate accepts, the actual `fs::write` call uses the
+    //      resolved absolute path, NOT `args.path`. A relative
+    //      `--path` resolved against `project_root` for the gate would
+    //      otherwise be re-resolved by `fs::write` against the process
+    //      cwd — and from a mono-repo subdirectory the two are
+    //      different paths, so the file would land at a misplaced
+    //      location while the gate had already approved.
+    let target_path: String = if let Some(art) = classify_path(provided) {
         let root = git::project_root();
         let branch = git::current_branch();
         if let Some(canonical) = canonical_path(art, &root, branch.as_deref()) {
@@ -190,11 +212,26 @@ pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
                     1,
                 );
             }
+            // Gate accepted: write to the resolved absolute path so
+            // fs::write cannot silently re-resolve against the process cwd.
+            provided_abs.to_string_lossy().into_owned()
+        } else {
+            // canonical_path returned None (branch-unavailable):
+            // pass-through, write to the caller-provided path verbatim.
+            args.path.clone()
         }
-    }
+    } else {
+        // Non-managed basename: pass-through, write to the caller-provided path.
+        args.path.clone()
+    };
 
-    if let Err(e) = write_rule(&args.path, &content) {
+    let content = match read_content_file(&args.content_file) {
+        Ok(c) => c,
+        Err(e) => return (json!({"status": "error", "message": e}), 1),
+    };
+
+    if let Err(e) = write_rule(&target_path, &content) {
         return (json!({"status": "error", "message": e}), 1);
     }
-    (json!({"status": "ok", "path": &args.path}), 0)
+    (json!({"status": "ok", "path": target_path}), 0)
 }

@@ -119,6 +119,18 @@ resolves the provided path to absolute (relative paths join against
 segments — `Path::components` already drops mid-path `.` segments),
 and rejects when the two normalized PathBufs differ.
 
+**Ordering invariants.** The gate runs BEFORE `read_content_file` so
+a rejection does not destroy the caller's input file
+(`read_content_file` deletes the source as part of its normal
+contract, so a post-read rejection would leave the caller with no
+content to retry). When the gate accepts, the actual `fs::write` call
+uses the resolved absolute path — never the original `args.path` —
+so a relative `--path` validated against `project_root` cannot be
+silently re-resolved by `fs::write` against the process cwd at write
+time. From a mono-repo subdirectory cwd the two resolutions diverge,
+and using the gate-validated absolute path is what keeps the on-disk
+write at the canonical destination the gate approved.
+
 **The error shape.** A rejection returns JSON to stdout and exits 1:
 
 ```json
@@ -142,9 +154,10 @@ pattern depends on.
 artifacts (`PlanMd`, `DagMd`, `CommitMsgTxt`) require a valid
 non-empty branch. In detached-HEAD or invalid-branch (slash-
 containing) contexts, `canonical_path` returns `None` and the gate
-stays silent — write-rule writes verbatim. The motivating choice is
-that pass-through is safer than rejecting writes the model has no
-way to fix.
+stays silent — write-rule writes the path verbatim. Pass-through in
+this context preserves writes the model has no branch information to
+redirect; a rejection here would have no recovery path because the
+caller cannot supply a branch the gate would accept.
 
 The gate complements the tool-call-layer hook above: write-rule
 canonicalizes its `--path` argument before `fs::write`, and the

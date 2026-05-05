@@ -864,6 +864,93 @@ fn write_rule_subprocess_path_with_parent_dir_normalizes_to_canonical() {
 }
 
 #[test]
+fn write_rule_subprocess_rejection_preserves_content_file() {
+    // Gate must run BEFORE read_content_file so a rejection does not
+    // destroy the caller's input. Regression: prior gate ordering ran
+    // read_content_file first; on reject the user lost their content.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = setup_branch_repo(dir.path(), "feat-x");
+    let content_file = repo.join("preserve-me.md");
+    fs::write(&content_file, "important content").unwrap();
+    let wrong = repo
+        .join(".worktrees")
+        .join("feat-x")
+        .join(".flow-states")
+        .join("feat-x")
+        .join("plan.md");
+
+    let output = run_wr_canon(
+        &repo,
+        &[
+            "--path",
+            wrong.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["step"], "path_canonicalization");
+    // The load-bearing assertion: content file survives the rejection.
+    assert!(
+        content_file.exists(),
+        "content file must survive a gate rejection so the caller can retry"
+    );
+    assert_eq!(
+        fs::read_to_string(&content_file).unwrap(),
+        "important content"
+    );
+}
+
+#[test]
+fn write_rule_subprocess_subdir_cwd_relative_path_lands_at_canonical() {
+    // Gate-vs-write divergence regression: the gate joins the relative
+    // --path against project_root, but the actual fs::write must use
+    // the same resolved absolute path — otherwise the write resolves
+    // the relative string against the process cwd instead, landing at
+    // a misplaced state copy. Drive the bug from a mono-repo
+    // subdirectory cwd.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = setup_branch_repo(dir.path(), "feat-x");
+    let subdir = repo.join("api");
+    fs::create_dir_all(&subdir).unwrap();
+    let content_file = subdir.join("content.md");
+    fs::write(&content_file, "plan body").unwrap();
+
+    let output = run_wr_canon(
+        &subdir,
+        &[
+            "--path",
+            ".flow-states/feat-x/plan.md",
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    let canonical = repo.join(".flow-states/feat-x/plan.md");
+    let misplaced = subdir.join(".flow-states/feat-x/plan.md");
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        canonical.exists(),
+        "write must land at gate-validated canonical path: {}",
+        canonical.display()
+    );
+    assert!(
+        !misplaced.exists(),
+        "write must NOT land at the subdir-local resolution: {}",
+        misplaced.display()
+    );
+    assert_eq!(fs::read_to_string(&canonical).unwrap(), "plan body");
+}
+
+#[test]
 fn write_rule_subprocess_detached_head_no_op_for_branch_scoped() {
     let dir = tempfile::tempdir().unwrap();
     let canonical_parent = dir.path().canonicalize().unwrap();
