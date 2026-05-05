@@ -134,6 +134,7 @@ pub const UNIVERSAL_ALLOW: &[&str] = &[
     "Bash(gh release create *)",
     "Bash(gh -C *)",
     "Bash(*bin/flow *)",
+    "Bash(bin/test --adversarial-path)",
     "Bash(rm .flow-*)",
     "Bash(test -f *)",
     "Bash(claude plugin list)",
@@ -248,12 +249,45 @@ pub const FLOW_DENY: &[&str] = &[
 
 /// Excluded paths — canonical source for git exclude entries.
 /// Shared with `prime_setup.rs` via pub import.
+///
+/// The first five entries cover FLOW's own per-machine state
+/// (`.flow-states/`, `.worktrees/`), the priming marker
+/// (`.flow.json`), and ambient cost/lock state under `.claude/`.
+///
+/// The five adversarial-probe basename patterns each match exactly
+/// one of the per-language probe paths recommended by the
+/// `assets/bin-stubs/test.sh` examples:
+///
+/// - `test_adversarial_flow.*` — Rust (`.rs`), Python (`.py`), and
+///   JS/TS (`.test.ts`). The trailing wildcard matches the language-
+///   specific extension while keeping the basename anchored.
+/// - `adversarial_flow_test.go` — Go's `<thing>_test.go` convention.
+/// - `adversarial_flow_test.rb` — Rails Minitest convention.
+/// - `adversarial_flow_spec.rb` — RSpec `*_spec.rb` convention.
+/// - `AdversarialFlowTests.swift` — Swift's `XCTestCase`-suffix
+///   convention.
+///
+/// All five are exact basenames (no leading wildcards) so a user-
+/// named legitimate test cannot be silently excluded by a pattern
+/// like `*_adversarial_flow_test.rb` — only the stub-recommended
+/// FLOW probe basenames match. The patterns land in
+/// `.git/info/exclude` at prime time so `git status` inside the
+/// worktree does not surface the throwaway probe alongside
+/// intentional changes. The probe lives inside the project's test
+/// tree so the language test runner can discover and execute it;
+/// worktree removal at Phase 6 Complete then disposes of the file
+/// as a side effect of removing the worktree directory.
 pub const EXCLUDE_ENTRIES: &[&str] = &[
     ".flow-states/",
     ".worktrees/",
     ".flow.json",
     ".claude/cost/",
     ".claude/scheduled_tasks.lock",
+    "test_adversarial_flow.*",
+    "adversarial_flow_test.go",
+    "adversarial_flow_test.rb",
+    "adversarial_flow_spec.rb",
+    "AdversarialFlowTests.swift",
 ];
 
 /// Custom `serde_json` formatter that emits `(", ", ": ")` separators

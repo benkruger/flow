@@ -349,3 +349,52 @@ fn test_no_weak_coverage_language_in_prose_corpus() {
 //   `.flow-states/<branch>/<purpose>.<ext>`; the
 //   `test_no_flat_layout_format_in_rust_source` scanner is no
 //   longer needed once the branch-cutoff window passed
+
+// --- Adversarial probe canonical-path relocation ---
+//
+// Cluster B (#1284, #1295, #1299, #1303, #1304, #1310, #1312, #1314,
+// #1261) closed by relocating the Code Review adversarial probe
+// inside the project's test tree. The canonical
+// `.flow-states/<branch>/adversarial_test.<ext>` location is gone
+// because language test runners cannot discover or execute it; the
+// project now declares the path via `bin/test --adversarial-path`
+// and worktree removal at Phase 6 Complete handles cleanup as a
+// side effect. Two byte-substring tombstones lock in the deletion:
+// `flow_paths.rs` no longer exposes the `adversarial_test_prefix`
+// helper (its only consumer was the removed prefix-glob cleanup
+// path, and the function is referenced nowhere else in the
+// codebase, so the bare identifier is a stable source literal that
+// no `concat!`/`format!`/split-constants reconstruction would
+// produce on the production path), and `cleanup.rs` line 225's
+// comment list no longer mentions `adversarial_test.*` (the comment
+// is human-authored prose, never assembled from constants).
+
+#[test]
+fn flow_paths_no_adversarial_test_prefix() {
+    // Tombstone: removed in PR #1333. Path-relocation closed cluster B.
+    let root = common::repo_root();
+    let path = root.join("src/flow_paths.rs");
+    let content = fs::read_to_string(&path).expect("src/flow_paths.rs must exist");
+    assert!(
+        !content.contains("adversarial_test_prefix"),
+        "src/flow_paths.rs must not contain `adversarial_test_prefix` — \
+         the canonical .flow-states/<branch>/adversarial_test.<ext> path was \
+         relocated into the project test tree via bin/test --adversarial-path; \
+         the helper is dead code."
+    );
+}
+
+#[test]
+fn cleanup_comment_no_adversarial_test_artifact() {
+    // Tombstone: removed in PR #1333. Path-relocation closed cluster B.
+    let root = common::repo_root();
+    let path = root.join("src/cleanup.rs");
+    let content = fs::read_to_string(&path).expect("src/cleanup.rs must exist");
+    assert!(
+        !content.contains("adversarial_test.*"),
+        "src/cleanup.rs comment must not list `adversarial_test.*` among \
+         per-branch artifacts — the probe lives inside the worktree's test \
+         tree and `git worktree remove` disposes of it; no per-suffix glob \
+         is required."
+    );
+}

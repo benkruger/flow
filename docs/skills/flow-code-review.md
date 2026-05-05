@@ -34,9 +34,12 @@ from agents — the parent session never reviews the diff itself.
 
 Collect all artifacts: full branch diff, substantive diff (whitespace
 changes filtered via `git diff -w`), plan file, CLAUDE.md, rules files,
-parameterize the adversarial agent's temp test file and `bin/flow ci
---test --file` runner command, run `tombstone-audit` to identify stale
-tombstones for removal in Step 4. No analysis.
+the adversarial agent's probe path resolved by shelling out to
+`bin/test --adversarial-path` (the path lives inside the project's
+test tree so the language runner can discover it; halt on exit 2 from
+an unconfigured stub), and the `bin/flow ci --test --file` runner
+command. Run `tombstone-audit` to identify stale tombstones for
+removal in Step 4. No analysis.
 
 ### Step 2 — Launch
 

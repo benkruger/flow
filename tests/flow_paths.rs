@@ -132,14 +132,6 @@ fn start_prompt_lives_under_branch_dir() {
 }
 
 #[test]
-fn adversarial_test_prefix_ends_in_dot() {
-    // Branch isolation now comes from branch_dir(), so the prefix is
-    // a bare basename pattern. The trailing dot anchors the match on
-    // the extension separator.
-    assert_eq!(paths().adversarial_test_prefix(), "adversarial_test.");
-}
-
-#[test]
 fn accepts_pathbuf_and_path_for_project_root() {
     let p1 = FlowPaths::new(PathBuf::from("/p"), "b");
     let p2 = FlowPaths::new(Path::new("/p"), "b");
