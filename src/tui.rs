@@ -855,9 +855,7 @@ impl TuiApp {
             let active_rows: Vec<&tui_data::PhaseTokenRow> = token_rows
                 .iter()
                 .filter(|r| {
-                    r.tokens > 0
-                        || r.cost_usd.abs() > f64::EPSILON
-                        || r.window_reset_observed
+                    r.tokens > 0 || r.cost_usd.abs() > f64::EPSILON || r.window_reset_observed
                 })
                 .collect();
             if !active_rows.is_empty() {
@@ -887,10 +885,8 @@ impl TuiApp {
                         marker
                     );
                     let line = Paragraph::new(Line::from(line_text));
-                    frame.render_widget(
-                        line,
-                        Rect::new(area.x, area.y + row as u16, area.width, 1),
-                    );
+                    frame
+                        .render_widget(line, Rect::new(area.x, area.y + row as u16, area.width, 1));
                     row += 1;
                 }
                 row += 1;
