@@ -271,8 +271,6 @@ fn cleanup_removes_branch_dir_with_seeded_artifacts() {
     fs::write(branch_dir.join("closed-issues.json"), r#"[{"number":42}]"#).unwrap();
     fs::write(branch_dir.join("issues.md"), "| Label | Title |\n").unwrap();
     fs::write(branch_dir.join("commit-msg.txt"), "Subject\n").unwrap();
-    fs::write(branch_dir.join("adversarial_test.rs"), "// rs\n").unwrap();
-    fs::write(branch_dir.join("adversarial_test.py"), "# py\n").unwrap();
 
     let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
     let steps = steps_from(&value);

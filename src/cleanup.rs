@@ -217,15 +217,17 @@ pub fn cleanup(
         );
     }
 
-    // Single recursive remove replaces the previous per-suffix delete
-    // enumeration and the bespoke adversarial-test glob. Every
-    // per-branch artifact (`state.json`, `log`, `plan.md`, `dag.md`,
-    // `phases.json`, `ci-passed`, `timings.md`, `closed-issues.json`,
-    // `issues.md`, `rule-content.md`, `commit-msg.txt`,
-    // `commit-msg-content.txt`, `start-prompt`, `adversarial_test.*`)
-    // lives under `branch_dir()`, so a single `remove_dir_all` is
-    // sufficient and naturally handles future per-branch additions
-    // without code changes.
+    // Every per-branch artifact (`state.json`, `log`, `plan.md`,
+    // `dag.md`, `phases.json`, `ci-passed`, `timings.md`,
+    // `closed-issues.json`, `issues.md`, `rule-content.md`,
+    // `commit-msg.txt`, `commit-msg-content.txt`, `start-prompt`)
+    // lives under `branch_dir()`, so one `remove_dir_all` covers the
+    // full set and naturally handles future per-branch additions
+    // without code changes. Code Review's adversarial probe lives
+    // inside the worktree's test tree (declared per-project via
+    // `bin/test --adversarial-path`) and is disposed of by
+    // `git worktree remove` later in this same cleanup pass — no
+    // per-suffix glob is required here.
     steps.insert(
         "branch_dir".to_string(),
         try_remove_branch_dir(&paths.branch_dir()),

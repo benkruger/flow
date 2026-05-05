@@ -233,16 +233,4 @@ impl FlowPaths {
     pub fn start_prompt(&self) -> PathBuf {
         self.branch_dir().join("start-prompt")
     }
-
-    /// Bare prefix `adversarial_test.` used to filter `branch_dir()`
-    /// entries for Phase 4 adversarial test files. The agent chooses
-    /// the extension at runtime, so callers list `branch_dir()` and
-    /// match `entry.file_name().starts_with(prefix)`. The trailing
-    /// dot anchors the match on the extension separator so a sibling
-    /// file named `adversarial_test_other.rs` cannot match. Branch
-    /// isolation comes from the `branch_dir()` scope, so the prefix
-    /// no longer needs to encode the branch name.
-    pub fn adversarial_test_prefix(&self) -> String {
-        "adversarial_test.".to_string()
-    }
 }
