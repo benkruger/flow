@@ -7,7 +7,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use common::{create_git_repo_with_remote, parse_output};
-use flow_rs::write_rule::{read_content_file, write_rule};
+use flow_rs::write_rule::{classify_path, read_content_file, write_rule, ManagedArtifact};
 
 fn run_write_rule(repo: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_flow-rs"))
@@ -269,6 +269,66 @@ fn write_rule_empty_path_errors_lib() {
     let result = write_rule("", "content");
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Could not write"));
+}
+
+// --- classify_path ---
+
+#[test]
+fn classify_path_matches_plan_md_basename() {
+    let p = Path::new("/some/where/.flow-states/feat/plan.md");
+    assert_eq!(classify_path(p), Some(ManagedArtifact::PlanMd));
+}
+
+#[test]
+fn classify_path_matches_dag_md_basename() {
+    let p = Path::new("/some/where/.flow-states/feat/dag.md");
+    assert_eq!(classify_path(p), Some(ManagedArtifact::DagMd));
+}
+
+#[test]
+fn classify_path_matches_commit_msg_txt_basename() {
+    let p = Path::new("/some/where/.flow-states/feat/commit-msg.txt");
+    assert_eq!(classify_path(p), Some(ManagedArtifact::CommitMsgTxt));
+}
+
+#[test]
+fn classify_path_matches_flow_issue_body_basename() {
+    let p = Path::new("/some/where/.flow-issue-body");
+    assert_eq!(classify_path(p), Some(ManagedArtifact::FlowIssueBody));
+}
+
+#[test]
+fn classify_path_matches_orchestrate_queue_json_basename() {
+    let p = Path::new("/some/where/.flow-states/orchestrate-queue.json");
+    assert_eq!(classify_path(p), Some(ManagedArtifact::OrchestrateQueue));
+}
+
+#[test]
+fn classify_path_returns_none_for_non_managed_basename() {
+    assert_eq!(classify_path(Path::new("/some/.claude/rules/rule.md")), None);
+    assert_eq!(classify_path(Path::new("/some/CLAUDE.md")), None);
+    assert_eq!(classify_path(Path::new("/some/foo.txt")), None);
+}
+
+#[test]
+fn classify_path_returns_none_when_path_has_no_file_name() {
+    // `Path::file_name()` returns None for paths that end with `..`
+    // or that are pure roots like `/`. The `?` propagation in
+    // classify_path must short-circuit these to None, not panic.
+    assert_eq!(classify_path(Path::new("/")), None);
+    assert_eq!(classify_path(Path::new("..")), None);
+}
+
+#[test]
+fn classify_path_returns_none_for_non_utf8_basename() {
+    // `path.file_name().to_str()` returns None when the basename
+    // contains non-UTF-8 bytes. Construct one via OsStrExt to drive
+    // the second `?` branch in classify_path.
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+    let bytes = b"\xff\xfe.md";
+    let osstr = OsStr::from_bytes(bytes);
+    assert_eq!(classify_path(Path::new(osstr)), None);
 }
 
 // --- end-to-end ---
