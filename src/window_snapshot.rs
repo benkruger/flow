@@ -18,7 +18,7 @@
 //! fixtures that drive every branch without mocking the filesystem.
 
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
@@ -97,14 +97,25 @@ pub fn capture(
 /// by the producer (typically `$HOME`) so this helper takes no
 /// process-env dependency.
 pub fn capture_for_active_state(home: &Path, state: &Value, project_root: &Path) -> WindowSnapshot {
+    // session_id and transcript_path are both state-derived strings.
+    // A corrupted or hand-edited `.flow-states/<branch>/state.json`
+    // can populate either field with attacker-controlled values, so
+    // we validate before constructing filesystem paths. session_id
+    // must look like a UUID-shaped token (no path separators, no
+    // traversal segments). transcript_path is rejected when it is
+    // not absolute or escapes the user's `~/.claude/projects/`
+    // directory — the only place flow's session transcripts live in
+    // production.
     let session_id = state
         .get("session_id")
         .and_then(|v| v.as_str())
+        .filter(|s| is_safe_session_id(s))
         .map(|s| s.to_string());
     let transcript_path = state
         .get("transcript_path")
         .and_then(|v| v.as_str())
-        .map(PathBuf::from);
+        .map(PathBuf::from)
+        .filter(|p| is_safe_transcript_path(p, home));
     let cost_path = session_id
         .as_ref()
         .map(|sid| cost_file_path(project_root, sid));
@@ -117,6 +128,39 @@ pub fn capture_for_active_state(home: &Path, state: &Value, project_root: &Path)
     )
 }
 
+/// Validate a state-derived `session_id` against the shape Claude
+/// Code populates: alphanumeric plus `-` and `_`, no path separators
+/// or traversal segments. Rejects `..`, `.`, `/`, `\`, NUL, and any
+/// other character that could escape the per-session cost-file path.
+fn is_safe_session_id(s: &str) -> bool {
+    if s.is_empty() || s == "." || s == ".." {
+        return false;
+    }
+    s.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Validate a state-derived `transcript_path` against the canonical
+/// location where Claude Code writes session transcripts:
+/// `<home>/.claude/projects/`. Rejects relative paths, paths
+/// outside that prefix, and paths containing a NUL byte. Production
+/// transcripts always live under that directory; values pointing
+/// elsewhere are corrupted state and read attempts could leak
+/// arbitrary file contents into snapshot fields.
+fn is_safe_transcript_path(path: &Path, home: &Path) -> bool {
+    if path.as_os_str().is_empty() {
+        return false;
+    }
+    if path.to_string_lossy().contains('\0') {
+        return false;
+    }
+    if !path.is_absolute() {
+        return false;
+    }
+    let expected_prefix = home.join(".claude").join("projects");
+    path.starts_with(&expected_prefix)
+}
+
 /// Write a `WindowSnapshot` into the named top-level field of a
 /// state JSON value. No-op when `state` is not an object — the
 /// guard mirrors the project-wide convention from
@@ -126,7 +170,15 @@ pub fn capture_for_active_state(home: &Path, state: &Value, project_root: &Path)
 /// state-file lock.
 pub fn write_snapshot_into_state(state: &mut Value, field: &str, snapshot: &WindowSnapshot) {
     if let Some(obj) = state.as_object_mut() {
-        let value = serde_json::to_value(snapshot).unwrap_or(Value::Null);
+        // `WindowSnapshot` is a derived-`Serialize` struct over
+        // primitive and `Option<primitive>` fields plus an `IndexMap`
+        // — serialization is infallible in practice. Match the
+        // `.expect()` contract used at the four per-phase callsites
+        // (phase_enter, phase_finalize, phase_transition,
+        // set_timestamp) so a future schema change that breaks
+        // serialization fails loudly here instead of silently
+        // writing `null` and corrupting consumer queries.
+        let value = serde_json::to_value(snapshot).expect("WindowSnapshot must serialize");
         obj.insert(field.to_string(), value);
     }
 }
@@ -148,6 +200,19 @@ pub fn append_step_snapshot(
 ) {
     if !state.is_object() {
         return;
+    }
+    // Per-level object guards per `.claude/rules/rust-patterns.md`
+    // "State Mutation Object Guards" + `.claude/rules/state-files.md`
+    // "Corruption Resilience": auto-heal `state["phases"]` and the
+    // per-phase entry to objects when a hand-edited state file holds
+    // wrong types (number / string / array). Without these guards,
+    // the IndexMut chain below panics with `cannot access key X in
+    // JSON <type>` and crashes every step-counter increment.
+    if !state["phases"].is_object() {
+        state["phases"] = serde_json::json!({});
+    }
+    if !state["phases"][phase].is_object() {
+        state["phases"][phase] = serde_json::json!({});
     }
     let step_snap = StepSnapshot {
         step,
@@ -191,8 +256,15 @@ fn cost_file_path(project_root: &Path, session_id: &str) -> PathBuf {
 }
 
 /// Read `~/.claude/rate-limits.json` and extract the two pct fields.
-/// Missing file or malformed JSON returns `(None, None)`.
+/// Missing file or malformed JSON returns `(None, None)`. Reject
+/// empty/relative `home` outright — joining with a relative path
+/// would resolve `.claude/rate-limits.json` against the worktree's
+/// cwd and read a committed `.claude/rate-limits.json` from a
+/// hostile repo as if it were the user's rate-limits data.
 fn read_rate_limits(home: &Path) -> (Option<i64>, Option<i64>) {
+    if home.as_os_str().is_empty() || !home.is_absolute() {
+        return (None, None);
+    }
     let path = home.join(".claude").join("rate-limits.json");
     let content = match fs::read_to_string(&path) {
         Ok(c) => c,
@@ -238,17 +310,32 @@ struct TranscriptAgg {
     by_model: IndexMap<String, ModelTokens>,
 }
 
+/// Hard cap on transcript bytes read per snapshot. Capture runs at
+/// every state-mutating transition (six producer call sites,
+/// including `set_timestamp` for every step counter advance). A
+/// long autonomous flow accumulates a transcript that grows without
+/// bound; reading the full file dozens of times within a single
+/// session is O(tasks × transcript_size) and risks OOM on
+/// memory-constrained machines. 50 MB covers a multi-thousand-turn
+/// session (typical compacted transcripts are < 10 MB) while
+/// bounding worst-case I/O. When a transcript exceeds the cap the
+/// counters are derived from a prefix of the file rather than the
+/// whole tail — counts and percentages may under-report but the
+/// process stays bounded.
+const TRANSCRIPT_BYTE_CAP: u64 = 50 * 1024 * 1024;
+
 /// Line-stream the transcript JSONL accumulating assistant-message
 /// usage. Lines that fail to parse as JSON are skipped silently —
 /// transcripts can include partial writes at the tail when a
-/// session is in flight.
+/// session is in flight. Reads at most `TRANSCRIPT_BYTE_CAP` bytes
+/// to bound I/O across long autonomous flows.
 fn read_transcript(path: &Path) -> TranscriptAgg {
     let mut agg = TranscriptAgg::default();
     let file = match fs::File::open(path) {
         Ok(f) => f,
         Err(_) => return agg,
     };
-    let reader = BufReader::new(file);
+    let reader = BufReader::new(file.take(TRANSCRIPT_BYTE_CAP));
     for line in reader.lines() {
         let line = match line {
             Ok(l) => l,
@@ -300,9 +387,16 @@ fn read_transcript(path: &Path) -> TranscriptAgg {
         agg.cache_creation_tokens = agg.cache_creation_tokens.saturating_add(cache_create);
         agg.cache_read_tokens = agg.cache_read_tokens.saturating_add(cache_read);
 
+        // Context window utilization measures tokens sent INTO the
+        // model for this turn. Per Anthropic API: `input_tokens`,
+        // `cache_creation_input_tokens`, and `cache_read_input_tokens`
+        // are three distinct buckets that together total the input
+        // context. `output_tokens` is generated by the model, not
+        // part of the context window for this turn — including it
+        // overcounts and produces context_window_pct values above
+        // 100% on real flows.
         agg.context_at_last_turn = Some(
             input
-                .saturating_add(output)
                 .saturating_add(cache_create)
                 .saturating_add(cache_read),
         );

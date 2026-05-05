@@ -930,36 +930,7 @@ fn run_impl_main_invalid_branch_json_falls_back_to_directory_scan() {
 
 // --- Tokens block ---
 
-/// Build a snapshot Value for fixtures. `n` scales each numeric
-/// field so callers can produce monotonically-increasing snapshots
-/// from a single shared session.
-fn snapshot_value(session: &str, n: i64, model: &str) -> Value {
-    json!({
-        "captured_at": format!("2026-01-01T0{}:00:00-08:00", n.min(9)),
-        "session_id": session,
-        "model": model,
-        "five_hour_pct": n,
-        "seven_day_pct": n / 2,
-        "session_input_tokens": n * 100,
-        "session_output_tokens": n * 50,
-        "session_cache_creation_tokens": 0,
-        "session_cache_read_tokens": 0,
-        "session_cost_usd": n as f64 * 0.01,
-        "by_model": {
-            model: {"input": n * 100, "output": n * 50, "cache_create": 0, "cache_read": 0}
-        },
-        "turn_count": n,
-        "tool_call_count": n * 2,
-        "context_at_last_turn_tokens": n * 100,
-        "context_window_pct": (n * 100) as f64 / 200_000.0 * 100.0,
-    })
-}
-
-fn add_phase_snapshots(state: &mut Value, key: &str, enter_n: i64, complete_n: i64) {
-    state["phases"][key]["window_at_enter"] = snapshot_value("S1", enter_n, "claude-opus-4-7");
-    state["phases"][key]["window_at_complete"] =
-        snapshot_value("S1", complete_n, "claude-opus-4-7");
-}
+use common::{add_phase_snapshots, snapshot_value};
 
 /// Full data: every phase carries enter+complete snapshots → the
 /// Tokens line appears in the in-progress panel with a non-zero total.

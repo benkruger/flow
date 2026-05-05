@@ -220,7 +220,25 @@ pub fn run_impl_main(
         }
     };
 
-    let state_path = FlowPaths::new(root, &branch).state_file();
+    // Per `.claude/rules/external-input-validation.md` "CLI subcommand
+    // entry callsite discipline" + `.claude/rules/branch-path-safety.md`:
+    // `--branch` is an external input. Slash-containing branches
+    // (`feature/foo`, `dependabot/*`) and the empty string flow raw
+    // from clap, so the panicking constructor would crash the CLI
+    // with a backtrace. `try_new` returns `None` for invalid inputs;
+    // translate that into a structured error.
+    let state_path = match FlowPaths::try_new(root, &branch) {
+        Some(p) => p.state_file(),
+        None => {
+            return (
+                json!({
+                    "status": "error",
+                    "message": format!("Invalid branch name: {:?}", branch)
+                }),
+                1,
+            );
+        }
+    };
 
     if !state_path.exists() {
         return (

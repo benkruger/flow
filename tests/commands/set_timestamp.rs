@@ -899,3 +899,71 @@ fn test_cli_no_branch_returns_error() {
         .unwrap_or("")
         .contains("Could not determine current branch"));
 }
+
+/// `--branch ''` (empty string) — `FlowPaths::try_new` rejects, so
+/// the subprocess returns a structured error rather than panicking.
+/// Per `.claude/rules/external-input-validation.md` "CLI subcommand
+/// entry callsite discipline".
+#[test]
+fn run_impl_main_with_empty_branch_returns_structured_error_no_panic() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    fs::create_dir_all(root.join(".git")).expect("mkdir .git");
+
+    let mut cmd = flow_rs();
+    cmd.arg("set-timestamp")
+        .arg("--branch")
+        .arg("")
+        .arg("--set")
+        .arg("plan_step=1")
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env_remove("FLOW_CI_RUNNING")
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .current_dir(&root);
+
+    let output = cmd.output().unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked at"),
+        "must not panic on empty branch. stderr={:?}",
+        stderr
+    );
+}
+
+/// `--branch feature/foo` (slash-containing) — `FlowPaths::try_new`
+/// rejects; same structured-error contract as the empty case.
+#[test]
+fn run_impl_main_with_slash_branch_returns_structured_error_no_panic() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    fs::create_dir_all(root.join(".git")).expect("mkdir .git");
+
+    let mut cmd = flow_rs();
+    cmd.arg("set-timestamp")
+        .arg("--branch")
+        .arg("feature/foo")
+        .arg("--set")
+        .arg("plan_step=1")
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env_remove("FLOW_CI_RUNNING")
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .current_dir(&root);
+
+    let output = cmd.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked at"),
+        "must not panic on slash branch. stderr={:?}",
+        stderr
+    );
+    let parsed: Value = serde_json::from_str(&stdout).unwrap_or(json!({"raw": stdout}));
+    assert_eq!(output.status.code().unwrap_or(-1), 1);
+    assert_eq!(parsed["status"], "error");
+    assert!(parsed["message"]
+        .as_str()
+        .unwrap_or("")
+        .contains("Invalid branch name"));
+}

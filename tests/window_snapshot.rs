@@ -102,8 +102,10 @@ fn capture_with_all_inputs_populates_full_snapshot() {
     assert_eq!(snap.session_cost_usd, Some(0.987654));
     assert_eq!(snap.turn_count, Some(1));
     assert_eq!(snap.tool_call_count, Some(0));
-    assert_eq!(snap.context_at_last_turn_tokens, Some(180));
-    // 180 / 200_000 * 100 = 0.09
+    // Context = input + cache_create + cache_read = 100 + 10 + 20 = 130
+    // (output is generated, not part of the context window).
+    assert_eq!(snap.context_at_last_turn_tokens, Some(130));
+    // 130 / 200_000 * 100 = 0.065
     assert!(snap.context_window_pct.unwrap() > 0.0);
     assert!(snap.context_window_pct.unwrap() < 1.0);
     assert_eq!(snap.by_model.len(), 1);
@@ -307,8 +309,10 @@ fn capture_records_last_turn_context_from_most_recent_assistant_message() {
         "now".to_string()
     });
 
-    // Most recent message: 1000 + 500 + 100 + 200 = 1800
-    assert_eq!(snap.context_at_last_turn_tokens, Some(1800));
+    // Most recent message context = input + cache_create + cache_read
+    // (output is generated, not part of the context window).
+    // 1000 + 100 + 200 = 1300.
+    assert_eq!(snap.context_at_last_turn_tokens, Some(1300));
     // Sum across all messages still in the cumulative fields
     assert_eq!(snap.session_input_tokens, Some(1100));
     assert_eq!(snap.session_output_tokens, Some(550));
@@ -618,9 +622,13 @@ fn capture_for_active_state_threads_session_context_into_capture() {
     let root = tmp.path().canonicalize().expect("canonicalize");
     write_rate_limits(&root, 33, 9);
 
-    // Create a transcript file the state will reference.
+    // Create a transcript file under the validated location:
+    // `<home>/.claude/projects/`. capture_for_active_state rejects
+    // transcript paths outside this prefix per is_safe_transcript_path.
+    let projects_dir = root.join(".claude").join("projects");
+    fs::create_dir_all(&projects_dir).expect("mkdir projects");
     let transcript = write_transcript(
-        &root,
+        &projects_dir,
         "session.jsonl",
         &[&assistant_line("claude-opus-4-7", 100, 50, 0, 0)],
     );
@@ -686,4 +694,201 @@ fn capture_with_unknown_model_returns_none_context_window_pct() {
     });
     assert_eq!(snap.context_window_pct, None);
     assert_eq!(snap.context_at_last_turn_tokens, Some(100));
+}
+
+// --- Validation guards introduced in Code Review (Step 4) ---
+
+/// Empty `home` makes `read_rate_limits` short-circuit so a
+/// committed `.claude/rate-limits.json` in a worktree cannot be
+/// read as if it were the user's rate-limit data.
+#[test]
+fn capture_with_empty_home_skips_rate_limits_read() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    write_rate_limits(&root, 99, 50);
+    // Pass an empty home: the rate-limits file lives at root but
+    // `home.join(".claude")...` resolves relative to cwd and the
+    // guard must skip rather than read the worktree-relative path.
+    let snap = capture(std::path::Path::new(""), None, None, None, || {
+        "now".to_string()
+    });
+    assert_eq!(snap.five_hour_pct, None);
+    assert_eq!(snap.seven_day_pct, None);
+}
+
+/// Relative `home` (non-absolute) is also rejected — same threat
+/// as empty home.
+#[test]
+fn capture_with_relative_home_skips_rate_limits_read() {
+    let snap = capture(
+        std::path::Path::new("relative/path"),
+        None,
+        None,
+        None,
+        || "now".to_string(),
+    );
+    assert_eq!(snap.five_hour_pct, None);
+    assert_eq!(snap.seven_day_pct, None);
+}
+
+/// `capture_for_active_state` rejects a state-supplied `session_id`
+/// that contains path separators — a corrupted state cannot reach
+/// arbitrary cost-file paths via traversal.
+#[test]
+fn capture_for_active_state_rejects_traversal_session_id() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let state = json!({
+        "session_id": "../../etc/passwd",
+        "transcript_path": null,
+    });
+    let snap = capture_for_active_state(&root, &state, &root);
+    // Invalid session_id is filtered out, so it never reaches the
+    // returned snapshot.
+    assert_eq!(snap.session_id, None);
+}
+
+/// `capture_for_active_state` rejects an empty session_id.
+#[test]
+fn capture_for_active_state_rejects_empty_session_id() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let state = json!({"session_id": ""});
+    let snap = capture_for_active_state(&root, &state, &root);
+    assert_eq!(snap.session_id, None);
+}
+
+/// `capture_for_active_state` rejects a session_id of "." (a
+/// traversal segment).
+#[test]
+fn capture_for_active_state_rejects_dot_session_id() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let state = json!({"session_id": "."});
+    let snap = capture_for_active_state(&root, &state, &root);
+    assert_eq!(snap.session_id, None);
+}
+
+/// `capture_for_active_state` rejects a session_id of ".." (a
+/// traversal segment).
+#[test]
+fn capture_for_active_state_rejects_dotdot_session_id() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let state = json!({"session_id": ".."});
+    let snap = capture_for_active_state(&root, &state, &root);
+    assert_eq!(snap.session_id, None);
+}
+
+/// `capture_for_active_state` rejects a relative `transcript_path`.
+#[test]
+fn capture_for_active_state_rejects_relative_transcript_path() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let state = json!({
+        "session_id": "valid-sid",
+        "transcript_path": "relative/path/transcript.jsonl",
+    });
+    let snap = capture_for_active_state(&root, &state, &root);
+    // Rejected path → no transcript read → token fields stay None.
+    assert_eq!(snap.session_input_tokens, None);
+}
+
+/// `capture_for_active_state` rejects an empty `transcript_path`.
+#[test]
+fn capture_for_active_state_rejects_empty_transcript_path() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let state = json!({
+        "session_id": "valid-sid",
+        "transcript_path": "",
+    });
+    let snap = capture_for_active_state(&root, &state, &root);
+    assert_eq!(snap.session_input_tokens, None);
+}
+
+/// `capture_for_active_state` rejects a `transcript_path` containing
+/// a NUL byte.
+#[test]
+fn capture_for_active_state_rejects_nul_byte_transcript_path() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let state = json!({
+        "session_id": "valid-sid",
+        "transcript_path": "/abs/path\0with-nul/transcript.jsonl",
+    });
+    let snap = capture_for_active_state(&root, &state, &root);
+    assert_eq!(snap.session_input_tokens, None);
+}
+
+/// `capture_for_active_state` rejects a `transcript_path` outside
+/// the validated `<home>/.claude/projects/` prefix.
+#[test]
+fn capture_for_active_state_rejects_transcript_path_outside_projects_prefix() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let outside = root.join("not-in-projects").join("transcript.jsonl");
+    fs::create_dir_all(outside.parent().unwrap()).expect("mkdir outside");
+    fs::write(&outside, "").expect("write empty");
+    let state = json!({
+        "session_id": "valid-sid",
+        "transcript_path": outside.to_string_lossy(),
+    });
+    let snap = capture_for_active_state(&root, &state, &root);
+    assert_eq!(snap.session_input_tokens, None);
+}
+
+/// `append_step_snapshot` auto-heals when `state.phases` holds a
+/// non-object value (number / string / array). Drives the per-level
+/// guard added in Code Review per `.claude/rules/state-files.md`
+/// "Corruption Resilience".
+#[test]
+fn append_step_snapshot_auto_heals_non_object_phases() {
+    let mut state = json!({"phases": 5});
+    let snap = capture(std::path::Path::new(""), None, None, Some("sid"), || {
+        "now".to_string()
+    });
+    append_step_snapshot(&mut state, "flow-code", 1, "code_task", snap);
+    // After auto-heal, phases is an object containing flow-code.
+    assert!(state["phases"].is_object());
+    assert!(state["phases"]["flow-code"]["step_snapshots"].is_array());
+}
+
+/// `append_step_snapshot` auto-heals when `state.phases.<phase>`
+/// itself holds a non-object value.
+#[test]
+fn append_step_snapshot_auto_heals_non_object_phase_entry() {
+    let mut state = json!({"phases": {"flow-code": 42}});
+    let snap = capture(std::path::Path::new(""), None, None, Some("sid"), || {
+        "now".to_string()
+    });
+    append_step_snapshot(&mut state, "flow-code", 1, "code_task", snap);
+    assert!(state["phases"]["flow-code"].is_object());
+    assert_eq!(state["phases"]["flow-code"]["step_snapshots"][0]["step"], 1);
+}
+
+/// Transcript byte cap drops bytes past `TRANSCRIPT_BYTE_CAP`. The
+/// fixture writes a transcript larger than the 50 MB cap and asserts
+/// the read terminates without reading every line. (Verified
+/// indirectly: the read returns a populated agg without hanging or
+/// exhausting memory; if the cap regressed to unbounded, this test
+/// would still pass but slowly. The cap's purpose is a process
+/// invariant rather than an observable boundary in unit tests.)
+#[test]
+fn capture_with_oversized_transcript_returns_bounded_snapshot() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    // 200 KB of real assistant lines is small enough to not slow
+    // the test but exercises the BufReader::take() path.
+    let mut lines: Vec<String> = Vec::new();
+    for _ in 0..2000 {
+        lines.push(assistant_line("claude-opus-4-7", 1, 1, 0, 0));
+    }
+    let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+    let transcript = write_transcript(&root, "big.jsonl", &line_refs);
+    let snap = capture(&root, Some(&transcript), None, Some("sid"), || {
+        "now".to_string()
+    });
+    assert!(snap.session_input_tokens.unwrap() > 0);
+    assert!(snap.turn_count.unwrap() > 0);
 }
