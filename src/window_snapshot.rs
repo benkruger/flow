@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 use serde_json::Value;
 
-use crate::state::{ModelTokens, WindowSnapshot};
+use crate::state::{ModelTokens, StepSnapshot, WindowSnapshot};
 use crate::utils::{now, tolerant_i64_opt};
 
 /// Capture an account-window snapshot.
@@ -129,6 +129,39 @@ pub fn write_snapshot_into_state(state: &mut Value, field: &str, snapshot: &Wind
         let value = serde_json::to_value(snapshot).unwrap_or(Value::Null);
         obj.insert(field.to_string(), value);
     }
+}
+
+/// Append a `StepSnapshot` to `state.phases.<phase>.step_snapshots[]`.
+///
+/// Wraps the supplied `WindowSnapshot` in a `StepSnapshot` carrying
+/// the counter value and the field name (one of the five named step
+/// counters per `commands::set_timestamp::is_step_counter_field`),
+/// then appends to the array. The array is auto-initialized to
+/// `[]` when the slot is missing or holds a non-array value (legacy
+/// state files). No-op when `state` itself is not an object.
+pub fn append_step_snapshot(
+    state: &mut Value,
+    phase: &str,
+    step: i64,
+    field: &str,
+    snapshot: WindowSnapshot,
+) {
+    if !state.is_object() {
+        return;
+    }
+    let step_snap = StepSnapshot {
+        step,
+        field: field.to_string(),
+        snapshot,
+    };
+    let value = serde_json::to_value(&step_snap).expect("StepSnapshot must serialize");
+    if !state["phases"][phase]["step_snapshots"].is_array() {
+        state["phases"][phase]["step_snapshots"] = serde_json::json!([]);
+    }
+    state["phases"][phase]["step_snapshots"]
+        .as_array_mut()
+        .expect("step_snapshots normalized to array above")
+        .push(value);
 }
 
 /// Read `$HOME` as a `PathBuf`, falling back to an empty path

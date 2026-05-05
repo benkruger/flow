@@ -12,7 +12,8 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 use flow_rs::window_snapshot::{
-    capture, capture_for_active_state, home_dir_or_empty, write_snapshot_into_state,
+    append_step_snapshot, capture, capture_for_active_state, home_dir_or_empty,
+    write_snapshot_into_state,
 };
 use serde_json::{json, Value};
 
@@ -499,6 +500,65 @@ fn capture_with_non_utf8_line_skips_silently() {
     let snap = capture(&root, Some(&path), None, Some("sid"), || "now".to_string());
     assert_eq!(snap.session_input_tokens, Some(5));
     assert_eq!(snap.turn_count, Some(1));
+}
+
+// --- append_step_snapshot ---
+
+/// Object state with empty phase entry → step snapshot appended
+/// after the array is auto-initialized. Subsequent appends extend
+/// the same array, in insertion order.
+#[test]
+fn append_step_snapshot_initializes_array_and_appends() {
+    let snap1 = capture(&PathBuf::new(), None, None, Some("sid"), || {
+        "t1".to_string()
+    });
+    let snap2 = capture(&PathBuf::new(), None, None, Some("sid"), || {
+        "t2".to_string()
+    });
+    let mut state = json!({"phases": {"flow-code": {}}, "current_phase": "flow-code"});
+    append_step_snapshot(&mut state, "flow-code", 1, "code_task", snap1);
+    append_step_snapshot(&mut state, "flow-code", 2, "code_task", snap2);
+    let arr = state["phases"]["flow-code"]["step_snapshots"]
+        .as_array()
+        .expect("step_snapshots populated");
+    assert_eq!(arr.len(), 2);
+    assert_eq!(arr[0]["step"], 1);
+    assert_eq!(arr[0]["captured_at"], "t1");
+    assert_eq!(arr[1]["step"], 2);
+    assert_eq!(arr[1]["captured_at"], "t2");
+}
+
+/// Pre-existing step_snapshots array → append extends without
+/// reinitializing.
+#[test]
+fn append_step_snapshot_extends_existing_array() {
+    let snap = capture(&PathBuf::new(), None, None, Some("sid"), || {
+        "t1".to_string()
+    });
+    let mut state = json!({
+        "phases": {"flow-code": {"step_snapshots": [{"existing": true}]}}
+    });
+    append_step_snapshot(&mut state, "flow-code", 5, "code_task", snap);
+    let arr = state["phases"]["flow-code"]["step_snapshots"]
+        .as_array()
+        .expect("array");
+    assert_eq!(arr.len(), 2);
+    assert_eq!(arr[0]["existing"], true);
+    assert_eq!(arr[1]["step"], 5);
+}
+
+/// Non-object state → no-op (matches the project's State Mutation
+/// Object Guards convention so a malformed state file cannot
+/// panic the producer).
+#[test]
+fn append_step_snapshot_with_non_object_state_is_noop() {
+    let snap = capture(&PathBuf::new(), None, None, Some("sid"), || {
+        "t".to_string()
+    });
+    let mut state = Value::Array(vec![json!(1)]);
+    let before = state.clone();
+    append_step_snapshot(&mut state, "flow-code", 1, "code_task", snap);
+    assert_eq!(state, before);
 }
 
 // --- write_snapshot_into_state ---
