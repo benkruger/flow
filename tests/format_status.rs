@@ -1020,8 +1020,7 @@ fn tokens_block_with_partial_data_still_renders() {
 #[test]
 fn tokens_block_renders_for_in_progress_phase_with_step_snapshots() {
     let mut state = make_state("flow-code", &[("flow-code", "in_progress")]);
-    state["phases"]["flow-code"]["window_at_enter"] =
-        snapshot_value("S1", 0, "claude-opus-4-7");
+    state["phases"]["flow-code"]["window_at_enter"] = snapshot_value("S1", 0, "claude-opus-4-7");
     let mut step_snap = snapshot_value("S1", 5, "claude-opus-4-7");
     step_snap["step"] = json!(1);
     step_snap["field"] = json!("code_task");
@@ -1110,10 +1109,7 @@ fn tokens_block_with_non_object_phases_value_is_safe() {
 /// the `n >= 1_000_000` branch of `format_tokens`.
 #[test]
 fn tokens_block_with_million_scale_total_renders_with_m_suffix() {
-    let mut state = make_state(
-        "flow-code",
-        &[("flow-code", "in_progress")],
-    );
+    let mut state = make_state("flow-code", &[("flow-code", "in_progress")]);
     let mut enter = snapshot_value("S1", 0, "claude-opus-4-7");
     let mut complete = snapshot_value("S1", 0, "claude-opus-4-7");
     enter["session_input_tokens"] = json!(0);

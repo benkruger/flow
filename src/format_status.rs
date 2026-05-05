@@ -40,10 +40,7 @@ fn tokens_line(state: &Value) -> Option<String> {
         .saturating_add(report.output_tokens_delta)
         .saturating_add(report.cache_creation_tokens_delta)
         .saturating_add(report.cache_read_tokens_delta);
-    if total == 0
-        && report.cost_delta_usd.abs() < f64::EPSILON
-        && !report.window_reset_observed
-    {
+    if total == 0 && report.cost_delta_usd.abs() < f64::EPSILON && !report.window_reset_observed {
         return None;
     }
     let marker = if report.window_reset_observed {

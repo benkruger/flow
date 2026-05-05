@@ -314,6 +314,93 @@ pub fn phase_timeline(state: &Value, now: Option<DateTime<FixedOffset>>) -> Vec<
     entries
 }
 
+/// A single row in the per-phase token cost table.
+///
+/// One row per `PHASE_ORDER` entry — the row exists even when the
+/// phase carries no snapshot data so the TUI renders a stable layout.
+/// Token / cost / reset fields are computed via
+/// `window_deltas::phase_delta`; rows for phases with no enter
+/// snapshot fall back to zero values.
+#[derive(Debug, Clone, Serialize)]
+pub struct PhaseTokenRow {
+    pub phase_key: String,
+    pub phase_name: String,
+    pub phase_number: usize,
+    pub status: String,
+    pub tokens: i64,
+    pub cost_usd: f64,
+    pub window_reset_observed: bool,
+    pub in_progress: bool,
+}
+
+/// Build a per-phase token cost table for the TUI flow detail panel.
+///
+/// Returns one row per `PHASE_ORDER` entry. Phases without snapshots
+/// produce zero-valued rows so the layout is stable. State that fails
+/// the `FlowState` parse (legacy or corrupted) renders the per-phase
+/// row scaffold with zero token data — the TUI still gets a layout
+/// to render. Returns an empty Vec when `phases` is missing or
+/// non-object.
+pub fn phase_token_table(state: &Value) -> Vec<PhaseTokenRow> {
+    let phases = match state.get("phases").and_then(|p| p.as_object()) {
+        Some(p) => p,
+        None => return vec![],
+    };
+    let names_map = phase_config::phase_names();
+    let numbers_map = phase_config::phase_numbers();
+
+    // Parse the state as FlowState for delta computation. Fail-open:
+    // rows still render when parse fails (older state files, missing
+    // required fields), just with zero token data.
+    let flow_state: Option<crate::state::FlowState> =
+        serde_json::from_value(state.clone()).ok();
+
+    let mut rows = Vec::new();
+    for &key in PHASE_ORDER {
+        let phase = match phases.get(key) {
+            Some(p) => p,
+            None => continue,
+        };
+        let status = phase
+            .get("status")
+            .and_then(|s| s.as_str())
+            .unwrap_or("pending")
+            .to_string();
+        let phase_name = names_map.get(key).cloned().unwrap_or_default();
+        let phase_number = numbers_map.get(key).copied().unwrap_or(0);
+        let in_progress = status == "in_progress";
+
+        let phase_enum: Option<crate::state::Phase> =
+            serde_json::from_value(serde_json::json!(key)).ok();
+        let (tokens, cost_usd, window_reset_observed) = flow_state
+            .as_ref()
+            .zip(phase_enum.as_ref())
+            .and_then(|(fs, pe)| fs.phases.get(pe))
+            .and_then(crate::window_deltas::phase_delta)
+            .map(|report| {
+                let total = report
+                    .input_tokens_delta
+                    .saturating_add(report.output_tokens_delta)
+                    .saturating_add(report.cache_creation_tokens_delta)
+                    .saturating_add(report.cache_read_tokens_delta);
+                (total, report.cost_delta_usd, report.window_reset_observed)
+            })
+            .unwrap_or((0, 0.0, false));
+
+        rows.push(PhaseTokenRow {
+            phase_key: key.to_string(),
+            phase_name,
+            phase_number,
+            status,
+            tokens,
+            cost_usd,
+            window_reset_observed,
+            in_progress,
+        });
+    }
+    rows
+}
+
 /// A parsed log entry for display.
 #[derive(Debug, Clone, Serialize)]
 pub struct LogEntry {
