@@ -147,6 +147,45 @@ pub fn get_file_path(tool_input: &Value) -> String {
     String::new()
 }
 
+/// Detect a `.flow-states/` write that targets a worktree-internal copy
+/// instead of the canonical main-repo location.
+///
+/// `.flow-states/` is the shared state directory and lives ONLY at
+/// `<project_root>/.flow-states/`. A tool call that writes to
+/// `<project_root>/.worktrees/<branch>/.flow-states/...` (worktree root)
+/// or `<project_root>/.worktrees/<branch>/<service>/.flow-states/...`
+/// (mono-repo service subdir) would create a misplaced copy invisible
+/// to the readers (cleanup, discovery scanners, hooks) that scan only
+/// the canonical location.
+///
+/// Returns `Some(canonical_path)` when `file_path` resolves to a
+/// `.flow-states/` segment underneath
+/// `<project_root>/.worktrees/<branch>/`. The returned path rewrites
+/// the prefix to `<project_root>/.flow-states/<suffix>` so the caller
+/// can name the canonical destination in the rejection message.
+///
+/// Returns `None` for: paths outside `<project_root>/.worktrees/`,
+/// paths inside the worktree without a `.flow-states/` segment, and
+/// substring matches like `foo-flow-states-bar` (the match requires
+/// the literal `/.flow-states/` segment with both slashes).
+///
+/// Pure string operations — no `Path` construction or filesystem
+/// reads. The `file_path` input is `tool_input.file_path` from Claude
+/// Code (untrusted model output), so the helper avoids any code path
+/// that could surface a path-traversal or filesystem-read sink.
+pub fn detect_misplaced_flow_states(file_path: &str, project_root: &str) -> Option<String> {
+    let worktrees_prefix = format!("{}/.worktrees/", project_root);
+    if !file_path.starts_with(&worktrees_prefix) {
+        return None;
+    }
+    let after_worktrees = &file_path[worktrees_prefix.len()..];
+    let branch_end = after_worktrees.find('/')?;
+    let after_branch = &after_worktrees[branch_end..];
+    let flow_states_idx = after_branch.find("/.flow-states/")?;
+    let suffix = &after_branch[flow_states_idx + "/.flow-states/".len()..];
+    Some(format!("{}/.flow-states/{}", project_root, suffix))
+}
+
 /// Validate that `file_path` targets the worktree, not the main repo.
 ///
 /// Returns `(allowed, message)`.
@@ -166,6 +205,23 @@ pub fn validate(file_path: &str, cwd: &str) -> (bool, String) {
     let prefix = format!("{}/", project_root);
     if !file_path.starts_with(&prefix) {
         return (true, String::new());
+    }
+
+    // Reject worktree-internal `.flow-states/` writes BEFORE the
+    // cwd-inside check below — otherwise a tool call to
+    // `<root>/.worktrees/<branch>/<service>/.flow-states/...`
+    // would be silently accepted whenever the cwd is the same
+    // service subdirectory. The state directory lives ONLY at
+    // `<project_root>/.flow-states/`, never inside a worktree.
+    if let Some(canonical) = detect_misplaced_flow_states(file_path, project_root) {
+        return (
+            false,
+            format!(
+                "BLOCKED: .flow-states/ lives at the main repo, \
+                 not the worktree. Use {} instead of {}",
+                canonical, file_path
+            ),
+        );
     }
 
     // Paths inside the worktree are fine

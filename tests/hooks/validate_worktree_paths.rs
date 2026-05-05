@@ -4,7 +4,7 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use flow_rs::hooks::validate_worktree_paths::{
-    get_file_path, is_shared_config, validate, validate_shared_config,
+    detect_misplaced_flow_states, get_file_path, is_shared_config, validate, validate_shared_config,
 };
 use serde_json::json;
 
@@ -393,4 +393,150 @@ fn run_subprocess_exits_0_when_current_dir_fails() {
     // cannot validate a path it can't contextualize against a
     // worktree root.
     assert_eq!(output.status.code(), Some(0));
+}
+
+// --- detect_misplaced_flow_states tests ---
+
+#[test]
+fn detect_misplaced_returns_none_for_canonical_path() {
+    let result = detect_misplaced_flow_states(
+        "/Users/ben/code/flow/.flow-states/foo.md",
+        "/Users/ben/code/flow",
+    );
+    assert!(result.is_none());
+}
+
+#[test]
+fn detect_misplaced_returns_canonical_for_worktree_root_flow_states() {
+    let result = detect_misplaced_flow_states(
+        "/Users/ben/code/flow/.worktrees/feat/.flow-states/foo.md",
+        "/Users/ben/code/flow",
+    );
+    assert_eq!(
+        result,
+        Some("/Users/ben/code/flow/.flow-states/foo.md".to_string())
+    );
+}
+
+#[test]
+fn detect_misplaced_returns_canonical_for_service_subdir_flow_states() {
+    let result = detect_misplaced_flow_states(
+        "/Users/ben/code/flow/.worktrees/feat/api/.flow-states/foo.md",
+        "/Users/ben/code/flow",
+    );
+    assert_eq!(
+        result,
+        Some("/Users/ben/code/flow/.flow-states/foo.md".to_string())
+    );
+}
+
+#[test]
+fn detect_misplaced_returns_canonical_for_deep_nested_flow_states() {
+    let result = detect_misplaced_flow_states(
+        "/Users/ben/code/flow/.worktrees/feat/api/sub/.flow-states/foo.md",
+        "/Users/ben/code/flow",
+    );
+    assert_eq!(
+        result,
+        Some("/Users/ben/code/flow/.flow-states/foo.md".to_string())
+    );
+}
+
+#[test]
+fn detect_misplaced_returns_none_for_paths_without_flow_states() {
+    let result = detect_misplaced_flow_states(
+        "/Users/ben/code/flow/.worktrees/feat/src/main.rs",
+        "/Users/ben/code/flow",
+    );
+    assert!(result.is_none());
+}
+
+#[test]
+fn detect_misplaced_returns_none_for_paths_outside_project() {
+    let result = detect_misplaced_flow_states("/home/user/.claude/foo", "/Users/ben/code/flow");
+    assert!(result.is_none());
+}
+
+#[test]
+fn detect_misplaced_returns_none_for_substring_match() {
+    let result = detect_misplaced_flow_states(
+        "/Users/ben/code/flow/.worktrees/feat/foo-flow-states-bar",
+        "/Users/ben/code/flow",
+    );
+    assert!(result.is_none());
+}
+
+#[test]
+fn detect_misplaced_returns_none_for_main_repo_flow_states() {
+    let result = detect_misplaced_flow_states(
+        "/Users/ben/code/flow/.flow-states/foo.md",
+        "/Users/ben/code/flow",
+    );
+    assert!(result.is_none());
+}
+
+#[test]
+fn detect_misplaced_returns_none_when_no_slash_after_worktrees_prefix() {
+    // Path matches `<root>/.worktrees/` literally but has no `/` after
+    // the branch token, so `after_worktrees.find('/')` returns None
+    // and the helper short-circuits without trying to detect the
+    // `.flow-states/` segment.
+    let result = detect_misplaced_flow_states(
+        "/Users/ben/code/flow/.worktrees/lonely-branch",
+        "/Users/ben/code/flow",
+    );
+    assert!(result.is_none());
+}
+
+// --- validate() .flow-states/ canonicalization tests ---
+
+#[test]
+fn validate_rejects_worktree_flow_states_write() {
+    let cwd = "/Users/ben/code/flow/.worktrees/feat/api";
+    let file_path = "/Users/ben/code/flow/.worktrees/feat/.flow-states/plan.md";
+    let (allowed, msg) = validate(file_path, cwd);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains(".flow-states/"));
+    assert!(msg.contains("/Users/ben/code/flow/.flow-states/plan.md"));
+    assert!(msg.contains(file_path));
+}
+
+#[test]
+fn validate_rejects_service_subdir_flow_states_write() {
+    let cwd = "/Users/ben/code/flow/.worktrees/feat/api";
+    let file_path = "/Users/ben/code/flow/.worktrees/feat/api/.flow-states/plan.md";
+    let (allowed, msg) = validate(file_path, cwd);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("/Users/ben/code/flow/.flow-states/plan.md"));
+}
+
+#[test]
+fn validate_accepts_main_repo_flow_states_write_from_subdir_cwd() {
+    let cwd = "/Users/ben/code/flow/.worktrees/feat/api";
+    let file_path = "/Users/ben/code/flow/.flow-states/feat/plan.md";
+    let (allowed, msg) = validate(file_path, cwd);
+    assert!(allowed);
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn validate_accepts_worktree_non_flow_states_write() {
+    let cwd = "/Users/ben/code/flow/.worktrees/feat/api";
+    let file_path = "/Users/ben/code/flow/.worktrees/feat/api/src/main.rs";
+    let (allowed, msg) = validate(file_path, cwd);
+    assert!(allowed);
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn validate_plain_repo_no_op() {
+    // No .worktrees/ in cwd — the new check is bypassed via the
+    // pre-existing "not in a worktree" early-return.
+    let cwd = "/Users/ben/code/flow";
+    let file_path = "/Users/ben/code/flow/.flow-states/feat/plan.md";
+    let (allowed, msg) = validate(file_path, cwd);
+    assert!(allowed);
+    assert!(msg.is_empty());
 }
