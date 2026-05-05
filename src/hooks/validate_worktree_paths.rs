@@ -158,32 +158,89 @@ pub fn get_file_path(tool_input: &Value) -> String {
 /// to the readers (cleanup, discovery scanners, hooks) that scan only
 /// the canonical location.
 ///
-/// Returns `Some(canonical_path)` when `file_path` resolves to a
-/// `.flow-states/` segment underneath
-/// `<project_root>/.worktrees/<branch>/`. The returned path rewrites
-/// the prefix to `<project_root>/.flow-states/<suffix>` so the caller
-/// can name the canonical destination in the rejection message.
+/// Input normalization runs before matching so the canonical-only
+/// invariant holds across filesystem variants and bypass shapes:
 ///
-/// Returns `None` for: paths outside `<project_root>/.worktrees/`,
-/// paths inside the worktree without a `.flow-states/` segment, and
-/// substring matches like `foo-flow-states-bar` (the match requires
-/// the literal `/.flow-states/` segment with both slashes).
+/// - **Doubled slashes** (`<root>//.worktrees/...`) are collapsed to
+///   single slashes so the worktrees-prefix probe matches the
+///   intended segment rather than falling through to the generic
+///   main-repo block (which would name a recursive worktree path
+///   in its redirect message).
+/// - **Case variants** (`.Flow-States/`, `.FLOW-STATES/`) are matched
+///   case-insensitively. macOS APFS is case-insensitive by default, so
+///   any case variant resolves to the same inode as `.flow-states/`;
+///   without case-insensitive matching, a model writing
+///   `.Flow-States/foo` would silently land in the canonical inode
+///   without ever invoking the helper.
+///
+/// The returned canonical path uses `project_root` verbatim and
+/// joins a sanitized suffix that drops `..`, `.`, and empty segments.
+/// Sanitization keeps the redirect message safe to follow — naming a
+/// `..`-containing path as the canonical destination would mislead
+/// the caller toward path-traversal usage even though the gate
+/// itself blocked the original write.
+///
+/// Returns `Some(canonical_path)` when `file_path` (after
+/// normalization) resolves to a `.flow-states/` segment underneath
+/// `<project_root>/.worktrees/<branch>/`. Returns `None` for paths
+/// outside `<project_root>/.worktrees/`, paths inside the worktree
+/// without a `.flow-states/` segment, and substring matches like
+/// `foo-flow-states-bar` (the match requires the literal
+/// `/.flow-states/` segment with both slashes).
 ///
 /// Pure string operations — no `Path` construction or filesystem
 /// reads. The `file_path` input is `tool_input.file_path` from Claude
 /// Code (untrusted model output), so the helper avoids any code path
 /// that could surface a path-traversal or filesystem-read sink.
 pub fn detect_misplaced_flow_states(file_path: &str, project_root: &str) -> Option<String> {
-    let worktrees_prefix = format!("{}/.worktrees/", project_root);
-    if !file_path.starts_with(&worktrees_prefix) {
+    let normalized = collapse_double_slashes(file_path);
+    let normalized_lower = normalized.to_ascii_lowercase();
+    let worktrees_prefix = format!("{}/.worktrees/", project_root.to_ascii_lowercase());
+    if !normalized_lower.starts_with(&worktrees_prefix) {
         return None;
     }
-    let after_worktrees = &file_path[worktrees_prefix.len()..];
+    let after_worktrees = &normalized_lower[worktrees_prefix.len()..];
     let branch_end = after_worktrees.find('/')?;
     let after_branch = &after_worktrees[branch_end..];
     let flow_states_idx = after_branch.find("/.flow-states/")?;
-    let suffix = &after_branch[flow_states_idx + "/.flow-states/".len()..];
+    let suffix_start =
+        worktrees_prefix.len() + branch_end + flow_states_idx + "/.flow-states/".len();
+    let suffix = sanitize_canonical_suffix(&normalized[suffix_start..]);
     Some(format!("{}/.flow-states/{}", project_root, suffix))
+}
+
+/// Collapse runs of `/` to a single `/` so doubled-slash bypass shapes
+/// (`<root>//.worktrees/...`) match the same segment as the canonical
+/// shape. Pure string operation, ASCII-only, no allocation when the
+/// input has no doubled slashes (returns a clone via the iterator).
+fn collapse_double_slashes(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut prev_slash = false;
+    for c in s.chars() {
+        if c == '/' {
+            if !prev_slash {
+                out.push(c);
+            }
+            prev_slash = true;
+        } else {
+            out.push(c);
+            prev_slash = false;
+        }
+    }
+    out
+}
+
+/// Drop `..`, `.`, and empty segments from the suffix before
+/// interpolating it into the canonical redirect message. The gate
+/// has already blocked the misplaced write; sanitization here keeps
+/// the "use this instead" message safe to follow rather than
+/// suggesting a path-traversal-containing destination.
+fn sanitize_canonical_suffix(suffix: &str) -> String {
+    suffix
+        .split('/')
+        .filter(|s| !s.is_empty() && *s != ".." && *s != ".")
+        .collect::<Vec<&str>>()
+        .join("/")
 }
 
 /// Validate that `file_path` targets the worktree, not the main repo.

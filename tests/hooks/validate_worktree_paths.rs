@@ -467,15 +467,6 @@ fn detect_misplaced_returns_none_for_substring_match() {
 }
 
 #[test]
-fn detect_misplaced_returns_none_for_main_repo_flow_states() {
-    let result = detect_misplaced_flow_states(
-        "/Users/ben/code/flow/.flow-states/foo.md",
-        "/Users/ben/code/flow",
-    );
-    assert!(result.is_none());
-}
-
-#[test]
 fn detect_misplaced_returns_none_when_no_slash_after_worktrees_prefix() {
     // Path matches `<root>/.worktrees/` literally but has no `/` after
     // the branch token, so `after_worktrees.find('/')` returns None
@@ -486,6 +477,88 @@ fn detect_misplaced_returns_none_when_no_slash_after_worktrees_prefix() {
         "/Users/ben/code/flow",
     );
     assert!(result.is_none());
+}
+
+#[test]
+fn detect_misplaced_matches_mixed_case_flow_states() {
+    // macOS APFS is case-insensitive — `.Flow-States/foo.md` resolves
+    // to the same inode as `.flow-states/foo.md`, so the helper must
+    // match case-insensitively to uphold the canonical-only invariant.
+    let result = detect_misplaced_flow_states(
+        "/Users/ben/code/flow/.worktrees/feat/.Flow-States/plan.md",
+        "/Users/ben/code/flow",
+    );
+    assert_eq!(
+        result,
+        Some("/Users/ben/code/flow/.flow-states/plan.md".to_string())
+    );
+}
+
+#[test]
+fn detect_misplaced_matches_uppercase_flow_states() {
+    let result = detect_misplaced_flow_states(
+        "/Users/ben/code/flow/.worktrees/feat/.FLOW-STATES/plan.md",
+        "/Users/ben/code/flow",
+    );
+    assert_eq!(
+        result,
+        Some("/Users/ben/code/flow/.flow-states/plan.md".to_string())
+    );
+}
+
+#[test]
+fn detect_misplaced_collapses_doubled_slashes_in_input() {
+    // A doubled slash between the project root and `.worktrees/` would
+    // otherwise slip past the worktrees-prefix probe and fall through
+    // to the generic main-repo block (which produces a recursive
+    // worktree path in its redirect message).
+    let result = detect_misplaced_flow_states(
+        "/Users/ben/code/flow//.worktrees/feat/.flow-states/plan.md",
+        "/Users/ben/code/flow",
+    );
+    assert_eq!(
+        result,
+        Some("/Users/ben/code/flow/.flow-states/plan.md".to_string())
+    );
+}
+
+#[test]
+fn detect_misplaced_sanitizes_traversal_segments_in_canonical() {
+    // The block fires correctly, but the redirect message must not name
+    // a path containing `..` segments — that would mislead the caller
+    // toward path-traversal usage.
+    let result = detect_misplaced_flow_states(
+        "/Users/ben/code/flow/.worktrees/feat/.flow-states/../../etc/passwd",
+        "/Users/ben/code/flow",
+    );
+    assert_eq!(
+        result,
+        Some("/Users/ben/code/flow/.flow-states/etc/passwd".to_string())
+    );
+}
+
+#[test]
+fn detect_misplaced_sanitizes_dot_segments_in_canonical() {
+    let result = detect_misplaced_flow_states(
+        "/Users/ben/code/flow/.worktrees/feat/.flow-states/./foo/./bar.md",
+        "/Users/ben/code/flow",
+    );
+    assert_eq!(
+        result,
+        Some("/Users/ben/code/flow/.flow-states/foo/bar.md".to_string())
+    );
+}
+
+#[test]
+fn detect_misplaced_collapses_doubled_slashes_inside_suffix() {
+    let result = detect_misplaced_flow_states(
+        "/Users/ben/code/flow/.worktrees/feat/.flow-states//foo//bar.md",
+        "/Users/ben/code/flow",
+    );
+    assert_eq!(
+        result,
+        Some("/Users/ben/code/flow/.flow-states/foo/bar.md".to_string())
+    );
 }
 
 // --- validate() .flow-states/ canonicalization tests ---
