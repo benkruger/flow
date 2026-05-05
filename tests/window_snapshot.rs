@@ -507,7 +507,9 @@ fn capture_with_non_utf8_line_skips_silently() {
 /// any prior value at that key.
 #[test]
 fn write_snapshot_into_state_inserts_at_named_field() {
-    let snap = capture(&PathBuf::new(), None, None, Some("sid"), || "now".to_string());
+    let snap = capture(&PathBuf::new(), None, None, Some("sid"), || {
+        "now".to_string()
+    });
     let mut state = json!({"existing": 1});
     write_snapshot_into_state(&mut state, "window_at_start", &snap);
     assert!(state["window_at_start"].is_object());
@@ -520,7 +522,9 @@ fn write_snapshot_into_state_inserts_at_named_field() {
 /// malformed state file cannot panic the producer.
 #[test]
 fn write_snapshot_into_state_with_non_object_state_is_noop() {
-    let snap = capture(&PathBuf::new(), None, None, Some("sid"), || "now".to_string());
+    let snap = capture(&PathBuf::new(), None, None, Some("sid"), || {
+        "now".to_string()
+    });
     let mut state = Value::Array(vec![json!({"a": 1})]);
     let before = state.clone();
     write_snapshot_into_state(&mut state, "window_at_start", &snap);
