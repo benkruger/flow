@@ -2098,3 +2098,256 @@ fn layer_10_passes_git_commit_in_unrelated_git_repo() {
         "git commit in unrelated git repo must allow; stderr={stderr}"
     );
 }
+
+// --- layer_10_skill_commit_carveout ---
+//
+// The legitimate skill-driven commit path is `/flow:flow-commit` →
+// `bin/flow finalize-commit`. The flow-code, flow-code-review, and
+// flow-learn skills all set `_continue_pending=commit` on the state
+// file immediately before invoking /flow:flow-commit, so the field is
+// the marker Layer 10 checks. When the carve-out fires, the hook
+// allows `bin/flow ... finalize-commit` (and only that shape) through
+// the active-flow gate. `git commit` is never carved out — the skill
+// never invokes raw git commit, so the marker plus a `git commit`
+// command always indicates a bypass attempt.
+
+/// Like `setup_active_flow_worktree(branch, true)` but lets the test
+/// specify the state.json content. Use this to write a state file
+/// with `_continue_pending=commit` (the carve-out marker) or any
+/// other shape needed to drive `state_continue_pending_is_commit`.
+fn setup_active_flow_worktree_with_state(
+    branch: &str,
+    state_json: &str,
+) -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().canonicalize().expect("canonicalize");
+
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let states_dir = root.join(".flow-states").join(branch);
+    std::fs::create_dir_all(&states_dir).unwrap();
+    std::fs::write(states_dir.join("state.json"), state_json).unwrap();
+
+    let worktree = root.join(".worktrees").join(branch);
+    std::fs::create_dir_all(&worktree).unwrap();
+    std::fs::write(
+        worktree.join(".git"),
+        format!("gitdir: ../../.git/worktrees/{branch}"),
+    )
+    .unwrap();
+
+    (dir, root, worktree)
+}
+
+#[test]
+fn layer_10_carveout_allows_bin_flow_finalize_commit_when_continue_pending_is_commit() {
+    // Skill choreography: flow-code (or sibling) wrote
+    // _continue_pending=commit, then dispatched
+    // bin/flow finalize-commit via /flow:flow-commit. Layer 10 must
+    // pass through so CI can run inside finalize-commit and the
+    // commit can land.
+    let (_dir, _root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "skill-invoked finalize-commit must pass; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_10_carveout_allows_absolute_bin_flow_finalize_commit_when_marker_set() {
+    // Skill bash blocks invoke `${CLAUDE_PLUGIN_ROOT}/bin/flow
+    // finalize-commit ...` which expands to an absolute-path form.
+    // The carve-out's command-shape predicate uses `is_bin_flow_token`
+    // which accepts both bare and `*/bin/flow` suffix forms.
+    let (_dir, _root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    let input = r#"{"tool_input": {"command": "/Users/me/code/flow/bin/flow finalize-commit msg.txt feat"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "absolute-path skill-invoked finalize-commit must pass; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_10_carveout_does_not_apply_to_git_commit_even_with_marker() {
+    // Marker is present but command shape is `git commit`. The skill
+    // carve-out is finalize-commit-only by design — raw git commit
+    // is never legitimate during a flow regardless of state. Block.
+    let (_dir, _root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    let input = r#"{"tool_input": {"command": "git commit -m \"x\""}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 2,
+        "git commit during active flow must block even with marker; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("BLOCKED"),
+        "stderr should contain BLOCKED; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("active flow"),
+        "stderr should name 'active flow' context; got: {stderr}"
+    );
+}
+
+#[test]
+fn layer_10_carveout_blocks_finalize_commit_when_continue_pending_absent() {
+    // Active state file but no _continue_pending key. The carve-out
+    // requires the marker to be definitively the string "commit";
+    // absence is fail-closed. Block.
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", r#"{}"#);
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 2,
+        "finalize-commit without _continue_pending marker must block; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("active flow"),
+        "stderr should name 'active flow' context; got: {stderr}"
+    );
+}
+
+#[test]
+fn layer_10_carveout_blocks_finalize_commit_when_continue_pending_is_other_value() {
+    // Marker is set but to a value other than "commit" (e.g. an old
+    // value left by a prior skill round, or a hand-edited state).
+    // The carve-out requires exact equality with "commit". Block.
+    let (_dir, _root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "review"}"#);
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 2,
+        "finalize-commit with non-commit marker must block; stderr={stderr}"
+    );
+    assert!(stderr.contains("active flow"));
+}
+
+#[test]
+fn layer_10_carveout_blocks_finalize_commit_when_continue_pending_wrong_type() {
+    // Marker present but as a non-string (e.g. number or null).
+    // `as_str()` returns None → fail-closed → block. Tolerates
+    // legacy or corrupted state without bypassing the gate.
+    let (_dir, _root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": 1}"#);
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 2,
+        "finalize-commit with non-string marker must block; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_10_carveout_blocks_finalize_commit_when_state_file_is_malformed_json() {
+    // `is_flow_active` reports active (state.json exists with
+    // `.is_file() == true`), so the active-flow predicate fires and
+    // the carve-out is consulted. `state_continue_pending_is_commit`
+    // reads the file then calls `serde_json::from_str` which returns
+    // Err on malformed content. Fail-closed → carve-out doesn't
+    // apply → block. Drives the parse-error let-else arm.
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", "this is not json");
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 2,
+        "finalize-commit with malformed state.json must block; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("active flow"),
+        "stderr should name 'active flow' context; got: {stderr}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn layer_10_carveout_blocks_finalize_commit_when_state_file_is_unreadable() {
+    use std::os::unix::fs::PermissionsExt;
+
+    // `is_flow_active`'s `.is_file()` succeeds even when the file's
+    // read perms are 000 — metadata is fetched from the parent dir,
+    // not by reading content. The downstream
+    // `state_continue_pending_is_commit` then attempts
+    // `read_to_string`, which returns `Err(EACCES)`. Fail-closed →
+    // carve-out doesn't apply → block. This test exercises the
+    // `Err` arm of the read so 100/100/100 covers the let-else.
+    let (_dir, root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    let state_path = root.join(".flow-states").join("feat").join("state.json");
+
+    let mut perms = std::fs::metadata(&state_path).unwrap().permissions();
+    perms.set_mode(0o000);
+    std::fs::set_permissions(&state_path, perms).unwrap();
+
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+
+    // Restore perms before any assertion can short-circuit tempdir
+    // cleanup.
+    let mut perms = std::fs::metadata(&state_path).unwrap().permissions();
+    perms.set_mode(0o644);
+    std::fs::set_permissions(&state_path, perms).unwrap();
+
+    assert_eq!(
+        code, 2,
+        "finalize-commit with unreadable state.json must block; stderr={stderr}"
+    );
+    assert!(stderr.contains("active flow"));
+}
+
+#[test]
+fn layer_10_carveout_allows_bash_c_wrapped_finalize_commit() {
+    // A `bash -c 'bin/flow finalize-commit ...'` wrapping must be
+    // recognized by the carve-out. `is_finalize_commit_invocation`
+    // calls `unwrap_bash_c` first to descend one level before
+    // matching the bin/flow shape, mirroring the integration-branch
+    // matcher.
+    let (_dir, _root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    let input = r#"{"tool_input": {"command": "bash -c 'bin/flow finalize-commit msg.txt feat'"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "bash -c wrapped skill finalize-commit must pass; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_10_carveout_does_not_apply_on_integration_branch() {
+    // Even with the marker set, a finalize-commit invocation whose
+    // resolved branch IS the integration branch must block — the
+    // carve-out is for active-flow context, not integration-branch
+    // context. `match_branch_at` fires before `check_active_flow_at`
+    // in `check_commit_during_flow`, so the integration-branch
+    // message wins.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let states_dir = root.join(".flow-states").join("main");
+    std::fs::create_dir_all(&states_dir).unwrap();
+    std::fs::write(
+        states_dir.join("state.json"),
+        r#"{"_continue_pending": "commit"}"#,
+    )
+    .unwrap();
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt main"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 2,
+        "finalize-commit on integration branch must block even with marker; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("integration branch"),
+        "stderr should name integration-branch context; got: {stderr}"
+    );
+}
