@@ -91,14 +91,82 @@ the hook is registered for in `hooks/hooks.json`. Both `file_path`
 (Edit/Write/Read) and `path` (Glob/Grep) input shapes resolve through
 `get_file_path` before the helper runs.
 
-This complements the CLI-layer canonicalization that `bin/flow
-write-rule` enforces internally: write-rule canonicalizes its `--path`
-argument before `fs::write`, and the validate-worktree-paths hook
-canonicalizes the tool-call layer before either Write or write-rule
-runs. Together they cover both surfaces — the model invoking the
-Write tool directly with a worktree-internal path, and the model
-invoking write-rule with one — so the canonical-only invariant holds
-regardless of which entry point a future skill picks.
+## Managed-Artifact Canonicalization Gate (CLI Layer)
+
+The hook above closes the tool-call surface; `bin/flow write-rule`
+itself closes the CLI surface. When `--path` is invoked with a basename
+that names a FLOW-managed artifact, write-rule rejects any path that
+isn't the canonical destination computed from
+`(project_root, current_branch)` via `FlowPaths`.
+
+**The managed-artifact set.** Five basenames are managed; every other
+basename passes through unchanged:
+
+| Basename | Variant | Canonical destination |
+|---|---|---|
+| `plan.md` | `PlanMd` | `<project_root>/.flow-states/<branch>/plan.md` |
+| `dag.md` | `DagMd` | `<project_root>/.flow-states/<branch>/dag.md` |
+| `commit-msg.txt` | `CommitMsgTxt` | `<project_root>/.flow-states/<branch>/commit-msg.txt` |
+| `.flow-issue-body` | `FlowIssueBody` | `<project_root>/.flow-issue-body` |
+| `orchestrate-queue.json` | `OrchestrateQueue` | `<project_root>/.flow-states/orchestrate-queue.json` |
+
+**The canonicalization rule.** `run_impl_main` calls
+`classify_path(args.path)` to look up the variant by basename. When a
+variant matches, it computes the canonical destination via
+`canonical_path(art, &project_root(), current_branch().as_deref())`,
+resolves the provided path to absolute (relative paths join against
+`project_root`), lexically normalizes both sides (resolving `..`
+segments — `Path::components` already drops mid-path `.` segments),
+and rejects when the two normalized PathBufs differ.
+
+**Ordering invariants.** The gate runs BEFORE `read_content_file` so
+a rejection does not destroy the caller's input file
+(`read_content_file` deletes the source as part of its normal
+contract, so a post-read rejection would leave the caller with no
+content to retry). When the gate accepts, the actual `fs::write` call
+uses the resolved absolute path — never the original `args.path` —
+so a relative `--path` validated against `project_root` cannot be
+silently re-resolved by `fs::write` against the process cwd at write
+time. From a mono-repo subdirectory cwd the two resolutions diverge,
+and using the gate-validated absolute path is what keeps the on-disk
+write at the canonical destination the gate approved.
+
+**The error shape.** A rejection returns JSON to stdout and exits 1:
+
+```json
+{
+  "status": "error",
+  "step": "path_canonicalization",
+  "message": "write-rule rejects --path <provided> for managed artifact <art>: canonical destination is <canonical>",
+  "provided": "<provided>",
+  "canonical": "<canonical>",
+  "artifact_kind": "PlanMd|DagMd|CommitMsgTxt|FlowIssueBody|OrchestrateQueue"
+}
+```
+
+**Pass-through for non-managed paths.** When the basename isn't in
+the set above (e.g., `.claude/rules/<topic>.md`, `CLAUDE.md`,
+arbitrary user-named files), the gate is silent and write-rule writes
+the path verbatim. This is the path the `flow-learn` rule-routing
+pattern depends on.
+
+**Pass-through for branch-unavailable contexts.** Branch-scoped
+artifacts (`PlanMd`, `DagMd`, `CommitMsgTxt`) require a valid
+non-empty branch. In detached-HEAD or invalid-branch (slash-
+containing) contexts, `canonical_path` returns `None` and the gate
+stays silent — write-rule writes the path verbatim. Pass-through in
+this context preserves writes the model has no branch information to
+redirect; a rejection here would have no recovery path because the
+caller cannot supply a branch the gate would accept.
+
+The gate complements the tool-call-layer hook above: write-rule
+canonicalizes its `--path` argument before `fs::write`, and the
+`validate-worktree-paths` hook canonicalizes the tool-call layer
+before either Write or write-rule runs. Together they cover both
+surfaces — the model invoking the Write tool directly with a
+worktree-internal path, and the model invoking write-rule with one —
+so the canonical-only invariant holds regardless of which entry
+point a future skill picks.
 
 ## The Write-Rule Escape Pattern
 
@@ -175,6 +243,13 @@ byte boundaries on every path match, rejecting longer paths that embed
 a monitored path as a substring (e.g. `my-orchestrate-queue.json`,
 `.flow-states/<branch>/commit-msg.txt.bak`).
 
+The CLI-layer canonicalization gate is enforced by the
+`tests/write_rule.rs` subprocess matrix: each managed artifact has a
+canonical-success cell and a worktree-misroute-reject cell, plus the
+non-managed pass-through and detached-HEAD pass-through cells. A
+regression in `classify_path`, `canonical_path`, or `normalize_lexical`
+fails CI immediately.
+
 When either test fails, the violation names the file and line. The fix
 is to adopt the Write-Rule Escape Pattern or the Edit Preamble Pattern
 respectively — never to add an allow-list that exempts the callsite.
@@ -197,7 +272,9 @@ fails CI.
 - `.claude/rules/tests-guard-real-regressions.md` — the discipline
   requiring every test to guard a named regression and name its
   consumer.
-- `src/write_rule.rs` — the reference Rust subcommand.
+- `src/write_rule.rs` — the reference Rust subcommand, including the
+  `ManagedArtifact` enum, `classify_path`, `canonical_path`, and the
+  `run_impl_main` gate.
 - `src/hooks/validate_worktree_paths.rs` — the reference hook with the
   `detect_misplaced_flow_states` helper that enforces the canonical
   `.flow-states/` location at the tool-call layer.

@@ -80,7 +80,7 @@ Write the queue JSON to `.flow-states/orchestrate-queue-content.json`
 using the Write tool, then apply the write:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path .flow-states/orchestrate-queue.json --content-file .flow-states/orchestrate-queue-content.json
+${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-states/orchestrate-queue.json --content-file <project_root>/.flow-states/orchestrate-queue-content.json
 ```
 
 ```bash
