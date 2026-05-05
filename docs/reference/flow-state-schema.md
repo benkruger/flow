@@ -145,6 +145,8 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `compact_count` | integer | Total number of context compactions during this feature. Incremented by PostCompact hook. Permanent. |
 | `slack_thread_ts` | string / null | Slack message timestamp of the initial thread message. Set by Start phase after first `notify-slack` call. Used by subsequent phases as `thread_ts` to reply in the same thread. Null or absent if Slack is not configured. |
 | `slack_notifications` | array | Slack notifications sent during the feature — see [Slack Notifications Array](#slack-notifications-array) |
+| `window_at_start` | object / absent | Account-window snapshot captured at flow-start. See [Window Snapshot](#window-snapshot). Absent when not yet populated or when capture failed. |
+| `window_at_complete` | object / absent | Account-window snapshot captured at Phase 6 finalize. See [Window Snapshot](#window-snapshot). Absent until Complete runs. |
 
 ---
 
@@ -161,6 +163,9 @@ Each phase entry has identical fields regardless of status.
 | `session_started_at` | ISO 8601 / null | Timestamp when current session entered this phase — reset to `now()` on resume, cleared to `null` on clean exit |
 | `cumulative_seconds` | integer | Total seconds spent in this phase across all visits — additive |
 | `visit_count` | integer | Number of times this phase has been entered |
+| `window_at_enter` | object / absent | Account-window snapshot captured on phase entry. See [Window Snapshot](#window-snapshot). Absent until phase entry runs or when capture failed. |
+| `window_at_complete` | object / absent | Account-window snapshot captured on phase finalize. See [Window Snapshot](#window-snapshot). Absent until phase finalize runs. |
+| `step_snapshots` | array | Array of [Step Snapshots](#step-snapshot) appended on each step-counter increment (`plan_step`, `code_task`, `code_review_step`, `learn_step`, `complete_step`). Empty until the phase begins incrementing its step counter. Bounded by step count per phase (typically <30 entries; up to ~10 KB for a long Code phase). |
 
 ---
 
@@ -369,6 +374,105 @@ The plan lives at `.flow-states/<branch>/plan.md` alongside other feature artifa
 - **Risks** — what could go wrong, edge cases, constraints
 - **Approach** — the chosen approach and rationale
 - **Tasks** — ordered implementation tasks with files and TDD notes
+
+---
+
+## Window Snapshot
+
+Captured at every state-mutating transition (flow start, phase enter, phase finalize, step-counter increments, flow complete). Stores account-wide observations attributed to the active flow by delta — exact when running a single flow end-to-end on a quiet account, approximate otherwise.
+
+Stored raw — never as deltas. Readers (Complete summary, `format-status`, TUI) compute deltas at read time and detect window resets (`five_hour_pct` going down between snapshots) by inspecting raw values. No `window_reset_observed` flag is stored.
+
+Every numeric field is optional so a missing or unreadable input source (rate-limits file, transcript JSONL, cost file) leaves the field as `null` rather than failing the capture or transition.
+
+```json
+{
+  "captured_at": "2026-05-04T10:00:00-07:00",
+  "session_id": "abc-123",
+  "model": "claude-opus-4-7",
+  "five_hour_pct": 42,
+  "seven_day_pct": 7,
+  "session_input_tokens": 12345,
+  "session_output_tokens": 67890,
+  "session_cache_creation_tokens": 100,
+  "session_cache_read_tokens": 9876,
+  "session_cost_usd": 0.987654,
+  "by_model": {
+    "claude-opus-4-7": {"input": 12345, "output": 67890, "cache_create": 100, "cache_read": 9876}
+  },
+  "turn_count": 15,
+  "tool_call_count": 73,
+  "context_at_last_turn_tokens": 123456,
+  "context_window_pct": 61.5
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `captured_at` | ISO 8601 | Wall-clock time the snapshot was taken (Pacific Time, per `src/utils.rs::now`) |
+| `session_id` | string / null | Claude Code session UUID at capture time, copied from `state.session_id` |
+| `model` | string / null | Model in use at capture time, when known — typically derived from the most recent `assistant` message in the transcript |
+| `five_hour_pct` | integer / null | 5-hour rolling rate-limit utilization, read from `~/.claude/rate-limits.json` |
+| `seven_day_pct` | integer / null | 7-day rolling rate-limit utilization, read from `~/.claude/rate-limits.json` |
+| `session_input_tokens` | integer / null | Sum of `message.usage.input_tokens` across every `assistant` message in the transcript |
+| `session_output_tokens` | integer / null | Sum of `message.usage.output_tokens` |
+| `session_cache_creation_tokens` | integer / null | Sum of `message.usage.cache_creation_input_tokens` |
+| `session_cache_read_tokens` | integer / null | Sum of `message.usage.cache_read_input_tokens` |
+| `session_cost_usd` | number / null | Cost for the current session (USD), read from `.claude/cost/<YYYY-MM>/<session_id>.txt` |
+| `by_model` | object | Per-model token totals — see [Model Tokens](#model-tokens). Empty when the transcript could not be read |
+| `turn_count` | integer / null | Number of `assistant` messages observed in the transcript |
+| `tool_call_count` | integer / null | Number of `tool_use` blocks observed across all `assistant` messages |
+| `context_at_last_turn_tokens` | integer / null | Total context window utilization (input + cache_read + cache_create + output) at the most recent assistant turn |
+| `context_window_pct` | number / null | `context_at_last_turn_tokens` as a percentage of the model's context window, when known |
+
+### Model Tokens
+
+A single entry inside the `by_model` object — present only when at least one `assistant` message named the model. Counters are non-optional within an entry because the entry exists by construction (zero is a meaningful value once the entry is populated).
+
+```json
+"claude-opus-4-7": {
+  "input": 12345,
+  "output": 67890,
+  "cache_create": 100,
+  "cache_read": 9876
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `input` | integer | Sum of `message.usage.input_tokens` for this model |
+| `output` | integer | Sum of `message.usage.output_tokens` for this model |
+| `cache_create` | integer | Sum of `message.usage.cache_creation_input_tokens` for this model |
+| `cache_read` | integer | Sum of `message.usage.cache_read_input_tokens` for this model |
+
+---
+
+## Step Snapshot
+
+Appended to a phase's `step_snapshots[]` on every step-counter increment that names one of the five recognized counters: `plan_step`, `code_task`, `code_review_step`, `learn_step`, `complete_step`. Each entry combines the counter value at the time of capture, the field name, and a flattened [Window Snapshot](#window-snapshot) — so each record is one flat JSON object rather than a nested `{snapshot: {...}}` shape.
+
+```json
+{
+  "step": 3,
+  "field": "code_task",
+  "captured_at": "2026-05-04T10:30:00-07:00",
+  "session_id": "abc-123",
+  "five_hour_pct": 45,
+  "session_input_tokens": 23456,
+  "session_output_tokens": 9876,
+  "by_model": {"claude-opus-4-7": {"input": 23456, "output": 9876, "cache_create": 0, "cache_read": 0}},
+  "turn_count": 22,
+  "tool_call_count": 110,
+  "context_at_last_turn_tokens": 145000,
+  "context_window_pct": 72.5
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `step` | integer | Counter value at capture time |
+| `field` | string | Counter name (one of `plan_step`, `code_task`, `code_review_step`, `learn_step`, `complete_step`) |
+| _flattened snapshot fields_ | various | Every [Window Snapshot](#window-snapshot) field, inlined at the same level |
 
 ---
 

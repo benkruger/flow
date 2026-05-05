@@ -6,10 +6,44 @@ use serde_json::Value;
 use crate::flow_paths::FlowPaths;
 use crate::git::resolve_branch;
 use crate::phase_config::{self, find_state_files, load_phase_config, PhaseConfig, PHASE_ORDER};
-use crate::utils::{derive_feature, detect_dev_mode, elapsed_since, format_time, read_version};
+use crate::state::FlowState;
+use crate::utils::{
+    derive_feature, detect_dev_mode, elapsed_since, format_time, format_tokens, read_version,
+};
+use crate::window_deltas::flow_total;
 
 /// Column width for phase name alignment.
 const NAME_WIDTH: usize = 12;
+
+/// Render the Tokens line from `state.window_at_*` snapshots and the
+/// per-phase snapshots via `window_deltas::flow_total`. Returns `None`
+/// when the state has no token activity (no tokens, no cost, no reset
+/// observed) so the caller omits the line entirely rather than rendering
+/// a placeholder. The reset marker (`↻`) is appended when any span
+/// observed a rate-limit window reset.
+fn tokens_line(state: &Value) -> Option<String> {
+    let flow_state: FlowState = serde_json::from_value(state.clone()).ok()?;
+    let report = flow_total(&flow_state);
+    let total = report
+        .input_tokens_delta
+        .saturating_add(report.output_tokens_delta)
+        .saturating_add(report.cache_creation_tokens_delta)
+        .saturating_add(report.cache_read_tokens_delta);
+    if total == 0 && report.cost_delta_usd.abs() < f64::EPSILON && !report.window_reset_observed {
+        return None;
+    }
+    let marker = if report.window_reset_observed {
+        "  ↻"
+    } else {
+        ""
+    };
+    Some(format!(
+        "  Tokens  : {}  (${:.3}){}",
+        format_tokens(total),
+        report.cost_delta_usd,
+        marker
+    ))
+}
 
 /// Build the status panel string from state dict and version.
 pub fn format_panel(
@@ -181,6 +215,12 @@ pub fn format_panel(
             .unwrap_or(&default_cmd);
         lines.push(format!("  Next: {}", cmd));
     }
+
+    // Tokens line (omitted when no snapshot data exists).
+    if let Some(line) = tokens_line(state) {
+        lines.push(line);
+    }
+
     lines.push(String::new());
     lines.push("────────────────────────────────────────────".to_string());
 
@@ -276,6 +316,12 @@ pub fn format_all_complete(
             "  [x] Phase {}:  {} ({})",
             num, padded_name, time_str
         ));
+    }
+
+    // Tokens line (omitted when no snapshot data exists).
+    if let Some(line) = tokens_line(state) {
+        lines.push(String::new());
+        lines.push(line);
     }
 
     lines.push(String::new());

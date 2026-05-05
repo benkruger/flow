@@ -210,6 +210,184 @@ fn test_render_detail_panel_phases() {
     assert!(output.contains("[ ]"));
 }
 
+/// Build a valid-FlowState Value with one phase carrying non-zero
+/// token deltas so `phase_token_table` reports populated data.
+fn make_flow_with_token_snapshots() -> FlowSummary {
+    let mut flow = make_flow("Token Test", "Code", 3);
+    let snap_enter = serde_json::json!({
+        "captured_at": "2026-01-01T00:00:00-08:00",
+        "session_id": "S1",
+        "model": "claude-opus-4-7",
+        "five_hour_pct": 10,
+        "seven_day_pct": 5,
+        "session_input_tokens": 100,
+        "session_output_tokens": 50,
+        "session_cache_creation_tokens": 0,
+        "session_cache_read_tokens": 0,
+        "session_cost_usd": 0.01,
+        "by_model": {
+            "claude-opus-4-7": {"input": 100, "output": 50, "cache_create": 0, "cache_read": 0}
+        },
+        "turn_count": 1,
+        "tool_call_count": 2,
+        "context_at_last_turn_tokens": 100,
+        "context_window_pct": 0.05
+    });
+    let snap_complete = serde_json::json!({
+        "captured_at": "2026-01-01T01:00:00-08:00",
+        "session_id": "S1",
+        "model": "claude-opus-4-7",
+        "five_hour_pct": 30,
+        "seven_day_pct": 15,
+        "session_input_tokens": 5_000,
+        "session_output_tokens": 2_500,
+        "session_cache_creation_tokens": 0,
+        "session_cache_read_tokens": 0,
+        "session_cost_usd": 0.50,
+        "by_model": {
+            "claude-opus-4-7": {"input": 5_000, "output": 2_500, "cache_create": 0, "cache_read": 0}
+        },
+        "turn_count": 50,
+        "tool_call_count": 100,
+        "context_at_last_turn_tokens": 5_000,
+        "context_window_pct": 2.5
+    });
+    flow.state = serde_json::json!({
+        "schema_version": 1,
+        "branch": "token-test",
+        "started_at": "2026-01-01T00:00:00-08:00",
+        "current_phase": "flow-code",
+        "files": {"plan": null, "dag": null, "log": "", "state": ""},
+        "phases": {
+            "flow-start": {
+                "name": "Start", "status": "complete", "started_at": null,
+                "completed_at": null, "session_started_at": null,
+                "cumulative_seconds": 0, "visit_count": 0
+            },
+            "flow-plan": {
+                "name": "Plan", "status": "complete", "started_at": null,
+                "completed_at": null, "session_started_at": null,
+                "cumulative_seconds": 0, "visit_count": 0
+            },
+            "flow-code": {
+                "name": "Code", "status": "in_progress", "started_at": null,
+                "completed_at": null, "session_started_at": null,
+                "cumulative_seconds": 0, "visit_count": 0,
+                "window_at_enter": snap_enter,
+                "window_at_complete": snap_complete
+            },
+            "flow-code-review": {
+                "name": "Code Review", "status": "pending", "started_at": null,
+                "completed_at": null, "session_started_at": null,
+                "cumulative_seconds": 0, "visit_count": 0
+            },
+            "flow-learn": {
+                "name": "Learn", "status": "pending", "started_at": null,
+                "completed_at": null, "session_started_at": null,
+                "cumulative_seconds": 0, "visit_count": 0
+            },
+            "flow-complete": {
+                "name": "Complete", "status": "pending", "started_at": null,
+                "completed_at": null, "session_started_at": null,
+                "cumulative_seconds": 0, "visit_count": 0
+            }
+        }
+    });
+    flow
+}
+
+/// The detail panel renders the per-phase token table when the
+/// selected flow's state carries snapshot data. This drives the
+/// `phase_token_table` consumer in `render_detail_panel`.
+#[test]
+fn test_render_detail_panel_renders_token_table_when_data_present() {
+    let mut app = make_app();
+    app.flows = vec![make_flow_with_token_snapshots()];
+    let output = render_to_string(&app, 100, 40);
+    assert!(
+        output.contains("Tokens"),
+        "Tokens header must appear:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Code:"),
+        "Per-phase row must appear:\n{}",
+        output
+    );
+}
+
+/// The token table is omitted when no phase carries token data so
+/// the existing detail panel layout is preserved for legacy state.
+#[test]
+fn test_render_detail_panel_omits_token_table_when_no_data() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("Plain Feature", "Plan", 2)];
+    let output = render_to_string(&app, 100, 40);
+    // The make_flow helper builds a state with no `phases` field at
+    // all, so the token table is empty and no `Tokens` header is
+    // rendered. The phase list above contains "Plan" so we don't
+    // assert on plain "Tokens" without disambiguation — instead,
+    // assert no per-phase token row marker appears.
+    assert!(
+        !output.contains("  Tokens  "),
+        "Tokens header must be omitted when no snapshots:\n{}",
+        output
+    );
+}
+
+/// Token table loop respects the viewport bound: when the panel
+/// runs out of rows mid-table, the inner loop breaks rather than
+/// rendering off-screen. Drives the `break` arm of the row-overflow
+/// check inside the token row loop.
+#[test]
+fn test_render_detail_panel_token_table_breaks_when_viewport_overflows() {
+    let mut app = make_app();
+    let mut flow = make_flow_with_token_snapshots();
+    // Populate snapshots on every phase so active_rows has 6 entries.
+    // With a small viewport, the loop must break before all 6 land.
+    let snap_enter = flow.state["phases"]["flow-code"]["window_at_enter"].clone();
+    let snap_complete = flow.state["phases"]["flow-code"]["window_at_complete"].clone();
+    for key in [
+        "flow-start",
+        "flow-plan",
+        "flow-code-review",
+        "flow-learn",
+        "flow-complete",
+    ] {
+        flow.state["phases"][key]["window_at_enter"] = snap_enter.clone();
+        flow.state["phases"][key]["window_at_complete"] = snap_complete.clone();
+    }
+    app.flows = vec![flow];
+    // 100x18 leaves only a few rows in the detail panel — enough for
+    // the timeline + header + 1 or 2 token rows, then the inner loop
+    // hits the row-overflow break before all 6 token rows land.
+    let _ = render_to_string(&app, 100, 18);
+}
+
+/// Window-reset marker appears on rows where the rate-limit window
+/// rolled over mid-phase.
+#[test]
+fn test_render_detail_panel_token_table_marks_window_reset() {
+    let mut app = make_app();
+    let mut flow = make_flow_with_token_snapshots();
+    // Rewrite flow-code's complete snapshot so 5h pct DROPS — that
+    // triggers window_reset_observed in phase_delta.
+    let snap_enter = flow.state["phases"]["flow-code"]["window_at_enter"].clone();
+    let mut snap_complete = flow.state["phases"]["flow-code"]["window_at_complete"].clone();
+    let mut enter_with_high_pct = snap_enter;
+    enter_with_high_pct["five_hour_pct"] = serde_json::json!(80);
+    snap_complete["five_hour_pct"] = serde_json::json!(5);
+    flow.state["phases"]["flow-code"]["window_at_enter"] = enter_with_high_pct;
+    flow.state["phases"]["flow-code"]["window_at_complete"] = snap_complete;
+    app.flows = vec![flow];
+    let output = render_to_string(&app, 100, 40);
+    assert!(
+        output.contains("\u{21bb}"),
+        "Reset marker (↻) must appear when window resets:\n{}",
+        output
+    );
+}
+
 #[test]
 fn test_render_detail_panel_with_issues() {
     let mut app = make_app();

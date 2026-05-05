@@ -30,6 +30,17 @@ pub enum PhaseStatus {
 }
 
 /// Per-phase state tracking.
+///
+/// `window_at_enter`, `window_at_complete`, and `step_snapshots` capture
+/// account-wide token / cost / rate-limit observations at every
+/// state-mutating phase transition. The values are populated by the
+/// `window_snapshot::capture` helper invoked from `phase_enter`,
+/// `phase_finalize`, `phase_transition`, and `set_timestamp` (when the
+/// mutated field names a step counter). Readers in `window_deltas`
+/// derive per-phase deltas, by-model rollups, and reset detection
+/// from these raw snapshots — all numeric snapshot fields are
+/// `Option<_>` so missing inputs (no rate-limits file, missing
+/// transcript, no cost file) surface as `None` rather than panics.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PhaseState {
     pub name: String,
@@ -39,6 +50,89 @@ pub struct PhaseState {
     pub session_started_at: Option<String>,
     pub cumulative_seconds: i64,
     pub visit_count: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_at_enter: Option<WindowSnapshot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_at_complete: Option<WindowSnapshot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub step_snapshots: Vec<StepSnapshot>,
+}
+
+/// Per-model token counters extracted from the session transcript.
+///
+/// Sessions can mix models (e.g. an Opus turn followed by a Sonnet
+/// turn after `/model` switches). Each `assistant` message in the
+/// transcript names its model in `message.model`; capture sums the
+/// usage fields per model into one entry of `WindowSnapshot.by_model`.
+/// All fields are non-optional `i64` because the entry only exists
+/// when at least one assistant message contributed to its model
+/// (zero is a meaningful value within a populated entry).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct ModelTokens {
+    pub input: i64,
+    pub output: i64,
+    pub cache_create: i64,
+    pub cache_read: i64,
+}
+
+/// Account-wide window observation captured at a state transition.
+///
+/// Every numeric field is `Option<i64>` / `Option<f64>` so that a
+/// missing or unreadable input source (rate-limits file, transcript,
+/// cost file) leaves the corresponding field as `None` rather than
+/// failing the capture. `captured_at` is always populated because the
+/// snapshot is constructed at a known wall-clock moment.
+///
+/// Stored raw — never as deltas. Readers in `window_deltas` compute
+/// deltas at read time and detect window resets (`five_hour_pct`
+/// going down between snapshots) by inspecting the raw values.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WindowSnapshot {
+    pub captured_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub five_hour_pct: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seven_day_pct: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_input_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_output_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_cache_creation_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_cache_read_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_cost_usd: Option<f64>,
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub by_model: IndexMap<String, ModelTokens>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_at_last_turn_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window_pct: Option<f64>,
+}
+
+/// A `WindowSnapshot` captured at a step-counter boundary.
+///
+/// Appended to `PhaseState.step_snapshots[]` by `set_timestamp` when
+/// the mutated field is one of the five named step counters
+/// (`plan_step`, `code_task`, `code_review_step`, `learn_step`,
+/// `complete_step`). `step` records the counter value and `field`
+/// records which counter; the snapshot fields are flattened into the
+/// outer JSON so each entry is one flat object.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StepSnapshot {
+    pub step: i64,
+    pub field: String,
+    #[serde(flatten)]
+    pub snapshot: WindowSnapshot,
 }
 
 /// Artifact file paths (relative to project root).
@@ -239,4 +333,12 @@ pub struct FlowState {
     pub compact_cwd: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compact_count: Option<i64>,
+
+    // Account-window snapshots — captured at flow start and complete.
+    // Per-phase snapshots live on PhaseState. See `WindowSnapshot`
+    // for field semantics and the "fail-open" convention.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_at_start: Option<WindowSnapshot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_at_complete: Option<WindowSnapshot>,
 }

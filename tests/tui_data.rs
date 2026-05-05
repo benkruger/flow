@@ -4,7 +4,8 @@ use chrono::{DateTime, FixedOffset};
 use flow_rs::phase_config::{self, PHASE_ORDER};
 use flow_rs::tui_data::{
     flow_summary, load_account_metrics, load_all_flows, load_orchestration, orchestration_summary,
-    parse_log_entries, phase_timeline, run_impl_main, status_icon, step_annotation, step_names,
+    parse_log_entries, phase_timeline, phase_token_table, run_impl_main, status_icon,
+    step_annotation, step_names,
 };
 use serde_json::{json, Value};
 
@@ -36,6 +37,7 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
     }
 
     json!({
+        "schema_version": 1,
         "branch": "test-feature",
         "repo": "test/test",
         "pr_number": 1,
@@ -45,8 +47,8 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
         "files": {
             "plan": null,
             "dag": null,
-            "log": null,
-            "state": null,
+            "log": "",
+            "state": "",
         },
         "phases": phases,
         "prompt": "",
@@ -2045,4 +2047,247 @@ fn run_impl_main_load_account_metrics_returns_object_exit_0() {
     let (value, code) = run_impl_main(false, false, true, dir.path()).expect("ok path");
     assert_eq!(code, 0);
     assert!(value.is_object(), "expected object, got {:?}", value);
+}
+
+// --- phase_token_table ---
+
+/// Build a snapshot Value for fixtures. `n` scales each numeric
+/// field so callers can produce monotonically-increasing snapshots.
+fn token_snapshot(session: &str, n: i64, model: &str) -> Value {
+    json!({
+        "captured_at": format!("2026-01-01T0{}:00:00-08:00", n.min(9)),
+        "session_id": session,
+        "model": model,
+        "five_hour_pct": n,
+        "seven_day_pct": n / 2,
+        "session_input_tokens": n * 100,
+        "session_output_tokens": n * 50,
+        "session_cache_creation_tokens": 0,
+        "session_cache_read_tokens": 0,
+        "session_cost_usd": n as f64 * 0.01,
+        "by_model": {
+            model: {"input": n * 100, "output": n * 50, "cache_create": 0, "cache_read": 0}
+        },
+        "turn_count": n,
+        "tool_call_count": n * 2,
+        "context_at_last_turn_tokens": n * 100,
+        "context_window_pct": (n * 100) as f64 / 200_000.0 * 100.0,
+    })
+}
+
+fn add_phase_token_snapshots(state: &mut Value, key: &str, enter_n: i64, complete_n: i64) {
+    state["phases"][key]["window_at_enter"] = token_snapshot("S1", enter_n, "claude-opus-4-7");
+    state["phases"][key]["window_at_complete"] =
+        token_snapshot("S1", complete_n, "claude-opus-4-7");
+}
+
+/// Every phase appears in the table in PHASE_ORDER, regardless of
+/// whether it carries snapshot data — readers expect a stable
+/// 6-row layout matching the timeline.
+#[test]
+fn phase_token_table_renders_each_phase() {
+    let state = make_state("flow-start", &[("flow-start", "in_progress")]);
+    let rows = phase_token_table(&state);
+    assert_eq!(rows.len(), PHASE_ORDER.len());
+    for (i, key) in PHASE_ORDER.iter().enumerate() {
+        assert_eq!(rows[i].phase_key, *key, "row {} key", i);
+    }
+}
+
+/// Phases without snapshots show zero tokens and zero cost — the
+/// row exists but the data fields are empty.
+#[test]
+fn phase_token_table_handles_missing_snapshots() {
+    let state = make_state("flow-start", &[("flow-start", "in_progress")]);
+    let rows = phase_token_table(&state);
+    for row in &rows {
+        assert_eq!(row.tokens, 0, "phase {} tokens", row.phase_key);
+        assert!(
+            row.cost_usd.abs() < f64::EPSILON,
+            "phase {} cost",
+            row.phase_key
+        );
+        assert!(!row.window_reset_observed, "phase {} reset", row.phase_key);
+    }
+}
+
+/// The currently-in-progress phase carries the `in_progress` flag.
+#[test]
+fn phase_token_table_marks_in_progress_phase() {
+    let state = make_state(
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
+    );
+    let rows = phase_token_table(&state);
+    let code_row = rows
+        .iter()
+        .find(|r| r.phase_key == "flow-code")
+        .expect("flow-code row");
+    assert!(code_row.in_progress, "flow-code must be marked in_progress");
+    let start_row = rows
+        .iter()
+        .find(|r| r.phase_key == "flow-start")
+        .expect("flow-start row");
+    assert!(
+        !start_row.in_progress,
+        "flow-start must not be marked in_progress"
+    );
+}
+
+/// Phases with full enter/complete snapshots produce non-zero token
+/// totals — drives the delta path through `phase_delta`.
+#[test]
+fn phase_token_table_with_snapshots_reports_tokens_and_cost() {
+    let mut state = make_state(
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
+    );
+    add_phase_token_snapshots(&mut state, "flow-start", 0, 5);
+    add_phase_token_snapshots(&mut state, "flow-code", 10, 20);
+    let rows = phase_token_table(&state);
+    let start_row = rows
+        .iter()
+        .find(|r| r.phase_key == "flow-start")
+        .expect("flow-start row");
+    assert!(start_row.tokens > 0, "flow-start tokens > 0");
+    assert!(start_row.cost_usd > 0.0, "flow-start cost > 0");
+    let code_row = rows
+        .iter()
+        .find(|r| r.phase_key == "flow-code")
+        .expect("flow-code row");
+    assert!(code_row.tokens > 0, "flow-code tokens > 0");
+}
+
+/// Window reset (pct decreases between snapshots) is propagated to
+/// the row's `window_reset_observed` flag.
+#[test]
+fn phase_token_table_marks_window_reset_observed() {
+    let mut state = make_state("flow-code", &[("flow-code", "in_progress")]);
+    let mut enter = token_snapshot("S1", 80, "claude-opus-4-7");
+    let mut complete = token_snapshot("S1", 5, "claude-opus-4-7");
+    enter["session_input_tokens"] = json!(100);
+    complete["session_input_tokens"] = json!(500);
+    state["phases"]["flow-code"]["window_at_enter"] = enter;
+    state["phases"]["flow-code"]["window_at_complete"] = complete;
+    let rows = phase_token_table(&state);
+    let code_row = rows
+        .iter()
+        .find(|r| r.phase_key == "flow-code")
+        .expect("flow-code row");
+    assert!(
+        code_row.window_reset_observed,
+        "window reset must be reported when pct drops"
+    );
+}
+
+/// Every row carries its phase number and display name so the TUI
+/// can render them without reaching back into phase_config.
+#[test]
+fn phase_token_table_includes_phase_name_and_number() {
+    let state = make_state("flow-start", &[("flow-start", "in_progress")]);
+    let rows = phase_token_table(&state);
+    let names = phase_config::phase_names();
+    let numbers = phase_config::phase_numbers();
+    for row in &rows {
+        let expected_name = names
+            .get(row.phase_key.as_str())
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(
+            row.phase_name, expected_name,
+            "phase {} name",
+            row.phase_key
+        );
+        let expected_number = numbers.get(row.phase_key.as_str()).copied().unwrap_or(0);
+        assert_eq!(
+            row.phase_number, expected_number,
+            "phase {} number",
+            row.phase_key
+        );
+    }
+}
+
+/// State with no `phases` field returns an empty table — the helper
+/// short-circuits gracefully on missing or non-object phases.
+#[test]
+fn phase_token_table_with_missing_phases_field_returns_empty() {
+    let state = json!({"branch": "test"});
+    let rows = phase_token_table(&state);
+    assert!(rows.is_empty());
+}
+
+/// State with `phases` set to a non-object value (corruption) →
+/// returns an empty table rather than panicking.
+#[test]
+fn phase_token_table_with_non_object_phases_value_returns_empty() {
+    let state = json!({"phases": "not an object"});
+    let rows = phase_token_table(&state);
+    assert!(rows.is_empty());
+}
+
+/// State that fails the FlowState parse (missing required fields)
+/// still returns the per-phase row scaffold with zero token data —
+/// the helper does not require a full FlowState parse to render the
+/// row layout, only to compute deltas.
+#[test]
+fn phase_token_table_with_unparseable_state_returns_zero_data_rows() {
+    let mut state = make_state("flow-code", &[("flow-code", "in_progress")]);
+    // Remove fields that FlowState requires.
+    state.as_object_mut().unwrap().remove("started_at");
+    let rows = phase_token_table(&state);
+    assert_eq!(rows.len(), PHASE_ORDER.len());
+    for row in &rows {
+        assert_eq!(row.tokens, 0);
+        assert!(row.cost_usd.abs() < f64::EPSILON);
+        assert!(!row.window_reset_observed);
+    }
+}
+
+/// State with only some phases present in the `phases` object →
+/// missing PHASE_ORDER entries are silently skipped, so the table
+/// has fewer rows than PHASE_ORDER.len(). Drives the `None =>
+/// continue` branch in the per-phase loop.
+#[test]
+fn phase_token_table_skips_phases_missing_from_state() {
+    let mut state = make_state("flow-code", &[("flow-code", "in_progress")]);
+    // Drop every phase except flow-code from the phases object.
+    let phases = state["phases"].as_object_mut().expect("phases object");
+    let keep: Vec<String> = vec!["flow-code".to_string()];
+    let to_drop: Vec<String> = phases
+        .keys()
+        .filter(|k| !keep.contains(k))
+        .cloned()
+        .collect();
+    for k in to_drop {
+        phases.remove(&k);
+    }
+    let rows = phase_token_table(&state);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].phase_key, "flow-code");
+}
+
+/// Phase status string is captured in the row so the TUI can render
+/// distinct icons for complete / in_progress / pending.
+#[test]
+fn phase_token_table_captures_phase_status() {
+    let state = make_state(
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
+    );
+    let rows = phase_token_table(&state);
+    let start_row = rows
+        .iter()
+        .find(|r| r.phase_key == "flow-start")
+        .expect("flow-start row");
+    assert_eq!(start_row.status, "complete");
+    let code_row = rows
+        .iter()
+        .find(|r| r.phase_key == "flow-code")
+        .expect("flow-code row");
+    assert_eq!(code_row.status, "in_progress");
+    let plan_row = rows
+        .iter()
+        .find(|r| r.phase_key == "flow-plan")
+        .expect("flow-plan row");
+    assert_eq!(plan_row.status, "pending");
 }

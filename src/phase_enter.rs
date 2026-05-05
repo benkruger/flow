@@ -229,9 +229,20 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     // `phases.<prev>.status == "complete"` — by the time we reach the
     // closure, the parsed state is guaranteed to be an object, so no
     // defensive non-object guard is needed here.
+    let home = crate::window_snapshot::home_dir_or_empty();
     let mutate_result = mutate_state(&state_path, &mut |state| {
         let result = phase_enter(state, &phase_name, None);
         *enter_result_holder.borrow_mut() = result;
+
+        // Capture account-window snapshot AFTER phase_enter has
+        // initialized the new phase's PhaseState. `phase_enter`
+        // unconditionally creates `phases.<phase_name>` as an
+        // object on the same state value, and serde_json's IndexMut
+        // auto-vivifies intermediate keys, so the assignment cannot
+        // panic from missing scaffolding.
+        let snap = crate::window_snapshot::capture_for_active_state(&home, state, &root);
+        state["phases"][&phase_name]["window_at_enter"] =
+            serde_json::to_value(&snap).expect("WindowSnapshot must serialize");
     });
 
     match mutate_result {

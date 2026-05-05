@@ -43,6 +43,12 @@ The status panel includes:
 - Phase list with completion state and cumulative time
 - Time in current phase + visit count for the active phase
 - Continue/Next command to run
+- **Tokens** — flow-level token total + cost (e.g. `12.4K  ($0.087)`)
+  computed via `window_deltas::flow_total` from the per-phase
+  `window_at_*` and `step_snapshots[]` data. The line carries a
+  trailing `↻` marker when any span observed a rate-limit window
+  reset. The line is omitted entirely when no phase carries
+  snapshot data so an empty block does not pollute the panel.
 
 ## Steps
 

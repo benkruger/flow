@@ -12,6 +12,28 @@ pub struct Update {
     pub value: Value,
 }
 
+/// Closed enumeration of the five step-counter fields that
+/// trigger an account-window step snapshot capture per
+/// `.claude/rules/scope-enumeration.md`. The single source of
+/// truth — Task 11 reads this when deciding whether to append to
+/// `phases.<n>.step_snapshots[]` after a `set-timestamp` call.
+const STEP_COUNTER_FIELDS: &[&str] = &[
+    "plan_step",
+    "code_task",
+    "code_review_step",
+    "learn_step",
+    "complete_step",
+];
+
+/// Returns `true` when `field` names one of the five step
+/// counters. Whitespace and case are not normalized — callers pass
+/// the field name straight from CLI argument parsing where
+/// `--set <field>=<value>` already produced an exact slice of the
+/// argument before the `=`.
+pub fn is_step_counter_field(field: &str) -> bool {
+    STEP_COUNTER_FIELDS.contains(&field)
+}
+
 /// Navigate a nested JSON Value by dot-path parts and set the final value.
 ///
 /// Numeric path segments are treated as array indexes (0-based).
@@ -198,7 +220,25 @@ pub fn run_impl_main(
         }
     };
 
-    let state_path = FlowPaths::new(root, &branch).state_file();
+    // Per `.claude/rules/external-input-validation.md` "CLI subcommand
+    // entry callsite discipline" + `.claude/rules/branch-path-safety.md`:
+    // `--branch` is an external input. Slash-containing branches
+    // (`feature/foo`, `dependabot/*`) and the empty string flow raw
+    // from clap, so the panicking constructor would crash the CLI
+    // with a backtrace. `try_new` returns `None` for invalid inputs;
+    // translate that into a structured error.
+    let state_path = match FlowPaths::try_new(root, &branch) {
+        Some(p) => p.state_file(),
+        None => {
+            return (
+                json!({
+                    "status": "error",
+                    "message": format!("Invalid branch name: {:?}", branch)
+                }),
+                1,
+            );
+        }
+    };
 
     if !state_path.exists() {
         return (
@@ -215,10 +255,37 @@ pub fn run_impl_main(
 
     // Snapshot state before applying updates so a mid-way failure can
     // restore the original — `apply_updates` mutates in place.
+    let home = crate::window_snapshot::home_dir_or_empty();
     let result = mutate_state(&state_path, &mut |state| {
         let backup = state.clone();
         match apply_updates(state, set_args) {
             Ok(updates) => {
+                // Per-step-counter snapshot: for each successful update
+                // whose field is one of the five step counters, capture
+                // a window snapshot and append it to
+                // phases.<current_phase>.step_snapshots[].
+                let current_phase = state
+                    .get("current_phase")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if !current_phase.is_empty() {
+                    for update in &updates {
+                        if !is_step_counter_field(&update.path) {
+                            continue;
+                        }
+                        let step = update.value.as_i64().unwrap_or(0);
+                        let snap =
+                            crate::window_snapshot::capture_for_active_state(&home, state, root);
+                        crate::window_snapshot::append_step_snapshot(
+                            state,
+                            &current_phase,
+                            step,
+                            &update.path,
+                            snap,
+                        );
+                    }
+                }
                 collected_updates = updates;
             }
             Err(e) => {

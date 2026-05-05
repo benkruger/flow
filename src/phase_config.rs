@@ -201,6 +201,9 @@ pub fn build_initial_phases(current_time: &str) -> IndexMap<Phase, PhaseState> {
                     session_started_at: Some(current_time.to_string()),
                     cumulative_seconds: 0,
                     visit_count: 1,
+                    window_at_enter: None,
+                    window_at_complete: None,
+                    step_snapshots: Vec::new(),
                 },
             );
         } else {
@@ -214,6 +217,9 @@ pub fn build_initial_phases(current_time: &str) -> IndexMap<Phase, PhaseState> {
                     session_started_at: None,
                     cumulative_seconds: 0,
                     visit_count: 0,
+                    window_at_enter: None,
+                    window_at_complete: None,
+                    step_snapshots: Vec::new(),
                 },
             );
         }

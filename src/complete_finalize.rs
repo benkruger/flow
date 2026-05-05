@@ -70,6 +70,20 @@ pub fn run_impl(args: &Args) -> Value {
 
     log("[Phase 6] complete-finalize — starting");
 
+    // Capture the flow-level final account-window snapshot BEFORE
+    // post_merge mutates state and cleanup deletes the state file.
+    // Lands at state.window_at_complete for consumers
+    // (format_complete_summary's Token Cost section) to read when
+    // rendering the post-merge summary.
+    let home = crate::window_snapshot::home_dir_or_empty();
+    let state_path = std::path::Path::new(&args.state_file);
+    if state_path.exists() {
+        let _ = crate::lock::mutate_state(state_path, &mut |state| {
+            let snap = crate::window_snapshot::capture_for_active_state(&home, state, &root);
+            crate::window_snapshot::write_snapshot_into_state(state, "window_at_complete", &snap);
+        });
+    }
+
     // Post-merge (best-effort: failures land in its own `failures` map)
     let post_merge_data = complete_post_merge::post_merge(args.pr, &args.state_file, branch);
     let formatted_time = post_merge_data

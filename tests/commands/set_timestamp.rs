@@ -18,7 +18,7 @@ use regex::Regex;
 use serde_json::{json, Value};
 
 use flow_rs::commands::set_timestamp::{
-    apply_updates, run_impl_main, set_nested, validate_code_task,
+    apply_updates, is_step_counter_field, run_impl_main, set_nested, validate_code_task,
 };
 
 fn iso_pattern() -> Regex {
@@ -27,6 +27,33 @@ fn iso_pattern() -> Regex {
 
 fn flow_rs() -> Command {
     Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+}
+
+// --- is_step_counter_field ---
+
+/// Each of the five named step counters returns `true` from the
+/// helper. Locks the closed enumeration that Task 11 reads when
+/// deciding whether to capture a `StepSnapshot` after a
+/// `set-timestamp` mutation.
+#[test]
+fn is_step_counter_field_returns_true_for_each_named_field() {
+    assert!(is_step_counter_field("plan_step"));
+    assert!(is_step_counter_field("code_task"));
+    assert!(is_step_counter_field("code_review_step"));
+    assert!(is_step_counter_field("learn_step"));
+    assert!(is_step_counter_field("complete_step"));
+}
+
+/// Non-step-counter fields return `false`, including dotted /
+/// nested paths and other state fields written via set-timestamp.
+#[test]
+fn is_step_counter_field_returns_false_for_non_step_fields() {
+    assert!(!is_step_counter_field(""));
+    assert!(!is_step_counter_field("code_task_name"));
+    assert!(!is_step_counter_field("files.plan"));
+    assert!(!is_step_counter_field("_continue_pending"));
+    assert!(!is_step_counter_field("Plan_Step"));
+    assert!(!is_step_counter_field("plan_steps_total"));
 }
 
 // --- set_nested unit tests ---
@@ -871,4 +898,72 @@ fn test_cli_no_branch_returns_error() {
         .as_str()
         .unwrap_or("")
         .contains("Could not determine current branch"));
+}
+
+/// `--branch ''` (empty string) — `FlowPaths::try_new` rejects, so
+/// the subprocess returns a structured error rather than panicking.
+/// Per `.claude/rules/external-input-validation.md` "CLI subcommand
+/// entry callsite discipline".
+#[test]
+fn run_impl_main_with_empty_branch_returns_structured_error_no_panic() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    fs::create_dir_all(root.join(".git")).expect("mkdir .git");
+
+    let mut cmd = flow_rs();
+    cmd.arg("set-timestamp")
+        .arg("--branch")
+        .arg("")
+        .arg("--set")
+        .arg("plan_step=1")
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env_remove("FLOW_CI_RUNNING")
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .current_dir(&root);
+
+    let output = cmd.output().unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked at"),
+        "must not panic on empty branch. stderr={:?}",
+        stderr
+    );
+}
+
+/// `--branch feature/foo` (slash-containing) — `FlowPaths::try_new`
+/// rejects; same structured-error contract as the empty case.
+#[test]
+fn run_impl_main_with_slash_branch_returns_structured_error_no_panic() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    fs::create_dir_all(root.join(".git")).expect("mkdir .git");
+
+    let mut cmd = flow_rs();
+    cmd.arg("set-timestamp")
+        .arg("--branch")
+        .arg("feature/foo")
+        .arg("--set")
+        .arg("plan_step=1")
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env_remove("FLOW_CI_RUNNING")
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .current_dir(&root);
+
+    let output = cmd.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked at"),
+        "must not panic on slash branch. stderr={:?}",
+        stderr
+    );
+    let parsed: Value = serde_json::from_str(&stdout).unwrap_or(json!({"raw": stdout}));
+    assert_eq!(output.status.code().unwrap_or(-1), 1);
+    assert_eq!(parsed["status"], "error");
+    assert!(parsed["message"]
+        .as_str()
+        .unwrap_or("")
+        .contains("Invalid branch name"));
 }
