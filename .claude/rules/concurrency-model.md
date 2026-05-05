@@ -86,23 +86,27 @@ Flow-commit runs CI and is never bypassed regardless of phrasing.
 The exception above is rule-level. The hook described in
 "Mechanical Enforcement" below is stricter: Layer 10 mechanically
 blocks any `git ... commit` or `bin/flow ... finalize-commit`
-invocation whose effective cwd resolves to the integration
-branch, even when the maintainer has explicitly directed an
-on-main fix in the current session. A user direction that lifts
+invocation whose effective cwd resolves either to the integration
+branch OR to a feature branch with an active FLOW state file,
+even when the maintainer has explicitly directed an on-main or
+in-flow fix in the current session. A user direction that lifts
 the rule-level default does NOT lift the hook-level gate. To
 commit a maintainer carve-out fix, work on a feature branch and
-merge through the standard PR path. This intentional strictness
-keeps the hook unambiguous: a single, mechanical answer for "is
-this commit allowed?" rather than a context-sensitive predicate
-the model could rationalize past.
+merge through the standard PR path; to commit during an active
+flow, route through `/flow:flow-commit`. This intentional
+strictness keeps the hook unambiguous: a single, mechanical
+answer for "is this commit allowed?" rather than a
+context-sensitive predicate the model could rationalize past.
 
 ### Mechanical Enforcement
 
 The `validate-pretool` PreToolUse hook's Layer 10 mechanically
-rejects direct commit invocations whose effective cwd resolves to
-the integration branch. The hook checks two pathways: `git ...
-commit` and `bin/flow ... finalize-commit` (recognized by
-basename suffix so absolute paths like
+rejects direct commit invocations whose effective cwd resolves
+either to the integration branch named by `default_branch_in` OR
+to a feature branch with an active FLOW state file at
+`.flow-states/<branch>/state.json`. The hook checks two pathways:
+`git ... commit` and `bin/flow ... finalize-commit` (recognized
+by basename suffix so absolute paths like
 `/Users/.../bin/flow finalize-commit` block the same way as bare
 `bin/flow`). The matcher is robust to a curated set of bypasses:
 
@@ -127,6 +131,45 @@ basename suffix so absolute paths like
   the immediate next one, so a future global flag (e.g.
   `--verbose`, `--log-level <value>`) cannot slip the
   subcommand past the matcher.
+
+### Active-Flow Trigger
+
+Layer 10 fires in two contexts. The integration-branch context
+above defends against direct commits on the trunk. The
+**active-flow context** defends against direct commits in any
+feature-branch worktree that already has a FLOW lifecycle
+running. The trigger is the existence of
+`.flow-states/<branch>/state.json` at the resolved project root,
+detected via the canonical `is_flow_active(branch, root)` helper
+shared with every other flow-aware hook (`validate-ask-user`,
+`validate-claude-paths`, `stop_continue`, etc.) — no parallel
+detection logic exists.
+
+The active-flow context covers the same bypasses as the
+integration-branch context (quoted command names, `git -c k=v`,
+`git -C path`, `bash -c`/`sh -c`, `bin/flow <flag>
+finalize-commit`) and applies to both candidate cwds (process
+cwd and any `-C` target). When both predicates fire on the same
+candidate (the rare case of an active flow on the integration
+branch itself), the integration-branch message wins.
+
+User-direction interaction mirrors the integration-branch
+posture: an explicit user direction in the current session does
+NOT lift the active-flow gate. The way to commit during an
+active flow is `/flow:flow-commit`, which routes through
+`bin/flow finalize-commit` from inside the skill — that path
+runs CI before `git commit` and is the only sanctioned commit
+surface during a flow. The active-flow gate exists because the
+rule "always commit through `/flow:flow-commit`" was previously
+mechanical only on the integration branch; PR #1322 surfaced
+that feature-branch commits could land without CI, and the
+gate's expansion closes the open backdoor.
+
+The pre-flow editing scenario remains unblocked: if no state
+file exists at `.flow-states/<branch>/state.json` (the user
+hasn't run `/flow:flow-start` yet), the active-flow predicate
+returns false and Layer 10 stays silent. The gate fires only
+once a flow is genuinely active.
 
 ### Known Limitations in v1
 

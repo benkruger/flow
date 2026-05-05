@@ -1798,3 +1798,303 @@ fn t27_git_dash_c_to_nonexistent_path_from_feature_branch_allows() {
         "feat-x cwd + non-git -C path must allow; stderr={stderr}"
     );
 }
+
+// --- layer_10_active_flow ---
+//
+// Layer 10 also fires when the hook's effective cwd resolves to a
+// feature-branch worktree that has an active FLOW state file at
+// `.flow-states/<branch>/state.json` — the second trigger context
+// the gate covers. The fixture `setup_active_flow_worktree` builds
+// the minimal layout the production helpers need:
+//   <root>/.claude/settings.json          → find_settings_and_root_from
+//   <root>/.flow-states/<branch>/state.json → is_flow_active (when present)
+//   <root>/.worktrees/<branch>/.git       → detect_branch_from_path
+// Tests in this section spawn the hook with cwd at
+// `<root>/.worktrees/<branch>/` (or the unrelated-cwd variant for the
+// `-C` interaction case) and assert the active-flow message contains
+// both "active flow" and "/flow:flow-commit".
+
+/// Build a fixture that satisfies `match_active_flow_at` for the named
+/// branch. Returns `(TempDir, project_root, worktree_path)` — pass
+/// `worktree_path` as the hook cwd. When `with_state_file` is false,
+/// the state file is omitted so `is_flow_active` returns false (used
+/// for the negative-context tests).
+fn setup_active_flow_worktree(
+    branch: &str,
+    with_state_file: bool,
+) -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().canonicalize().expect("canonicalize");
+
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    if with_state_file {
+        let states_dir = root.join(".flow-states").join(branch);
+        std::fs::create_dir_all(&states_dir).unwrap();
+        std::fs::write(states_dir.join("state.json"), "{}").unwrap();
+    }
+
+    let worktree = root.join(".worktrees").join(branch);
+    std::fs::create_dir_all(&worktree).unwrap();
+    // The .git pointer's target need not exist: detect_branch_from_path
+    // recognizes the branch from the `.worktrees/<branch>/` path
+    // segment alone, and current_branch_in's git subprocess fallback
+    // failing here is the desired behavior — match_branch_at must
+    // return None so the active-flow predicate is what fires.
+    std::fs::write(
+        worktree.join(".git"),
+        format!("gitdir: ../../.git/worktrees/{branch}"),
+    )
+    .unwrap();
+
+    (dir, root, worktree)
+}
+
+#[test]
+fn layer_10_blocks_bare_git_commit_on_active_flow_worktree() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree("feat", true);
+    let input = r#"{"tool_input": {"command": "git commit -m \"x\""}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 2,
+        "git commit during active flow must block; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("BLOCKED"),
+        "stderr should contain BLOCKED; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("active flow"),
+        "stderr should name 'active flow' context; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("/flow:flow-commit"),
+        "stderr should redirect to /flow:flow-commit; got: {stderr}"
+    );
+}
+
+#[test]
+fn layer_10_blocks_quoted_git_commit_on_active_flow_worktree() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree("feat", true);
+    let input = r#"{"tool_input": {"command": "'git' commit -m \"x\""}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 2,
+        "'git' commit during active flow must block (dequoted); stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("active flow"));
+}
+
+#[test]
+fn layer_10_blocks_git_dash_c_kv_commit_on_active_flow_worktree() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree("feat", true);
+    let input = r#"{"tool_input": {"command": "git -c user.email=x commit -m \"x\""}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 2,
+        "git -c k=v commit during active flow must block; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("active flow"));
+}
+
+#[test]
+fn layer_10_blocks_bash_dash_c_git_commit_on_active_flow_worktree() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree("feat", true);
+    let input = r#"{"tool_input": {"command": "bash -c 'git commit -m \"x\"'"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 2,
+        "bash -c 'git commit ...' during active flow must block; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("active flow"));
+}
+
+#[test]
+fn layer_10_blocks_bin_flow_finalize_commit_on_active_flow_worktree() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree("feat", true);
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 2,
+        "bin/flow finalize-commit during active flow must block; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("active flow"));
+    assert!(stderr.contains("/flow:flow-commit"));
+}
+
+#[test]
+fn layer_10_blocks_bin_flow_flag_finalize_commit_on_active_flow_worktree() {
+    // The `bin/flow` arm matches `finalize-commit` as ANY subsequent
+    // token. A future global flag like `--verbose` must not bypass the
+    // active-flow gate either.
+    let (_dir, _root, cwd) = setup_active_flow_worktree("feat", true);
+    let input = r#"{"tool_input": {"command": "bin/flow --verbose finalize-commit"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 2,
+        "bin/flow <flag> finalize-commit during active flow must block; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("active flow"));
+}
+
+#[test]
+fn layer_10_blocks_git_dash_c_path_to_active_flow_worktree() {
+    // Hook cwd is unrelated (no git, no .claude/, no .flow-states/),
+    // but the command uses `git -C <active-flow-worktree-path> commit`.
+    // The -C target's branch resolves via detect_branch_from_path's
+    // `.worktrees/<branch>/` marker; find_settings_and_root_from on
+    // the target walks up to the active-flow root; is_flow_active
+    // returns true → active-flow fires for the -C target.
+    let (_flow_dir, _flow_root, flow_cwd) = setup_active_flow_worktree("feat", true);
+    let unrelated = tempfile::tempdir().expect("tempdir");
+    let unrelated_root = unrelated.path().canonicalize().expect("canonicalize");
+    let target = flow_cwd.to_str().expect("utf-8 path");
+    let cmd = format!(
+        r#"{{"tool_input": {{"command": "git -C {} commit -m \"x\""}}}}"#,
+        target
+    );
+    let (code, _stdout, stderr) = run_hook_with_input(&cmd, Some(&unrelated_root));
+    assert_eq!(
+        code, 2,
+        "git -C <active-flow-worktree> commit from unrelated cwd must block; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(
+        stderr.contains("active flow"),
+        "stderr should name 'active flow' context (the -C target's predicate); got: {stderr}"
+    );
+}
+
+#[test]
+fn layer_10_passes_git_status_on_active_flow_worktree() {
+    // Read-only git is not a commit invocation → Layer 10 is silent.
+    let (_dir, _root, cwd) = setup_active_flow_worktree("feat", true);
+    let input = r#"{"tool_input": {"command": "git status"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "git status during active flow must allow; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_10_passes_git_diff_cached_on_active_flow_worktree() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree("feat", true);
+    let input = r#"{"tool_input": {"command": "git diff --cached"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "git diff --cached during active flow must allow; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_10_passes_git_log_on_active_flow_worktree() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree("feat", true);
+    let input = r#"{"tool_input": {"command": "git log --oneline -5"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "git log during active flow must allow; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_10_passes_git_commit_on_feature_branch_without_state_file() {
+    // Pre-flow editing scenario: settings.json present (so the FLOW
+    // project is discoverable) but no state file at
+    // .flow-states/<branch>/state.json. is_flow_active returns false
+    // → active-flow predicate returns None → Layer 10 silent.
+    let (_dir, _root, cwd) = setup_active_flow_worktree("feat", false);
+    let input = r#"{"tool_input": {"command": "git commit -m \"x\""}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "git commit on feature worktree without state file must allow; stderr={stderr}"
+    );
+}
+
+/// Drives the `cwd.is_none()` branch in `validate_pretool::run()` —
+/// `env::current_dir()` returns `Err` when the cwd inode has been
+/// unlinked. The hook must fall through Layer 10 cleanly (no panic,
+/// no Layer 10 fire) and exit 0 on the allowed `git status` payload.
+///
+/// Mirrors the production-binding test for the same branch in
+/// `tests/adversarial_agent_block.rs::validate_pretool_with_stale_cwd_does_not_panic`,
+/// brought into the mirrored test binary so the per-file gate against
+/// `src/hooks/validate_pretool.rs` exercises the line.
+#[cfg(unix)]
+#[test]
+fn layer_10_stale_cwd_does_not_panic_or_block() {
+    use std::os::unix::process::CommandExt;
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let cwd = root.join("doomed");
+    std::fs::create_dir(&cwd).expect("mkdir doomed");
+
+    let preexec_path =
+        std::ffi::CString::new(cwd.to_str().expect("utf8").as_bytes()).expect("CString");
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.args(["hook", "validate-pretool"])
+        .env_remove("FLOW_CI_RUNNING")
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .current_dir(&cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    // SAFETY: libc::rmdir is POSIX async-signal-safe. The closure
+    // allocates nothing, produces no panic surface, and does not
+    // interact with any parent-process state.
+    unsafe {
+        cmd.pre_exec(move || {
+            libc::rmdir(preexec_path.as_ptr());
+            Ok(())
+        });
+    }
+
+    let mut child = cmd.spawn().expect("spawn flow-rs");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(br#"{"tool_input":{"command":"git status"}}"#)
+        .unwrap();
+    let output = child.wait_with_output().expect("wait");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked at"),
+        "validate-pretool must not panic with stale cwd; stderr={stderr}"
+    );
+    assert_eq!(
+        output.status.code().unwrap_or(-1),
+        0,
+        "stale cwd + allowed command must exit 0; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_10_passes_git_commit_in_unrelated_git_repo() {
+    // Cwd is an unrelated git repo: no .claude/settings.json walking
+    // up from cwd → find_settings_and_root_from returns (None, None)
+    // → match_active_flow_at returns None. Branch resolves to
+    // "feat-x" via the real git subprocess (the existing fixture),
+    // so match_branch_at returns None ("feat-x" != "main"). Layer 10
+    // silent → allow.
+    let (_dir, root) = setup_repo_on_branch("feat-x");
+    let input = r#"{"tool_input": {"command": "git commit -m \"x\""}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 0,
+        "git commit in unrelated git repo must allow; stderr={stderr}"
+    );
+}

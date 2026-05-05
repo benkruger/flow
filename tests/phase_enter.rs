@@ -929,7 +929,7 @@ fn phase_enter_args_clap_derives_covered() {
     let _ = Args::try_parse_from(["phase-enter", "--phase", "flow-x"]);
     let _ = Args::parse_from(["phase-enter", "--phase", "flow-y"]);
     let _ = a2.try_update_from(["phase-enter", "--phase", "flow-z"].iter().copied());
-    let _ = a2.update_from(["phase-enter", "--phase", "flow-w"].iter().copied());
+    a2.update_from(["phase-enter", "--phase", "flow-w"].iter().copied());
     assert_eq!(args.phase, "flow-code");
     assert!(args.branch.is_none());
     assert!(args.steps_total.is_none());

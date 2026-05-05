@@ -426,29 +426,58 @@ fn commit_block_message(branch: &str) -> String {
     )
 }
 
-/// Run Layer 10's commit-on-integration-branch check against the
-/// effective cwd. Returns `Some(message)` when the check fires (the
-/// command is a commit invocation AND at least one candidate cwd
-/// resolves to the integration branch); the caller eprintlns the
-/// message and exits 2. Returns `None` when Layer 10 does not block
-/// — either the command is not a commit invocation, no candidate
-/// cwd is in a git repo, or every resolved branch differs from its
-/// own integration branch.
+/// Compose the Layer 10 block message naming the active flow's branch.
+/// Returned when a commit invocation lands in a feature-branch worktree
+/// that has an active FLOW state file. The message must contain
+/// `BLOCKED`, the literal phrase "active flow", and the
+/// `/flow:flow-commit` redirect so contract tests can assert the
+/// distinct fire context.
+fn commit_block_message_active_flow(branch: &str) -> String {
+    format!(
+        "BLOCKED: direct commits during an active flow on '{}' are not allowed. \
+         Run /flow:flow-commit instead so CI runs through the gate. \
+         This block is mechanical (Layer 10).",
+        branch
+    )
+}
+
+/// Run Layer 10's commit-during-flow check against the effective cwd.
+/// Returns `Some(message)` when the check fires (the command is a
+/// commit invocation AND at least one candidate cwd either resolves
+/// to the integration branch OR has an active FLOW state file); the
+/// caller eprintlns the message and exits 2. Returns `None` when
+/// Layer 10 does not block — either the command is not a commit
+/// invocation, no candidate cwd is in a git repo / FLOW project, or
+/// every resolved branch differs from its own integration branch and
+/// has no active state file.
 ///
 /// Candidates are the hook's process cwd plus any `-C <path>`
 /// argument extracted from the command — `git -C <other> commit`
-/// shifts git's effective cwd onto `<other>`, so the branch must be
-/// resolved from there too. Layer 10 blocks if EITHER candidate
-/// matches the integration branch.
-fn check_commit_on_integration(command: &str, cwd: &Path) -> Option<String> {
+/// shifts git's effective cwd onto `<other>`, so each candidate must
+/// be checked. Layer 10 blocks if EITHER candidate triggers either
+/// predicate.
+///
+/// Per-candidate predicate ordering: integration-branch fires before
+/// active-flow so the existing "integration branch" message wins on
+/// the rare case where both apply (the integration branch itself
+/// has an active flow). Across candidates: process cwd is checked
+/// before the `-C` target.
+fn check_commit_during_flow(command: &str, cwd: &Path) -> Option<String> {
     if !is_commit_invocation(command) {
         return None;
     }
     if let Some(msg) = match_branch_at(cwd) {
         return Some(msg);
     }
+    if let Some(msg) = match_active_flow_at(cwd) {
+        return Some(msg);
+    }
     if let Some(p) = extract_dash_c_path(command) {
-        if let Some(msg) = match_branch_at(Path::new(p)) {
+        let target = Path::new(p);
+        if let Some(msg) = match_branch_at(target) {
+            return Some(msg);
+        }
+        if let Some(msg) = match_active_flow_at(target) {
             return Some(msg);
         }
     }
@@ -464,6 +493,29 @@ fn match_branch_at(path: &Path) -> Option<String> {
     let integration = default_branch_in(path);
     if current == integration {
         Some(commit_block_message(&current))
+    } else {
+        None
+    }
+}
+
+/// Resolve the branch and FLOW project root from the given path; return
+/// the active-flow block message when `is_flow_active(branch, root)`
+/// reports an active state file. Returns None when the path has no
+/// detectable branch, no `.claude/settings.json` ancestor, or no
+/// active FLOW state file at the resolved root.
+///
+/// Reuses the canonical helpers `detect_branch_from_path`,
+/// `find_settings_and_root_from`, `resolve_main_root`, and
+/// `is_flow_active` so the active-flow definition stays consistent
+/// across hooks (`validate-ask-user`, `validate-claude-paths`,
+/// `stop_continue`, etc.) — no parallel discovery logic is introduced.
+fn match_active_flow_at(path: &Path) -> Option<String> {
+    let branch = detect_branch_from_path(path)?;
+    let (_, project_root) = find_settings_and_root_from(path);
+    let root = project_root?;
+    let main_root = resolve_main_root(&root);
+    if is_flow_active(&branch, &main_root) {
+        Some(commit_block_message_active_flow(&branch))
     } else {
         None
     }
@@ -643,16 +695,18 @@ pub fn run() {
     }
 
     // Layer 10: block direct commit invocations when the hook's
-    // effective cwd resolves to the integration branch. Layered after
-    // validate() returns Ok rather than as another layer inside
+    // effective cwd resolves either to the integration branch named
+    // by `default_branch_in` OR to a feature branch with an active
+    // FLOW state file at `.flow-states/<branch>/state.json`. Layered
+    // after validate() returns Ok rather than as another layer inside
     // validate() because validate() does not receive cwd — adding it
     // would expand the function's signature across every existing
     // caller. Commands blocked by Layers 1-9 never reach this point;
     // Layer 10 fires only when the command passes all preceding
-    // structural gates AND is a commit invocation on the integration
-    // branch.
+    // structural gates AND is a commit invocation routed through one
+    // of the two trigger contexts.
     if let Some(cwd_path) = cwd.as_deref() {
-        if let Some(msg) = check_commit_on_integration(command, cwd_path) {
+        if let Some(msg) = check_commit_during_flow(command, cwd_path) {
             eprintln!("{}", msg);
             std::process::exit(2);
         }
