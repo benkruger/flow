@@ -71,6 +71,62 @@ The trigger "change crosses file boundaries" is on the author to
 decide. When uncertain, `bin/test tests/<affected-file>.rs` for
 each affected file is still faster than one full-CI run.
 
+## Phantom Misses (Stale Instrumented Binaries)
+
+`bin/test` runs with `cargo llvm-cov --no-clean` so test binaries
+are kept warm across runs for fast incremental rebuilds. The
+profraw sweep at the start of every invocation purges stale
+profdata, but it does NOT purge the instrumented binaries
+themselves under `target/llvm-cov-target/debug/deps/`. Those
+binaries' instrumentation maps stay in cargo-llvm-cov's "expected
+function" set even when their profdata is empty.
+
+The result: a file can read e.g. `92.31% / 95.54% / 96.15%` with
+mysterious "missed functions" that resist every test you add.
+The "missed" counts are 3 different stale crate hashes' empty
+function entries, not real source-level gaps. Adding tests does
+nothing because the executed instantiation is already counted
+once; the stale instantiations remain unexecuted forever.
+
+**Diagnostic.** When per-file coverage looks impossibly stuck
+(adds tests pass, coverage doesn't move):
+
+1. Run `bin/test --funcs <basename>.rs` — lists every function
+   instantiation with its execution count. Multiple entries for
+   the same demangled name with different mangled crate hashes
+   (e.g., `_RNvNtCs8fXSiUa7bCM_*`, `_RNvNtCsaO9B8DlJywj_*`,
+   `_RNvNtCslT5c56zUrC1_*` all alongside the live
+   `_RNvNtCscjLNWQIh9gP_*`) confirm stale binaries.
+2. Run `bin/flow ci --clean`. This is the user-facing reset:
+   removes `target/llvm-cov-target/debug/deps/`, the
+   `incremental/` dir, and every `*.profraw`. The next test run
+   rebuilds fresh instrumentation with one crate hash per binary
+   and the phantom misses disappear.
+3. Re-run `bin/test tests/<name>.rs`. The reported coverage now
+   reflects the actual code state. If the file is still <100%,
+   the remaining gap is real and addressable via tests or
+   refactor.
+
+The cleanup is a ~12-second one-shot followed by a ~45-second
+fresh compile on the first subsequent test run. Cheap relative
+to the cost of chasing phantom misses for hours.
+
+**When to suspect phantom misses.** Symptoms:
+
+- Adding tests doesn't move coverage at all (same numbers
+  repeatedly).
+- "Missed functions" count exceeds the count of named functions
+  + closures you can actually find in the source.
+- `bin/test --show <file>` shows execution counts > 0 on every
+  source line but the coverage row still flags "missed regions"
+  / "missed functions".
+- `bin/test --funcs <file>` shows the same demangled name three
+  or four times with different mangled hashes, only one of which
+  has count > 0.
+
+Any one of those is sufficient — clean and re-measure before
+spending more time on test design.
+
 ## Cross-References
 
 - `CLAUDE.md` "Development Environment" — names the three `bin/test`

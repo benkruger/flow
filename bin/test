@@ -11,7 +11,19 @@
 #   bin/test --file <path> [args...]          — single file via rustc --test (dev)
 #   bin/test --check <module> [args...]       — fast lib tests, no coverage (dev)
 #   bin/test --report                         — re-render cached coverage (dev)
-#   bin/test --show <file>                    — annotated source (dev)
+#   bin/test --show <file>                    — annotated source for ONE
+#                                               file (dev). Pass basename
+#                                               (start_init.rs) or path
+#                                               (src/start_init.rs).
+#   bin/test --funcs <file>                   — per-function coverage
+#                                               (mangled name + count) for
+#                                               one source file. Useful when
+#                                               --show shows phantom misses
+#                                               and you need to see which
+#                                               crate-hash instantiations are
+#                                               stale (see
+#                                               .claude/rules/per-file-coverage-iteration.md
+#                                               "Phantom misses").
 #   bin/test --module <name>                  — per-module lib coverage (dev)
 #
 # Trailing args after `--` on `bin/flow ci --test` forward here as
