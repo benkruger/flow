@@ -52,13 +52,20 @@ insufficient:
   dedicated tools.
 - **Whitelist enforcement under an active flow** — Layer 9
   rejects commands not present in the merged allow list.
-- **Direct commits on the integration branch** — Layer 10
-  rejects `git ... commit` and `bin/flow ... finalize-commit`
+- **Direct commits during a flow** — Layer 10 rejects
+  `git ... commit` and `bin/flow ... finalize-commit`
   invocations whose effective cwd (or any `git -C` target)
   resolves to the integration branch named by
-  `default_branch_in`. See `.claude/rules/concurrency-model.md`
-  "Mechanical Enforcement" for the bypass surface and the
-  documented v1 gaps.
+  `default_branch_in` OR to a feature branch with an active
+  FLOW state file at `.flow-states/<branch>/state.json`. The
+  active-flow context carries a skill-commit carve-out:
+  `bin/flow ... finalize-commit` passes through when the state
+  file has `_continue_pending == "commit"` (the marker the
+  commit-invoking skills set before invoking
+  `/flow:flow-commit`); raw `git commit` is never carved out.
+  See `.claude/rules/concurrency-model.md` "Mechanical
+  Enforcement" for the bypass surface, the carve-out's trust
+  contract, and the documented v1 gaps.
 - **`run_in_background` on `bin/flow` and `bin/ci`** — the
   pre-validation path in `validate-pretool` rejects any
   background invocation of `bin/flow` (any subcommand) and

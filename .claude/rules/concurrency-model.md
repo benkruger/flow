@@ -171,6 +171,44 @@ hasn't run `/flow:flow-start` yet), the active-flow predicate
 returns false and Layer 10 stays silent. The gate fires only
 once a flow is genuinely active.
 
+**Skill-commit carve-out.** The active-flow gate would otherwise
+block the legitimate skill path itself, because
+`/flow:flow-commit` invokes `bin/flow finalize-commit` via the
+Bash tool and `is_commit_invocation` matches both `git commit`
+and `bin/flow ... finalize-commit`. The carve-out passes the
+invocation through iff BOTH conditions hold for the candidate
+cwd:
+
+1. The command shape is `bin/flow ... finalize-commit` (NOT
+   `git commit`). Raw `git commit` is never legitimate during a
+   flow even with the marker present — the skill never invokes
+   bare git commit, so the marker plus a `git commit` command is
+   always a bypass attempt.
+2. The state file at `.flow-states/<branch>/state.json` has
+   `_continue_pending == "commit"`. The flow-code, flow-code-
+   review, and flow-learn skills all set this field via
+   `bin/flow set-timestamp` immediately before invoking
+   `/flow:flow-commit`, and `phase_enter()` clears it on phase
+   advance — so the marker is `"commit"` only during the skill-
+   driven commit window.
+
+The integration-branch context is NOT carved out — commits on
+the integration branch are blocked regardless of the marker.
+
+Trust contract: the `_continue_pending` field is writable by
+the model (the same `bin/flow set-timestamp` call that the
+skills use is reachable from any Bash invocation). A model that
+deliberately bypasses `/flow:flow-commit` could write the
+marker, then call `bin/flow finalize-commit` directly, skipping
+the skill's diff review and commit-message review. The hook
+preserves the CI invariant — `finalize-commit` runs
+`ci::run_impl()` before `git commit` regardless — but the
+surrounding choreography is upheld by the rule discipline, not
+by the hook. A stronger one-shot-token gate (token written by
+`/flow:flow-commit`'s preflight, validated and consumed by
+`finalize-commit`, checked by Layer 10) is the next iteration
+if the marker-only design proves insufficient in practice.
+
 ### Known Limitations in v1
 
 The current matcher does not defend against the following shapes.

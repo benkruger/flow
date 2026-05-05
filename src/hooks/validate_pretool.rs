@@ -19,6 +19,7 @@ use super::{
     build_permission_regexes, detect_branch_from_path, find_settings_and_root_from, is_flow_active,
     read_hook_input, resolve_main_root, FILE_READ_COMMANDS,
 };
+use crate::flow_paths::FlowPaths;
 use crate::git::{current_branch_in, default_branch_in};
 
 /// Validate a Bash command string.
@@ -469,7 +470,7 @@ fn check_commit_during_flow(command: &str, cwd: &Path) -> Option<String> {
     if let Some(msg) = match_branch_at(cwd) {
         return Some(msg);
     }
-    if let Some(msg) = match_active_flow_at(cwd) {
+    if let Some(msg) = check_active_flow_at(command, cwd) {
         return Some(msg);
     }
     if let Some(p) = extract_dash_c_path(command) {
@@ -477,7 +478,7 @@ fn check_commit_during_flow(command: &str, cwd: &Path) -> Option<String> {
         if let Some(msg) = match_branch_at(target) {
             return Some(msg);
         }
-        if let Some(msg) = match_active_flow_at(target) {
+        if let Some(msg) = check_active_flow_at(command, target) {
             return Some(msg);
         }
     }
@@ -498,27 +499,118 @@ fn match_branch_at(path: &Path) -> Option<String> {
     }
 }
 
-/// Resolve the branch and FLOW project root from the given path; return
-/// the active-flow block message when `is_flow_active(branch, root)`
-/// reports an active state file. Returns None when the path has no
-/// detectable branch, no `.claude/settings.json` ancestor, or no
-/// active FLOW state file at the resolved root.
+/// Resolve the branch and FLOW project root from the given path; if a
+/// flow is active, return the active-flow block message UNLESS the
+/// skill-commit carve-out applies. Returns None when no flow is
+/// active or when the carve-out fires.
 ///
 /// Reuses the canonical helpers `detect_branch_from_path`,
 /// `find_settings_and_root_from`, `resolve_main_root`, and
 /// `is_flow_active` so the active-flow definition stays consistent
 /// across hooks (`validate-ask-user`, `validate-claude-paths`,
 /// `stop_continue`, etc.) — no parallel discovery logic is introduced.
-fn match_active_flow_at(path: &Path) -> Option<String> {
+///
+/// ## Skill-commit carve-out
+///
+/// The legitimate skill-driven commit path is `/flow:flow-commit` →
+/// `bin/flow finalize-commit`. The flow-code, flow-code-review, and
+/// flow-learn skills set `_continue_pending=commit` on the state file
+/// via `bin/flow set-timestamp` immediately before invoking
+/// /flow:flow-commit. `phase_enter()` clears the field on phase
+/// advance, so the marker is `"commit"` only during the skill-driven
+/// commit window.
+///
+/// The carve-out fires (returns None instead of the block message)
+/// iff BOTH conditions hold:
+///
+/// 1. The command shape is `bin/flow ... finalize-commit` (NOT
+///    `git commit`). Raw `git commit` is never legitimate during a
+///    flow even when the marker is set.
+/// 2. The state file's `_continue_pending` is the string `"commit"`.
+///    The state-file read is fail-closed: any read or parse error
+///    leaves the gate intact.
+///
+/// The integration-branch check (`match_branch_at`) runs ahead of
+/// this function in `check_commit_during_flow` and is NOT carved out
+/// — commits on the integration branch are blocked regardless of
+/// the marker.
+///
+/// Trust contract: the carve-out trusts the surrounding skill
+/// choreography (diff review, commit message review, user approval)
+/// to remain in place. The hook gate preserves the CI invariant —
+/// `finalize-commit` runs `ci::run_impl()` before `git commit` on
+/// every invocation regardless of how the carve-out is reached. A
+/// stronger one-shot-token design is on the table if the marker-only
+/// gate proves insufficient in practice.
+fn check_active_flow_at(command: &str, path: &Path) -> Option<String> {
     let branch = detect_branch_from_path(path)?;
     let (_, project_root) = find_settings_and_root_from(path);
     let root = project_root?;
     let main_root = resolve_main_root(&root);
-    if is_flow_active(&branch, &main_root) {
-        Some(commit_block_message_active_flow(&branch))
-    } else {
-        None
+    if !is_flow_active(&branch, &main_root) {
+        return None;
     }
+    if is_finalize_commit_invocation(command)
+        && state_continue_pending_is_commit(&branch, &main_root)
+    {
+        return None;
+    }
+    Some(commit_block_message_active_flow(&branch))
+}
+
+/// Recognize a `bin/flow ... finalize-commit` invocation specifically.
+/// Mirrors the `bin/flow` arm of `is_commit_invocation_inner`: handles
+/// the bare `bin/flow` token and the `*/bin/flow` suffix form via
+/// `is_bin_flow_token`, dequotes the first token, unwraps one level
+/// of `bash -c`/`sh -c`, and matches `finalize-commit` as any
+/// subsequent token (so future global flags between launcher and
+/// subcommand cannot defeat the matcher).
+///
+/// Returns false for `git commit` in any form. The skill carve-out
+/// is finalize-commit-only — raw `git commit` is never legitimate
+/// during a flow even when the state marker is set.
+fn is_finalize_commit_invocation(stripped: &str) -> bool {
+    if let Some(inner) = unwrap_bash_c(stripped) {
+        return is_finalize_commit_inner(&inner);
+    }
+    is_finalize_commit_inner(stripped)
+}
+
+fn is_finalize_commit_inner(stripped: &str) -> bool {
+    let mut tokens = stripped.split_whitespace();
+    let first_raw = tokens.next().unwrap_or("");
+    let first = dequote_token(first_raw);
+    if !is_bin_flow_token(first) {
+        return false;
+    }
+    tokens.any(|t| t == "finalize-commit")
+}
+
+/// Read `<main_root>/.flow-states/<branch>/state.json` and return
+/// true iff `_continue_pending` is the string `"commit"`. Fail-closed:
+/// returns false on any read or parse error (file unreadable, JSON
+/// parse failure, key absent, wrong type). The fail-closed default
+/// preserves Layer 10's block when the marker cannot be definitively
+/// confirmed.
+///
+/// `FlowPaths::try_new` is called with `.expect()` because every
+/// caller (`check_active_flow_at`) gates on `is_flow_active(&branch,
+/// &main_root)` returning true. `is_flow_active` itself calls
+/// `FlowPaths::try_new(root, branch)` and returns false on `None`,
+/// so the same call here with the same arguments is guaranteed to
+/// succeed. See `.claude/rules/testability-means-simplicity.md`
+/// "When the test resists the real production path" — `.expect()`
+/// on the unreachable arm does not create a coverage branch.
+fn state_continue_pending_is_commit(branch: &str, main_root: &Path) -> bool {
+    let paths = FlowPaths::try_new(main_root, branch)
+        .expect("is_flow_active gate guarantees FlowPaths-valid branch");
+    let Ok(content) = std::fs::read_to_string(paths.state_file()) else {
+        return false;
+    };
+    let Ok(state) = serde_json::from_str::<Value>(&content) else {
+        return false;
+    };
+    state.get("_continue_pending").and_then(|v| v.as_str()) == Some("commit")
 }
 
 /// Determine whether a command should be blocked from run_in_background.
