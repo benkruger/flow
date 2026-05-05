@@ -105,13 +105,19 @@ The canonical list:
   versions under other engineers' feet)
 - `.github/` (workflows, issue templates, CODEOWNERS) — affect
   every PR in the repo
+- `.config/` (everything under it — `nextest.toml`, build profile
+  configs, language-toolchain configs, etc.) — shared
+  build/test infrastructure that every engineer's CI run inherits.
+  A change to `.config/nextest.toml` (test timeouts, test groups,
+  parallelism limits) reshapes every concurrent flow's CI behavior.
 - `.claude/settings.json` — covered by "Never Edit Permissions
   Mid-Flow" above
 
 When a PR's scope is narrow (e.g., "fix one flaky test"), editing
 any of these files expands the diff into territory the user never
-agreed to review. Even a one-line change to `.gitignore` is a
-scope expansion — the user has not seen or approved that entry.
+agreed to review. Even a one-line change to `.gitignore` or
+`.config/nextest.toml` is a scope expansion — the user has not
+seen or approved that entry.
 
 ## The Anti-Pattern
 
@@ -126,13 +132,25 @@ have been created (see
 `.gitignore` never should have been modified to work around the
 script.
 
+A second motivating incident: a CI test under nextest's
+`slow-timeout` was failing under heavy machine load (video call).
+Claude attempted to add a serial test-group override in
+`.config/nextest.toml` to "fix" the flake. That was scope
+expansion into shared infrastructure (every engineer's CI
+inherits the override) AND it was solving an environmental noise
+problem with a config change rather than waiting for load to
+return to normal. The user reverted both. See also
+`.claude/rules/testing-gotchas.md` "Distinguish Environmental
+Load From Flaky Tests" for the test-side discipline.
+
 ## The Correct Path
 
 When a task's natural cleanup requires modifying a shared config
 file, stop and ask the user:
 
 > "The cleanest solution here requires adding one line to
-> `.gitignore` (or modifying `.github/workflows/ci.yml`, etc.).
+> `.gitignore` (or modifying `.github/workflows/ci.yml`,
+> `.config/nextest.toml`, etc.).
 > This is shared config that every engineer reads. May I modify
 > it, or should I change the approach to avoid the edit?"
 
@@ -155,6 +173,17 @@ canonical filenames (`.gitignore`, `.gitattributes`, `Makefile`,
 `go.mod`, `Cargo.toml`) plus any path passing through a `.github/`
 directory component.
 
+**Coverage gap.** The hook does NOT yet match `.config/` paths
+(e.g., `.config/nextest.toml`). The prose rule above forbids
+unapproved edits to those files; the hook does not yet enforce
+them. Until the hook is extended, the model must follow the prose
+rule manually for `.config/` writes — every Edit/Write to a
+`.config/*` file under an active flow requires explicit user
+approval before the call. Future work is to extend the
+`is_shared_config` predicate to match any path passing through a
+`.config/` directory component, mirroring the existing
+`.github/` treatment.
+
 The `validate_shared_config` function gates on tool name: only
 `Edit` and `Write` tool calls are blocked (exit 2). `Read`,
 `Glob`, and `Grep` calls pass through so codebase exploration is
@@ -176,3 +205,7 @@ existing `validate-worktree-paths` entries for Edit and Write in
 - `.claude/rules/code-review-scope.md` "Rules Landed on Main
   Mid-Flow" — covers the adjacent case of shared rules updated
   on main during an active branch.
+- `.claude/rules/testing-gotchas.md` "Distinguish Environmental
+  Load From Flaky Tests" — the test-side discipline that
+  prevents shared-config edits from being used to paper over
+  environmental load events.
