@@ -3,7 +3,7 @@
 mod common;
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use common::{create_git_repo_with_remote, parse_output};
@@ -413,6 +413,507 @@ fn canonical_path_returns_none_when_branch_unavailable_for_branch_scoped() {
     // Project-root and machine-level variants still return Some when branch is None.
     assert!(canonical_path(ManagedArtifact::FlowIssueBody, root, None).is_some());
     assert!(canonical_path(ManagedArtifact::OrchestrateQueue, root, None).is_some());
+}
+
+// --- subprocess canonicalization matrix ---
+
+/// Setup helper: create a git repo on a feature branch, return its path.
+/// The returned path is canonicalized (macOS /var → /private/var stable).
+/// Subprocess hygiene: `run_wr_canon` neutralizes FLOW_CI_RUNNING and HOME.
+fn setup_branch_repo(parent: &Path, branch: &str) -> PathBuf {
+    let canonical_parent = parent.canonicalize().expect("canonicalize tempdir");
+    let repo = create_git_repo_with_remote(&canonical_parent);
+    let repo = repo.canonicalize().expect("canonicalize repo");
+    Command::new("git")
+        .args(["checkout", "-b", branch])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    repo
+}
+
+/// Spawn `bin/flow write-rule` with subprocess hygiene per
+/// `.claude/rules/subprocess-test-hygiene.md`. `cwd` is the working
+/// directory write-rule runs from; the binary detects project_root and
+/// current_branch from there.
+fn run_wr_canon(cwd: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .arg("write-rule")
+        .args(args)
+        .current_dir(cwd)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", cwd)
+        .env("CLAUDE_PLUGIN_ROOT", env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn write_rule_subprocess_canonical_path_succeeds_plan_md() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = setup_branch_repo(dir.path(), "feat-x");
+    let content_file = repo.join("content.md");
+    fs::write(&content_file, "plan body").unwrap();
+    let canonical = repo
+        .join(".flow-states")
+        .join("feat-x")
+        .join("plan.md");
+
+    let output = run_wr_canon(
+        &repo,
+        &[
+            "--path",
+            canonical.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(fs::read_to_string(&canonical).unwrap(), "plan body");
+}
+
+#[test]
+fn write_rule_subprocess_worktree_root_path_rejects_plan_md() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = setup_branch_repo(dir.path(), "feat-x");
+    let content_file = repo.join("content.md");
+    fs::write(&content_file, "plan body").unwrap();
+    // Simulate the bug: model substituted <project_root> to a worktree
+    // root, so --path lands at <main_repo>/.worktrees/feat-x/.flow-states/feat-x/plan.md.
+    let wrong = repo
+        .join(".worktrees")
+        .join("feat-x")
+        .join(".flow-states")
+        .join("feat-x")
+        .join("plan.md");
+
+    let output = run_wr_canon(
+        &repo,
+        &[
+            "--path",
+            wrong.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "path_canonicalization");
+    assert_eq!(data["artifact_kind"], "PlanMd");
+    assert!(!wrong.exists(), "rejected path must not be written");
+}
+
+#[test]
+fn write_rule_subprocess_service_subdir_path_rejects_plan_md() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = setup_branch_repo(dir.path(), "feat-x");
+    let content_file = repo.join("content.md");
+    fs::write(&content_file, "plan body").unwrap();
+    // Simulate the mono-repo bug: model substituted <project_root> to a
+    // service subdirectory, so --path lands at <main_repo>/api/.flow-states/feat-x/plan.md.
+    let wrong = repo
+        .join("api")
+        .join(".flow-states")
+        .join("feat-x")
+        .join("plan.md");
+
+    let output = run_wr_canon(
+        &repo,
+        &[
+            "--path",
+            wrong.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "path_canonicalization");
+    assert!(!wrong.exists(), "rejected path must not be written");
+}
+
+#[test]
+fn write_rule_subprocess_canonical_path_succeeds_dag_md() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = setup_branch_repo(dir.path(), "feat-x");
+    let content_file = repo.join("content.md");
+    fs::write(&content_file, "dag body").unwrap();
+    let canonical = repo.join(".flow-states").join("feat-x").join("dag.md");
+
+    let output = run_wr_canon(
+        &repo,
+        &[
+            "--path",
+            canonical.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(fs::read_to_string(&canonical).unwrap(), "dag body");
+}
+
+#[test]
+fn write_rule_subprocess_worktree_root_path_rejects_dag_md() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = setup_branch_repo(dir.path(), "feat-x");
+    let content_file = repo.join("content.md");
+    fs::write(&content_file, "dag body").unwrap();
+    let wrong = repo
+        .join(".worktrees")
+        .join("feat-x")
+        .join(".flow-states")
+        .join("feat-x")
+        .join("dag.md");
+
+    let output = run_wr_canon(
+        &repo,
+        &[
+            "--path",
+            wrong.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["artifact_kind"], "DagMd");
+}
+
+#[test]
+fn write_rule_subprocess_canonical_path_succeeds_commit_msg() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = setup_branch_repo(dir.path(), "feat-x");
+    let content_file = repo.join("content.txt");
+    fs::write(&content_file, "commit message").unwrap();
+    let canonical = repo
+        .join(".flow-states")
+        .join("feat-x")
+        .join("commit-msg.txt");
+
+    let output = run_wr_canon(
+        &repo,
+        &[
+            "--path",
+            canonical.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(fs::read_to_string(&canonical).unwrap(), "commit message");
+}
+
+#[test]
+fn write_rule_subprocess_worktree_root_path_rejects_commit_msg() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = setup_branch_repo(dir.path(), "feat-x");
+    let content_file = repo.join("content.txt");
+    fs::write(&content_file, "commit message").unwrap();
+    let wrong = repo
+        .join(".worktrees")
+        .join("feat-x")
+        .join(".flow-states")
+        .join("feat-x")
+        .join("commit-msg.txt");
+
+    let output = run_wr_canon(
+        &repo,
+        &[
+            "--path",
+            wrong.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["artifact_kind"], "CommitMsgTxt");
+}
+
+#[test]
+fn write_rule_subprocess_canonical_path_succeeds_flow_issue_body() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = setup_branch_repo(dir.path(), "feat-x");
+    let content_file = repo.join("content.md");
+    fs::write(&content_file, "issue body").unwrap();
+    let canonical = repo.join(".flow-issue-body");
+
+    let output = run_wr_canon(
+        &repo,
+        &[
+            "--path",
+            canonical.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(fs::read_to_string(&canonical).unwrap(), "issue body");
+}
+
+#[test]
+fn write_rule_subprocess_worktree_path_rejects_flow_issue_body() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = setup_branch_repo(dir.path(), "feat-x");
+    let content_file = repo.join("content.md");
+    fs::write(&content_file, "issue body").unwrap();
+    // Wrong: under a worktree subdirectory, not at project root.
+    let wrong = repo
+        .join(".worktrees")
+        .join("feat-x")
+        .join(".flow-issue-body");
+
+    let output = run_wr_canon(
+        &repo,
+        &[
+            "--path",
+            wrong.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["artifact_kind"], "FlowIssueBody");
+}
+
+#[test]
+fn write_rule_subprocess_canonical_path_succeeds_orchestrate_queue() {
+    let dir = tempfile::tempdir().unwrap();
+    // Orchestrate queue is machine-level — no branch needed.
+    let canonical_parent = dir.path().canonicalize().unwrap();
+    let repo = create_git_repo_with_remote(&canonical_parent);
+    let repo = repo.canonicalize().unwrap();
+    let content_file = repo.join("content.json");
+    fs::write(&content_file, "{}").unwrap();
+    let canonical = repo
+        .join(".flow-states")
+        .join("orchestrate-queue.json");
+
+    let output = run_wr_canon(
+        &repo,
+        &[
+            "--path",
+            canonical.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(fs::read_to_string(&canonical).unwrap(), "{}");
+}
+
+#[test]
+fn write_rule_subprocess_worktree_path_rejects_orchestrate_queue() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = setup_branch_repo(dir.path(), "feat-x");
+    let content_file = repo.join("content.json");
+    fs::write(&content_file, "{}").unwrap();
+    // Wrong: under a worktree subdirectory, not at project root's .flow-states.
+    let wrong = repo
+        .join(".worktrees")
+        .join("feat-x")
+        .join(".flow-states")
+        .join("orchestrate-queue.json");
+
+    let output = run_wr_canon(
+        &repo,
+        &[
+            "--path",
+            wrong.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["artifact_kind"], "OrchestrateQueue");
+}
+
+#[test]
+fn write_rule_subprocess_non_managed_path_passes_through() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = setup_branch_repo(dir.path(), "feat-x");
+    let content_file = repo.join("content.md");
+    fs::write(&content_file, "rule body").unwrap();
+    // Non-managed basenames pass the gate unchanged.
+    let target = repo.join(".claude").join("rules").join("topic.md");
+
+    let output = run_wr_canon(
+        &repo,
+        &[
+            "--path",
+            target.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(fs::read_to_string(&target).unwrap(), "rule body");
+
+    // Same for CLAUDE.md.
+    let content_file2 = repo.join("content2.md");
+    fs::write(&content_file2, "claude body").unwrap();
+    let target2 = repo.join("CLAUDE.md");
+    let output2 = run_wr_canon(
+        &repo,
+        &[
+            "--path",
+            target2.to_str().unwrap(),
+            "--content-file",
+            content_file2.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(output2.status.code(), Some(0));
+    assert_eq!(fs::read_to_string(&target2).unwrap(), "claude body");
+}
+
+#[test]
+fn write_rule_subprocess_relative_canonical_path_succeeds() {
+    // Drives the relative-path branch (root.join(provided)) of the
+    // gate — a relative --path resolves against project_root.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = setup_branch_repo(dir.path(), "feat-x");
+    let content_file = repo.join("content.md");
+    fs::write(&content_file, "plan body").unwrap();
+    // Relative --path: project_root() must resolve it to the canonical
+    // destination for the gate to accept.
+    let rel = ".flow-states/feat-x/plan.md";
+
+    let output = run_wr_canon(
+        &repo,
+        &[
+            "--path",
+            rel,
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(repo.join(".flow-states/feat-x/plan.md")).unwrap(),
+        "plan body"
+    );
+}
+
+#[test]
+fn write_rule_subprocess_path_with_parent_dir_normalizes_to_canonical() {
+    // Drives the Component::ParentDir branch of normalize_lexical.
+    // A `..` traversal in the middle of an otherwise-canonical path
+    // must normalize to the canonical destination, not be rejected.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = setup_branch_repo(dir.path(), "feat-x");
+    let content_file = repo.join("content.md");
+    fs::write(&content_file, "plan body").unwrap();
+    // <repo>/.flow-states/other/../feat-x/plan.md normalizes to
+    // <repo>/.flow-states/feat-x/plan.md (the canonical destination).
+    let provided = repo
+        .join(".flow-states")
+        .join("other")
+        .join("..")
+        .join("feat-x")
+        .join("plan.md");
+
+    let output = run_wr_canon(
+        &repo,
+        &[
+            "--path",
+            provided.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(repo.join(".flow-states/feat-x/plan.md")).unwrap(),
+        "plan body"
+    );
+}
+
+#[test]
+fn write_rule_subprocess_detached_head_no_op_for_branch_scoped() {
+    let dir = tempfile::tempdir().unwrap();
+    let canonical_parent = dir.path().canonicalize().unwrap();
+    let repo = create_git_repo_with_remote(&canonical_parent);
+    let repo = repo.canonicalize().unwrap();
+    // Detach HEAD: checkout the commit by SHA.
+    let sha_out = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    let sha = String::from_utf8(sha_out.stdout).unwrap().trim().to_string();
+    Command::new("git")
+        .args(["checkout", &sha])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+
+    let content_file = repo.join("content.md");
+    fs::write(&content_file, "plan body").unwrap();
+    // Branch is None in detached HEAD. Branch-scoped canonical_path
+    // returns None → gate is no-op pass-through. Even an unusual --path
+    // is accepted; we exercise the canonical path here.
+    let target = repo
+        .join(".flow-states")
+        .join("placeholder")
+        .join("plan.md");
+
+    let output = run_wr_canon(
+        &repo,
+        &[
+            "--path",
+            target.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "detached HEAD must not block branch-scoped writes; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read_to_string(&target).unwrap(), "plan body");
 }
 
 // --- end-to-end ---

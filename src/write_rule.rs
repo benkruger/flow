@@ -11,12 +11,13 @@
 //! no inline #[cfg(test)] in this file.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use clap::Parser;
 use serde_json::json;
 
 use crate::flow_paths::{FlowPaths, FlowStatesDir};
+use crate::git;
 
 /// FLOW-managed artifacts whose on-disk location is computed by
 /// `FlowPaths` rather than chosen by the caller. When `--path` names
@@ -75,12 +76,8 @@ pub fn canonical_path(
     branch_opt: Option<&str>,
 ) -> Option<PathBuf> {
     match art {
-        ManagedArtifact::PlanMd => {
-            FlowPaths::try_new(root, branch_opt?).map(|p| p.plan_file())
-        }
-        ManagedArtifact::DagMd => {
-            FlowPaths::try_new(root, branch_opt?).map(|p| p.dag_file())
-        }
+        ManagedArtifact::PlanMd => FlowPaths::try_new(root, branch_opt?).map(|p| p.plan_file()),
+        ManagedArtifact::DagMd => FlowPaths::try_new(root, branch_opt?).map(|p| p.dag_file()),
         ManagedArtifact::CommitMsgTxt => {
             FlowPaths::try_new(root, branch_opt?).map(|p| p.commit_msg())
         }
@@ -131,11 +128,71 @@ pub fn write_rule(target_path: &str, content: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Lexically normalize a path: resolve `..` components without
+/// touching the filesystem. Used by the canonicalization gate to
+/// compare `--path` against the canonical destination without
+/// requiring either to exist on disk. `Path::components()` already
+/// drops mid-path `.` segments, so only `..` (`Component::ParentDir`)
+/// needs explicit handling.
+fn normalize_lexical(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
     let content = match read_content_file(&args.content_file) {
         Ok(c) => c,
         Err(e) => return (json!({"status": "error", "message": e}), 1),
     };
+
+    // Canonicalization gate per .claude/rules/file-tool-preflights.md
+    // "Canonical Location for `.flow-states/`". When --path names a
+    // managed artifact by basename, the canonical destination is
+    // computed from (project_root, current_branch) via FlowPaths and
+    // any provided path that doesn't normalize to that destination is
+    // rejected. Branch-unavailable cases (detached HEAD, slash branch)
+    // produce a None canonical and the gate stays silent — that's
+    // pass-through behavior, not a reject.
+    let provided = Path::new(&args.path);
+    if let Some(art) = classify_path(provided) {
+        let root = git::project_root();
+        let branch = git::current_branch();
+        if let Some(canonical) = canonical_path(art, &root, branch.as_deref()) {
+            let provided_abs = if provided.is_absolute() {
+                provided.to_path_buf()
+            } else {
+                root.join(provided)
+            };
+            if normalize_lexical(&provided_abs) != normalize_lexical(&canonical) {
+                return (
+                    json!({
+                        "status": "error",
+                        "step": "path_canonicalization",
+                        "message": format!(
+                            "write-rule rejects --path {} for managed \
+                             artifact {:?}: canonical destination is {}",
+                            args.path,
+                            art,
+                            canonical.display()
+                        ),
+                        "provided": &args.path,
+                        "canonical": canonical.display().to_string(),
+                        "artifact_kind": format!("{:?}", art),
+                    }),
+                    1,
+                );
+            }
+        }
+    }
+
     if let Err(e) = write_rule(&args.path, &content) {
         return (json!({"status": "error", "message": e}), 1);
     }
