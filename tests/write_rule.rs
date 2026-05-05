@@ -7,7 +7,9 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use common::{create_git_repo_with_remote, parse_output};
-use flow_rs::write_rule::{classify_path, read_content_file, write_rule, ManagedArtifact};
+use flow_rs::write_rule::{
+    canonical_path, classify_path, read_content_file, write_rule, ManagedArtifact,
+};
 
 fn run_write_rule(repo: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_flow-rs"))
@@ -305,7 +307,10 @@ fn classify_path_matches_orchestrate_queue_json_basename() {
 
 #[test]
 fn classify_path_returns_none_for_non_managed_basename() {
-    assert_eq!(classify_path(Path::new("/some/.claude/rules/rule.md")), None);
+    assert_eq!(
+        classify_path(Path::new("/some/.claude/rules/rule.md")),
+        None
+    );
     assert_eq!(classify_path(Path::new("/some/CLAUDE.md")), None);
     assert_eq!(classify_path(Path::new("/some/foo.txt")), None);
 }
@@ -329,6 +334,85 @@ fn classify_path_returns_none_for_non_utf8_basename() {
     let bytes = b"\xff\xfe.md";
     let osstr = OsStr::from_bytes(bytes);
     assert_eq!(classify_path(Path::new(osstr)), None);
+}
+
+// --- canonical_path ---
+
+#[test]
+fn canonical_path_branch_scoped_returns_main_repo_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let branch = Some("feat-x");
+
+    assert_eq!(
+        canonical_path(ManagedArtifact::PlanMd, root, branch),
+        Some(root.join(".flow-states").join("feat-x").join("plan.md"))
+    );
+    assert_eq!(
+        canonical_path(ManagedArtifact::DagMd, root, branch),
+        Some(root.join(".flow-states").join("feat-x").join("dag.md"))
+    );
+    assert_eq!(
+        canonical_path(ManagedArtifact::CommitMsgTxt, root, branch),
+        Some(
+            root.join(".flow-states")
+                .join("feat-x")
+                .join("commit-msg.txt")
+        )
+    );
+}
+
+#[test]
+fn canonical_path_project_root_returns_main_repo_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    // FlowIssueBody is project-root-scoped; branch availability does not matter.
+    assert_eq!(
+        canonical_path(ManagedArtifact::FlowIssueBody, root, None),
+        Some(root.join(".flow-issue-body"))
+    );
+    assert_eq!(
+        canonical_path(ManagedArtifact::FlowIssueBody, root, Some("feat-x")),
+        Some(root.join(".flow-issue-body"))
+    );
+}
+
+#[test]
+fn canonical_path_machine_level_returns_main_repo_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    // OrchestrateQueue is a machine-level singleton at .flow-states/orchestrate-queue.json
+    // — not branch-scoped. Branch availability does not matter.
+    assert_eq!(
+        canonical_path(ManagedArtifact::OrchestrateQueue, root, None),
+        Some(root.join(".flow-states").join("orchestrate-queue.json"))
+    );
+    assert_eq!(
+        canonical_path(ManagedArtifact::OrchestrateQueue, root, Some("feat-x")),
+        Some(root.join(".flow-states").join("orchestrate-queue.json"))
+    );
+}
+
+#[test]
+fn canonical_path_returns_none_when_branch_unavailable_for_branch_scoped() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    // Branch-scoped variants return None when branch is unavailable
+    // (detached HEAD, or invalid branch like one containing '/').
+    assert_eq!(canonical_path(ManagedArtifact::PlanMd, root, None), None);
+    assert_eq!(canonical_path(ManagedArtifact::DagMd, root, None), None);
+    assert_eq!(
+        canonical_path(ManagedArtifact::CommitMsgTxt, root, None),
+        None
+    );
+    // Invalid branch (slash) is also None — FlowPaths::try_new rejects it.
+    assert_eq!(
+        canonical_path(ManagedArtifact::PlanMd, root, Some("feature/foo")),
+        None
+    );
+    // Project-root and machine-level variants still return Some when branch is None.
+    assert!(canonical_path(ManagedArtifact::FlowIssueBody, root, None).is_some());
+    assert!(canonical_path(ManagedArtifact::OrchestrateQueue, root, None).is_some());
 }
 
 // --- end-to-end ---

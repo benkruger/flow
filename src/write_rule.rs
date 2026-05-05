@@ -11,10 +11,12 @@
 //! no inline #[cfg(test)] in this file.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use serde_json::json;
+
+use crate::flow_paths::{FlowPaths, FlowStatesDir};
 
 /// FLOW-managed artifacts whose on-disk location is computed by
 /// `FlowPaths` rather than chosen by the caller. When `--path` names
@@ -50,6 +52,44 @@ pub fn classify_path(path: &Path) -> Option<ManagedArtifact> {
         ".flow-issue-body" => Some(ManagedArtifact::FlowIssueBody),
         "orchestrate-queue.json" => Some(ManagedArtifact::OrchestrateQueue),
         _ => None,
+    }
+}
+
+/// Compute the canonical destination for a managed artifact.
+///
+/// Branch-scoped artifacts (`PlanMd`, `DagMd`, `CommitMsgTxt`) live at
+/// `<project_root>/.flow-states/<branch>/<filename>` and require a
+/// valid branch — `None` is returned when `branch_opt` is absent or
+/// fails `FlowPaths::is_valid_branch` (e.g., contains `/`). Returning
+/// `None` lets `run_impl_main` fall back to pass-through behavior in
+/// detached-HEAD or invalid-branch contexts rather than panicking.
+///
+/// `FlowIssueBody` lives at `<project_root>/.flow-issue-body` and
+/// `OrchestrateQueue` lives at
+/// `<project_root>/.flow-states/orchestrate-queue.json`. Neither is
+/// branch-scoped, so both always return `Some(_)` regardless of
+/// `branch_opt`.
+pub fn canonical_path(
+    art: ManagedArtifact,
+    root: &Path,
+    branch_opt: Option<&str>,
+) -> Option<PathBuf> {
+    match art {
+        ManagedArtifact::PlanMd => {
+            FlowPaths::try_new(root, branch_opt?).map(|p| p.plan_file())
+        }
+        ManagedArtifact::DagMd => {
+            FlowPaths::try_new(root, branch_opt?).map(|p| p.dag_file())
+        }
+        ManagedArtifact::CommitMsgTxt => {
+            FlowPaths::try_new(root, branch_opt?).map(|p| p.commit_msg())
+        }
+        ManagedArtifact::FlowIssueBody => Some(root.join(".flow-issue-body")),
+        ManagedArtifact::OrchestrateQueue => Some(
+            FlowStatesDir::new(root)
+                .path()
+                .join("orchestrate-queue.json"),
+        ),
     }
 }
 
