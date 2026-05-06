@@ -248,6 +248,8 @@ Key test files: `tests/structural.rs` (config invariants, version consistency), 
 - `/flow-release` — `.claude/skills/flow-release/SKILL.md` — bump version, tag, push, create GitHub Release
 - `/flow-changelog-audit` — `.claude/skills/flow-changelog-audit/SKILL.md` — audit Claude Code CHANGELOG.md for plugin-relevant changes, categorize as Adopt/Remove/Adapt, file issues
 
+When developing FLOW itself, point Claude Code at the local plugin source via `claude --plugin-dir=$HOME/code/flow` (or the worktree path you are working in). The installed marketplace plugin enforces phase counts and skill gates from the released version, which conflict with in-progress source changes; `--plugin-dir` overrides the installed version for the duration of the session so source-level edits take effect on the next session start.
+
 ## Conventions
 
 - **Never invoke `/flow-release` unless the user explicitly runs it** — fixing a bug does not authorize a release. Committing a fix and releasing it are separate decisions. The user decides when to ship.

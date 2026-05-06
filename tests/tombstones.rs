@@ -354,13 +354,28 @@ fn test_no_weak_coverage_language_in_prose_corpus() {
 //
 // The flow-qa maintainer skill, four backing Rust modules
 // (qa_mode, qa_reset, qa_verify, scaffold_qa), the qa/templates/
-// directory, and the matching Commands::Qa* clap variants are gone.
-// The maintainer QAs locally via --plugin-dir instead. These four
-// tombstones fail CI if a merge conflict resolution reintroduces any
-// of them.
+// directory, the matching Commands::Qa* clap variants, and the
+// `Bash(rm -rf *.qa-repos*)` allow-list entry are gone. The
+// maintainer QAs locally via --plugin-dir instead.
+//
+// Two protection layers against merge-conflict resurrection:
+//   1. Source-content byte-substring tombstones for the canonical
+//      Rust declaration syntax (`pub mod qa_mode;`,
+//      `Commands::QaMode`, etc.) — strong because Rust requires
+//      these literals to appear in source for the modules and
+//      enum variants to resolve at compile time.
+//   2. File-existence tombstones for `src/qa_*.rs` — required
+//      because `#[path = "qa_mode.rs"] pub mod legacy_qa;` would
+//      resurrect a deleted file under a renamed module name
+//      without the byte-substring tombstone firing. The path-based
+//      check catches the file regardless of the importing module
+//      name.
+//
+// Both layers must fire together; either layer alone has a
+// documented gap.
 
 #[test]
-fn flow_qa_skill_directory_does_not_exist() {
+fn test_flow_qa_no_skill_directory() {
     // Tombstone: removed in PR #1344. Must not return.
     let root = common::repo_root();
     let path = root.join(".claude/skills/flow-qa");
@@ -371,9 +386,30 @@ fn flow_qa_skill_directory_does_not_exist() {
     );
 }
 
+/// Tombstone: removed in PR #1344. Must not return.
+///
+/// Stability of the byte-substring assertion (per
+/// `.claude/rules/tombstone-tests.md` "Literal tombstones —
+/// stability checklist"):
+///
+/// 1. `concat!`/`format!` cannot synthesize `pub mod qa_mode;` —
+///    Rust expands `mod` declarations at parse time, before macro
+///    expansion. A `concat!`-built string cannot become a module
+///    declaration.
+/// 2. Constant references like `const M: &str = "pub mod qa_mode;"`
+///    do not produce a Rust module — the compiler does not parse
+///    string contents as items.
+/// 3. Method-chain assembly cannot produce a module declaration
+///    for the same reason.
+///
+/// Companion gap: `#[path = "qa_mode.rs"] pub mod legacy_qa;`
+/// would resurrect the deleted file `src/qa_mode.rs` under a
+/// renamed module name without the literal `pub mod qa_mode;`
+/// appearing in source. The four file-existence tombstones below
+/// (`test_src_no_qa_mode_rs`, etc.) close that gap by asserting
+/// the source files themselves are absent.
 #[test]
-fn qa_modules_not_in_lib_rs() {
-    // Tombstone: removed in PR #1344. Must not return.
+fn test_lib_rs_no_qa_modules() {
     let root = common::repo_root();
     let path = root.join("src/lib.rs");
     let content = fs::read_to_string(&path).expect("src/lib.rs must exist");
@@ -391,9 +427,24 @@ fn qa_modules_not_in_lib_rs() {
     }
 }
 
+/// Tombstone: removed in PR #1344. Must not return.
+///
+/// Stability of the byte-substring assertion (per
+/// `.claude/rules/tombstone-tests.md` "Literal tombstones —
+/// stability checklist"):
+///
+/// 1. `concat!`/`format!` cannot synthesize `Commands::QaMode` —
+///    enum variant names are resolved by the compiler from the
+///    parsed `enum Commands { ... }` body. A string literal
+///    matching the path expression cannot replace the variant
+///    declaration.
+/// 2. Constant or method-chain assembly cannot redeclare an enum
+///    variant. The variant must exist as a literal `QaMode(...)`
+///    declaration in source.
+/// 3. The `Commands::` prefix anchors the match — dispatch sites
+///    must spell the path explicitly to compile.
 #[test]
-fn qa_command_variants_not_in_main_rs() {
-    // Tombstone: removed in PR #1344. Must not return.
+fn test_main_rs_no_qa_command_variants() {
     let root = common::repo_root();
     let path = root.join("src/main.rs");
     let content = fs::read_to_string(&path).expect("src/main.rs must exist");
@@ -412,12 +463,90 @@ fn qa_command_variants_not_in_main_rs() {
 }
 
 #[test]
-fn qa_templates_directory_does_not_exist() {
+fn test_qa_no_templates_directory() {
     // Tombstone: removed in PR #1344. Must not return.
     let root = common::repo_root();
     let path = root.join("qa/templates");
     assert!(
         !path.exists(),
         "qa/templates/ must not exist — the QA repo templates are gone."
+    );
+}
+
+#[test]
+fn test_src_no_qa_mode_rs() {
+    // Tombstone: removed in PR #1344. Must not return.
+    let root = common::repo_root();
+    let path = root.join("src/qa_mode.rs");
+    assert!(
+        !path.exists(),
+        "src/qa_mode.rs must not exist — the qa-mode subcommand is gone. \
+         Catches `#[path = \"qa_mode.rs\"] pub mod <alias>;` resurrection \
+         that the byte-substring tombstone in test_lib_rs_no_qa_modules \
+         cannot detect."
+    );
+}
+
+#[test]
+fn test_src_no_qa_reset_rs() {
+    // Tombstone: removed in PR #1344. Must not return.
+    let root = common::repo_root();
+    let path = root.join("src/qa_reset.rs");
+    assert!(
+        !path.exists(),
+        "src/qa_reset.rs must not exist — the qa-reset subcommand is gone."
+    );
+}
+
+#[test]
+fn test_src_no_qa_verify_rs() {
+    // Tombstone: removed in PR #1344. Must not return.
+    let root = common::repo_root();
+    let path = root.join("src/qa_verify.rs");
+    assert!(
+        !path.exists(),
+        "src/qa_verify.rs must not exist — the qa-verify subcommand is gone."
+    );
+}
+
+#[test]
+fn test_src_no_scaffold_qa_rs() {
+    // Tombstone: removed in PR #1344. Must not return.
+    let root = common::repo_root();
+    let path = root.join("src/scaffold_qa.rs");
+    assert!(
+        !path.exists(),
+        "src/scaffold_qa.rs must not exist — the scaffold-qa subcommand is gone."
+    );
+}
+
+/// Tombstone: removed in PR #1344. Must not return.
+///
+/// Stability of the byte-substring assertion (per
+/// `.claude/rules/tombstone-tests.md` "Literal tombstones —
+/// stability checklist"):
+///
+/// 1. `concat!`/`format!` cannot synthesize the literal — the
+///    string is the entire allow-list entry inside a JSON array,
+///    so any `concat!`-style assembly would still produce the
+///    exact same byte sequence in source for the entry to be
+///    syntactically valid JSON.
+/// 2. The pattern `Bash(rm -rf *.qa-repos*)` is the unique allow-
+///    list entry that authorized the qa-repos cleanup; no other
+///    permission would substitute for it without changing the
+///    matched command surface.
+/// 3. JSON does not permit comment-based or interpolated string
+///    construction inside a permissions array — the entry must
+///    appear literally to be honoured by Claude Code.
+#[test]
+fn test_settings_json_no_qa_repos_allow_entry() {
+    let root = common::repo_root();
+    let path = root.join(".claude/settings.json");
+    let content = fs::read_to_string(&path).expect(".claude/settings.json must exist");
+    assert!(
+        !content.contains("Bash(rm -rf *.qa-repos*)"),
+        ".claude/settings.json must not contain the `Bash(rm -rf *.qa-repos*)` \
+         allow-list entry — the qa-repos cleanup permission has no consumer \
+         after the flow-qa skill removal."
     );
 }
