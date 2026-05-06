@@ -178,6 +178,30 @@ BEFORE the cleanup step. The Done section runs after cleanup — by
 that point, `.flow-states/<branch>/state.json` has been deleted and any
 command that reads it will fail.
 
+## Cd-Before-bin/flow Carve-Out for Destructive Worktree Operations
+
+Most `bin/flow` subcommands resolve the project root internally and
+do not require the caller to `cd` anywhere — every phase skill's
+Hard Rules section forbids `cd` before invoking `bin/flow`.
+
+The exception is `bin/flow complete-finalize`. The command removes
+the worktree as part of cleanup. When the caller's shell sits inside
+the worktree at invocation time, a successful removal leaves the
+shell in a deleted directory and every subsequent command emits
+`getcwd: cannot access parent directories`. The skill that invokes
+`complete-finalize` must therefore `cd <project_root>` before the
+invocation. The subcommand also self-gates: it returns
+`{"status":"error","reason":"cwd_inside_worktree"}` when its
+canonicalized cwd equals or sits beneath the canonicalized
+`--worktree`. The gate produces a clean error rather than shell
+corruption, but the `cd` should still happen first because the gate
+otherwise short-circuits the entire finalize flow.
+
+This carve-out applies only to subcommands whose execution path
+removes the caller's cwd. New subcommands that only mutate state
+or read files inherit the default rule (no `cd` before
+`bin/flow`).
+
 ## Numbered Lists With Fenced Code Blocks
 
 Never use numbered lists (1. 2. 3.) when fenced code blocks appear

@@ -54,7 +54,33 @@ pub struct Args {
 /// JSON result. Best-effort logging to `.flow-states/<branch>.log`
 /// when the directory exists. Slash-containing branches no-op the log
 /// closure via `FlowPaths::try_new`.
+///
+/// Self-gates against cwd-inside-worktree before any side effect: when
+/// the caller's canonicalized cwd equals or sits beneath the
+/// canonicalized `--worktree` argument, the worktree removal would
+/// strand the caller's shell in a deleted directory. The guard
+/// returns a structured `cwd_inside_worktree` error so the failure
+/// mode is a clean JSON envelope rather than shell corruption. See
+/// `.claude/rules/rust-patterns.md` "Cwd-Inside-Destructive-Path
+/// Guard" for the pattern this applies.
 pub fn run_impl(args: &Args) -> Value {
+    if let (Ok(cwd_canon), Ok(worktree_canon)) = (
+        std::env::current_dir().and_then(|p| p.canonicalize()),
+        Path::new(&args.worktree).canonicalize(),
+    ) {
+        if cwd_canon == worktree_canon || cwd_canon.starts_with(&worktree_canon) {
+            let root = project_root();
+            return json!({
+                "status": "error",
+                "reason": "cwd_inside_worktree",
+                "message": format!(
+                    "cd to {} before running complete-finalize",
+                    root.display()
+                ),
+            });
+        }
+    }
+
     let root = project_root();
     let branch = &args.branch;
 
