@@ -7,7 +7,9 @@
 //!   bin/flow cleanup <project_root> --branch <name> --worktree <path> [--pr <number>] [--pull]
 //!
 //! Output (JSON to stdout):
-//!   {"status": "ok", "steps": {"worktree": "removed", "state_file": "deleted", ...}}
+//!   {"status": "ok", "steps": {"pr_close": ..., "worktree": ..., "remote_branch": ...,
+//!                              "local_branch": ..., "branch_dir": ..., "queue_entry": ...,
+//!                              "git_pull": ...}}
 //!
 //! Each step reports one of: "removed"/"deleted"/"closed"/"pulled", "skipped", or "failed: <reason>".
 //!
@@ -22,6 +24,7 @@ use clap::Parser;
 use indexmap::IndexMap;
 
 use crate::commands::log::append_log;
+use crate::commands::start_lock::QUEUE_DIRNAME;
 use crate::flow_paths::FlowPaths;
 
 #[derive(Parser, Debug)]
@@ -130,23 +133,9 @@ pub fn cleanup(
         steps.insert("pr_close".to_string(), "skipped".to_string());
     }
 
-    // Remove worktree tmp/ (FLOW repo only — before worktree removal)
-    let is_flow_repo = project_root.join("flow-phases.json").exists();
-    let wt_tmp = project_root.join(worktree).join("tmp");
-    if is_flow_repo && wt_tmp.is_dir() {
-        let (ok, output) = match fs::remove_dir_all(&wt_tmp) {
-            Ok(()) => (true, String::new()),
-            Err(e) => (false, format!("{}", e)),
-        };
-        steps.insert(
-            "worktree_tmp".to_string(),
-            label_result(ok, "removed", &output),
-        );
-    } else {
-        steps.insert("worktree_tmp".to_string(), "skipped".to_string());
-    }
-
-    // Remove worktree
+    // Remove worktree (the subsequent `git worktree remove --force`
+    // also disposes of any worktree-internal scratch like `tmp/`, so a
+    // separate per-tmp step is unnecessary).
     let wt_path = project_root.join(worktree);
     if wt_path.exists() {
         let wt_str = wt_path.to_string_lossy().to_string();
@@ -191,6 +180,10 @@ pub fn cleanup(
                 "branch_dir".to_string(),
                 "skipped: invalid branch".to_string(),
             );
+            steps.insert(
+                "queue_entry".to_string(),
+                "skipped: invalid branch".to_string(),
+            );
             if pull {
                 let (ok, output) = run_cmd(&["git", "pull", "origin", base_branch], project_root);
                 steps.insert("git_pull".to_string(), label_result(ok, "pulled", &output));
@@ -232,6 +225,21 @@ pub fn cleanup(
         "branch_dir".to_string(),
         try_remove_branch_dir(&paths.branch_dir()),
     );
+
+    // Remove the start-lock queue entry for this branch, if present.
+    // `start_init` writes `.flow-states/<QUEUE_DIRNAME>/<branch>` while
+    // holding the start lock and `start_finalize` releases it on the
+    // happy path; this step is defense-in-depth for the abort path and
+    // any unusual case where Complete runs without a clean Start. The
+    // queue_dir itself is left in place — `start_lock::queue_path`
+    // recreates it on demand for subsequent flows.
+    let queue_entry_path = paths.flow_states_dir().join(QUEUE_DIRNAME).join(branch);
+    let queue_result = match fs::remove_file(&queue_entry_path) {
+        Ok(()) => "removed".to_string(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "skipped".to_string(),
+        Err(e) => format!("failed: {}", e),
+    };
+    steps.insert("queue_entry".to_string(), queue_result);
 
     // Pull latest origin/<base_branch> (after worktree removal —
     // ordering matters). `base_branch` flows in from the caller's

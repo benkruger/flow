@@ -416,47 +416,6 @@ fn cleanup_full_happy_path() {
 }
 
 #[test]
-fn cleanup_removes_worktree_tmp_in_flow_repo() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    fs::write(dir.path().join("flow-phases.json"), "{}").unwrap();
-    let wt_tmp = dir.path().join(&wt_rel).join("tmp");
-    fs::create_dir_all(&wt_tmp).unwrap();
-    fs::write(wt_tmp.join("release-notes-v1.0.md"), "notes").unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["worktree_tmp"], "removed");
-}
-
-#[test]
-fn cleanup_skips_tmp_without_flow_phases() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    let wt_tmp = dir.path().join(&wt_rel).join("tmp");
-    fs::create_dir_all(&wt_tmp).unwrap();
-    fs::write(wt_tmp.join("some-file.txt"), "data").unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["worktree_tmp"], "skipped");
-}
-
-#[test]
-fn cleanup_skips_missing_worktree_tmp() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    fs::write(dir.path().join("flow-phases.json"), "{}").unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert_eq!(steps["worktree_tmp"], "skipped");
-}
-
-#[test]
 fn no_pull_flag_no_git_pull_step() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path());
@@ -493,11 +452,11 @@ fn step_key_order_matches_expected() {
         keys,
         vec![
             "pr_close",
-            "worktree_tmp",
             "worktree",
             "remote_branch",
             "local_branch",
             "branch_dir",
+            "queue_entry",
         ]
     );
 }
@@ -516,43 +475,98 @@ fn step_key_order_with_pull() {
         keys,
         vec![
             "pr_close",
-            "worktree_tmp",
             "worktree",
             "remote_branch",
             "local_branch",
             "branch_dir",
+            "queue_entry",
             "git_pull",
         ]
     );
 }
 
-// --- Error paths ---
+// --- queue_entry step ---
 
 #[test]
-fn cleanup_worktree_tmp_remove_fails_reports_error() {
+fn cleanup_queue_entry_removes_present_file() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let wt_rel = setup_feature(dir.path(), "test-feature");
+
+    let queue_dir = dir.path().join(".flow-states/start-queue");
+    fs::create_dir_all(&queue_dir).unwrap();
+    let queue_file = queue_dir.join("test-feature");
+    fs::write(&queue_file, "").unwrap();
+
+    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
+    let steps = steps_from(&value);
+    assert_eq!(steps["queue_entry"], "removed");
+    assert!(!queue_file.exists(), "queue entry file must be removed");
+}
+
+#[test]
+fn cleanup_queue_entry_skipped_when_absent() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let wt_rel = setup_feature(dir.path(), "test-feature");
+    // No .flow-states/start-queue/ directory at all.
+
+    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
+    let steps = steps_from(&value);
+    assert_eq!(steps["queue_entry"], "skipped");
+}
+
+#[test]
+fn cleanup_queue_entry_failed_on_unwritable_parent() {
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path());
     let wt_rel = setup_feature(dir.path(), "test-feature");
-    fs::write(dir.path().join("flow-phases.json"), "{}").unwrap();
 
-    let wt_root = dir.path().join(&wt_rel);
-    let wt_tmp = wt_root.join("tmp");
-    fs::create_dir_all(&wt_tmp).unwrap();
-    fs::write(wt_tmp.join("f.txt"), "x").unwrap();
-    fs::set_permissions(&wt_root, fs::Permissions::from_mode(0o500)).unwrap();
+    let queue_dir = dir.path().join(".flow-states/start-queue");
+    fs::create_dir_all(&queue_dir).unwrap();
+    let queue_file = queue_dir.join("test-feature");
+    fs::write(&queue_file, "").unwrap();
+    fs::set_permissions(&queue_dir, fs::Permissions::from_mode(0o500)).unwrap();
 
     let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
 
-    fs::set_permissions(&wt_root, fs::Permissions::from_mode(0o755)).unwrap();
+    // Restore so TempDir can drop cleanly.
+    fs::set_permissions(&queue_dir, fs::Permissions::from_mode(0o755)).unwrap();
 
     let steps = steps_from(&value);
     assert!(
-        steps["worktree_tmp"].starts_with("failed:"),
+        steps["queue_entry"].starts_with("failed:"),
         "expected failed, got: {}",
-        steps["worktree_tmp"]
+        steps["queue_entry"]
     );
 }
+
+// --- worktree_tmp step removal ---
+
+/// Tombstone: worktree_tmp step removed in PR #1349. The subsequent
+/// `git worktree remove --force` handles `tmp/` cleanup, so a separate
+/// per-tmp step is no longer needed. This test guards against the step
+/// returning via merge or refactor.
+#[test]
+fn cleanup_no_worktree_tmp_step_in_output() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let wt_rel = setup_feature(dir.path(), "test-feature");
+    fs::write(dir.path().join("flow-phases.json"), "{}").unwrap();
+    let wt_tmp = dir.path().join(&wt_rel).join("tmp");
+    fs::create_dir_all(&wt_tmp).unwrap();
+
+    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
+    let steps = steps_from(&value);
+    assert!(
+        !steps.contains_key("worktree_tmp"),
+        "worktree_tmp step must not appear in cleanup output, got keys: {:?}",
+        steps.keys().collect::<Vec<_>>()
+    );
+}
+
+// --- Error paths ---
 
 #[test]
 fn cleanup_branch_dir_permission_denied_returns_failed() {
