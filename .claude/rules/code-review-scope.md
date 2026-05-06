@@ -46,6 +46,79 @@ in-scope action is deletion regardless of file location — not
 filing. The supersession check is complementary to this rule; it
 routes superseded code to Step 4 for deletion.
 
+## Value-vs-Bureaucracy Finding Triage
+
+Agent findings are hypotheses, not verdicts. Every Real
+classification must survive a value test before routing to Step 4:
+"would the proposed fix add signal that an informed reader cannot
+already derive from the code, the existing rule files, or the
+diff?" If the answer is "no — the fix duplicates information
+already discoverable through grep, rustdoc, the file's own doc
+comments, or a sibling rule," the finding is a false positive
+even when the agent's claim is technically correct.
+
+The bureaucracy-trap shape: a finding flags a missing CLAUDE.md
+"Key Files" entry for a small extracted helper whose purpose is
+already stated in its module doc comment, a missing
+cross-reference between two rules that already mention each
+other in adjacent sections, or a missing redundant doc comment
+that restates what the source already says. The fix lands quickly
+and looks productive, but it does not change behavior, does not
+unblock a future reader, and does not prevent any class of
+regression. Every such fix is pure churn — a maintenance cost
+paid in exchange for the appearance of diligence.
+
+### The triage test
+
+For every Real candidate produced in Step 3, ask:
+
+1. **Behavior.** Does the fix change runtime behavior, prevent a
+   class of bug, or unblock a workflow? If yes, classify Real.
+2. **Discoverability.** If the fix is a documentation update,
+   would a reader using grep, rustdoc, the existing rule
+   cross-references, or the file's own doc comments find the
+   information without it? If yes, the proposed fix is
+   redundant — classify False positive.
+3. **Forward applicability.** Would the fix help a session that
+   has not yet been written? A fix that only records work
+   already complete in this PR — without changing how a future
+   session would discover or apply that work — is record-keeping
+   for record-keeping's sake. Classify False positive.
+4. **Author-driven exception.** When in doubt, surface the
+   question to the user rather than auto-routing to Step 4
+   under the agent's framing. The user is the final arbiter on
+   value calls.
+
+### What this is NOT
+
+The triage test is not permission to dismiss findings that touch
+real behavior, security, correctness, or test coverage. Findings
+in tenants 1–5 (architecture, simplicity, maintainability,
+correctness, test coverage) almost always pass the value test
+because their fixes change behavior or prevent bugs.
+
+The trap concentrates in tenant 6 (documentation): doc-drift
+findings that restate information already encoded elsewhere.
+Apply the test most rigorously there, where the cost of a
+redundant fix is lowest and the rate of agent over-flagging is
+highest.
+
+The "Key Files" addition in `CLAUDE.md` is the canonical edge
+case: per `.claude/rules/docs-with-behavior.md` "What Counts," a
+*permanent on-main artifact* requires a Key Files entry. A small
+helper extracted as part of a larger feature, when the helper's
+purpose is already documented in its module doc comment AND in
+the file that calls it, is borderline — apply the discoverability
+and forward-applicability tests rigorously and surface the
+decision to the user when uncertain.
+
+### Cross-reference
+
+`.claude/rules/forward-facing-authoring.md` "How Code Review
+Applies This" governs the *form* of documentation fixes that pass
+this triage. This rule governs whether a documentation fix should
+be applied at all.
+
 ## New Rules Added Alongside Code
 
 When a PR adds a new `.claude/rules/*.md` file that retroactively

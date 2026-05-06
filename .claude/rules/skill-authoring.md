@@ -372,6 +372,38 @@ that have since been removed. A single glob for the skill directory
 catches stale references before they become error messages that direct
 users to non-existent commands.
 
+## Verify Test Function References in Issues
+
+When an issue body or pre-decomposed plan references specific test
+functions, helper functions, or test fixtures by name —
+`tests/<file>.rs::<function_name>`, "the existing
+`parse_settings_allow_list` helper", "extract the category list from
+the test fixture" — verify the named entity exists in the current
+codebase during Plan phase via Grep. Issue authors — including
+Claude in prior sessions — can name test functions that were
+renamed, never created, or carried forward from a different
+codebase generation. Building a plan task on a non-existent fixture
+produces an unfounded scope-drop deviation in Code phase that the
+Plan-phase verification could have prevented.
+
+The cheapest signal: for every backtick-quoted test or function
+identifier in the issue body or `## Implementation Plan` section,
+run a single Grep over `tests/` (or the relevant `src/` directory)
+to confirm the identifier appears as a definition (e.g.
+`fn <name>(`), not just as a prose reference. If the identifier
+does not exist, the plan task referencing it must take one of three
+paths: (a) name an existing nearby identifier that serves the same
+purpose, (b) propose creating the named entity as part of the
+task, or (c) drop the task and document the deviation per
+`.claude/rules/plan-commit-atomicity.md` "Plan Signature Deviations
+Must Be Logged".
+
+This pairs with the "Verify Script Behavior Claims in Issues"
+discipline above: that rule covers behavioral assertions ("script X
+populates field Y"); this rule covers structural assertions ("test
+function X exists at file Y"). Both run during Plan phase, both
+catch issue-author errors before they become Code-phase bugs.
+
 ## Config Chain Integrity
 
 The autonomy config chain is: prime presets → `.flow.json` → state file → skill reads.
