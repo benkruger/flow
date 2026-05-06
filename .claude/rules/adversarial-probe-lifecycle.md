@@ -74,16 +74,3 @@ audit the adversarial probe file. For each test in the probe:
 The default is delete. The probe's purpose is to surface findings
 during Code Review, not to live as a long-lived regression guard.
 Regression guards belong in `tests/<path>/<name>.rs`.
-
-## Cross-References
-
-- `skills/flow-code-review/SKILL.md` — Step 2 launches the
-  adversarial agent; Step 4 fixes findings; this rule covers the
-  reconciliation that closes the loop.
-- `.claude/rules/test-placement.md` — named regression guards
-  live in `tests/<path>/<name>.rs`, not in the throwaway probe.
-- `agents/adversarial.md` — agent prompt that produces the probe.
-- `assets/bin-stubs/test.sh` — recommended per-language probe
-  paths.
-- `src/prime_check.rs::EXCLUDE_ENTRIES` — `.git/info/exclude`
-  patterns that keep the throwaway probe out of `git status`.

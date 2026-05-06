@@ -67,30 +67,6 @@ When a coverage gap resists two or three straightforward tests:
 5. **Re-write the tests against the simpler function.** They
    should now be boring: call the function, assert the output.
 
-## Example
-
-`run_with_drain_and_timeout` in `src/analyze_issues.rs` was
-40 lines that spawned a `Child`, drained stdout/stderr in
-background threads, polled `try_wait()` in a loop, and killed
-on timeout. To make it testable required a `ChildController`
-trait, a `MockChild` struct, a seam-injected
-`wait_for_exit_with_timeout` helper, and explicit unit tests
-for each trait method — all of it existing only because the
-real `Child` type couldn't be mocked.
-
-The single sentence: "call `gh`, return stdout or an error."
-
-The simple primitive: `std::process::Command::output()`. It
-drains automatically, it returns a `Result`, and every branch
-is a single `match` arm any test can drive. No timeout (gh has
-its own network timeout; a hung process is a Ctrl-C scenario,
-not a coverage concern).
-
-Result: the 40-line function collapses to ~15, the trait +
-mock + seam helper delete entirely, and the two stubborn
-uncovered-region gaps disappear because the regions no longer
-exist.
-
 ## Cross-references
 
 - `.claude/rules/reachable-is-testable.md` — the triage that
@@ -101,11 +77,10 @@ exist.
   tests that exist only to hit an over-engineered branch are
   not naming a real regression.
 - `.claude/rules/rust-patterns.md` — seam-injection variant
-  patterns (`run_impl_with_deps`, `ChildController`) are
-  legitimate when the production caller genuinely needs a
-  dependency it cannot mock in-process (TTYs, real sockets, &c.).
-  They become over-engineering when the simpler primitive would
-  have sufficed.
+  patterns are legitimate when the production caller genuinely
+  needs a dependency it cannot mock in-process (TTYs, real sockets,
+  &c.). They become over-engineering when the simpler primitive
+  would have sufficed.
 - `.claude/rules/no-waivers.md` — the 100% coverage gate forces
   this discipline. When you can't reach 100% on a branch, the
   rule says fix the code, not the threshold.

@@ -17,14 +17,6 @@ twice is pure cost. The
 section calls this out as a duplicate guard, and the cheapest catch
 is at Plan time before the second test is written.
 
-Issue #1175 / PR #1173 surfaced this. The plan named
-`stop_continue_qa_pending_fallback_blocks` as a new subprocess
-test; a pre-existing `test_stop_continue_qa_pending_fallback_blocks`
-(identical except for the `test_` prefix) already exercised the same
-production path. Code Review caught the duplicate and deleted the
-older test, costing a full review cycle on work the Plan-phase gate
-could have prevented.
-
 ## The Rule
 
 The scanner normalizes every candidate test name via
@@ -71,21 +63,17 @@ Two line-level HTML comments suppress a trigger:
 
 - `<!-- duplicate-test-coverage: not-a-new-test -->` — the plan
   prose is discussing or referencing an existing test by name, not
-  proposing a new one. Use when a plan's Exploration section cites
-  an existing test as prior art.
+  proposing a new one.
 - `<!-- duplicate-test-coverage: intentional-duplicate -->` — the
   author is knowingly adding a parallel test whose name collides
   with an existing test. See the "Named Tests After Refactor"
   section of `.claude/rules/docs-with-behavior.md` for the class of
-  case this handles: a refactor that makes a test appear redundant
-  still requires the named test to exist, driven through a test
-  seam so the caller-level contract is independently asserted.
+  case this handles.
 
 Walk-back grammar matches sibling rules: the comment applies to
 its own line, the next non-blank line, or two lines below with a
 single blank line between. No chaining across more than one blank
-line. This mirrors `.claude/rules/scope-enumeration.md` and
-`.claude/rules/external-input-audit-gate.md`.
+line.
 
 ## Enforcement Topology
 
@@ -104,35 +92,22 @@ Three callsites share `duplicate_test_coverage::scan`:
 
 All three callsites return the same JSON error shape
 (`status="error"`, `violations[]`, `message`) with per-violation
-`rule="duplicate-test-coverage"` tags, so the repair loop is
-identical regardless of which path triggered the failure.
+`rule="duplicate-test-coverage"` tags.
 
 ### No corpus contract test
 
 Unlike the sibling `scope_enumeration` and `external_input_audit`
 rules, this rule intentionally ships without a corpus contract
 test over `CLAUDE.md`, `.claude/rules/*.md`, `skills/**/SKILL.md`,
-and `.claude/skills/**/SKILL.md`. The reason is empirical: the
-first attempt at such a scanner produced 18+ false positives on
-legitimate educational citations — `test_agent_frontmatter_only_supported_keys`
-in CLAUDE.md naming an enforcement mechanism,
-`production_ci_decider_tree_changed_returns_not_skipped` in
-`.claude/rules/extract-helper-refactor.md` as a reference pattern,
-and similar references across 8 rule files.
+and `.claude/skills/**/SKILL.md`. Legitimate educational citations
+of test names in rule files would false-positive at scale.
 
-Per `.claude/rules/tests-guard-real-regressions.md` "Forbidden
-patterns: Duplicate guards for a property already covered by an
-existing plan-check scanner," the corpus scan adds no protection
-on top of the Plan-phase gate already shipped. A plan that
-copy-pastes a test name from committed prose is caught by the
-same `plan_check` invocation that runs over plan content, so the
-documented-name-in-prose path never escapes the gate. Per
-`.claude/rules/scope-enumeration.md` "False-positive sweep before
-expanding the vocabulary" (count ≥ 5 → revert), the corpus scan
-was reverted to a documented empty marker at
-`tests/duplicate_test_coverage.rs`; its module doc comment
-records the rationale so future sessions do not re-derive this
-conclusion.
+Per `.claude/rules/tests-guard-real-regressions.md`, the corpus
+scan adds no protection on top of the Plan-phase gate already
+shipped — a plan that copy-pastes a test name from committed prose
+is caught by the same `plan_check` invocation that runs over plan
+content. `tests/duplicate_test_coverage.rs` ships as a documented
+empty marker; its module doc comment records the rationale.
 
 ## How to Apply
 
@@ -144,8 +119,7 @@ When `bin/flow plan-check` returns a violation tagged
    test and its location.
 2. Decide the correct path:
    - **Rename** — if the new test exercises a distinct property,
-     rename it so the normalized form differs from the existing
-     test's normalized form.
+     rename it so the normalized form differs.
    - **Strengthen** — if the new test exercises the same property,
      delete the new-test proposal from the plan and strengthen the
      existing test if its assertion is weaker than the plan
@@ -187,10 +161,7 @@ time but at the cost of a full plan-rewrite cycle.
 
 The pattern recurs most often with pre-decomposed issues
 (`/flow:flow-create-issue`) because the issue body is drafted
-ahead of plan-time codebase exploration. The
-`flow-create-issue` skill cannot afford to enumerate every test
-file in the repo at issue-filing time, so the discovery
-responsibility shifts to the Plan phase. Plan authors fed a
+ahead of plan-time codebase exploration. Plan authors fed a
 pre-decomposed issue with a `## Implementation Plan` section
 must NOT trust the test names in the issue verbatim — they must
 re-validate against the current state of the test corpus before
@@ -202,24 +173,4 @@ The length-filter threshold (≥ 10 characters) and the two-item
 opt-out grammar are closed and curated. Novel false-positive
 phrasings are handled by extending the vocabulary in follow-up
 commits, mirroring the discipline documented in
-`.claude/rules/scope-enumeration.md` "Vocabulary Extensibility."
-The rule file is the primary instrument; the scanner is the
-merge-conflict trip-wire.
-
-## Cross-References
-
-- `.claude/rules/tests-guard-real-regressions.md` — the prose
-  discipline this gate enforces mechanically. Also the authority
-  that explains why no corpus contract test ships.
-- `.claude/rules/scope-enumeration.md` — structurally sibling
-  gate; shares the opt-out grammar and three-callsite topology.
-- `.claude/rules/external-input-audit-gate.md` — the other
-  structurally sibling gate.
-- `.claude/rules/docs-with-behavior.md` "Named Tests After
-  Refactor" — the motivating class for the
-  `intentional-duplicate` opt-out.
-- `src/duplicate_test_coverage.rs` — the scanner implementation.
-- `src/plan_check.rs` — the standard-path gate.
-- `src/plan_extract.rs` — the extracted and resume gates.
-- `tests/duplicate_test_coverage.rs` — documented empty marker
-  explaining why no corpus contract test ships.
+`.claude/rules/scope-enumeration.md`.

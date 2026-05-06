@@ -10,23 +10,17 @@ must know when those mutations land relative to when the hook fires.
 
 ## Why
 
-The initial `validate-ask-user` block path (PR #1053) gated on
-`skills.<current_phase>.continue == "auto"` without accounting for
-WHEN `current_phase` is written. `phase_complete()` advances
-`current_phase` to the NEXT phase before the completing skill's
-HARD-GATE fires `AskUserQuestion`. With a manual→auto transition
-(Code=manual with Code Review=auto in the Recommended preset), the
-skill fires the approval prompt, the hook reads `current_phase` =
-the next (auto) phase, and blocks the approval — flow deadlocked.
+A hook that gates on `current_phase` without accounting for WHEN
+`current_phase` is written will fire in unintended states.
+`phase_complete()` advances `current_phase` to the NEXT phase
+before the completing skill's HARD-GATE fires `AskUserQuestion`.
+With a manual→auto transition, the skill fires the approval prompt,
+the hook reads `current_phase` = the next (auto) phase, and blocks
+the approval — flow deadlocked.
 
-The fix was to add a phase-status predicate
-(`phases.<current_phase>.status == "in_progress"`) so the block
-only fires when the phase is actively executing. The bug was
-catchable at Plan time if the Risks section had enumerated state
-reads against state writes; it wasn't, so Code Review's pre-mortem
-agent caught it post-implementation. Escalating the rule from
-instruction-level to hook-level is a class of change where this
-pattern is most likely to recur.
+The fix is to add a phase-status predicate (e.g.
+`phases.<current_phase>.status == "in_progress"`) so the block only
+fires when the phase is actively executing.
 
 ## The Rule
 

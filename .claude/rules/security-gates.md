@@ -28,9 +28,7 @@ normalized before comparison:
 3. **Lowercase with ASCII semantics** (`to_ascii_lowercase()`)
    when the comparison is conceptually case-insensitive. Phase
    names, outcome names, and command names in FLOW are all
-   intended to be case-insensitive for robustness — a caller
-   passing the wrong case is a caller bug, not an attack, but
-   the gate defending against it is cheap.
+   intended to be case-insensitive for robustness.
 
 Normalization runs on BOTH sides of the comparison: if you are
 checking `input == "flow-code-review"`, either normalize
@@ -39,7 +37,7 @@ already normalized. Asymmetric normalization is the bug that
 adversarial tests find.
 
 Extract normalization into a named helper when multiple gates
-share the same logic, so the contract is visible and reusable:
+share the same logic:
 
 ```rust
 fn normalize_gate_input(s: &str) -> String {
@@ -74,9 +72,7 @@ if outcome_norm == "filed" {
 ```
 
 The allowlist makes the rule's invariant explicit in code: "Code
-Review accepts exactly these outcomes." The denylist encodes
-"Code Review rejects exactly this outcome," which is weaker and
-brittle to future additions.
+Review accepts exactly these outcomes."
 
 ## Fail Closed When State Is Unreliable
 
@@ -97,10 +93,6 @@ Fail-closed semantics matter most when the state file signals
 that a flow is active but the gate cannot tell which phase. A
 kill signal, interrupted write, or hand edit that leaves the
 file unparseable must not silently disable the gate.
-
-The rejection message should name the failure mode (invalid JSON,
-missing field, wrong type) and point the user at the override or
-recovery path if one exists.
 
 ## Gate-Action Atomicity for Validated Paths
 
@@ -181,9 +173,7 @@ enumerate:
    gate-validated destination).
 
 A plan that introduces a transforming gate without naming all
-four is incomplete. Pre-mortem and adversarial agents will
-catch the gap during Code Review at the cost of a full review
-cycle; the cheaper catch is at Plan time.
+four is incomplete.
 
 ### Code-phase Discipline
 
@@ -245,12 +235,10 @@ Minimum variant checklist for every string-input gate:
 For each variant, add a test case. The unit tests for the pure
 gate helper cover most of these; the integration test (binary
 spawn with prepared state) covers the ones that depend on
-subprocess state (state-file reads, exit codes).
+subprocess state.
 
 The discipline: write the variant list FIRST, then write the
-tests from the list, then write the implementation. The goal is
-to be boring — the gate passes every test on first implementation
-because the test list already anticipated every bypass.
+tests from the list, then write the implementation.
 
 ## How to Apply
 

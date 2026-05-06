@@ -40,27 +40,16 @@ implementation for this pattern.
 
 - **Predicate state scope.** Document explicitly which scanner states
   invoke the predicate. `scan_unquoted` calls its predicate only in
-  Normal state — quoted bytes are inert by construction. A caller who
-  expected the predicate to run inside double quotes would be surprised,
-  so the scanner's doc comment must say so outright.
-
+  Normal state — quoted bytes are inert by construction.
 - **Scanner-internal universal matches.** When a match is universal
   across multiple states (e.g. `$(` and backticks are structural in
   both Normal and Double state because bash expands them in both), the
   scanner itself must perform the match rather than relying on
-  predicates to agree. `scan_unquoted` hardcodes `$(` and backtick
-  detection inside the Double state arm because every predicate would
-  otherwise have to duplicate that logic — duplication invites drift.
-  Only Single-quoted state fully suppresses expansion in bash; the
-  scanner encodes this invariant once.
-
+  predicates to agree. Duplication invites drift.
 - **Shared scanner, multiple predicates.** When the same state machine
-  backs multiple CLI layers (Layer 1 compound operators and Layer 2
-  redirection in `validate_pretool::validate`), both layers must go
-  through the same scanner function so a quote-semantics bug fix in
-  the scanner automatically applies to every layer. Layering two
-  independent scanners produces drift.
-
+  backs multiple CLI layers, both layers must go through the same
+  scanner function so a quote-semantics bug fix in the scanner
+  automatically applies to every layer.
 - **Unclosed-state fallback.** When the scanner finishes inside a
   non-Normal state (unclosed quote, unterminated escape), return a
   distinct `Err(ScanError::Unclosed)` variant rather than silently
@@ -70,9 +59,6 @@ implementation for this pattern.
 
 **How to apply:**
 
-<!-- scope-enumeration: imperative -->
-When designing a new stateful scanner that accepts predicates:
-
 1. Enumerate every scanner state the predicate will run in. Pick one
    (typically "outside all non-literal contexts") and document it.
 2. List every operator class the scanner must catch. Split them into
@@ -81,14 +67,7 @@ When designing a new stateful scanner that accepts predicates:
 3. Treat the state machine as shared infrastructure, not caller-owned.
    Do NOT let consumers bring their own state machine — that defeats
    the shared-scanner guarantee.
-4. Add an explicit error variant for each malformed-input class
-   (unclosed quote, unterminated escape, unbalanced bracket). Consumers
-   must match on the error type, not treat it as "no match."
-
-When reviewing an existing predicate-based scanner, check that the
-predicates are consistent about which states they run in. If one
-predicate assumes it runs in Normal only and another assumes it runs
-everywhere, the scanner has a silent contract gap.
+4. Add an explicit error variant for each malformed-input class.
 
 ## State Mutation Object Guards
 
@@ -102,8 +81,7 @@ guards — check the type of each intermediate level before assigning.
 When a nested field like `state["phases"]` must be an object for
 downstream IndexMut access, reset it to `json!({})` if its type is
 wrong. This auto-heal approach prevents panics from corrupted or
-legacy state files while allowing the operation to proceed with
-empty data rather than failing entirely.
+legacy state files.
 
 ## Hook Input Boolean Field Tolerance
 
@@ -127,13 +105,9 @@ have the main arm call one of the centralized helpers in
 `src/dispatch.rs`:
 
 - `dispatch::dispatch_json(Value, i32)` — for subcommands whose
-  stdout contract is JSON (e.g., `check_phase::run_impl_main`,
-  `phase_transition::run_impl_main`, `tui_data::run_impl_main`,
-  `format_complete_summary::run_impl_main`,
-  `format_issues_summary::run_impl_main`,
-  `format_pr_timings::run_impl_main`).
+  stdout contract is JSON.
 - `dispatch::dispatch_text(&str, i32)` — for subcommands whose
-  stdout contract is plain text (e.g., `format_status::run_impl_main`).
+  stdout contract is plain text.
 
 Return type choices:
 
@@ -141,18 +115,13 @@ Return type choices:
 - `(String, i32)` — plain-text stdout, no stderr path.
 - `Result<(Value, i32), (String, i32)>` — when the arm has a stderr
   error path. `Ok` routes to stdout via `dispatch_json`; `Err` goes
-  to stderr with the paired exit code. Reference:
-  `tui_data::run_impl_main` (no-flag error) and
-  `format_status::run_impl_main` (branch-resolution failure at exit
-  2). The main arm pattern-matches the Result.
+  to stderr with the paired exit code.
 
 `run_impl_main` functions take `root: &Path` (and `cwd: &Path` where
 the arm enforces cwd drift) as parameters rather than calling
 `project_root()` / `current_dir()` internally, so integration tests
 in `tests/<name>.rs` can pass a `TempDir` fixture without colliding
-with the host worktree. Main.rs resolves those values once per arm
-and passes them in, matching the shape of the pre-existing
-`run_impl` seam in `ci.rs::run()`.
+with the host worktree.
 
 **Seam-injection variant for externally-coupled code.** When a
 module's production wrapper depends on resources `cargo nextest`
@@ -164,9 +133,9 @@ keep the production wrapper a thin closure-supplier.
 "externally-coupled" resources that justify a pub test seam is
 exactly: real TTY (`libc::isatty`), raw-mode terminal (crossterm
 `enable_raw_mode`/`LeaveAlternateScreen`), live crossterm event
-loop, network socket opened inside the module. Nothing else. In
-particular, the following do NOT qualify as externally coupled and
-cannot be used to justify a pub test seam:
+loop, network socket opened inside the module. Nothing else. The
+following do NOT qualify and cannot be used to justify a pub test
+seam:
 
 - Subprocess calls to `gh`, `git`, `bin/flow`, or any other binary —
   these are fixture-controllable (prepend a fake binary to PATH,
@@ -191,23 +160,14 @@ accepts `is_tty_fn: FnOnce() -> bool` and `run_terminal_fn:
 FnOnce(&mut TuiApp) -> io::Result<()>` so unit tests substitute
 mock closures and assert each branch's return tuple. The production
 wrapper `run_tui_arm` returns `!` and calls `run_tui_arm_impl` with
-real implementations (`libc::isatty`, the crossterm event loop),
-then matches the Result to `process::exit` — keeping the exit
-dispatch inside the module leaves main.rs's match arm a single
-fully-covered expression. Crossterm code that physically cannot run
-without a TTY (raw mode, alternate screen) lives in a private
-helper (`run_terminal`) whose internal coverage is the module's
-concern, not main.rs's.
+real implementations, then matches the Result to `process::exit`.
 
 The same closure-injection pattern applies to RAII guards whose
 release path needs unit-test verification: parameterize the cleanup
 closure (`TerminalGuard<F: FnMut()>` with `release_fn: Option<F>`)
 so unit tests construct a guard with a flag-setting closure, panic
 inside `std::panic::catch_unwind`, and assert the flag was set on
-Drop unwind. The production caller passes the real cleanup closure
-(disable_raw_mode, LeaveAlternateScreen) and gets the same
-guarantee. Per `.claude/rules/panic-safe-cleanup.md`, the closure
-must swallow its own errors because `Drop` cannot return them.
+Drop unwind.
 
 **Three-tier dispatch for subprocess-coordinating modules.**
 
@@ -216,9 +176,7 @@ pub-for-testing. Before adopting it, confirm the dependencies truly
 cannot be exercised via the real production path with fixtures. If
 the dependencies are `gh`/`git`/`bin/flow` subprocess calls, fixture
 them via a fake binary on PATH instead of introducing a `_with_deps`
-pub seam. If the dependencies are filesystem reads or environment
-variables, fixture them via tempdir and `Command::env`. A
-`_with_deps` variant whose only non-test caller is the
+pub seam. A `_with_deps` variant whose only non-test caller is the
 same-module `run_impl` production binder fails the bright-line
 test in `.claude/rules/test-placement.md` and is forbidden.
 
@@ -238,24 +196,12 @@ approaches have been tried and documented as insufficient.
 3. `pub fn run_impl_main(args, root, cwd) -> (Value, i32)` — main-arm
    dispatcher that wraps into the `(Value, i32)` contract.
 
-Reference implementations: the four start-family modules
-(`src/start_init.rs`, `src/start_gate.rs`, `src/start_workspace.rs`,
-`src/start_finalize.rs`) follow this three-tier pattern. Only
-`start_init` keeps `run_impl -> Result<Value, String>` and adds a
-seam-level `run_impl_main_with_deps` — its module doc comment
-documents the asymmetry and the reason (`plug_root_finder=None` and
-init-state subprocess `Err` are reachable infrastructure failures
-that need to map to exit code 1).
-
 **Exit code convention for business errors.** When `run_impl` returns
 `Value` unconditionally, the paired `run_impl_main` wraps as
 `(v, 0)` — exit code is always `0`. Callers distinguish success from
 failure by parsing the JSON `status` field, not by shell exit code.
-This matches the pre-existing convention of `format_complete_summary`,
-`format_issues_summary`, `format_pr_timings`, and `tui_data`. Exit
-code `1` is reserved for infrastructure failures that escape the JSON
-contract (surfaced via `Err` from a fallible `run_impl`, then wrapped
-as `(err_json, 1)` by `run_impl_main`).
+Exit code `1` is reserved for infrastructure failures that escape the
+JSON contract.
 
 ## Test Subprocess Stdio
 
@@ -297,8 +243,7 @@ When other modules need the same tolerance, import from `crate::utils`
 ## Saturating Arithmetic on Counter Reads
 
 Counter reads via `tolerant_i64` can return values at or near `i64::MAX`
-when state files carry corrupt or legacy values (hand edits, external
-writers, or integer overflow from a prior session). Raw `+ 1` or
+when state files carry corrupt or legacy values. Raw `+ 1` or
 `+ elapsed` arithmetic on those values panics in debug builds and wraps
 silently to `i64::MIN` in release builds, corrupting the counter.
 
@@ -348,8 +293,7 @@ user-controlled directories.
 Use `fs::symlink_metadata(&path).is_ok()` for the existence check
 instead. `symlink_metadata` does not follow symlinks, so it returns
 `Ok` for files, directories, valid symlinks, AND dangling symlinks —
-every entry the filesystem considers present. The installer then
-skips the path without writing, preserving whatever is already there.
+every entry the filesystem considers present.
 
 ```rust
 // Correct
@@ -374,10 +318,7 @@ directory, and missing-path cases.
 The rule is scoped to **writes and file-creation calls only**. Deletion
 paths (`fs::remove_file`, `fs::remove_dir`) do not have the same
 symlink-escape risk — `fs::remove_file` on a symlink removes the link
-itself, never its target. Citing this rule for a deletion-path concern
-is a false positive. For the separate concern of iterating a directory
-and deleting entries, see "Safe Directory Iteration and Deletion"
-below.
+itself, never its target.
 
 ## Safe Directory Iteration and Deletion
 
@@ -403,12 +344,7 @@ explicitly:
 3. **Partial success return shape.** With continue-past-error, the
    return value must distinguish three states: no matches (`"skipped"`),
    at least one file deleted successfully (`"deleted"`), and matches
-   existed but every attempt failed (`"failed: <first_error>"`). Do
-   NOT use `"deleted"` when only some matches were removed and
-   others failed — that hides the failures. The first-error-reporting
-   shape (only report failure when NO file was deleted) balances
-   signal strength against noise: a single transient error does not
-   block the entire cleanup, but a hard failure is still surfaced.
+   existed but every attempt failed (`"failed: <first_error>"`).
 
 Canonical shape:
 
@@ -455,33 +391,13 @@ fn try_delete_matching(dir: &Path, prefix: &str) -> String {
 }
 ```
 
-**Plan phase checklist for `fs::read_dir` + delete loops.** When a
-plan task describes a helper that iterates a directory and deletes
-matching entries, enumerate these three risks explicitly in the
-Risks section before Code Review catches them:
+**Plan phase checklist for `fs::read_dir` + delete loops.** Enumerate
+these three risks explicitly in the Risks section before Code Review
+catches them:
 
-- Non-file entries that happen to match the filter prefix (directories,
-  sockets, named pipes) — must be skipped, not deleted, not aborting
-  the loop
-- Partial failure aggregation — loop must continue past individual
-  errors so one bad entry cannot orphan the others
-- Return shape for partial success — distinct statuses for
-  no-match, any-deleted, all-failed
-
-**Test coverage for directory iteration helpers.** Every new helper
-of this shape must ship with tests covering:
-
-- Single matching file → `"deleted"`, file gone
-- No matching files → `"skipped"`
-- Multiple matching files → `"deleted"`, all gone
-- Directory entry matching the prefix alongside real files → directory
-  untouched, files still deleted, step returns `"deleted"`
-- Missing target directory (`read_dir` returns `Err`) → `"skipped"`,
-  no panic
-- Branch-scoped or prefix-scoped isolation (concurrent callers with
-  different prefixes do not interfere)
-- Trailing-separator precision when the prefix ends in a
-  character-class boundary (e.g., `"foo."` must not match `"foo_bar"`)
+- Non-file entries that happen to match the filter prefix
+- Partial failure aggregation
+- Return shape for partial success
 
 ## Guard Universality Across CLI Entry Points
 
@@ -497,10 +413,7 @@ family. FLOW has two relevant families:
 - **State mutators:** `bin/flow phase-enter`, `bin/flow phase-finalize`,
   `bin/flow phase-transition`, `bin/flow set-timestamp`,
   `bin/flow add-finding`, `bin/flow add-issue`,
-  `bin/flow add-notification`, `bin/flow append-note`
-  (`src/phase_enter.rs`, `src/phase_finalize.rs`, the
-  `PhaseTransition` branch in `src/main.rs`, `src/commands/*.rs`,
-  `src/add_finding.rs`, etc.).
+  `bin/flow add-notification`, `bin/flow append-note`.
 
 **Read-only exemption.** Subcommands that only READ the state file
 and plan/worktree files (no mutations, no tool dispatch) are
@@ -508,12 +421,9 @@ exempt from `cwd_scope::enforce` — a wrong cwd on a read-only
 command cannot drift the flow because the command produces no
 side effects. The current exempt set is:
 
-- `bin/flow format-status` (`src/format_status.rs`) — renders the
-  status panel from state
-- `bin/flow tombstone-audit` (`src/tombstone_audit.rs`) — scans
-  `tests/*.rs` for tombstone PR references and queries GitHub
-- `bin/flow plan-check` (`src/plan_check.rs`) — runs the
-  scope-enumeration scanner against the current plan file
+- `bin/flow format-status` (`src/format_status.rs`)
+- `bin/flow tombstone-audit` (`src/tombstone_audit.rs`)
+- `bin/flow plan-check` (`src/plan_check.rs`)
 
 When adding a new read-only subcommand, add it to this list AND
 to the corresponding list in CLAUDE.md's Subdirectory Context
@@ -522,11 +432,7 @@ section so the two canonical enumerations stay in sync.
 Before merging a PR that adds a guard, grep `src/main.rs` for every
 `Commands::` variant in the target family and verify the guard lands
 in every `run_impl` or `run()` entry. A guard that exists in only one
-runner creates divergent behavior: the user hits the same failure
-mode in the unguarded sibling. The class of bug is invisible to
-individual unit tests — only a contract test that enumerates every
-variant can catch it mechanically. Consider adding such a contract
-test whenever a new guard is introduced.
+runner creates divergent behavior.
 
 When tests spawn `CARGO_BIN_EXE_flow-rs` subprocesses while the test
 suite itself is running inside a `bin/flow ci` invocation,
@@ -538,9 +444,7 @@ fresh invocation.
 The two family lists above are also the canonical enumeration used
 by `.claude/rules/scope-enumeration.md` — the prose-side rule that
 requires every universal-quantifier claim about a code family to
-carry a named sibling list. When you add a new member to either
-family, update both this section and any plan prose that references
-the family by its universal noun so the named list stays in sync.
+carry a named sibling list.
 
 ## Cwd-Inside-Destructive-Path Guard
 
@@ -586,27 +490,19 @@ Three properties matter:
 - **Equality OR prefix.** A cwd nested inside the worktree
   (`<worktree>/<sub>/...`) must trigger the gate too. The
   `cwd_canon.starts_with(&worktree_canon)` check covers descendants;
-  the `==` check covers the exact-root case (some platforms strip
-  trailing separators that would otherwise break `starts_with`).
+  the `==` check covers the exact-root case.
 - **Skip on canonicalize error, do not panic.** When either path
-  can't be canonicalized (worktree path doesn't yet exist, cwd
-  vanished mid-call), the guard falls through and lets downstream
-  steps surface a more specific error. The guard's job is to catch
-  the common case cleanly, not to be the universal error path.
+  can't be canonicalized, the guard falls through and lets downstream
+  steps surface a more specific error.
 
 The error envelope uses the same `(status, reason, message)` shape
-as `cwd_scope::enforce` (`reason="cwd_drift"` there,
-`reason="cwd_inside_worktree"` here). The exit code stays at 0 per
-the "Exit code convention for business errors" note above —
-the JSON `status` field is the actual signal callers parse.
+as `cwd_scope::enforce`. The exit code stays at 0 per the
+"Exit code convention for business errors" note above — the JSON
+`status` field is the actual signal callers parse.
 
 When adding a new subcommand whose execution path removes the
-caller's cwd (e.g. a future `flow worktree purge` or any helper
-that calls `git worktree remove` against a runtime-supplied path),
-plant the same guard at the top of its `run_impl` before any side
-effect runs. The pair to `cwd_scope::enforce` covers both directions
-of cwd hazard: drift away from the expected directory, and
-self-deletion of the current directory.
+caller's cwd, plant the same guard at the top of its `run_impl`
+before any side effect runs.
 
 ## Local Doc Comments
 
@@ -635,9 +531,7 @@ integration test file, not in the source file.
 - Wrong: `// --- tolerant_i64(v: &Value) ---`
 
 Before adding a new marker, grep the test file for existing
-`// --- ` lines and match their style. A marker that deviates from
-the file's convention is a maintainability regression — the pattern
-is discoverable only by reading the file, so consistency matters.
+`// --- ` lines and match their style.
 
 ## Session Log Message Format
 

@@ -22,10 +22,9 @@ broken. Speculative tests have three costs:
 The project already has strong mechanical enforcement for the
 drift surfaces that matter: tombstones in `tests/tombstones.rs`,
 corpus scanners like `tests/scope_enumeration.rs` and
-`tests/external_input_audit.rs` (each with a named trigger
-vocabulary backed by a concrete incident), and plan-check gates.
-Adding broader "safety net" scans on top of that accumulates test
-code without covering new regressions.
+`tests/external_input_audit.rs`, and plan-check gates. Adding
+broader "safety net" scans on top of that accumulates test code
+without covering new regressions.
 
 ## The Rule
 
@@ -51,16 +50,15 @@ name.
   the deleted content is gone. See
   `.claude/rules/tombstone-tests.md`.
 - **Structural contract tests** — assert a specific invariant in a
-  specific file (e.g., "flow-plan SKILL.md contains the
-  Extract-Helper Branch Enumeration subsection"). The regression
-  is an accidental edit; the consumer is the skill's cross-
-  reference or the subsection's role in the workflow.
+  specific file. The regression is an accidental edit; the consumer
+  is the skill's cross-reference or the subsection's role in the
+  workflow.
 - **Targeted corpus scans** — the scanner must have a named
-  trigger vocabulary tied to a documented incident and a named
+  trigger vocabulary tied to a documented constraint and a named
   consumer (the rule file that authorizes the scan). See
   `tests/scope_enumeration.rs` and
   `tests/external_input_audit.rs`. Broader scans without a named
-  incident or vocabulary are speculative.
+  vocabulary are speculative.
 
 ### Multi-file contract tests
 
@@ -75,12 +73,10 @@ explain what specifically breaks if any one of the files drifts.
 **Default shape: per-file siblings.** Rather than a single
 `multi_file_contract` test asserting "all four agents reference
 the new diff range," write four separate tests — one per file —
-each naming the agent and the regression
-(`reviewer_agent_input_describes_substantive_diff`,
-`pre_mortem_agent_input_describes_substantive_diff`, etc.).
-Per-file tests give failure output that names the drifted file
-immediately, instead of forcing the maintainer to read assertion
-internals to find which file regressed.
+each naming the agent and the regression. Per-file tests give
+failure output that names the drifted file immediately, instead of
+forcing the maintainer to read assertion internals to find which
+file regressed.
 
 **Single-test shape: only when coordination is the invariant.**
 When the assertion is genuinely a single coordinated invariant
@@ -142,18 +138,6 @@ corpus-class contract test:
    future session looking for the contract test finds the rationale
    without re-deriving it.
 
-**Motivating incident.** PR #1177's `duplicate_test_coverage`
-scanner flagged 18+ legitimate educational test-name citations in
-the prose corpus (e.g. `test_agent_frontmatter_only_supported_keys`
-in CLAUDE.md documenting an enforcement mechanism,
-`production_ci_decider_tree_changed_returns_not_skipped` in
-`extract-helper-refactor.md` as a reference pattern). The Plan-phase
-gate catches the real regression path (a plan proposing a duplicate
-test name is flagged at plan-check time regardless of where the
-name appeared in committed prose), so the corpus scanner added no
-protection on top of the existing gate. `tests/duplicate_test_coverage.rs`
-now ships as a documented empty marker per step 4 above.
-
 ### Forbidden patterns
 
 - **"Just in case"** scans over broad file sets without a named
@@ -206,14 +190,11 @@ the coverage surface:
 - **Library-level tests** — call `pub` items from the `flow_rs`
   crate directly (`run_impl_main` seams, public helpers, injected
   closure variants). Used when the branch under test is reachable
-  through the public surface of the subject module. Reference
-  pattern: `tests/complete_fast.rs` exercises
-  `run_impl_with_deps` through the public seam.
+  through the public surface of the subject module.
 - **Subprocess tests** — spawn the compiled binary via
   `CARGO_BIN_EXE_flow-rs` to exercise CLI dispatch, real
   filesystem interactions, or behavior that requires a fresh
-  process. Reference pattern: subprocess tests in
-  `tests/main_dispatch.rs` and `tests/concurrency.rs`.
+  process.
 
 If a coverage-required branch resists both modes, the fix is one
 of the three default responses in `.claude/rules/no-waivers.md`:
@@ -271,8 +252,7 @@ correctness depends on byte-stability.
 Discovering the golden value by running the production code and
 copying its output into the test is the fastest path but
 provides ZERO regression protection if the code is wrong at
-authoring time. The test would assert the buggy output equals
-itself.
+authoring time.
 
 The discipline:
 
@@ -280,8 +260,7 @@ The discipline:
    expected output through a separate path — a reference
    implementation, a spec-derived calculation, manual computation
    on a small input, or cross-check against an existing
-   downstream artifact (e.g., a stored `.flow.json` hash from a
-   previous release). Document the verification path in the
+   downstream artifact. Document the verification path in the
    test's doc comment.
 2. **If no independent path exists, pin the value but require a
    second-source confirmation.** Add an inline comment naming the
@@ -302,12 +281,9 @@ under a section marker. Tag the golden constant with
 `CURRENT_<purpose>` (e.g., `CURRENT_CONFIG_HASH`) so a grep for
 the prefix surfaces every frozen value in the codebase.
 
-A reference implementation: `compute_config_hash_uses_python_default_formatter`
-in `tests/prime_check.rs` pins a 12-character SHA-256 prefix
-produced from `UNIVERSAL_ALLOW`/`FLOW_DENY`/`EXCLUDE_ENTRIES`
-through the `PythonDefaultFormatter`. The pinned value protects
-every stored `.flow.json` hash in the wild from silent
-invalidation.
+Reference: `compute_config_hash_uses_python_default_formatter` in
+`tests/prime_check.rs` pins a 12-character SHA-256 prefix produced
+from `UNIVERSAL_ALLOW`/`FLOW_DENY`/`EXCLUDE_ENTRIES`.
 
 ## How to Apply
 
@@ -332,43 +308,3 @@ deleting it.
 
 **Learn phase.** User corrections that flag speculative tests
 surface as missing-rule findings. This rule is the reference.
-
-## Motivating Incident
-
-Issue #1160 / PR #1168 surfaced this. During the Code phase, I
-added a `no_waiver_language_in_authoring_corpus` contract test
-that scanned `.claude/rules/*.md`, `CLAUDE.md`, `skills/**/SKILL.md`,
-and `.claude/skills/**/SKILL.md` for forbidden waiver substrings,
-with an exemption list for `no-waivers.md` and the new
-`extract-helper-refactor.md`. The test was ~100 lines of Rust. The
-user flagged it: main already has three specific tombstones
-covering the three surfaces where waivers had been historically
-introduced (`test_coverage.md`, `docs-with-behavior.md` Waiver
-Discipline section, CLAUDE.md `test_coverage.md` references), plus
-the `.claude/rules/no-waivers.md` rule prose, plus plan-check
-scanners. The corpus scan's only realistic regression paths were
-already covered; the scan would only fire on the exempt files
-themselves (silently). I reverted the test.
-
-## Cross-References
-
-- `.claude/rules/tombstone-tests.md` — the canonical form for
-  guarding named deletions.
-- `.claude/rules/scope-enumeration.md` and
-  `.claude/rules/external-input-audit-gate.md` — canonical forms
-  for targeted corpus scans with named trigger vocabularies.
-- `.claude/rules/scope-enumeration.md` "False-positive sweep before
-  expanding the vocabulary" — the original protocol that the
-  Corpus-scan viability check section generalizes.
-- `.claude/rules/skill-authoring.md` "Plan Task Ordering" — TDD
-  discipline that this rule complements.
-- `.claude/rules/duplicate-test-coverage.md` "Enforcement Topology"
-  — a rule that intentionally ships without a corpus contract
-  test per the viability check above, with the deferral rationale
-  inline.
-- `.claude/rules/no-waivers.md` — the 100% coverage discipline
-  that names coverage-required tests as having a valid named
-  consumer.
-- `.claude/rules/rust-patterns.md` "Test Module Section Markers"
-  — naming and grouping conventions for coverage-required tests
-  placed inline in source files or grouped in `tests/*.rs`.

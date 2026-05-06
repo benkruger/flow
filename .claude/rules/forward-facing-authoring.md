@@ -91,14 +91,3 @@ forward-facing before commit. A rule addition or doc comment
 that names the current PR, branch, or file the session just
 modified is a Real finding that must be rewritten before Step 4
 concludes.
-
-## Cross-References
-
-- `.claude/rules/comment-quality.md` — the same Forward-Facing
-  Test applied to inline code comments specifically
-- `.claude/rules/tests-guard-real-regressions.md` — tests must
-  guard a named regression; this rule's equivalent for prose
-  artifacts is to name a general principle, not a specific PR
-- `.claude/rules/no-waivers.md` — prohibits waiver
-  documentation; this rule prohibits backward-facing rule
-  documentation more broadly

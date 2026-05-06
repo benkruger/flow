@@ -33,10 +33,7 @@ invisible to the audit.
 no matter how old the underlying PR is. Use `PR #<number>` exactly,
 even if the conceptual "source" of the removal was an issue — cite
 the merge PR that performed the removal, not the issue that filed
-the request. If the removal landed outside a PR (e.g. a direct
-push, which should never happen in this repo but can in others),
-the tombstone is inauditable and should be accompanied by a doc
-comment explaining why.
+the request.
 
 ```rust
 #[test]
@@ -73,11 +70,7 @@ tombstone for each:
   `Cargo.toml`/`Gemfile.lock`/`package.json`, environment-
   variable defaults, feature-flag entries. Tombstone shape:
   source-content check that asserts the removed entry's exact
-  string does NOT appear in the config file. The
-  `Bash(rm -rf *.qa-repos*)` allow-list entry from
-  `.claude/settings.json` is the canonical example: a
-  permission was removed, so a tombstone reads the JSON and
-  asserts the entry is absent.
+  string does NOT appear in the config file.
 - **External plugin dependency.** A reference to another
   Claude Code plugin (`code-review:code-review`,
   `decompose:decompose`), a third-party MCP server, or any
@@ -92,12 +85,7 @@ tombstone for each:
   current count, so a future re-numbering catches drift.
 
 Every category benefits from a stability argument per
-"Literal tombstones — stability checklist" below — config-axis
-literals (e.g. allow-list entries) typically pass the checklist
-trivially because JSON does not permit interpolated string
-construction inside permissions arrays, but the argument
-should still be documented in the doc comment so future
-maintainers see the reasoning.
+"Literal tombstones — stability checklist" below.
 
 ## Naming Convention
 
@@ -139,14 +127,6 @@ fails to catch ALL of:
 - `.arg("start-").arg("lock")` — chained method calls that pass
   the two halves as separate arguments
 
-PR #1166 proved all eight of these bypasses with failing adversarial
-tests. The initial tombstone for that PR shipped with a byte-
-substring check and had to be rewritten under Code Review pressure.
-The rewrite scans the function body of each protected test for
-`Command::new(FLOW_RS)` — a construct no bypass can hide. This
-section documents the strength criteria so future tombstones ship
-strong from the start.
-
 ### Two kinds of tombstone
 
 A tombstone protects against resurrection of one of:
@@ -154,10 +134,10 @@ A tombstone protects against resurrection of one of:
 1. **A stable source literal.** The forbidden thing is a fixed
    string that appears in source — a CLI argument quoted with
    double quotes (`"start-lock"`), a function name that cannot be
-   synthesized at runtime (e.g. `post_message`), a file path, a
-   config key. A byte-substring check is acceptable AS LONG AS
-   the literal cannot be constructed by any of the patterns above
-   and still produce the same runtime effect.
+   synthesized at runtime, a file path, a config key. A
+   byte-substring check is acceptable AS LONG AS the literal
+   cannot be constructed by any of the patterns above and still
+   produce the same runtime effect.
 2. **A structural construct.** The forbidden thing is a class of
    runtime behavior (spawning a subprocess, opening a network
    socket, calling a deprecated API) that can be expressed through
@@ -224,8 +204,6 @@ fn test_concurrency_no_subprocess_start_lock() {
 The `split_once("#[test]")` bounds the assertion scope to the
 function body. An `unwrap_or(tail)` fallback handles the case
 where the protected function is the last `#[test]` in the file.
-For protected functions in the middle of the file, the bound is
-the next `#[test]` attribute.
 
 ### Literal tombstones — stability checklist
 
@@ -268,8 +246,7 @@ When a plan proposes a tombstone, the Tasks section must specify:
    above.
 
 A tombstone proposal without this documentation is a Plan-phase
-gap. Code Review's adversarial agent will write failing tests
-against the weak assertion; the cheaper catch is at Plan time.
+gap.
 
 ## Consolidation
 
@@ -283,8 +260,7 @@ tombstones integral to a test domain stay in their domain's
 If a tombstone needs to call a crate-internal function, convert it
 to a source-content assertion — read the source file at runtime
 with `std::fs::read_to_string` and assert the removed pattern does
-not appear. Source-content assertions run from `tests/` and need
-no privileged access to the crate's internals.
+not appear.
 
 ## Lifecycle
 

@@ -20,8 +20,7 @@ the binary. Anything the child does beyond that path is pollution:
   state (creates labels, closes issues, opens PRs).
 - **Coverage artifact leaks** — a child that inherits
   `LLVM_PROFILE_FILE` pointing to a path it cannot resolve writes
-  profraw files to its cwd. When the child's cwd is the worktree
-  root, those files persist into `git status`.
+  profraw files to its cwd.
 - **Ambient config** — a child that inherits `HOME` can read
   `~/.gitconfig`, `~/.cargo/config.toml`, `~/.config/gh/*`, and
   dozens of other dotfiles that vary by engineer, introducing
@@ -44,8 +43,7 @@ environment — must explicitly neutralize these surfaces:
    - Slack: `SLACK_WEBHOOK_URL`, `SLACK_BOT_TOKEN`,
      `SLACK_CHANNEL` — set to empty or `env_remove`
    - AWS / GCP / Azure — whichever cloud's SDK the subject
-     uses: `AWS_ACCESS_KEY_ID`, `GOOGLE_APPLICATION_CREDENTIALS`,
-     `AZURE_STORAGE_ACCOUNT` — `env_remove`
+     uses: `env_remove` the relevant credential vars
 2. **Ambient config homes**:
    - `HOME` — set to the test's canonical tempdir root so the
      child reads no user dotfiles
@@ -118,8 +116,7 @@ When a plan task adds a test that spawns a subprocess:
    listed neutralizer
 
 A subprocess test that omits a required neutralizer is a
-Plan-phase gap — the adversarial and pre-mortem agents will
-catch it in Code Review, but the cheaper catch is at Plan time.
+Plan-phase gap.
 
 ## How to Apply (Code Review)
 
@@ -134,20 +131,3 @@ subprocess test lacking env neutralization:
    credential set (e.g., `GH_TOKEN=<real-token> bin/flow ci --test
    -- <test>`) — the test must still pass without making
    network calls
-
-## Enforcement
-
-Iteration 1 is rule-prose only. A future contract test in
-`tests/subprocess_hygiene.rs` could scan every `Command::new`
-in `tests/**/*.rs` for missing env-neutralization patterns; see
-the filed plugin issue for the enforcement proposal.
-
-## Cross-References
-
-- `.claude/rules/testing-gotchas.md` — Rust parallel test env
-  var races; the "never `set_var` in tests" discipline is the
-  sibling rule for inside-process env safety, this rule covers
-  the child-process side.
-- `.claude/rules/concurrency-model.md` — shared GitHub state
-  coordination; the rule explains why neutralizing `GH_TOKEN`
-  matters (real API calls mutate shared state across engineers).

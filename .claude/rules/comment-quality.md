@@ -79,11 +79,6 @@ The correct rewrite discipline:
    only makes sense to a reader who has read the old comment, it is
    still backward-facing — go back to step 1.
 
-Rewrites that miss this discipline produce a second round of
-violations: the scanner or a reviewer flags the rewrite, another
-Code Review cycle fixes it, and the fix commit doubles the work.
-Read the code first, write from the code.
-
 ## Enforcement
 
 `tests/tombstones.rs::test_no_backward_facing_comments_in_rust_source`
@@ -91,11 +86,10 @@ mechanically enforces this rule at CI time. The scanner walks every
 `*.rs` file under `src/` and `tests/`, filters out lines matching the
 tombstone exception (`Tombstone:.*?PR #`), and asserts no line contains
 any phrase from a curated prohibited-pattern list (covering parity
-references to a deleted Python codebase, historical PR provenance,
-origin stories, "Before the fix" narratives, and dead section markers).
-The scanner self-excludes its own file via canonicalized-path
-comparison because it must contain the prohibited patterns as search
-input.
+references, historical PR provenance, origin stories, "Before the fix"
+narratives, and dead section markers). The scanner self-excludes its
+own file via canonicalized-path comparison because it must contain
+the prohibited patterns as search input.
 
 The pattern list is curated rather than regex-based: it captures every
 phrasing the rule explicitly prohibits, plus the phrasings observed in

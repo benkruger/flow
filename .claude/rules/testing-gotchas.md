@@ -70,8 +70,7 @@ environmental.
 `.config/*`, test-group overrides, parallelism limits) to paper
 over single-machine load events.** That expands the PR's diff into
 shared territory the user has not approved and conflates an
-environmental incident with a real config change. Every engineer
-running CI inherits the change.
+environmental incident with a real config change.
 
 **Investigation steps before classifying as flaky:**
 
@@ -86,11 +85,6 @@ running CI inherits the change.
    different days or load profiles — does the test merit a "flaky
    test" classification.
 
-The Phase 3 `flow-code` SKILL.md "Flaky test detection" instruction
-that authorizes filing Flaky Test issues based on a single
-failure-then-pass pattern is overridden by this rule: investigate
-load before filing.
-
 ## Cross-Branch Verification Before Claiming Infrastructure Bugs
 
 Before concluding that a build tool, test runner, or CI script
@@ -100,20 +94,13 @@ on a worktree is evidence of something — but until both observations
 exist, the failure cannot be located in the worktree's changes
 versus the shared infrastructure those changes inherit.
 
-**Why.** The default attribution when a test command misbehaves
-is "my branch broke it," not "the tool is broken." The worktree
-contains uncommitted changes; the integration branch contains
-code that has already passed CI. If the same command passes on
-the integration branch and fails or behaves unexpectedly in the
-worktree, the worktree is the cause. If the command reproduces
-the same behavior on both, only then is "infrastructure bug"
-a credible diagnosis.
-
-This is the verification side of the broader discipline in
-"Distinguish Environmental Load From Flaky Tests" above —
-environmental noise is one explanation for a transient anomaly,
-but a worktree-specific change is a more common explanation, and
-the cross-branch check distinguishes the two.
+The default attribution when a test command misbehaves is "my
+branch broke it," not "the tool is broken." The worktree contains
+uncommitted changes; the integration branch contains code that has
+already passed CI. If the same command passes on the integration
+branch and fails or behaves unexpectedly in the worktree, the
+worktree is the cause. If the command reproduces the same behavior
+on both, only then is "infrastructure bug" a credible diagnosis.
 
 **The Rule.** Before declaring `bin/test`, `bin/flow ci`,
 `cargo`, `nextest`, or any other build/test tool buggy, slow, or
@@ -121,8 +108,8 @@ broken:
 
 1. Capture the failing or anomalous command and its observed
    timing/exit code in the worktree.
-2. Run the exact same command on the integration branch
-   (`main` for FLOW). Capture timing and exit code there.
+2. Run the exact same command on the integration branch. Capture
+   timing and exit code there.
 3. Compare. Only when the integration-branch run reproduces the
    anomaly does "tool bug" become a valid hypothesis. Otherwise
    the worktree's changes are the cause — investigate them.
@@ -135,10 +122,7 @@ A diagnosis without step 2 is speculation. The user's evidence —
 "`bin/test` is slow," "the runner has a bug," "CI is broken,"
 "the suite timeout is wrong," or any equivalent statement that
 locates the fault in shared infrastructure rather than in the
-current branch's changes. The trigger fires on timing
-observations as much as on failures — a CI run that took twice
-its usual time is not evidence of an infrastructure regression
-until the integration-branch baseline confirms it.
+current branch's changes.
 
 ## Ambiguous Check Name Filters
 
@@ -162,18 +146,15 @@ because the recreated directory contains only fresh files.
 ## Test Doc Comment Must Support the Test Name
 
 A test's doc comment should describe what the test verifies in terms
-consistent with the test function's name. Never rewrite a doc comment
-during code review in a way that disavows the test name's assertion —
-e.g., a test named `deps_stdout_does_not_corrupt_return_value` whose
-comment says "the structural guarantee lives in production, not this
-test". If the test's exercise path only indirectly verifies the
-property the name claims (e.g., the property is enforced structurally
-in production code, and the test trip-wires a regression of that
-structure), the comment should explain HOW the exercise path
-trip-wires a regression of the named property — not that the property
-is someone else's responsibility. A reader whose first exposure to
-the test is its name should find the comment affirmatively supporting
-the name, not contradicting it.
+consistent with the test function's name. Never write a doc comment
+that disavows the test name's assertion — e.g., a test named
+`deps_stdout_does_not_corrupt_return_value` whose comment says "the
+structural guarantee lives in production, not this test". If the
+test's exercise path only indirectly verifies the property the name
+claims (e.g., the property is enforced structurally in production
+code, and the test trip-wires a regression of that structure), the
+comment should explain HOW the exercise path trip-wires a regression
+of the named property.
 
 ## Message Content Assertions — Per Variant, Not Just Presence
 
@@ -183,8 +164,7 @@ variants of that input (e.g. `bin/flow ci` and `bin/ci`), every test
 that exercises a different variant must assert on the message content,
 not just `msg.is_some()`. A single hardcoded message string that names
 only one variant will silently mislead callers who triggered the
-function via the other variant — the test passes because the message
-exists, but the content is wrong.
+function via the other variant.
 
 Pattern:
 
@@ -199,9 +179,7 @@ fn test_bin_ci_variant_produces_correct_message() {
 
 How to apply: when writing tests for a function with multi-variant
 message output, enumerate the variants in the test list and add one
-content assertion per variant. If the function returns the same
-message for every variant, use a generalized message that names all
-variants so the assertion is meaningful across the test set.
+content assertion per variant.
 
 ## Suffix-Match Path Coverage
 
@@ -210,10 +188,7 @@ file or binary (e.g. `first.ends_with("/bin/ci")`), tests must
 include BOTH the bare form (`bin/ci`) and the absolute-path form
 (`/Users/name/project/bin/ci` or `/opt/tools/bin/ci`). Parallel
 tests for each path variant document the intended coverage and
-catch bugs where the suffix match is silently broken (e.g. a
-refactor that accidentally changes `ends_with` to `starts_with`).
-
-Pattern for every `ends_with(path)` callsite in production code:
+catch bugs where the suffix match is silently broken.
 
 ```rust
 #[test]
@@ -229,8 +204,7 @@ fn test_absolute_path_matches() {
 
 How to apply: during Plan phase, enumerate every `ends_with` pattern
 the implementation will use, then add one test per pattern for each
-form (bare + absolute). The test count is small — two tests per
-pattern — and it locks the intended match surface.
+form (bare + absolute).
 
 ## Subsection-Local Assertions in Contract Tests
 
@@ -245,34 +219,12 @@ sibling section still carries the expected substring.
 
 ### Why
 
-When a new section is added to a multi-section file (for example,
-a subsection inside `skills/flow-code/SKILL.md` whose job is to
-route a specific task shape to `/flow:flow-commit`), a contract
-test proves the subsection exists and carries the correct routing.
-A naive implementation looks like:
-
-```rust
-// WRONG — after_heading covers everything from the heading to EOF
-let after_heading = c
-    .split("Measurement-Only Tasks")
-    .nth(1)
-    .expect("heading checked above");
-assert!(after_heading.contains("/flow:flow-commit"));
-```
-
 `split("H").nth(1)` returns the *entire* remainder of the file from
 the first occurrence of `"H"` forward. Any later section in the
-same file that happens to mention `/flow:flow-commit` satisfies the
-assertion — including the standard Commit section that every
-iteration of the skill has always had. A malicious (or merely
-careless) refactor that empties the new subsection of its
-`/flow:flow-commit` reference while leaving the rest of the file
-intact passes CI because the later unrelated mention still lives in
-`after_heading`.
+same file that happens to mention the asserted token satisfies the
+assertion — including unrelated sibling sections.
 
-The same class of gap appears whenever the assertion scope exceeds
-the logical unit under test. If the test's English claim is "the
-Measurement-Only Tasks subsection routes through `/flow:flow-commit`,"
+If the test's English claim is "the X subsection routes through Y,"
 the slice must cover only that subsection, not everything after its
 opening heading.
 
@@ -296,18 +248,13 @@ assert!(subsection.contains("/flow:flow-commit"));
 ```
 
 `split_once` is preferred over `split().nth(1)` because it makes
-the intent explicit (one split, two pieces) and avoids the iterator
-`nth()` ambiguity on strings that contain multiple occurrences of
-the split delimiter.
+the intent explicit (one split, two pieces).
 
 For Markdown files, "next section boundary" is usually the next
 heading of the same or higher level. The end delimiter should
 match the heading marker of the section being tested:
 
-- For a `### ` subsection, split on `"\n### "` (stops at the next
-  `### ` or a higher-level `## `/`# ` by virtue of the newline
-  anchor and the assumption that the subsection's parent ends with
-  `## `, not `### `).
+- For a `### ` subsection, split on `"\n### "`.
 - For a `## ` section, split on `"\n## "`.
 
 For Rust source files, use the `fn ` or `mod ` tokens that bound
@@ -316,11 +263,9 @@ the sub-document.
 
 ### Fallback to EOF
 
-When the section being tested is the last section in the file, the
-next-section split returns no matches. Use `.unwrap_or(tail)` so
-the assertion scope falls back to the end of the file rather than
-panicking. This keeps the test robust against a future edit that
-reorders sections and leaves the one under test at EOF.
+When the section being tested is the last section in the file, use
+`.unwrap_or(tail)` so the assertion scope falls back to the end of
+the file rather than panicking.
 
 ### How to apply
 
@@ -328,8 +273,7 @@ When writing a new contract test that asserts content inside a
 named section:
 
 1. Identify the heading or boundary marker that starts the section.
-2. Identify the marker that ends the section (the next peer heading,
-   the next mod block, the next top-level key).
+2. Identify the marker that ends the section.
 3. Walk to the start using `split_once(start_marker)`.
 4. Walk to the end using a second `split_once(end_marker)` on the
    tail, falling back to the tail itself via `unwrap_or(tail)`.
@@ -341,15 +285,6 @@ When reviewing an existing contract test that uses
 grep the file being tested for the asserted substrings. If any of
 them appear in multiple sections, the test is fragile — replace it
 with the bounded-slice pattern above.
-
-The motivating incident is benkruger/flow#1167 — the initial
-contract test for the Measurement-Only Tasks subsection matched
-`/flow:flow-commit` anywhere after the heading, including the
-standard Commit section ~L443 of `skills/flow-code/SKILL.md`. A
-gutted subsection passed the test. The fix bounded the slice with
-`split_once("### Measurement-Only Tasks")` followed by
-`split_once("\n### ")`. This rule codifies the pattern so future
-contract tests ship bounded from the start.
 
 ## macOS Subprocess Path Canonicalization
 
@@ -458,5 +393,4 @@ time per CI run, compounding across the test corpus.
 identify which time source the production code reads (mtime, system
 clock, sleep duration) and inject a seam at that point. If the
 production code does not accept a seam, refactor it to accept one
-before writing the test. A test that uses `thread::sleep` is a
-signal that the production code lacks a time-injection seam.
+before writing the test.

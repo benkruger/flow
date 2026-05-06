@@ -35,9 +35,7 @@ scope:
   - Completes in ~3 minutes
 
 For iterating on one file, the per-file gate is the **same gate,
-same file, same thresholds** — just 30× faster. Running full CI
-between iterations wastes ~2m55s per attempt; across a dozen
-iterations that's 35 minutes that should have been 1.
+same file, same thresholds** — just 30× faster.
 
 ## The Rule
 
@@ -67,10 +65,6 @@ Full CI (or `bin/flow ci --test`) is the right tool when:
   has verified the target file, but the commit still needs the
   cross-file sanity pass.
 
-The trigger "change crosses file boundaries" is on the author to
-decide. When uncertain, `bin/test tests/<affected-file>.rs` for
-each affected file is still faster than one full-CI run.
-
 ## Phantom Misses (Stale Instrumented Binaries)
 
 `bin/test` runs with `cargo llvm-cov --no-clean` so test binaries
@@ -94,18 +88,14 @@ once; the stale instantiations remain unexecuted forever.
 1. Run `bin/test --funcs <basename>.rs` — lists every function
    instantiation with its execution count. Multiple entries for
    the same demangled name with different mangled crate hashes
-   (e.g., `_RNvNtCs8fXSiUa7bCM_*`, `_RNvNtCsaO9B8DlJywj_*`,
-   `_RNvNtCslT5c56zUrC1_*` all alongside the live
-   `_RNvNtCscjLNWQIh9gP_*`) confirm stale binaries.
+   confirm stale binaries.
 2. Run `bin/flow ci --clean`. This is the user-facing reset:
    removes `target/llvm-cov-target/debug/deps/`, the
    `incremental/` dir, and every `*.profraw`. The next test run
    rebuilds fresh instrumentation with one crate hash per binary
    and the phantom misses disappear.
 3. Re-run `bin/test tests/<name>.rs`. The reported coverage now
-   reflects the actual code state. If the file is still <100%,
-   the remaining gap is real and addressable via tests or
-   refactor.
+   reflects the actual code state.
 
 The cleanup is a ~12-second one-shot followed by a ~45-second
 fresh compile on the first subsequent test run. Cheap relative
@@ -126,14 +116,3 @@ to the cost of chasing phantom misses for hours.
 
 Any one of those is sufficient — clean and re-measure before
 spending more time on test design.
-
-## Cross-References
-
-- `CLAUDE.md` "Development Environment" — names the three `bin/test`
-  invocation shapes (full suite, single-phase, per-file).
-- `.claude/rules/ci-is-a-gate.md` — explains why `bin/flow ci` is the
-  pre-commit gate; this rule is about iteration, not the gate.
-- `.claude/rules/no-waivers.md` — defines the 100/100/100 threshold
-  both the per-file and full-suite gates enforce.
-- `bin/test` — the script that implements both modes; per-file
-  dispatch is the `tests/<path>/<name>.rs` argument form.

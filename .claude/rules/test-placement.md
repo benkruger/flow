@@ -18,8 +18,7 @@ via a private helper, one of two things is true:
    — and the test — need alike. Add the seam.
 
 Both outcomes improve the code. Neither requires moving the privacy
-boundary. Calling code reaches private helpers through a public
-entry point every time; tests do the same.
+boundary.
 
 Three secondary wins fall out of the placement rule:
 
@@ -29,14 +28,10 @@ Three secondary wins fall out of the placement rule:
   in `tests/` at the same relative path.
 - **Fast per-file green loop** — `bin/test tests/<path>/<name>.rs`
   drives the mirrored src file to 100/100/100 in isolation. Edit
-  the src file, run the one test file, see red or green. No need
-  to reason about which inline `mod tests` block covers which
-  branch.
+  the src file, run the one test file, see red or green.
 - **Clean diffs** — production edits and test edits land in
   separate files. A source-file diff shows only behavior change; a
-  test-file diff shows only coverage change. Review is easier to
-  scope and the Code phase's commit boundaries align with the
-  atomic-commit rule.
+  test-file diff shows only coverage change.
 
 ## The Rule
 
@@ -79,6 +74,7 @@ the mirror rule:
 - `tests/structural.rs` — config invariants
 - `tests/permissions.rs` — permission allow/deny simulation
 - `tests/docs_sync.rs` — docs completeness
+- `tests/opt_out_inventory.rs` — frozen list of bypass comments in the rule corpus
 
 Adding a new meta-test without a src counterpart requires amending
 this list. Every other test under `tests/` must mirror a src file.
@@ -106,17 +102,14 @@ Flagged contexts include:
 - Any other surface that produces the exact substring on a line.
 
 A single flagged line fails the build. The scanner is strict by
-design — this is a drift tripwire, not a negotiation surface. It
-is not lowered, opt-outed, or relaxed to handle edge cases.
+design — this is a drift tripwire, not a negotiation surface.
 
 When a src file genuinely needs the characters `#[cfg(test)]` in a
 string literal (e.g., a test-corpus scanner's fixture construction),
 there is exactly one canonical escape: split the literal via
 `concat!("#[cfg", "(test)]")`. The `concat!` output produces the
 same runtime string without placing the literal substring on any
-source line. This matches the existing `concat!("#[", "ignore",
-"]")` pattern used in `tests/duplicate_test_coverage.rs` fixtures
-to avoid tripping the `no_skipped_or_excluded` contract test.
+source line.
 
 No other escapes exist. If a src file is flagged:
 
@@ -161,9 +154,7 @@ test:
      the src file until every branch reaches the public surface.
 3. Never make a private item `pub` solely to enable the test.
    That inverts the rule's intent — exposure for testing expands
-   the public surface without a production consumer, and every
-   future maintainer must treat the exposed item as part of the
-   crate's contract.
+   the public surface without a production consumer.
 
    **Bright-line test for `pub` additions.** Before adding `pub`
    to any item, the author MUST name the non-test production
@@ -229,8 +220,7 @@ test:
    ```
 
    Use `#[path = "../common/mod.rs"] mod common;` at the top of
-   the subdirectory test file to access shared helpers (adjust the
-   `../` depth for deeper subdirs).
+   the subdirectory test file to access shared helpers.
 5. Run `bin/test tests/<path>/<name>.rs` and iterate until the
    mirrored src file reads 100/100/100.
 
@@ -251,26 +241,4 @@ the two mechanical follow-ups.
 **Migrating section markers.** The `// --- <primary_name> ---`
 grouping convention from `.claude/rules/rust-patterns.md` still
 applies inside the integration test file — the home of the markers
-moves from `src/<path>/<name>.rs` to `tests/<path>/<name>.rs`, the
-convention itself is unchanged.
-
-## Cross-References
-
-- `.claude/rules/testability-means-simplicity.md` — the principle
-  this rule mechanically enforces. When a branch can't be tested
-  via the public surface, simplify or seam-inject; never widen
-  privacy.
-- `.claude/rules/tests-guard-real-regressions.md` — every test in
-  the migrated tests file must still guard a named regression, one
-  per branch.
-- `.claude/rules/rust-patterns.md` — seam-injection patterns
-  (`run_impl_main`, `run_impl_with_deps`, closure-parameter
-  variants) that make interface-only testing tractable for
-  externally-coupled code.
-- `.claude/rules/no-waivers.md` — 100/100/100 coverage gate.
-  Interface-only testing must still reach the gate; when a branch
-  resists public-surface testing, the answer is one of the three
-  responses in that rule (subprocess test, refactor, design
-  change), never a waiver.
-- `tests/test_placement.rs` — the contract test that enforces the
-  rule at CI time.
+moves from `src/<path>/<name>.rs` to `tests/<path>/<name>.rs`.

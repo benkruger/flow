@@ -22,10 +22,6 @@ actually reads the `reason` field and branches on it. When the Plan
 phase names tasks for the gate implementation but not for the
 consuming skill's error-handling, the Code phase ships a producer
 that emits the new reason and a consumer that silently drops it.
-Code Review's pre-mortem agent then surfaces the gap as a
-correctness bug and Step 4 fixes it. The cycle is avoidable: the
-caller enumeration is cheap to write at Plan time, and writing it
-forces the author to consider all consumers up front.
 
 ## The Rule
 
@@ -87,16 +83,14 @@ For every new error reason:
    <name>` invocation in `skills/`, `.claude/skills/`,
    `hooks/`, `agents/`, and `src/`. The audit table has one row
    per callsite.
-2. **Classify each consumer's parse.** Read
-   the surrounding 5-10 lines to see which JSON fields the
-   consumer reads. A consumer that captures `$(bin/flow ...)`
-   into a variable and uses only `formatted_time` from it is
-   reading `formatted_time`; it is NOT reading `status` or
-   `reason`.
+2. **Classify each consumer's parse.** Read the surrounding 5-10
+   lines to see which JSON fields the consumer reads. A consumer
+   that captures `$(bin/flow ...)` into a variable and uses only
+   `formatted_time` from it is reading `formatted_time`; it is NOT
+   reading `status` or `reason`.
 3. **For each consumer that does not currently branch on
    `status`/`reason`, add a Code-phase task** to extend the
-   parse. The task description must name the branch's behavior
-   (retry, escalate, propagate, etc.).
+   parse. The task description must name the branch's behavior.
 4. **Mark exempt consumers explicitly** — never leave a row
    blank. An exempt consumer named in the table proves the
    author considered it; an absent consumer is a Plan-phase
@@ -114,8 +108,7 @@ group entry.
 **Code phase.** Execute the producer change and every consumer
 change in the same PR. A producer that emits a new reason and a
 consumer that does not handle it is an internally-inconsistent
-PR — Code Review's pre-mortem agent will catch it, but the
-cheaper catch is at Plan time.
+PR.
 
 **Code Review phase.** The reviewer agent cross-checks every
 new error reason in the diff against the consumer enumeration
@@ -124,21 +117,3 @@ the diff did not extend is a Real finding fixed in Step 4.
 Conversely, a new reason that has no enumeration table at all
 is a Plan-phase gap — fix in Step 4 by writing the table
 retroactively, then verifying every consumer is correct.
-
-## Cross-References
-
-- `.claude/rules/cli-output-contracts.md` — the broader rule for
-  CLI output contracts (output format, exit codes, error
-  messages, fallback behavior). This rule extends it: when a
-  contract changes, every consumer must be enumerated.
-- `.claude/rules/scope-enumeration.md` — sibling rule for
-  universal-coverage claims. Both rules force enumeration before
-  the Code phase begins; this rule is the error-handling
-  dimension.
-- `.claude/rules/code-review-scope.md` — Real findings fixed in
-  the PR. A missing consumer-side update surfaced by Code Review
-  is fixed in Step 4 regardless of which file it lives in.
-- `.claude/rules/plan-commit-atomicity.md` — when the consumer
-  update lives in a different file from the producer, the plan
-  must mark the producer task and the consumer task as an
-  atomic group so they land in the same commit.

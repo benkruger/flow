@@ -77,11 +77,7 @@ The required investigation:
    it's fine."
 
 If a line is genuinely uncovered in the aggregate, return to the
-three triage questions. The discipline forbids reporting any
-form of partial coverage as final; "covered elsewhere" is the
-specific phrasing that tries to slip past this discipline by
-displacing the responsibility to a test the speaker has not named
-or verified.
+three triage questions.
 
 ## Fixture recipes for the common hard cases
 
@@ -138,20 +134,3 @@ before approving any workaround. A claim of "covered elsewhere"
 must cite the specific test function and binary, and the reviewer
 should confirm the full-CI aggregate reads 100/100/100 before
 accepting.
-
-## Cross-references
-
-- `.claude/rules/testability-means-simplicity.md` — the response
-  when the triage surfaces an over-engineered branch.
-- `.claude/rules/no-waivers.md` — the 100/100/100 gate this rule
-  protects.
-- `.claude/rules/per-file-coverage-iteration.md` — the per-file
-  gate is for iteration speed, not for completion reporting; the
-  full-CI gate is the authority.
-- `.claude/rules/rust-patterns.md` "Seam-injection variant for
-  externally-coupled code" — the seam patterns whose production
-  bindings the fixture recipes above test.
-- `.claude/rules/test-placement.md` — every test lives in
-  `tests/<path>/<name>.rs` and drives through the public
-  interface. The triage above is how that discipline stays
-  honest when the public path is fixture-hungry.

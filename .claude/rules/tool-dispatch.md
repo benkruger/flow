@@ -66,17 +66,15 @@ When adding a new stub template or a new auto-installed script:
 `target/llvm-cov-target/` at the start of every invocation —
 full-suite, filtered, and forced. This is the coherence mechanism
 that keeps coverage measurements bounded to a single source
-generation on long-lived target directories (notably main's).
-
-### Why
+generation on long-lived target directories.
 
 cargo-llvm-cov's `--no-clean` flag preserves accumulated
-instrumented binaries across runs for incremental speed. On main's
-long-lived `target/`, stale `flow_rs-*` binaries accumulate as PRs
-merge and source evolves. Without a profraw sweep, old profraws
-from prior runs match the stale binaries' function hashes and
-contribute execution counts against old source layouts, producing
-Frankenstein coverage numbers.
+instrumented binaries across runs for incremental speed. On the
+base branch's long-lived `target/`, stale `flow_rs-*` binaries
+accumulate as PRs merge and source evolves. Without a profraw
+sweep, old profraws from prior runs match the stale binaries'
+function hashes and contribute execution counts against old source
+layouts, producing Frankenstein coverage numbers.
 
 By sweeping all `*.profraw` at the top of every `bin/test`
 invocation, llvm-cov's report is scoped to profdata produced by
@@ -97,9 +95,9 @@ without matching fresh profdata.
   when a full fresh-clone experience is wanted.
 
 When adding a new tool that writes coverage-like artifacts under
-`target/llvm-cov-target/` on a long-lived target dir (main's), the
-same discipline applies: either the tool must sweep its stale
-artifacts before measuring, or it must not be invoked on main.
+`target/llvm-cov-target/` on a long-lived target dir, the same
+discipline applies: either the tool must sweep its stale artifacts
+before measuring, or it must not be invoked on the base branch.
 
 ## Stub Lifecycle Integration Tests
 
@@ -127,9 +125,7 @@ mode only manifests across the priming ↔ runner boundary.
 `EXCLUDE_ENTRIES` in `src/prime_check.rs` is the canonical source for
 patterns that prime adds to `.git/info/exclude` at install time. When a
 plan extends `EXCLUDE_ENTRIES` to cover a new family of project-managed
-files (e.g. throwaway probe tests, scratch caches, generated artifacts
-that share a basename convention but live inside the project's source
-tree), the plan must enumerate the pattern set exhaustively across every
+files, the plan must enumerate the pattern set exhaustively across every
 language whose convention the file family targets — before Code phase
 begins.
 
@@ -143,17 +139,6 @@ be excluded." The cost of a missed language is paid silently on every
 project that uses that language; the cost of an over-broad pattern (a
 leading wildcard that matches user-named legitimate tests) is paid
 silently in lost work.
-
-The first iteration of a `bin/test --adversarial-path` PR (PR #1333)
-shipped two patterns (`test_adversarial_flow.*`,
-`*_adversarial_flow_test.rb`) and missed Go, Rails Minitest, RSpec, and
-Swift conventions. The Code Review reviewer + adversarial agents both
-caught the gap; Step 4 replaced the patterns with five exact-basename
-entries (`test_adversarial_flow.*`, `adversarial_flow_test.go`,
-`adversarial_flow_test.rb`, `adversarial_flow_spec.rb`,
-`AdversarialFlowTests.swift`) and bumped `CURRENT_CONFIG_HASH` a second
-time within the same PR. Plan-time enumeration would have surfaced the
-full pattern set in one design pass and avoided the second hash bump.
 
 ### The Rule
 
@@ -185,20 +170,16 @@ to every entry:
 
 - **No leading wildcards.** A pattern like `*_adversarial_flow_test.rb`
   silently excludes any user-named legitimate test ending in
-  `_adversarial_flow_test.rb` (e.g.
-  `authentication_adversarial_flow_test.rb`). Use exact basenames or
-  trailing-only wildcards (`<exact_prefix>.*`) so user files cannot
-  collide.
+  `_adversarial_flow_test.rb`. Use exact basenames or trailing-only
+  wildcards (`<exact_prefix>.*`) so user files cannot collide.
 - **Trailing-wildcard scope.** `test_adversarial_flow.*` matches any
   file whose basename is `test_adversarial_flow.<extension>`. The `.*`
   end-of-basename wildcard is acceptable because it requires the exact
   prefix; user files named `test_adversarial_flow_local_dev.py` are
-  NOT matched (the `_local_dev` segment violates the prefix anchor).
+  NOT matched.
 
-When in doubt, prefer five exact-basename patterns over one
-leading-wildcard pattern. The cost of an extra entry is one line in
-`.git/info/exclude`; the cost of a leading wildcard is invisible
-exclusion of legitimate files.
+When in doubt, prefer multiple exact-basename patterns over one
+leading-wildcard pattern.
 
 ### Hash-Bump Discipline
 

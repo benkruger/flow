@@ -36,13 +36,6 @@ intervene to say "please continue the thing I already told you to
 continue." Every such intervention costs trust and round-trip
 latency.
 
-The specific failure mode this rule targets: a long Code phase
-(many tasks, many commits) where the session begins to feel
-context pressure and injects a pause to "check in" with the user.
-The user then has to say "you stopped for no reason, keep going."
-This happened during PR #1046 twice in the same Code phase; see
-the state file's `findings[]` for the recorded learnings.
-
 ## How to Apply
 
 - At every step boundary in a `continue: auto` phase, the next
@@ -107,8 +100,3 @@ the user invokes it during an in-progress autonomous phase, the
 hook blocks that confirmation. Workaround: invoke with `--auto`
 to skip the confirmation, or accept the block by switching the
 current phase to `manual` before aborting.
-
-This is the hook-level escalation described by
-`.claude/rules/hook-vs-instruction.md` — the rule exists because
-the user-visible pauses observed during PR #1046 proved that
-instruction-level enforcement alone was insufficient.

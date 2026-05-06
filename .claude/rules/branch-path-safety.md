@@ -19,7 +19,6 @@ nested subdirectory the discovery scanners cannot see.
 
 ## The Rule
 
-<!-- scope-enumeration: imperative -->
 Branch names that flow into a `.flow-states/` or `.worktrees/`
 path must reach the filesystem through one of three guards:
 
@@ -84,17 +83,11 @@ accepts a branch.
 ## Cross-References
 
 - `.claude/rules/external-input-validation.md` — the broader
-  prose discipline for fallible constructors. This rule is a
-  specialization of that one for the specific case of branch
-  names flowing into directory paths.
+  prose discipline for fallible constructors.
 - `.claude/rules/external-input-audit-gate.md` — the Plan-phase
-  gate that requires a callsite audit table. Branch-validation
-  tightenings trigger that gate; the table must enumerate both
-  hook and CLI callsite families.
+  gate that requires a callsite audit table.
 - `src/flow_paths.rs` — `FlowPaths::is_valid_branch`,
   `FlowPaths::new`, and `FlowPaths::try_new` are the canonical
-  guards. Their doc comments name the four rejection classes
-  with the cleanup-blast-radius rationale inline.
+  guards.
 - `tests/flow_paths.rs` — coverage for every rejection class
-  through every entry point (predicate, fallible constructor,
-  panicking constructor).
+  through every entry point.
