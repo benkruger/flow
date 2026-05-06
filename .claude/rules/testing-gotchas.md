@@ -91,6 +91,55 @@ that authorizes filing Flaky Test issues based on a single
 failure-then-pass pattern is overridden by this rule: investigate
 load before filing.
 
+## Cross-Branch Verification Before Claiming Infrastructure Bugs
+
+Before concluding that a build tool, test runner, or CI script
+itself has a bug, run the same command on the integration branch
+to establish a baseline. A failure or anomalous timing observation
+on a worktree is evidence of something — but until both observations
+exist, the failure cannot be located in the worktree's changes
+versus the shared infrastructure those changes inherit.
+
+**Why.** The default attribution when a test command misbehaves
+is "my branch broke it," not "the tool is broken." The worktree
+contains uncommitted changes; the integration branch contains
+code that has already passed CI. If the same command passes on
+the integration branch and fails or behaves unexpectedly in the
+worktree, the worktree is the cause. If the command reproduces
+the same behavior on both, only then is "infrastructure bug"
+a credible diagnosis.
+
+This is the verification side of the broader discipline in
+"Distinguish Environmental Load From Flaky Tests" above —
+environmental noise is one explanation for a transient anomaly,
+but a worktree-specific change is a more common explanation, and
+the cross-branch check distinguishes the two.
+
+**The Rule.** Before declaring `bin/test`, `bin/flow ci`,
+`cargo`, `nextest`, or any other build/test tool buggy, slow, or
+broken:
+
+1. Capture the failing or anomalous command and its observed
+   timing/exit code in the worktree.
+2. Run the exact same command on the integration branch
+   (`main` for FLOW). Capture timing and exit code there.
+3. Compare. Only when the integration-branch run reproduces the
+   anomaly does "tool bug" become a valid hypothesis. Otherwise
+   the worktree's changes are the cause — investigate them.
+
+A diagnosis without step 2 is speculation. The user's evidence —
+"it works on main" — is ground truth per the
+"User evidence is ground truth" convention in CLAUDE.md.
+
+**When this triggers.** Any time the model is about to claim
+"`bin/test` is slow," "the runner has a bug," "CI is broken,"
+"the suite timeout is wrong," or any equivalent statement that
+locates the fault in shared infrastructure rather than in the
+current branch's changes. The trigger fires on timing
+observations as much as on failures — a CI run that took twice
+its usual time is not evidence of an infrastructure regression
+until the integration-branch baseline confirms it.
+
 ## Ambiguous Check Name Filters
 
 When filtering a list of check results by name substring, verify the
