@@ -29,14 +29,20 @@ file is missing.
 2. Removes the "Flow In-Progress" label from any issues referenced in the prompt (if state file exists)
 3. Confirms with the user before any destructive action, including any
    warnings from the entry check
-4. Navigates to the project root
-5. Closes the PR with `gh pr close` and a comment
-6. Removes the worktree with `git worktree remove --force`
-7. Deletes the remote branch with `git push origin --delete`
-8. Deletes the local branch with `git branch -D`
-9. Deletes `.flow-states/<branch>/state.json` and CI sentinel
+4. Runs `bin/flow cleanup <project_root> --branch <branch> --worktree <worktree> --pr <pr>`,
+   which performs every cleanup step under one Rust subcommand:
+   `pr_close` (`gh pr close`), `worktree`
+   (`git worktree remove --force`), `remote_branch`
+   (`git push origin --delete`), `local_branch` (`git branch -D`),
+   `branch_dir` (recursive remove of `.flow-states/<branch>/`
+   covering state file, log, plan, DAG, frozen phases, CI sentinel,
+   timings, closed-issues record, issues summary, scratch rule
+   content, commit message, and start prompt), and `queue_entry`
+   (the matching start-lock entry under
+   `.flow-states/start-queue/<branch>`). Each step reports
+   `"closed"`/`"removed"`/`"deleted"`, `"skipped"`, or
+   `"failed: <reason>"` in the JSON output
 
-Steps 4–9 follow a mix of abort-specific actions and cleanup operations.
 Every step after confirmation is best-effort — if one fails (e.g., PR
 already closed, worktree already removed), it continues to the next.
 

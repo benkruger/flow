@@ -41,7 +41,11 @@ fn setup_git_repo(dir: &Path) {
 }
 
 /// Create a worktree and seed the branch directory with a state.json
-/// and log file. Returns the worktree's relative path.
+/// and log file. Returns the worktree's relative path. The state file
+/// includes the `worktree` field so cleanup_all's
+/// `is_safe_worktree_rel` validator accepts it (an empty/missing
+/// worktree value is rejected as a state-derived path-construction
+/// hazard).
 fn setup_feature(git_repo: &Path, branch: &str) -> String {
     let wt_rel = format!(".worktrees/{}", branch);
     StdCommand::new("git")
@@ -54,7 +58,7 @@ fn setup_feature(git_repo: &Path, branch: &str) -> String {
     fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
         branch_dir.join("state.json"),
-        json!({"branch": branch}).to_string(),
+        json!({"branch": branch, "worktree": &wt_rel}).to_string(),
     )
     .unwrap();
     fs::write(branch_dir.join("log"), "test log\n").unwrap();
@@ -1263,5 +1267,228 @@ fn cleanup_all_queue_sweep_total_failure() {
         qs.starts_with("failed:"),
         "expected total failure with two unremovable entries, got: {}",
         qs
+    );
+}
+
+// --- is_safe_worktree_rel rejection paths (Code Review fixes) ---
+
+/// Helper for the rejection tests: run cleanup_all over a single
+/// flow with the given malformed worktree value and assert the
+/// flow's entry carries an `error` field starting with the rejection
+/// prefix. The validator is private so tests drive through the
+/// public `cleanup_all` surface.
+fn assert_worktree_rejected(worktree: Value, branch: &str) {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let branch_dir = dir.path().join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    let mut state = json!({"branch": branch, "base_branch": "main"});
+    state["worktree"] = worktree;
+    fs::write(branch_dir.join("state.json"), state.to_string()).unwrap();
+
+    let value = run_impl_main(&args_all(dir.path(), false)).0;
+    let flows = value["flows"].as_array().unwrap();
+    let flow = flows
+        .iter()
+        .find(|f| f["branch"] == branch)
+        .expect("flow must appear in flows[]");
+    assert!(
+        flow["error"]
+            .as_str()
+            .unwrap_or("")
+            .starts_with("rejected worktree path:"),
+        "expected rejection error, got: {}",
+        flow
+    );
+    assert!(
+        flow.get("steps").is_none(),
+        "rejected flow must not carry steps; got: {}",
+        flow
+    );
+}
+
+#[test]
+fn cleanup_all_rejects_empty_worktree() {
+    assert_worktree_rejected(json!(""), "empty-wt");
+}
+
+#[test]
+fn cleanup_all_rejects_worktree_with_nul_byte() {
+    assert_worktree_rejected(json!(".worktrees/foo\u{0}bar"), "nul-wt");
+}
+
+#[test]
+fn cleanup_all_rejects_absolute_worktree_path() {
+    assert_worktree_rejected(json!("/etc/passwd"), "absolute-wt");
+}
+
+#[test]
+fn cleanup_all_rejects_worktree_with_dotdot_segment() {
+    assert_worktree_rejected(json!(".worktrees/../sibling"), "dotdot-wt");
+}
+
+#[test]
+fn cleanup_all_rejects_worktree_with_dot_segment() {
+    assert_worktree_rejected(json!(".worktrees/./foo"), "dot-wt");
+}
+
+// --- run_impl_main mutual-exclusion errors (Code Review fixes) ---
+
+#[test]
+fn cleanup_all_with_branch_returns_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let args = Args {
+        project_root: dir.path().to_string_lossy().to_string(),
+        branch: Some("test".to_string()),
+        worktree: None,
+        pr: None,
+        pull: false,
+        all: true,
+        dry_run: false,
+    };
+    let (value, code) = run_impl_main(&args);
+    assert_eq!(code, 1);
+    assert_eq!(value["status"], "error");
+    assert!(value["message"].as_str().unwrap_or("").contains("--branch"));
+}
+
+#[test]
+fn cleanup_all_with_worktree_returns_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let args = Args {
+        project_root: dir.path().to_string_lossy().to_string(),
+        branch: None,
+        worktree: Some(".worktrees/test".to_string()),
+        pr: None,
+        pull: false,
+        all: true,
+        dry_run: false,
+    };
+    let (value, code) = run_impl_main(&args);
+    assert_eq!(code, 1);
+    assert_eq!(value["status"], "error");
+    assert!(value["message"]
+        .as_str()
+        .unwrap_or("")
+        .contains("--worktree"));
+}
+
+#[test]
+fn cleanup_all_with_pr_returns_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let args = Args {
+        project_root: dir.path().to_string_lossy().to_string(),
+        branch: None,
+        worktree: None,
+        pr: Some(123),
+        pull: false,
+        all: true,
+        dry_run: false,
+    };
+    let (value, code) = run_impl_main(&args);
+    assert_eq!(code, 1);
+    assert_eq!(value["status"], "error");
+    assert!(value["message"].as_str().unwrap_or("").contains("--pr"));
+}
+
+#[test]
+fn cleanup_all_with_pull_returns_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let args = Args {
+        project_root: dir.path().to_string_lossy().to_string(),
+        branch: None,
+        worktree: None,
+        pr: None,
+        pull: true,
+        all: true,
+        dry_run: false,
+    };
+    let (value, code) = run_impl_main(&args);
+    assert_eq!(code, 1);
+    assert_eq!(value["status"], "error");
+    assert!(value["message"].as_str().unwrap_or("").contains("--pull"));
+}
+
+#[test]
+fn cleanup_dry_run_without_all_returns_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let args = Args {
+        project_root: dir.path().to_string_lossy().to_string(),
+        branch: Some("test".to_string()),
+        worktree: Some(".worktrees/test".to_string()),
+        pr: None,
+        pull: false,
+        all: false,
+        dry_run: true,
+    };
+    let (value, code) = run_impl_main(&args);
+    assert_eq!(code, 1);
+    assert_eq!(value["status"], "error");
+    assert!(value["message"]
+        .as_str()
+        .unwrap_or("")
+        .contains("--dry-run"));
+}
+
+/// Covers the inner `Err(e) => Err(format!("read error: ..."))` arm
+/// of cleanup_all's byte-capped read where `fs::File::open` succeeds
+/// but `read_to_string` fails. Invalid UTF-8 in state.json triggers
+/// `read_to_string` failure (the function requires valid UTF-8) while
+/// `File::open` returns Ok.
+#[test]
+fn cleanup_all_state_json_invalid_utf8_reports_read_error() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let branch_dir = dir.path().join(".flow-states/invalid-utf8");
+    fs::create_dir_all(&branch_dir).unwrap();
+    // 0xFF is an invalid UTF-8 start byte. fs::File::open succeeds;
+    // read_to_string fails with InvalidData.
+    fs::write(branch_dir.join("state.json"), [0xFFu8, 0xFEu8, 0xFFu8]).unwrap();
+
+    let value = run_impl_main(&args_all(dir.path(), false)).0;
+    let flows = value["flows"].as_array().unwrap();
+    let flow = flows
+        .iter()
+        .find(|f| f["branch"] == "invalid-utf8")
+        .unwrap();
+    let err = flow["error"].as_str().unwrap_or("");
+    assert!(
+        err.starts_with("read error:"),
+        "expected read-error from inner read_to_string failure, got: {}",
+        err
+    );
+}
+
+// --- tolerant_i64_opt for pr_number string fixture (Code Review F2 fix) ---
+
+#[test]
+fn cleanup_all_pr_number_string_coerces_via_tolerant_i64() {
+    // Per .claude/rules/state-files.md "Counter and State Field Type
+    // Tolerance", consumers must accept int, float, and string
+    // representations. A state file with `"pr_number": "5678"`
+    // (string) is now coerced to Some(5678) instead of being silently
+    // dropped.
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let branch_dir = dir.path().join(".flow-states/string-pr");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(
+        branch_dir.join("state.json"),
+        json!({
+            "branch": "string-pr",
+            "worktree": ".worktrees/string-pr",
+            "base_branch": "main",
+            "pr_number": "5678",
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let value = run_impl_main(&args_all(dir.path(), true)).0;
+    let flows = value["flows"].as_array().unwrap();
+    let flow = flows.iter().find(|f| f["branch"] == "string-pr").unwrap();
+    assert_eq!(
+        flow["pr_number"], 5678,
+        "pr_number string must coerce to integer"
     );
 }

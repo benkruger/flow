@@ -35,6 +35,7 @@
 //! no inline #[cfg(test)] in this file.
 
 use std::fs;
+use std::io::{BufReader, Read};
 use std::path::Path;
 use std::process::Command;
 
@@ -45,6 +46,43 @@ use serde_json::{json, Map, Value};
 use crate::commands::log::append_log;
 use crate::commands::start_lock::QUEUE_DIRNAME;
 use crate::flow_paths::{FlowPaths, FlowStatesDir};
+use crate::utils::tolerant_i64_opt;
+
+/// Maximum bytes we will read from a per-flow `state.json` while
+/// enumerating all flows for `--all`. State files grow continuously
+/// during long autonomous runs (every phase enter/complete, every
+/// step counter increment, every window snapshot appends data). The
+/// cap bounds peak memory consumption when sweeping a machine with
+/// many active flows so a corrupted or pathologically-grown state
+/// file cannot OOM-kill the cleanup process per
+/// `.claude/rules/external-input-path-construction.md` "Enforce a
+/// documented size cap on every external read."
+const STATE_FILE_BYTE_CAP: u64 = 50 * 1024 * 1024;
+
+/// Positive validator for the `worktree` field read from state files.
+///
+/// `cleanup_all` reads `state["worktree"]` from each flow's
+/// `state.json` (a hand-editable, externally-writable surface) and
+/// passes the value to `cleanup()` where it joins onto
+/// `project_root` and feeds `git worktree remove --force`. Without a
+/// validator, an empty value would resolve to the project root
+/// itself and a traversal value (`..`, `/abs`) would resolve outside
+/// the worktrees directory.
+///
+/// Rejects:
+/// - empty string
+/// - any string containing `\0`
+/// - leading `/` (absolute path)
+/// - any path component equal to `.` or `..`
+fn is_safe_worktree_rel(s: &str) -> bool {
+    if s.is_empty() || s.contains('\0') {
+        return false;
+    }
+    if s.starts_with('/') {
+        return false;
+    }
+    s.split('/').all(|seg| seg != ".." && seg != ".")
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "cleanup", about = "FLOW cleanup orchestrator")]
@@ -309,7 +347,26 @@ pub fn cleanup(
 /// On a malformed `state.json`, the flow's entry in `flows[]` carries
 /// an `"error"` field describing the parse failure and the per-flow
 /// cleanup is skipped — the surrounding loop continues to other
-/// flows so one corrupt state file cannot block a reset.
+/// flows so one corrupt state file cannot block a reset. Same for
+/// state-derived `worktree` values that fail
+/// `is_safe_worktree_rel`: per-flow `error` field, walk continues.
+///
+/// **Concurrency.** This function is invoked exclusively from
+/// `/flow:flow-reset`, whose Guard gates entry on `git branch
+/// --show-current == main` (the user must be on the integration
+/// branch at the project root). The reset is destructive by
+/// design: it sweeps the start-lock queue, deletes
+/// `.flow-states/main/` (the base-branch CI sentinel directory),
+/// and removes orchestrate.json — none of which are coordinated
+/// with the start lock. Any concurrent `flow-start` running on
+/// the same machine during a `cleanup_all` invocation will be
+/// disrupted (the next start may re-run base-branch CI because
+/// the sentinel was removed; an in-flight start may have its
+/// queue entry deleted mid-acquire). The user invoking flow-reset
+/// has accepted that "reset every FLOW artifact" includes the
+/// start lock and the orchestration queue. The 30-minute stale
+/// timeout on queue entries protects against permanent block;
+/// recovery from sentinel-loss is automatic on the next CI run.
 pub fn cleanup_all(project_root: &Path, dry_run: bool) -> Value {
     let states_dir = FlowStatesDir::new(project_root).path().to_path_buf();
     let mut flows: Vec<Value> = Vec::new();
@@ -333,9 +390,23 @@ pub fn cleanup_all(project_root: &Path, dry_run: bool) -> Value {
                     continue;
                 }
 
-                let parsed: Result<Value, String> = match fs::read_to_string(&state_path) {
-                    Ok(content) => serde_json::from_str::<Value>(&content)
-                        .map_err(|e| format!("parse error: {}", e)),
+                // Byte-capped state-file read per
+                // `.claude/rules/external-input-path-construction.md`.
+                // BufReader::take stops the read at STATE_FILE_BYTE_CAP
+                // even for pathologically large state files; oversize
+                // files surface as `error: state file exceeds N-byte cap`
+                // rather than OOM-killing the sweep.
+                let parsed: Result<Value, String> = match fs::File::open(&state_path) {
+                    Ok(file) => {
+                        let mut content = String::new();
+                        match BufReader::new(file.take(STATE_FILE_BYTE_CAP))
+                            .read_to_string(&mut content)
+                        {
+                            Ok(_) => serde_json::from_str::<Value>(&content)
+                                .map_err(|e| format!("parse error: {}", e)),
+                            Err(e) => Err(format!("read error: {}", e)),
+                        }
+                    }
                     Err(e) => Err(format!("read error: {}", e)),
                 };
 
@@ -352,7 +423,15 @@ pub fn cleanup_all(project_root: &Path, dry_run: bool) -> Value {
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        let pr_number = state.get("pr_number").and_then(|v| v.as_i64());
+                        // Use tolerant_i64_opt so legacy/hand-edited
+                        // state files with `pr_number` as a JSON string
+                        // ("1234") still surface the PR number, per
+                        // `.claude/rules/state-files.md` Counter Type
+                        // Tolerance. `as_i64()` alone returns None for
+                        // string-typed fields and silently drops
+                        // pr_close / remote_branch deletion.
+                        let pr_number =
+                            tolerant_i64_opt(state.get("pr_number").unwrap_or(&Value::Null));
                         let base_branch = state
                             .get("base_branch")
                             .and_then(|v| v.as_str())
@@ -369,7 +448,24 @@ pub fn cleanup_all(project_root: &Path, dry_run: bool) -> Value {
                             },
                         );
 
-                        if !dry_run {
+                        if !is_safe_worktree_rel(&worktree_rel) {
+                            // Reject a state-derived worktree value that
+                            // would resolve outside `<project_root>/`.
+                            // Empty `""` would resolve to the project
+                            // root itself (causing
+                            // `git worktree remove --force <project_root>`);
+                            // `..`/`/abs` would resolve outside the
+                            // worktrees subdirectory. Surface the
+                            // rejection per-flow so the user sees which
+                            // state file is corrupt.
+                            flow_obj.insert(
+                                "error".to_string(),
+                                Value::String(format!(
+                                    "rejected worktree path: {:?}",
+                                    worktree_rel
+                                )),
+                            );
+                        } else if !dry_run {
                             let steps = cleanup(
                                 project_root,
                                 &branch_name,
@@ -501,8 +597,42 @@ pub fn run_impl_main(args: &Args) -> (Value, i32) {
         return (serde_json::from_str(&err_str).unwrap(), 1);
     }
 
+    // Mutual exclusion: --all is the destructive machine-wide reset
+    // path and ignores per-branch flags. Silently dropping --branch /
+    // --worktree / --pr / --pull when --all is also set would mask
+    // user intent (e.g., a misconstructed automation script that
+    // sets both). Reject the combination with a structured error so
+    // the user sees which flag was unexpected.
     if args.all {
+        if args.branch.is_some() {
+            let err_str =
+                crate::output::json_error_string("--all is mutually exclusive with --branch", &[]);
+            return (serde_json::from_str(&err_str).unwrap(), 1);
+        }
+        if args.worktree.is_some() {
+            let err_str = crate::output::json_error_string(
+                "--all is mutually exclusive with --worktree",
+                &[],
+            );
+            return (serde_json::from_str(&err_str).unwrap(), 1);
+        }
+        if args.pr.is_some() {
+            let err_str =
+                crate::output::json_error_string("--all is mutually exclusive with --pr", &[]);
+            return (serde_json::from_str(&err_str).unwrap(), 1);
+        }
+        if args.pull {
+            let err_str =
+                crate::output::json_error_string("--all is mutually exclusive with --pull", &[]);
+            return (serde_json::from_str(&err_str).unwrap(), 1);
+        }
         return (cleanup_all(root, args.dry_run), 0);
+    }
+
+    // --dry-run only applies to --all; reject when --all is absent.
+    if args.dry_run {
+        let err_str = crate::output::json_error_string("--dry-run requires --all", &[]);
+        return (serde_json::from_str(&err_str).unwrap(), 1);
     }
 
     // Per-branch mode: --branch and --worktree are required.
