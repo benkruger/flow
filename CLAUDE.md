@@ -81,7 +81,6 @@ CI will fail if these are missing:
 - `bin/flow` — Rust dispatcher: resolves the Rust binary (`target/release/flow-rs` or `target/debug/flow-rs`), auto-rebuilds when source is newer than binary
 - `bin/{format,lint,build,test}` — FLOW's own dogfood scripts; each repo gets its own copies installed by `/flow:flow-prime` from `assets/bin-stubs/`
 - `assets/bin-stubs/` — self-documenting bash stubs that prime copies into target projects when absent
-- `qa/templates/<name>/` — QA repo templates used by `/flow-qa`
 - `.claude-plugin/marketplace.json` — marketplace registry (version must match plugin.json)
 
 ## Development Environment
@@ -246,9 +245,10 @@ Key test files: `tests/structural.rs` (config invariants, version consistency), 
 
 ## Maintainer Skills (private to this repo)
 
-- `/flow-qa` — `.claude/skills/flow-qa/SKILL.md` — clone QA repos, prime, run a full lifecycle, and verify results. **Always run `/flow-qa --start` before `/flow:flow-start` when developing FLOW.** The installed marketplace plugin enforces its own phase count and skill gates, which conflict with the source being developed and break the workflow mid-feature. QA repos exist solely to test the FLOW lifecycle (Start through Complete) — `bin/flow ci` must run tests only, no linters or style checks. If `bin/flow ci` fails on seed code, fix the seed, don't debug the linter.
 - `/flow-release` — `.claude/skills/flow-release/SKILL.md` — bump version, tag, push, create GitHub Release
 - `/flow-changelog-audit` — `.claude/skills/flow-changelog-audit/SKILL.md` — audit Claude Code CHANGELOG.md for plugin-relevant changes, categorize as Adopt/Remove/Adapt, file issues
+
+When developing FLOW itself, point Claude Code at the local plugin source via `claude --plugin-dir=$HOME/code/flow` (or the worktree path you are working in). The installed marketplace plugin enforces phase counts and skill gates from the released version, which conflict with in-progress source changes; `--plugin-dir` overrides the installed version for the duration of the session so source-level edits take effect on the next session start.
 
 ## Conventions
 

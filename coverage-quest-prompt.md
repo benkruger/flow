@@ -66,7 +66,7 @@ CURRENT STATE
   100/100/100 is reachable through the public surface only.
 - Previous sessions migrated/reverted ~14 modules (close_issue,
   close_issues, complete_*, finalize_commit, issue, label_issues,
-  scaffold_qa, start_*). Those are the canonical reference
+  start_*). Those are the canonical reference
   implementations for the patterns below — read them when stuck.
 - The full-suite `bin/flow ci` currently fails at the test_placement
   contract test (fail-fast cancels the remaining suite). The

@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-# No dependencies to install — QA repo uses stdlib + pytest from venv
-exit 0

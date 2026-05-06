@@ -226,35 +226,6 @@ pub fn set_blocked_idle(state_path: &Path) {
     set_blocked(state_path);
 }
 
-/// Check for a QA continuation breadcrumb at
-/// `.flow-states/qa-pending.json`.
-///
-/// Returns (should_block, context). Does NOT delete the file — the QA
-/// skill handles cleanup. Fail-open: any error returns (false, None).
-pub fn check_qa_pending(root: &Path) -> (bool, Option<String>) {
-    let qa_path = root.join(".flow-states").join("qa-pending.json");
-    if !qa_path.exists() {
-        return (false, None);
-    }
-    let content = match std::fs::read_to_string(&qa_path) {
-        Ok(c) => c,
-        Err(_) => return (false, None),
-    };
-    let data: Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(_) => return (false, None),
-    };
-    let context = data
-        .get("_continue_context")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string());
-    match context {
-        Some(ctx) => (true, Some(ctx)),
-        None => (false, None),
-    }
-}
-
 /// Write the repo color to the terminal tab via /dev/tty.
 ///
 /// Wraps `write_tab_sequences` with root/branch-aware fallback logic:
@@ -583,17 +554,6 @@ pub fn run() {
     }
 
     capture_session_id(&hook_input, &state_path);
-
-    // Fallback: check for QA continuation breadcrumb when no branch
-    // state file blocked the stop.
-    if !result.should_block {
-        let (qa_block, qa_context) = check_qa_pending(&root);
-        if qa_block {
-            result.should_block = true;
-            result.skill = Some("flow-complete".to_string());
-            result.context = qa_context;
-        }
-    }
 
     // Blocked flag: CLEAR when session is continuing (blocking),
     // SET when session is going idle (not blocking).

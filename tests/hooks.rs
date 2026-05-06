@@ -1619,39 +1619,6 @@ fn stop_continue_slash_branch_exits_zero_no_panic() {
 }
 
 #[test]
-fn stop_continue_qa_pending_fallback_blocks() {
-    // No branch state file, only a qa-pending.json breadcrumb at the
-    // project root. check_qa_pending fires in the run() fallback path
-    // (lines 582–589) and produces a block output with
-    // skill=flow-complete carrying the qa_context.
-    let dir = tempfile::tempdir().unwrap();
-    let _ = Command::new("git")
-        .args(["init"])
-        .current_dir(dir.path())
-        .output();
-    let state_dir = flow_states_dir(dir.path());
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(
-        state_dir.join("qa-pending.json"),
-        r#"{"_continue_context": "Resume QA verification now."}"#,
-    )
-    .unwrap();
-    let output = run_hook("stop-continue", dir.path(), "some-feature", b"{}");
-    assert_eq!(output.status.code().unwrap(), 0);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: Value = serde_json::from_str(stdout.trim()).unwrap();
-    assert_eq!(parsed["decision"], "block");
-    assert!(
-        parsed["reason"]
-            .as_str()
-            .unwrap_or("")
-            .contains("Resume QA verification now."),
-        "reason must embed QA context: {}",
-        parsed
-    );
-}
-
-#[test]
 fn stop_continue_discussion_with_pending_uses_context_message() {
     // First-stop + pending path: check_first_stop sets
     // skill=discussion-with-pending. run()'s output formatter branches

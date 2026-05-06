@@ -1,9 +1,8 @@
 //! Integration tests for `src/hooks/stop_continue.rs`. Drives the public
-//! surface (`capture_session_id`, `check_continue`, `check_qa_pending`,
-//! `set_blocked_idle`, `set_tab_color`, `check_discussion_mode`,
-//! `check_first_stop`, `format_block_output`,
-//! `format_conditional_continue_reason`, `DISCUSSION_BLOCK_REASON`) and
-//! covers `run()` via subprocess tests.
+//! surface (`capture_session_id`, `check_continue`, `set_blocked_idle`,
+//! `set_tab_color`, `check_discussion_mode`, `check_first_stop`,
+//! `format_block_output`, `format_conditional_continue_reason`,
+//! `DISCUSSION_BLOCK_REASON`) and covers `run()` via subprocess tests.
 
 use std::fs;
 use std::io::Write;
@@ -12,7 +11,7 @@ use std::process::{Command, Stdio};
 
 use flow_rs::commands::clear_blocked::clear_blocked;
 use flow_rs::hooks::stop_continue::{
-    capture_session_id, check_continue, check_discussion_mode, check_first_stop, check_qa_pending,
+    capture_session_id, check_continue, check_discussion_mode, check_first_stop,
     format_block_output, format_conditional_continue_reason, set_blocked_idle, set_tab_color,
     DISCUSSION_BLOCK_REASON,
 };
@@ -212,66 +211,6 @@ fn test_set_blocked_idle_no_state_file() {
     set_blocked_idle(&path);
 }
 
-// --- check_qa_pending ---
-
-#[test]
-fn test_check_qa_pending_reads_breadcrumb() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let qa_path = state_dir.join("qa-pending.json");
-    fs::write(&qa_path, r#"{"_continue_context": "finish QA tests"}"#).unwrap();
-
-    let (should_block, context) = check_qa_pending(dir.path());
-    assert!(should_block);
-    assert_eq!(context.unwrap(), "finish QA tests");
-}
-
-#[test]
-fn test_check_qa_pending_missing_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let (should_block, context) = check_qa_pending(dir.path());
-    assert!(!should_block);
-    assert!(context.is_none());
-}
-
-#[test]
-fn test_check_qa_pending_empty_context() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let qa_path = state_dir.join("qa-pending.json");
-    fs::write(&qa_path, r#"{"_continue_context": ""}"#).unwrap();
-
-    let (should_block, context) = check_qa_pending(dir.path());
-    assert!(!should_block);
-    assert!(context.is_none());
-}
-
-#[test]
-fn test_check_qa_pending_missing_context_key() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let qa_path = state_dir.join("qa-pending.json");
-    fs::write(&qa_path, r#"{"other": "value"}"#).unwrap();
-
-    let (should_block, _) = check_qa_pending(dir.path());
-    assert!(!should_block);
-}
-
-#[test]
-fn test_check_qa_pending_corrupt_json() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let qa_path = state_dir.join("qa-pending.json");
-    fs::write(&qa_path, "{bad json").unwrap();
-
-    let (should_block, _) = check_qa_pending(dir.path());
-    assert!(!should_block);
-}
-
 struct PermissionGuard {
     path: std::path::PathBuf,
     restore_mode: u32,
@@ -281,24 +220,6 @@ impl Drop for PermissionGuard {
         use std::os::unix::fs::PermissionsExt;
         let _ = fs::set_permissions(&self.path, fs::Permissions::from_mode(self.restore_mode));
     }
-}
-
-#[test]
-fn test_check_qa_pending_unreadable_file() {
-    use std::os::unix::fs::PermissionsExt;
-    let dir = tempfile::tempdir().unwrap();
-    let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    let qa_path = state_dir.join("qa-pending.json");
-    fs::write(&qa_path, r#"{"_continue_context": "x"}"#).unwrap();
-    fs::set_permissions(&qa_path, fs::Permissions::from_mode(0o000)).unwrap();
-    let _guard = PermissionGuard {
-        path: qa_path.clone(),
-        restore_mode: 0o644,
-    };
-    let (should_block, context) = check_qa_pending(dir.path());
-    assert!(!should_block);
-    assert!(context.is_none());
 }
 
 // --- set_tab_color ---
@@ -1186,10 +1107,15 @@ fn run_subprocess_slash_branch_exits_0() {
     assert_eq!(code, 0);
 }
 
-// State file already instructed + no pending + QA breadcrumb → run()
-// falls through to check_qa_pending and blocks with flow-complete.
+// State already instructed (_stop_instructed=true) + _continue_pending set
+// to a non-discussion skill name → check_first_stop falls through, then
+// check_continue blocks with skill=<pending>. run()'s output formatter
+// takes the else branch (format_block_output) because the skill name is
+// neither "discussion" nor "discussion-with-pending". This exercises the
+// non-discussion block path in run() that was previously also covered by
+// the now-deleted qa-pending fallback test.
 #[test]
-fn run_subprocess_qa_pending_fallback_blocks() {
+fn run_subprocess_continue_pending_uses_format_block_output() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     Command::new("git")
@@ -1221,22 +1147,17 @@ fn run_subprocess_qa_pending_fallback_blocks() {
 
     let state_dir = root.join(".flow-states");
     fs::create_dir_all(state_dir.join("main")).unwrap();
-    // State that allows check_first_stop to fall through (already
-    // instructed, no pending) and check_continue to also fall through
-    // (no pending).
+    // _stop_instructed=true forces check_first_stop to fall through, so
+    // run() invokes check_continue, which returns skill=<pending>.
     let state = json!({
         "branch": "main",
         "_stop_instructed": true,
+        "_continue_pending": "flow-commit",
+        "_continue_context": "Resume the parent skill instructions."
     });
     fs::write(
         state_dir.join("main").join("state.json"),
         serde_json::to_string_pretty(&state).unwrap(),
-    )
-    .unwrap();
-    // QA breadcrumb with context that should trigger the fallback block.
-    fs::write(
-        state_dir.join("qa-pending.json"),
-        r#"{"_continue_context": "finish QA run"}"#,
     )
     .unwrap();
 
@@ -1248,5 +1169,10 @@ fn run_subprocess_qa_pending_fallback_blocks() {
         .unwrap_or_else(|| panic!("no JSON in stdout: {}", stdout));
     let json: Value = serde_json::from_str(last).unwrap();
     assert_eq!(json["decision"], "block");
-    assert!(json["reason"].as_str().unwrap().contains("finish QA run"));
+    let reason = json["reason"].as_str().unwrap_or("");
+    assert!(
+        reason.contains("child skill 'flow-commit' has returned"),
+        "format_block_output reason must name the pending skill: {}",
+        reason
+    );
 }

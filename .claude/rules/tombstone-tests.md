@@ -54,6 +54,51 @@ external plugin dependency, or numbered step should leave a
 tombstone test. The test comment must reference the PR that
 performed the removal so the intent is traceable.
 
+The four categories cover distinct surfaces — overlooking any of
+them produces unprotected deletions. A removal plan must
+enumerate which categories its deletions fall into and add a
+tombstone for each:
+
+- **Named feature.** A SKILL.md, public function, public
+  struct, public enum variant, public trait, or any other
+  exported identifier that other code can reach by name.
+  Tombstone shape: file-existence check (for SKILL.md, source
+  files) and/or source-content byte-substring check (for
+  function names, struct names, enum variants).
+- **Config axis.** An entry in any configuration surface that
+  governs runtime behavior — `.claude/settings.json`
+  allow/deny entries, `flow-phases.json` phase or
+  back-transition entries, `.flow.json` schema fields,
+  `hooks/hooks.json` hook registrations, version pins in
+  `Cargo.toml`/`Gemfile.lock`/`package.json`, environment-
+  variable defaults, feature-flag entries. Tombstone shape:
+  source-content check that asserts the removed entry's exact
+  string does NOT appear in the config file. The
+  `Bash(rm -rf *.qa-repos*)` allow-list entry from
+  `.claude/settings.json` is the canonical example: a
+  permission was removed, so a tombstone reads the JSON and
+  asserts the entry is absent.
+- **External plugin dependency.** A reference to another
+  Claude Code plugin (`code-review:code-review`,
+  `decompose:decompose`), a third-party MCP server, or any
+  other named external integration the skill or hook used to
+  invoke. Tombstone shape: scan the SKILL.md or hook script
+  for the integration's invocation surface and assert it does
+  not appear.
+- **Numbered step.** A step in a phase skill (`### Step 7`)
+  that was removed. Tombstone shape: scan the skill's content
+  and assert the step header is absent. Pair with a check that
+  the total step count in the skill's HARD-GATE matches the
+  current count, so a future re-numbering catches drift.
+
+Every category benefits from a stability argument per
+"Literal tombstones — stability checklist" below — config-axis
+literals (e.g. allow-list entries) typically pass the checklist
+trivially because JSON does not permit interpolated string
+construction inside permissions arrays, but the argument
+should still be documented in the doc comment so future
+maintainers see the reasoning.
+
 ## Naming Convention
 
 `test_<scope>_no_<removed_thing>` — e.g.,
@@ -123,6 +168,17 @@ When in doubt, assume #2. Most "don't reintroduce this subprocess
 call" or "don't reintroduce this API" cases are structural, even
 when the current source happens to express them with a specific
 literal.
+
+A separate dimension that always applies regardless of which
+kind of tombstone the situation calls for: **file-resurrection
+threats**. When the deletion target includes a source file (a
+deleted `src/<name>.rs`, `tests/<name>.rs`, or
+`.claude/skills/<name>/SKILL.md`), pair the byte-substring
+tombstone with a file-existence tombstone for the same path.
+Without the path-based pair, `#[path = "<name>.rs"] pub mod
+<alias>;` resurrects the file under a renamed module and the
+byte-substring tombstone never fires. The file-existence check
+catches the file regardless of how it is imported.
 
 ### Structural tombstones — function-body scan
 
@@ -206,6 +262,10 @@ When a plan proposes a tombstone, the Tasks section must specify:
    plausible bypasses the author considered and rejected with
    reasoning. For structural assertions, name the function(s)
    being scanned.
+5. **File-resurrection pair.** If the deletion target includes a
+   source file, name the file-existence tombstone that pairs with
+   the byte-substring tombstone, per "Two kinds of tombstone"
+   above.
 
 A tombstone proposal without this documentation is a Plan-phase
 gap. Code Review's adversarial agent will write failing tests
