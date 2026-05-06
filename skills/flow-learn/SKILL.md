@@ -373,15 +373,24 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=3
 
 Promote any session permissions accumulated in
 `.claude/settings.local.json` into the persistent
-`.claude/settings.json`.
+`.claude/settings.json`. The `--confirm-on-flow-branch` flag is
+required because the active-flow gate inside `promote-permissions`
+otherwise rejects mid-flow runs (see
+`.claude/rules/permissions.md` "Never Edit Permissions Mid-Flow").
+Learn is the one sanctioned mid-flow caller.
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow promote-permissions --worktree-path <worktree_path>
+${CLAUDE_PLUGIN_ROOT}/bin/flow promote-permissions --worktree-path <worktree_path> --confirm-on-flow-branch
 ```
 
 Parse the JSON output:
 
-- `"status": "skipped"` — no `settings.local.json` exists. Continue.
+- `"status": "skipped"`, `"reason": "no_local_file"` — no
+  `settings.local.json` exists. Continue.
+- `"status": "skipped"`, `"reason": "active_flow"` — should never
+  appear here because `--confirm-on-flow-branch` is passed; if it
+  does, the flag was dropped. Log the response and continue rather
+  than retry.
 - `"status": "ok"` — permissions promoted. If `promoted` is non-empty,
   note that `.claude/settings.json` has changed for the commit decision
   in Step 5.

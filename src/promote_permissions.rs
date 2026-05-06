@@ -22,11 +22,25 @@ use std::path::{Path, PathBuf};
 use clap::Args as ClapArgs;
 use serde_json::{json, Value};
 
+use crate::hooks::{detect_branch_from_path, is_flow_active};
+
 #[derive(ClapArgs)]
 pub struct Args {
     /// Path to the worktree or project root
     #[arg(long = "worktree-path")]
     pub worktree_path: String,
+    /// Acknowledge that the caller intends to mutate `.claude/settings.json`
+    /// while a flow is active for the target worktree's branch.
+    ///
+    /// Default `false` — the active-flow gate inside `run_impl` returns
+    /// `{"status":"skipped","reason":"active_flow"}` instead of merging,
+    /// closing the subprocess-layer hole that lets a model bypass the
+    /// "Never Edit Permissions Mid-Flow" rule via a direct subprocess
+    /// call. The `flow-learn` skill (the only sanctioned mid-flow caller
+    /// per `skills/flow-learn/SKILL.md` Step 4) passes `--confirm-on-flow-branch`
+    /// to bypass the gate. Outside a flow the flag is a no-op.
+    #[arg(long = "confirm-on-flow-branch", default_value_t = false)]
+    pub confirm_on_flow_branch: bool,
 }
 
 /// Merge settings.local.json allow entries into settings.json.
@@ -159,6 +173,74 @@ pub fn read_json(path: &Path) -> Result<Value, String> {
     serde_json::from_slice(&bytes).map_err(|e| e.to_string())
 }
 
+/// Active-flow gate for promote-permissions during a FLOW phase.
+///
+/// Closes the subprocess-layer hole the `validate-claude-paths` hook
+/// leaves open — the hook does not protect `.claude/settings.json`, so
+/// `bin/flow promote-permissions --worktree-path <worktree>` can
+/// mutate the worktree's settings file mid-flow without the user
+/// noticing. The gate enforces `.claude/rules/permissions.md` "Never
+/// Edit Permissions Mid-Flow" mechanically: when `worktree_path`
+/// resolves to `<main_root>/.worktrees/<branch>/` AND a state file
+/// exists at `<main_root>/.flow-states/<branch>/state.json`, the
+/// merge is skipped.
+///
+/// `--confirm-on-flow-branch` lifts the gate. `flow-learn` Step 4 —
+/// the one sanctioned mid-flow caller — passes the flag so its
+/// promotion runs to completion. A model that bypasses flow-learn
+/// and constructs the flag itself is documented as the prose-only
+/// limitation in the rule (mirroring the `_continue_pending=commit`
+/// trust contract in concurrency-model.md).
+///
+/// Returns `Some(skipped_value)` when the gate fires, `None`
+/// otherwise. Detection uses path-based heuristics — no git
+/// subprocess — so a missing or unreachable git binary cannot
+/// silently disable the gate.
+fn active_flow_gate(worktree_path: &Path, confirm: bool) -> Option<Value> {
+    if confirm {
+        return None;
+    }
+    // Mirror the write_rule guard: `.expect` on `current_dir()` is
+    // intentional. A subprocess that cannot resolve its own cwd is
+    // broken in ways the surrounding `promote()` call would already
+    // fail on (it joins `worktree_path` against `.claude/`). Collapsing
+    // the branch keeps the gate testable without a deleted-cwd fixture
+    // per `.claude/rules/testability-means-simplicity.md`.
+    let abs = if worktree_path.is_absolute() {
+        worktree_path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .expect("subprocess cwd must be resolvable for promote-permissions")
+            .join(worktree_path)
+    };
+    let mut current = abs.clone();
+    let main_root = loop {
+        if current.join(".flow-states").is_dir() {
+            break current;
+        }
+        if !current.pop() {
+            return None;
+        }
+    };
+    let branch = detect_branch_from_path(&abs)?;
+    if !is_flow_active(&branch, &main_root) {
+        return None;
+    }
+    Some(json!({
+        "status": "skipped",
+        "reason": "active_flow",
+        "message": format!(
+            "promote-permissions skipped: active flow on branch '{}' \
+             at {}. Pass --confirm-on-flow-branch to override (per \
+             .claude/rules/permissions.md \"Never Edit Permissions \
+             Mid-Flow\"); flow-learn Step 4 passes the flag automatically.",
+            branch,
+            main_root.display()
+        ),
+        "branch": branch,
+    }))
+}
+
 /// Build the CLI result as a JSON value.
 ///
 /// Returns `Err` when the result `status` is `"error"` so `run` can
@@ -166,6 +248,9 @@ pub fn read_json(path: &Path) -> Result<Value, String> {
 /// the `Ok` path.
 pub fn run_impl(args: &Args) -> Result<Value, Value> {
     let worktree = PathBuf::from(&args.worktree_path);
+    if let Some(skipped) = active_flow_gate(&worktree, args.confirm_on_flow_branch) {
+        return Ok(skipped);
+    }
     let result = promote(&worktree);
     if result.get("status").and_then(|v| v.as_str()) == Some("error") {
         Err(result)
