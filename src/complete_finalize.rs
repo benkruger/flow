@@ -151,6 +151,32 @@ pub fn run_impl(args: &Args) -> Value {
         .map(|(k, v)| (k, Value::String(v)))
         .collect();
 
+    // Persist the integration-branch sentinel when the post-merge pull
+    // completed cleanly. With the working_tree_dirty gate in
+    // `finalize_commit::run_impl`, the post-merge tree on local
+    // <base_branch> is byte-identical to the feature-branch tip whose
+    // CI just passed. Writing the sentinel here lets the next
+    // `start-gate` see the snapshot match and skip CI entirely. The
+    // write is best-effort — a filesystem error here must not fail
+    // the merge that already succeeded upstream.
+    if args.pull && cleanup_map.get("git_pull").and_then(|v| v.as_str()) == Some("pulled") {
+        let snapshot = crate::ci::tree_snapshot(&root, None);
+        let sentinel = crate::ci::sentinel_path(&root, &base_branch);
+        // `sentinel_path` always returns a multi-component path
+        // under `<root>/.flow-states/<branch>/`, so `.parent()` is
+        // never None. `.expect()` is the canonical pattern for an
+        // unreachable arm per
+        // `.claude/rules/testability-means-simplicity.md`. The parent
+        // dir may not exist when the sentinel branch is the base
+        // branch (no flow ever ran on main), so create it before
+        // writing.
+        let parent = sentinel
+            .parent()
+            .expect("sentinel_path always returns a multi-component path");
+        let _ = std::fs::create_dir_all(parent);
+        let _ = std::fs::write(&sentinel, &snapshot);
+    }
+
     let mut result = json!({
         "status": "ok",
         "formatted_time": formatted_time,

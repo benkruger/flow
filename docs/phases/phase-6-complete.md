@@ -88,6 +88,13 @@ rather than stranding the shell in a deleted directory.
   file, closed-issues file, issues file, and adversarial test file
   (glob-matched as `.flow-states/<branch>/adversarial_test.*`),
   followed by `git pull origin <base_branch>` (the integration branch)
+- Integration-branch sentinel write: when `--pull` was passed AND
+  the pull completed cleanly, writes
+  `<root>/.flow-states/<base_branch>/ci-passed` from
+  `ci::tree_snapshot(&root, None)`. The post-merge local tree is
+  byte-identical to the feature-branch tip whose CI passed, so the
+  sentinel is honest by construction. The next `start-gate` sees
+  the snapshot match and skips CI entirely.
 
 Each cleanup step is best-effort — if one fails, the rest still run.
 

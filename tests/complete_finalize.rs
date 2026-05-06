@@ -341,6 +341,136 @@ fn finalize_pull_flag_threads_to_cleanup() {
     let _ = cleanup;
 }
 
+// --- run_impl: integration-branch sentinel persisted after clean pull ---
+
+/// `--pull` was passed AND `git pull origin main` succeeded — write
+/// the integration-branch sentinel so the next `start-gate` skips
+/// CI. Asserts the sentinel exists at the canonical path
+/// (`<root>/.flow-states/main-ci-passed`) and that its content
+/// matches a fresh `ci::tree_snapshot(&repo, None)` evaluation.
+#[test]
+fn complete_finalize_writes_sentinel_after_clean_pull() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = make_repo_fixture(&parent);
+    let state_path = write_state_file(&repo, BRANCH, true);
+    let flow_bin = parent.join("bin-flow-stub").join("flow");
+    write_success_flow_stub(&flow_bin);
+    let stubs = path_stub_dir(&parent);
+
+    let sentinel_path = flow_rs::ci::sentinel_path(&repo, "main");
+    assert!(
+        !sentinel_path.exists(),
+        "sentinel must not exist before complete-finalize runs"
+    );
+
+    let (code, stdout, _) = run_complete_finalize(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        ".worktrees/test-feature",
+        true, // --pull
+        Some(&flow_bin),
+        Some(&stubs),
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert_eq!(
+        json["cleanup"]["git_pull"], "pulled",
+        "fixture must produce a clean pull: {}",
+        json
+    );
+
+    assert!(
+        sentinel_path.exists(),
+        "sentinel must exist at {} after clean pull",
+        sentinel_path.display()
+    );
+    let sentinel_content = fs::read_to_string(&sentinel_path).expect("read sentinel");
+    let expected = flow_rs::ci::tree_snapshot(&repo, None);
+    assert_eq!(
+        sentinel_content, expected,
+        "sentinel content must equal current tree_snapshot"
+    );
+}
+
+/// `--pull` flag was NOT set, so no pull happened. We don't know
+/// main's state, so the sentinel must not be written.
+#[test]
+fn complete_finalize_no_sentinel_when_pull_disabled() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = make_repo_fixture(&parent);
+    let state_path = write_state_file(&repo, BRANCH, true);
+    let flow_bin = parent.join("bin-flow-stub").join("flow");
+    write_success_flow_stub(&flow_bin);
+    let stubs = path_stub_dir(&parent);
+
+    let (code, _stdout, _) = run_complete_finalize(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        ".worktrees/test-feature",
+        false, // --pull NOT set
+        Some(&flow_bin),
+        Some(&stubs),
+    );
+
+    assert_eq!(code, 0);
+    let sentinel_path = flow_rs::ci::sentinel_path(&repo, "main");
+    assert!(
+        !sentinel_path.exists(),
+        "sentinel must NOT exist when --pull is unset"
+    );
+}
+
+/// `--pull` was passed but the bare remote was removed before
+/// complete-finalize ran, so `git pull` fails. The sentinel must
+/// not be written when the pull did not complete cleanly — main's
+/// local state may be stale or inconsistent with what CI tested.
+#[test]
+fn complete_finalize_no_sentinel_when_pull_failed() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = make_repo_fixture(&parent);
+    let state_path = write_state_file(&repo, BRANCH, true);
+    let flow_bin = parent.join("bin-flow-stub").join("flow");
+    write_success_flow_stub(&flow_bin);
+    let stubs = path_stub_dir(&parent);
+
+    // Remove the bare remote so `git pull origin main` fails.
+    fs::remove_dir_all(parent.join("bare.git")).expect("remove bare remote");
+
+    let (code, stdout, _) = run_complete_finalize(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        ".worktrees/test-feature",
+        true, // --pull
+        Some(&flow_bin),
+        Some(&stubs),
+    );
+
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    let git_pull = json["cleanup"]["git_pull"].as_str().unwrap_or("");
+    assert!(
+        git_pull.starts_with("failed"),
+        "fixture must produce a failed pull: got {}",
+        git_pull
+    );
+
+    let sentinel_path = flow_rs::ci::sentinel_path(&repo, "main");
+    assert!(
+        !sentinel_path.exists(),
+        "sentinel must NOT exist when pull failed"
+    );
+}
+
 #[test]
 fn finalize_has_failures_ok_status_absent_failures() {
     // post_merge returns no failures → post_merge_failures absent →
