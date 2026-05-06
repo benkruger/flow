@@ -157,6 +157,52 @@ Permission lockdown changes belong in `src/prime_check.rs`
 own `.claude/settings.json` is updated on main after the PR merges,
 or during the next `/flow:flow-prime` run.
 
+### Mechanical enforcement at the subprocess layer
+
+The `validate-claude-paths` PreToolUse hook intentionally does NOT
+protect `.claude/settings.json` (`is_protected_path` matches only
+`CLAUDE.md`, `.claude/rules/*`, `.claude/skills/*`), so a model
+that wants to mutate the settings file directly via Edit or Write
+is blocked by the broader `validate-worktree-paths` hook only for
+the limited set of shared-config filenames it tracks. But
+`bin/flow promote-permissions --worktree-path <worktree>` is a
+subprocess that reads `.claude/settings.local.json` and writes
+`.claude/settings.json` at the worktree root — entirely outside
+the hook surface. Without an additional gate, that subprocess can
+land permission changes mid-flow.
+
+`src/promote_permissions.rs::active_flow_gate` closes the hole.
+Before the merge runs, it walks up the resolved `--worktree-path`
+looking for `.flow-states/`, derives the branch via
+`crate::hooks::detect_branch_from_path`, and checks
+`crate::hooks::is_flow_active(&branch, &main_root)`. When a flow
+is active and the caller did NOT pass `--confirm-on-flow-branch`,
+the gate returns:
+
+```json
+{"status": "skipped", "reason": "active_flow",
+ "message": "...", "branch": "<branch>"}
+```
+
+The local settings file is preserved across the skip so a
+confirmed retry (typically from `flow-learn` Step 4, the only
+sanctioned mid-flow caller) completes the merge.
+
+The `--confirm-on-flow-branch` flag is the bypass. `flow-learn`
+Step 4 passes it; any other caller documenting a legitimate
+mid-flow promotion must do the same. A model that constructs the
+flag itself to bypass the gate inherits the prose-only trust
+contract — symmetric with the `_continue_pending=commit` carve-out
+documented in `.claude/rules/concurrency-model.md` "Mechanical
+Enforcement". The gate exists to prevent accidental mid-flow
+mutations, not adversarial bypass.
+
+See `src/promote_permissions.rs::active_flow_gate` for the
+implementation and `tests/promote_permissions.rs` for the
+active-flow matrix (without-confirm-skips, with-confirm-proceeds,
+no-active-flow-proceeds, inactive-branch-proceeds,
+branch-undetectable-proceeds, relative-path-resolution).
+
 ## Shared Config Files — Express User Permission Required
 
 Some files in the worktree are not FLOW state and not task-scoped

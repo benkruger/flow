@@ -32,6 +32,8 @@ use serde_json::json;
 
 use crate::flow_paths::{FlowPaths, FlowStatesDir};
 use crate::git;
+use crate::hooks::is_flow_active;
+use crate::protected_paths::is_protected_path;
 
 /// FLOW-managed artifacts whose on-disk location is computed by
 /// `FlowPaths` rather than chosen by the caller. When `--path` names
@@ -161,6 +163,188 @@ fn normalize_lexical(path: &Path) -> PathBuf {
     out
 }
 
+/// Walk up from `cwd` looking for an ancestor that contains
+/// `.flow-states/`. Returns the first match — the main repo root.
+///
+/// Mirrors `find_project_root_in` in
+/// `src/hooks/validate_claude_paths.rs`. Duplicated rather than
+/// promoted to a shared helper because the loop is five lines and a
+/// new pub surface would require its own consumer + test row per
+/// `.claude/rules/test-placement.md` "Bright-line test for `pub`
+/// additions".
+fn find_main_root_from(cwd: &Path) -> Option<PathBuf> {
+    let mut current = cwd.to_path_buf();
+    loop {
+        if FlowStatesDir::new(&current).path().is_dir() {
+            return Some(current);
+        }
+        if !current.pop() {
+            break;
+        }
+    }
+    None
+}
+
+/// Extract the worktree branch from the first `.worktrees/<X>/` segment
+/// in `path`.
+///
+/// Unlike `crate::hooks::detect_branch_from_path` — which walks the
+/// path up looking for a `.git` marker file — this helper extracts
+/// the worktree branch strictly from the path's `.worktrees/`
+/// segment. The walk-up approach incorrectly returns
+/// `<branch>/<sub>` when the path traverses a git submodule (a
+/// subdirectory carrying its own `.git` marker) inside a worktree.
+/// The slash-containing result then fails
+/// `FlowPaths::is_valid_branch`, and `is_flow_active` returns false
+/// for the bogus branch — silently disabling the gate. Bypassing
+/// the `.git` walk-up closes that hole so a submodule subdirectory
+/// cannot defeat the active-flow correlation.
+///
+/// Returns `None` when the path has no `.worktrees/<X>/` segment
+/// (cwd outside a worktree, e.g., on the integration branch).
+///
+/// An empty string segment (path ending exactly at `.worktrees/`)
+/// flows through to `is_flow_active` which calls
+/// `FlowPaths::try_new(root, "")` — that returns `None` for the
+/// empty branch, so the caller's downstream `is_flow_active` check
+/// returns false and the gate passes through. Returning `Some("")`
+/// vs `None` is therefore observationally equivalent at the gate
+/// boundary; collapsing the explicit empty-segment check keeps the
+/// helper free of an unreachable branch (production cwd inputs
+/// never end exactly at the marker).
+fn worktree_branch_from_path(path: &Path) -> Option<String> {
+    let s = path.to_string_lossy();
+    let pos = s.find(".worktrees/")?;
+    let after = &s[pos + ".worktrees/".len()..];
+    let segment = after
+        .split('/')
+        .next()
+        .expect("str::split iterator is non-empty; next() always returns Some");
+    Some(segment.to_string())
+}
+
+/// Canonicalize `path` by resolving symlinks via
+/// `std::fs::canonicalize`. When the path itself does not exist,
+/// walks up to the deepest existing ancestor, canonicalizes that,
+/// and re-appends the missing trailing components.
+///
+/// This closes two attack surfaces in `worktree_path_guard`:
+///
+/// 1. **macOS canonical-path divergence.** `tempfile::tempdir()`
+///    returns `/var/folders/...` (a symlink to `/private/var/...`).
+///    `std::env::current_dir()` resolves through the symlink.
+///    A `--path` passed in non-canonical `/var/...` form against
+///    a canonical `cwd` in `/private/var/...` form makes the lexical
+///    `starts_with` comparison reject a legitimate worktree write.
+///    Canonicalizing both sides resolves to the same `/private/var/`
+///    representation.
+/// 2. **Symlink escape.** A symlink inside the worktree pointing
+///    out (e.g., `<worktree>/.claude/rules/evil.md → <main_repo>/CLAUDE.md`)
+///    would pass a lexical `starts_with` check while the OS-level
+///    `fs::write` follows the link to the main repo. Canonicalize
+///    resolves the link to its target before the comparison so the
+///    gate sees the real destination.
+fn canonicalize_with_fallback(path: &Path) -> PathBuf {
+    if let Ok(canon) = path.canonicalize() {
+        return canon;
+    }
+    // Path does not canonicalize. Recurse on the parent and re-attach
+    // the basename. Both gate inputs (`worktree` from `find_main_root_from`,
+    // `target_abs` from `cwd.join(provided)` or absolute provided) are
+    // absolute paths, so each recursion eventually reaches the filesystem
+    // root, which canonicalizes via the short-circuit above. The two
+    // `.expect` arms below are therefore unreachable for the gate's
+    // production callers; per `.claude/rules/testability-means-simplicity.md`,
+    // collapsing them keeps the helper free of dead branches.
+    let parent = path
+        .parent()
+        .expect("non-canonicalizable absolute path always has a parent (root canonicalizes via short-circuit above)");
+    let name = path
+        .file_name()
+        .expect("non-canonicalizable path has a file_name component (root canonicalizes via short-circuit above)");
+    canonicalize_with_fallback(parent).join(name)
+}
+
+/// Worktree-path guard for protected basenames during an active flow.
+///
+/// Closes the subprocess-layer hole the `validate-claude-paths`
+/// PreToolUse hook leaves open: the hook blocks Edit/Write tool calls
+/// on `CLAUDE.md`, `.claude/rules/*`, and `.claude/skills/*` and
+/// redirects the model to `bin/flow write-rule`. Without this guard,
+/// a `bin/flow write-rule --path <main_repo>/CLAUDE.md` invocation
+/// during an active flow would write to the main-repo copy, bypassing
+/// the worktree-only invariant the hook enforces.
+///
+/// Returns `Some(error_value)` when the gate fires (caller exits 1
+/// with that JSON envelope on stdout). Returns `None` when the gate
+/// is silent — the path isn't protected, no flow is active, the
+/// target already lands inside the worktree, or `cwd` cannot be
+/// resolved.
+///
+/// The gate uses path-based detection (no git subprocess) so it
+/// preserves the existing pass-through guarantee for non-managed
+/// paths: `git::project_root()` is only invoked for managed
+/// artifacts in the canonicalization gate above. Detection here:
+///
+/// 1. Walk up `cwd` for `.flow-states/` → `main_root`.
+/// 2. `worktree_branch_from_path(cwd)` extracts the first segment
+///    after `.worktrees/` in the cwd path. (Bypassing
+///    `detect_branch_from_path`'s `.git` walk-up so a git submodule
+///    inside a worktree cannot return `<branch>/<sub>` and silently
+///    disable the gate.)
+/// 3. `is_flow_active(branch, main_root)` checks for
+///    `<main_root>/.flow-states/<branch>/state.json`.
+/// 4. The expected worktree is `<main_root>/.worktrees/<branch>/`.
+///    Reject when the resolved target's canonical path does NOT
+///    descend from the worktree's canonical path. Both sides are
+///    canonicalized via `canonicalize_with_fallback` so a non-
+///    canonical `--path` (macOS `/var/...` vs `/private/var/...`)
+///    or a symlink inside the worktree pointing to a main-repo
+///    file does not bypass the prefix match.
+///
+/// Per `.claude/rules/security-gates.md` "Gate-Action Atomicity for
+/// Validated Paths", the caller must use the resolved absolute path
+/// (not the raw `args.path`) when this guard is silent — otherwise
+/// `fs::write` re-resolves the relative input against the process
+/// cwd at write time and lands at a different file than the one the
+/// gate inspected.
+fn worktree_path_guard(provided: &Path, cwd: &Path) -> Option<serde_json::Value> {
+    if !is_protected_path(provided) {
+        return None;
+    }
+    let main_root = find_main_root_from(cwd)?;
+    let branch = worktree_branch_from_path(cwd)?;
+    if !is_flow_active(&branch, &main_root) {
+        return None;
+    }
+    let target_abs = if provided.is_absolute() {
+        provided.to_path_buf()
+    } else {
+        cwd.join(provided)
+    };
+    let worktree = main_root.join(".worktrees").join(&branch);
+    let target_canon = canonicalize_with_fallback(&target_abs);
+    let worktree_canon = canonicalize_with_fallback(&worktree);
+    if target_canon.starts_with(&worktree_canon) {
+        return None;
+    }
+    Some(json!({
+        "status": "error",
+        "step": "worktree_path_validation",
+        "message": format!(
+            "write-rule rejects --path {} for protected basename: \
+             active flow on branch '{}' requires writes to land inside \
+             the worktree at {}",
+            target_abs.display(),
+            branch,
+            worktree.display()
+        ),
+        "provided": provided.display().to_string(),
+        "branch": branch,
+        "worktree": worktree.display().to_string(),
+    }))
+}
+
 pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
     let provided = Path::new(&args.path);
 
@@ -224,6 +408,25 @@ pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
         // Non-managed basename: pass-through, write to the caller-provided path.
         args.path.clone()
     };
+
+    // Worktree-path guard for protected basenames during an active
+    // flow. Runs BEFORE `read_content_file` (same ordering invariant
+    // as the canonicalization gate above) so a rejection does not
+    // destroy the caller's input file. See
+    // `.claude/rules/file-tool-preflights.md` "Managed-Artifact
+    // Canonicalization Gate (CLI Layer)" for the gate-before-read
+    // discipline this guard inherits.
+    //
+    // `.expect()` is intentional: a subprocess that cannot resolve its
+    // own cwd is broken in ways the upstream `git::project_root()`
+    // call already would have failed on (the canonicalization gate
+    // above shells `git rev-parse` from the same cwd). Collapsing the
+    // branch keeps the gate testable without contriving a deleted-cwd
+    // fixture per `.claude/rules/testability-means-simplicity.md`.
+    let cwd = std::env::current_dir().expect("subprocess cwd must be resolvable for write-rule");
+    if let Some(err) = worktree_path_guard(provided, &cwd) {
+        return (err, 1);
+    }
 
     let content = match read_content_file(&args.content_file) {
         Ok(c) => c,

@@ -25,6 +25,40 @@ current working directory (from `pwd`), not the project root from
 Shared paths that live OUTSIDE the worktree are fine to access
 directly: `.flow-states/`, `~/.claude/`, plugin cache paths.
 
+### Mechanical enforcement at the subprocess layer
+
+The Edit/Write tool surface is gated by the `validate-claude-paths`
+PreToolUse hook, which redirects `CLAUDE.md`, `.claude/rules/*`, and
+`.claude/skills/*` writes to `bin/flow write-rule` during an active
+flow. Without an additional check at the subprocess layer, a model
+could call `bin/flow write-rule --path <main_repo>/.claude/rules/foo.md
+--content-file <temp>` and bypass the hook entirely, writing to the
+main-repo copy of a rule that the worktree should own.
+
+`src/write_rule.rs::run_impl_main` closes that hole. After the
+managed-artifact canonicalization gate, a worktree-path guard
+classifies the `--path` basename via
+`crate::protected_paths::is_protected_path`. When the basename is
+protected AND a flow is active for the current branch (state file at
+`<main_root>/.flow-states/<branch>/state.json` exists), the gate
+rejects any path that doesn't normalize to a descendant of
+`<main_root>/.worktrees/<branch>/`. Rejection returns
+`{"status":"error","step":"worktree_path_validation"}` on stdout and
+exits 1, with the canonical worktree destination named in the
+response so the caller can retry against the right path.
+
+The gate runs BEFORE `read_content_file` so a rejection does not
+destroy the caller's input — the model can re-issue the call against
+the correct worktree path with the same content file. Pass-through
+behavior is preserved for non-protected basenames and for
+invocations without an active flow (prime-time, one-off rule edits
+on main).
+
+See `src/write_rule.rs::worktree_path_guard` for the implementation
+and `tests/write_rule.rs` for the protected-path matrix
+(main-repo-rejected vs. worktree-passes vs. no-active-flow vs.
+non-protected-passes).
+
 ## Never invoke cargo directly
 
 Never run `cargo test`, `cargo build`, or any `cargo` subcommand

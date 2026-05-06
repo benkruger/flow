@@ -53,6 +53,7 @@ pub mod plan_extract;
 pub mod prime_check;
 pub mod prime_setup;
 pub mod promote_permissions;
+pub mod protected_paths;
 pub mod render_pr_body;
 pub mod scope_enumeration;
 pub mod start_finalize;

@@ -1001,6 +1001,423 @@ fn write_rule_subprocess_detached_head_no_op_for_branch_scoped() {
     assert_eq!(fs::read_to_string(&target).unwrap(), "plan body");
 }
 
+// --- worktree-path guard for protected basenames ---
+
+/// Setup helper: create the active-flow fixture for the worktree-path
+/// guard tests. Mirrors `seed_active_flow_fixture` from
+/// tests/hooks/validate_claude_paths.rs — a `.git` marker file at the
+/// worktree level lets `detect_branch_from_path` resolve the branch
+/// without invoking git, so no real git worktree is required. Returns
+/// `(main_root, worktree_path)` both canonicalized for stable
+/// `starts_with` comparisons on macOS (/var → /private/var).
+fn seed_active_flow(parent: &Path, branch: &str) -> (PathBuf, PathBuf) {
+    let main_root = parent.canonicalize().expect("canonicalize tempdir");
+    let branch_dir = main_root.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), "{}").unwrap();
+    let worktree = main_root.join(".worktrees").join(branch);
+    fs::create_dir_all(&worktree).unwrap();
+    fs::write(worktree.join(".git"), "gitdir: fake\n").unwrap();
+    (main_root, worktree)
+}
+
+#[test]
+fn write_rule_subprocess_protected_main_repo_path_rejects() {
+    // Protected basename + main-repo destination + active flow → reject
+    // with step:worktree_path_validation. This is the load-bearing
+    // regression: without the guard, a model can call write-rule with a
+    // main-repo path during a flow and the subprocess writes to main.
+    let dir = tempfile::tempdir().unwrap();
+    let (main_root, worktree) = seed_active_flow(dir.path(), "feat-x");
+    let content_file = worktree.join("content.md");
+    fs::write(&content_file, "rule body").unwrap();
+    // Main-repo destination — outside the worktree.
+    let main_target = main_root.join(".claude").join("rules").join("foo.md");
+
+    let output = run_wr_canon(
+        &worktree,
+        &[
+            "--path",
+            main_target.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "worktree_path_validation");
+    assert!(
+        !main_target.exists(),
+        "rejected path must not be written to main repo"
+    );
+    // Content file preserved across rejection (gate-before-read invariant).
+    assert!(content_file.exists(), "content file must survive rejection");
+}
+
+#[test]
+fn write_rule_subprocess_protected_worktree_path_passes() {
+    // Protected basename + worktree destination + active flow → pass.
+    // The guard fires only when the path lands outside the worktree.
+    let dir = tempfile::tempdir().unwrap();
+    let (_main_root, worktree) = seed_active_flow(dir.path(), "feat-x");
+    let content_file = worktree.join("content.md");
+    fs::write(&content_file, "rule body").unwrap();
+    let worktree_target = worktree.join(".claude").join("rules").join("foo.md");
+
+    let output = run_wr_canon(
+        &worktree,
+        &[
+            "--path",
+            worktree_target.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read_to_string(&worktree_target).unwrap(), "rule body");
+}
+
+#[test]
+fn write_rule_subprocess_protected_no_active_flow_passes() {
+    // Protected basename + no active flow (no state.json) → pass.
+    // The guard is conditional on flow-active state — outside a flow,
+    // `bin/flow write-rule` keeps its current pass-through behavior so
+    // prime-time and one-off invocations are not blocked.
+    let dir = tempfile::tempdir().unwrap();
+    // No seed_active_flow — just create a worktree-shaped dir without
+    // .flow-states/<branch>/state.json so is_flow_active returns false.
+    let main_root = dir.path().canonicalize().unwrap();
+    let worktree = main_root.join(".worktrees").join("feat-x");
+    fs::create_dir_all(&worktree).unwrap();
+    fs::write(worktree.join(".git"), "gitdir: fake\n").unwrap();
+    let content_file = worktree.join("content.md");
+    fs::write(&content_file, "rule body").unwrap();
+    let main_target = main_root.join(".claude").join("rules").join("foo.md");
+
+    let output = run_wr_canon(
+        &worktree,
+        &[
+            "--path",
+            main_target.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read_to_string(&main_target).unwrap(), "rule body");
+}
+
+#[test]
+fn write_rule_subprocess_unprotected_main_repo_path_passes_in_flow() {
+    // Non-protected path + main-repo destination + active flow → pass.
+    // The guard's purpose is to protect CLAUDE.md / .claude/rules /
+    // .claude/skills only — other paths under main repo (e.g.
+    // .flow-issue-body, .flow-states/*) are governed by the existing
+    // managed-artifact canonicalization gate and unrelated paths pass
+    // through unchanged.
+    let dir = tempfile::tempdir().unwrap();
+    let (main_root, worktree) = seed_active_flow(dir.path(), "feat-x");
+    let content_file = worktree.join("content.txt");
+    fs::write(&content_file, "unrelated body").unwrap();
+    let main_target = main_root.join("docs").join("notes.txt");
+
+    let output = run_wr_canon(
+        &worktree,
+        &[
+            "--path",
+            main_target.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read_to_string(&main_target).unwrap(), "unrelated body");
+}
+
+#[test]
+fn write_rule_subprocess_protected_claude_md_main_repo_rejects() {
+    // CLAUDE.md is also a protected basename (alongside .claude/rules and
+    // .claude/skills). The guard must fire on a main-repo CLAUDE.md
+    // target as well — not only on the .claude/* directory cases above.
+    let dir = tempfile::tempdir().unwrap();
+    let (main_root, worktree) = seed_active_flow(dir.path(), "feat-x");
+    let content_file = worktree.join("content.md");
+    fs::write(&content_file, "claude body").unwrap();
+    let main_target = main_root.join("CLAUDE.md");
+
+    let output = run_wr_canon(
+        &worktree,
+        &[
+            "--path",
+            main_target.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "worktree_path_validation");
+    assert!(!main_target.exists());
+}
+
+#[test]
+fn write_rule_subprocess_protected_skills_main_repo_rejects() {
+    // .claude/skills/ is protected just like .claude/rules/.
+    let dir = tempfile::tempdir().unwrap();
+    let (main_root, worktree) = seed_active_flow(dir.path(), "feat-x");
+    let content_file = worktree.join("content.md");
+    fs::write(&content_file, "skill body").unwrap();
+    let main_target = main_root
+        .join(".claude")
+        .join("skills")
+        .join("my-skill")
+        .join("SKILL.md");
+
+    let output = run_wr_canon(
+        &worktree,
+        &[
+            "--path",
+            main_target.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "worktree_path_validation");
+}
+
+#[test]
+fn write_rule_subprocess_protected_relative_path_passes_inside_worktree() {
+    // Drives the `cwd.join(provided)` branch of worktree_path_guard:
+    // a relative protected `--path` resolves against cwd (the
+    // worktree), which lands inside the worktree → pass. Without this
+    // test the relative-resolution branch is uncovered.
+    let dir = tempfile::tempdir().unwrap();
+    let (_main_root, worktree) = seed_active_flow(dir.path(), "feat-x");
+    let content_file = worktree.join("content.md");
+    fs::write(&content_file, "rule body").unwrap();
+
+    let output = run_wr_canon(
+        &worktree,
+        &[
+            "--path",
+            ".claude/rules/foo.md",
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(worktree.join(".claude/rules/foo.md")).unwrap(),
+        "rule body"
+    );
+}
+
+#[test]
+fn write_rule_subprocess_protected_inactive_flow_for_branch_passes() {
+    // Drives the `is_flow_active = false` branch of worktree_path_guard:
+    // `.flow-states/` exists at main_root (so find_main_root succeeds)
+    // but the BRANCH-specific state.json is missing, so the gate
+    // returns None and the write proceeds. Without this test the
+    // is_flow_active=false branch is uncovered.
+    let dir = tempfile::tempdir().unwrap();
+    let main_root = dir.path().canonicalize().unwrap();
+    // Create .flow-states/ at main_root for an UNRELATED branch so
+    // find_main_root_from succeeds but is_flow_active("feat-x", ...)
+    // returns false.
+    fs::create_dir_all(main_root.join(".flow-states").join("other-branch")).unwrap();
+    fs::write(
+        main_root
+            .join(".flow-states")
+            .join("other-branch")
+            .join("state.json"),
+        "{}",
+    )
+    .unwrap();
+    let worktree = main_root.join(".worktrees").join("feat-x");
+    fs::create_dir_all(&worktree).unwrap();
+    fs::write(worktree.join(".git"), "gitdir: fake\n").unwrap();
+    let content_file = worktree.join("content.md");
+    fs::write(&content_file, "rule body").unwrap();
+    // Target main-repo destination — without an active flow on this
+    // branch, the gate must NOT block.
+    let main_target = main_root.join(".claude").join("rules").join("foo.md");
+
+    let output = run_wr_canon(
+        &worktree,
+        &[
+            "--path",
+            main_target.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read_to_string(&main_target).unwrap(), "rule body");
+}
+
+#[test]
+fn write_rule_subprocess_protected_branch_undetectable_passes() {
+    // Drives the `detect_branch_from_path = None` branch of
+    // worktree_path_guard: cwd is at main_root (no .worktrees/ marker)
+    // and there is no git repo here, so detect_branch_from_path falls
+    // through to the git subprocess fallback which fails. The gate
+    // returns None — no branch means no flow correlation — and the
+    // write proceeds.
+    let dir = tempfile::tempdir().unwrap();
+    let main_root = dir.path().canonicalize().unwrap();
+    // .flow-states/ exists so find_main_root_from succeeds at main_root.
+    fs::create_dir_all(main_root.join(".flow-states")).unwrap();
+    let content_file = main_root.join("content.md");
+    fs::write(&content_file, "rule body").unwrap();
+    // Protected basename so worktree_path_guard's first short-circuit
+    // (is_protected_path=false) does NOT fire.
+    let target = main_root.join(".claude").join("rules").join("foo.md");
+
+    let output = run_wr_canon(
+        &main_root,
+        &[
+            "--path",
+            target.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read_to_string(&target).unwrap(), "rule body");
+}
+
+#[test]
+fn write_rule_subprocess_submodule_subdirectory_does_not_bypass_gate() {
+    // Adversarial regression: a git submodule (or any subdirectory
+    // carrying its own `.git` file) inside a worktree previously
+    // tricked `detect_branch_from_path` into returning `<branch>/<sub>`
+    // — a slash-containing branch that `is_flow_active` rejected,
+    // silently disabling the gate. The fix in `worktree_branch_from_path`
+    // bypasses the `.git` walk-up and extracts the first `.worktrees/<X>/`
+    // segment, restoring the active-flow correlation.
+    let dir = tempfile::tempdir().unwrap();
+    let (main_root, worktree) = seed_active_flow(dir.path(), "feat-x");
+    let sub = worktree.join("sub");
+    fs::create_dir_all(&sub).unwrap();
+    fs::write(sub.join(".git"), "gitdir: submodule\n").unwrap();
+    let content_file = sub.join("content.md");
+    fs::write(&content_file, "exfiltrated").unwrap();
+    let main_target = main_root.join("CLAUDE.md");
+
+    let output = run_wr_canon(
+        &sub,
+        &[
+            "--path",
+            main_target.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "worktree_path_validation");
+    assert!(
+        !main_target.exists(),
+        "main repo CLAUDE.md must NOT have been written from a submodule cwd"
+    );
+}
+
+#[test]
+#[cfg(target_os = "macos")]
+fn write_rule_subprocess_non_canonical_macos_path_lands_inside_worktree() {
+    // Adversarial regression: on macOS the seed worktree path resolves
+    // through a /var/ → /private/var/ symlink. A `--path` passed in
+    // non-canonical /var/ form against a canonical cwd in /private/var/
+    // form previously tripped the lexical `starts_with` comparison and
+    // false-rejected a legitimate worktree write. The fix in
+    // `canonicalize_with_fallback` resolves both sides to the same
+    // /private/var/ representation before the prefix match.
+    let dir = tempfile::tempdir().unwrap();
+    let (_main_root, worktree) = seed_active_flow(dir.path(), "feat-x");
+    if !worktree.to_string_lossy().starts_with("/private/var/") {
+        return; // Non-/var tempdir layout — gate skipped silently.
+    }
+    let canonical_str = worktree.to_string_lossy().to_string();
+    let non_canonical_str = canonical_str.replacen("/private/var/", "/var/", 1);
+    let non_canonical_worktree = PathBuf::from(&non_canonical_str);
+    assert!(non_canonical_worktree.exists());
+
+    let content_file = worktree.join("content.md");
+    fs::write(&content_file, "rule body").unwrap();
+    let target = non_canonical_worktree
+        .join(".claude")
+        .join("rules")
+        .join("foo.md");
+
+    let output = run_wr_canon(
+        &worktree,
+        &[
+            "--path",
+            target.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "non-canonical absolute --path resolving to a legitimate \
+         worktree file must NOT be rejected. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // Verify the canonical destination has the bytes (not a phantom write).
+    let canonical_target = worktree.join(".claude/rules/foo.md");
+    assert!(canonical_target.exists());
+    assert_eq!(fs::read_to_string(&canonical_target).unwrap(), "rule body");
+}
+
 // --- end-to-end ---
 
 #[test]

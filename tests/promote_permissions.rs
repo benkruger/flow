@@ -464,6 +464,257 @@ fn settings_permissions_as_string_does_not_panic() {
     assert!(data.get("status").is_some());
 }
 
+// --- active-flow gate ---
+
+/// Setup helper for the active-flow gate tests: create a main-repo
+/// dir with `.flow-states/<branch>/state.json` and a worktree at
+/// `.worktrees/<branch>/` carrying a `.git` marker. Both paths are
+/// canonicalized for stable comparisons on macOS.
+fn setup_active_flow_repo(parent: &Path, branch: &str) -> (PathBuf, PathBuf) {
+    let main_root = parent.canonicalize().expect("canonicalize tempdir");
+    let branch_dir = main_root.join(".flow-states").join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), "{}").unwrap();
+    let worktree = main_root.join(".worktrees").join(branch);
+    fs::create_dir_all(&worktree).unwrap();
+    fs::write(worktree.join(".git"), "gitdir: fake\n").unwrap();
+    (main_root, worktree)
+}
+
+#[test]
+fn promote_subprocess_active_flow_without_confirm_skips() {
+    // Active flow on the worktree's branch + no --confirm-on-flow-branch
+    // → status:skipped, reason:active_flow. Settings are NOT mutated and
+    // the local file is preserved so a subsequent confirmed call (e.g.
+    // from flow-learn) can complete the merge.
+    let dir = tempfile::tempdir().unwrap();
+    let (_main_root, worktree) = setup_active_flow_repo(dir.path(), "feat-x");
+    let settings_path = setup_settings(
+        &worktree,
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
+    let local_path = setup_local(
+        &worktree,
+        json!({"permissions": {"allow": ["Bash(npm run *)"]}}),
+    );
+
+    let output = flow_rs()
+        .args(["promote-permissions", "--worktree-path"])
+        .arg(&worktree)
+        .output()
+        .unwrap();
+    let data = parse_stdout(&output.stdout);
+    assert_eq!(data["status"], "skipped");
+    assert_eq!(data["reason"], "active_flow");
+    assert_eq!(data["branch"], "feat-x");
+
+    // Settings unchanged — Bash(npm run *) NOT promoted.
+    let settings: Value =
+        serde_json::from_str(&fs::read_to_string(&settings_path).unwrap()).unwrap();
+    let allow = settings["permissions"]["allow"].as_array().unwrap();
+    assert_eq!(allow.len(), 1);
+    assert_eq!(allow[0], "Bash(git *)");
+
+    // Local file preserved for the confirmed retry path.
+    assert!(local_path.exists());
+}
+
+#[test]
+fn promote_subprocess_active_flow_with_confirm_proceeds() {
+    // Active flow + --confirm-on-flow-branch → gate is silent and the
+    // merge runs to completion. This is the path flow-learn Step 4
+    // takes when accumulating session permissions into settings.json.
+    let dir = tempfile::tempdir().unwrap();
+    let (_main_root, worktree) = setup_active_flow_repo(dir.path(), "feat-x");
+    let settings_path = setup_settings(
+        &worktree,
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
+    setup_local(
+        &worktree,
+        json!({"permissions": {"allow": ["Bash(npm run *)"]}}),
+    );
+
+    let output = flow_rs()
+        .args([
+            "promote-permissions",
+            "--confirm-on-flow-branch",
+            "--worktree-path",
+        ])
+        .arg(&worktree)
+        .output()
+        .unwrap();
+    let data = parse_stdout(&output.stdout);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["promoted"], json!(["Bash(npm run *)"]));
+
+    let settings: Value =
+        serde_json::from_str(&fs::read_to_string(&settings_path).unwrap()).unwrap();
+    let allow = settings["permissions"]["allow"].as_array().unwrap();
+    assert_eq!(allow.len(), 2);
+}
+
+#[test]
+fn promote_subprocess_no_active_flow_proceeds_without_confirm() {
+    // No `.flow-states/` ancestor → no flow active → gate stays silent
+    // and the merge runs as before (preserves prime-time and one-off
+    // promote-permissions calls outside any flow).
+    let dir = tempfile::tempdir().unwrap();
+    let main_root = dir.path().canonicalize().unwrap();
+    let settings_path = setup_settings(
+        &main_root,
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
+    setup_local(
+        &main_root,
+        json!({"permissions": {"allow": ["Bash(npm run *)"]}}),
+    );
+
+    let output = flow_rs()
+        .args(["promote-permissions", "--worktree-path"])
+        .arg(&main_root)
+        .output()
+        .unwrap();
+    let data = parse_stdout(&output.stdout);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["promoted"], json!(["Bash(npm run *)"]));
+
+    let settings: Value =
+        serde_json::from_str(&fs::read_to_string(&settings_path).unwrap()).unwrap();
+    assert_eq!(
+        settings["permissions"]["allow"].as_array().unwrap().len(),
+        2
+    );
+}
+
+#[test]
+fn promote_subprocess_inactive_flow_for_branch_proceeds() {
+    // `.flow-states/` exists at main_root but NO state.json for the
+    // worktree's branch → is_flow_active returns false → gate silent.
+    // Mirrors the matching write_rule case (state file present for an
+    // unrelated branch).
+    let dir = tempfile::tempdir().unwrap();
+    let main_root = dir.path().canonicalize().unwrap();
+    fs::create_dir_all(main_root.join(".flow-states/other-branch")).unwrap();
+    fs::write(main_root.join(".flow-states/other-branch/state.json"), "{}").unwrap();
+    let worktree = main_root.join(".worktrees/feat-x");
+    fs::create_dir_all(&worktree).unwrap();
+    fs::write(worktree.join(".git"), "gitdir: fake\n").unwrap();
+    setup_settings(
+        &worktree,
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
+    setup_local(
+        &worktree,
+        json!({"permissions": {"allow": ["Bash(npm run *)"]}}),
+    );
+
+    let output = flow_rs()
+        .args(["promote-permissions", "--worktree-path"])
+        .arg(&worktree)
+        .output()
+        .unwrap();
+    let data = parse_stdout(&output.stdout);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["promoted"], json!(["Bash(npm run *)"]));
+}
+
+#[test]
+fn promote_subprocess_active_flow_branch_undetectable_proceeds() {
+    // `.flow-states/` exists at main_root, but worktree_path lacks a
+    // `.worktrees/` segment so detect_branch_from_path returns None
+    // (and there's no real git repo to fall back to). The gate cannot
+    // correlate to a branch → returns None → merge proceeds.
+    let dir = tempfile::tempdir().unwrap();
+    let main_root = dir.path().canonicalize().unwrap();
+    fs::create_dir_all(main_root.join(".flow-states")).unwrap();
+    setup_settings(
+        &main_root,
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
+    setup_local(
+        &main_root,
+        json!({"permissions": {"allow": ["Bash(make *)"]}}),
+    );
+
+    let output = flow_rs()
+        .args(["promote-permissions", "--worktree-path"])
+        .arg(&main_root)
+        .output()
+        .unwrap();
+    let data = parse_stdout(&output.stdout);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["promoted"], json!(["Bash(make *)"]));
+}
+
+#[test]
+fn promote_subprocess_relative_worktree_path_resolves_against_cwd() {
+    // Drives the relative-path branch in active_flow_gate: an
+    // unqualified `--worktree-path .worktrees/feat-x` resolves
+    // against the subprocess cwd.
+    let dir = tempfile::tempdir().unwrap();
+    let (_main_root, worktree) = setup_active_flow_repo(dir.path(), "feat-x");
+    setup_settings(
+        &worktree,
+        json!({"permissions": {"allow": ["Bash(git *)"]}}),
+    );
+    setup_local(
+        &worktree,
+        json!({"permissions": {"allow": ["Bash(npm run *)"]}}),
+    );
+
+    // Run from the canonicalized parent (main_root). Relative path =
+    // ".worktrees/feat-x".
+    let output = flow_rs()
+        .args([
+            "promote-permissions",
+            "--worktree-path",
+            ".worktrees/feat-x",
+        ])
+        .current_dir(_main_root)
+        .output()
+        .unwrap();
+    let data = parse_stdout(&output.stdout);
+    assert_eq!(data["status"], "skipped");
+    assert_eq!(data["reason"], "active_flow");
+}
+
+#[test]
+fn promote_subprocess_submodule_subdirectory_does_not_bypass_gate() {
+    // Adversarial regression: a git submodule (or any subdirectory
+    // carrying its own `.git` file) inside a worktree previously
+    // tricked `detect_branch_from_path` into returning `<branch>/<sub>`
+    // — a slash-containing branch that `is_flow_active` rejected,
+    // silently disabling the gate. The fix in `worktree_branch_from_path`
+    // bypasses the `.git` walk-up and extracts the first `.worktrees/<X>/`
+    // segment, restoring the active-flow correlation.
+    let dir = tempfile::tempdir().unwrap();
+    let (_main_root, worktree) = setup_active_flow_repo(dir.path(), "feat-x");
+    let sub = worktree.join("sub");
+    fs::create_dir_all(&sub).unwrap();
+    fs::write(sub.join(".git"), "gitdir: submodule\n").unwrap();
+    setup_settings(&sub, json!({"permissions": {"allow": []}}));
+    setup_local(&sub, json!({"permissions": {"allow": ["Bash(rm -rf *)"]}}));
+
+    let output = flow_rs()
+        .args(["promote-permissions", "--worktree-path"])
+        .arg(&sub)
+        .output()
+        .unwrap();
+    let data = parse_stdout(&output.stdout);
+    assert_eq!(data["status"], "skipped");
+    assert_eq!(data["reason"], "active_flow");
+    // Settings unchanged — the dangerous Bash(rm -rf *) entry must NOT
+    // have been promoted from the submodule subdirectory.
+    let settings: Value =
+        serde_json::from_str(&fs::read_to_string(sub.join(".claude/settings.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        settings["permissions"]["allow"].as_array().unwrap().len(),
+        0
+    );
+}
+
 // --- Library-level tests (migrated from src/promote_permissions.rs) ---
 
 fn setup_dir_lib() -> tempfile::TempDir {
@@ -505,6 +756,7 @@ fn run_impl_skipped_is_ok() {
     let dir = setup_dir_lib();
     let args = Args {
         worktree_path: dir.path().to_string_lossy().to_string(),
+        confirm_on_flow_branch: false,
     };
     let result = run_impl(&args).unwrap();
     assert_eq!(result["status"], "skipped");
@@ -520,6 +772,7 @@ fn run_impl_error_is_err() {
     // No settings.json → error
     let args = Args {
         worktree_path: dir.path().to_string_lossy().to_string(),
+        confirm_on_flow_branch: false,
     };
     let result = run_impl(&args);
     assert!(result.is_err());
