@@ -40,7 +40,6 @@
       "Bash(claude plugin install *)",
       "Bash(claude plugin list)",
       "Bash(rm .flow-*)",
-      "Bash(rm -rf *.qa-repos*)",
       "Bash(rm .claude/settings.local.json)",
       "Bash(chmod +x *)",
       "Bash(cd *)",

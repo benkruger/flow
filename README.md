@@ -337,29 +337,17 @@ These skills and scripts live in the FLOW repo itself (`.claude/skills/`). They 
 | Command | What it does |
 |---------|-------------|
 | `/flow-release` | Bump version in plugin.json and marketplace.json, tag, push, create GitHub Release |
-| `/flow-qa` | End-to-end QA — clone QA repos, prime with local source, run a full 6-phase lifecycle, verify results |
 | `/flow-changelog-audit` | Audit Claude Code CHANGELOG.md for plugin-relevant changes, categorize as Adopt/Remove/Adapt, file issues |
 
-### QA System
+### Local Testing
 
-Every plugin change can be tested end-to-end before releasing. `/flow-qa` clones dedicated QA repos, primes them with the local plugin source, runs a fully autonomous 6-phase lifecycle (Start through Complete), and verifies the results.
-
-```bash
-/flow-qa python       # test against Python QA repo
-/flow-qa rails        # test against Rails QA repo
-/flow-qa ios          # test against iOS QA repo
-/flow-qa all          # test all QA repos sequentially
-```
-
-Each QA repo (`benkruger/flow-qa-python`, `flow-qa-rails`, `flow-qa-ios`, `flow-qa-go`) ships its own `bin/{format,lint,build,test}` scripts wired to the repo's toolchain, plus a minimal Calculator class, tests, and seed issues. The QA skill clones fresh, primes with `--plugin-root $PWD` to test the local source, runs a flow against a seed issue, and then verifies: worktree removed, state file deleted, PR merged, no stale artifacts.
-
-Supporting scripts: `bin/flow scaffold-qa` (create QA repos from templates), `bin/flow qa-reset` (reset repos to seed state), `bin/flow qa-verify` (verify post-Complete assertions).
-
-For quick local testing without the full QA lifecycle, use Claude Code's `--plugin-dir` flag:
+To test plugin changes against a target project, point Claude Code at the local plugin source via `--plugin-dir`:
 
 ```bash
 claude --plugin-dir=$HOME/code/flow
 ```
+
+That overrides the installed marketplace version for the duration of the session, so source-level edits take effect on the next session start.
 
 ---
 

@@ -349,3 +349,75 @@ fn test_no_weak_coverage_language_in_prose_corpus() {
 //   `.flow-states/<branch>/<purpose>.<ext>`; the
 //   `test_no_flat_layout_format_in_rust_source` scanner is no
 //   longer needed once the branch-cutoff window passed
+
+// --- flow-qa removal ---
+//
+// The flow-qa maintainer skill, four backing Rust modules
+// (qa_mode, qa_reset, qa_verify, scaffold_qa), the qa/templates/
+// directory, and the matching Commands::Qa* clap variants are gone.
+// The maintainer QAs locally via --plugin-dir instead. These four
+// tombstones fail CI if a merge conflict resolution reintroduces any
+// of them.
+
+#[test]
+fn flow_qa_skill_directory_does_not_exist() {
+    // Tombstone: removed in PR #1344. Must not return.
+    let root = common::repo_root();
+    let path = root.join(".claude/skills/flow-qa");
+    assert!(
+        !path.exists(),
+        ".claude/skills/flow-qa/ must not exist — the maintainer QAs locally \
+         via --plugin-dir, not via the flow-qa skill."
+    );
+}
+
+#[test]
+fn qa_modules_not_in_lib_rs() {
+    // Tombstone: removed in PR #1344. Must not return.
+    let root = common::repo_root();
+    let path = root.join("src/lib.rs");
+    let content = fs::read_to_string(&path).expect("src/lib.rs must exist");
+    for forbidden in &[
+        "pub mod qa_mode;",
+        "pub mod qa_reset;",
+        "pub mod qa_verify;",
+        "pub mod scaffold_qa;",
+    ] {
+        assert!(
+            !content.contains(forbidden),
+            "src/lib.rs must not contain `{}` — the qa_* modules are gone.",
+            forbidden
+        );
+    }
+}
+
+#[test]
+fn qa_command_variants_not_in_main_rs() {
+    // Tombstone: removed in PR #1344. Must not return.
+    let root = common::repo_root();
+    let path = root.join("src/main.rs");
+    let content = fs::read_to_string(&path).expect("src/main.rs must exist");
+    for forbidden in &[
+        "Commands::QaMode",
+        "Commands::QaReset",
+        "Commands::QaVerify",
+        "Commands::ScaffoldQa",
+    ] {
+        assert!(
+            !content.contains(forbidden),
+            "src/main.rs must not contain `{}` — the qa_* clap variants are gone.",
+            forbidden
+        );
+    }
+}
+
+#[test]
+fn qa_templates_directory_does_not_exist() {
+    // Tombstone: removed in PR #1344. Must not return.
+    let root = common::repo_root();
+    let path = root.join("qa/templates");
+    assert!(
+        !path.exists(),
+        "qa/templates/ must not exist — the QA repo templates are gone."
+    );
+}

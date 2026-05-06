@@ -194,7 +194,7 @@ If any element is missing or out of order, rewrite before displaying.
 
 **Subject line rules (both formats):**
 - Start with an imperative verb: Add, Fix, Update, Remove, Refactor, Extract
-- Include the business reason — why this change matters, not just what changed. "Remove /flow-qa skill and dev-mode plumbing because Claude Code's --plugin-dir flag makes QA testing trivial."
+- Include the business reason — why this change matters, not just what changed. "Add Slack thread replies because operators want phase updates without polling the PR."
 - Describe the goal, not the mechanism — when a change has both, the subject says why it matters
 - No prefix jargon (no `feat:`, `chore:`, `fix:` — just the verb)
 - Ends with a period (it is a full sentence)

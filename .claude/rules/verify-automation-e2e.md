@@ -16,9 +16,9 @@ slow. The two canonical bootstrapping scenarios:
 
 1. **Test would re-enter the active workflow.** A FLOW lifecycle
    feature cannot be E2E-tested from inside an active FLOW
-   session, because `/flow-qa --start` bootstraps a NEW lifecycle
-   in a target QA repo and would conflict with the active flow's
-   state file, lock, and worktree.
+   session, because the test would need to start a NEW lifecycle
+   and that conflicts with the active flow's state file, lock,
+   and worktree.
 2. **Test would require operator approval the agent cannot
    provide.** A feature that requires interactive credential
    entry, hardware access, or a manual UI confirmation cannot
@@ -29,8 +29,9 @@ When the carve-out applies, the deferral must satisfy ALL of:
 1. **Logged via `bin/flow log`** with explicit text describing
    what was deferred, why the bootstrapping prevented in-session
    testing, and what command the user must run after merge to
-   verify (e.g., `/flow-qa --start` in a fresh Claude Code
-   session). The log entry serves three readers: Code Review's
+   verify (e.g., manually running the lifecycle from start to
+   complete in a fresh Claude Code session against a target
+   project). The log entry serves three readers: Code Review's
    reviewer agent (which checks deferral discipline), the Learn
    analyst (which audits whether the deferral was reasonable),
    and the user (post-merge action).

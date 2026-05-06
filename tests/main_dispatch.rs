@@ -103,10 +103,6 @@ fn all_subcommands_have_working_help() {
         "tui",
         "tui-data",
         "upgrade-check",
-        "qa-mode",
-        "qa-reset",
-        "qa-verify",
-        "scaffold-qa",
         "hook",
     ];
     for sub in subcommands {
@@ -964,13 +960,13 @@ fn main_arm_invocations_cover_dispatch() {
         cmd.env("GIT_CEILING_DIRECTORIES", &root);
         // Neutralize gh CLI auth so any subcommand that shells out to
         // `gh` (close-issue, create-sub-issue, link-blocked-by,
-        // create-milestone, auto-close-parent, label-issues, qa-reset,
-        // qa-verify, scaffold-qa) fails with an immediate auth error
-        // rather than blocking on a network timeout in CI environments
-        // without GitHub credentials. `GH_TOKEN=invalid` forces gh to
-        // fail at the auth check before issuing any HTTP request.
-        // Setting `HOME` to the tempdir prevents gh from reading a
-        // user-level config that could supply a real token.
+        // create-milestone, auto-close-parent, label-issues) fails
+        // with an immediate auth error rather than blocking on a
+        // network timeout in CI environments without GitHub
+        // credentials. `GH_TOKEN=invalid` forces gh to fail at the
+        // auth check before issuing any HTTP request. Setting `HOME`
+        // to the tempdir prevents gh from reading a user-level
+        // config that could supply a real token.
         cmd.env("GH_TOKEN", "invalid");
         cmd.env("HOME", &root);
         if let Some(input) = stdin_json {
@@ -1216,18 +1212,6 @@ fn main_arm_invocations_cover_dispatch() {
         ("orchestrate-state", &["--init"], None),
         ("tombstone-audit", &[], None),
         ("upgrade-check", &[], None),
-        (
-            "qa-mode",
-            &["--start", "--local-path", "/nonexistent"],
-            None,
-        ),
-        ("qa-reset", &["--repo", "x/y"], None),
-        ("qa-verify", &["--repo", "x/y"], None),
-        (
-            "scaffold-qa",
-            &["--template", "nonexistent", "--repo", "x/y"],
-            None,
-        ),
     ];
 
     for (sub, args, stdin) in invocations {
