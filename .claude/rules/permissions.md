@@ -58,27 +58,23 @@ Forgetting either side breaks `bin/flow ci`: the contract test in
 `tests/permissions.rs` walks every SKILL.md bash block, extracts the
 command, and asserts it matches at least one allow-list entry. A
 new skill bash command without a matching entry fails CI in Code
-phase. Without Plan-time enumeration, the gap surfaces as a
-mid-Code permission failure that triggers an unplanned plan
-deviation log + a `CURRENT_CONFIG_HASH` bump (the allow-list
-addition changes the config-hash inputs).
+phase.
 
 ### What counts as a new bash command
 
 A bash block in a SKILL.md introduces a "new" command when its
 first token (the program name, modulo `${CLAUDE_PLUGIN_ROOT}/`
 prefix) is not already covered by an existing `UNIVERSAL_ALLOW`
-entry under the project's permission-pattern matching. Examples:
+entry. Examples:
 
 - A skill that adds `bin/test --adversarial-path` introduces a new
   command — `Bash(bin/test --adversarial-path)` is the matching
-  entry (or `Bash(bin/test *)` if the project wants to broaden).
+  entry.
 - A skill that adds `${CLAUDE_PLUGIN_ROOT}/bin/flow custom-subcmd`
   is covered by the existing `Bash(*bin/flow *)` entry — no
   permission change needed.
-- A skill that adds `gh release upload <tag> <file>` is covered by
-  existing `Bash(gh release create *)` only if patterns subsume —
-  most likely a new `Bash(gh release upload *)` entry is needed.
+- A skill that adds `gh release upload <tag> <file>` likely needs
+  a new `Bash(gh release upload *)` entry.
 
 ### How to apply
 
@@ -86,8 +82,7 @@ entry under the project's permission-pattern matching. Examples:
 add a bash block, the task description must include a "Permission
 coverage" subsection naming:
 
-1. The command's first token (e.g., `bin/test --adversarial-path`,
-   `${CLAUDE_PLUGIN_ROOT}/bin/flow <new-subcmd>`).
+1. The command's first token.
 2. The matching existing `UNIVERSAL_ALLOW` entry, OR the new
    `Bash(<pattern>)` entry the plan will add to both
    `src/prime_check.rs::UNIVERSAL_ALLOW` and
@@ -98,10 +93,7 @@ coverage" subsection naming:
 
 **Code phase.** When implementing the SKILL.md change, the same
 commit must include the matching allow-list addition + the
-`CURRENT_CONFIG_HASH` bump. Discovering the gap mid-Code is a
-plan-deviation event per
-`.claude/rules/plan-commit-atomicity.md` and must be logged via
-`bin/flow log` before the commit lands.
+`CURRENT_CONFIG_HASH` bump.
 
 **Code Review phase.** The reviewer agent cross-checks every new
 SKILL.md bash command in the diff against the diff's allow-list
@@ -134,15 +126,12 @@ explicit ask" — the user implicitly asks for it by running
 themselves placed in conflicting lists. The merge does not
 remove deny entries that have no allow-list counterpart, and
 `UNIVERSAL_ALLOW` / `FLOW_DENY` are validated against each other
-by the `no_allow_deny_overlap_in_plugin_permissions` test so
-FLOW never engineers a conflict that would silently strip a
-user's deny.
+by the `no_allow_deny_overlap_in_plugin_permissions` test.
 
 The match is exact-string only. A user with `Bash(git push)` in
 their deny list and `Bash(git *)` (broader pattern) in their
 allow list keeps the deny — subsumption-based removal is out of
-scope. See `src/prime_setup.rs::merge_settings_with` for the
-implementation and the doc comment that records the contract.
+scope. See `src/prime_setup.rs::merge_settings_with`.
 
 ## Never Edit Permissions Mid-Flow
 
@@ -154,26 +143,15 @@ blocks mid-session.
 
 Permission lockdown changes belong in `src/prime_check.rs`
 (UNIVERSAL_ALLOW, FLOW_DENY) for target projects. The FLOW repo's
-own `.claude/settings.json` is updated on main after the PR merges,
-or during the next `/flow:flow-prime` run.
+own `.claude/settings.json` is updated on the base branch after
+the PR merges, or during the next `/flow:flow-prime` run.
 
 ### Mechanical enforcement at the subprocess layer
 
-The `validate-claude-paths` PreToolUse hook intentionally does NOT
-protect `.claude/settings.json` (`is_protected_path` matches only
-`CLAUDE.md`, `.claude/rules/*`, `.claude/skills/*`), so a model
-that wants to mutate the settings file directly via Edit or Write
-is blocked by the broader `validate-worktree-paths` hook only for
-the limited set of shared-config filenames it tracks. But
-`bin/flow promote-permissions --worktree-path <worktree>` is a
-subprocess that reads `.claude/settings.local.json` and writes
-`.claude/settings.json` at the worktree root — entirely outside
-the hook surface. Without an additional gate, that subprocess can
-land permission changes mid-flow.
-
-`src/promote_permissions.rs::active_flow_gate` closes the hole.
-Before the merge runs, it walks up the resolved `--worktree-path`
-looking for `.flow-states/`, derives the branch via
+`src/promote_permissions.rs::active_flow_gate` blocks
+`bin/flow promote-permissions` mid-flow. Before the merge runs, it
+walks up the resolved `--worktree-path` looking for
+`.flow-states/`, derives the branch via
 `crate::hooks::detect_branch_from_path`, and checks
 `crate::hooks::is_flow_active(&branch, &main_root)`. When a flow
 is active and the caller did NOT pass `--confirm-on-flow-branch`,
@@ -190,18 +168,7 @@ sanctioned mid-flow caller) completes the merge.
 
 The `--confirm-on-flow-branch` flag is the bypass. `flow-learn`
 Step 4 passes it; any other caller documenting a legitimate
-mid-flow promotion must do the same. A model that constructs the
-flag itself to bypass the gate inherits the prose-only trust
-contract — symmetric with the `_continue_pending=commit` carve-out
-documented in `.claude/rules/concurrency-model.md` "Mechanical
-Enforcement". The gate exists to prevent accidental mid-flow
-mutations, not adversarial bypass.
-
-See `src/promote_permissions.rs::active_flow_gate` for the
-implementation and `tests/promote_permissions.rs` for the
-active-flow matrix (without-confirm-skips, with-confirm-proceeds,
-no-active-flow-proceeds, inactive-branch-proceeds,
-branch-undetectable-proceeds, relative-path-resolution).
+mid-flow promotion must do the same.
 
 ## Shared Config Files — Express User Permission Required
 
@@ -223,41 +190,13 @@ The canonical list:
   every PR in the repo
 - `.config/` (everything under it — `nextest.toml`, build profile
   configs, language-toolchain configs, etc.) — shared
-  build/test infrastructure that every engineer's CI run inherits.
-  A change to `.config/nextest.toml` (test timeouts, test groups,
-  parallelism limits) reshapes every concurrent flow's CI behavior.
+  build/test infrastructure that every engineer's CI run inherits
 - `.claude/settings.json` — covered by "Never Edit Permissions
   Mid-Flow" above
 
 When a PR's scope is narrow (e.g., "fix one flaky test"), editing
 any of these files expands the diff into territory the user never
-agreed to review. Even a one-line change to `.gitignore` or
-`.config/nextest.toml` is a scope expansion — the user has not
-seen or approved that entry.
-
-## The Anti-Pattern
-
-The motivating incident (PR #1166): Claude created a helper
-script `.flow-loop-runner.sh` whose execution was blocked by the
-permission model. To keep the orphan file out of the commit,
-Claude added the filename to `.gitignore` without user permission.
-The user had to revert the `.gitignore` change manually after
-catching it. Two violations compounded: the script never should
-have been created (see
-`.claude/rules/permission-blocked-workarounds.md`), and
-`.gitignore` never should have been modified to work around the
-script.
-
-A second motivating incident: a CI test under nextest's
-`slow-timeout` was failing under heavy machine load (video call).
-Claude attempted to add a serial test-group override in
-`.config/nextest.toml` to "fix" the flake. That was scope
-expansion into shared infrastructure (every engineer's CI
-inherits the override) AND it was solving an environmental noise
-problem with a config change rather than waiting for load to
-return to normal. The user reverted both. See also
-`.claude/rules/testing-gotchas.md` "Distinguish Environmental
-Load From Flaky Tests" for the test-side discipline.
+agreed to review.
 
 ## The Correct Path
 
@@ -266,9 +205,9 @@ file, stop and ask the user:
 
 > "The cleanest solution here requires adding one line to
 > `.gitignore` (or modifying `.github/workflows/ci.yml`,
-> `.config/nextest.toml`, etc.).
-> This is shared config that every engineer reads. May I modify
-> it, or should I change the approach to avoid the edit?"
+> `.config/nextest.toml`, etc.). This is shared config that
+> every engineer reads. May I modify it, or should I change the
+> approach to avoid the edit?"
 
 Prefer approaches that keep the diff scoped to task-relevant
 code. Ask before expanding scope into shared territory. If the
@@ -293,40 +232,14 @@ directory component.
 (e.g., `.config/nextest.toml`). The prose rule above forbids
 unapproved edits to those files; the hook does not yet enforce
 them. Until the hook is extended, the model must follow the prose
-rule manually for `.config/` writes — every Edit/Write to a
-`.config/*` file under an active flow requires explicit user
-approval before the call. Future work is to extend the
-`is_shared_config` predicate to match any path passing through a
-`.config/` directory component, mirroring the existing
-`.github/` treatment.
+rule manually for `.config/` writes.
 
 The `validate_shared_config` function gates on tool name: only
 `Edit` and `Write` tool calls are blocked (exit 2). `Read`,
-`Glob`, and `Grep` calls pass through so codebase exploration is
-unaffected. The block fires only when the CWD is inside a
-`.worktrees/` directory (the flow-active proxy) and the target
-path is inside the worktree.
+`Glob`, and `Grep` calls pass through. The block fires only when
+the CWD is inside a `.worktrees/` directory and the target path
+is inside the worktree.
 
 The block message directs the model to confirm with the user via
 `AskUserQuestion` before proceeding, and points to this section
-for context. No hook registration changes are needed — the
-existing `validate-worktree-paths` entries for Edit and Write in
-`hooks/hooks.json` already cover the tool surface.
-
-## Cross-References
-
-- `.claude/rules/permission-blocked-workarounds.md` — documents the
-  first half of the compound anti-pattern (creating the orphan
-  artifact) that commonly motivates shared-config modification.
-- `.claude/rules/code-review-scope.md` "Rules Landed on Main
-  Mid-Flow" — covers the adjacent case of shared rules updated
-  on main during an active branch.
-- `.claude/rules/testing-gotchas.md` "Distinguish Environmental
-  Load From Flaky Tests" — the test-side discipline that
-  prevents shared-config edits from being used to paper over
-  environmental load events.
-- `.claude/rules/cli-output-contracts.md` — when a new skill
-  bash command is also a new consumed-output subcommand or stub
-  flag, the Plan-phase enumeration here couples with the
-  output-contract discipline there. The plan must specify both
-  the permission entry AND the output contract before Code phase.
+for context.

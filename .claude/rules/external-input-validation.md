@@ -16,27 +16,9 @@ place (git, user config, subprocess output, parsed JSON, env vars)
 and does not validate upstream, the check is a denial-of-service
 vector for legitimate inputs the external system permits.
 
-Issue #1054 surfaced this exactly: `FlowPaths::new` was changed to
-<!-- external-input-audit: not-a-tightening -->
-panic on slash-containing branches, under the assumption that
-`branch_name()` sanitization applied to its inputs. The assumption
-was wrong — `branch_name()` only runs at flow-start, while
-`current_branch()` returns raw git refs that commonly contain
-slashes (`feature/foo`, `dependabot/*`). Five hook entry points and
-`format-status` crashed with a Rust panic for every user on a
-standard git branch. Adversarial testing caught it; planning should
-have.
-
-Issue #1137 surfaced a second instance of the same class — this time
-in a CLI subcommand rather than a hook. `bin/flow complete-fast
---branch feature/foo` panicked in `src/complete_fast.rs:read_state`
-because `read_state` called `FlowPaths::new(root, branch)` directly
-with the unvalidated `--branch` CLI override. The rule's callsite
-inventory listed only `src/hooks/*.rs`, so the Plan phase did not
-audit the CLI-entry callsite. The fix used `FlowPaths::try_new` with
-a structured error return. The motivating lesson is that **any CLI
-subcommand accepting a `--branch` override is a branch-validation
-callsite just like a hook**, and must use the fallible constructor.
+A `--branch` CLI override is also an external input — `clap` accepts
+any string the shell passes, including slash-containing and empty
+values. The override is no more trusted than a git subprocess result.
 
 ## Mechanical Enforcement
 
@@ -56,7 +38,6 @@ function parameter, the plan must include a caller audit for that
 function. The audit enumerates the callsites. For every row in the
 audit:
 
-<!-- scope-enumeration: imperative -->
 1. Record the exact source of the validated argument (e.g. state-
    file key, `current_branch()` subprocess, CLI flag, struct
    field).
@@ -89,13 +70,11 @@ tags, commit SHAs), the public API must expose at least one fallible
 constructor alongside the panicking one. Callers that receive the
 value from `current_branch()`, `resolve_branch()`, `resolve_branch_in()`,
 or any subprocess running `git` must use the fallible variant. **A
-`--branch` CLI override is also an external input** — `clap` accepts
-any string the shell passes, including slash-containing and empty
-values, so the override is no more trusted than a git subprocess
-result. Callers that accept `--branch` must use the fallible variant.
-The panicking variant is reserved for callers that have already
-validated the value at a prior boundary (state-file keyspace,
-`branch_name()` output, upstream `try_new` success).
+`--branch` CLI override is also an external input** — callers that
+accept `--branch` must use the fallible variant. The panicking
+variant is reserved for callers that have already validated the
+value at a prior boundary (state-file keyspace, `branch_name()`
+output, upstream `try_new` success).
 
 The reference implementation is `FlowPaths::new` / `FlowPaths::try_new`:
 
@@ -137,12 +116,9 @@ hook panic.
 The CLI subcommand entry inventory that receives a branch via
 `--branch` (and therefore must guard with `FlowPaths::try_new` or
 pre-validate via `FlowPaths::is_valid_branch`) includes
-`src/complete_fast.rs:read_state` (commit `12b098f6`, the issue
-#1137 fix). Any new CLI subcommand that accepts `--branch` and
-constructs a `FlowPaths` must follow the same discipline. When
-refactoring an existing CLI subcommand, audit its `read_state` /
-`FlowPaths::new` callsites against this discipline before declaring
-the refactor complete.
+`src/complete_fast.rs:read_state`. Any new CLI subcommand that
+accepts `--branch` and constructs a `FlowPaths` must follow the
+same discipline.
 
 ### Code Review enforcement
 
@@ -164,7 +140,4 @@ and asserts the hook exits 0 / returns early without panicking.
 
 CLI subcommands that accept `--branch` must include a regression
 test that exercises the slash-branch path and asserts a structured
-error (not a panic). The issue-#1137 fix added
-`read_state_slash_branch_returns_structured_error_no_panic` and
-`run_impl_inner_slash_branch_returns_structured_error_no_panic` as
-the reference pattern.
+error (not a panic).

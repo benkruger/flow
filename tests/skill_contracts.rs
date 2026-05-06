@@ -660,10 +660,8 @@ fn phase_skills_no_inline_time_computation() {
 /// above each opening ```bash fence. The backward walk stops at any
 /// prior fenced block — each CI-invoking block must have its own
 /// adjacent preamble, and inheritance across unrelated blocks is
-/// prohibited. This closes the adjacent-block inheritance gap found
-/// by Code Review's adversarial agent (PR #1183, finding A10) at the
-/// cost of requiring each adjacent variant in the same section to
-/// carry its own preamble.
+/// prohibited. Adjacent variants in the same section each carry their
+/// own preamble.
 #[test]
 fn skill_ci_invocations_specify_long_timeout() {
     // CI-running subcommand family. Each entry runs `ci::run_impl()`
@@ -3236,11 +3234,11 @@ fn flow_plan_skill_has_extract_helper_branch_enumeration() {
 fn extract_helper_refactor_rule_has_expected_structure() {
     // The SKILL.md Extract-Helper Branch Enumeration subsection
     // cross-references .claude/rules/extract-helper-refactor.md for the
-    // full trigger vocabulary, the three classifications, the opt-out
-    // grammar, and the motivating PR #1155 incident. This test asserts
-    // that rule file exists and contains the canonical elements the
-    // SKILL.md cross-reference promises, so a broken cross-reference
-    // or a missing section fails CI instead of silently shipping.
+    // full trigger vocabulary, the three classifications, and the
+    // opt-out grammar. This test asserts that rule file exists and
+    // contains the canonical elements the SKILL.md cross-reference
+    // promises, so a broken cross-reference or a missing section fails
+    // CI instead of silently shipping.
     let path = common::repo_root()
         .join(".claude")
         .join("rules")
@@ -3265,11 +3263,6 @@ fn extract_helper_refactor_rule_has_expected_structure() {
          'extract-helper-refactor: not-an-extraction'"
     );
 
-    assert!(
-        content.contains("PR #1155"),
-        "extract-helper-refactor.md must cite the motivating PR #1155 incident"
-    );
-
     // The rule file must carry the canonical section structure the
     // SKILL.md cross-reference promises. A future edit that removes
     // Why, The Rule, The Three Classifications, or Enforcement
@@ -3283,7 +3276,6 @@ fn extract_helper_refactor_rule_has_expected_structure() {
         "## Enforcement",
         "## Opt-Out Grammar",
         "## How to Apply",
-        "## Motivating Incident",
     ] {
         assert!(
             content.contains(section),

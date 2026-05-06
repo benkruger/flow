@@ -23,19 +23,13 @@ Mechanical enforcement ensures the path is absent:
 - `bin/flow add-finding` applies a positive allowlist: the outcome
   must be in `{fixed, dismissed}` when `--phase flow-code-review`.
   Both inputs are normalized (whitespace trimmed, NULs stripped,
-  ASCII-lowercased) before comparison, so whitespace or case drift
-  in CLI arguments cannot bypass the gate. Any outcome outside the
-  allowed set — including `filed` and any future outcome added to
-  `VALID_OUTCOMES` — is rejected.
+  ASCII-lowercased) before comparison.
 - `bin/flow issue` blocks issue creation when the state file shows
-  `current_phase == "flow-code-review"` (normalized via the same
-  trim + NUL-strip + lowercase). The gate fails CLOSED when a
-  non-empty state file exists but its `current_phase` cannot be
-  determined (invalid JSON, BOM prefix, wrong type, missing key).
-  The `--override-code-review-ban` flag bypasses the gate and is
-  the deliberate-friction escape hatch for exceptional cases
-  (e.g., a FLOW process gap raised inside a Code Review that
-  genuinely cannot wait for Phase 5 Learn).
+  `current_phase == "flow-code-review"`. The gate fails CLOSED
+  when a non-empty state file exists but its `current_phase`
+  cannot be determined. The `--override-code-review-ban` flag
+  bypasses the gate and is the deliberate-friction escape hatch
+  for exceptional cases.
 
 ## Supersession Exception
 
@@ -43,8 +37,7 @@ Before classifying a finding as Real or False positive, run the
 supersession test from `.claude/rules/supersession.md`. If the
 finding describes code the PR has made permanently redundant, the
 in-scope action is deletion regardless of file location — not
-filing. The supersession check is complementary to this rule; it
-routes superseded code to Step 4 for deletion.
+filing.
 
 ## Value-vs-Bureaucracy Finding Triage
 
@@ -65,8 +58,7 @@ other in adjacent sections, or a missing redundant doc comment
 that restates what the source already says. The fix lands quickly
 and looks productive, but it does not change behavior, does not
 unblock a future reader, and does not prevent any class of
-regression. Every such fix is pure churn — a maintenance cost
-paid in exchange for the appearance of diligence.
+regression.
 
 ### The triage test
 
@@ -99,9 +91,7 @@ because their fixes change behavior or prevent bugs.
 
 The trap concentrates in tenant 6 (documentation): doc-drift
 findings that restate information already encoded elsewhere.
-Apply the test most rigorously there, where the cost of a
-redundant fix is lowest and the rate of agent over-flagging is
-highest.
+Apply the test most rigorously there.
 
 The "Key Files" addition in `CLAUDE.md` is the canonical edge
 case: per `.claude/rules/docs-with-behavior.md` "What Counts," a
@@ -134,18 +124,15 @@ skill update lands on **the base branch** (the integration branch
 the flow coordinates against — `main` for standard repos,
 `staging`/`develop`/etc. for non-main-trunk repos) during an active
 Code or Code Review phase on an already-started branch. Both rule
-files (`.claude/rules/*.md`) and skill files (`skills/**/SKILL.md`
-and `.claude/skills/**/SKILL.md`) flow into the current session via
-the auto-inserted `system-reminder` that surfaces edited files —
-the Code phase sees the updated text even though the feature branch
+files and skill files flow into the current session via the
+auto-inserted `system-reminder` that surfaces edited files — the
+Code phase sees the updated text even though the feature branch
 forked before it was written.
 
 Skills are the same drift surface as rules: both are dynamic
 instructions the Code phase follows. A skill that adds a new step,
 changes a gate, or tightens a commit convention can retroactively
-flag the current branch's in-progress work, exactly the way a rule
-update does. The decision tree below is written against rules, but
-every criterion applies identically to skill updates.
+flag the current branch's in-progress work.
 
 When this happens, the Code phase has a decision to make:
 
@@ -192,23 +179,3 @@ noticed the change and consciously chose a path" from "Claude
 ignored the change". The Learn phase analyst reads the log when
 auditing compliance and treats an undocumented decision as a
 process gap.
-
-### Motivating incident
-
-PR #1157 (Coverage: HTTP client trait seam) was mid-Code-phase when
-`.claude/rules/external-input-validation.md` was updated on main to
-extend the `FlowPaths::try_new` discipline to CLI subcommand
-`--branch` overrides (per issue #1137). The Code phase notes
-indicated awareness of the rule update but elected not to fix the
-pre-existing `FlowPaths::new(root, branch)` call in
-`phase_finalize::run_impl_with_deps`. Code Review's reviewer agent
-caught the violation under the new rule's lens, and the fix landed
-as a Code Review finding in the same PR. The deferral was a valid
-scope-management decision per this rule's "defer" criterion
-(wide-blast-radius is arguable; the call was adjacent to already-
-changed code, so "proactively sweep" would also have been
-defensible). What was missing was the log entry — the decision was
-implicit, leaving Learn to infer the reasoning from commit messages
-and absent state notes. This section codifies the logging
-discipline. The incident involved a rule update; the same logging
-discipline applies to skill updates by symmetry.

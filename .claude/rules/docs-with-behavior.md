@@ -51,8 +51,7 @@ data is available. When a skill changes what artifacts it passes to
 a sub-agent (e.g. switching from full diff to substantive diff),
 update the agent's Input section in the same commit. Stale Input
 sections mislead the agent about available context and produce
-incorrect reasoning. CI cannot enforce this (agent Input sections
-are prose).
+incorrect reasoning.
 
 **Plan-phase enumeration requirement.** When a plan task modifies
 a skill that invokes one or more sub-agents, the plan's Exploration
@@ -87,9 +86,7 @@ tell users the only valid value is the original hardcoded one.
 **The trigger.** A plan task that adds a parameter, state field,
 or configuration axis where prior code hardcoded the value. Symptom
 language in the plan: "now reads X from Y," "previously hardcoded,"
-"plumb through," "honor the configured value." When such language
-appears in a plan task, the same plan must enumerate every prose
-surface that mentions the old hardcoded value.
+"plumb through," "honor the configured value."
 
 **The enumeration.** Grep the entire prose corpus for the old
 hardcoded value before Code phase begins:
@@ -115,9 +112,7 @@ Every matching file is in-scope. Group findings by classification:
 The distinguishing test: would the prose still be correct if it
 were applied to a target project where the configurable parameter
 holds a different value? If yes → universal → generalize. If no →
-self-referential → leave alone. Mixed-mode files (CLAUDE.md often
-contains both) are common; identify each section's classification
-individually.
+self-referential → leave alone.
 
 **Plan-phase task template.** A plan that introduces a
 configurable parameter must include a "Generalize universal prose"
@@ -130,9 +125,7 @@ task with these subtasks:
 4. Mark the universal-prose task as atomic with the
    implementation task per
    `.claude/rules/plan-commit-atomicity.md` so the prose lands
-   in the same PR as the code (the inverse of "self-referential
-   prose drift": code change without prose update produces
-   exactly that drift).
+   in the same PR as the code.
 
 **Code-phase verification.** Before committing the
 implementation, re-run the grep to confirm no universal-prose
@@ -185,10 +178,6 @@ fixing drift caused by a renamed or removed identifier. For the
 sibling rule covering **coverage claims** — plan prose that
 asserts a guard applies universally to a code family without
 naming its members — see `.claude/rules/scope-enumeration.md`.
-The two rules are complementary: the rename-side grep finds every
-file that still mentions the old identifier, while the
-coverage-side scanner catches universal-quantifier claims that
-lack a named sibling list.
 
 When renaming a command, replacing a subcommand, or fixing
 documentation drift, grep all files for the old identifier before

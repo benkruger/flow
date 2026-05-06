@@ -9,21 +9,11 @@ downstream reviewers consistently catch uncovered siblings.
 ## Why
 
 A universal-quantifier claim without a named list is an invisible
-checklist. Two observed incidents (#1033):
-
-- A plan for `cwd_scope::enforce` said the guard applied to the
-  state-mutating subcommand family. Code landed the guard in the
-  five CI-tier tool runners (`ci`, `build`, `lint`, `format`,
-  `test`) and missed the five state mutators (`add-finding`,
-  `phase-finalize`, `phase-enter`, `phase-transition`,
-  `set-timestamp`). Code Review caught the gap; the fix touched
-  another five files.
-- A `FLOW_CI_RUNNING` recursion guard landed in `ci.rs::run()` but
-  missed `build.rs`, `lint.rs`, `format_check.rs`, and
-  `test_runner.rs`.
-
-Both plans used a universal phrase without enumerating. Both ended
-with avoidable Code Review back-and-forth.
+checklist. A plan saying "the guard applies to the state-mutating
+subcommand family" doesn't tell the Code phase WHICH subcommands
+to touch — and the Code phase will land the guard in some siblings
+and miss others. Code Review then has to find the misses, costing
+a full review cycle on work the Plan phase could have prevented.
 
 ## The Rule
 
@@ -59,13 +49,11 @@ to two optional intervening adjectives:
 
 **Intentional gaps.** Bare `command` and bare `module` are NOT in
 the vocabulary. Adding them would catch novel phrasings but also
-flag pre-existing imperative prose in this tree (e.g. "every Bash
-command", "every command in every step", "every mutate_state
-module"). The scanner's curated-closed philosophy prefers to miss
-a novel phrasing over introducing mass false positives — the rule
-file itself is the primary instrument and the contract test is the
-drift tripwire. The unit tests
-`trigger_rejects_bare_command_intentionally` and
+flag pre-existing imperative prose in this tree. The scanner's
+curated-closed philosophy prefers to miss a novel phrasing over
+introducing mass false positives — the rule file itself is the
+primary instrument and the contract test is the drift tripwire.
+Unit tests `trigger_rejects_bare_command_intentionally` and
 `trigger_rejects_bare_module_intentionally` lock these gaps in so
 a future widening is a deliberate decision, not an accident.
 
@@ -96,8 +84,8 @@ use the opt-out comment instead of a forced list.
 - **`.claude/rules/*.md`** — same contract test.
 - **`skills/**/SKILL.md` and `.claude/skills/**/SKILL.md`** — same
   contract test.
-- **Agent prompts and issue bodies** — not mechanically enforced in
-  iteration 1; the rule is the primary instrument.
+- **Agent prompts and issue bodies** — not mechanically enforced;
+  the rule is the primary instrument.
 
 ## Opt-Out Comments
 
@@ -111,8 +99,7 @@ Two line-level opt-out comments are recognized by the scanner:
 The opt-out applies to its own line and to the next non-blank line,
 with **at most one blank line separating them**. An opt-out at the
 top of a section cannot silence arbitrary triggers further down —
-the walk-back is bounded to one blank line by `is_optout_line` so
-a stray comment cannot globally disable the gate.
+the walk-back is bounded to one blank line.
 
 Example of the imperative form (rendered inside a fenced block so
 the example does not itself trigger the scanner):
@@ -131,19 +118,12 @@ Two mechanical enforcers back the rule:
   Step 4, the pre-decomposed extracted path in `src/plan_extract.rs`,
   and the resume path in the same file). All three callsites share
   `src/scope_enumeration.rs::scan` so the trigger vocabulary and the
-  enumeration-present heuristic cannot drift. A non-empty violation
-  list blocks phase completion; editing the plan file in place is
-  the only way through.
+  enumeration-present heuristic cannot drift between callsites. A
+  non-empty violation list blocks phase completion; editing the plan
+  file in place is the only way through.
 - `tests/scope_enumeration.rs` runs during every `bin/flow ci`
-  invocation and scans the committed prose corpus (`CLAUDE.md`,
-  `.claude/rules/*.md`, `skills/**/SKILL.md`,
-  `.claude/skills/**/SKILL.md`). A single new unenumerated universal
-  claim fails the build automatically — this is a drift tripwire,
-  not a manual check.
-
-Both enforcers share `src/scope_enumeration.rs::scan` so the trigger
-vocabulary and the enumeration-present heuristic cannot drift
-between the plan-time gate and the prose-drift tripwire.
+  invocation and scans the committed prose corpus. A single new
+  unenumerated universal claim fails the build automatically.
 
 ## Enumeration Heuristic
 
@@ -163,10 +143,7 @@ enumeration near a trigger:
 
 Loose backtick counts alone (two unrelated code references in the
 same paragraph) do NOT satisfy the heuristic — a real structured
-list is required. This is the stricter revision that replaced the
-initial "≥ 2 backticks anywhere in the window" heuristic after Code
-Review found that unrelated identifiers near a trigger defeated the
-check.
+list is required.
 
 ## Vocabulary Extensibility
 
@@ -187,11 +164,9 @@ Before accepting a proposed vocabulary expansion, run a mandatory
 false-positive sweep. The protocol is:
 
 1. Add the candidate noun to `SCOPE_TRIGGER_PATTERN` on a scratch
-   branch (or via a local `git stash` edit) and run
-   `bin/flow ci --test -- scope_enumeration`. The contract test in
-   `tests/scope_enumeration.rs` will report every pre-existing
-   prose line in `CLAUDE.md`, `.claude/rules/*.md`, `skills/**/SKILL.md`,
-   and `.claude/skills/**/SKILL.md` that now triggers.
+   branch and run `bin/flow ci --test -- scope_enumeration`. The
+   contract test in `tests/scope_enumeration.rs` will report every
+   pre-existing prose line that now triggers.
 2. Count the new violations. If the count is **zero or low** (≤ 4),
    audit each flagged line — if they are genuine missing enumerations,
    fix them in the same commit as the vocabulary expansion. If they
@@ -204,13 +179,11 @@ false-positive sweep. The protocol is:
    Update the Intentional Gaps note above to document the decision
    and cite the unit test.
 4. Never ship a vocabulary expansion that requires a sweeping
-   opt-out cleanup across unrelated files. That expansion is not
-   an improvement — it is a forced rewrite with a pass-the-buck
-   disguise. The curated-closed philosophy prefers to miss a novel
-   phrasing over introducing mass false positives.
+   opt-out cleanup across unrelated files. The curated-closed
+   philosophy prefers to miss a novel phrasing over introducing
+   mass false positives.
 
 The false-positive sweep converts an adversarial finding about a
-missing noun (e.g. Adversarial A1/A3 for `command` and `module`)
-from a one-line fix into a deliberate decision with evidence. It
-also makes gap documentation cheap: the unit test and the
-Intentional Gaps note are the entire artifact.
+missing noun from a one-line fix into a deliberate decision with
+evidence. It also makes gap documentation cheap: the unit test and
+the Intentional Gaps note are the entire artifact.

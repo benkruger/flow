@@ -9,20 +9,14 @@ calls at function exit.
 
 ## Why
 
-Issue #1135 / PR #1154 surfaced this in the TUI: `run_tui_terminal`
-enabled crossterm's raw mode and entered the alternate screen, ran
-the event loop, then called `disable_raw_mode()` and
-`LeaveAlternateScreen` AFTER the loop returned. Rust panics unwind
-the stack — they do NOT execute code after the panicking call. A
-panic inside the event loop would skip the inline cleanup, leaving
-the user's terminal in raw mode with no echo, no line discipline,
-and the alternate screen still active. Recovery requires `reset`
-or closing the terminal tab.
-
 Inline cleanup at scope-exit is a footgun for any resource whose
-"unset" state must be restored. The Drop impl runs on every exit
-path including panic unwind — that is the only mechanism the
-language guarantees.
+"unset" state must be restored. Rust panics unwind the stack — they
+do NOT execute code after the panicking call. A panic inside the
+work block skips inline cleanup, leaving the resource in its
+acquired state.
+
+The Drop impl runs on every exit path including panic unwind — that
+is the only mechanism the language guarantees.
 
 ## The Rule
 
@@ -59,7 +53,7 @@ fn do_thing() -> Result<()> {
   bracketed paste. Reference: `TerminalGuard<F>` in `src/tui_terminal.rs`.
 - **File locks** — `flock`, `fcntl` advisory locks. The lockfile
   must be released even on panic or the next process blocks
-  forever (or until 30-minute stale timeout, in FLOW's case).
+  forever.
 - **Spawned child processes you intend to wait on** — orphaning
   is sometimes acceptable but only after explicit decision.
 - **Mutated global state** — env vars set for the duration of an
@@ -70,9 +64,9 @@ fn do_thing() -> Result<()> {
   `shutdown()`.
 
 NOT every resource needs a Drop guard. Allocations that release
-naturally on drop (Vec, String, Box) handle themselves through
-their own Drop impls. The discipline applies specifically to
-resources whose "released" state is not the default.
+naturally on drop (Vec, String, Box) handle themselves. The
+discipline applies specifically to resources whose "released" state
+is not the default.
 
 ## Reference Implementation
 
@@ -104,34 +98,27 @@ impl<F: FnMut()> Drop for TerminalGuard<F> {
 
 The guard:
 
-1. Owns the cleanup closure (here, a closure capturing the shared
-   handle to the same terminal the draw closure renders into,
-   plus the crossterm `disable_raw_mode` and `LeaveAlternateScreen`
-   calls)
+1. Owns the cleanup closure.
 2. Implements `Drop` with errors swallowed inside the closure
    (`let _ = ...`) because Drop cannot return them and a
-   panic-during-cleanup is worse than a swallowed error
-3. Uses `Option::take` so the closure runs at most once even if
-   the guard is somehow dropped twice
-4. Is placed in scope BEFORE the work that might panic, so
-   stack-unwinding drops it
+   panic-during-cleanup is worse than a swallowed error.
+3. Uses `Option::take` so the closure runs at most once.
+4. Is placed in scope BEFORE the work that might panic.
 5. Is a named struct (not `defer!`-style scope_guard crate) so
-   the responsibility is documented in the type system
+   the responsibility is documented in the type system.
 
 The closure-injection design — exposing `release_fn` as a generic
 parameter rather than hardcoding the cleanup body — also makes
 the Drop unit-testable without a real terminal. See
 `.claude/rules/rust-patterns.md` "Seam-injection variant for
-externally-coupled code" for the broader pattern this guard
-exemplifies.
+externally-coupled code".
 
 ## Plan-Phase Trigger
 
 When a plan task acquires a resource of any of the categories
-listed above ("What Counts" section), the plan must enumerate:
+listed above, the plan must enumerate:
 
-1. The **resource** being acquired (terminal mode, file lock,
-   etc.)
+1. The **resource** being acquired (terminal mode, file lock, etc.)
 2. The **release call** that must run on every exit path
 3. The **guard struct name** that wraps the release in Drop
 4. Where the guard is placed in scope (must be BEFORE the
@@ -151,6 +138,7 @@ survive panic.
 3. Test the guard explicitly. The simplest test acquires the
    resource, panics, catches the panic, and verifies the resource
    is released:
+
    ```rust
    #[test]
    fn guard_releases_on_panic() {
@@ -159,9 +147,10 @@ survive panic.
            panic!("simulated work failure");
        });
        assert!(result.is_err());
-       assert!(resource_is_released()); // <-- the load-bearing assertion
+       assert!(resource_is_released());
    }
    ```
+
 4. Document the guard's Drop behavior in its type doc comment —
    what gets cleaned up, what errors are swallowed, why.
 
@@ -173,13 +162,3 @@ acquisition in production code, verify:
 1. The release path is in a Drop impl, not inline at scope-exit
 2. The guard is in scope BEFORE any operation that might panic
 3. There is a test that proves cleanup runs on panic unwind
-
-## Cross-References
-
-- `src/tui_terminal.rs::TerminalGuard<F>` — the reference implementation
-- `.claude/rules/rust-patterns.md` — Seam-injection variant for
-  externally-coupled code (the closure-injection pattern that
-  makes the Drop unit-testable)
-- `.claude/rules/concurrency-model.md` — file lock rules; the
-  start lock specifically benefits from Drop-based release
-- Rust reference on RAII and Drop semantics

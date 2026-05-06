@@ -5,8 +5,7 @@
 When designing a skill change, start with the simplest solution that
 works. If the user proposes a simple approach, do not add machinery
 (resume checks, self-invocation, state counters) unless you can
-explain in one sentence why the simple approach fails. If you cannot
-articulate the failure, the simple approach is correct.
+explain in one sentence why the simple approach fails.
 
 When you agree to simplify and then re-introduce the same complexity
 in the next response, you are flip-flopping. Stop, re-read what you
@@ -62,17 +61,15 @@ always run `git add -A` before `git diff --cached`.
 The commit message lives at
 `<project_root>/.flow-states/<branch>/commit-msg.txt`, branch-
 scoped under `.flow-states/` alongside other branch-scoped
-state. The path is centralized in
-`FlowPaths::commit_msg()` so future layout changes (see issue
-#1045) flip in one place. `.flow-states/` is gitignored, so
-`git add -A` never picks the file up — there is no need for a
-`git restore --staged` step.
+state. The path is centralized in `FlowPaths::commit_msg()`.
+`.flow-states/` is gitignored, so `git add -A` never picks the
+file up — there is no need for a `git restore --staged` step.
 
 Parent phases that invoke `/flow:flow-commit` must never write
-the commit-msg file themselves. The commit skill owns the
-file: it routes the message through `bin/flow write-rule` in
-Round 5, and `finalize-commit` reads and deletes it after the
-git commit succeeds. The skill owns the file end to end.
+the commit-msg file themselves. The commit skill owns the file
+end to end: it routes the message through `bin/flow write-rule`
+in Round 5, and `finalize-commit` reads and deletes it after the
+git commit succeeds.
 
 ## Sub-Agent Safety
 
@@ -113,11 +110,7 @@ applies equally to skill removals and Rust source removals — the
 `.claude/rules/tombstone-tests.md` "When to Add" criterion is
 universal and covers every intentional removal of a named feature,
 not just skill-scoped ones. Without a tombstone, the removal has no
-CI-visible protection — Code Review catches the gap, but the Plan
-phase should have prevented it. See `.claude/rules/tombstone-tests.md`
-for the test pattern and consolidation guidance (standalone tombstones
-live in `tests/tombstones.rs`; topical tombstones integral to a test
-domain stay in their respective test files).
+CI-visible protection.
 
 ## Decompose Completeness
 
@@ -165,12 +158,10 @@ it or the target path will not exist.
 Files under `.flow-states/` at the project root are NOT inside the
 worktree — they live in the main repo's directory tree and persist
 across worktree removal. Cleanup steps that operate on those files
-(state_file, plan_file, dag_file, log_file, frozen_phases,
-ci_sentinel, timings_file, closed_issues_file, issues_file,
-adversarial_test) may be placed after the worktree removal step
-without risk. The distinguishing test is "does this step's target
-path pass through `.worktrees/<branch>/`?" If yes, it must precede
-`git worktree remove`. If no, placement is free.
+may be placed after the worktree removal step without risk. The
+distinguishing test is "does this step's target path pass through
+`.worktrees/<branch>/`?" If yes, it must precede `git worktree
+remove`. If no, placement is free.
 
 Similarly, any SKILL.md command that reads `.flow-states/` files
 (state file, log, CI sentinel) must be placed in a numbered step
@@ -187,15 +178,12 @@ Hard Rules section forbids `cd` before invoking `bin/flow`.
 The exception is `bin/flow complete-finalize`. The command removes
 the worktree as part of cleanup. When the caller's shell sits inside
 the worktree at invocation time, a successful removal leaves the
-shell in a deleted directory and every subsequent command emits
-`getcwd: cannot access parent directories`. The skill that invokes
+shell in a deleted directory. The skill that invokes
 `complete-finalize` must therefore `cd <project_root>` before the
 invocation. The subcommand also self-gates: it returns
 `{"status":"error","reason":"cwd_inside_worktree"}` when its
 canonicalized cwd equals or sits beneath the canonicalized
-`--worktree`. The gate produces a clean error rather than shell
-corruption, but the `cd` should still happen first because the gate
-otherwise short-circuits the entire finalize flow.
+`--worktree`.
 
 This carve-out applies only to subcommands whose execution path
 removes the caller's cwd. New subcommands that only mutate state
@@ -230,8 +218,7 @@ has already been explored.
 
 The HARD-GATE must prohibit all action without explicit user approval:
 proceeding to the next step, proposing direct edits, committing changes,
-or taking any action outside the active skill flow. The enforcement
-language is what distinguishes a gate from a suggestion.
+or taking any action outside the active skill flow.
 
 ## Hard Rules Consistency
 
@@ -272,21 +259,6 @@ and branch on the result. If the field was never set, the gate sees an
 empty value and either passes trivially or errors in a way the skill
 does not anticipate.
 
-Two real incidents shaped this rule:
-
-- The Phase 2 Plan skill's scope-enumeration gate in
-  `bin/flow plan-check` reads `files.plan` from the state file to
-  locate the plan. An earlier revision of Step 4 invoked `plan-check`
-  BEFORE `set-timestamp --set files.plan`, so on the standard plan
-  path the gate never had a plan file to scan. Code Review Reviewer
-  Finding 1 caught the reachability bug. A Plan-phase risk check
-  that enumerated "state fields read by this gate" would have
-  caught it before Code phase.
-- Any new gate that consumes a state field exposes the same class of
-  bug: the gate runs but reads an empty field and passes silently.
-  The failure is invisible until a downstream phase fails to find
-  the artifact the gate was supposed to protect.
-
 **Plan-phase verification.** When a plan task adds a gate command to a
 SKILL.md step, the plan's Risks section must enumerate (a) every state
 field the gate reads, and (b) every prior step that must write that
@@ -309,15 +281,12 @@ orderings hold in the committed SKILL.md:
 
 A textual-only ordering test catches regression A (someone moves the
 gate above the state mutation). The adjacency check catches regression
-B (someone inserts a new step in the middle). Both are mechanical
-regressions that instructional prose cannot prevent.
+B (someone inserts a new step in the middle).
 
 **How to apply.** When adding a gate command to a SKILL.md, search the
 file for every `set-timestamp --set` call that writes a field the gate
 reads, verify textual and adjacent ordering, and write the contract
-test in the same commit as the gate. Do not rely on Code Review to
-catch ordering bugs — the contract test is the merge-conflict
-trip-wire, the Plan-phase risk audit is the authoring-time trip-wire.
+test in the same commit as the gate.
 
 ## Destination Renumbering
 
@@ -325,7 +294,7 @@ When renumbering destinations or steps within a SKILL.md, grep for the
 old numbers throughout the entire file before marking the change complete.
 Preamble summary lines (e.g. "Use `<worktree_path>` for destinations 2
 and 4") are easy to miss because they sit far from the destination table
-they reference. A grep for the old number catches these stale references.
+they reference.
 
 Also audit spelled-out step counts in prose sections (e.g. "six review
 steps" buried inside a paragraph). These do not follow the `Step N`
@@ -335,9 +304,7 @@ count as a word ("six", "three", etc.) in addition to as a digit.
 Also audit skip/jump targets — instructions like "Skip directly to
 Step 8 (cleanup)" that reference steps by number. When inserting a new
 step, these targets must be reconsidered for intent, not just
-mechanically incremented. A skip that pointed to cleanup before the
-insertion should now point to the new step if the new step should also
-run in that path.
+mechanically incremented.
 
 When a step is moved (not added), range boundaries need special
 attention. "Steps 2–11" does not become "Steps 2–12" just because every
@@ -365,12 +332,11 @@ assumptions before they become bugs in the implementation.
 ## Verify Command References in Issues
 
 When an issue body or plan references a `/flow:<skill-name>` command as
-a user directive (e.g. "the user should run `/flow:flow-continue`"),
-verify `skills/<skill-name>/` exists in the repo during the Plan phase.
-Prior-session issue authors — including Claude — can reference skills
-that have since been removed. A single glob for the skill directory
-catches stale references before they become error messages that direct
-users to non-existent commands.
+a user directive, verify `skills/<skill-name>/` exists in the repo
+during the Plan phase. Prior-session issue authors — including Claude —
+can reference skills that have since been removed. A single glob for
+the skill directory catches stale references before they become error
+messages that direct users to non-existent commands.
 
 ## Verify Test Function References in Issues
 
@@ -390,19 +356,7 @@ The cheapest signal: for every backtick-quoted test or function
 identifier in the issue body or `## Implementation Plan` section,
 run a single Grep over `tests/` (or the relevant `src/` directory)
 to confirm the identifier appears as a definition (e.g.
-`fn <name>(`), not just as a prose reference. If the identifier
-does not exist, the plan task referencing it must take one of three
-paths: (a) name an existing nearby identifier that serves the same
-purpose, (b) propose creating the named entity as part of the
-task, or (c) drop the task and document the deviation per
-`.claude/rules/plan-commit-atomicity.md` "Plan Signature Deviations
-Must Be Logged".
-
-This pairs with the "Verify Script Behavior Claims in Issues"
-discipline above: that rule covers behavioral assertions ("script X
-populates field Y"); this rule covers structural assertions ("test
-function X exists at file Y"). Both run during Plan phase, both
-catch issue-author errors before they become Code-phase bugs.
+`fn <name>(`), not just as a prose reference.
 
 ## Config Chain Integrity
 
@@ -425,8 +379,6 @@ ignores at Skill tool turn boundaries. The correct pattern: after each
 sub-step completes, invoke the skill itself as the FINAL action with
 a `--continue-step` flag. The skill's Resume Check reads a step counter
 from the state file and dispatches to the next sub-step on re-entry.
-This mirrors how phase-to-phase transitions work — the Skill invocation
-is the last action, never a mid-response call.
 
 ## Target Project Mindset
 
@@ -444,8 +396,7 @@ that run in target projects should simulate a target project layout
 Every new feature — not just skill bash blocks — must have a clear
 answer to: "How does a plugin user in a target project access this?"
 before implementation begins. If the answer is unclear, the feature
-will ship unreachable. Issue #362 is the cautionary example: 27+
-commits built a TUI that no plugin user could launch.
+will ship unreachable.
 
 There are exactly three valid access paths for plugin users:
 
@@ -464,9 +415,7 @@ design that makes it reachable.
 Every `bin/flow` call in a plugin skill bash block must use
 `${CLAUDE_PLUGIN_ROOT}/bin/flow`. Bare `bin/flow` only
 resolves in the FLOW repo itself — target projects do not have
-it. This works during plugin development (the FLOW repo has
-`bin/flow` locally) but fails with exit 127 in every target
-project. CI enforces this via
+it. CI enforces this via
 `test_plugin_skills_use_plugin_root_for_bin_flow`.
 
 ## Worktree bin/flow for Repo-Modifying Commands
@@ -550,11 +499,6 @@ permission tests, placeholder substitution in `tests/permissions.rs`).
 Inconsistent naming means only one variant gets tested and the others
 silently substitute wrong values or skip validation entirely.
 
-How to apply: after writing a parameterized table, scan every cell for
-angle-bracket placeholders and verify every row uses identical names
-for the same semantic value. If Code Review fixes a placeholder in one
-row, verify all rows in the same pass.
-
 ## Placeholder Resolution Must Match Runtime Paths
 
 When a skill instruction or agent prompt uses a placeholder to name a
@@ -569,11 +513,7 @@ A placeholder that represents a conceptual file (`<temp_test_file>` =
 producing code actually writes a concrete file with an additional
 suffix (`.flow-states/<branch>/adversarial_test.rs`) creates a silent
 cleanup gap: `rm <temp_test_file>` targets a path that never exists,
-succeeds with no effect, and the real file orphans. Issue #1037
-documents this class of bug — the adversarial agent writes
-`<temp_test_file>.<ext>` but two cleanup layers `rm <temp_test_file>`
-(no extension), so both layers silently no-op and the file survives
-until a later phase can glob it by prefix.
+succeeds with no effect, and the real file orphans.
 
 ### How to apply
 
@@ -586,21 +526,15 @@ until a later phase can glob it by prefix.
    extension too (so the cleanup matches exactly what was written),
    (b) use a glob pattern that matches the runtime variants, or
    (c) defer cleanup to a phase that can enumerate matches by
-   prefix (e.g., `fs::read_dir` + prefix filter in Rust code).
+   prefix.
 3. **Abstractions are for documentation, not for cleanup commands.**
-   It is fine to describe a file conceptually in prose
-   (`<temp_test_file>` the Phase 4 adversarial test file), but the
+   It is fine to describe a file conceptually in prose, but the
    actual `rm`, `Write`, or `Read` call must use a path that resolves
-   to the real bytes on disk. If the prose placeholder cannot be made
-   concrete (because the runtime chooses part of the name), split
-   the placeholder into a documented prefix plus a runtime suffix,
-   and have the cleanup command operate on the prefix via glob —
-   never directly via `rm <prefix>`.
+   to the real bytes on disk.
 4. **Plan phase verification.** When a plan adds or modifies a skill
    that writes a temp file and cleans it up later, grep both the
    writer's and cleaner's references to the placeholder and confirm
-   the resolved path matches byte-for-byte. Record this check in
-   the Risks section so Code Review can verify it.
+   the resolved path matches byte-for-byte.
 
 ## Purpose Preamble for Behavioral Sections
 

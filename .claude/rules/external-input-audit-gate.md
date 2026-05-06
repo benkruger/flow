@@ -16,28 +16,15 @@ HOW the gate enforces it at Plan-phase completion.
 
 ## Why
 
-Issue #1054 surfaced this exactly. The plan tightened
-`FlowPaths::new` on the assumption that `branch_name()` sanitization
-applied to the function's callers. The assumption was wrong:
-`branch_name()` only runs at flow-start, while `current_branch()`
-returns raw git refs that commonly contain slashes
-(`feature/foo`, `dependabot/*`). Five hooks and `format-status`
-crashed with a Rust panic for users on standard git branches.
-The adversarial agent caught the regression in Code Review — too
-late; the cheaper catch is at Plan time.
+Reviewers cannot manually catch every callsite assumption. Adversarial
+testing surfaces gaps but only after the Code phase has already
+written the panic. The audit is cheap to write — a four-column table
+per panic-introducing plan is on the order of minutes; the cost of a
+missed audit is one full Code Review cycle plus a hot-fix.
 
-The rule exists because:
-
-1. **Reviewers cannot manually catch every callsite assumption.**
-   PR #1054's plan went through Code Review and only the
-   adversarial agent (writing failing tests) noticed the gap.
-2. **The audit is cheap to write.** A four-column table per
-   panic-introducing plan is on the order of minutes; the cost of
-   a missed audit is one full Code Review cycle plus a hot-fix.
-3. **Force-functioning the conversation works.** Requiring the
-   table at Plan completion forces the author to enumerate
-   callers — which is the same activity that catches the
-   `current_branch()` assumption directly.
+Force-functioning the conversation works. Requiring the table at Plan
+completion forces the author to enumerate callers — which is the
+same activity that catches assumption errors directly.
 
 ## The Trigger Vocabulary
 
@@ -96,12 +83,9 @@ A canonical audit table looks like:
 | `current_branch()` (`src/git.rs`) | git subprocess output | Trusted-but-external | `try_new`, treat `None` as no-active-flow |
 | `state["branch"]` (`src/start_init.rs`) | state file written by `branch_name()` | Guaranteed valid | `new` directly |
 
-The gate validates **table presence**, not row content. The rule's
-authority validates rows; the gate is a forcing function for the
-audit conversation. A TBD-content table (`| TBD | TBD | TBD | TBD |`)
-will pass the gate, but it signals author irresponsibility to the
-reviewer — that signal is the rule's responsibility, not the
-gate's.
+The gate validates **table presence**, not row content. A TBD-content
+table (`| TBD | TBD | TBD | TBD |`) will pass the gate, but it
+signals author irresponsibility to the reviewer.
 
 ## Opt-Out Grammar
 
@@ -114,12 +98,7 @@ tightening proposal) can carry the opt-out comment
 - two lines above with a single blank line in between.
 
 Larger gaps do not chain — the rule is "the next non-blank line
-with at most one blank line separating them," matching the
-sibling opt-out grammar in `scope-enumeration.md`.
-
-The opt-out walks back exactly one blank line by design — a stray
-opt-out at the top of a section cannot silence arbitrary triggers
-further down.
+with at most one blank line separating them."
 
 ## Enforcement Topology
 
@@ -127,18 +106,13 @@ Three callsites share `external_input_audit::scan`:
 
 - **Standard plan path** — `bin/flow plan-check` (called from
   `skills/flow-plan/SKILL.md` Step 4 →
-  `src/plan_check.rs::run_impl`). This is the gate the model hits
-  for plans it writes from scratch.
-- **Pre-decomposed extracted path** —
-  `src/plan_extract.rs` extracted path (~line 668) runs the
-  scanner against the promoted plan content for issues filed via
-  `/flow:flow-create-issue` with an `## Implementation Plan`
-  section.
-- **Resume path** — `src/plan_extract.rs` resume path (~line 432)
-  re-runs the scanner against the existing plan file when the
-  user re-enters Phase 2 after a prior violation. A plan edited
-  to fix the violations passes the gate here and the phase
-  completes.
+  `src/plan_check.rs::run_impl`).
+- **Pre-decomposed extracted path** — `src/plan_extract.rs` extracted
+  path runs the scanner against the promoted plan content for
+  issues filed via `/flow:flow-create-issue`.
+- **Resume path** — `src/plan_extract.rs` resume path re-runs the
+  scanner against the existing plan file when the user re-enters
+  Phase 2 after a prior violation.
 
 All three callsites return the same JSON error shape
 (`status="error"`, `violations[]`, `message`) so the repair loop
@@ -159,11 +133,7 @@ When `bin/flow plan-check` returns a violation tagged
 
 1. Read the cited line in the plan file. Identify the function
    the proposal tightens.
-2. Grep for the function's callers across `src/` (the rule file
-   `.claude/rules/external-input-validation.md` lists the
-   canonical hook callsite inventory as one example —
-   `stop_continue.rs`, `stop_failure.rs`, `post_compact.rs`,
-   `validate_ask_user.rs`, `validate_claude_paths.rs`).
+2. Grep for the function's callers across `src/`.
 3. Build the four-column audit table near the trigger in the
    plan. For each caller row:
    - **Caller** — file path and line range
@@ -179,16 +149,3 @@ When `bin/flow plan-check` returns a violation tagged
 If the trigger is a discussion mention rather than a proposal, add
 the `<!-- external-input-audit: not-a-tightening -->` opt-out
 comment using the walk-back rule above.
-
-## Cross-References
-
-- `.claude/rules/external-input-validation.md` — the prose
-  discipline (constructor patterns, `try_new` convention, hook
-  callsite rules).
-- `.claude/rules/scope-enumeration.md` — the structurally sibling
-  gate this design is modeled on, sharing the windowing
-  heuristic, opt-out grammar, and three-callsite topology.
-- `src/external_input_audit.rs` — the scanner implementation.
-- `src/plan_check.rs` — the standard-path gate.
-- `src/plan_extract.rs` — the extracted and resume gates.
-- `tests/external_input_audit.rs` — the corpus contract test.

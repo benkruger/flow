@@ -29,7 +29,7 @@ filesystem:
    redirect a read to `../../etc/passwd`,
    `~/.config/gh/hosts.yml`, or any file the running user can
    read. The fail-open pattern (`.ok()?`) makes the redirect
-   silent — no error surfaces to the user.
+   silent.
 2. **Unbounded resource consumption.** A transcript file or
    session log can grow to hundreds of megabytes during a long
    autonomous flow. When a per-step capture re-reads the file
@@ -102,8 +102,7 @@ When in doubt, treat as state-derived and validate.
 
 ## Reference Implementation
 
-`src/window_snapshot.rs` is the canonical example after the
-Code Review hardening:
+`src/window_snapshot.rs` is the canonical example:
 
 - `is_safe_session_id(s: &str) -> bool` — accepts only ASCII
   alphanumeric plus `-` and `_`; rejects empty, `.`, `..`, and
@@ -137,9 +136,7 @@ must enumerate:
 4. **Cap.** For every file read, the byte cap that bounds I/O.
 
 A plan that proposes a new external-input read without naming
-all four is incomplete — Code Review's pre-mortem and
-adversarial agents will surface the gap, but the cheaper catch
-is at Plan time.
+all four is incomplete.
 
 ## How to Apply
 
@@ -169,8 +166,7 @@ in the same PR per `.claude/rules/code-review-scope.md`.
 ## Cross-References
 
 - `.claude/rules/external-input-validation.md` — the parent
-  rule covering panicking constructors. This rule extends the
-  same discipline to silent path-construction sinks.
+  rule covering panicking constructors.
 - `.claude/rules/external-input-audit-gate.md` — the
   Plan-phase mechanical gate. Its trigger vocabulary today
   catches `panic!` / `assert!` tightenings; the patterns here
@@ -181,12 +177,7 @@ in the same PR per `.claude/rules/code-review-scope.md`.
   `fs::File::open(<state-value>)` patterns.
 - `.claude/rules/security-gates.md` "Normalize Before
   Comparing" — the sibling rule for string comparisons in
-  gates. Path-construction validation is the same shape
-  applied to a different sink.
+  gates.
 - `.claude/rules/subprocess-argument-escaping.md` — the
   sibling rule for state-derived strings flowing into shell /
-  AppleScript / SQL interpolation. Path construction is the
-  filesystem variant of the same threat.
-- `src/window_snapshot.rs` — reference implementation with
-  validators (`is_safe_session_id`, `is_safe_transcript_path`),
-  prefix containment, and the `TRANSCRIPT_BYTE_CAP` pattern.
+  AppleScript / SQL interpolation.

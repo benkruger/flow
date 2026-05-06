@@ -27,13 +27,6 @@ The counter has two readers:
    under-count makes the audit incorrectly flag the PR as
    incomplete and produces a false process-gap finding.
 
-PR #1156 surfaced this exactly. The plan listed 13 tasks and the
-PR delivered all 13, but `code_task` only reached 7 because each
-test+implementation pair (Tasks 3+4, 5+6, 7+8, 9+10) was treated
-as a single increment. The Learn audit had to manually
-reconstruct the actual task count from commit messages instead of
-trusting the counter.
-
 ## How to Apply
 
 When a plan task description names a paired test+implementation
@@ -53,8 +46,7 @@ group (TDD pair):
 When a plan marks a set of tasks as an atomic commit group
 (per `.claude/rules/plan-commit-atomicity.md`), the same
 discipline applies: increment the counter once per task in the
-group before the single commit lands. The atomic-group rule
-governs commit boundaries; this rule governs the counter.
+group before the single commit lands.
 
 For atomic groups, batch all counter advances in a single CLI
 call using multiple `--set` arguments:
@@ -78,7 +70,7 @@ Example: Task 2 lands its implementation, but the new code
 introduces an `Option::None` branch in `check_X` that only Task
 9's edge-case tests exercise. Coverage gate is 100/100/100. To
 land Task 2's commit green, Task 9's tests must already exist in
-the diff. The Code phase writes Tasks 9's test code in the same
+the diff. The Code phase writes Task 9's test code in the same
 commit as Tasks 1-4.
 
 The counter rule still requires +1 per task. Apply this shape:
@@ -123,14 +115,3 @@ validated against the state as mutated by preceding `--set` args
 in the same call. A jump (e.g., `--set code_task=5` when current
 is 0) is rejected; sequential steps (e.g., `--set code_task=1
 --set code_task=2`) succeed.
-
-## Cross-References
-
-- CLAUDE.md "State Mutations" section names the
-  increment-by-exactly-1 invariant.
-- `.claude/rules/plan-commit-atomicity.md` covers commit-grouping
-  rules; this rule covers counter-grouping rules. The two are
-  orthogonal: a paired test+implementation group can land in one
-  commit (atomic) while the counter advances twice (per task).
-- `skills/flow-code/SKILL.md` "Commit" section is where the
-  per-task increment instruction lives.

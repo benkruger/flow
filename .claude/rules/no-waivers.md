@@ -74,8 +74,6 @@ must:
 
 A task that writes "record the achievable baseline" or "accept the
 current measurement as the achievable target" violates this rule.
-Those phrasings are forbidden in plan prose, per the "Forbidden Plan
-Prose" list above.
 
 **Plan-phase verification.** When a plan's acceptance criteria state
 "all N files reach 100%" but the plan's tasks only verify the
@@ -105,7 +103,7 @@ enforced at four layers:
    coverage strategy.
 2. **Plan-check scanner**. `bin/flow plan-check` should scan plan
    prose for waiver-suggestion phrases and reject plans that
-   contain them. (Tracking issue: see `benkruger/flow` Flow label.)
+   contain them.
 3. **Code Review reviewer agent**. The reviewer agent flags any
    diff that adds a `test_coverage.md` entry as a Real finding to
    be deleted in Step 4.
@@ -113,14 +111,10 @@ enforced at four layers:
    run passes `--fail-under-lines 100 --fail-under-regions 100
    --fail-under-functions 100` to `cargo llvm-cov nextest`. Any
    uncovered region, function, or line fails CI and blocks the
-   commit. The thresholds are pinned at 100 and never lowered — a
-   regression is a CI-blocking failure, not grounds to relax the
-   gate. The flags live on the `cargo llvm-cov nextest` invocation
-   inside `bin/test`, so every CI run by every engineer on every
-   branch inherits the same gate. `.claude/rules/tool-dispatch.md`
-   "`bin/test` Sweeps Profraws Before Every Run" documents the
-   complementary coverage-coherence discipline that keeps the
-   measurement honest across main's long-lived `target/` dir.
+   commit. The thresholds are pinned at 100 and never lowered. The
+   flags live on the `cargo llvm-cov nextest` invocation inside
+   `bin/test`, so every CI run by every engineer on every branch
+   inherits the same gate.
 
 ## How to Apply (Plan Phase)
 
@@ -135,8 +129,7 @@ When designing a plan that touches code:
 4. After writing the plan, grep for waiver-suggestion phrases. If
    any appear, rewrite them.
 5. If the plan has a "verify 100%" task, confirm the task body
-   hard-gates on per-file 100% (not measurement-only). Measurement
-   tasks are not coverage completion tasks.
+   hard-gates on per-file 100% (not measurement-only).
 
 ## How to Apply (Code Phase)
 
@@ -162,18 +155,3 @@ When triaging findings:
    for deletion in Step 4 regardless of file location. Per
    `.claude/rules/supersession.md`, the entry is dead code in the
    PR's wake.
-
-## Cross-References
-
-- `.claude/rules/docs-with-behavior.md` — must be updated to remove
-  any "Waiver Discipline" prose that authorized `test_coverage.md`
-  entries. The two rules are now in conflict; this rule wins.
-- `.claude/rules/tool-dispatch.md` "Full-Suite `bin/test` Runs Clean
-  First" — the coverage-coherence discipline that makes the
-  `--fail-under-*` numbers trustworthy on main's long-lived target
-  dir.
-- `tests/main_dispatch.rs` — reference subprocess test surface for
-  CLI dispatch coverage.
-- `src/dispatch.rs` and the `run_impl_main` extraction — reference
-  refactor pattern for hoisting `process::exit` out of the testable
-  surface.

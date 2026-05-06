@@ -42,7 +42,7 @@ fence — so adjacent bash blocks in the same section must each carry
 their own preamble, not inherit from a distant section across
 unrelated blocks.
 
-The CI-running subcommand family (as of issue #1182):
+The CI-running subcommand family:
 
 - `bin/flow ci` — the direct CI runner
 - `bin/flow start-gate` — runs CI on the base branch under the start

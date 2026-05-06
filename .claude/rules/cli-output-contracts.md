@@ -48,9 +48,7 @@ contract specification listing four items:
    code signals to the caller. The default success/failure
    convention (`0` ok, `1` error) is acceptable but must be
    stated; non-default codes (e.g., `2` for input-resolution
-   failures) must be named with their trigger and how the caller
-   distinguishes them from accidental scripting errors that
-   happen to share the same exit code.
+   failures) must be named with their trigger.
 3. **Error messages.** What appears on stderr for each error
    class. Errors fall into two buckets: `infrastructure errors`
    (subprocess failed, file system unavailable — caller cannot
@@ -96,20 +94,15 @@ The plan task must name the normalization rule explicitly:
 **Plan phase.** Add the four-item contract plus the
 caller-side normalization rule to the implementation task. Cite
 the consumers that will read the output (skill bash block paths,
-Rust caller modules) so the contract's audience is explicit. The
-contract is a section of the task description, not a deferred
-Risks note — Plan-phase reviewers read the Tasks section and
-check the contract for completeness.
+Rust caller modules) so the contract's audience is explicit.
 
 **Code phase.** Implement the subcommand or flag to match the
 contract verbatim. Adding a fallback or changing an exit code
 mid-Code phase is a plan deviation per
-`.claude/rules/plan-commit-atomicity.md` "Plan Signature
-Deviations Must Be Logged" and must be logged via `bin/flow log`
-before the commit lands. The Code Review reviewer agent
-cross-references the contract against the implementation; any
-mismatch (added fallback, changed exit code, new error class) is
-a Real finding.
+`.claude/rules/plan-commit-atomicity.md` and must be logged via
+`bin/flow log` before the commit lands. The Code Review reviewer
+agent cross-references the contract against the implementation;
+any mismatch is a Real finding.
 
 **Code Review phase.** Verify the contract is present in the
 plan and that the implementation matches it. Findings:
@@ -124,26 +117,3 @@ plan and that the implementation matches it. Findings:
 - Caller-side normalization missing or incomplete → Real
   finding, fix in Step 4 by adding the explicit normalization
   prose to the SKILL.md.
-
-## Cross-References
-
-- `.claude/rules/docs-with-behavior.md` — the new-subcommand
-  documentation rule. New subcommands also require CLAUDE.md
-  Key Files entries and `docs/reference/flow-state-schema.md`
-  updates when state mutations are involved; this rule covers
-  the API contract layer of the same change.
-- `.claude/rules/plan-commit-atomicity.md` "Plan Signature
-  Deviations Must Be Logged" — the discipline for handling
-  contract changes discovered during Code phase.
-- `.claude/rules/external-input-validation.md` — when
-  subcommand output flows back into another subcommand's
-  input, the consumer must validate the value through
-  fallible constructors (`FlowPaths::try_new`, etc.).
-- `.claude/rules/security-gates.md` "Normalize Before
-  Comparing" — when subcommand output is compared against
-  string constants in a gate, the comparison must normalize
-  both sides.
-- `.claude/rules/tool-dispatch.md` — bin-stub conventions for
-  the `bin/format` / `bin/lint` / `bin/build` / `bin/test`
-  family. Flag additions to those stubs that produce consumed
-  output also fall under this rule.
