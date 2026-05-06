@@ -32,7 +32,7 @@ use serde_json::json;
 
 use crate::flow_paths::{FlowPaths, FlowStatesDir};
 use crate::git;
-use crate::hooks::{detect_branch_from_path, is_flow_active};
+use crate::hooks::is_flow_active;
 use crate::protected_paths::is_protected_path;
 
 /// FLOW-managed artifacts whose on-disk location is computed by
@@ -185,6 +185,86 @@ fn find_main_root_from(cwd: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Extract the worktree branch from the first `.worktrees/<X>/` segment
+/// in `path`.
+///
+/// Unlike `crate::hooks::detect_branch_from_path` — which walks the
+/// path up looking for a `.git` marker file — this helper extracts
+/// the worktree branch strictly from the path's `.worktrees/`
+/// segment. The walk-up approach incorrectly returns
+/// `<branch>/<sub>` when the path traverses a git submodule (a
+/// subdirectory carrying its own `.git` marker) inside a worktree.
+/// The slash-containing result then fails
+/// `FlowPaths::is_valid_branch`, and `is_flow_active` returns false
+/// for the bogus branch — silently disabling the gate. Bypassing
+/// the `.git` walk-up closes that hole so a submodule subdirectory
+/// cannot defeat the active-flow correlation.
+///
+/// Returns `None` when the path has no `.worktrees/<X>/` segment
+/// (cwd outside a worktree, e.g., on the integration branch).
+///
+/// An empty string segment (path ending exactly at `.worktrees/`)
+/// flows through to `is_flow_active` which calls
+/// `FlowPaths::try_new(root, "")` — that returns `None` for the
+/// empty branch, so the caller's downstream `is_flow_active` check
+/// returns false and the gate passes through. Returning `Some("")`
+/// vs `None` is therefore observationally equivalent at the gate
+/// boundary; collapsing the explicit empty-segment check keeps the
+/// helper free of an unreachable branch (production cwd inputs
+/// never end exactly at the marker).
+fn worktree_branch_from_path(path: &Path) -> Option<String> {
+    let s = path.to_string_lossy();
+    let pos = s.find(".worktrees/")?;
+    let after = &s[pos + ".worktrees/".len()..];
+    let segment = after
+        .split('/')
+        .next()
+        .expect("str::split iterator is non-empty; next() always returns Some");
+    Some(segment.to_string())
+}
+
+/// Canonicalize `path` by resolving symlinks via
+/// `std::fs::canonicalize`. When the path itself does not exist,
+/// walks up to the deepest existing ancestor, canonicalizes that,
+/// and re-appends the missing trailing components.
+///
+/// This closes two attack surfaces in `worktree_path_guard`:
+///
+/// 1. **macOS canonical-path divergence.** `tempfile::tempdir()`
+///    returns `/var/folders/...` (a symlink to `/private/var/...`).
+///    `std::env::current_dir()` resolves through the symlink.
+///    A `--path` passed in non-canonical `/var/...` form against
+///    a canonical `cwd` in `/private/var/...` form makes the lexical
+///    `starts_with` comparison reject a legitimate worktree write.
+///    Canonicalizing both sides resolves to the same `/private/var/`
+///    representation.
+/// 2. **Symlink escape.** A symlink inside the worktree pointing
+///    out (e.g., `<worktree>/.claude/rules/evil.md → <main_repo>/CLAUDE.md`)
+///    would pass a lexical `starts_with` check while the OS-level
+///    `fs::write` follows the link to the main repo. Canonicalize
+///    resolves the link to its target before the comparison so the
+///    gate sees the real destination.
+fn canonicalize_with_fallback(path: &Path) -> PathBuf {
+    if let Ok(canon) = path.canonicalize() {
+        return canon;
+    }
+    // Path does not canonicalize. Recurse on the parent and re-attach
+    // the basename. Both gate inputs (`worktree` from `find_main_root_from`,
+    // `target_abs` from `cwd.join(provided)` or absolute provided) are
+    // absolute paths, so each recursion eventually reaches the filesystem
+    // root, which canonicalizes via the short-circuit above. The two
+    // `.expect` arms below are therefore unreachable for the gate's
+    // production callers; per `.claude/rules/testability-means-simplicity.md`,
+    // collapsing them keeps the helper free of dead branches.
+    let parent = path
+        .parent()
+        .expect("non-canonicalizable absolute path always has a parent (root canonicalizes via short-circuit above)");
+    let name = path
+        .file_name()
+        .expect("non-canonicalizable path has a file_name component (root canonicalizes via short-circuit above)");
+    canonicalize_with_fallback(parent).join(name)
+}
+
 /// Worktree-path guard for protected basenames during an active flow.
 ///
 /// Closes the subprocess-layer hole the `validate-claude-paths`
@@ -207,12 +287,20 @@ fn find_main_root_from(cwd: &Path) -> Option<PathBuf> {
 /// artifacts in the canonicalization gate above. Detection here:
 ///
 /// 1. Walk up `cwd` for `.flow-states/` → `main_root`.
-/// 2. `detect_branch_from_path(cwd)` reads the `.worktrees/<branch>/`
-///    marker if present, falling back to `git branch --show-current`.
+/// 2. `worktree_branch_from_path(cwd)` extracts the first segment
+///    after `.worktrees/` in the cwd path. (Bypassing
+///    `detect_branch_from_path`'s `.git` walk-up so a git submodule
+///    inside a worktree cannot return `<branch>/<sub>` and silently
+///    disable the gate.)
 /// 3. `is_flow_active(branch, main_root)` checks for
 ///    `<main_root>/.flow-states/<branch>/state.json`.
 /// 4. The expected worktree is `<main_root>/.worktrees/<branch>/`.
-///    Reject when the resolved target normalizes outside it.
+///    Reject when the resolved target's canonical path does NOT
+///    descend from the worktree's canonical path. Both sides are
+///    canonicalized via `canonicalize_with_fallback` so a non-
+///    canonical `--path` (macOS `/var/...` vs `/private/var/...`)
+///    or a symlink inside the worktree pointing to a main-repo
+///    file does not bypass the prefix match.
 ///
 /// Per `.claude/rules/security-gates.md` "Gate-Action Atomicity for
 /// Validated Paths", the caller must use the resolved absolute path
@@ -225,7 +313,7 @@ fn worktree_path_guard(provided: &Path, cwd: &Path) -> Option<serde_json::Value>
         return None;
     }
     let main_root = find_main_root_from(cwd)?;
-    let branch = detect_branch_from_path(cwd)?;
+    let branch = worktree_branch_from_path(cwd)?;
     if !is_flow_active(&branch, &main_root) {
         return None;
     }
@@ -235,9 +323,9 @@ fn worktree_path_guard(provided: &Path, cwd: &Path) -> Option<serde_json::Value>
         cwd.join(provided)
     };
     let worktree = main_root.join(".worktrees").join(&branch);
-    let target_norm = normalize_lexical(&target_abs);
-    let worktree_norm = normalize_lexical(&worktree);
-    if target_norm.starts_with(&worktree_norm) {
+    let target_canon = canonicalize_with_fallback(&target_abs);
+    let worktree_canon = canonicalize_with_fallback(&worktree);
+    if target_canon.starts_with(&worktree_canon) {
         return None;
     }
     Some(json!({

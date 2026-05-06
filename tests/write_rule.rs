@@ -1330,6 +1330,94 @@ fn write_rule_subprocess_protected_branch_undetectable_passes() {
     assert_eq!(fs::read_to_string(&target).unwrap(), "rule body");
 }
 
+#[test]
+fn write_rule_subprocess_submodule_subdirectory_does_not_bypass_gate() {
+    // Adversarial regression: a git submodule (or any subdirectory
+    // carrying its own `.git` file) inside a worktree previously
+    // tricked `detect_branch_from_path` into returning `<branch>/<sub>`
+    // — a slash-containing branch that `is_flow_active` rejected,
+    // silently disabling the gate. The fix in `worktree_branch_from_path`
+    // bypasses the `.git` walk-up and extracts the first `.worktrees/<X>/`
+    // segment, restoring the active-flow correlation.
+    let dir = tempfile::tempdir().unwrap();
+    let (main_root, worktree) = seed_active_flow(dir.path(), "feat-x");
+    let sub = worktree.join("sub");
+    fs::create_dir_all(&sub).unwrap();
+    fs::write(sub.join(".git"), "gitdir: submodule\n").unwrap();
+    let content_file = sub.join("content.md");
+    fs::write(&content_file, "exfiltrated").unwrap();
+    let main_target = main_root.join("CLAUDE.md");
+
+    let output = run_wr_canon(
+        &sub,
+        &[
+            "--path",
+            main_target.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["step"], "worktree_path_validation");
+    assert!(
+        !main_target.exists(),
+        "main repo CLAUDE.md must NOT have been written from a submodule cwd"
+    );
+}
+
+#[test]
+#[cfg(target_os = "macos")]
+fn write_rule_subprocess_non_canonical_macos_path_lands_inside_worktree() {
+    // Adversarial regression: on macOS the seed worktree path resolves
+    // through a /var/ → /private/var/ symlink. A `--path` passed in
+    // non-canonical /var/ form against a canonical cwd in /private/var/
+    // form previously tripped the lexical `starts_with` comparison and
+    // false-rejected a legitimate worktree write. The fix in
+    // `canonicalize_with_fallback` resolves both sides to the same
+    // /private/var/ representation before the prefix match.
+    let dir = tempfile::tempdir().unwrap();
+    let (_main_root, worktree) = seed_active_flow(dir.path(), "feat-x");
+    if !worktree.to_string_lossy().starts_with("/private/var/") {
+        return; // Non-/var tempdir layout — gate skipped silently.
+    }
+    let canonical_str = worktree.to_string_lossy().to_string();
+    let non_canonical_str = canonical_str.replacen("/private/var/", "/var/", 1);
+    let non_canonical_worktree = PathBuf::from(&non_canonical_str);
+    assert!(non_canonical_worktree.exists());
+
+    let content_file = worktree.join("content.md");
+    fs::write(&content_file, "rule body").unwrap();
+    let target = non_canonical_worktree
+        .join(".claude")
+        .join("rules")
+        .join("foo.md");
+
+    let output = run_wr_canon(
+        &worktree,
+        &[
+            "--path",
+            target.to_str().unwrap(),
+            "--content-file",
+            content_file.to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "non-canonical absolute --path resolving to a legitimate \
+         worktree file must NOT be rejected. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // Verify the canonical destination has the bytes (not a phantom write).
+    let canonical_target = worktree.join(".claude/rules/foo.md");
+    assert!(canonical_target.exists());
+    assert_eq!(fs::read_to_string(&canonical_target).unwrap(), "rule body");
+}
+
 // --- end-to-end ---
 
 #[test]

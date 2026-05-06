@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use clap::Args as ClapArgs;
 use serde_json::{json, Value};
 
-use crate::hooks::{detect_branch_from_path, is_flow_active};
+use crate::hooks::is_flow_active;
 
 #[derive(ClapArgs)]
 pub struct Args {
@@ -196,6 +196,13 @@ pub fn read_json(path: &Path) -> Result<Value, String> {
 /// otherwise. Detection uses path-based heuristics — no git
 /// subprocess — so a missing or unreachable git binary cannot
 /// silently disable the gate.
+///
+/// Branch derivation matches `worktree_path_guard` in
+/// `src/write_rule.rs`: extract the first segment after
+/// `.worktrees/` in the resolved `worktree_path`, bypassing
+/// `crate::hooks::detect_branch_from_path`'s `.git` walk-up so a
+/// submodule subdirectory inside a worktree cannot return
+/// `<branch>/<sub>` and silently disable the gate.
 fn active_flow_gate(worktree_path: &Path, confirm: bool) -> Option<Value> {
     if confirm {
         return None;
@@ -222,7 +229,7 @@ fn active_flow_gate(worktree_path: &Path, confirm: bool) -> Option<Value> {
             return None;
         }
     };
-    let branch = detect_branch_from_path(&abs)?;
+    let branch = worktree_branch_from_path(&abs)?;
     if !is_flow_active(&branch, &main_root) {
         return None;
     }
@@ -239,6 +246,30 @@ fn active_flow_gate(worktree_path: &Path, confirm: bool) -> Option<Value> {
         ),
         "branch": branch,
     }))
+}
+
+/// Extract the worktree branch from the first `.worktrees/<X>/` segment
+/// in `path`. Mirrors `worktree_branch_from_path` in
+/// `src/write_rule.rs`. Duplicated rather than promoted to a shared
+/// helper because the loop is six lines and a new pub surface would
+/// require its own consumer + test row per
+/// `.claude/rules/test-placement.md` "Bright-line test for `pub`
+/// additions".
+///
+/// Returns `None` when the path has no `.worktrees/<X>/` segment.
+/// An empty-segment input (path ending exactly at `.worktrees/`)
+/// returns `Some("")` and is rejected downstream by
+/// `is_flow_active` via `FlowPaths::try_new` — collapsed so the
+/// helper has no unreachable branch.
+fn worktree_branch_from_path(path: &Path) -> Option<String> {
+    let s = path.to_string_lossy();
+    let pos = s.find(".worktrees/")?;
+    let after = &s[pos + ".worktrees/".len()..];
+    let segment = after
+        .split('/')
+        .next()
+        .expect("str::split iterator is non-empty; next() always returns Some");
+    Some(segment.to_string())
 }
 
 /// Build the CLI result as a JSON value.

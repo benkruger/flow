@@ -679,6 +679,42 @@ fn promote_subprocess_relative_worktree_path_resolves_against_cwd() {
     assert_eq!(data["reason"], "active_flow");
 }
 
+#[test]
+fn promote_subprocess_submodule_subdirectory_does_not_bypass_gate() {
+    // Adversarial regression: a git submodule (or any subdirectory
+    // carrying its own `.git` file) inside a worktree previously
+    // tricked `detect_branch_from_path` into returning `<branch>/<sub>`
+    // — a slash-containing branch that `is_flow_active` rejected,
+    // silently disabling the gate. The fix in `worktree_branch_from_path`
+    // bypasses the `.git` walk-up and extracts the first `.worktrees/<X>/`
+    // segment, restoring the active-flow correlation.
+    let dir = tempfile::tempdir().unwrap();
+    let (_main_root, worktree) = setup_active_flow_repo(dir.path(), "feat-x");
+    let sub = worktree.join("sub");
+    fs::create_dir_all(&sub).unwrap();
+    fs::write(sub.join(".git"), "gitdir: submodule\n").unwrap();
+    setup_settings(&sub, json!({"permissions": {"allow": []}}));
+    setup_local(&sub, json!({"permissions": {"allow": ["Bash(rm -rf *)"]}}));
+
+    let output = flow_rs()
+        .args(["promote-permissions", "--worktree-path"])
+        .arg(&sub)
+        .output()
+        .unwrap();
+    let data = parse_stdout(&output.stdout);
+    assert_eq!(data["status"], "skipped");
+    assert_eq!(data["reason"], "active_flow");
+    // Settings unchanged — the dangerous Bash(rm -rf *) entry must NOT
+    // have been promoted from the submodule subdirectory.
+    let settings: Value =
+        serde_json::from_str(&fs::read_to_string(sub.join(".claude/settings.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        settings["permissions"]["allow"].as_array().unwrap().len(),
+        0
+    );
+}
+
 // --- Library-level tests (migrated from src/promote_permissions.rs) ---
 
 fn setup_dir_lib() -> tempfile::TempDir {
