@@ -1,13 +1,23 @@
-//! Consolidated start-gate: git pull + CI baseline (retry 3) + update-deps +
-//! post-deps CI (retry 3 if deps changed) in a single command.
+//! Consolidated start-gate: git pull + CI baseline (single attempt) +
+//! update-deps + post-deps CI (single attempt if deps changed) in a
+//! single command.
 //!
 //! Returns JSON with status:
-//! - "clean" — all gates passed (may include deps_changed, flaky info)
-//! - "ci_flaky" — CI was flaky (baseline or post-deps), includes filing context
-//! - "ci_failed" — consistent CI failure on baseline (lock held)
-//! - "deps_ci_failed" — consistent CI failure after dep update (lock held)
+//! - "clean" — all gates passed (may include deps_changed)
+//! - "ci_failed" — CI failure on baseline (lock held)
+//! - "deps_ci_failed" — CI failure after dep update (lock held)
 //! - "error" — infrastructure failure (pull failed, non-consistent CI error,
 //!   deps error, commit-deps error)
+//!
+//! Retries are intentionally absent. A deterministic CI failure (the
+//! common case for a real regression on the integration branch) ran
+//! 3× under the prior policy and produced 11 minutes of identical
+//! output before halting. Single-attempt fail-fast semantics surface
+//! the same diagnostic in 1/3 the time. Genuine test flakiness is
+//! discovered at iteration time on a feature branch, not during the
+//! integration-branch gate, per
+//! `.claude/rules/testing-gotchas.md` "Distinguish Environmental
+//! Load From Flaky Tests".
 //!
 //! Logic is driven entirely through the compiled binary; integration tests
 //! use real git and controllable `bin/*` stubs in a `TempDir` fixture.
@@ -83,10 +93,10 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
         );
     }
 
-    // Step 2: CI baseline with retry
+    // Step 2: CI baseline (single attempt — see module doc).
     let ci_args = ci::Args {
         force: false,
-        retry: 3,
+        retry: 1,
         branch: Some(base_branch.clone()),
         simulate_branch: None,
         format: false,
@@ -106,8 +116,6 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
             ci_result["status"]
         ),
     );
-
-    let mut flaky_info: Option<Value> = None;
 
     if ci_result["status"] == "error" {
         if ci_result
@@ -132,19 +140,6 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
             }),
             0,
         );
-    }
-
-    // Check for flaky baseline
-    if ci_result
-        .get("flaky")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
-    {
-        flaky_info = Some(json!({
-            "first_failure_output": ci_result["first_failure_output"],
-            "attempts": ci_result["attempts"],
-            "flaky_context": "CI baseline on pristine main during flow-start",
-        }));
     }
 
     // Step 3: Update dependencies
@@ -178,27 +173,17 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
     }
 
     if deps_skipped || deps_no_changes {
-        // No dep changes — return clean (with flaky info if applicable)
-        if let Some(info) = flaky_info {
-            return (
-                json!({
-                    "status": "ci_flaky",
-                    "first_failure_output": info["first_failure_output"],
-                    "attempts": info["attempts"],
-                    "flaky_context": info["flaky_context"],
-                }),
-                0,
-            );
-        }
+        // No dep changes — return clean.
         return (json!({"status": "clean"}), 0);
     }
 
-    // Step 4: Post-deps CI. Reaching this point means dependencies were
-    // updated (the deps_error, deps_skipped, and deps_no_changes branches
-    // all returned early above).
+    // Step 4: Post-deps CI (single attempt — see module doc).
+    // Reaching this point means dependencies were updated (the
+    // deps_error, deps_skipped, and deps_no_changes branches all
+    // returned early above).
     let post_ci_args = ci::Args {
         force: false,
-        retry: 3,
+        retry: 1,
         branch: Some(base_branch.clone()),
         simulate_branch: None,
         format: false,
@@ -244,20 +229,6 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
         );
     }
 
-    // Check for flaky post-deps
-    if post_ci_result
-        .get("flaky")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
-    {
-        // Post-deps flaky overrides baseline flaky context
-        flaky_info = Some(json!({
-            "first_failure_output": post_ci_result["first_failure_output"],
-            "attempts": post_ci_result["attempts"],
-            "flaky_context": "CI post-deps gate during flow-start after dependency update",
-        }));
-    }
-
     // Commit dependency changes to the integration branch while holding
     // the start lock.
     if let Err(e) = commit_deps(cwd, &base_branch) {
@@ -277,20 +248,7 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
     }
     let _ = append_log(root, branch, "[Phase 1] start-gate — commit deps (ok)");
 
-    // Build response
-    let mut response = json!({
-        "status": "clean",
-        "deps_changed": true,
-    });
-
-    if let Some(info) = flaky_info {
-        response["status"] = json!("ci_flaky");
-        response["first_failure_output"] = info["first_failure_output"].clone();
-        response["attempts"] = info["attempts"].clone();
-        response["flaky_context"] = info["flaky_context"].clone();
-    }
-
-    (response, 0)
+    (json!({"status": "clean", "deps_changed": true}), 0)
 }
 
 /// Commit dependency changes to the integration branch and push.

@@ -204,38 +204,11 @@ Parse the JSON output and branch on `status`:
 
 **If `"status": "clean"`** — all gates passed. Continue to Step 3.
 
-**If `"status": "ci_flaky"`** — a test failed then passed on retry.
-File a "Flaky Test" issue with reproduction data from the `first_failure_output`
-and `attempts` fields, using the `flaky_context` field for the issue body context.
-
-Write the issue body to `.flow-states/<branch>/issue-body-content.md` using
-the Write tool, then route it to `.flow-issue-body` in the project root
-via `bin/flow write-rule` (avoids Claude Code's Write-tool preflight on a
-pre-existing body file — see `.claude/rules/file-tool-preflights.md`):
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-issue-body --content-file .flow-states/<branch>/issue-body-content.md
-```
-
-Then file:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Flaky Test" --title "<issue_title>" --body-file .flow-issue-body
-```
-
-After filing, record it:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flaky Test" --title "<issue_title>" --url "<issue_url>" --phase "flow-start"
-```
-
-Then continue to Step 3.
-
-**If `"status": "ci_failed"`** — all retry attempts failed consistently.
-Hold the lock and stop. The integration branch is broken — the next
-queued flow would hit the same failure. Report to the user that CI is
-consistently failing on the pristine integration branch. The 30-minute
-stale timeout releases the lock if the user does not act.
+**If `"status": "ci_failed"`** — CI failed on the integration branch.
+Hold the lock and stop. Report to the user that CI is failing on the
+pristine integration branch — show the `output` field. The next
+queued flow would hit the same failure. The 30-minute stale timeout
+releases the lock if the user does not act.
 
 **If `"status": "deps_ci_failed"`** — dependencies were updated but
 post-deps CI failed consistently. Launch the `ci-fixer` sub-agent to

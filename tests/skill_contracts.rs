@@ -3090,11 +3090,18 @@ fn start_no_explicit_ci_bash_blocks() {
 }
 
 #[test]
-fn start_files_flaky_test_issues() {
+fn start_no_flaky_test_filing() {
     let c = common::read_skill("flow-start");
     assert!(
-        c.contains("Flaky Test"),
-        "Step 2 (start-gate) must file Flaky Test issues"
+        !c.contains("Flaky Test"),
+        "Tombstone: start-gate retry was removed; Flaky Test filing branch \
+         removed alongside. Must not return — re-introducing retries on the \
+         integration-branch gate produces 11 minutes of identical output for \
+         a deterministic failure (see start_gate.rs module doc)."
+    );
+    assert!(
+        !c.contains("ci_flaky"),
+        "Tombstone: ci_flaky status removed when start-gate retry was eliminated"
     );
 }
 

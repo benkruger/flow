@@ -37,36 +37,6 @@ fn create_bin_tools(repo: &Path, exit_code: i32) {
 /// `bin/test` fails `fail_count` times then succeeds. `bin/test` runs
 /// last in the dispatch order, so baseline CI sees the failures from it
 /// until the counter elapses.
-fn create_flaky_bin_tools(repo: &Path, fail_count: u32) {
-    let bin_dir = repo.join("bin");
-    fs::create_dir_all(&bin_dir).unwrap();
-    let pass = "#!/bin/bash\nexit 0\n";
-    for tool in ["format", "lint", "build"] {
-        let path = bin_dir.join(tool);
-        fs::write(&path, pass).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    let counter_path = repo.join(".ci-counter");
-    let script = format!(
-        "#!/bin/bash\n\
-         COUNTER_FILE=\"{}\"\n\
-         if [ ! -f \"$COUNTER_FILE\" ]; then echo 0 > \"$COUNTER_FILE\"; fi\n\
-         COUNT=$(cat \"$COUNTER_FILE\")\n\
-         COUNT=$((COUNT + 1))\n\
-         echo $COUNT > \"$COUNTER_FILE\"\n\
-         if [ $COUNT -le {} ]; then\n\
-           echo \"FLAKY FAILURE attempt $COUNT\" >&2\n\
-           exit 1\n\
-         fi\n\
-         exit 0\n",
-        counter_path.to_string_lossy(),
-        fail_count
-    );
-    let test_path = bin_dir.join("test");
-    fs::write(&test_path, script).unwrap();
-    fs::set_permissions(&test_path, fs::Permissions::from_mode(0o755)).unwrap();
-}
-
 /// Install no-op `bin/{format,lint,build}` stubs that always pass. The
 /// caller is expected to install `bin/test` separately with the
 /// behavior it wants to exercise.
@@ -215,27 +185,6 @@ fn test_clean_path() {
     );
     let data = parse_output(&output);
     assert_eq!(data["status"], "clean");
-}
-
-#[test]
-fn test_ci_flaky_baseline() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = create_git_repo_with_remote(dir.path());
-    create_flaky_bin_tools(&repo, 1); // fail once, then succeed
-    create_state_file(&repo, "flaky-branch");
-
-    let output = run_start_gate(&repo, "flaky-branch");
-    let data = parse_output(&output);
-    assert_eq!(data["status"], "ci_flaky");
-    assert!(
-        data["first_failure_output"].is_string(),
-        "Must include first failure output"
-    );
-    assert!(data["attempts"].is_number(), "Must include attempt count");
-    assert_eq!(
-        data["flaky_context"], "CI baseline on pristine main during flow-start",
-        "Must include correct flaky context"
-    );
 }
 
 #[test]
@@ -389,53 +338,6 @@ fn test_post_deps_ci_non_consistent_returns_error_step_ci_post_deps() {
     let data = parse_output(&output);
     assert_eq!(data["status"], "error");
     assert_eq!(data["step"], "ci_post_deps");
-}
-
-#[test]
-fn test_deps_ci_flaky() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = create_git_repo_with_remote(dir.path());
-    create_bin_deps(&repo, "echo 'updated' > deps-output.txt");
-    create_state_file(&repo, "deps-flaky-branch");
-
-    // bin/{format,lint,build} always pass. bin/test passes baseline
-    // (call #1), fails once on post-deps attempt 1 (call #2), then
-    // passes on post-deps attempt 2 (call #3).
-    install_passing_noncritical_tools(&repo);
-    let bin_dir = repo.join("bin");
-    let counter_path = repo.join(".ci-counter");
-    let script = format!(
-        "#!/bin/bash\n\
-         COUNTER_FILE=\"{}\"\n\
-         if [ ! -f \"$COUNTER_FILE\" ]; then echo 0 > \"$COUNTER_FILE\"; fi\n\
-         COUNT=$(cat \"$COUNTER_FILE\")\n\
-         COUNT=$((COUNT + 1))\n\
-         echo $COUNT > \"$COUNTER_FILE\"\n\
-         if [ $COUNT -eq 2 ]; then\n\
-           echo \"FLAKY POST-DEPS FAILURE\" >&2\n\
-           exit 1\n\
-         fi\n\
-         exit 0\n",
-        counter_path.to_string_lossy()
-    );
-    fs::write(bin_dir.join("test"), script).unwrap();
-    fs::set_permissions(bin_dir.join("test"), fs::Permissions::from_mode(0o755)).unwrap();
-
-    let output = run_start_gate(&repo, "deps-flaky-branch");
-    let data = parse_output(&output);
-    // When post-deps CI is flaky, start-gate should still return clean
-    // but include flaky info
-    assert!(
-        data["status"] == "clean" || data["status"] == "ci_flaky",
-        "Expected clean or ci_flaky, got: {}",
-        data["status"]
-    );
-    if data["status"] == "ci_flaky" {
-        assert_eq!(
-            data["flaky_context"],
-            "CI post-deps gate during flow-start after dependency update"
-        );
-    }
 }
 
 #[test]
