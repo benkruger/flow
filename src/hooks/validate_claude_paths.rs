@@ -10,51 +10,7 @@ use std::path::Path;
 
 use super::{detect_branch_from_path, is_flow_active, read_hook_input, resolve_main_root};
 use crate::flow_paths::FlowStatesDir;
-
-/// Check if a file path targets a protected .claude/ location.
-///
-/// Protected: .claude/rules/ (any depth), .claude/skills/ (any depth),
-/// CLAUDE.md (any level).
-/// Not protected: .claude/settings.json, .claude/settings.local.json.
-///
-/// Matching is ASCII-case-insensitive for `.claude`, `rules`, `skills`,
-/// and `CLAUDE.md` so a caller on a case-insensitive filesystem
-/// (macOS APFS/HFS+ by default) cannot bypass the gate by writing to
-/// `.CLAUDE/rules/foo.md` or `Claude.md` — which resolve to the same
-/// inode as the protected names.
-pub fn is_protected_path(file_path: &str) -> bool {
-    if file_path.is_empty() {
-        return false;
-    }
-
-    let path = Path::new(file_path);
-    let components: Vec<&str> = path
-        .components()
-        .map(|c| c.as_os_str().to_str().unwrap_or(""))
-        .collect();
-
-    // Check for .claude/rules/ or .claude/skills/ at any depth.
-    for (i, comp) in components.iter().enumerate() {
-        if comp.eq_ignore_ascii_case(".claude") && i + 1 < components.len() {
-            let next = components[i + 1];
-            if next.eq_ignore_ascii_case("rules") || next.eq_ignore_ascii_case("skills") {
-                return true;
-            }
-        }
-    }
-
-    // Check for CLAUDE.md at any level. The empty-string early-return
-    // above guarantees `components` is non-empty, so `.last()` is always
-    // `Some`. Substituting `""` for the unreachable None case keeps the
-    // comparison safe (`""` cannot match `"CLAUDE.md"` under any casing)
-    // and avoids producing a None arm that no test can reach.
-    let filename = components.last().copied().unwrap_or("");
-    if filename.eq_ignore_ascii_case("CLAUDE.md") {
-        return true;
-    }
-
-    false
-}
+use crate::protected_paths::is_protected_path;
 
 /// Validate that an Edit/Write on this path is allowed.
 ///
@@ -68,7 +24,7 @@ pub fn validate(file_path: &str, flow_active: bool) -> (bool, String) {
         return (true, String::new());
     }
 
-    if !is_protected_path(file_path) {
+    if !is_protected_path(Path::new(file_path)) {
         return (true, String::new());
     }
 

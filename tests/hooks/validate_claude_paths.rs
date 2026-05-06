@@ -1,91 +1,14 @@
 //! Integration tests for `src/hooks/validate_claude_paths.rs`.
+//!
+//! `is_protected_path` tests live at tests/protected_paths.rs (mirroring
+//! src/protected_paths.rs) — only the hook-specific `validate` and
+//! `run_impl_main` surface is exercised here.
 
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use flow_rs::hooks::validate_claude_paths::{is_protected_path, run_impl_main, validate};
-
-// --- is_protected_path tests ---
-
-#[test]
-fn test_is_protected_path_empty() {
-    assert!(!is_protected_path(""));
-}
-
-#[test]
-fn test_is_protected_path_claude_rules() {
-    assert!(is_protected_path("/project/.claude/rules/foo.md"));
-}
-
-#[test]
-fn test_is_protected_path_claude_md() {
-    assert!(is_protected_path("/project/CLAUDE.md"));
-}
-
-#[test]
-fn test_is_protected_path_claude_skills() {
-    assert!(is_protected_path("/project/.claude/skills/foo/SKILL.md"));
-}
-
-#[test]
-fn test_is_protected_path_settings() {
-    assert!(!is_protected_path("/project/.claude/settings.json"));
-}
-
-#[test]
-fn test_is_protected_path_settings_local() {
-    assert!(!is_protected_path("/project/.claude/settings.local.json"));
-}
-
-#[test]
-fn test_is_protected_path_nested_rules() {
-    assert!(is_protected_path("/project/.claude/rules/subdir/deep.md"));
-}
-
-#[test]
-fn test_is_protected_path_nested_skills() {
-    assert!(is_protected_path(
-        "/project/.claude/skills/subdir/deep/SKILL.md"
-    ));
-}
-
-#[test]
-fn test_is_protected_path_worktree_rules() {
-    assert!(is_protected_path(
-        "/project/.worktrees/feat/.claude/rules/foo.md"
-    ));
-}
-
-#[test]
-fn test_is_protected_path_worktree_claude_md() {
-    assert!(is_protected_path("/project/.worktrees/feat/CLAUDE.md"));
-}
-
-#[test]
-fn test_is_protected_path_worktree_skills() {
-    assert!(is_protected_path(
-        "/project/.worktrees/feat/.claude/skills/foo/SKILL.md"
-    ));
-}
-
-#[test]
-fn test_is_protected_path_mixed_case_claude_md() {
-    assert!(is_protected_path("/project/Claude.md"));
-    assert!(is_protected_path("/project/claude.md"));
-}
-
-#[test]
-fn test_is_protected_path_mixed_case_claude_dir() {
-    assert!(is_protected_path("/project/.CLAUDE/rules/foo.md"));
-    assert!(is_protected_path("/project/.Claude/rules/foo.md"));
-}
-
-#[test]
-fn test_is_protected_path_mixed_case_rules_and_skills() {
-    assert!(is_protected_path("/project/.claude/Rules/foo.md"));
-    assert!(is_protected_path("/project/.claude/SKILLS/foo/SKILL.md"));
-}
+use flow_rs::hooks::validate_claude_paths::{run_impl_main, validate};
 
 // --- validate tests ---
 
