@@ -342,6 +342,97 @@ fn happy_path_commit_pull_push_succeed() {
     assert!(!msg_path.exists());
 }
 
+// --- run_impl: working_tree_dirty gate ---
+
+/// Stage a file with one content, then modify the working tree
+/// without re-staging. The gate's `git diff --quiet` call sees
+/// the unstaged divergence and returns the structured error
+/// without invoking CI or `git commit`. HEAD must not advance —
+/// the whole point of the gate is that CI tests one set of
+/// bytes (the working tree) and `git commit` would commit a
+/// different set (the index).
+#[test]
+fn working_tree_dirty_blocks_commit_when_index_differs() {
+    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let clone_path = clone_dir.path();
+
+    fs::write(clone_path.join("feature.rs"), "initial\n").unwrap();
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .output()
+            .unwrap(),
+    );
+    git_assert_ok(
+        &Command::new("git")
+            .args([
+                "-C",
+                clone_path.to_str().unwrap(),
+                "commit",
+                "-m",
+                "seed feature.rs",
+            ])
+            .output()
+            .unwrap(),
+    );
+
+    fs::write(clone_path.join("feature.rs"), "staged-bad\n").unwrap();
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", clone_path.to_str().unwrap(), "add", "feature.rs"])
+            .output()
+            .unwrap(),
+    );
+
+    fs::write(clone_path.join("feature.rs"), "working-tree-good\n").unwrap();
+
+    let msg_path = clone_path.join(".flow-commit-msg");
+    fs::write(&msg_path, "Test commit.").unwrap();
+
+    let head_before = Command::new("git")
+        .args(["-C", clone_path.to_str().unwrap(), "rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    git_assert_ok(&head_before);
+    let sha_before = String::from_utf8_lossy(&head_before.stdout)
+        .trim()
+        .to_string();
+
+    let args = Args {
+        message_file: msg_path.to_str().unwrap().to_string(),
+        branch: "main".to_string(),
+    };
+    let result = run_impl(&args, clone_path, clone_path).unwrap();
+
+    assert_eq!(result["status"], "error", "got: {}", result);
+    assert_eq!(result["step"], "working_tree_dirty");
+    let msg = result["message"].as_str().unwrap();
+    assert!(
+        msg.contains("git add"),
+        "message must name `git add` recovery: {}",
+        msg
+    );
+    assert!(
+        msg.contains("git restore"),
+        "message must name `git restore` recovery: {}",
+        msg
+    );
+
+    let head_after = Command::new("git")
+        .args(["-C", clone_path.to_str().unwrap(), "rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    git_assert_ok(&head_after);
+    let sha_after = String::from_utf8_lossy(&head_after.stdout)
+        .trim()
+        .to_string();
+    assert_eq!(sha_before, sha_after, "HEAD must not have advanced");
+
+    // Gate fired before finalize_commit ran, so the message file
+    // is still on disk for the user's retry.
+    assert!(msg_path.exists());
+}
+
 // --- run_impl: CI enforcement ---
 
 #[test]
@@ -809,47 +900,6 @@ fn no_sentinel_refresh_when_pull_merges() {
     );
 }
 
-// --- run_impl: staged_diff fallback when `git diff --cached` fails ---
-
-/// Exercises the `_ => String::new()` fallback where `git diff --cached`
-/// returns a non-zero exit code. Triggered by running against a directory
-/// that isn't a git repo — every git subcommand fails with exit 128.
-/// CI is bypassed via a sentinel. With an empty staged_diff the
-/// plan-deviation scanner collects no deviations and the commit path moves
-/// on to `git commit`, which also fails — status becomes "error" with
-/// step "commit".
-#[test]
-fn staged_diff_fallback_when_git_diff_fails() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().canonicalize().unwrap();
-
-    // No git init — every `git -C <root>` call returns exit 128.
-    // But we still need the branch directory for the CI sentinel.
-    fs::create_dir_all(root.join(".flow-states").join("main")).unwrap();
-
-    // Write the CI sentinel matching the snapshot so ci::run_impl
-    // takes the fast skip path (no bin/* scripts invoked).
-    let snapshot = flow_rs::ci::tree_snapshot(&root, None);
-    let sentinel = flow_rs::ci::sentinel_path(&root, "main");
-    fs::write(&sentinel, &snapshot).unwrap();
-
-    let msg_path = root.join(".flow-commit-msg");
-    fs::write(&msg_path, "msg").unwrap();
-
-    let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
-        branch: "main".to_string(),
-    };
-
-    let result = run_impl(&args, &root, &root).unwrap();
-    // Commit fails because it's not a git repo — but crucially the staged_diff
-    // fallback (`_ => String::new()`) ran to produce the empty staged_diff
-    // that plan_deviation::run_impl then saw. The commit itself fails with
-    // step="commit".
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["step"], "commit");
-}
-
 // --- run_impl: state-file not-object guard in mutate_state closure ---
 
 /// Exercises the `if !(state.is_object() || state.is_null()) { return; }`
@@ -1073,28 +1123,19 @@ fn test_beta() {
 /// Err arm. CI is bypassed via a sentinel matching the "no-git" snapshot
 /// (tree_snapshot hashes all-empty git outputs to a deterministic value
 /// the test pre-computes in an empty directory).
+/// PATH is empty so git can't be spawned. The working_tree_dirty
+/// gate's `git diff --quiet` call returns Err — covers the
+/// `Err(_) => true` arm of the gate's match. Result is
+/// `step: "working_tree_dirty"`. The CI gate and finalize_commit
+/// never run because the gate short-circuits before them.
 #[test]
-fn commit_spawn_failure_returns_error_step_commit() {
+fn git_unavailable_returns_working_tree_dirty() {
     let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
     let clone_path = clone_dir.path();
 
     let msg_path = clone_path.join(".flow-commit-msg");
     fs::write(&msg_path, "msg").unwrap();
 
-    // Pre-compute the "no-git" tree_snapshot hash using an empty dir —
-    // every git_stdout call in tree_snapshot returns "" (git exits
-    // non-zero since it's not a git repo), producing the same hash the
-    // flow-rs subprocess will compute when git is absent from PATH.
-    let empty_dir = tempfile::tempdir().unwrap();
-    let no_git_snapshot = flow_rs::ci::tree_snapshot(empty_dir.path(), None);
-    let sentinel = flow_rs::ci::sentinel_path(clone_path, "main");
-    fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
-    fs::write(&sentinel, &no_git_snapshot).unwrap();
-
-    // PATH is empty: ci::run_impl calls tree_snapshot → git absent →
-    // every git call returns Err → program_stdout "" → snapshot matches
-    // sentinel → CI skips. Then finalize_commit calls run_cmd_with_timeout
-    // for `git commit` which spawn-fails → Err branch fires.
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["finalize-commit", msg_path.to_str().unwrap(), "main"])
         .current_dir(clone_path)
@@ -1106,15 +1147,11 @@ fn commit_spawn_failure_returns_error_step_commit() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
     assert_eq!(json["status"], "error", "got: {}", json);
-    assert_eq!(json["step"], "commit");
-    let msg = json["message"].as_str().unwrap();
-    assert!(
-        msg.to_lowercase().contains("failed to spawn"),
-        "expected spawn failure in message, got: {}",
-        msg
-    );
-    // Message file removed even on Err path.
-    assert!(!msg_path.exists());
+    assert_eq!(json["step"], "working_tree_dirty");
+    // Message file is preserved on the working_tree_dirty path —
+    // the gate fires before finalize_commit() runs and only
+    // finalize_commit() removes the message file.
+    assert!(msg_path.exists());
 }
 
 /// Commit fails with nonzero exit + stderr. Covers the

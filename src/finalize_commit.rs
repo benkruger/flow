@@ -97,32 +97,25 @@ fn run_git_in_dir(
 /// compiled `bin/flow finalize-commit` binary for testing via real git
 /// fixtures and stubs. No closure-injection seam.
 ///
-/// The first git call (`git commit`) handles spawn/timeout Err directly.
-/// All subsequent calls `.expect()` on Ok because git was proven alive
-/// by the commit; rev-parse HEAD always succeeds after a successful
-/// commit, so its Err and non-zero branches are omitted per
-/// `.claude/rules/testability-means-simplicity.md`.
+/// All git calls `.expect()` on Ok because the working_tree_dirty gate
+/// in `run_impl` already proved git is alive by the time this function
+/// runs — its `git diff --quiet` call would have returned Err and
+/// emitted `step: "working_tree_dirty"` if git couldn't be located.
+/// `commit` still has a non-zero exit branch (the index produces an
+/// empty commit, the user's identity isn't configured, etc.); pull and
+/// push retain non-zero branches for legit error cases (merge conflict,
+/// push rejected) per `.claude/rules/testability-means-simplicity.md`.
 fn finalize_commit(message_file: &str, branch: &str, cwd: &std::path::Path) -> Value {
     // Step 1: git commit -F <message_file>
-    match run_git_in_dir(cwd, &["commit", "-F", message_file], LOCAL_TIMEOUT) {
-        Err(e) => {
-            remove_message_file(message_file);
-            return json!({
-                "status": "error",
-                "step": "commit",
-                "message": format!("git commit {}", e)
-            });
-        }
-        Ok((code, _, stderr)) => {
-            remove_message_file(message_file);
-            if code != 0 {
-                return json!({
-                    "status": "error",
-                    "step": "commit",
-                    "message": stderr.trim()
-                });
-            }
-        }
+    let (code, _, stderr) = run_git_in_dir(cwd, &["commit", "-F", message_file], LOCAL_TIMEOUT)
+        .expect("git located by working_tree_dirty gate");
+    remove_message_file(message_file);
+    if code != 0 {
+        return json!({
+            "status": "error",
+            "step": "commit",
+            "message": stderr.trim()
+        });
     }
 
     // Capture post-commit SHA for pull_merged detection. After a successful
@@ -202,93 +195,121 @@ pub fn run_impl(
             .unwrap_or(0)
     };
 
+    // Working-tree-dirty gate. CI tools read the working tree, but
+    // `git commit -F` commits the index. When working tree != index,
+    // CI tests one set of bytes and `git commit` commits another.
+    // Refuse the commit when `git diff` (working tree vs index) is
+    // non-empty so the user makes an explicit choice: `git add` to
+    // commit the working-tree state or `git restore <file>` to drop
+    // unstaged edits. See `.claude/rules/plan-commit-atomicity.md`.
+    let working_tree_dirty = match run_git_in_dir(cwd, &["diff", "--quiet"], LOCAL_TIMEOUT) {
+        Ok((code, _, _)) => code != 0,
+        Err(_) => true,
+    };
+
     // Enforce CI before committing. run_impl checks the sentinel first —
     // if CI already passed for this tree state, it noops instantly.
-    let ci_args = crate::ci::Args {
-        force: false,
-        retry: 0,
-        branch: Some(args.branch.clone()),
-        simulate_branch: None,
-        format: false,
-        lint: false,
-        build: false,
-        test: false,
-        audit: false,
-        clean: false,
-        trailing: Vec::new(),
-    };
-    let (ci_result, ci_code) = crate::ci::run_impl(&ci_args, cwd, root, false);
-
-    let result = if ci_code != 0 {
-        let msg = ci_result["message"]
-            .as_str()
-            .unwrap_or("bin/flow ci failed");
+    let result = if working_tree_dirty {
         let _ = append_log(
             root,
             &args.branch,
-            &format!("[Phase {}] finalize-commit — ci (failed)", pn),
+            &format!(
+                "[Phase {}] finalize-commit — working_tree_dirty (blocked)",
+                pn
+            ),
         );
         json!({
             "status": "error",
-            "step": "ci",
-            "message": msg,
+            "step": "working_tree_dirty",
+            "message": "Working tree has unstaged changes. Either `git add` them (commit them) or `git restore <file>` (drop them), then re-run finalize-commit. Refusing to commit code that differs from what CI tested.",
         })
     } else {
-        let _ = append_log(
-            root,
-            &args.branch,
-            &format!("[Phase {}] finalize-commit — ci (ok)", pn),
-        );
-
-        // Capture the staged diff for the plan-deviation gate.
-        // An error or non-zero exit from `git diff --cached`
-        // produces an empty diff, which makes the gate a no-op
-        // (the plan has no tests to cross-reference against).
-        let staged_diff = match run_git_in_dir(cwd, &["diff", "--cached"], LOCAL_TIMEOUT) {
-            Ok((0, stdout, _)) => stdout,
-            _ => String::new(),
+        let ci_args = crate::ci::Args {
+            force: false,
+            retry: 0,
+            branch: Some(args.branch.clone()),
+            simulate_branch: None,
+            format: false,
+            lint: false,
+            build: false,
+            test: false,
+            audit: false,
+            clean: false,
+            trailing: Vec::new(),
         };
+        let (ci_result, ci_code) = crate::ci::run_impl(&ci_args, cwd, root, false);
 
-        // Plan signature deviation gate. Blocks the commit when
-        // a plan-named test's fixture value drifts without a
-        // matching log acknowledgment. The gate is mechanical
-        // enforcement of `.claude/rules/plan-commit-atomicity.md`
-        // "Plan Signature Deviations Must Be Logged".
-        match crate::plan_deviation::run_impl(root, &args.branch, &staged_diff) {
-            Ok(()) => finalize_commit(&args.message_file, &args.branch, cwd),
-            Err(deviations) => {
-                emit_deviation_stderr(&args.branch, &deviations);
-                let _ = append_log(
-                    root,
-                    &args.branch,
-                    &format!(
-                        "[Phase {}] finalize-commit — plan_deviation (blocked: {} deviation{})",
-                        pn,
-                        deviations.len(),
-                        if deviations.len() == 1 { "" } else { "s" }
-                    ),
-                );
-                let deviation_json: Vec<Value> = deviations
-                    .iter()
-                    .map(|d| {
-                        json!({
-                            "test_name": d.test_name,
-                            "fixture_key": d.fixture_key,
-                            "plan_value": d.plan_value,
-                            "plan_line": d.plan_line,
+        if ci_code != 0 {
+            let msg = ci_result["message"]
+                .as_str()
+                .unwrap_or("bin/flow ci failed");
+            let _ = append_log(
+                root,
+                &args.branch,
+                &format!("[Phase {}] finalize-commit — ci (failed)", pn),
+            );
+            json!({
+                "status": "error",
+                "step": "ci",
+                "message": msg,
+            })
+        } else {
+            let _ = append_log(
+                root,
+                &args.branch,
+                &format!("[Phase {}] finalize-commit — ci (ok)", pn),
+            );
+
+            // Capture the staged diff for the plan-deviation gate.
+            // The working_tree_dirty gate at the top of run_impl
+            // already proved git is alive and the cwd is a real
+            // repo, so .expect() is safe — Err and non-zero arms
+            // for `git diff --cached` are unreachable in practice
+            // per `.claude/rules/testability-means-simplicity.md`.
+            let (_, staged_diff, _) = run_git_in_dir(cwd, &["diff", "--cached"], LOCAL_TIMEOUT)
+                .expect("git located by working_tree_dirty gate");
+
+            // Plan signature deviation gate. Blocks the commit when
+            // a plan-named test's fixture value drifts without a
+            // matching log acknowledgment. The gate is mechanical
+            // enforcement of `.claude/rules/plan-commit-atomicity.md`
+            // "Plan Signature Deviations Must Be Logged".
+            match crate::plan_deviation::run_impl(root, &args.branch, &staged_diff) {
+                Ok(()) => finalize_commit(&args.message_file, &args.branch, cwd),
+                Err(deviations) => {
+                    emit_deviation_stderr(&args.branch, &deviations);
+                    let _ = append_log(
+                        root,
+                        &args.branch,
+                        &format!(
+                            "[Phase {}] finalize-commit — plan_deviation (blocked: {} deviation{})",
+                            pn,
+                            deviations.len(),
+                            if deviations.len() == 1 { "" } else { "s" }
+                        ),
+                    );
+                    let deviation_json: Vec<Value> = deviations
+                        .iter()
+                        .map(|d| {
+                            json!({
+                                "test_name": d.test_name,
+                                "fixture_key": d.fixture_key,
+                                "plan_value": d.plan_value,
+                                "plan_line": d.plan_line,
+                            })
                         })
+                        .collect();
+                    json!({
+                        "status": "error",
+                        "step": "plan_deviation",
+                        "message": format!(
+                            "{} unacknowledged plan signature deviation{}",
+                            deviations.len(),
+                            if deviations.len() == 1 { "" } else { "s" }
+                        ),
+                        "deviations": deviation_json,
                     })
-                    .collect();
-                json!({
-                    "status": "error",
-                    "step": "plan_deviation",
-                    "message": format!(
-                        "{} unacknowledged plan signature deviation{}",
-                        deviations.len(),
-                        if deviations.len() == 1 { "" } else { "s" }
-                    ),
-                    "deviations": deviation_json,
-                })
+                }
             }
         }
     };
