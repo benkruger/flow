@@ -5,11 +5,23 @@ description: "Reset all FLOW artifacts. Closes PRs, removes worktrees, deletes b
 
 # FLOW Reset
 
-Remove all FLOW artifacts from the current project. Use when abandoned features leave orphaned worktrees, branches, state files, and PRs.
+Remove every FLOW artifact from the current project in one pass: every PR, every
+worktree, every per-branch state directory, every residual start-lock entry, the
+orchestration queue singleton, and the base-branch CI sentinel directory. Use
+when abandoned features have left orphaned worktrees, branches, state files,
+and PRs that the per-feature `/flow:flow-abort` cannot reach.
+
+The skill is a thin wrapper around `bin/flow cleanup --all`. The Rust primitive
+walks `.flow-states/` for every flow with a `state.json`, runs the per-branch
+cleanup against each, then runs the three machine-level tail steps
+(`orchestrate.json`, `.flow-states/main/`, `start-queue/` sweep). The directory
+shells (`.flow-states/`, `.flow-states/start-queue/`) survive so subsequent
+flow-starts do not need to recreate them.
 
 ## Guard
 
-Run:
+Reset must run from the project root with `main` checked out. Running from a
+worktree would attempt to remove the worktree mid-execution.
 
 ```bash
 git branch --show-current
@@ -21,79 +33,19 @@ If the current branch is NOT `main`, stop:
 
 ## Step 1 — Inventory
 
-Gather all FLOW artifacts. Display each category.
-
-### Worktrees
-
-Run:
+Print the inventory of what `--all` would remove without modifying disk. The
+JSON output's `flows[]`, `orchestrate_json`, `main_dir`, and `queue_sweep`
+fields describe every artifact that the live run would touch.
 
 ```bash
-git worktree list
+${CLAUDE_PLUGIN_ROOT}/bin/flow cleanup . --all --dry-run
 ```
 
-List any worktrees besides the main working tree.
+Render the JSON output inline inside a fenced code block so the user can
+review it before approving the destructive run.
 
-### State files
-
-Use Glob to find all files in `.flow-states/` — JSON state files and logs.
-
-### Start lock queue
-
-Use Glob to find files in `.flow-states/start-queue/`.
-
-### Local branches
-
-Run:
-
-```bash
-git branch --list
-```
-
-List any branches besides `main`.
-
-### Remote branches
-
-Run:
-
-```bash
-git branch -r
-```
-
-List any remote branches besides `origin/main` and `origin/HEAD`.
-
-### Open PRs
-
-Run:
-
-```bash
-gh pr list --state open --json number,headRefName
-```
-
-List any open PRs.
-
-### Display inventory
-
-Print the full inventory inside a fenced code block:
-
-````markdown
-```text
-──────────────────────────────────────────────────
-  FLOW Reset — Artifact Inventory
-──────────────────────────────────────────────────
-
-Worktrees: <count>
-State files: <count>
-Start lock entries: <count>
-Local branches: <count>
-Remote branches: <count>
-Open PRs: <count>
-──────────────────────────────────────────────────
-```
-````
-
-List each item under its category.
-
-If nothing is found in any category, print:
+If `flows[]` is empty AND `orchestrate_json` is `"skipped"` AND `main_dir` is
+`"skipped"` AND `queue_sweep` is `"skipped"`, print:
 
 > "No FLOW artifacts found. Nothing to reset."
 
@@ -101,7 +53,7 @@ And stop.
 
 ## Step 2 — Confirm
 
-Use AskUserQuestion:
+This is destructive and irreversible. Use AskUserQuestion:
 
 > "Destroy all listed artifacts? This cannot be undone."
 >
@@ -112,67 +64,45 @@ If cancelled, stop.
 
 ## Step 3 — Execute
 
-Process each category. Continue on failure — report errors at the end.
+Run the live cleanup. Each per-branch cleanup may report `"failed: <reason>"`
+for individual steps (a missing worktree, an already-deleted remote branch);
+the walk continues to the next flow regardless.
 
-### Close open PRs
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow cleanup . --all
+```
 
-For each open PR, run `gh pr close <number>` where `<number>` is the PR number from the inventory.
+Render the JSON output inline so the user can see the per-flow `steps` map and
+the tail-step results.
 
-### Remove worktrees
+## Step 4 — Verify
 
-For each worktree (besides main), run `git worktree remove --force <path>` where `<path>` is the worktree path from the inventory.
+Confirm only `main` remains.
 
-### Delete remote branches
+```bash
+git worktree list
+```
 
-For each remote branch (besides `origin/main` and `origin/HEAD`), run `git push origin --delete <name>` where `<name>` is the branch name without the `origin/` prefix.
+```bash
+git branch --list
+```
 
-### Delete local branches
-
-For each local branch (besides `main`), run `git branch -D <name>`.
-
-### Clear start lock queue
-
-For each file in `.flow-states/start-queue/`, run `rm .flow-states/start-queue/<filename>`.
-
-### Delete state files and logs
-
-For each file in `.flow-states/`, run `rm .flow-states/<filename>`.
-
-## Step 4 — Report
-
-Print results inside a fenced code block:
+If any worktree besides the main working tree appears, or any local branch
+besides `main`, list the survivors so the user can investigate. Otherwise
+print:
 
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ✓ FLOW Reset — Complete
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-PRs closed: <count>
-Worktrees removed: <count>
-Remote branches deleted: <count>
-Local branches deleted: <count>
-State files deleted: <count>
-Lock queue entries cleared: <count>
-Errors: <count or "none">
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
 
-If any step failed, list the error details below the summary.
+## Rules
 
-## Step 5 — Verify
-
-Run:
-
-```bash
-git worktree list
-```
-
-And:
-
-```bash
-git branch --list
-```
-
-Confirm only `main` remains. If stale artifacts persist, report them.
+- Available from `main` only — running from a worktree is unsafe
+- Never rebase, never force push — the cleanup primitive only invokes the
+  destructive surfaces the per-feature `/flow:flow-abort` already uses
+- Every step after confirmation is best-effort — if one per-flow step fails,
+  the next flow still processes

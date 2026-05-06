@@ -21,11 +21,20 @@ requires explicit confirmation.
 ## What It Does
 
 1. Checks that the current branch is `main`
-2. Inventories all FLOW artifacts across six categories:
-   worktrees, state files, start lock queue entries, local branches, remote branches, and open PRs
-3. Displays the inventory and asks for confirmation
-4. Destroys all artifacts, including start lock queue entries (best-effort — continues on individual failures)
-5. Reports results and verifies cleanup
+2. Runs `bin/flow cleanup . --all --dry-run` to print the inventory
+   of artifacts that would be removed: every flow's per-branch
+   directory under `.flow-states/<branch>/`, the orchestration queue
+   singleton (`orchestrate.json`), the base-branch CI sentinel
+   directory (`.flow-states/main/`), and any residual start-lock
+   entries
+3. Displays the JSON inventory and asks for confirmation
+4. Runs `bin/flow cleanup . --all` to perform the live cleanup. Each
+   per-flow cleanup closes the PR, removes the worktree, deletes
+   local and remote branches, removes the branch directory, and
+   sweeps the matching start-queue entry. The walk continues when
+   individual per-flow steps fail.
+5. Verifies via `git worktree list` and `git branch --list` that
+   only `main` remains
 
 ---
 

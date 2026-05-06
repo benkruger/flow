@@ -1,13 +1,33 @@
 //! Cleanup orchestrator for FLOW features.
 //!
-//! Shared by /flow:flow-complete (Phase 6) and /flow:flow-abort. Performs best-effort
-//! cleanup steps, continuing on failure.
+//! Two entry shapes:
 //!
-//! Usage:
+//! - **Per-branch (`--branch`)** — used by `/flow:flow-complete` (Phase 6)
+//!   and `/flow:flow-abort`. Closes the PR, removes the worktree, deletes
+//!   branches, removes the branch directory, and sweeps the start-lock
+//!   queue entry for the named branch.
+//! - **All-flows (`--all`)** — used by `/flow:flow-reset`. Walks every
+//!   subdirectory of `.flow-states/` that contains a `state.json` and
+//!   runs the per-branch cleanup against each flow. Then runs three
+//!   machine-level tail steps: remove `orchestrate.json`, remove
+//!   `.flow-states/main/`, and sweep any residual `start-queue/` entries
+//!   left behind by interrupted starts. `--dry-run` returns an inventory
+//!   of what would be removed without modifying disk.
+//!
+//! Per-branch usage:
 //!   bin/flow cleanup <project_root> --branch <name> --worktree <path> [--pr <number>] [--pull]
 //!
-//! Output (JSON to stdout):
-//!   {"status": "ok", "steps": {"worktree": "removed", "state_file": "deleted", ...}}
+//! All-flows usage:
+//!   bin/flow cleanup <project_root> --all [--dry-run]
+//!
+//! Per-branch output (JSON to stdout):
+//!   {"status": "ok", "steps": {"pr_close": ..., "worktree": ..., "remote_branch": ...,
+//!                              "local_branch": ..., "branch_dir": ..., "queue_entry": ...,
+//!                              "git_pull": ...}}
+//!
+//! All-flows output (JSON to stdout):
+//!   {"status": "ok", "dry_run": <bool>, "flows": [...], "orchestrate_json": ...,
+//!    "main_dir": ..., "queue_sweep": ...}
 //!
 //! Each step reports one of: "removed"/"deleted"/"closed"/"pulled", "skipped", or "failed: <reason>".
 //!
@@ -15,14 +35,54 @@
 //! no inline #[cfg(test)] in this file.
 
 use std::fs;
+use std::io::{BufReader, Read};
 use std::path::Path;
 use std::process::Command;
 
 use clap::Parser;
 use indexmap::IndexMap;
+use serde_json::{json, Map, Value};
 
 use crate::commands::log::append_log;
-use crate::flow_paths::FlowPaths;
+use crate::commands::start_lock::QUEUE_DIRNAME;
+use crate::flow_paths::{FlowPaths, FlowStatesDir};
+use crate::utils::tolerant_i64_opt;
+
+/// Maximum bytes we will read from a per-flow `state.json` while
+/// enumerating all flows for `--all`. State files grow continuously
+/// during long autonomous runs (every phase enter/complete, every
+/// step counter increment, every window snapshot appends data). The
+/// cap bounds peak memory consumption when sweeping a machine with
+/// many active flows so a corrupted or pathologically-grown state
+/// file cannot OOM-kill the cleanup process per
+/// `.claude/rules/external-input-path-construction.md` "Enforce a
+/// documented size cap on every external read."
+const STATE_FILE_BYTE_CAP: u64 = 50 * 1024 * 1024;
+
+/// Positive validator for the `worktree` field read from state files.
+///
+/// `cleanup_all` reads `state["worktree"]` from each flow's
+/// `state.json` (a hand-editable, externally-writable surface) and
+/// passes the value to `cleanup()` where it joins onto
+/// `project_root` and feeds `git worktree remove --force`. Without a
+/// validator, an empty value would resolve to the project root
+/// itself and a traversal value (`..`, `/abs`) would resolve outside
+/// the worktrees directory.
+///
+/// Rejects:
+/// - empty string
+/// - any string containing `\0`
+/// - leading `/` (absolute path)
+/// - any path component equal to `.` or `..`
+fn is_safe_worktree_rel(s: &str) -> bool {
+    if s.is_empty() || s.contains('\0') {
+        return false;
+    }
+    if s.starts_with('/') {
+        return false;
+    }
+    s.split('/').all(|seg| seg != ".." && seg != ".")
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "cleanup", about = "FLOW cleanup orchestrator")]
@@ -30,21 +90,34 @@ pub struct Args {
     /// Path to project root
     pub project_root: String,
 
-    /// Branch name
+    /// Branch name (required unless --all)
     #[arg(long)]
-    pub branch: String,
+    pub branch: Option<String>,
 
-    /// Worktree path (relative)
+    /// Worktree path relative to project_root (required unless --all)
     #[arg(long)]
-    pub worktree: String,
+    pub worktree: Option<String>,
 
-    /// PR number to close
+    /// PR number to close (per-branch mode only)
     #[arg(long = "pr")]
     pub pr: Option<i64>,
 
-    /// Run git pull origin main after cleanup
+    /// Run git pull origin <base_branch> after per-branch cleanup
     #[arg(long)]
     pub pull: bool,
+
+    /// Reset every flow on this machine. Walks `.flow-states/` for
+    /// every subdirectory containing a `state.json` and runs the
+    /// per-branch cleanup against it, then removes `orchestrate.json`,
+    /// `.flow-states/main/`, and any residual `start-queue/` entries.
+    /// Mutually exclusive with `--branch`.
+    #[arg(long)]
+    pub all: bool,
+
+    /// With `--all`: print the inventory of what would be removed
+    /// without modifying disk.
+    #[arg(long = "dry-run")]
+    pub dry_run: bool,
 }
 
 /// Run a command in `cwd` via `Command::output()` without a timeout.
@@ -130,23 +203,9 @@ pub fn cleanup(
         steps.insert("pr_close".to_string(), "skipped".to_string());
     }
 
-    // Remove worktree tmp/ (FLOW repo only — before worktree removal)
-    let is_flow_repo = project_root.join("flow-phases.json").exists();
-    let wt_tmp = project_root.join(worktree).join("tmp");
-    if is_flow_repo && wt_tmp.is_dir() {
-        let (ok, output) = match fs::remove_dir_all(&wt_tmp) {
-            Ok(()) => (true, String::new()),
-            Err(e) => (false, format!("{}", e)),
-        };
-        steps.insert(
-            "worktree_tmp".to_string(),
-            label_result(ok, "removed", &output),
-        );
-    } else {
-        steps.insert("worktree_tmp".to_string(), "skipped".to_string());
-    }
-
-    // Remove worktree
+    // Remove worktree (the subsequent `git worktree remove --force`
+    // also disposes of any worktree-internal scratch like `tmp/`, so a
+    // separate per-tmp step is unnecessary).
     let wt_path = project_root.join(worktree);
     if wt_path.exists() {
         let wt_str = wt_path.to_string_lossy().to_string();
@@ -191,6 +250,10 @@ pub fn cleanup(
                 "branch_dir".to_string(),
                 "skipped: invalid branch".to_string(),
             );
+            steps.insert(
+                "queue_entry".to_string(),
+                "skipped: invalid branch".to_string(),
+            );
             if pull {
                 let (ok, output) = run_cmd(&["git", "pull", "origin", base_branch], project_root);
                 steps.insert("git_pull".to_string(), label_result(ok, "pulled", &output));
@@ -233,6 +296,21 @@ pub fn cleanup(
         try_remove_branch_dir(&paths.branch_dir()),
     );
 
+    // Remove the start-lock queue entry for this branch, if present.
+    // `start_init` writes `.flow-states/<QUEUE_DIRNAME>/<branch>` while
+    // holding the start lock and `start_finalize` releases it on the
+    // happy path; this step is defense-in-depth for the abort path and
+    // any unusual case where Complete runs without a clean Start. The
+    // queue_dir itself is left in place — `start_lock::queue_path`
+    // recreates it on demand for subsequent flows.
+    let queue_entry_path = paths.flow_states_dir().join(QUEUE_DIRNAME).join(branch);
+    let queue_result = match fs::remove_file(&queue_entry_path) {
+        Ok(()) => "removed".to_string(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "skipped".to_string(),
+        Err(e) => format!("failed: {}", e),
+    };
+    steps.insert("queue_entry".to_string(), queue_result);
+
     // Pull latest origin/<base_branch> (after worktree removal —
     // ordering matters). `base_branch` flows in from the caller's
     // state-file read (defaulting to "main" for legacy state files).
@@ -244,16 +322,274 @@ pub fn cleanup(
     steps
 }
 
+/// Reset every flow on this machine. Walks `.flow-states/` for branch
+/// subdirectories that contain `state.json`, runs the per-branch
+/// `cleanup()` against each (closing PRs, removing worktrees, deleting
+/// branches, removing branch dirs, sweeping the matching queue entry),
+/// then handles three machine-level tail steps:
+///
+/// - `orchestrate.json` removal — the machine-level orchestration
+///   queue singleton.
+/// - `.flow-states/main/` removal — the base-branch CI sentinel
+///   directory written by `start-gate`.
+/// - residual `start-queue/` entry sweep — entries left after
+///   per-flow cleanups, e.g. orphans from interrupted starts.
+///
+/// `dry_run = true` returns an inventory of what would be removed
+/// without modifying disk. The directory shells (`.flow-states/`,
+/// `.flow-states/start-queue/`) are intentionally left in place even
+/// in live mode — `start_lock::queue_path` and other downstream code
+/// recreate them on demand. Subdirectories without `state.json`
+/// (`main/`, `start-queue/`, transient cleanup remnants) are skipped
+/// from the per-flow walk; the named tail steps cover the load-bearing
+/// ones.
+///
+/// On a malformed `state.json`, the flow's entry in `flows[]` carries
+/// an `"error"` field describing the parse failure and the per-flow
+/// cleanup is skipped — the surrounding loop continues to other
+/// flows so one corrupt state file cannot block a reset. Same for
+/// state-derived `worktree` values that fail
+/// `is_safe_worktree_rel`: per-flow `error` field, walk continues.
+///
+/// **Concurrency.** This function is invoked exclusively from
+/// `/flow:flow-reset`, whose Guard gates entry on `git branch
+/// --show-current == main` (the user must be on the integration
+/// branch at the project root). The reset is destructive by
+/// design: it sweeps the start-lock queue, deletes
+/// `.flow-states/main/` (the base-branch CI sentinel directory),
+/// and removes orchestrate.json — none of which are coordinated
+/// with the start lock. Any concurrent `flow-start` running on
+/// the same machine during a `cleanup_all` invocation will be
+/// disrupted (the next start may re-run base-branch CI because
+/// the sentinel was removed; an in-flight start may have its
+/// queue entry deleted mid-acquire). The user invoking flow-reset
+/// has accepted that "reset every FLOW artifact" includes the
+/// start lock and the orchestration queue. The 30-minute stale
+/// timeout on queue entries protects against permanent block;
+/// recovery from sentinel-loss is automatic on the next CI run.
+pub fn cleanup_all(project_root: &Path, dry_run: bool) -> Value {
+    let states_dir = FlowStatesDir::new(project_root).path().to_path_buf();
+    let mut flows: Vec<Value> = Vec::new();
+
+    if states_dir.is_dir() {
+        if let Ok(entries) = fs::read_dir(&states_dir) {
+            let mut subdirs: Vec<_> = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
+                .collect();
+            subdirs.sort_by_key(|e| e.file_name());
+
+            for entry in subdirs {
+                let name = entry.file_name();
+                let branch_name = name.to_string_lossy().into_owned();
+                let state_path = entry.path().join("state.json");
+                if !state_path.is_file() {
+                    // Subdir without state.json (e.g. `main/`,
+                    // `start-queue/`, transient cleanup leftover).
+                    // Not a flow — handled by tail steps or ignored.
+                    continue;
+                }
+
+                // Byte-capped state-file read per
+                // `.claude/rules/external-input-path-construction.md`.
+                // BufReader::take stops the read at STATE_FILE_BYTE_CAP
+                // even for pathologically large state files; oversize
+                // files surface as `error: state file exceeds N-byte cap`
+                // rather than OOM-killing the sweep.
+                let parsed: Result<Value, String> = match fs::File::open(&state_path) {
+                    Ok(file) => {
+                        let mut content = String::new();
+                        match BufReader::new(file.take(STATE_FILE_BYTE_CAP))
+                            .read_to_string(&mut content)
+                        {
+                            Ok(_) => serde_json::from_str::<Value>(&content)
+                                .map_err(|e| format!("parse error: {}", e)),
+                            Err(e) => Err(format!("read error: {}", e)),
+                        }
+                    }
+                    Err(e) => Err(format!("read error: {}", e)),
+                };
+
+                let mut flow_obj: Map<String, Value> = Map::new();
+                flow_obj.insert("branch".to_string(), Value::String(branch_name.clone()));
+
+                match parsed {
+                    Err(error) => {
+                        flow_obj.insert("error".to_string(), Value::String(error));
+                    }
+                    Ok(state) => {
+                        let worktree_rel = state
+                            .get("worktree")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        // Use tolerant_i64_opt so legacy/hand-edited
+                        // state files with `pr_number` as a JSON string
+                        // ("1234") still surface the PR number, per
+                        // `.claude/rules/state-files.md` Counter Type
+                        // Tolerance. `as_i64()` alone returns None for
+                        // string-typed fields and silently drops
+                        // pr_close / remote_branch deletion.
+                        let pr_number =
+                            tolerant_i64_opt(state.get("pr_number").unwrap_or(&Value::Null));
+                        let base_branch = state
+                            .get("base_branch")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("main")
+                            .to_string();
+
+                        flow_obj
+                            .insert("worktree".to_string(), Value::String(worktree_rel.clone()));
+                        flow_obj.insert(
+                            "pr_number".to_string(),
+                            match pr_number {
+                                Some(n) => Value::from(n),
+                                None => Value::Null,
+                            },
+                        );
+
+                        if !is_safe_worktree_rel(&worktree_rel) {
+                            // Reject a state-derived worktree value that
+                            // would resolve outside `<project_root>/`.
+                            // Empty `""` would resolve to the project
+                            // root itself (causing
+                            // `git worktree remove --force <project_root>`);
+                            // `..`/`/abs` would resolve outside the
+                            // worktrees subdirectory. Surface the
+                            // rejection per-flow so the user sees which
+                            // state file is corrupt.
+                            flow_obj.insert(
+                                "error".to_string(),
+                                Value::String(format!(
+                                    "rejected worktree path: {:?}",
+                                    worktree_rel
+                                )),
+                            );
+                        } else if !dry_run {
+                            let steps = cleanup(
+                                project_root,
+                                &branch_name,
+                                &worktree_rel,
+                                pr_number,
+                                false, // never pull during --all
+                                &base_branch,
+                            );
+                            let steps_map: Map<String, Value> = steps
+                                .into_iter()
+                                .map(|(k, v)| (k, Value::String(v)))
+                                .collect();
+                            flow_obj.insert("steps".to_string(), Value::Object(steps_map));
+                        }
+                    }
+                }
+
+                flows.push(Value::Object(flow_obj));
+            }
+        }
+    }
+
+    // Tail step: orchestrate.json removal.
+    let orchestrate_path = states_dir.join("orchestrate.json");
+    let orchestrate_json = if dry_run {
+        if orchestrate_path.is_file() {
+            "would_remove".to_string()
+        } else {
+            "skipped".to_string()
+        }
+    } else {
+        match fs::remove_file(&orchestrate_path) {
+            Ok(()) => "deleted".to_string(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => "skipped".to_string(),
+            Err(e) => format!("failed: {}", e),
+        }
+    };
+
+    // Tail step: `.flow-states/main/` directory removal.
+    let main_path = states_dir.join("main");
+    let main_dir = if dry_run {
+        if main_path.is_dir() {
+            "would_remove".to_string()
+        } else {
+            "skipped".to_string()
+        }
+    } else if main_path.is_dir() {
+        match fs::remove_dir_all(&main_path) {
+            Ok(()) => "removed".to_string(),
+            Err(e) => format!("failed: {}", e),
+        }
+    } else {
+        "skipped".to_string()
+    };
+
+    // Tail step: residual start-queue/ entry sweep. The queue_dir
+    // itself is left in place — `start_lock::queue_path` recreates
+    // it on demand for subsequent flow-starts.
+    let queue_dir = states_dir.join(QUEUE_DIRNAME);
+    let queue_sweep = match fs::read_dir(&queue_dir) {
+        Ok(entries) => {
+            let files: Vec<_> = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().map(|ft| ft.is_file()).unwrap_or(false))
+                .collect();
+            if files.is_empty() {
+                "skipped".to_string()
+            } else if dry_run {
+                format!("would_sweep {} entries", files.len())
+            } else {
+                let mut count = 0usize;
+                let mut first_err: Option<String> = None;
+                for f in &files {
+                    match fs::remove_file(f.path()) {
+                        Ok(()) => count += 1,
+                        Err(e) => {
+                            if first_err.is_none() {
+                                first_err = Some(format!("{}", e));
+                            }
+                        }
+                    }
+                }
+                if count > 0 {
+                    format!("swept {} entries", count)
+                } else {
+                    // count==0 with a non-empty `files` list means every
+                    // remove_file failed, so first_err is guaranteed
+                    // Some — the loop sets it on the first error.
+                    format!(
+                        "failed: {}",
+                        first_err.expect("count==0 with non-empty files implies first_err is set")
+                    )
+                }
+            }
+        }
+        Err(_) => "skipped".to_string(),
+    };
+
+    json!({
+        "status": "ok",
+        "dry_run": dry_run,
+        "flows": flows,
+        "orchestrate_json": orchestrate_json,
+        "main_dir": main_dir,
+        "queue_sweep": queue_sweep,
+    })
+}
+
 /// Main-arm dispatch: validate args.project_root and run cleanup.
 /// Returns (JSON value, exit code).
 ///
-/// `base_branch` is resolved from the per-branch state file via
-/// `git::read_base_branch` and falls back to git's integration
-/// branch (origin/HEAD) when the state file is missing, malformed,
+/// Two modes:
+/// - `--all`: invoke [`cleanup_all`] over every flow on disk.
+/// - `--branch <name> --worktree <path>`: invoke [`cleanup`] for the
+///   single flow.
+///
+/// Per-branch `base_branch` is resolved from the per-branch state file
+/// via `git::read_base_branch` and falls back to git's integration
+/// branch (`origin/HEAD`) when the state file is missing, malformed,
 /// or omits the field — both the abort path (state file may be
-/// present but partially initialized) and pre-`base_branch`-field
-/// state files are covered by the same fallback.
-pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
+/// partially initialized) and pre-`base_branch`-field state files are
+/// covered by the same fallback. `--all` resolves `base_branch`
+/// per-flow inside [`cleanup_all`].
+pub fn run_impl_main(args: &Args) -> (Value, i32) {
     let root = Path::new(&args.project_root);
     if !root.is_dir() {
         let msg = format!("Project root not found: {}", args.project_root);
@@ -261,21 +597,74 @@ pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
         return (serde_json::from_str(&err_str).unwrap(), 1);
     }
 
-    let base_branch = FlowPaths::try_new(root, &args.branch)
+    // Mutual exclusion: --all is the destructive machine-wide reset
+    // path and ignores per-branch flags. Silently dropping --branch /
+    // --worktree / --pr / --pull when --all is also set would mask
+    // user intent (e.g., a misconstructed automation script that
+    // sets both). Reject the combination with a structured error so
+    // the user sees which flag was unexpected.
+    if args.all {
+        if args.branch.is_some() {
+            let err_str =
+                crate::output::json_error_string("--all is mutually exclusive with --branch", &[]);
+            return (serde_json::from_str(&err_str).unwrap(), 1);
+        }
+        if args.worktree.is_some() {
+            let err_str = crate::output::json_error_string(
+                "--all is mutually exclusive with --worktree",
+                &[],
+            );
+            return (serde_json::from_str(&err_str).unwrap(), 1);
+        }
+        if args.pr.is_some() {
+            let err_str =
+                crate::output::json_error_string("--all is mutually exclusive with --pr", &[]);
+            return (serde_json::from_str(&err_str).unwrap(), 1);
+        }
+        if args.pull {
+            let err_str =
+                crate::output::json_error_string("--all is mutually exclusive with --pull", &[]);
+            return (serde_json::from_str(&err_str).unwrap(), 1);
+        }
+        return (cleanup_all(root, args.dry_run), 0);
+    }
+
+    // --dry-run only applies to --all; reject when --all is absent.
+    if args.dry_run {
+        let err_str = crate::output::json_error_string("--dry-run requires --all", &[]);
+        return (serde_json::from_str(&err_str).unwrap(), 1);
+    }
+
+    // Per-branch mode: --branch and --worktree are required.
+    let branch = match args.branch.as_deref() {
+        Some(b) => b,
+        None => {
+            let err_str = crate::output::json_error_string(
+                "Either --branch (with --worktree) or --all is required",
+                &[],
+            );
+            return (serde_json::from_str(&err_str).unwrap(), 1);
+        }
+    };
+    let worktree = match args.worktree.as_deref() {
+        Some(w) => w,
+        None => {
+            let err_str = crate::output::json_error_string(
+                "--worktree is required when --branch is set",
+                &[],
+            );
+            return (serde_json::from_str(&err_str).unwrap(), 1);
+        }
+    };
+
+    let base_branch = FlowPaths::try_new(root, branch)
         .and_then(|paths| crate::git::read_base_branch(&paths.state_file()).ok())
         .unwrap_or_else(|| crate::git::default_branch_in(root));
 
-    let steps = cleanup(
-        root,
-        &args.branch,
-        &args.worktree,
-        args.pr,
-        args.pull,
-        &base_branch,
-    );
-    let steps_map: indexmap::IndexMap<String, serde_json::Value> = steps
+    let steps = cleanup(root, branch, worktree, args.pr, args.pull, &base_branch);
+    let steps_map: IndexMap<String, Value> = steps
         .into_iter()
-        .map(|(k, v)| (k, serde_json::Value::String(v)))
+        .map(|(k, v)| (k, Value::String(v)))
         .collect();
     let steps_value = serde_json::to_value(steps_map).unwrap();
     let ok_str = crate::output::json_ok_string(&[("steps", steps_value)]);
