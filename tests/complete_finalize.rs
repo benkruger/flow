@@ -405,6 +405,124 @@ fn finalize_state_file_missing_skips_snapshot_capture() {
     assert_eq!(code, 0);
 }
 
+/// Rejection arm: spawning complete-finalize with cwd equal to the
+/// worktree root must trigger the cwd-inside-worktree guard and
+/// return a structured error before any side effect runs.
+#[test]
+fn complete_finalize_rejects_cwd_inside_worktree() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = make_repo_fixture(&parent);
+    let state_path = write_state_file(&repo, BRANCH, true);
+    let worktree_abs = repo.join(".worktrees").join("test-feature");
+    fs::create_dir_all(&worktree_abs).unwrap();
+    let worktree_canon = worktree_abs.canonicalize().unwrap();
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.args([
+        "complete-finalize",
+        "--pr",
+        "1",
+        "--state-file",
+        state_path.to_string_lossy().as_ref(),
+        "--branch",
+        BRANCH,
+        "--worktree",
+        worktree_canon.to_string_lossy().as_ref(),
+    ])
+    .current_dir(&worktree_canon)
+    .env_remove("FLOW_CI_RUNNING");
+    let output = cmd.output().expect("spawn flow-rs");
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let json = last_json_line(&stdout);
+    assert_eq!(json["status"], "error");
+    assert_eq!(json["reason"], "cwd_inside_worktree");
+    let msg = json["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("cd to"),
+        "message should name the project root to cd to; got: {}",
+        msg
+    );
+    assert!(
+        worktree_abs.exists(),
+        "worktree must still exist when guard rejects; the guard runs before cleanup"
+    );
+}
+
+/// Descendant arm: a nested subdirectory of the worktree must also
+/// trigger the guard via the prefix check (cwd starts_with worktree
+/// after canonicalization).
+#[test]
+fn complete_finalize_rejects_cwd_in_nested_subdir_of_worktree() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = make_repo_fixture(&parent);
+    let state_path = write_state_file(&repo, BRANCH, true);
+    let worktree_abs = repo.join(".worktrees").join("test-feature");
+    let nested = worktree_abs.join("nested");
+    fs::create_dir_all(&nested).unwrap();
+    let worktree_canon = worktree_abs.canonicalize().unwrap();
+    let nested_canon = nested.canonicalize().unwrap();
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.args([
+        "complete-finalize",
+        "--pr",
+        "1",
+        "--state-file",
+        state_path.to_string_lossy().as_ref(),
+        "--branch",
+        BRANCH,
+        "--worktree",
+        worktree_canon.to_string_lossy().as_ref(),
+    ])
+    .current_dir(&nested_canon)
+    .env_remove("FLOW_CI_RUNNING");
+    let output = cmd.output().expect("spawn flow-rs");
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let json = last_json_line(&stdout);
+    assert_eq!(json["status"], "error");
+    assert_eq!(json["reason"], "cwd_inside_worktree");
+}
+
+/// Pass-through arm: cwd at the project root (which is NOT inside
+/// the worktree) must NOT trigger the guard. Downstream errors are
+/// acceptable; the test only asserts the guard's reason string is
+/// absent so the binary proceeded past the guard.
+#[test]
+fn complete_finalize_proceeds_when_cwd_is_project_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = make_repo_fixture(&parent);
+    let state_path = write_state_file(&repo, BRANCH, true);
+    let worktree_abs = repo.join(".worktrees").join("test-feature");
+    fs::create_dir_all(&worktree_abs).unwrap();
+    let worktree_canon = worktree_abs.canonicalize().unwrap();
+    let flow_bin = parent.join("bin-flow-stub").join("flow");
+    write_success_flow_stub(&flow_bin);
+    let stubs = path_stub_dir(&parent);
+
+    let (code, stdout, _) = run_complete_finalize(
+        &repo,
+        "1",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        worktree_canon.to_string_lossy().as_ref(),
+        false,
+        Some(&flow_bin),
+        Some(&stubs),
+    );
+
+    assert!(
+        !stdout.contains("\"reason\":\"cwd_inside_worktree\""),
+        "guard must not false-positive when cwd is the project root; stdout={}",
+        stdout
+    );
+    let _ = code;
+}
+
 #[test]
 fn finalize_result_includes_empty_banner_and_issues_links_on_bare_state() {
     // The state file omits slack thread and has no prompt → various

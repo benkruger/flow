@@ -555,8 +555,13 @@ privileges.
 
 ### Step 6 — Finalize: post-merge + cleanup
 
-Navigate to the project root before finalize — the worktree is about
-to be removed:
+The next step removes the worktree. Navigate to the project root first
+so the shell does not end up stranded inside a deleted directory.
+`complete-finalize` self-gates against this — when its canonicalized
+cwd equals or sits beneath the canonicalized `--worktree`, it returns
+`{"status":"error","reason":"cwd_inside_worktree"}` before any side
+effect, so a missed `cd` produces a clean error rather than shell
+corruption. Run the `cd` anyway — it is the simpler path:
 
 ```bash
 cd <project_root>

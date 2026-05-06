@@ -542,6 +542,72 @@ carry a named sibling list. When you add a new member to either
 family, update both this section and any plan prose that references
 the family by its universal noun so the named list stays in sync.
 
+## Cwd-Inside-Destructive-Path Guard
+
+`cwd_scope::enforce` (above) protects against cwd DRIFTING away from
+the worktree subdirectory the flow expects. The complementary risk
+runs in the opposite direction: a subcommand whose execution removes
+the caller's cwd as part of its work. If the caller's shell sits
+inside the path about to be deleted, a successful run leaves the
+shell in a nonexistent directory and every subsequent command emits
+`getcwd: cannot access parent directories`.
+
+The canonical example is `bin/flow complete-finalize`, which removes
+the worktree as part of cleanup. Its `run_impl` self-gates with a
+canonicalize-and-compare check at the very top of the function,
+before any side effect:
+
+```rust
+if let (Ok(cwd_canon), Ok(worktree_canon)) = (
+    std::env::current_dir().and_then(|p| p.canonicalize()),
+    Path::new(&args.worktree).canonicalize(),
+) {
+    if cwd_canon == worktree_canon || cwd_canon.starts_with(&worktree_canon) {
+        let root = project_root();
+        return json!({
+            "status": "error",
+            "reason": "cwd_inside_worktree",
+            "message": format!(
+                "cd to {} before running complete-finalize",
+                root.display()
+            ),
+        });
+    }
+}
+```
+
+Three properties matter:
+
+- **Canonicalize before comparing.** On macOS, `tempfile::tempdir()`
+  hides under `/private/var/...` symlinks; `git worktree list`
+  reports the symlinked form; `current_dir()` resolves through the
+  symlink. Without canonicalization on both sides the comparison
+  silently fails to match.
+- **Equality OR prefix.** A cwd nested inside the worktree
+  (`<worktree>/<sub>/...`) must trigger the gate too. The
+  `cwd_canon.starts_with(&worktree_canon)` check covers descendants;
+  the `==` check covers the exact-root case (some platforms strip
+  trailing separators that would otherwise break `starts_with`).
+- **Skip on canonicalize error, do not panic.** When either path
+  can't be canonicalized (worktree path doesn't yet exist, cwd
+  vanished mid-call), the guard falls through and lets downstream
+  steps surface a more specific error. The guard's job is to catch
+  the common case cleanly, not to be the universal error path.
+
+The error envelope uses the same `(status, reason, message)` shape
+as `cwd_scope::enforce` (`reason="cwd_drift"` there,
+`reason="cwd_inside_worktree"` here). The exit code stays at 0 per
+the "Exit code convention for business errors" note above —
+the JSON `status` field is the actual signal callers parse.
+
+When adding a new subcommand whose execution path removes the
+caller's cwd (e.g. a future `flow worktree purge` or any helper
+that calls `git worktree remove` against a runtime-supplied path),
+plant the same guard at the top of its `run_impl` before any side
+effect runs. The pair to `cwd_scope::enforce` covers both directions
+of cwd hazard: drift away from the expected directory, and
+self-deletion of the current directory.
+
 ## Local Doc Comments
 
 Any non-obvious design decision (custom formatters, shared constants,
