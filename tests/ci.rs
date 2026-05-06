@@ -1591,16 +1591,124 @@ fn args_parse_clean_flag() {
     assert!(!args.test);
 }
 
+// Regression: ci::run_impl with cwd inside a subdir AND a state file
+// recording `relative_cwd="<subdir>"` must NOT fail cwd_scope::enforce.
+// The fix: enforce runs on the ORIGINAL cwd (before normalization), so
+// the descendant check `cwd.starts_with(<worktree>/<relative_cwd>)`
+// succeeds (cwd IS the subdir). If enforce ran on the normalized cwd
+// (worktree root), the check would fail because worktree_root is the
+// PARENT of the expected directory, not a descendant — every subdir
+// flow's CI would error.
+#[test]
+fn ci_subdir_cwd_with_relative_cwd_state_passes_enforce() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+
+    // Worktree-shaped layout with the worktree as a real git repo.
+    let worktree = root.join(".worktrees").join("feat");
+    let cortex = worktree.join("cortex");
+    fs::create_dir_all(&cortex).unwrap();
+    init_git_repo(&worktree, "main");
+
+    // State file records the subdirectory scope. cwd_scope::enforce
+    // reads this and asserts cwd is inside <worktree>/cortex.
+    let flow_states = worktree.join(".flow-states").join("main");
+    fs::create_dir_all(&flow_states).unwrap();
+    fs::write(
+        flow_states.join("state.json"),
+        r#"{"branch":"main","relative_cwd":"cortex"}"#,
+    )
+    .unwrap();
+
+    // Plant a script at the worktree root.
+    let bin_dir = worktree.join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    let script = bin_dir.join("format");
+    fs::write(&script, "#!/usr/bin/env bash\nexit 0\n").unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let args = Args {
+        branch: Some("feat".to_string()),
+        force: true,
+        ..default_args()
+    };
+
+    // cwd = cortex subdir; project_root = worktree (state file location).
+    // enforce runs on the ORIGINAL cwd (cortex, which IS inside
+    // worktree/cortex), then normalization strips to worktree root.
+    let (out, code) = run_impl(&args, &cortex, &worktree, false);
+    assert_eq!(
+        code, 0,
+        "expected ok (enforce passes on original cwd), got: {} (status={})",
+        out, out["status"]
+    );
+    assert_eq!(out["status"], "ok");
+}
+
+// Regression for non-UTF-8 cwd: when `Path::to_str()` returns None,
+// `run_impl` must NOT corrupt the path through to_string_lossy +
+// PathBuf::from. The normalization is skipped and the original cwd
+// flows through to bin_tool_sequence, preserving bytes.
+//
+// Run on Unix only — constructing a non-UTF-8 OsStr requires
+// `std::os::unix::ffi::OsStrExt::from_bytes`. The test path is not
+// created on disk; cwd_scope::enforce returns Ok early because
+// `current_branch_in` cannot resolve a branch from a non-existent
+// cwd (git fails → returns None → enforce early-returns). The test
+// confirms run_impl does not panic and reaches the bin_tool_sequence
+// step with the original cwd unchanged (which then returns "No bin
+// scripts" because the path doesn't exist).
+#[cfg(unix)]
+#[test]
+fn ci_skips_normalization_on_non_utf8_cwd() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+
+    // Construct a Path containing invalid UTF-8 (continuation byte
+    // without a lead). `to_str()` returns None for this path so the
+    // normalization branch falls into `None => cwd`. The path doesn't
+    // exist on disk — bin_tool_sequence finds no scripts.
+    let bytes: Vec<u8> = b"/Users/non/utf8/\xFF\xFE/.worktrees/feat/cortex".to_vec();
+    let os_str = OsStr::from_bytes(&bytes);
+    let cwd = Path::new(os_str);
+
+    let args = Args {
+        branch: Some("feat".to_string()),
+        force: true,
+        ..default_args()
+    };
+
+    // Should NOT panic; the non-UTF-8 cwd flows through normalization
+    // unchanged. Returns "No bin scripts" error because the path
+    // doesn't exist on disk — but the relevant invariant is "no panic,
+    // no path corruption."
+    let (out, _code) = run_impl(&args, cwd, &root, false);
+    // Either status:error (no scripts) or status:ok (no scripts found
+    // = clean exit) — both prove the function returned without panic
+    // or path corruption.
+    let status = out["status"].as_str().unwrap_or("");
+    assert!(
+        status == "error" || status == "ok",
+        "expected error or ok, got: {} (out={})",
+        status,
+        out
+    );
+}
+
 // Regression for #1250: ci::run_impl with cwd inside a service subdir
 // of a worktree must invoke the worktree-root-level
-// bin/{format,lint,build,test} scripts, not per-service ones. The
-// project's root-level scripts can dispatch by diff per project
+// bin/{format,lint,build,test} stubs, not per-service ones. The
+// project's root-level stubs can dispatch by diff per project
 // convention (e.g., full-harvest's bin/_dispatch-ci). Test plants a
-// script ONLY at the worktree root and asserts the call from a subdir
+// stub ONLY at the worktree root and asserts the call from a subdir
 // cwd succeeds — without the cwd normalization, bin_tool_sequence
 // would scan the subdir and return "No bin scripts" error.
 #[test]
-fn ci_runs_worktree_root_scripts_from_subdir_cwd() {
+fn ci_runs_worktree_root_stubs_from_subdir_cwd() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
 

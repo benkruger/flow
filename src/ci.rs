@@ -746,26 +746,41 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
         );
     }
 
+    // Enforce cwd-drift on the ORIGINAL cwd, not a normalized one.
+    // `cwd_scope::enforce` reads `relative_cwd` from the state file
+    // and asserts cwd is inside `<worktree_root>/<relative_cwd>` —
+    // running it on a normalized worktree-root cwd would fail the
+    // descendant check for any subdir-scoped flow (relative_cwd is
+    // a non-empty suffix; worktree_root.starts_with(worktree_root +
+    // suffix) is false).
+    if let Err(msg) = crate::cwd_scope::enforce(cwd, root) {
+        return (json!({"status": "error", "message": msg}), 1);
+    }
+
     // Normalize cwd to the worktree root so monorepo-subdir flows
     // invoke the project's root-level `bin/{format,lint,build,test}`
     // scripts (which can dispatch by diff per project convention).
     // For non-worktree cwds and cwds already at the worktree root,
-    // this is a no-op. All downstream consumers — `cwd_scope::enforce`,
-    // `bin_tool_sequence`, `tree_snapshot`, sentinel handling —
-    // benefit automatically.
-    let cwd_str = cwd.to_string_lossy();
+    // this is a no-op. All downstream consumers — `bin_tool_sequence`,
+    // `tree_snapshot`, sentinel handling — benefit automatically.
+    //
+    // `Path::to_str()` returns `None` for non-UTF-8 paths (Linux can
+    // contain arbitrary bytes in filenames). In that case, skip the
+    // normalization and pass the original `cwd` through unchanged —
+    // roundtripping non-UTF-8 bytes through string-find + `PathBuf::from`
+    // would produce a path bytes-different from the original, breaking
+    // every downstream `Path::join`.
     let cwd_buf;
-    let cwd: &Path = match compute_worktree_root(&cwd_str) {
-        Some(root_str) if root_str.len() < cwd_str.len() => {
-            cwd_buf = PathBuf::from(root_str);
-            &cwd_buf
-        }
-        _ => cwd,
+    let cwd: &Path = match cwd.to_str() {
+        Some(cwd_str) => match compute_worktree_root(cwd_str) {
+            Some(root_str) if root_str.len() < cwd_str.len() => {
+                cwd_buf = PathBuf::from(root_str);
+                &cwd_buf
+            }
+            _ => cwd,
+        },
+        None => cwd,
     };
-
-    if let Err(msg) = crate::cwd_scope::enforce(cwd, root) {
-        return (json!({"status": "error", "message": msg}), 1);
-    }
 
     let resolved_branch = crate::git::resolve_branch_in(args.branch.as_deref(), cwd, root);
     let selected = args.selected_phase();

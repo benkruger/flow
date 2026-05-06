@@ -6,7 +6,9 @@
 
 use std::path::{Path, PathBuf};
 
-use flow_rs::flow_paths::{compute_worktree_root, FlowPaths, FlowStatesDir};
+use flow_rs::flow_paths::{
+    compute_worktree_paths, compute_worktree_root, FlowPaths, FlowStatesDir,
+};
 
 // --- FlowPaths ---
 
@@ -433,5 +435,69 @@ fn compute_worktree_root_strips_multi_subdir() {
     assert_eq!(
         compute_worktree_root("/Users/ben/code/flow/.worktrees/my-feature/packages/api"),
         Some("/Users/ben/code/flow/.worktrees/my-feature")
+    );
+}
+
+// Regression: project paths that contain `.worktrees/` as a non-marker
+// substring (no leading slash) must NOT be matched. Previous `find` /
+// first-occurrence semantics could resolve `xx.worktrees/yy` against
+// the `.worktrees/` substring; the leading-slash anchor on rfind
+// prevents this so the helper returns None for non-anchored shapes.
+#[test]
+fn compute_worktree_root_rejects_unanchored_substring_match() {
+    assert_eq!(compute_worktree_root("/foo/xx.worktrees/yy"), None);
+    assert_eq!(compute_worktree_root("/abc.worktrees/feat"), None);
+}
+
+// Regression for PM-F2: project_root path that itself contains a
+// `.worktrees/` directory before the FLOW worktree must resolve to
+// the outermost (rightmost) `/.worktrees/` boundary, not the spurious
+// match in the project_root. With first-occurrence (find) semantics,
+// the helper would truncate at the wrong boundary; rfind anchors on
+// the FLOW worktree.
+#[test]
+fn compute_worktree_root_uses_rightmost_worktrees_segment() {
+    assert_eq!(
+        compute_worktree_root("/home/dev/my.worktrees/myproject/.worktrees/feat/cortex"),
+        Some("/home/dev/my.worktrees/myproject/.worktrees/feat")
+    );
+}
+
+// --- compute_worktree_paths ---
+
+#[test]
+fn compute_worktree_paths_returns_project_and_worktree_roots() {
+    let cwd = "/Users/ben/code/flow/.worktrees/my-feature/cortex";
+    assert_eq!(
+        compute_worktree_paths(cwd),
+        Some((
+            "/Users/ben/code/flow",
+            "/Users/ben/code/flow/.worktrees/my-feature"
+        ))
+    );
+}
+
+#[test]
+fn compute_worktree_paths_returns_none_for_unanchored_substring() {
+    assert_eq!(compute_worktree_paths("/foo/xx.worktrees/yy"), None);
+}
+
+#[test]
+fn compute_worktree_paths_uses_rightmost_anchor() {
+    let cwd = "/home/dev/my.worktrees/myproject/.worktrees/feat";
+    assert_eq!(
+        compute_worktree_paths(cwd),
+        Some((
+            "/home/dev/my.worktrees/myproject",
+            "/home/dev/my.worktrees/myproject/.worktrees/feat"
+        ))
+    );
+}
+
+#[test]
+fn compute_worktree_paths_returns_none_when_no_branch_segment() {
+    assert_eq!(
+        compute_worktree_paths("/Users/ben/code/flow/.worktrees/"),
+        None
     );
 }

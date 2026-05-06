@@ -21,7 +21,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::read_hook_input;
-use crate::flow_paths::FlowStatesDir;
+use crate::flow_paths::{compute_worktree_paths, FlowStatesDir};
 
 const WORKTREE_MARKER: &str = ".worktrees/";
 
@@ -246,17 +246,23 @@ fn sanitize_canonical_suffix(suffix: &str) -> String {
 /// Validate that `file_path` targets the worktree, not the main repo.
 ///
 /// Returns `(allowed, message)`.
+///
+/// The project_root and worktree_root come from `compute_worktree_paths`
+/// — a single shared computation so this hook and `ci::run_impl` agree
+/// on the worktree boundary. The helper handles the rightmost-occurrence
+/// invariant (a project path containing `.worktrees/` does not produce a
+/// false match) and the empty-branch edge case (cwd ending exactly in
+/// `.worktrees/` returns `None` — treat as "not in a worktree" and
+/// allow). See `compute_worktree_paths` doc for the full branch table.
 pub fn validate(file_path: &str, cwd: &str) -> (bool, String) {
     if file_path.is_empty() {
         return (true, String::new());
     }
 
-    let marker_pos = match cwd.find(WORKTREE_MARKER) {
-        Some(pos) => pos,
+    let (project_root, worktree_root) = match compute_worktree_paths(cwd) {
+        Some(pair) => pair,
         None => return (true, String::new()), // not in a worktree
     };
-
-    let project_root = cwd[..marker_pos].trim_end_matches('/');
 
     // Paths outside the project are always fine (~/.claude, /tmp, etc.)
     let prefix = format!("{}/", project_root);
@@ -280,19 +286,6 @@ pub fn validate(file_path: &str, cwd: &str) -> (bool, String) {
             ),
         );
     }
-
-    // Compute the worktree root from cwd. cwd may point at a service
-    // subdir of the worktree (e.g., `<worktree>/cortex/`); the
-    // worktree-prefix check below must use the worktree boundary —
-    // the common ancestor of every file the worktree owns — not the
-    // agent's cwd. The branch segment is whatever sits between the
-    // marker and the next slash; if there's no slash, cwd is the
-    // worktree root itself with no subdirectory or trailing slash.
-    let after_marker = marker_pos + WORKTREE_MARKER.len();
-    let worktree_root = match cwd[after_marker..].find('/') {
-        Some(slash) => &cwd[..after_marker + slash],
-        None => cwd,
-    };
 
     // Paths inside the worktree are fine
     let worktree_prefix = format!("{}/", worktree_root);
