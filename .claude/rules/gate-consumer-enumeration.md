@@ -85,9 +85,9 @@ For every new error reason:
 
 1. **Grep for callers of the subcommand.** Find every `bin/flow
    <name>` invocation in `skills/`, `.claude/skills/`,
-   `hooks/`, `agents/`, and `src/`. Each callsite is a row in
-   the table.
-2. **For each callsite, classify the consumer's parse.** Read
+   `hooks/`, `agents/`, and `src/`. The audit table has one row
+   per callsite.
+2. **Classify each consumer's parse.** Read
    the surrounding 5-10 lines to see which JSON fields the
    consumer reads. A consumer that captures `$(bin/flow ...)`
    into a variable and uses only `formatted_time` from it is
