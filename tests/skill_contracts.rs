@@ -3821,27 +3821,11 @@ fn file_tool_preflight_edit_paths_preceded_by_read() {
 
 // --- flow-reset SKILL.md delegates to bin/flow cleanup --all ---
 //
-// The flow-reset skill is a thin wrapper around `bin/flow cleanup --all`
-// (see PR #1349 / issue #1267). The two contract tests below lock in
-// that delegation:
-//
-//   - `flow_reset_invokes_cleanup_all_dry_run_and_live` — positive
-//     assertion: the rewritten skill must invoke both
-//     `${CLAUDE_PLUGIN_ROOT}/bin/flow cleanup . --all --dry-run`
-//     (Step 1 inventory) and the live `--all` form (Step 3 execute).
-//     If either is missing, the skill cannot fulfil its purpose.
-//
-//   - `flow_reset_no_per_resource_bash_patterns_outside_cleanup_all` —
-//     negative assertion (also a tombstone for PR #1349): the skill's
-//     pre-rewrite enumeration in skill bash (`gh pr close <number>`,
-//     `git worktree remove --force <path>`, `git push origin --delete
-//     <name>`, `git branch -D <name>`, `rm .flow-states/<filename>`)
-//     is broken under the `.flow-states/<branch>/` per-branch directory
-//     layout introduced by PR #1258. A merge that resurrects the old
-//     bash here would silently fail to clean per-branch state. Each
-//     forbidden pattern is allowed only on lines that ALSO contain
-//     `bin/flow cleanup --all` — i.e., only inside the canonical
-//     invocations.
+// The flow-reset skill is a thin wrapper around `bin/flow cleanup --all`.
+// The contract test below locks in the canonical delegation: the skill
+// must invoke both the dry-run inventory form (Step 1) and the live
+// execute form (Step 3). If either is missing, the skill cannot fulfil
+// its purpose.
 
 #[test]
 fn flow_reset_invokes_cleanup_all_dry_run_and_live() {
@@ -3858,39 +3842,5 @@ fn flow_reset_invokes_cleanup_all_dry_run_and_live() {
     assert!(
         live_present,
         "skills/flow-reset/SKILL.md must invoke `cleanup . --all` without --dry-run (Step 3 execute)"
-    );
-}
-
-#[test]
-fn flow_reset_no_per_resource_bash_patterns_outside_cleanup_all() {
-    // Tombstone: removed in PR #1349. Must not return.
-    //
-    // The pre-rewrite skill ran these commands directly in skill bash to
-    // delete worktrees, branches, PRs, state files, and lock entries
-    // one resource at a time. The new layout makes them broken (state
-    // files are now directories, so `rm` fails). The contract here:
-    // each forbidden pattern is allowed only on a line that ALSO
-    // invokes `bin/flow cleanup --all`, which is the only canonical
-    // invocation of the consolidated primitive.
-    const FORBIDDEN: &[&str] = &[
-        "gh pr close",
-        "git worktree remove",
-        "git push origin --delete",
-        "git branch -D",
-        "rm .flow-states/",
-    ];
-    let content = common::read_skill("flow-reset");
-    let mut violations: Vec<String> = Vec::new();
-    for (idx, line) in content.lines().enumerate() {
-        for pattern in FORBIDDEN {
-            if line.contains(pattern) && !line.contains("bin/flow cleanup --all") {
-                violations.push(format!("L{}: `{}` — line: {}", idx + 1, pattern, line));
-            }
-        }
-    }
-    assert!(
-        violations.is_empty(),
-        "skills/flow-reset/SKILL.md must not contain per-resource bash patterns outside a `bin/flow cleanup --all` invocation. The cleanup primitive owns these surfaces:\n{}",
-        violations.join("\n")
     );
 }

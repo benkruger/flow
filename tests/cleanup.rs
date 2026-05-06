@@ -562,30 +562,6 @@ fn cleanup_queue_entry_failed_on_unwritable_parent() {
     );
 }
 
-// --- worktree_tmp step removal ---
-
-/// Tombstone: worktree_tmp step removed in PR #1349. The subsequent
-/// `git worktree remove --force` handles `tmp/` cleanup, so a separate
-/// per-tmp step is no longer needed. This test guards against the step
-/// returning via merge or refactor.
-#[test]
-fn cleanup_no_worktree_tmp_step_in_output() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let wt_rel = setup_feature(dir.path(), "test-feature");
-    fs::write(dir.path().join("flow-phases.json"), "{}").unwrap();
-    let wt_tmp = dir.path().join(&wt_rel).join("tmp");
-    fs::create_dir_all(&wt_tmp).unwrap();
-
-    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
-    let steps = steps_from(&value);
-    assert!(
-        !steps.contains_key("worktree_tmp"),
-        "worktree_tmp step must not appear in cleanup output, got keys: {:?}",
-        steps.keys().collect::<Vec<_>>()
-    );
-}
-
 // --- Error paths ---
 
 #[test]

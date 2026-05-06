@@ -582,7 +582,18 @@ artifact files. Sections with missing data are omitted automatically.
 ${CLAUDE_PLUGIN_ROOT}/bin/flow complete-finalize --pr <pr_number> --state-file <project_root>/.flow-states/<branch>/state.json --branch <branch> --worktree <worktree_path> --pull
 ```
 
-Parse the JSON output. Keep `formatted_time`, `cumulative_seconds`,
+Parse the JSON output.
+
+**If `"status": "error"` and `"reason": "cwd_inside_worktree"`** —
+the self-gate fired because the `cd <project_root>` above was missed
+(or the cwd drifted back into the worktree). The worktree was NOT
+removed. Re-run the `cd <project_root>` command above and re-invoke
+`complete-finalize` once. If the second invocation also returns
+`cwd_inside_worktree`, stop and report the error to the user — the
+project root path is unresolvable in this session and manual
+intervention is needed.
+
+**On success** — keep `formatted_time`, `cumulative_seconds`,
 `summary`, `issues_links`, and `banner_line` for the Done banner.
 
 The `cleanup` field contains the results of Step 7 (cleanup operations):

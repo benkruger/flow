@@ -431,7 +431,9 @@ fn complete_finalize_rejects_cwd_inside_worktree() {
         worktree_canon.to_string_lossy().as_ref(),
     ])
     .current_dir(&worktree_canon)
-    .env_remove("FLOW_CI_RUNNING");
+    .env_remove("FLOW_CI_RUNNING")
+    .env("GH_TOKEN", "invalid")
+    .env("HOME", &parent);
     let output = cmd.output().expect("spawn flow-rs");
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -478,7 +480,9 @@ fn complete_finalize_rejects_cwd_in_nested_subdir_of_worktree() {
         worktree_canon.to_string_lossy().as_ref(),
     ])
     .current_dir(&nested_canon)
-    .env_remove("FLOW_CI_RUNNING");
+    .env_remove("FLOW_CI_RUNNING")
+    .env("GH_TOKEN", "invalid")
+    .env("HOME", &parent);
     let output = cmd.output().expect("spawn flow-rs");
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -503,24 +507,38 @@ fn complete_finalize_proceeds_when_cwd_is_project_root() {
     let flow_bin = parent.join("bin-flow-stub").join("flow");
     write_success_flow_stub(&flow_bin);
     let stubs = path_stub_dir(&parent);
-
-    let (code, stdout, _) = run_complete_finalize(
-        &repo,
-        "1",
-        state_path.to_string_lossy().as_ref(),
-        BRANCH,
-        worktree_canon.to_string_lossy().as_ref(),
-        false,
-        Some(&flow_bin),
-        Some(&stubs),
+    let path_with_stubs = format!(
+        "{}:{}",
+        stubs.display(),
+        std::env::var("PATH").unwrap_or_default()
     );
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.args([
+        "complete-finalize",
+        "--pr",
+        "1",
+        "--state-file",
+        state_path.to_string_lossy().as_ref(),
+        "--branch",
+        BRANCH,
+        "--worktree",
+        worktree_canon.to_string_lossy().as_ref(),
+    ])
+    .current_dir(&repo)
+    .env_remove("FLOW_CI_RUNNING")
+    .env("FLOW_BIN_PATH", &flow_bin)
+    .env("PATH", &path_with_stubs)
+    .env("GH_TOKEN", "invalid")
+    .env("HOME", &parent);
+    let output = cmd.output().expect("spawn flow-rs");
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
 
     assert!(
         !stdout.contains("\"reason\":\"cwd_inside_worktree\""),
         "guard must not false-positive when cwd is the project root; stdout={}",
         stdout
     );
-    let _ = code;
 }
 
 #[test]

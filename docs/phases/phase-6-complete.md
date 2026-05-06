@@ -66,7 +66,12 @@ and returns for CI wait.
 ### 6. Finalize: post-merge + cleanup
 
 `complete-finalize` handles all post-merge work AND cleanup in a single
-best-effort call:
+best-effort call. Self-gates before any side effect: when the caller's
+canonicalized cwd equals or sits beneath the canonicalized `--worktree`
+argument, the command returns
+`{"status":"error","reason":"cwd_inside_worktree"}` instead of removing
+the worktree, so a missed `cd <project_root>` produces a clean error
+rather than stranding the shell in a deleted directory.
 
 - Phase transition complete (records timing)
 - PR body rendering (What, Artifacts, Plan, DAG Analysis, Phase
