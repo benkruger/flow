@@ -38,7 +38,7 @@ use clap::Parser;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use crate::flow_paths::FlowPaths;
+use crate::flow_paths::{compute_worktree_root, FlowPaths};
 
 /// CLI arguments for `bin/flow ci`.
 #[derive(Parser, Debug)]
@@ -745,6 +745,23 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
             0,
         );
     }
+
+    // Normalize cwd to the worktree root so monorepo-subdir flows
+    // invoke the project's root-level `bin/{format,lint,build,test}`
+    // scripts (which can dispatch by diff per project convention).
+    // For non-worktree cwds and cwds already at the worktree root,
+    // this is a no-op. All downstream consumers — `cwd_scope::enforce`,
+    // `bin_tool_sequence`, `tree_snapshot`, sentinel handling —
+    // benefit automatically.
+    let cwd_str = cwd.to_string_lossy();
+    let cwd_buf;
+    let cwd: &Path = match compute_worktree_root(&cwd_str) {
+        Some(root_str) if root_str.len() < cwd_str.len() => {
+            cwd_buf = PathBuf::from(root_str);
+            &cwd_buf
+        }
+        _ => cwd,
+    };
 
     if let Err(msg) = crate::cwd_scope::enforce(cwd, root) {
         return (json!({"status": "error", "message": msg}), 1);

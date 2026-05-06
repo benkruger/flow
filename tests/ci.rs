@@ -1590,3 +1590,49 @@ fn args_parse_clean_flag() {
     assert!(!args.force);
     assert!(!args.test);
 }
+
+// Regression for #1250: ci::run_impl with cwd inside a service subdir
+// of a worktree must invoke the worktree-root-level
+// bin/{format,lint,build,test} scripts, not per-service ones. The
+// project's root-level scripts can dispatch by diff per project
+// convention (e.g., full-harvest's bin/_dispatch-ci). Test plants a
+// script ONLY at the worktree root and asserts the call from a subdir
+// cwd succeeds — without the cwd normalization, bin_tool_sequence
+// would scan the subdir and return "No bin scripts" error.
+#[test]
+fn ci_runs_worktree_root_scripts_from_subdir_cwd() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+
+    // Worktree-shaped layout: <root>/.worktrees/feat/cortex/
+    let worktree = root.join(".worktrees").join("feat");
+    let cortex = worktree.join("cortex");
+    fs::create_dir_all(&cortex).unwrap();
+
+    // Init the worktree as a git repo so cwd_scope::enforce can resolve
+    // a branch when it walks up from cortex.
+    init_git_repo(&worktree, "main");
+
+    // Plant a script ONLY at the worktree root (not in cortex/bin).
+    write_script(
+        &worktree.join("bin").join("format"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+
+    let args = Args {
+        branch: Some("feat".to_string()),
+        force: true,
+        ..default_args()
+    };
+
+    // Pass project_root = worktree (matches start-workspace where
+    // worktree IS the project_root for cwd_scope purposes since the
+    // state file lives at <worktree>/.flow-states/<branch>/).
+    let (out, code) = run_impl(&args, &cortex, &worktree, false);
+    assert_eq!(
+        code, 0,
+        "expected ok, got: {} (status={})",
+        out, out["status"]
+    );
+    assert_eq!(out["status"], "ok");
+}

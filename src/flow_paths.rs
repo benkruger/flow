@@ -1,6 +1,7 @@
-//! Centralized construction for `.flow-states/` paths.
+//! Centralized construction for FLOW-managed paths.
 //!
-//! Two types cover the two access patterns:
+//! Two types cover the `.flow-states/` access patterns, plus a free
+//! function for `.worktrees/<branch>/` boundary computation:
 //!
 //! - `FlowStatesDir` — directory-only. Use for cross-branch operations
 //!   (discovery scans, hook prefix checks, pre-lock queue paths) that
@@ -11,6 +12,11 @@
 //!   those shapes produce malformed paths; `try_new` is the fallible
 //!   variant for callers that receive branches from git and cannot
 //!   guarantee validity.
+//! - `compute_worktree_root` — derive the worktree root from any cwd
+//!   inside the worktree. Used by the worktree-paths hook and by
+//!   `ci::run_impl` to normalize a subdir cwd back to its worktree
+//!   boundary so the worktree's owning consumers see the same path
+//!   regardless of which subdirectory the agent invoked from.
 //!
 //! `FlowPaths` also exposes `flow_states_dir()` for callers that
 //! already hold a branch-scoped instance and incidentally need the
@@ -233,4 +239,41 @@ impl FlowPaths {
     pub fn start_prompt(&self) -> PathBuf {
         self.branch_dir().join("start-prompt")
     }
+}
+
+/// Compute the worktree root from a cwd that lives somewhere inside it.
+///
+/// Returns the prefix of `cwd` ending at `<project_root>/.worktrees/<branch>`
+/// (no trailing slash) when `cwd` is anywhere underneath that path.
+/// Returns `None` when `cwd` is not inside a `.worktrees/<branch>/`
+/// subdirectory.
+///
+/// Used by the worktree-paths hook (to compute the worktree boundary
+/// independent of the agent's cwd subdirectory) and by `ci::run_impl`
+/// (to normalize cwd to the worktree root so monorepo-subdir flows
+/// invoke the project's root-level `bin/{format,lint,build,test}`
+/// scripts).
+///
+/// Branches:
+/// - cwd lacks `.worktrees/` → `None`
+/// - cwd ends with `.worktrees/` (no branch segment) → `None`
+/// - cwd at worktree root (no subdir) → `Some(cwd)` (borrows from input)
+/// - cwd at worktree root with trailing slash → `Some(<root>/.worktrees/<branch>)`
+///   (slash stripped)
+/// - cwd at any subdir under the worktree → strips every segment after
+///   the branch
+///
+/// Worktree directory names are git-branch-name-shaped via
+/// `branch_name()` sanitization at flow-start, so the first `/` after
+/// `.worktrees/` is the branch terminator.
+pub fn compute_worktree_root(cwd: &str) -> Option<&str> {
+    const WORKTREE_MARKER: &str = ".worktrees/";
+    let marker_pos = cwd.find(WORKTREE_MARKER)?;
+    let after_marker = marker_pos + WORKTREE_MARKER.len();
+    let after_worktrees = &cwd[after_marker..];
+    if after_worktrees.is_empty() {
+        return None;
+    }
+    let branch_end = after_worktrees.find('/').unwrap_or(after_worktrees.len());
+    Some(&cwd[..after_marker + branch_end])
 }

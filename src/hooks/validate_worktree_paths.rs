@@ -281,9 +281,22 @@ pub fn validate(file_path: &str, cwd: &str) -> (bool, String) {
         );
     }
 
+    // Compute the worktree root from cwd. cwd may point at a service
+    // subdir of the worktree (e.g., `<worktree>/cortex/`); the
+    // worktree-prefix check below must use the worktree boundary —
+    // the common ancestor of every file the worktree owns — not the
+    // agent's cwd. The branch segment is whatever sits between the
+    // marker and the next slash; if there's no slash, cwd is the
+    // worktree root itself with no subdirectory or trailing slash.
+    let after_marker = marker_pos + WORKTREE_MARKER.len();
+    let worktree_root = match cwd[after_marker..].find('/') {
+        Some(slash) => &cwd[..after_marker + slash],
+        None => cwd,
+    };
+
     // Paths inside the worktree are fine
-    let cwd_prefix = format!("{}/", cwd);
-    if file_path.starts_with(&cwd_prefix) || file_path == cwd {
+    let worktree_prefix = format!("{}/", worktree_root);
+    if file_path.starts_with(&worktree_prefix) || file_path == worktree_root {
         return (true, String::new());
     }
 
@@ -296,13 +309,13 @@ pub fn validate(file_path: &str, cwd: &str) -> (bool, String) {
 
     // Block: path targets main repo from inside a worktree
     let relative = &file_path[project_root.len() + 1..];
-    let corrected = format!("{}/{}", cwd, relative);
+    let corrected = format!("{}/{}", worktree_root, relative);
 
     (
         false,
         format!(
             "BLOCKED: You are in worktree {}. Use {} instead of {}",
-            cwd, corrected, file_path
+            worktree_root, corrected, file_path
         ),
     )
 }

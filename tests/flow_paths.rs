@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use flow_rs::flow_paths::{FlowPaths, FlowStatesDir};
+use flow_rs::flow_paths::{compute_worktree_root, FlowPaths, FlowStatesDir};
 
 // --- FlowPaths ---
 
@@ -388,4 +388,50 @@ fn flow_states_dir_debug_format_contains_path() {
     let d = FlowStatesDir::new("/tmp/project");
     let dbg = format!("{:?}", d);
     assert!(dbg.contains("flow-states"));
+}
+
+// --- compute_worktree_root ---
+
+#[test]
+fn compute_worktree_root_returns_none_when_no_marker() {
+    assert_eq!(compute_worktree_root("/Users/ben/code/flow"), None);
+}
+
+#[test]
+fn compute_worktree_root_returns_none_when_no_branch_segment() {
+    assert_eq!(
+        compute_worktree_root("/Users/ben/code/flow/.worktrees/"),
+        None
+    );
+}
+
+#[test]
+fn compute_worktree_root_at_worktree_root_no_slash() {
+    let cwd = "/Users/ben/code/flow/.worktrees/my-feature";
+    assert_eq!(compute_worktree_root(cwd), Some(cwd));
+}
+
+#[test]
+fn compute_worktree_root_at_worktree_root_trailing_slash() {
+    let cwd = "/Users/ben/code/flow/.worktrees/my-feature/";
+    assert_eq!(
+        compute_worktree_root(cwd),
+        Some("/Users/ben/code/flow/.worktrees/my-feature")
+    );
+}
+
+#[test]
+fn compute_worktree_root_strips_single_subdir() {
+    assert_eq!(
+        compute_worktree_root("/Users/ben/code/flow/.worktrees/my-feature/synapse"),
+        Some("/Users/ben/code/flow/.worktrees/my-feature")
+    );
+}
+
+#[test]
+fn compute_worktree_root_strips_multi_subdir() {
+    assert_eq!(
+        compute_worktree_root("/Users/ben/code/flow/.worktrees/my-feature/packages/api"),
+        Some("/Users/ben/code/flow/.worktrees/my-feature")
+    );
 }
