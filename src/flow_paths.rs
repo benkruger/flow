@@ -1,6 +1,7 @@
-//! Centralized construction for `.flow-states/` paths.
+//! Centralized construction for FLOW-managed paths.
 //!
-//! Two types cover the two access patterns:
+//! Two types cover the `.flow-states/` access patterns, plus a free
+//! function for `.worktrees/<branch>/` boundary computation:
 //!
 //! - `FlowStatesDir` — directory-only. Use for cross-branch operations
 //!   (discovery scans, hook prefix checks, pre-lock queue paths) that
@@ -11,6 +12,16 @@
 //!   those shapes produce malformed paths; `try_new` is the fallible
 //!   variant for callers that receive branches from git and cannot
 //!   guarantee validity.
+//! - `compute_worktree_paths` / `compute_worktree_root` — derive the
+//!   project root and worktree root from any cwd inside the worktree.
+//!   `compute_worktree_paths` returns `Option<(project_root, worktree_root)>`
+//!   for callers (the worktree-paths hook) that need both. The thin
+//!   wrapper `compute_worktree_root` returns just the worktree root
+//!   for callers (`ci::run_impl`) that only need to normalize cwd to
+//!   the worktree boundary. Both are anchored on a leading `/` and
+//!   match the rightmost occurrence so a project path containing
+//!   `.worktrees/` as a non-marker component does not produce a false
+//!   match.
 //!
 //! `FlowPaths` also exposes `flow_states_dir()` for callers that
 //! already hold a branch-scoped instance and incidentally need the
@@ -233,4 +244,64 @@ impl FlowPaths {
     pub fn start_prompt(&self) -> PathBuf {
         self.branch_dir().join("start-prompt")
     }
+}
+
+/// Compute the project root and worktree root from a cwd that lives
+/// somewhere inside the worktree.
+///
+/// Returns `Some((project_root, worktree_root))` where:
+/// - `project_root` is the prefix of `cwd` before `/.worktrees/`
+/// - `worktree_root` is the prefix of `cwd` ending at
+///   `<project_root>/.worktrees/<branch>` (no trailing slash)
+///
+/// Returns `None` when `cwd` is not inside a `.worktrees/<branch>/`
+/// subdirectory.
+///
+/// The match is **anchored to a leading slash** (`/.worktrees/`) so
+/// substring shapes like `xx.worktrees/yy` (no leading `/`) do NOT
+/// match. The match is **rightmost-occurrence** via `rfind` so a
+/// project_root path that itself contains a `.worktrees/` directory
+/// (e.g. `/home/dev/my.worktrees/myproject/.worktrees/feat`) resolves
+/// to the FLOW worktree boundary, not the spurious match inside the
+/// project_root.
+///
+/// Used by the worktree-paths hook (to derive both project_root and
+/// worktree_root) and by `ci::run_impl` (which only needs worktree_root
+/// — see `compute_worktree_root` thin wrapper).
+///
+/// Branches:
+/// - cwd lacks `/.worktrees/` → `None`
+/// - cwd ends with `.worktrees/` (no branch segment) → `None`
+/// - cwd at worktree root (no subdir) → `Some((root, cwd))` (borrows
+///   from input)
+/// - cwd at worktree root with trailing slash → `Some((root, <root>/.worktrees/<branch>))`
+///   (slash stripped)
+/// - cwd at any subdir under the worktree → strips every segment after
+///   the branch
+///
+/// Worktree directory names are git-branch-name-shaped via
+/// `branch_name()` sanitization at flow-start, so the first `/` after
+/// `.worktrees/` is the branch terminator.
+pub fn compute_worktree_paths(cwd: &str) -> Option<(&str, &str)> {
+    const WORKTREE_ANCHOR: &str = "/.worktrees/";
+    let slash_pos = cwd.rfind(WORKTREE_ANCHOR)?;
+    let project_root = &cwd[..slash_pos];
+    let after_anchor = slash_pos + WORKTREE_ANCHOR.len();
+    let after_worktrees = &cwd[after_anchor..];
+    if after_worktrees.is_empty() {
+        return None;
+    }
+    let branch_end = after_worktrees.find('/').unwrap_or(after_worktrees.len());
+    let worktree_root = &cwd[..after_anchor + branch_end];
+    Some((project_root, worktree_root))
+}
+
+/// Compute the worktree root from a cwd that lives somewhere inside it.
+///
+/// Thin wrapper over `compute_worktree_paths` for callers that only
+/// need the worktree root (e.g. `ci::run_impl` cwd normalization).
+/// See `compute_worktree_paths` for full semantics including the
+/// leading-slash anchor and rightmost-occurrence behavior.
+pub fn compute_worktree_root(cwd: &str) -> Option<&str> {
+    compute_worktree_paths(cwd).map(|(_, worktree_root)| worktree_root)
 }

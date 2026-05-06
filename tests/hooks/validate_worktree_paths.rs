@@ -90,6 +90,79 @@ fn test_allows_worktree_root_path_exactly() {
     assert!(allowed);
 }
 
+// Regression for #1269: cwd in a service subdir of the worktree;
+// file_path at the worktree root must be allowed.
+#[test]
+fn validate_allows_worktree_root_path_from_subdir_cwd() {
+    let cwd = "/Users/ben/code/flow/.worktrees/my-feature/synapse";
+    let file_path = "/Users/ben/code/flow/.worktrees/my-feature/CLAUDE.md";
+    let (allowed, msg) = validate(file_path, cwd);
+    assert!(allowed);
+    assert!(msg.is_empty());
+}
+
+// Regression for #1260: cwd in a subdir, file_path under .claude/rules/
+// must be allowed.
+#[test]
+fn validate_allows_claude_rules_path_from_subdir_cwd() {
+    let cwd = "/Users/ben/code/flow/.worktrees/my-feature/cortex";
+    let file_path = "/Users/ben/code/flow/.worktrees/my-feature/.claude/rules/testing-gotchas.md";
+    let (allowed, _) = validate(file_path, cwd);
+    assert!(allowed);
+}
+
+// Regression for #1291 / #1249: redirect message must name the worktree
+// root, never produce a doubly-nested path.
+#[test]
+fn validate_redirect_uses_worktree_root_not_cwd_subdir() {
+    let cwd = "/Users/ben/code/flow/.worktrees/my-feature/synapse";
+    let file_path = "/Users/ben/code/flow/lib/foo.py";
+    let (allowed, msg) = validate(file_path, cwd);
+    assert!(!allowed);
+    assert!(msg.contains("/Users/ben/code/flow/.worktrees/my-feature/lib/foo.py"));
+    assert!(!msg.contains("/synapse/.worktrees/"));
+}
+
+// Regression: multi-level subdir cwd produces worktree-root-prefixed
+// redirect, exercises Branch F of compute_worktree_root.
+#[test]
+fn validate_redirect_uses_worktree_root_multi_level_subdir() {
+    let cwd = "/Users/ben/code/flow/.worktrees/my-feature/packages/api";
+    let file_path = "/Users/ben/code/flow/lib/foo.py";
+    let (_, msg) = validate(file_path, cwd);
+    assert!(msg.contains("/Users/ben/code/flow/.worktrees/my-feature/lib/foo.py"));
+    assert!(!msg.contains("/packages/api/.worktrees/"));
+}
+
+// Regression: when cwd ends exactly in `.worktrees/` (no branch
+// segment), the hook treats it as "not in a worktree" and allows the
+// file_path. Previously, an inline reimplementation in the hook
+// produced a malformed redirect containing `//` (e.g.,
+// "Use /proj/.worktrees//lib/foo.py"). The shared helper returns
+// None for this shape; the hook now follows.
+#[test]
+fn validate_allows_when_cwd_ends_in_marker_no_branch() {
+    let cwd = "/proj/.worktrees/";
+    let file_path = "/proj/lib/foo.py";
+    let (allowed, msg) = validate(file_path, cwd);
+    assert!(allowed);
+    assert!(msg.is_empty());
+}
+
+// Regression for the rightmost-occurrence anchor: when cwd is inside
+// a worktree whose project_root path contains `.worktrees/` as a
+// non-marker directory component, the hook resolves the FLOW worktree
+// boundary at the deepest `/.worktrees/` segment, not the spurious
+// project-root match.
+#[test]
+fn validate_uses_rightmost_worktrees_segment_in_redirect() {
+    let cwd = "/home/dev/my.worktrees/proj/.worktrees/feat/cortex";
+    let file_path = "/home/dev/my.worktrees/proj/lib/foo.py";
+    let (allowed, msg) = validate(file_path, cwd);
+    assert!(!allowed);
+    assert!(msg.contains("/home/dev/my.worktrees/proj/.worktrees/feat/lib/foo.py"));
+}
+
 // --- get_file_path tests ---
 
 #[test]

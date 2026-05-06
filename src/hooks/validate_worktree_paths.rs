@@ -21,7 +21,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::read_hook_input;
-use crate::flow_paths::FlowStatesDir;
+use crate::flow_paths::{compute_worktree_paths, FlowStatesDir};
 
 const WORKTREE_MARKER: &str = ".worktrees/";
 
@@ -246,17 +246,23 @@ fn sanitize_canonical_suffix(suffix: &str) -> String {
 /// Validate that `file_path` targets the worktree, not the main repo.
 ///
 /// Returns `(allowed, message)`.
+///
+/// The project_root and worktree_root come from `compute_worktree_paths`
+/// — a single shared computation so this hook and `ci::run_impl` agree
+/// on the worktree boundary. The helper handles the rightmost-occurrence
+/// invariant (a project path containing `.worktrees/` does not produce a
+/// false match) and the empty-branch edge case (cwd ending exactly in
+/// `.worktrees/` returns `None` — treat as "not in a worktree" and
+/// allow). See `compute_worktree_paths` doc for the full branch table.
 pub fn validate(file_path: &str, cwd: &str) -> (bool, String) {
     if file_path.is_empty() {
         return (true, String::new());
     }
 
-    let marker_pos = match cwd.find(WORKTREE_MARKER) {
-        Some(pos) => pos,
+    let (project_root, worktree_root) = match compute_worktree_paths(cwd) {
+        Some(pair) => pair,
         None => return (true, String::new()), // not in a worktree
     };
-
-    let project_root = cwd[..marker_pos].trim_end_matches('/');
 
     // Paths outside the project are always fine (~/.claude, /tmp, etc.)
     let prefix = format!("{}/", project_root);
@@ -282,8 +288,8 @@ pub fn validate(file_path: &str, cwd: &str) -> (bool, String) {
     }
 
     // Paths inside the worktree are fine
-    let cwd_prefix = format!("{}/", cwd);
-    if file_path.starts_with(&cwd_prefix) || file_path == cwd {
+    let worktree_prefix = format!("{}/", worktree_root);
+    if file_path.starts_with(&worktree_prefix) || file_path == worktree_root {
         return (true, String::new());
     }
 
@@ -296,13 +302,13 @@ pub fn validate(file_path: &str, cwd: &str) -> (bool, String) {
 
     // Block: path targets main repo from inside a worktree
     let relative = &file_path[project_root.len() + 1..];
-    let corrected = format!("{}/{}", cwd, relative);
+    let corrected = format!("{}/{}", worktree_root, relative);
 
     (
         false,
         format!(
             "BLOCKED: You are in worktree {}. Use {} instead of {}",
-            cwd, corrected, file_path
+            worktree_root, corrected, file_path
         ),
     )
 }

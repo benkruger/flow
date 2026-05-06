@@ -25,6 +25,19 @@
 #                                               .claude/rules/per-file-coverage-iteration.md
 #                                               "Phantom misses").
 #   bin/test --module <name>                  — per-module lib coverage (dev)
+#   bin/test --adversarial-path               — print canonical Code
+#                                               Review adversarial probe
+#                                               test path on stdout (used
+#                                               by Phase 4 to discover
+#                                               where the adversarial
+#                                               agent should write its
+#                                               probe). Path lives inside
+#                                               the project's test tree
+#                                               so cargo nextest discovers
+#                                               and executes it; worktree
+#                                               removal at Phase 6
+#                                               disposes of it as a side
+#                                               effect.
 #
 # Trailing args after `--` on `bin/flow ci --test` forward here as
 # filter expressions for nextest.
@@ -65,6 +78,20 @@ if [ "${#PASS_THROUGH[@]}" -gt 0 ]; then
   set -- "${PASS_THROUGH[@]}"
 else
   set --
+fi
+
+# --- Code Review adversarial probe path ---
+#
+# Phase 4 calls this BEFORE running the suite to learn where the
+# adversarial agent should write its probe. The path is relative to
+# the worktree root and lives inside `tests/` so cargo nextest
+# discovers and executes it via the standard integration-test glob.
+# `EXCLUDE_ENTRIES` in `src/prime_check.rs` lists the basename glob
+# (`test_adversarial_flow.*`) that prime adds to `.git/info/exclude`
+# so the throwaway probe never appears in `git status`.
+if [ "${1:-}" = "--adversarial-path" ]; then
+  echo "tests/test_adversarial_flow.rs"
+  exit 0
 fi
 
 # --- Dev-only modes (unchanged behavior) ---
