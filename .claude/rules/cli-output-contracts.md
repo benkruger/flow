@@ -2,7 +2,7 @@
 
 When a plan adds a new `bin/flow` subcommand or extends a
 `bin/<tool>` stub (`bin/test`, `bin/format`, `bin/lint`,
-`bin/build`) with a new flag whose stdout, exit code, or stderr is
+`bin/build`) with a new flag whose stdout, exit code, or stderr is <!-- cli-output-contracts: not-a-new-flag -->
 consumed by skills, agents, or other subcommands, the plan must
 specify the output contract upfront — before Code phase begins —
 not discover it during Code Review.
@@ -88,6 +88,24 @@ The plan task must name the normalization rule explicitly:
   empty stdout means the contract was violated (the script ran
   to exit 0 without producing the expected value). The caller
   must distinguish this from a configured-but-empty value.
+
+## Mechanical Enforcement
+
+`src/cli_output_contract_scanner.rs` ships a Plan-phase scanner
+shared by `bin/flow plan-check` and both `src/plan_extract.rs`
+callsites (extracted and resume paths). The scanner fires when a
+single line contains BOTH a verb-target ("new flag", "add a
+subcommand", "introduce ... flag", etc.) AND an output-kind
+keyword ("output", "stdout", "stderr", "exit code", "consumed",
+"json", "parses", "branches on"). Compliance proof is the
+four-item block above appearing within `WINDOW_NON_BLANK_LINES`
+non-blank lines forward of the trigger; the scanner reports each
+missing item via `Violation::missing_items` so the repair loop can
+name exactly which items still need to be added. The opt-out
+comment `<!-- cli-output-contracts: not-a-new-flag -->` follows
+the same walk-back grammar as the sibling scanners — the trigger
+line itself, the line directly above, or two lines above with one
+blank line between.
 
 ## How to Apply
 
