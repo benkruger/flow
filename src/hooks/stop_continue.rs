@@ -1,10 +1,17 @@
-//! Stop hook that forces continuation when `_continue_pending` is set.
+//! Stop hook composed of three predicates that may refuse a turn-end.
 //!
-//! When a phase skill sets `_continue_pending=<skill_name>` in the state
-//! file before invoking a child skill, this hook fires when the model
-//! tries to end its turn. If the flag is non-empty, the hook clears it
-//! and blocks the stop, forcing Claude to continue generating and follow
-//! the parent skill's remaining instructions.
+//! `run()` evaluates them in order:
+//!
+//! 1. `check_first_stop` — on the first Stop event of a session,
+//!    enters discussion mode (or consumes a pending continuation
+//!    with a conditional message).
+//! 2. `check_continue` — on subsequent stops, forces continuation
+//!    when `_continue_pending=<skill_name>` is set, supporting
+//!    multi-child-skill chains.
+//! 3. `check_autonomous_in_progress` — when the current phase is
+//!    in-progress AND configured `auto` AND `_continue_pending` is
+//!    empty, refuses a voluntary turn-end. Closes the
+//!    text-only-stop hole that PreToolUse hooks cannot reach.
 //!
 //! Fail-open with error reporting: any error allows the stop (exit 0,
 //! no block output), but writes a diagnostic to stderr and attempts to
@@ -519,6 +526,95 @@ pub fn format_conditional_continue_reason(skill: &str, context: Option<&str>) ->
     )
 }
 
+/// Refuse a voluntary turn-end when the current phase is in-progress,
+/// configured autonomous, and no `_continue_pending` marker is set.
+///
+/// PreToolUse hooks cannot observe a turn-end with no tool call —
+/// only a Stop hook can. When a phase is configured `auto`, the user
+/// has authorized continuous execution; allowing the model to end
+/// the turn voluntarily silently breaks that contract. This predicate
+/// converts the contract from advisory prose into a mechanical block.
+///
+/// Composed into `run()` AFTER `check_first_stop` and `check_continue`
+/// so discussion mode and multi-child-skill chains keep their
+/// semantics. Reordering would let `_continue_pending` paths get
+/// caught by the autonomous block.
+///
+/// Recognizes both skill-config shapes: bare `"auto"` string
+/// (`SkillConfig::Simple`) and `{"continue": "auto", ...}` object
+/// (`SkillConfig::Detailed`). Mirrors `validate_ask_user::validate`'s
+/// scoping precisely.
+///
+/// Fail-open on every error class: missing state file, unparseable
+/// JSON, wrong root type, missing `current_phase`. The Stop hook must
+/// never panic — a hook crash terminates the user's session.
+pub fn check_autonomous_in_progress(state_path: &Path) -> ContinueResult {
+    let no_block = || ContinueResult {
+        should_block: false,
+        skill: None,
+        context: None,
+    };
+    if !state_path.exists() {
+        return no_block();
+    }
+    // Fold read-Err and parse-Err through the same `None` arm: a chmod-000
+    // file (read-Err), a malformed JSON file (parse-Err), and a missing
+    // file (handled above) all behave identically — fail-open with no
+    // block. Collapsing into one branch keeps the surface testable
+    // through the parse-Err path without requiring a chmod fixture per
+    // `.claude/rules/reachable-is-testable.md`.
+    let state: Value = match std::fs::read_to_string(state_path)
+        .ok()
+        .and_then(|c| serde_json::from_str::<Value>(&c).ok())
+    {
+        Some(v) => v,
+        None => return no_block(),
+    };
+
+    let current_phase = state
+        .get("current_phase")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if current_phase.is_empty() {
+        return no_block();
+    }
+
+    let in_progress = state
+        .get("phases")
+        .and_then(|p| p.get(current_phase))
+        .and_then(|p| p.get("status"))
+        .and_then(|v| v.as_str())
+        == Some("in_progress");
+    if !in_progress {
+        return no_block();
+    }
+
+    let skill_entry = state.get("skills").and_then(|s| s.get(current_phase));
+    let is_auto = match skill_entry {
+        Some(v) if v.as_str() == Some("auto") => true,
+        Some(v) => v.get("continue").and_then(|c| c.as_str()) == Some("auto"),
+        None => false,
+    };
+    if !is_auto {
+        return no_block();
+    }
+
+    ContinueResult {
+        should_block: true,
+        skill: Some("autonomous-stop-refused".to_string()),
+        context: Some(format!(
+            "Autonomous mode in phase `{}`. Stop refused.\n\n\
+             Autonomous flows must not end the turn voluntarily. \
+             Continue with the next plan task. If context is exhausted, \
+             commit in-flight work at a natural boundary, then continue.\n\n\
+             If the user has expressed stop intent, route through \
+             /flow:flow-abort (to end the flow) or /flow:flow-note (to \
+             capture a correction without ending). Do not stop on text alone.",
+            current_phase
+        )),
+    }
+}
+
 /// Run the stop-continue hook (entry point).
 ///
 /// Uses `resolve_branch` for `--branch` override support. Calls
@@ -553,6 +649,15 @@ pub fn run() {
         result = check_continue(&hook_input, &state_path);
     }
 
+    // Autonomous-stop refusal: when the current phase is in-progress
+    // and configured `auto`, refuse a voluntary turn-end. Composed
+    // AFTER check_continue so multi-child-skill chains route through
+    // check_continue first; reordering would let `_continue_pending`
+    // paths get caught here.
+    if !result.should_block {
+        result = check_autonomous_in_progress(&state_path);
+    }
+
     capture_session_id(&hook_input, &state_path);
 
     // Blocked flag: CLEAR when session is continuing (blocking),
@@ -567,11 +672,14 @@ pub fn run() {
 
     if result.should_block {
         let skill_name = result.skill.as_deref().unwrap_or("");
-        // Discussion mode and discussion-with-pending both use their context
-        // directly as the reason — not the "child skill returned" framing
-        // from format_block_output, which is designed for multi-child-skill
-        // check_continue continuations.
-        let output = if skill_name == "discussion" || skill_name == "discussion-with-pending" {
+        // Discussion mode, discussion-with-pending, and autonomous-stop-refused
+        // all use their context directly as the reason — not the "child
+        // skill returned" framing from format_block_output, which is
+        // designed for multi-child-skill check_continue continuations.
+        let output = if skill_name == "discussion"
+            || skill_name == "discussion-with-pending"
+            || skill_name == "autonomous-stop-refused"
+        {
             json!({"decision": "block", "reason": result.context.as_deref().unwrap_or(DISCUSSION_BLOCK_REASON)})
         } else {
             format_block_output(skill_name, result.context.as_deref())
