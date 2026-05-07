@@ -618,33 +618,6 @@ fn exclude_entries_includes_adversarial_basenames() {
     );
 }
 
-/// `FLOW_DENY` carries the patterns that prime writes to
-/// `.claude/settings.json` `permissions.deny`. The five `find` shapes
-/// below cover the destructive-by-construction flag forms that have
-/// no benign read-only use under FLOW: `-exec`, `-execdir`, `-ok`,
-/// `-okdir`, and `-delete` invoke arbitrary commands or unlink files
-/// without confirmation. Layer 7 of `validate-pretool` consults the
-/// merged settings.deny on every Bash call, so target projects
-/// inherit these blocks at next prime.
-#[test]
-fn flow_deny_includes_find_destructive_flags() {
-    use flow_rs::prime_check::FLOW_DENY;
-    let expected = [
-        "Bash(find * -exec *)",
-        "Bash(find * -execdir *)",
-        "Bash(find * -ok *)",
-        "Bash(find * -okdir *)",
-        "Bash(find * -delete*)",
-    ];
-    for pat in &expected {
-        assert!(
-            FLOW_DENY.contains(pat),
-            "FLOW_DENY must contain {pat:?} — got {:?}",
-            FLOW_DENY
-        );
-    }
-}
-
 /// Guards that `compute_config_hash` produces the same hex output for
 /// repeated calls within a single process. If the function ever picks
 /// up a non-deterministic input (clock, env var, random nonce), this
@@ -681,7 +654,7 @@ fn compute_config_hash_uses_python_default_formatter() {
     // produced by the in-tree constants and formatter at the time the
     // test was authored. Update it together with any intentional change
     // to UNIVERSAL_ALLOW / FLOW_DENY / EXCLUDE_ENTRIES / hash format.
-    const CURRENT_CONFIG_HASH: &str = "88edad2bc7b7";
+    const CURRENT_CONFIG_HASH: &str = "a634c4685bae";
     assert_eq!(
         hash, CURRENT_CONFIG_HASH,
         "config_hash drift — PythonDefaultFormatter or input constants changed; \

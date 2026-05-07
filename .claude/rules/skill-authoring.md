@@ -79,10 +79,10 @@ sub-agents with the global `PreToolUse` hook for system-level
 enforcement. The hook (`bin/flow hook validate-pretool`) is
 registered in `hooks/hooks.json` and blocks compound commands,
 command substitution (quote-aware — operators inside single- or
-double-quoted arguments pass through), shell redirection,
-file-read commands, and `general-purpose` Agent calls during
-active FLOW phases with exit code 2, feeding helpful error
-messages back to the sub-agent so it adapts.
+double-quoted arguments pass through), shell redirection, and
+`general-purpose` Agent calls during active FLOW phases with
+exit code 2, feeding helpful error messages back to the
+sub-agent so it adapts.
 
 Never use `bypassPermissions` mode on sub-agents. Permission deny
 lists exist to prevent destructive operations. Always use the

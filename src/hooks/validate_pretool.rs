@@ -90,6 +90,47 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
         );
     }
 
+    // Layer 4: Block destructive `find` flag forms structurally.
+    // `find` with -exec, -execdir, -ok, -okdir, or -delete runs
+    // arbitrary commands or recursively unlinks files. UNIVERSAL_ALLOW
+    // permits `Bash(find *)` for read-only invocations (the safe
+    // default with no destructive flag); this layer rejects the
+    // destructive shapes regardless of `settings.json` content or
+    // `flow_active` state, so the protection holds during the
+    // pre-prime upgrade window AND outside FLOW phases. Tokenization
+    // via `split_whitespace` catches path-omitted forms like
+    // `find -exec rm /etc/passwd \;` and `find -delete` (find
+    // defaults the path to `.` when absent) that a regex pattern
+    // with a required path slot would silently pass.
+    //
+    // The check matches the literal command name `find` plus any
+    // absolute-path variant ending with `/find`. Bash-quoted
+    // (`'find'`) or escape-prefixed (`\find`) shapes are not caught
+    // here — the same gap exists for every settings-driven layer in
+    // this hook because they also tokenize on the literal command
+    // string.
+    const FIND_DESTRUCTIVE_FLAGS: &[&str] = &["-exec", "-execdir", "-ok", "-okdir", "-delete"];
+    let mut find_tokens = stripped.split_whitespace();
+    let first_token = find_tokens.next();
+    let is_find_command =
+        first_token == Some("find") || first_token.is_some_and(|t| t.ends_with("/find"));
+    if is_find_command {
+        for token in find_tokens {
+            if FIND_DESTRUCTIVE_FLAGS.contains(&token) {
+                return (
+                    false,
+                    format!(
+                        "BLOCKED: 'find' with destructive flag '{}' is forbidden. \
+                         `-exec`, `-execdir`, `-ok`, `-okdir`, and `-delete` \
+                         run arbitrary commands or unlink files. Use Glob to \
+                         discover paths and Read to inspect them.",
+                        token
+                    ),
+                );
+            }
+        }
+    }
+
     // Layer 5: Block blanket restore (git restore . wipes all changes)
     if stripped == "git restore ." {
         return (

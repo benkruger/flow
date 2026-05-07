@@ -395,71 +395,145 @@ fn test_deny_runs_before_allow() {
     assert!(msg.to_lowercase().contains("deny"));
 }
 
-// --- find -exec/-execdir/-ok/-okdir/-delete deny coverage ---
-
-/// Build a synthetic settings JSON whose `permissions.deny` list
-/// matches the five `find` patterns the FLOW_DENY constant carries.
-/// The tests below feed this JSON to `validate()` so Layer 7's
-/// regex-compilation + match path is exercised against the same
-/// shapes a primed target project would inherit from `FLOW_DENY`.
-fn find_deny_settings() -> Value {
-    json!({
-        "permissions": {
-            "allow": ["Bash(find *)"],
-            "deny": [
-                "Bash(find * -exec *)",
-                "Bash(find * -execdir *)",
-                "Bash(find * -ok *)",
-                "Bash(find * -okdir *)",
-                "Bash(find * -delete*)",
-            ]
-        }
-    })
-}
+// --- Layer 4: structural find -exec/-execdir/-ok/-okdir/-delete block ---
+//
+// Layer 4 in src/hooks/validate_pretool.rs::validate tokenizes find
+// invocations and rejects any of the destructive flag forms
+// (`-exec`, `-execdir`, `-ok`, `-okdir`, `-delete`) regardless of
+// `settings` content or `flow_active` state. The block fires for
+// both with-path forms (`find . -exec rm {} \;`) AND no-path forms
+// (`find -exec rm {} \;` — find defaults the path to `.`) because
+// tokenization is structural rather than regex-pattern-based.
+//
+// The tests below pass `None` for settings and `false` for
+// flow_active to prove the block fires independently of those
+// surfaces — closing the pre-prime upgrade-window gap and the
+// outside-FLOW-phase gap that a settings-driven deny would leave
+// open.
 
 #[test]
-fn test_deny_blocks_find_exec() {
-    let s = find_deny_settings();
-    let (allowed, msg) = validate("find . -name x -exec rm {} \\;", Some(&s), true);
+fn test_blocks_find_exec_with_path() {
+    let (allowed, msg) = validate("find . -name x -exec rm {} \\;", None, false);
     assert!(!allowed);
-    assert!(msg.to_lowercase().contains("deny"));
+    assert!(msg.contains("BLOCKED"));
     assert!(msg.contains("-exec"));
 }
 
 #[test]
-fn test_deny_blocks_find_execdir() {
-    let s = find_deny_settings();
-    let (allowed, msg) = validate("find . -execdir rm {} \\;", Some(&s), true);
+fn test_blocks_find_execdir_with_path() {
+    let (allowed, msg) = validate("find . -execdir rm {} \\;", None, false);
     assert!(!allowed);
-    assert!(msg.to_lowercase().contains("deny"));
+    assert!(msg.contains("BLOCKED"));
     assert!(msg.contains("-execdir"));
 }
 
 #[test]
-fn test_deny_blocks_find_ok() {
-    let s = find_deny_settings();
-    let (allowed, msg) = validate("find . -ok rm {} \\;", Some(&s), true);
+fn test_blocks_find_ok_with_path() {
+    let (allowed, msg) = validate("find . -ok rm {} \\;", None, false);
     assert!(!allowed);
-    assert!(msg.to_lowercase().contains("deny"));
+    assert!(msg.contains("BLOCKED"));
     assert!(msg.contains("-ok"));
 }
 
 #[test]
-fn test_deny_blocks_find_okdir() {
-    let s = find_deny_settings();
-    let (allowed, msg) = validate("find . -okdir rm {} \\;", Some(&s), true);
+fn test_blocks_find_okdir_with_path() {
+    let (allowed, msg) = validate("find . -okdir rm {} \\;", None, false);
     assert!(!allowed);
-    assert!(msg.to_lowercase().contains("deny"));
+    assert!(msg.contains("BLOCKED"));
     assert!(msg.contains("-okdir"));
 }
 
 #[test]
-fn test_deny_blocks_find_delete() {
-    let s = find_deny_settings();
-    let (allowed, msg) = validate("find . -name x -delete", Some(&s), true);
+fn test_blocks_find_delete_with_path() {
+    let (allowed, msg) = validate("find . -name x -delete", None, false);
     assert!(!allowed);
-    assert!(msg.to_lowercase().contains("deny"));
+    assert!(msg.contains("BLOCKED"));
     assert!(msg.contains("-delete"));
+}
+
+// --- Layer 4: no-path bypass shapes ---
+//
+// `find -exec rm` and `find -delete` (path defaults to `.`) are the
+// canonical destructive shapes a regex pattern requiring a non-empty
+// path slot would silently pass. Layer 4's structural tokenization
+// catches them.
+
+#[test]
+fn test_blocks_find_exec_without_path() {
+    let (allowed, msg) = validate("find -exec rm /etc/passwd \\;", None, false);
+    assert!(
+        !allowed,
+        "find -exec without path must be blocked; msg={msg:?}"
+    );
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("-exec"));
+}
+
+#[test]
+fn test_blocks_find_execdir_without_path() {
+    let (allowed, msg) = validate("find -execdir rm {} \\;", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("-execdir"));
+}
+
+#[test]
+fn test_blocks_find_ok_without_path() {
+    let (allowed, msg) = validate("find -ok rm {} \\;", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("-ok"));
+}
+
+#[test]
+fn test_blocks_find_okdir_without_path() {
+    let (allowed, msg) = validate("find -okdir rm {} \\;", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("-okdir"));
+}
+
+#[test]
+fn test_blocks_find_delete_without_path() {
+    let (allowed, msg) = validate("find -delete", None, false);
+    assert!(
+        !allowed,
+        "find -delete without path recursively unlinks cwd; must be blocked; msg={msg:?}"
+    );
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("-delete"));
+}
+
+// --- Layer 4: absolute-path /find variant ---
+
+#[test]
+fn test_blocks_absolute_path_find_exec() {
+    let (allowed, msg) = validate("/usr/bin/find . -exec rm {} \\;", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("-exec"));
+}
+
+// --- Layer 4: safe find invocations pass ---
+//
+// Read-only find shapes (no destructive flag) must NOT be blocked
+// by Layer 4 — they fall through to subsequent layers so the
+// whitelist (Layer 8) can permit them via UNIVERSAL_ALLOW's
+// `Bash(find *)` allow.
+
+#[test]
+fn test_layer4_skips_safe_find() {
+    let (allowed, msg) = validate("find . -name foo", None, false);
+    assert!(allowed, "safe find must pass Layer 4; msg={msg:?}");
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn test_layer4_skips_non_find_command() {
+    // First token isn't `find` — Layer 4 must not fire even if
+    // the command contains `-exec` as a literal arg later.
+    let (allowed, _msg) = validate("ls -la -exec", None, false);
+    assert!(allowed);
 }
 
 // --- Read-only file commands pass with active flow + standard allow list ---
