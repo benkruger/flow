@@ -1433,3 +1433,148 @@ fn subprocess_stop_hook_blocks_voluntary_stop_in_autonomous_in_progress_phase() 
         reason
     );
 }
+
+// --- check_autonomous_in_progress normalization (security-gates.md) ---
+//
+// Each test below asserts the gate still blocks under a state-file value
+// that defeats raw byte equality: trailing/leading whitespace, mixed case,
+// embedded NUL. Without normalization a hand-edited or hostile state file
+// could silently bypass the autonomous-stop gate per security-gates.md
+// "Normalize Before Comparing".
+
+fn write_state(path: &std::path::Path, status: Value, skill: Value) {
+    let state = json!({
+        "current_phase": "flow-code",
+        "phases": {"flow-code": {"status": status}},
+        "skills": {"flow-code": skill},
+    });
+    fs::write(path, serde_json::to_string(&state).unwrap()).unwrap();
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_status_has_trailing_whitespace() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    write_state(&path, json!("in_progress "), json!("auto"));
+    assert!(
+        check_autonomous_in_progress(&path).should_block,
+        "trailing-whitespace status must normalize and still block"
+    );
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_status_has_leading_whitespace() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    write_state(&path, json!(" in_progress"), json!("auto"));
+    assert!(
+        check_autonomous_in_progress(&path).should_block,
+        "leading-whitespace status must normalize and still block"
+    );
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_status_is_mixed_case() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    write_state(&path, json!("In_Progress"), json!("auto"));
+    assert!(
+        check_autonomous_in_progress(&path).should_block,
+        "mixed-case status must normalize (case-fold) and still block"
+    );
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_status_has_embedded_nul() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    write_state(&path, json!("in_progress\u{0000}"), json!("auto"));
+    assert!(
+        check_autonomous_in_progress(&path).should_block,
+        "NUL-padded status must normalize and still block"
+    );
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_simple_skill_has_trailing_whitespace() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    write_state(&path, json!("in_progress"), json!("auto "));
+    assert!(
+        check_autonomous_in_progress(&path).should_block,
+        "trailing-whitespace Simple skill must normalize and still block"
+    );
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_simple_skill_is_uppercase() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    write_state(&path, json!("in_progress"), json!("AUTO"));
+    assert!(
+        check_autonomous_in_progress(&path).should_block,
+        "uppercase Simple skill must normalize and still block"
+    );
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_simple_skill_has_embedded_nul() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    write_state(&path, json!("in_progress"), json!("auto\u{0000}"));
+    assert!(
+        check_autonomous_in_progress(&path).should_block,
+        "NUL-padded Simple skill must normalize and still block"
+    );
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_detailed_skill_continue_is_uppercase() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    write_state(&path, json!("in_progress"), json!({"continue": "AUTO"}));
+    assert!(
+        check_autonomous_in_progress(&path).should_block,
+        "uppercase Detailed-form continue must normalize and still block"
+    );
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_detailed_skill_continue_has_trailing_whitespace() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    write_state(&path, json!("in_progress"), json!({"continue": "auto "}));
+    assert!(
+        check_autonomous_in_progress(&path).should_block,
+        "trailing-whitespace Detailed-form continue must normalize and still block"
+    );
+}
+
+// --- check_autonomous_in_progress oversized state file (byte cap) ---
+
+#[test]
+fn check_autonomous_in_progress_no_block_when_state_file_exceeds_byte_cap() {
+    // Write a state file that exceeds STATE_FILE_BYTE_CAP (4 MB). The
+    // capped read truncates mid-string, the JSON parse fails, and the
+    // function fails open (no block). This proves the cap actually
+    // bounds the read — without it, the read would consume the full
+    // 5 MB and only fail at parse time after a successful unbounded
+    // allocation.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    // 5 MB padding inside a string field, wrapping a state otherwise
+    // valid for blocking. The padding pushes the file past the 4 MB cap.
+    let padding = "x".repeat(5 * 1024 * 1024);
+    let state = json!({
+        "current_phase": "flow-code",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": "auto"},
+        "padding": padding,
+    });
+    fs::write(&path, serde_json::to_string(&state).unwrap()).unwrap();
+    let result = check_autonomous_in_progress(&path);
+    assert!(
+        !result.should_block,
+        "state file exceeding byte cap must fail-open (truncated read produces malformed JSON)"
+    );
+}

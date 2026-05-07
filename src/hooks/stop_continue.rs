@@ -17,8 +17,8 @@
 //! no block output), but writes a diagnostic to stderr and attempts to
 //! log to `.flow-states/<branch>.log` for post-mortem visibility.
 
-use std::fs::OpenOptions;
-use std::io::{Read, Write};
+use std::fs::{File, OpenOptions};
+use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
@@ -526,6 +526,24 @@ pub fn format_conditional_continue_reason(skill: &str, context: Option<&str>) ->
     )
 }
 
+/// State file size cap for the direct read in
+/// `check_autonomous_in_progress`. The state file is FLOW-managed and
+/// branch-scoped, but a corrupted or hostile state file could grow
+/// without bound (account-window snapshots, findings array, log
+/// entries) and an unbounded read at every Stop event would scale
+/// O(turns × file_size). 4 MB is comfortably above the largest
+/// observed legitimate state file and bounds adversarial input.
+const STATE_FILE_BYTE_CAP: u64 = 4 * 1024 * 1024;
+
+/// Normalize a state-file string before comparing in a gate per
+/// `.claude/rules/security-gates.md` "Normalize Before Comparing":
+/// strip embedded NULs (defeat-byte-equality from truncated writes),
+/// trim whitespace (state-file padding, hand edits), and ASCII-
+/// lowercase (case-insensitive intent across `auto`/`Auto`/`AUTO`).
+fn normalize_gate_input(s: &str) -> String {
+    s.replace('\0', "").trim().to_ascii_lowercase()
+}
+
 /// Refuse a voluntary turn-end when the current phase is in-progress,
 /// configured autonomous, and no `_continue_pending` marker is set.
 ///
@@ -557,16 +575,25 @@ pub fn check_autonomous_in_progress(state_path: &Path) -> ContinueResult {
     if !state_path.exists() {
         return no_block();
     }
-    // Fold read-Err and parse-Err through the same `None` arm: a chmod-000
-    // file (read-Err), a malformed JSON file (parse-Err), and a missing
-    // file (handled above) all behave identically — fail-open with no
-    // block. Collapsing into one branch keeps the surface testable
-    // through the parse-Err path without requiring a chmod fixture per
-    // `.claude/rules/reachable-is-testable.md`.
-    let state: Value = match std::fs::read_to_string(state_path)
-        .ok()
-        .and_then(|c| serde_json::from_str::<Value>(&c).ok())
-    {
+    // Read with a byte cap per `.claude/rules/external-input-path-construction.md`
+    // — bounds the read so a corrupted or hostile state file cannot OOM the
+    // hook on a long autonomous flow where this fires at every Stop. Fold
+    // read-Err and parse-Err through the same `None` arm: a chmod-000 file,
+    // a malformed JSON file, and a missing file (handled above) all behave
+    // identically — fail-open with no block. Collapsing into one branch
+    // keeps the surface testable through the parse-Err path without
+    // requiring a chmod fixture per `.claude/rules/reachable-is-testable.md`.
+    let state: Value = match File::open(state_path).ok().and_then(|f| {
+        let mut buf = String::new();
+        // Discard the read-Err arm: any read failure (chmod-000 mid-read,
+        // transient I/O) leaves `buf` empty or partial, which then fails the
+        // JSON parse below. Funnelling both error paths through the parse-Err
+        // arm avoids an unreachable branch — see
+        // `.claude/rules/reachable-is-testable.md` "When the test resists
+        // the real production path."
+        let _ = BufReader::new(f.take(STATE_FILE_BYTE_CAP)).read_to_string(&mut buf);
+        serde_json::from_str::<Value>(&buf).ok()
+    }) {
         Some(v) => v,
         None => return no_block(),
     };
@@ -579,11 +606,16 @@ pub fn check_autonomous_in_progress(state_path: &Path) -> ContinueResult {
         return no_block();
     }
 
+    // Normalize before comparing per `.claude/rules/security-gates.md` so
+    // hand-edited padding (whitespace, NUL), case variants, and BOM-ish
+    // remnants do not silently disable the gate.
     let in_progress = state
         .get("phases")
         .and_then(|p| p.get(current_phase))
         .and_then(|p| p.get("status"))
         .and_then(|v| v.as_str())
+        .map(normalize_gate_input)
+        .as_deref()
         == Some("in_progress");
     if !in_progress {
         return no_block();
@@ -591,8 +623,14 @@ pub fn check_autonomous_in_progress(state_path: &Path) -> ContinueResult {
 
     let skill_entry = state.get("skills").and_then(|s| s.get(current_phase));
     let is_auto = match skill_entry {
-        Some(v) if v.as_str() == Some("auto") => true,
-        Some(v) => v.get("continue").and_then(|c| c.as_str()) == Some("auto"),
+        Some(v) if v.as_str().map(normalize_gate_input).as_deref() == Some("auto") => true,
+        Some(v) => {
+            v.get("continue")
+                .and_then(|c| c.as_str())
+                .map(normalize_gate_input)
+                .as_deref()
+                == Some("auto")
+        }
         None => false,
     };
     if !is_auto {
