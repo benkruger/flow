@@ -1261,24 +1261,6 @@ fn validate_pretool_compound_command_blocked_exits_2() {
 }
 
 #[test]
-fn validate_pretool_file_read_command_blocked_exits_2() {
-    let dir = tempfile::tempdir().unwrap();
-    let cwd = setup_pretool_fixture(dir.path(), "feat", &["Bash(cat *)"]);
-    let input = serde_json::to_vec(&json!({
-        "tool_input": {"command": "cat foo.txt"}
-    }))
-    .unwrap();
-    let output = run_hook_in(&cwd, "validate-pretool", &input);
-    assert_eq!(output.status.code().unwrap(), 2);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("BLOCKED") || stderr.contains("Read"),
-        "file-read command must block: {}",
-        stderr
-    );
-}
-
-#[test]
 fn validate_pretool_safe_command_allowed_exits_zero() {
     let dir = tempfile::tempdir().unwrap();
     let cwd = setup_pretool_fixture(dir.path(), "feat", &["Bash(git status)"]);

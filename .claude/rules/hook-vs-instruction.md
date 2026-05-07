@@ -47,12 +47,9 @@ insufficient:
   to the Read tool and the Grep tool.
 - **Deny-list permissions** — Layer 7 honours
   `.claude/settings.json` deny patterns ahead of allow.
-- **File-read commands** — Layer 8 blocks `cat`, `head`,
-  `tail`, `grep`, `rg`, `find`, `ls` and redirects to the
-  dedicated tools.
-- **Whitelist enforcement under an active flow** — Layer 9
+- **Whitelist enforcement under an active flow** — Layer 8
   rejects commands not present in the merged allow list.
-- **Direct commits during a flow** — Layer 10 rejects
+- **Direct commits during a flow** — Layer 9 rejects
   `git ... commit` and `bin/flow ... finalize-commit`
   invocations whose effective cwd (or any `git -C` target)
   resolves to the integration branch named by

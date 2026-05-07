@@ -105,57 +105,6 @@ fn test_blocks_or_operator() {
     assert!(msg.contains("Compound commands"));
 }
 
-// --- File-read command blocking ---
-
-#[test]
-fn test_blocks_cat() {
-    let (allowed, msg) = validate("cat lib/foo.py", None, true);
-    assert!(!allowed);
-    assert!(msg.contains("Read"));
-}
-
-#[test]
-fn test_blocks_grep() {
-    let (allowed, msg) = validate("grep -r 'pattern' lib/", None, true);
-    assert!(!allowed);
-    assert!(msg.contains("Grep"));
-}
-
-#[test]
-fn test_blocks_rg() {
-    let (allowed, msg) = validate("rg 'pattern' lib/", None, true);
-    assert!(!allowed);
-    assert!(msg.contains("Grep"));
-}
-
-#[test]
-fn test_blocks_find() {
-    let (allowed, msg) = validate("find . -name '*.py'", None, true);
-    assert!(!allowed);
-    assert!(msg.contains("Glob"));
-}
-
-#[test]
-fn test_blocks_ls() {
-    let (allowed, msg) = validate("ls -la lib/", None, true);
-    assert!(!allowed);
-    assert!(msg.contains("Glob"));
-}
-
-#[test]
-fn test_blocks_head() {
-    let (allowed, msg) = validate("head -20 lib/foo.py", None, true);
-    assert!(!allowed);
-    assert!(msg.contains("Read"));
-}
-
-#[test]
-fn test_blocks_tail() {
-    let (allowed, msg) = validate("tail -f log.txt", None, true);
-    assert!(!allowed);
-    assert!(msg.contains("Read"));
-}
-
 // --- Exec prefix ---
 
 #[test]
@@ -337,14 +286,6 @@ fn test_flow_active_false_still_blocks_compound() {
 }
 
 #[test]
-fn test_flow_active_false_still_blocks_file_read() {
-    let s = sample_settings();
-    let (allowed, msg) = validate("cat README.md", Some(&s), false);
-    assert!(!allowed);
-    assert!(msg.contains("Read"));
-}
-
-#[test]
 fn test_flow_active_false_still_blocks_deny() {
     let s = deny_settings();
     let (allowed, msg) = validate("git rebase main", Some(&s), false);
@@ -374,14 +315,6 @@ fn test_compound_blocked_before_whitelist() {
     let (allowed, msg) = validate("git status && git diff", Some(&s), true);
     assert!(!allowed);
     assert!(msg.contains("Compound commands"));
-}
-
-#[test]
-fn test_file_read_blocked_before_whitelist() {
-    let s = sample_settings();
-    let (allowed, msg) = validate("cat README.md", Some(&s), true);
-    assert!(!allowed);
-    assert!(msg.contains("Read"));
 }
 
 // --- Deny list ---
@@ -527,6 +460,101 @@ fn test_deny_blocks_find_delete() {
     assert!(!allowed);
     assert!(msg.to_lowercase().contains("deny"));
     assert!(msg.contains("-delete"));
+}
+
+// --- Read-only file commands pass with active flow + standard allow list ---
+//
+// UNIVERSAL_ALLOW carries `Bash(cat *)`, `Bash(grep *)`, `Bash(find *)`,
+// `Bash(ls *)`, `Bash(rg *)`, `Bash(head *)`, `Bash(tail *)` — so a primed
+// target project allows these read-only commands when a flow is active.
+// The synthetic settings below mirror the relevant subset of the
+// universal allow list and assert each command falls through every
+// preceding layer (compound, redirection, exec, restore, git diff,
+// deny) into the whitelist check, which then permits the call.
+
+fn read_only_allow_settings() -> Value {
+    json!({
+        "permissions": {
+            "allow": [
+                "Bash(cat *)",
+                "Bash(grep *)",
+                "Bash(find *)",
+                "Bash(ls *)",
+                "Bash(rg *)",
+                "Bash(head *)",
+                "Bash(tail *)",
+            ],
+            "deny": []
+        }
+    })
+}
+
+#[test]
+fn test_allows_cat_with_active_flow() {
+    let s = read_only_allow_settings();
+    let (allowed, msg) = validate("cat foo", Some(&s), true);
+    assert!(allowed, "cat should pass — got msg={msg:?}");
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn test_allows_head_with_active_flow() {
+    let s = read_only_allow_settings();
+    let (allowed, msg) = validate("head -n 5 foo", Some(&s), true);
+    assert!(allowed, "head -n 5 foo should pass — got msg={msg:?}");
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn test_allows_tail_with_active_flow() {
+    let s = read_only_allow_settings();
+    let (allowed, msg) = validate("tail foo", Some(&s), true);
+    assert!(allowed, "tail should pass — got msg={msg:?}");
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn test_allows_ls_bare_with_active_flow() {
+    let s = read_only_allow_settings();
+    let (allowed, msg) = validate("ls", Some(&s), true);
+    // Bare `ls` (no args) does not match `Bash(ls *)` because the
+    // glob requires at least a trailing space + char. The whitelist
+    // check rejects it. This documents the expected behavior so a
+    // future widening of the allow pattern is a deliberate decision.
+    assert!(!allowed, "bare ls should still hit whitelist rejection");
+    assert!(msg.contains("not in allow list"));
+}
+
+#[test]
+fn test_allows_ls_la_with_active_flow() {
+    let s = read_only_allow_settings();
+    let (allowed, msg) = validate("ls -la", Some(&s), true);
+    assert!(allowed, "ls -la should pass — got msg={msg:?}");
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn test_allows_grep_with_active_flow() {
+    let s = read_only_allow_settings();
+    let (allowed, msg) = validate("grep pat file", Some(&s), true);
+    assert!(allowed, "grep should pass — got msg={msg:?}");
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn test_allows_rg_with_active_flow() {
+    let s = read_only_allow_settings();
+    let (allowed, msg) = validate("rg pat", Some(&s), true);
+    assert!(allowed, "rg should pass — got msg={msg:?}");
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn test_allows_find_simple_with_active_flow() {
+    let s = read_only_allow_settings();
+    let (allowed, msg) = validate("find . -name x", Some(&s), true);
+    assert!(allowed, "find . -name x should pass — got msg={msg:?}");
+    assert!(msg.is_empty());
 }
 
 // --- Redirect blocking ---
@@ -876,15 +904,15 @@ fn run_agent_path_allowed_exits_zero() {
     assert_eq!(code, 0, "empty command outside flow must exit 0");
 }
 
-/// Covers the validate()-rejected exit-2 path: a file-read command is
-/// blocked regardless of flow-active state, so validate() returns
-/// (false, msg) and run() eprintlns the message and exits 2.
+/// Covers the validate()-rejected exit-2 path: `git restore .` is
+/// blocked at Layer 5 regardless of flow-active state, so validate()
+/// returns (false, msg) and run() eprintlns the message and exits 2.
 #[test]
 fn run_validate_rejection_exits_two() {
     let dir = tempfile::tempdir().unwrap();
-    let input = r#"{"tool_input": {"command": "cat foo.py"}}"#;
+    let input = r#"{"tool_input": {"command": "git restore ."}}"#;
     let (code, _, stderr) = run_hook_with_input(input, Some(dir.path()));
-    assert_eq!(code, 2, "cat must be blocked; stderr={stderr}");
+    assert_eq!(code, 2, "git restore . must be blocked; stderr={stderr}");
     assert!(stderr.contains("BLOCKED"));
 }
 
@@ -1310,7 +1338,7 @@ fn test_allows_ampersand_in_flag_name() {
 
 // --- commit_on_integration_branch ---
 //
-// Layer 10: block direct commit invocations when the hook's effective
+// Layer 9: block direct commit invocations when the hook's effective
 // cwd resolves to the integration branch (the value `default_branch_in`
 // returns — `main` for the test fixtures below, since no remote HEAD is
 // configured and the helper falls back to `"main"`).
@@ -1428,7 +1456,7 @@ fn t6_git_commit_amend_on_main_blocks() {
 #[test]
 fn t2_git_commit_on_feature_branch_in_worktree_allows() {
     // Fixture branch `feat-x` differs from default_branch_in's "main"
-    // fallback (no remote configured). Layer 10 does not fire.
+    // fallback (no remote configured). Layer 9 does not fire.
     let (_dir, root) = setup_repo_on_branch("feat-x");
     let input = r#"{"tool_input": {"command": "git commit -m \"x\""}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
@@ -1455,7 +1483,7 @@ fn t3_git_commit_on_feature_branch_in_main_repo_allows() {
 fn t4_git_commit_on_staging_default_repo_blocks() {
     // Configure `origin/HEAD` to `origin/staging` so default_branch_in
     // returns "staging" rather than the hardcoded fallback. The block
-    // message names the staging branch — proving Layer 10 honours the
+    // message names the staging branch — proving Layer 9 honours the
     // actual integration branch.
     let (_dir, root) = setup_repo_on_branch("staging");
     let _ = Command::new("git")
@@ -1492,7 +1520,7 @@ fn t4_git_commit_on_staging_default_repo_blocks() {
 
 #[test]
 fn t14_git_status_on_main_allows() {
-    // Layer 10 only fires on `git ... commit`. `git status` is a
+    // Layer 9 only fires on `git ... commit`. `git status` is a
     // different subcommand → is_commit_invocation returns false →
     // the hook does not check the branch.
     let (_dir, root) = setup_repo_on_branch("main");
@@ -1633,7 +1661,7 @@ fn t11_bin_flow_finalize_commit_in_worktree_allows() {
 #[test]
 fn t12_bin_flow_start_gate_on_main_allows() {
     // start-gate is a sibling bin/flow subcommand that does NOT
-    // perform a commit through Claude's Bash tool path. Layer 10
+    // perform a commit through Claude's Bash tool path. Layer 9
     // must not match it. This pins the boundary so the matcher
     // doesn't over-fire on every bin/flow invocation.
     let (_dir, root) = setup_repo_on_branch("main");
@@ -1648,7 +1676,7 @@ fn t12_bin_flow_start_gate_on_main_allows() {
 #[test]
 fn t13_bin_flow_start_workspace_on_main_allows() {
     // Sibling case: start-workspace also runs from the start lock on
-    // main and must not be blocked by Layer 10.
+    // main and must not be blocked by Layer 9.
     let (_dir, root) = setup_repo_on_branch("main");
     let input = r#"{"tool_input": {"command": "bin/flow start-workspace feat-x --branch feat-x"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
@@ -1700,7 +1728,7 @@ fn t7_git_dash_c_key_value_commit_on_main_blocks() {
 fn t8_git_dash_c_to_main_from_worktree_blocks() {
     // Adversarial: hook cwd is a feature-branch worktree, but the
     // command uses `git -C <main_repo_path>` to redirect git's
-    // effective cwd onto the integration branch. Layer 10 must
+    // effective cwd onto the integration branch. Layer 9 must
     // resolve the branch from BOTH the hook cwd AND the `-C` path
     // and block when EITHER matches the integration branch.
     let (_main_dir, main_root) = setup_repo_on_branch("main");
@@ -1793,7 +1821,7 @@ fn t24_git_dash_c_with_no_value_allows() {
     // Boundary: `git -c` with no value (or no subcommand after the
     // value) — the matcher consumes `-c` plus the next token (None
     // here), the loop exhausts without finding a subcommand, and
-    // returns Some(_) == "commit" → false. Layer 10 doesn't fire.
+    // returns Some(_) == "commit" → false. Layer 9 doesn't fire.
     // Pins the "next_git_subcommand returns None on exhaustion"
     // branch so a refactor that loses the loop-end fallback fails CI.
     let (_dir, root) = setup_repo_on_branch("main");
@@ -1812,7 +1840,7 @@ fn t25_git_dash_uppercase_c_with_no_path_allows() {
     // returns None and check_commit_on_integration only checks the
     // hook cwd (which is `main`). is_commit_invocation also returns
     // false because next_git_subcommand exhausts without finding a
-    // subcommand → Layer 10 does not fire → allow.
+    // subcommand → Layer 9 does not fire → allow.
     let (_dir, root) = setup_repo_on_branch("main");
     let input = r#"{"tool_input": {"command": "git -C"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
@@ -1868,7 +1896,7 @@ fn t27_git_dash_c_to_nonexistent_path_from_feature_branch_allows() {
 
 // --- layer_10_active_flow ---
 //
-// Layer 10 also fires when the hook's effective cwd resolves to a
+// Layer 9 also fires when the hook's effective cwd resolves to a
 // feature-branch worktree that has an active FLOW state file at
 // `.flow-states/<branch>/state.json` — the second trigger context
 // the gate covers. The fixture `setup_active_flow_worktree` builds
@@ -2041,7 +2069,7 @@ fn layer_10_blocks_git_dash_c_path_to_active_flow_worktree() {
 
 #[test]
 fn layer_10_passes_git_status_on_active_flow_worktree() {
-    // Read-only git is not a commit invocation → Layer 10 is silent.
+    // Read-only git is not a commit invocation → Layer 9 is silent.
     let (_dir, _root, cwd) = setup_active_flow_worktree("feat", true);
     let input = r#"{"tool_input": {"command": "git status"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
@@ -2078,7 +2106,7 @@ fn layer_10_passes_git_commit_on_feature_branch_without_state_file() {
     // Pre-flow editing scenario: settings.json present (so the FLOW
     // project is discoverable) but no state file at
     // .flow-states/<branch>/state.json. is_flow_active returns false
-    // → active-flow predicate returns None → Layer 10 silent.
+    // → active-flow predicate returns None → Layer 9 silent.
     let (_dir, _root, cwd) = setup_active_flow_worktree("feat", false);
     let input = r#"{"tool_input": {"command": "git commit -m \"x\""}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
@@ -2090,8 +2118,8 @@ fn layer_10_passes_git_commit_on_feature_branch_without_state_file() {
 
 /// Drives the `cwd.is_none()` branch in `validate_pretool::run()` —
 /// `env::current_dir()` returns `Err` when the cwd inode has been
-/// unlinked. The hook must fall through Layer 10 cleanly (no panic,
-/// no Layer 10 fire) and exit 0 on the allowed `git status` payload.
+/// unlinked. The hook must fall through Layer 9 cleanly (no panic,
+/// no Layer 9 fire) and exit 0 on the allowed `git status` payload.
 ///
 /// Mirrors the production-binding test for the same branch in
 /// `tests/adversarial_agent_block.rs::validate_pretool_with_stale_cwd_does_not_panic`,
@@ -2155,7 +2183,7 @@ fn layer_10_passes_git_commit_in_unrelated_git_repo() {
     // up from cwd → find_settings_and_root_from returns (None, None)
     // → match_active_flow_at returns None. Branch resolves to
     // "feat-x" via the real git subprocess (the existing fixture),
-    // so match_branch_at returns None ("feat-x" != "main"). Layer 10
+    // so match_branch_at returns None ("feat-x" != "main"). Layer 9
     // silent → allow.
     let (_dir, root) = setup_repo_on_branch("feat-x");
     let input = r#"{"tool_input": {"command": "git commit -m \"x\""}}"#;
@@ -2172,7 +2200,7 @@ fn layer_10_passes_git_commit_in_unrelated_git_repo() {
 // `bin/flow finalize-commit`. The flow-code, flow-code-review, and
 // flow-learn skills all set `_continue_pending=commit` on the state
 // file immediately before invoking /flow:flow-commit, so the field is
-// the marker Layer 10 checks. When the carve-out fires, the hook
+// the marker Layer 9 checks. When the carve-out fires, the hook
 // allows `bin/flow ... finalize-commit` (and only that shape) through
 // the active-flow gate. `git commit` is never carved out — the skill
 // never invokes raw git commit, so the marker plus a `git commit`
@@ -2212,7 +2240,7 @@ fn setup_active_flow_worktree_with_state(
 fn layer_10_carveout_allows_bin_flow_finalize_commit_when_continue_pending_is_commit() {
     // Skill choreography: flow-code (or sibling) wrote
     // _continue_pending=commit, then dispatched
-    // bin/flow finalize-commit via /flow:flow-commit. Layer 10 must
+    // bin/flow finalize-commit via /flow:flow-commit. Layer 9 must
     // pass through so CI can run inside finalize-commit and the
     // commit can land.
     let (_dir, _root, cwd) =

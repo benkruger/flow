@@ -207,9 +207,9 @@ Block-first ordering: when the current phase's `phases.<current_phase>.status ==
 
 ### Permission Invariant
 
-Every bash block in every skill must run without triggering a permission prompt. `tests/permissions.rs` enforces at test time; `bin/flow hook validate-pretool` enforces at runtime via global PreToolUse hook (compound commands, command substitution, redirection, file-read commands blocked; whitelist enforced when a flow is active; `general-purpose` sub-agents blocked during active phases).
+Every bash block in every skill must run without triggering a permission prompt. `tests/permissions.rs` enforces at test time; `bin/flow hook validate-pretool` enforces at runtime via global PreToolUse hook (compound commands, command substitution, redirection blocked; whitelist enforced when a flow is active; `general-purpose` sub-agents blocked during active phases).
 
-Layer 10 mechanically blocks direct commit invocations (`git ... commit`, `bin/flow ... finalize-commit`) when the effective cwd resolves to the integration branch OR to a feature branch with an active state file. The active-flow context carries a skill-commit carve-out: `bin/flow ... finalize-commit` (only that shape, never `git commit`) passes through when the state file has `_continue_pending == "commit"`. The integration-branch context is NOT carved out.
+Layer 9 mechanically blocks direct commit invocations (`git ... commit`, `bin/flow ... finalize-commit`) when the effective cwd resolves to the integration branch OR to a feature branch with an active state file. The active-flow context carries a skill-commit carve-out: `bin/flow ... finalize-commit` (only that shape, never `git commit`) passes through when the state file has `_continue_pending == "commit"`. The integration-branch context is NOT carved out.
 
 `validate-ask-user` blocks `AskUserQuestion` calls with exit 2 when the current phase is both in-progress AND autonomous.
 

@@ -16,9 +16,6 @@ use crate::flow_paths::FlowPaths;
 /// Marker directory name for FLOW worktrees.
 const WORKTREE_MARKER: &str = ".worktrees/";
 
-/// Commands that have dedicated tool alternatives.
-pub const FILE_READ_COMMANDS: &[&str] = &["cat", "head", "tail", "grep", "rg", "find", "ls"];
-
 /// Find `.claude/settings.json` by walking up from a starting directory.
 pub fn find_settings_and_root_from(start: &Path) -> (Option<Value>, Option<PathBuf>) {
     let mut current = start.to_path_buf();

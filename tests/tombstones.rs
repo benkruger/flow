@@ -355,3 +355,53 @@ fn test_no_weak_coverage_language_in_prose_corpus() {
 //   directory, the Commands::Qa* clap variants, and the
 //   `Bash(rm -rf *.qa-repos*)` allow-list entry. The maintainer QAs
 //   locally via --plugin-dir instead.
+
+// --- Layer 8 (file-read commands) removal ---
+//
+// The validate-pretool hook used to carry a Layer 8 block that
+// rejected cat/head/tail/grep/rg/find/ls outright via the
+// `FILE_READ_COMMANDS` constant. UNIVERSAL_ALLOW already covered the
+// same seven commands, so Layer 8 contradicted the allow list and
+// produced confusing block messages on legitimate read-only
+// invocations. The block was removed; FLOW_DENY was hardened against
+// `find -exec/-execdir/-ok/-okdir/-delete` to preserve the genuinely
+// dangerous slice. The tombstone below pairs two byte-substring
+// checks — one over the constant's definition site and one over its
+// import site — so a merge resolution that re-introduces the
+// constant fails CI regardless of which file the resurrection lands
+// in. `FILE_READ_COMMANDS` is a 19-character SHOUTY_SNAKE_CASE
+// identifier with no plausible `concat!`, `format!`, or
+// split-constant assembly that would produce the same runtime effect
+// without the literal appearing on a source line, so byte-substring
+// matching is sufficient per
+// `.claude/rules/tombstone-tests.md` "Literal tombstones — stability
+// checklist."
+
+#[test]
+fn validate_pretool_no_file_read_commands_constant() {
+    // Tombstone: removed in PR #1363. The Layer 8 file-read-command
+    // block was removed because UNIVERSAL_ALLOW already covered the
+    // same seven commands; FLOW_DENY hardened against
+    // find -exec/-delete instead. Must not return.
+    let root = common::repo_root();
+    let mod_path = root.join("src/hooks/mod.rs");
+    let pretool_path = root.join("src/hooks/validate_pretool.rs");
+
+    let mod_content = fs::read_to_string(&mod_path).expect("src/hooks/mod.rs must exist");
+    let pretool_content =
+        fs::read_to_string(&pretool_path).expect("src/hooks/validate_pretool.rs must exist");
+
+    assert!(
+        !mod_content.contains("FILE_READ_COMMANDS"),
+        "src/hooks/mod.rs must not contain FILE_READ_COMMANDS — \
+         the constant was removed alongside Layer 8 of validate-pretool. \
+         If this assertion fires, a merge resolution likely resurrected the \
+         constant. Delete it again and re-run CI."
+    );
+    assert!(
+        !pretool_content.contains("FILE_READ_COMMANDS"),
+        "src/hooks/validate_pretool.rs must not contain FILE_READ_COMMANDS — \
+         the import and Layer 8 reference were removed alongside the file-read \
+         block. UNIVERSAL_ALLOW already covers cat/head/tail/grep/rg/find/ls."
+    );
+}
