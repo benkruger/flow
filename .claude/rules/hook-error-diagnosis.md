@@ -14,6 +14,7 @@ anything.
 - `PreToolUse:Read`, `PreToolUse:Glob`, `PreToolUse:Grep` →
   `validate-worktree-paths`
 - `PreToolUse:AskUserQuestion` → `validate-ask-user`
+- `PreToolUse:Skill` → `validate-skill`
 
 ## Procedure
 

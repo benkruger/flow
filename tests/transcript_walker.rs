@@ -57,22 +57,48 @@ fn walker_returns_false_when_path_unparseable_jsonl() {
 }
 
 #[test]
-fn walker_returns_false_when_oversized() {
-    // Fixture sized just past TRANSCRIPT_BYTE_CAP with the matching
-    // `<command-name>` tag positioned beyond the cap. The reader
-    // truncates at the cap so the matching content is unreadable and
-    // the predicate returns false.
+fn walker_returns_false_when_command_falls_off_tail_cap() {
+    // Tail-read fixture: a valid user turn with the matching command
+    // is written at the file's HEAD, then > TRANSCRIPT_BYTE_CAP bytes
+    // of padding follow. `read_capped` reads the LAST cap bytes, so
+    // the head-positioned command is invisible and the walker
+    // returns false. Verifies the byte cap bounds backward visibility
+    // when the most recent content has buried older user turns far
+    // enough back that they no longer fit in the cap.
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let proj = home.join(".claude").join("projects").join("p");
     fs::create_dir_all(&proj).unwrap();
     let path = proj.join("oversized.jsonl");
+    let leading = b"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}}\n";
+    let mut content: Vec<u8> = leading.to_vec();
     let padding_size = (TRANSCRIPT_BYTE_CAP as usize) + 1024;
-    let mut content = vec![b'\n'; padding_size];
-    let trailing = "\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}}\n";
-    content.extend_from_slice(trailing.as_bytes());
+    content.extend(std::iter::repeat_n(b'\n', padding_size));
     fs::write(&path, &content).unwrap();
     assert!(!last_user_message_invokes_skill(
+        &path,
+        "flow:flow-abort",
+        home
+    ));
+}
+
+#[test]
+fn walker_finds_command_when_tail_within_cap() {
+    // Inverse of walker_returns_false_when_command_falls_off_tail_cap:
+    // padding precedes the command, then a valid user turn at the
+    // tail fits within the last TRANSCRIPT_BYTE_CAP bytes. The
+    // tail-read sees the command and the predicate returns true.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let proj = home.join(".claude").join("projects").join("p");
+    fs::create_dir_all(&proj).unwrap();
+    let path = proj.join("tail-within-cap.jsonl");
+    let padding_size = 1024usize;
+    let mut content: Vec<u8> = std::iter::repeat_n(b'\n', padding_size).collect();
+    let trailing = b"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}}\n";
+    content.extend_from_slice(trailing);
+    fs::write(&path, &content).unwrap();
+    assert!(last_user_message_invokes_skill(
         &path,
         "flow:flow-abort",
         home
@@ -393,4 +419,157 @@ fn walker_rejects_path_outside_home_prefix() {
         home
     ));
     assert!(!most_recent_skill_in_user_only_set(&stray, home));
+}
+
+// --- Adversarial regression tests ---
+//
+// Each test below locks in a fix surfaced by the Code Review
+// adversarial / pre-mortem agents. Adding the test here protects
+// against future regression.
+
+#[test]
+fn walker_rejects_path_traversal_via_dotdot_components() {
+    // `Path::starts_with(<home>/.claude/projects)` is a lexical
+    // prefix check that does NOT canonicalize `..` segments. A path
+    // like `<home>/.claude/projects/../../evil.jsonl` passes the
+    // prefix check but `File::open` resolves it OUT of the canonical
+    // root. The validator must reject any ParentDir component before
+    // the prefix check.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let evil = home.join("evil.jsonl");
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}}\n";
+    fs::write(&evil, jsonl).unwrap();
+    fs::create_dir_all(home.join(".claude").join("projects").join("p")).unwrap();
+    let traversal = home
+        .join(".claude")
+        .join("projects")
+        .join("..")
+        .join("..")
+        .join("evil.jsonl");
+    assert!(!last_user_message_invokes_skill(
+        &traversal,
+        "flow:flow-abort",
+        home
+    ));
+    assert!(!most_recent_skill_in_user_only_set(&traversal, home));
+}
+
+#[test]
+fn last_user_invokes_rejects_command_mention_in_user_prose() {
+    // A user typing "what does <command-name>/flow:flow-abort</command-name>
+    // do?" — the marker appears mid-string. The walker must require
+    // the marker at the START of the trimmed content (slash-command
+    // anchoring), not anywhere in the line.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"what does <command-name>/flow:flow-abort</command-name> do?\"}}\n";
+    let path = common::transcript_fixture(home, "p", jsonl);
+    assert!(!last_user_message_invokes_skill(
+        &path,
+        "flow:flow-abort",
+        home
+    ));
+}
+
+#[test]
+fn last_user_invokes_returns_false_when_user_turn_missing_content_field() {
+    // Most recent user turn has a `message` field but no `content`
+    // sub-field — the walker hits the user boundary and the
+    // content-extraction match arm returns false. Exercises the
+    // None branch of the content lookup.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\"}}\n";
+    let path = common::transcript_fixture(home, "p", jsonl);
+    assert!(!last_user_message_invokes_skill(
+        &path,
+        "flow:flow-abort",
+        home
+    ));
+}
+
+#[test]
+fn last_user_invokes_rejects_tool_result_wrapped_user_turn() {
+    // Claude Code wraps tool results inside user-role turns whose
+    // `content` is an array (not a string) of blocks. The
+    // assistant-generated tool_result text inside such a turn must
+    // NOT authorize a user-only skill invocation. Only string-
+    // valued user content (direct user input) qualifies as a
+    // slash-command invocation.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"tu_1\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}]}}\n";
+    let path = common::transcript_fixture(home, "p", jsonl);
+    assert!(!last_user_message_invokes_skill(
+        &path,
+        "flow:flow-abort",
+        home
+    ));
+}
+
+#[test]
+fn last_user_invokes_lowercases_skill_name_for_anchor_match() {
+    // The walker normalizes the input skill via normalize_gate_input
+    // (lowercase + trim + NUL-strip). Mixed-case input must still
+    // match a properly-typed slash command in the transcript.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}}\n";
+    let path = common::transcript_fixture(home, "p", jsonl);
+    // Mixed-case input — should match because both sides normalize.
+    assert!(last_user_message_invokes_skill(
+        &path,
+        "Flow:Flow-Abort",
+        home
+    ));
+}
+
+#[test]
+fn last_user_invokes_rejects_empty_skill_after_normalization() {
+    // A `skill` argument that is purely whitespace, NULs, or empty
+    // becomes an empty string after `normalize_gate_input`. Such a
+    // value must not authorize anything — return false.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}}\n";
+    let path = common::transcript_fixture(home, "p", jsonl);
+    assert!(!last_user_message_invokes_skill(&path, "  \0  ", home));
+    assert!(!last_user_message_invokes_skill(&path, "", home));
+}
+
+#[test]
+fn most_recent_skill_walker_finds_user_only_in_multi_skill_turn() {
+    // Assistant turn fires multiple Skill tool_use calls in the same
+    // content array — first a non-user-only skill, then a user-only
+    // one. The walker must scan ALL Skill blocks in the turn
+    // (extract_skill_invocations returns a Vec), not return on the
+    // first match. Otherwise the carve-out would miss the user-only
+    // call when it appears after a non-user-only one.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"do things\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[\
+{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-status\"}},\
+{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-abort\"}}]}}\n";
+    let path = common::transcript_fixture(home, "p", jsonl);
+    assert!(most_recent_skill_in_user_only_set(&path, home));
+}
+
+#[test]
+fn normalize_gate_input_strips_nul_trims_and_lowercases() {
+    use flow_rs::hooks::transcript_walker::normalize_gate_input;
+    assert_eq!(normalize_gate_input("flow:flow-abort"), "flow:flow-abort");
+    assert_eq!(
+        normalize_gate_input("  flow:flow-abort  "),
+        "flow:flow-abort"
+    );
+    assert_eq!(normalize_gate_input("Flow:Flow-Abort"), "flow:flow-abort");
+    assert_eq!(normalize_gate_input("flow:flow-abort\0"), "flow:flow-abort");
+    assert_eq!(
+        normalize_gate_input("\0  Flow:flow-Abort  \0"),
+        "flow:flow-abort"
+    );
+    assert_eq!(normalize_gate_input(""), "");
+    assert_eq!(normalize_gate_input("   "), "");
 }

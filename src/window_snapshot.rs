@@ -165,6 +165,18 @@ pub fn is_safe_transcript_path(path: &Path, home: &Path) -> bool {
     if !path.is_absolute() {
         return false;
     }
+    // Reject any ParentDir (`..`) component. `Path::starts_with` is a
+    // lexical component-wise prefix check that does NOT canonicalize
+    // `..` segments — `<home>/.claude/projects/../../etc/passwd`
+    // passes `starts_with(<home>/.claude/projects)` even though
+    // `File::open` resolves it to `<home>/etc/passwd`. Refusing
+    // ParentDir components closes the traversal-bypass surface
+    // without paying the canonicalize() syscall cost on every call.
+    for component in path.components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            return false;
+        }
+    }
     let expected_prefix = home.join(".claude").join("projects");
     path.starts_with(&expected_prefix)
 }

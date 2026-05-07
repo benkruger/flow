@@ -144,6 +144,80 @@ fn validate_blocks_when_user_only_skill_and_no_transcript_path() {
     assert!(msg.contains("BLOCKED"));
 }
 
+// --- Adversarial regression tests for gate normalization ---
+//
+// Each test below locks in a Code Review fix that closed a Layer 1
+// bypass — case variation, trailing whitespace, NUL padding. The
+// `normalize_gate_input` helper now strips all three before the
+// `USER_ONLY_SKILLS` membership check.
+
+#[test]
+fn validate_blocks_case_variant_user_only_skill_name() {
+    // `Flow:Flow-Abort` previously bypassed `USER_ONLY_SKILLS.contains`
+    // because the membership check was exact-string. With
+    // `normalize_gate_input`, both sides lowercase before comparison.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let tool_input = json!({"skill": "Flow:Flow-Abort"});
+    let (allowed, msg) = validate(&tool_input, None, home);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn validate_blocks_whitespace_padded_user_only_skill_name() {
+    // `flow:flow-abort ` (trailing space) previously bypassed the
+    // membership check. Normalization trims whitespace.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let tool_input = json!({"skill": "  flow:flow-abort  "});
+    let (allowed, msg) = validate(&tool_input, None, home);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn validate_blocks_nul_padded_user_only_skill_name() {
+    // `flow:flow-abort\0` previously bypassed the membership check.
+    // Normalization strips NUL bytes.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let tool_input = json!({"skill": "flow:flow-abort\0"});
+    let (allowed, msg) = validate(&tool_input, None, home);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn validate_block_message_uses_normalized_skill_name() {
+    // The block message echoes the normalized skill name so the
+    // user always sees the canonical form regardless of how the
+    // model phrased the bypass attempt.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let tool_input = json!({"skill": "  Flow:FLOW-Abort\0"});
+    let (allowed, msg) = validate(&tool_input, None, home);
+    assert!(!allowed);
+    assert!(msg.contains("`flow:flow-abort`"));
+}
+
+#[test]
+fn validate_blocks_user_prose_mention_of_command_marker() {
+    // A user message that mentions the literal
+    // `<command-name>/flow:flow-abort</command-name>` substring
+    // mid-text is NOT a slash-command invocation. The walker
+    // requires the marker at the START of the trimmed content,
+    // so this case must block.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"can you describe what <command-name>/flow:flow-abort</command-name> does?\"}}\n";
+    let path = common::transcript_fixture(home, "p", jsonl);
+    let tool_input = json!({"skill": "flow:flow-abort"});
+    let (allowed, msg) = validate(&tool_input, Some(&path), home);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
 // --- subprocess integration tests ---
 
 fn run_hook_subprocess(stdin_input: &str) -> (i32, String, String) {

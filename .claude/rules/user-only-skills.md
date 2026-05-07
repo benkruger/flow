@@ -29,39 +29,85 @@ directly.
 The four skills are protected by three independent mechanical
 gates so a single bypass does not defeat the discipline.
 
+### Layer threat mapping
+
+Each layer addresses a specific bypass surface:
+
+- **Layer 1 (`validate-skill`)** — defends against *direct model
+  invocation* of a user-only skill via the Skill tool. The hook
+  fires PreToolUse:Skill and blocks unless the most recent user-
+  role transcript turn typed the matching slash command.
+- **Layer 2 (`validate-ask-user` carve-out)** — defends against
+  *autonomous-phase deadlock* when a user typing
+  `/flow:flow-abort` mid-autonomous-flow needs the
+  destructive-confirmation prompt to fire. The carve-out
+  suppresses the autonomous-phase block on AskUserQuestion when
+  the most recent assistant Skill tool_use call fired a user-only
+  skill — meaning the user just typed the slash command and Layer
+  1 already verified it.
+- **Layer 3 (`validate-claude-paths` transcript root)** — defends
+  against *transcript tampering* that would defeat Layer 1's user-
+  invocation check. Blocks Edit/Write on `~/.claude/projects/`
+  regardless of flow state. Reads remain allowed because Layer 1
+  and Layer 2 walkers themselves need them.
+
+If Layer 1's substring or membership check has a bypass, Layers 2
+and 3 cannot independently catch the bypass — they are defense in
+depth around Layer 1's correctness, not redundant gates over the
+same surface. The Layer 1 gate's `normalize_gate_input`
+(NUL strip + trim + ASCII lowercase) and slash-command anchoring
+are therefore the load-bearing checks; the other two layers
+extend the protection but do not replace it.
+
 ### Layer 1: `validate-skill` (PreToolUse:Skill)
 
 `src/hooks/validate_skill.rs` runs on every Skill tool call. When
-`tool_input.skill` is in the user-only set AND the persisted
-transcript at `transcript_path` does NOT contain a matching
-`<command-name>/<skill></command-name>` substring in the most
-recent user-role turn, the hook exits 2 and Claude Code rejects
-the tool call. The block message names the skill and points to
-this rule file.
+`tool_input.skill` (after normalization) is in the user-only set
+AND the persisted transcript at `transcript_path` does NOT carry
+a matching `<command-name>/<skill></command-name>` substring AT
+THE START of the most recent user-role turn's `message.content`
+string, the hook exits 2 and Claude Code rejects the tool call.
+The block message names the skill (in canonical lowercased form)
+and points to this rule file.
 
 The walker
 (`src/hooks/transcript_walker.rs::last_user_message_invokes_skill`)
 scans backward through the transcript JSONL, stops at the first
-user-role turn, and checks that turn for the matching tag. The
-read is capped at `TRANSCRIPT_BYTE_CAP` (50 MB) per
-`.claude/rules/external-input-path-construction.md`.
+user-role turn, and requires the marker at the START of trimmed
+content (slash-command anchoring). User prose mentioning the
+literal marker mid-text, and tool_result-wrapped user turns whose
+content is an array of blocks (carrying assistant-echoed text),
+are explicitly rejected.
+
+The walker reads the LAST `TRANSCRIPT_BYTE_CAP` bytes of the
+file (50 MB) so the most recent turns are always visible
+regardless of total transcript size. Per
+`.claude/rules/external-input-path-construction.md`, the
+`transcript_path` is validated through
+`crate::window_snapshot::is_safe_transcript_path` — which rejects
+empty, NUL-byte, relative, ParentDir-component, and
+prefix-escaping paths.
 
 ### Layer 2: `validate-ask-user` carve-out
 
 `src/hooks/validate_ask_user.rs::user_only_skill_carve_out_applies`
 allows `AskUserQuestion` to fire even during in-progress
-autonomous phases when the most recent assistant Skill tool_use
-call (since the most recent user turn) targets a user-only skill.
-Without this carve-out, a user typing `/flow:flow-abort` during
-an in-progress autonomous Code phase would deadlock — the abort
-skill's destructive-confirmation prompt would be blocked by the
-existing autonomous-phase-discipline gate.
+autonomous phases when the most recent assistant turn fires at
+least one Skill tool_use whose `input.skill` (after normalization)
+is in `USER_ONLY_SKILLS`. Without this carve-out, a user typing
+`/flow:flow-abort` during an in-progress autonomous Code phase
+would deadlock — the abort skill's destructive-confirmation
+prompt would be blocked by the existing autonomous-phase-
+discipline gate.
 
 The carve-out fires after `validate` would have returned a block
 and overrides it. The walker function
 (`most_recent_skill_in_user_only_set`) stops at the most recent
 user turn going backward — older Skill calls outside that window
-are invisible.
+are invisible. Multi-tool assistant turns are scanned in full
+(extract_skill_invocations returns all Skill names), so a user-
+only Skill appearing second or later in the turn's content
+array still satisfies the carve-out.
 
 ### Layer 3: `validate-claude-paths` transcript root lockdown
 
@@ -113,3 +159,6 @@ Reserve ask-first for scoped actions whose error path is local
 recovery (`/flow:flow-create-issue` files an issue but the user
 can close it; `/flow:flow-start` opens a worktree but the user
 can abort).
+
+See `.claude/rules/autonomous-phase-discipline.md` "User-Only
+Skill Carve-Out" for the interaction with autonomous phases.

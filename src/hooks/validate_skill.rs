@@ -26,7 +26,9 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use super::read_hook_input;
-use crate::hooks::transcript_walker::{last_user_message_invokes_skill, USER_ONLY_SKILLS};
+use crate::hooks::transcript_walker::{
+    last_user_message_invokes_skill, normalize_gate_input, USER_ONLY_SKILLS,
+};
 use crate::window_snapshot::home_dir_or_empty;
 
 /// Decide whether to allow or block a Skill tool invocation.
@@ -34,6 +36,13 @@ use crate::window_snapshot::home_dir_or_empty;
 /// Returns `(allowed, message)`:
 /// - `(true, "")` — allow the tool call (silent)
 /// - `(false, msg)` — block; caller writes `msg` to stderr and exits 2
+///
+/// The `skill` field is normalized through `normalize_gate_input`
+/// (NUL strip + trim + ASCII lowercase) before the membership check
+/// per `.claude/rules/security-gates.md` "Normalize Before
+/// Comparing", so case-variant (`flow:Flow-Abort`),
+/// whitespace-padded (`"flow:flow-abort "`), and NUL-padded inputs
+/// all match the canonical entries in `USER_ONLY_SKILLS`.
 ///
 /// `tool_input` is the parsed JSON payload Claude Code passes for
 /// the Skill tool — its `skill` field carries the name being
@@ -44,15 +53,16 @@ use crate::window_snapshot::home_dir_or_empty;
 /// `.claude/rules/testing-gotchas.md` "Rust Parallel Test Env Var
 /// Races").
 pub fn validate(tool_input: &Value, transcript_path: Option<&Path>, home: &Path) -> (bool, String) {
-    let skill = tool_input
+    let skill_raw = tool_input
         .get("skill")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    if !USER_ONLY_SKILLS.contains(&skill) {
+    let skill_norm = normalize_gate_input(skill_raw);
+    if !USER_ONLY_SKILLS.contains(&skill_norm.as_str()) {
         return (true, String::new());
     }
     if let Some(path) = transcript_path {
-        if last_user_message_invokes_skill(path, skill, home) {
+        if last_user_message_invokes_skill(path, &skill_norm, home) {
             return (true, String::new());
         }
     }
@@ -63,7 +73,7 @@ pub fn validate(tool_input: &Value, transcript_path: Option<&Path>, home: &Path)
              Ask the user to type `/{}` directly. This skill performs a \
              destructive or initiating action that requires explicit user \
              intent — see .claude/rules/user-only-skills.md.",
-            skill, skill,
+            skill_norm, skill_norm,
         ),
     )
 }
