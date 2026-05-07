@@ -2,6 +2,79 @@ mod common;
 
 use common::flow_states_dir;
 
+use flow_rs::plan_extract::detect_truncation;
+
+// --- detect_truncation (Gate 4) ---
+
+#[test]
+fn detect_truncation_returns_none_for_intact_content() {
+    let source = "#### Task 1: Foo\n\nDo X.\n\n#### Task 2: Bar\n\nDo Y.\n";
+    let promoted = "### Task 1: Foo\n\nDo X.\n\n### Task 2: Bar\n\nDo Y.\n";
+    assert_eq!(detect_truncation(source, promoted), None);
+}
+
+#[test]
+fn detect_truncation_fires_on_unclosed_fence_in_source() {
+    let source = "#### Task 1: Foo\n\nDo X.\n\n```\nfn foo() {}\n";
+    let promoted = "### Task 1: Foo\n\nDo X.\n\n```\nfn foo() {}\n";
+    let result = detect_truncation(source, promoted);
+    assert!(result.is_some());
+}
+
+#[test]
+fn detect_truncation_fires_on_task_count_mismatch() {
+    let source = "#### Task 1: Foo\n\n#### Task 2: Bar\n\n#### Task 3: Baz\n";
+    let promoted = "### Task 1: Foo\n\n### Task 2: Bar\n";
+    let result = detect_truncation(source, promoted);
+    assert_eq!(result, Some((3, 2)));
+}
+
+#[test]
+fn detect_truncation_handles_empty_content() {
+    assert_eq!(detect_truncation("", ""), None);
+}
+
+#[test]
+fn detect_truncation_balanced_fences_clean() {
+    let source = "#### Task 1: Foo\n\n```\nfn foo() {}\n```\n";
+    let promoted = "### Task 1: Foo\n\n```\nfn foo() {}\n```\n";
+    assert_eq!(detect_truncation(source, promoted), None);
+}
+
+#[test]
+fn detect_truncation_unclosed_tilde_fence() {
+    let source = "#### Task 1: Foo\n\n~~~\nfoo\n";
+    let promoted = "### Task 1: Foo\n\n~~~\nfoo\n";
+    assert!(detect_truncation(source, promoted).is_some());
+}
+
+#[test]
+fn detect_truncation_mixed_fence_types_unbalanced() {
+    // Open with ``` then open with ~~~ before closing. The first
+    // unclosed type wins.
+    let source = "#### Task 1\n\n```\n~~~\n";
+    let promoted = "### Task 1\n\n```\n~~~\n";
+    assert!(detect_truncation(source, promoted).is_some());
+}
+
+#[test]
+fn detect_truncation_balanced_tilde_fences_clean() {
+    // ~~~ open and ~~~ close — covers the Some('~') => None arm.
+    let source = "#### Task 1\n\n~~~\nfoo\n~~~\n";
+    let promoted = "### Task 1\n\n~~~\nfoo\n~~~\n";
+    assert_eq!(detect_truncation(source, promoted), None);
+}
+
+#[test]
+fn detect_truncation_tilde_open_then_backtick_treated_as_content() {
+    // ~~~ opens; ``` while inside ~~~ does NOT close it (different
+    // fence type). Covers the Some(_) => open arm of the backtick
+    // branch — open stays Some('~') even when ``` is encountered.
+    let source = "#### Task 1\n\n~~~\n```\n~~~\n";
+    let promoted = "### Task 1\n\n~~~\n```\n~~~\n";
+    assert_eq!(detect_truncation(source, promoted), None);
+}
+
 // Unit tests for now-private helpers removed — all coverage is
 // driven through the `integration` subprocess module below via
 // `bin/flow plan-extract` against fixture repos.
@@ -1850,6 +1923,291 @@ exit 1
             "dag must be set in the reset files map, got: {}",
             updated_state["files"]
         );
+    }
+
+    #[test]
+    fn test_extracted_path_flags_cli_output_contract_violation() {
+        // Covers the cli_scan + cli_violations branch in the
+        // extracted path. A decomposed issue whose Implementation
+        // Plan proposes a new flag with consumed stdout but lacks
+        // the four-item contract block must produce a violation
+        // response with rule="cli-output-contracts" and
+        // missing_items naming each absent item.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let state = make_plan_state("Closes #77", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":77,"title":"Add output flag","body":"## Implementation Plan\n\n### Context\n\nNeed a new flag.\n\n### Tasks\n\n#### Task 1: Introduce a new flag with consumed stdout\n\nNo contract follows.","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0, "business errors exit 0, got {}", json);
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["path"], "extracted");
+        let violations = json["violations"].as_array().expect("violations array");
+        let cli_violations: Vec<_> = violations
+            .iter()
+            .filter(|v| v["rule"] == "cli-output-contracts")
+            .collect();
+        assert_eq!(cli_violations.len(), 1, "got: {:?}", violations);
+        let v = cli_violations[0];
+        let missing = v["missing_items"].as_array().unwrap();
+        assert_eq!(missing.len(), 4);
+    }
+
+    #[test]
+    fn test_resume_path_flags_cli_output_contract_violation() {
+        // Covers the cli_scan + cli_violations branch in the resume
+        // path. A plan file that already exists on disk with a
+        // Gate 1 violation must be re-scanned and reported when
+        // plan-extract runs.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let plan_rel = ".flow-states/test-feature/plan.md";
+        let plan_abs = dir.path().join(plan_rel);
+        fs::create_dir_all(plan_abs.parent().unwrap()).unwrap();
+        fs::write(
+            &plan_abs,
+            "## Tasks\n\nIntroduce a new flag with consumed stdout. No contract block.\n",
+        )
+        .unwrap();
+
+        let state = make_plan_state("standalone", |s| {
+            s["files"]["plan"] = serde_json::Value::String(plan_rel.to_string());
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0, "business errors exit 0, got {}", json);
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["path"], "resumed");
+        let violations = json["violations"].as_array().expect("violations array");
+        let cli_violations: Vec<_> = violations
+            .iter()
+            .filter(|v| v["rule"] == "cli-output-contracts")
+            .collect();
+        assert_eq!(cli_violations.len(), 1, "got: {:?}", violations);
+    }
+
+    #[test]
+    fn test_extracted_path_flags_deletion_sweep_violation() {
+        // Covers the del_scan + del_violations branch in the
+        // extracted path. A decomposed issue whose Implementation
+        // Plan proposes removing a named identifier without sweep
+        // evidence must produce a violation response.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let state = make_plan_state("Closes #88", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":88,"title":"Remove legacy","body":"## Implementation Plan\n\n### Context\n\nLegacy removal.\n\n### Tasks\n\n#### Task 1: Remove legacy fn\n\nDelete `obsolete_handler_v2`. No bullets.","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0, "business errors exit 0, got {}", json);
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["path"], "extracted");
+        let violations = json["violations"].as_array().expect("violations array");
+        let del_violations: Vec<_> = violations
+            .iter()
+            .filter(|v| v["rule"] == "deletion-sweep")
+            .collect();
+        assert_eq!(del_violations.len(), 1, "got: {:?}", violations);
+    }
+
+    #[test]
+    fn test_resume_path_flags_deletion_sweep_violation() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let plan_rel = ".flow-states/test-feature/plan.md";
+        let plan_abs = dir.path().join(plan_rel);
+        fs::create_dir_all(plan_abs.parent().unwrap()).unwrap();
+        fs::write(
+            &plan_abs,
+            "## Tasks\n\nRemove `obsolete_handler_v2`. No sweep.\n",
+        )
+        .unwrap();
+
+        let state = make_plan_state("standalone", |s| {
+            s["files"]["plan"] = serde_json::Value::String(plan_rel.to_string());
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["path"], "resumed");
+        let violations = json["violations"].as_array().expect("violations array");
+        let del_violations: Vec<_> = violations
+            .iter()
+            .filter(|v| v["rule"] == "deletion-sweep")
+            .collect();
+        assert_eq!(del_violations.len(), 1);
+    }
+
+    #[test]
+    fn test_extracted_path_flags_tombstone_checklist_violation() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let state = make_plan_state("Closes #99", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":99,"title":"Add tombstone","body":"## Implementation Plan\n\n### Context\n\nLegacy.\n\n### Tasks\n\n#### Task 1: Add tombstone\n\nAdd a tombstone test. No checklist.","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["path"], "extracted");
+        let violations = json["violations"].as_array().expect("violations array");
+        let tomb_violations: Vec<_> = violations
+            .iter()
+            .filter(|v| v["rule"] == "tombstone-checklist")
+            .collect();
+        assert_eq!(tomb_violations.len(), 1);
+    }
+
+    #[test]
+    fn test_resume_path_flags_tombstone_checklist_violation() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let plan_rel = ".flow-states/test-feature/plan.md";
+        let plan_abs = dir.path().join(plan_rel);
+        fs::create_dir_all(plan_abs.parent().unwrap()).unwrap();
+        fs::write(
+            &plan_abs,
+            "## Tasks\n\nAdd a tombstone test. No checklist.\n",
+        )
+        .unwrap();
+
+        let state = make_plan_state("standalone", |s| {
+            s["files"]["plan"] = serde_json::Value::String(plan_rel.to_string());
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["path"], "resumed");
+        let violations = json["violations"].as_array().expect("violations array");
+        let tomb_violations: Vec<_> = violations
+            .iter()
+            .filter(|v| v["rule"] == "tombstone-checklist")
+            .collect();
+        assert_eq!(tomb_violations.len(), 1);
+    }
+
+    #[test]
+    fn test_resume_path_flags_verify_references_violation() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let plan_rel = ".flow-states/test-feature/plan.md";
+        let plan_abs = dir.path().join(plan_rel);
+        fs::create_dir_all(plan_abs.parent().unwrap()).unwrap();
+        fs::write(&plan_abs, "## Tasks\n\nUse `nonexistent_helper_fn` here.\n").unwrap();
+
+        let state = make_plan_state("standalone", |s| {
+            s["files"]["plan"] = serde_json::Value::String(plan_rel.to_string());
+        });
+        setup_state(dir.path(), "test-feature", &state);
+
+        let (code, json) = run_plan_extract(dir.path(), &["--branch", "test-feature"]);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["path"], "resumed");
+        let violations = json["violations"].as_array().expect("violations array");
+        let verify_violations: Vec<_> = violations
+            .iter()
+            .filter(|v| v["rule"] == "verify-references")
+            .collect();
+        assert_eq!(verify_violations.len(), 1);
+    }
+
+    #[test]
+    fn test_extracted_path_flags_truncation() {
+        // Issue body with unclosed fence at EOF — Gate 4
+        // detects the truncation before writing the plan file.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let state = make_plan_state("Closes #222", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":222,"title":"Truncated","body":"## Implementation Plan\n\n### Context\n\nC.\n\n### Tasks\n\n#### Task 1: Foo\n\n```\nfn foo() {}\n","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["truncated"], true);
+        assert!(json["message"].as_str().unwrap().contains("truncation"));
+    }
+
+    #[test]
+    fn test_extracted_path_flags_verify_references_violation() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let state = make_plan_state("Closes #111", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":111,"title":"Verify ref","body":"## Implementation Plan\n\n### Context\n\nC.\n\n### Tasks\n\n#### Task 1: Use helper\n\nCall `nonexistent_helper_fn`.","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["path"], "extracted");
+        let violations = json["violations"].as_array().expect("violations array");
+        let verify_violations: Vec<_> = violations
+            .iter()
+            .filter(|v| v["rule"] == "verify-references")
+            .collect();
+        assert_eq!(verify_violations.len(), 1);
     }
 
     #[test]

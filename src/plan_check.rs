@@ -1,38 +1,53 @@
 //! Plan-check: scan the current plan file for Plan-phase rule
 //! violations.
 //!
-//! This command is the Plan-phase gate that aggregates three scanners
-//! — `src/scope_enumeration.rs::scan` (universal-coverage prose
-//! without a named sibling list), `src/external_input_audit.rs::scan`
-//! (panic/assert tightening proposals without a paired callsite
-//! audit table), and
-//! `src/duplicate_test_coverage.rs::scan` (proposed test names that
-//! collide with existing tests in the corpus). Invoked from
-//! `skills/flow-plan/SKILL.md` Step 4 before
-//! `phase-transition --action complete`, the gate refuses to let the
-//! Plan phase finish if any scanner finds violations. Each violation
-//! in the JSON response carries a `rule` field naming which scanner
-//! fired, so the skill's repair loop can point the author at the
-//! right fix. The extracted and resume paths in
-//! `src/plan_extract.rs` invoke the same three scanners against the
-//! promoted plan content before `complete_plan_phase` to gate the
-//! same class of mistakes for pre-planned issues.
+//! This command is the Plan-phase gate that aggregates seven
+//! scanners:
 //!
-//! All four callsites (standard, extracted, resume, and the
-//! committed-prose contract test) share the same scanner modules so
-//! the trigger vocabulary, opt-out grammars, and rule tagging cannot
-//! drift between the three paths.
+//! - `src/scope_enumeration.rs::scan` — universal-coverage prose
+//!   without a named sibling list.
+//! - `src/external_input_audit.rs::scan` — panic/assert tightening
+//!   proposals without a paired callsite audit table.
+//! - `src/duplicate_test_coverage.rs::scan` — proposed test names
+//!   that collide with existing tests in the corpus.
+//! - `src/cli_output_contract_scanner.rs::scan` — flag/subcommand
+//!   proposals without the four-item output contract block.
+//! - `src/deletion_sweep_scanner.rs::scan` — delete/rename
+//!   proposals without nearby sweep evidence.
+//! - `src/tombstone_checklist_scanner.rs::scan` — tombstone
+//!   proposals without the five-item checklist.
+//! - `src/verify_references_scanner.rs::scan` — backtick-quoted
+//!   identifiers in `## Tasks` not defined as `fn <name>(`
+//!   anywhere under `tests/` or `src/`.
+//!
+//! Invoked from `skills/flow-plan/SKILL.md` Step 4 before
+//! `phase-transition --action complete`, the gate refuses to let
+//! the Plan phase finish if any scanner finds violations. Each
+//! violation in the JSON response carries a `rule` field naming
+//! which scanner fired, so the skill's repair loop can point the
+//! author at the right fix. The extracted and resume paths in
+//! `src/plan_extract.rs` invoke the same seven scanners against
+//! the promoted plan content before `complete_plan_phase` to gate
+//! the same class of mistakes for pre-planned issues.
+//!
+//! All callsites (standard, extracted, resume) share the same
+//! scanner modules so the trigger vocabulary, opt-out grammars,
+//! and rule tagging cannot drift between the three paths.
 
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use serde_json::{json, Value};
 
+use crate::cli_output_contract_scanner::{self};
+use crate::deletion_sweep_scanner::{self};
 use crate::duplicate_test_coverage::{self, TestCorpus};
 use crate::external_input_audit;
 use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::scope_enumeration::scan;
+use crate::tombstone_checklist_scanner::{self};
+use crate::verify_references_scanner::{self, DefinitionIndex};
 
 /// CLI arguments for the plan-check subcommand.
 #[derive(Parser, Debug)]
@@ -133,8 +148,20 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let audit_violations = external_input_audit::scan(&content, &plan_path);
     let test_corpus = TestCorpus::from_repo(&root);
     let dup_violations = duplicate_test_coverage::scan(&content, &plan_path, &test_corpus);
+    let cli_violations = cli_output_contract_scanner::scan(&content, &plan_path);
+    let del_violations = deletion_sweep_scanner::scan(&content, &plan_path);
+    let tomb_violations = tombstone_checklist_scanner::scan(&content, &plan_path);
+    let verify_index = DefinitionIndex::from_repo(&root);
+    let verify_violations = verify_references_scanner::scan(&content, &plan_path, &verify_index);
 
-    if scope_violations.is_empty() && audit_violations.is_empty() && dup_violations.is_empty() {
+    if scope_violations.is_empty()
+        && audit_violations.is_empty()
+        && dup_violations.is_empty()
+        && cli_violations.is_empty()
+        && del_violations.is_empty()
+        && tomb_violations.is_empty()
+        && verify_violations.is_empty()
+    {
         return Ok(json!({"status": "ok"}));
     }
 
@@ -160,12 +187,34 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     for v in &dup_violations {
         violations_json.push(duplicate_violation_to_tagged_json(v));
     }
+    for v in &cli_violations {
+        violations_json.push(cli_output_violation_to_tagged_json(v));
+    }
+    for v in &del_violations {
+        violations_json.push(deletion_sweep_violation_to_tagged_json(v));
+    }
+    for v in &tomb_violations {
+        violations_json.push(tombstone_checklist_violation_to_tagged_json(v));
+    }
+    for v in &verify_violations {
+        violations_json.push(verify_references_violation_to_tagged_json(v));
+    }
 
-    let total = scope_violations.len() + audit_violations.len() + dup_violations.len();
+    let total = scope_violations.len()
+        + audit_violations.len()
+        + dup_violations.len()
+        + cli_violations.len()
+        + del_violations.len()
+        + tomb_violations.len()
+        + verify_violations.len();
     let message = build_violation_message(
         scope_violations.len(),
         audit_violations.len(),
         dup_violations.len(),
+        cli_violations.len(),
+        del_violations.len(),
+        tomb_violations.len(),
+        verify_violations.len(),
         total,
     );
 
@@ -198,6 +247,79 @@ pub fn duplicate_violation_to_tagged_json(v: &duplicate_test_coverage::Violation
     })
 }
 
+/// Serialize a cli-output-contracts violation with its extra
+/// `missing_items` field so the skill's repair loop can name which
+/// of the four contract items (output_format, exit_codes,
+/// error_messages, fallback) the author still needs to add.
+///
+/// Shared with `src/plan_extract.rs::violations_response` — both
+/// callsites MUST produce the same JSON shape so the skill renders
+/// consistent output regardless of which path triggered the failure.
+pub fn cli_output_violation_to_tagged_json(
+    v: &crate::cli_output_contract_scanner::Violation,
+) -> Value {
+    json!({
+        "file": v.file.display().to_string(),
+        "line": v.line,
+        "phrase": v.phrase,
+        "context": v.context,
+        "rule": "cli-output-contracts",
+        "missing_items": v.missing_items,
+    })
+}
+
+/// Serialize a deletion-sweep violation with its extra
+/// `identifier` field naming the proposed-for-deletion symbol.
+///
+/// Shared with `src/plan_extract.rs::violations_response`.
+pub fn deletion_sweep_violation_to_tagged_json(
+    v: &crate::deletion_sweep_scanner::Violation,
+) -> Value {
+    json!({
+        "file": v.file.display().to_string(),
+        "line": v.line,
+        "phrase": v.phrase,
+        "context": v.context,
+        "rule": "deletion-sweep",
+        "identifier": v.identifier,
+    })
+}
+
+/// Serialize a tombstone-checklist violation with its extra
+/// `missing_items` field naming which of the five checklist
+/// items are absent from the plan window.
+///
+/// Shared with `src/plan_extract.rs::violations_response`.
+pub fn tombstone_checklist_violation_to_tagged_json(
+    v: &crate::tombstone_checklist_scanner::Violation,
+) -> Value {
+    json!({
+        "file": v.file.display().to_string(),
+        "line": v.line,
+        "phrase": v.phrase,
+        "context": v.context,
+        "rule": "tombstone-checklist",
+        "missing_items": v.missing_items,
+    })
+}
+
+/// Serialize a verify-references violation with its extra
+/// `identifier` field naming the cited-but-missing identifier.
+///
+/// Shared with `src/plan_extract.rs::violations_response`.
+pub fn verify_references_violation_to_tagged_json(
+    v: &crate::verify_references_scanner::Violation,
+) -> Value {
+    json!({
+        "file": v.file.display().to_string(),
+        "line": v.line,
+        "phrase": v.phrase,
+        "context": v.context,
+        "rule": "verify-references",
+        "identifier": v.identifier,
+    })
+}
+
 /// Build a human-readable summary message that names each scanner's
 /// count when non-zero. The message must tell the author which rule
 /// file to consult for each violation class.
@@ -207,10 +329,15 @@ pub fn duplicate_violation_to_tagged_json(v: &duplicate_test_coverage::Violation
 /// repair loop renders consistent output regardless of which path
 /// triggered the failure. `pub(crate)` so `plan_extract.rs` can
 /// call it directly.
+#[allow(clippy::too_many_arguments)]
 pub fn build_violation_message(
     scope_count: usize,
     audit_count: usize,
     dup_count: usize,
+    cli_count: usize,
+    del_count: usize,
+    tomb_count: usize,
+    verify_count: usize,
     total: usize,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
@@ -234,6 +361,38 @@ pub fn build_violation_message(
              collide with existing tests (see \
              .claude/rules/duplicate-test-coverage.md)",
             dup_count
+        ));
+    }
+    if cli_count > 0 {
+        parts.push(format!(
+            "{} cli-output-contract violation(s): new flag/subcommand proposal(s) \
+             lack the four-item contract block (see \
+             .claude/rules/cli-output-contracts.md)",
+            cli_count
+        ));
+    }
+    if del_count > 0 {
+        parts.push(format!(
+            "{} deletion-sweep violation(s): delete/rename proposal(s) lack \
+             nearby sweep evidence (see \
+             .claude/rules/docs-with-behavior.md \"Scope Enumeration (Rename Side)\")",
+            del_count
+        ));
+    }
+    if tomb_count > 0 {
+        parts.push(format!(
+            "{} tombstone-checklist violation(s): tombstone proposal(s) lack \
+             the five-item checklist (see \
+             .claude/rules/tombstone-tests.md \"Plan-phase responsibility\")",
+            tomb_count
+        ));
+    }
+    if verify_count > 0 {
+        parts.push(format!(
+            "{} verify-references violation(s): cited identifier(s) not found \
+             as `fn <name>(` definitions (see \
+             .claude/rules/skill-authoring.md \"Verify Test Function References in Issues\")",
+            verify_count
         ));
     }
     format!("{} plan-check violation(s): {}.", total, parts.join("; "))

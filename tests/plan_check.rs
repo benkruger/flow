@@ -505,16 +505,20 @@ fn relative_override_joins_project_root() {
 
 #[test]
 fn message_names_only_scope_when_audit_count_is_zero() {
-    let m = build_violation_message(2, 0, 0, 2);
+    let m = build_violation_message(2, 0, 0, 0, 0, 0, 0, 2);
     assert!(m.contains("2 universal-coverage"));
     assert!(m.contains("scope-enumeration.md"));
     assert!(!m.contains("panic/assert"));
     assert!(!m.contains("duplicate-test-coverage"));
+    assert!(!m.contains("cli-output-contract"));
+    assert!(!m.contains("deletion-sweep"));
+    assert!(!m.contains("tombstone-checklist"));
+    assert!(!m.contains("verify-references"));
 }
 
 #[test]
 fn message_names_only_audit_when_scope_count_is_zero() {
-    let m = build_violation_message(0, 3, 0, 3);
+    let m = build_violation_message(0, 3, 0, 0, 0, 0, 0, 3);
     assert!(m.contains("3 panic/assert"));
     assert!(m.contains("external-input-audit-gate.md"));
     assert!(!m.contains("universal-coverage"));
@@ -522,7 +526,7 @@ fn message_names_only_audit_when_scope_count_is_zero() {
 
 #[test]
 fn message_names_only_duplicate_when_others_are_zero() {
-    let m = build_violation_message(0, 0, 2, 2);
+    let m = build_violation_message(0, 0, 2, 0, 0, 0, 0, 2);
     assert!(m.contains("2 duplicate-test-coverage"));
     assert!(m.contains("duplicate-test-coverage.md"));
     assert!(!m.contains("universal-coverage"));
@@ -530,15 +534,57 @@ fn message_names_only_duplicate_when_others_are_zero() {
 }
 
 #[test]
-fn message_names_all_three_rules_when_all_have_violations() {
-    let m = build_violation_message(2, 1, 3, 6);
+fn message_names_only_cli_when_others_are_zero() {
+    let m = build_violation_message(0, 0, 0, 2, 0, 0, 0, 2);
+    assert!(m.contains("2 cli-output-contract"));
+    assert!(m.contains("cli-output-contracts.md"));
+    assert!(!m.contains("universal-coverage"));
+    assert!(!m.contains("panic/assert"));
+    assert!(!m.contains("duplicate-test-coverage"));
+}
+
+#[test]
+fn message_names_only_deletion_when_others_are_zero() {
+    let m = build_violation_message(0, 0, 0, 0, 5, 0, 0, 5);
+    assert!(m.contains("5 deletion-sweep"));
+    assert!(m.contains("Scope Enumeration"));
+    assert!(!m.contains("universal-coverage"));
+    assert!(!m.contains("cli-output-contract"));
+}
+
+#[test]
+fn message_names_only_tombstone_when_others_are_zero() {
+    let m = build_violation_message(0, 0, 0, 0, 0, 7, 0, 7);
+    assert!(m.contains("7 tombstone-checklist"));
+    assert!(m.contains("tombstone-tests.md"));
+    assert!(!m.contains("universal-coverage"));
+    assert!(!m.contains("deletion-sweep"));
+}
+
+#[test]
+fn message_names_only_verify_when_others_are_zero() {
+    let m = build_violation_message(0, 0, 0, 0, 0, 0, 4, 4);
+    assert!(m.contains("4 verify-references"));
+    assert!(m.contains("Verify Test Function"));
+    assert!(!m.contains("universal-coverage"));
+}
+
+#[test]
+fn message_names_all_seven_rules_when_all_have_violations() {
+    let m = build_violation_message(2, 1, 3, 4, 5, 6, 7, 28);
     assert!(m.contains("2 universal-coverage"));
     assert!(m.contains("1 panic/assert"));
     assert!(m.contains("3 duplicate-test-coverage"));
+    assert!(m.contains("4 cli-output-contract"));
+    assert!(m.contains("5 deletion-sweep"));
+    assert!(m.contains("6 tombstone-checklist"));
+    assert!(m.contains("7 verify-references"));
     assert!(m.contains("scope-enumeration.md"));
     assert!(m.contains("external-input-audit-gate.md"));
     assert!(m.contains("duplicate-test-coverage.md"));
-    assert!(m.contains("6 plan-check violation"));
+    assert!(m.contains("cli-output-contracts.md"));
+    assert!(m.contains("tombstone-tests.md"));
+    assert!(m.contains("28 plan-check violation"));
 }
 
 #[test]
@@ -699,4 +745,210 @@ fn run_impl_returns_ok_when_both_scanners_clean() {
     let _ = std::fs::remove_file(&tmp);
 
     assert_eq!(result["status"], "ok");
+}
+
+// --- cli-output-contracts (Gate 1) integration ---
+
+#[test]
+fn plan_check_flags_cli_output_contract_violation() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "test-feature");
+    // A plan that proposes a new flag with consumed stdout but
+    // omits the four-item contract block must be rejected by the
+    // gate.
+    let plan =
+        "## Tasks\n\nIntroduce a new flag with consumed stdout. No contract block follows.\n";
+    write_plan(dir.path(), ".flow-states/test-feature-plan.md", plan);
+    write_state(
+        dir.path(),
+        "test-feature",
+        Some(".flow-states/test-feature-plan.md"),
+    );
+
+    let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "error");
+    let violations = json["violations"].as_array().expect("violations array");
+    let cli_violations: Vec<_> = violations
+        .iter()
+        .filter(|v| v["rule"] == "cli-output-contracts")
+        .collect();
+    assert_eq!(cli_violations.len(), 1);
+    let v = cli_violations[0];
+    assert!(v["missing_items"].is_array());
+    let missing = v["missing_items"].as_array().unwrap();
+    assert_eq!(missing.len(), 4);
+    assert!(json["message"]
+        .as_str()
+        .unwrap()
+        .contains("cli-output-contract"));
+}
+
+#[test]
+fn plan_check_passes_cli_output_contract_with_full_block() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "test-feature");
+    let plan = "## Tasks\n\nIntroduce a new flag with consumed stdout.\n\n\
+        Output format: JSON.\n\
+        Exit codes: 0 ok, 1 error.\n\
+        Error messages: stderr names the failure class.\n\
+        Fallback: none — fail closed.\n";
+    write_plan(dir.path(), ".flow-states/test-feature-plan.md", plan);
+    write_state(
+        dir.path(),
+        "test-feature",
+        Some(".flow-states/test-feature-plan.md"),
+    );
+
+    let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "ok");
+}
+
+// --- deletion-sweep (Gate 2) integration ---
+
+#[test]
+fn plan_check_flags_deletion_sweep_violation() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "test-feature");
+    // A plan that proposes removing a named identifier without
+    // sweep evidence (file bullets or Exploration heading) must
+    // be rejected.
+    let plan = "## Tasks\n\nRemove `old_legacy_helper_fn`. No sweep follows.\n";
+    write_plan(dir.path(), ".flow-states/test-feature-plan.md", plan);
+    write_state(
+        dir.path(),
+        "test-feature",
+        Some(".flow-states/test-feature-plan.md"),
+    );
+
+    let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "error");
+    let violations = json["violations"].as_array().expect("violations array");
+    let del_violations: Vec<_> = violations
+        .iter()
+        .filter(|v| v["rule"] == "deletion-sweep")
+        .collect();
+    assert_eq!(del_violations.len(), 1);
+    assert_eq!(del_violations[0]["identifier"], "old_legacy_helper_fn");
+    assert!(json["message"].as_str().unwrap().contains("deletion-sweep"));
+}
+
+#[test]
+fn plan_check_passes_deletion_sweep_with_evidence() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "test-feature");
+    // The `old_legacy_helper_fn` identifier is a fixture symbol —
+    // does not exist as a `fn` definition in this fixture's tests/
+    // or src/, so Gate 6 (verify-references) would flag it. The
+    // verify-references opt-out marks this as prose citation, not
+    // a Gate 6 target.
+    let plan = "## Tasks\n\n\
+        <!-- verify-references: prose-citation -->\n\
+        Remove `old_legacy_helper_fn`.\n\n\
+        ## Exploration\n\n\
+        Files affected:\n";
+    write_plan(dir.path(), ".flow-states/test-feature-plan.md", plan);
+    write_state(
+        dir.path(),
+        "test-feature",
+        Some(".flow-states/test-feature-plan.md"),
+    );
+
+    let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "ok");
+}
+
+// --- tombstone-checklist (Gate 3) integration ---
+
+#[test]
+fn plan_check_flags_tombstone_checklist_violation() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "test-feature");
+    let plan = "## Tasks\n\nAdd a tombstone test. No checklist follows.\n";
+    write_plan(dir.path(), ".flow-states/test-feature-plan.md", plan);
+    write_state(
+        dir.path(),
+        "test-feature",
+        Some(".flow-states/test-feature-plan.md"),
+    );
+
+    let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "error");
+    let violations = json["violations"].as_array().expect("violations array");
+    let tomb_violations: Vec<_> = violations
+        .iter()
+        .filter(|v| v["rule"] == "tombstone-checklist")
+        .collect();
+    assert_eq!(tomb_violations.len(), 1);
+    let v = tomb_violations[0];
+    assert_eq!(v["missing_items"].as_array().unwrap().len(), 5);
+    assert!(json["message"]
+        .as_str()
+        .unwrap()
+        .contains("tombstone-checklist"));
+}
+
+// --- verify-references (Gate 6) integration ---
+
+#[test]
+fn plan_check_flags_verify_references_violation() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "test-feature");
+    // No tests/ or src/ in the fixture, so any cited identifier
+    // is missing from the index. The plan cites a snake_case
+    // identifier ≥10 chars in the Tasks section.
+    let plan = "## Tasks\n\nUse the existing `nonexistent_helper_fn` to refactor.\n";
+    write_plan(dir.path(), ".flow-states/test-feature-plan.md", plan);
+    write_state(
+        dir.path(),
+        "test-feature",
+        Some(".flow-states/test-feature-plan.md"),
+    );
+
+    let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "error");
+    let violations = json["violations"].as_array().expect("violations array");
+    let verify_violations: Vec<_> = violations
+        .iter()
+        .filter(|v| v["rule"] == "verify-references")
+        .collect();
+    assert_eq!(verify_violations.len(), 1);
+    assert_eq!(verify_violations[0]["identifier"], "nonexistent_helper_fn");
+    assert!(json["message"]
+        .as_str()
+        .unwrap()
+        .contains("verify-references"));
+}
+
+#[test]
+fn plan_check_passes_tombstone_with_full_checklist() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "test-feature");
+    // `removed_fn` is a fixture symbol — does not exist as a `fn`
+    // definition in this fixture's tests/ or src/. Opt out of the
+    // verify-references gate to keep this test scoped to
+    // tombstone-checklist.
+    let plan = "## Tasks\n\n\
+        <!-- verify-references: prose-citation -->\n\
+        Add a tombstone test for `removed_fn`.\n\n\
+        Protection target: the deleted function.\n\
+        Assertion kind: literal byte-substring.\n\
+        Stability: cannot be assembled by concat!.\n\
+        Bypass list: format!, slice join, split constants.\n\
+        File-resurrection pair: paired existence check.\n";
+    write_plan(dir.path(), ".flow-states/test-feature-plan.md", plan);
+    write_state(
+        dir.path(),
+        "test-feature",
+        Some(".flow-states/test-feature-plan.md"),
+    );
+
+    let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "ok");
 }

@@ -21,7 +21,9 @@ use serde_json::{json, Value};
 
 use std::process::Command;
 
+use crate::cli_output_contract_scanner::{scan as cli_scan, Violation as CliViolation};
 use crate::commands::log::append_log;
+use crate::deletion_sweep_scanner::{scan as del_scan, Violation as DelViolation};
 use crate::duplicate_test_coverage::{scan as dup_scan, TestCorpus, Violation as DupViolation};
 use crate::external_input_audit::{scan as audit_scan, Violation as AuditViolation};
 use crate::flow_paths::FlowPaths;
@@ -31,8 +33,12 @@ use crate::phase_config::load_phase_config;
 use crate::phase_transition::{phase_complete, phase_enter};
 use crate::render_pr_body::render_body;
 use crate::scope_enumeration::{scan as scope_scan, Violation};
+use crate::tombstone_checklist_scanner::{scan as tomb_scan, Violation as TombViolation};
 use crate::update_pr_body::gh_set_body;
 use crate::utils::extract_issue_numbers;
+use crate::verify_references_scanner::{
+    scan as verify_scan, DefinitionIndex, Violation as VerifyViolation,
+};
 
 /// Extract and fast-track pre-decomposed plans, or prepare state for model-driven planning.
 #[derive(Parser, Debug)]
@@ -286,6 +292,77 @@ fn promote_headings(content: &str) -> String {
     result
 }
 
+/// Plan-phase Gate 4 — plan-extract truncation gate.
+///
+/// Detects whether the issue body fed to plan-extract was
+/// truncated mid-content. The most reliable signal is an unclosed
+/// fenced code block at EOF — when the issue body cuts off inside
+/// a fenced block, the issue was truncated. Returns
+/// `Some((expected, actual))` when truncation is detected, `None`
+/// when the content is intact.
+///
+/// `expected` and `actual` are the source `#### Task N:` count
+/// and the post-promotion `### Task N:` count respectively. The
+/// promote_headings transform is deterministic, so a mismatch
+/// indicates either an unclosed fenced block at EOF (which
+/// suppressed task headings) or some other parse failure.
+///
+/// The check is conservative: only an unclosed fence at EOF or a
+/// task-count mismatch fires the gate. False positives would
+/// block legitimate plans, so the gate accepts ambiguous cases.
+pub fn detect_truncation(source: &str, promoted: &str) -> Option<(usize, usize)> {
+    let expected = count_tasks(source);
+    let actual = count_tasks_after_promotion(promoted);
+    if has_unclosed_fence(source) || has_unclosed_fence(promoted) {
+        return Some((expected, actual));
+    }
+    if expected != actual {
+        return Some((expected, actual));
+    }
+    None
+}
+
+/// Count `### Task N:` headings in the post-promotion content.
+fn count_tasks_after_promotion(content: &str) -> usize {
+    let mut count = 0;
+    let mut in_code_block = false;
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_code_block = !in_code_block;
+            continue;
+        }
+        if !in_code_block && trimmed.starts_with("### Task ") {
+            count += 1;
+        }
+    }
+    count
+}
+
+/// Returns `true` when the content has an unclosed fenced code
+/// block at EOF (an opening ` ``` ` or `~~~` with no matching
+/// close).
+fn has_unclosed_fence(content: &str) -> bool {
+    let mut open: Option<char> = None;
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") {
+            open = match open {
+                Some('`') => None,
+                Some(_) => open,
+                None => Some('`'),
+            };
+        } else if trimmed.starts_with("~~~") {
+            open = match open {
+                Some('~') => None,
+                Some(_) => open,
+                None => Some('~'),
+            };
+        }
+    }
+    open.is_some()
+}
+
 /// Count `#### Task N:` headings in the content (pre-promotion format).
 fn count_tasks(content: &str) -> usize {
     let mut count = 0;
@@ -342,10 +419,15 @@ fn count_tasks_any_level(content: &str) -> usize {
 /// gate callsite with one parser. Each violation carries a `rule`
 /// field naming the scanner that fired so the repair loop can point
 /// the user at the right rule file.
+#[allow(clippy::too_many_arguments)]
 fn violations_response(
     scope_violations: &[Violation],
     audit_violations: &[AuditViolation],
     dup_violations: &[DupViolation],
+    cli_violations: &[CliViolation],
+    del_violations: &[DelViolation],
+    tomb_violations: &[TombViolation],
+    verify_violations: &[VerifyViolation],
     path_label: &str,
 ) -> Value {
     let mut violations_json: Vec<Value> = Vec::new();
@@ -372,7 +454,29 @@ fn violations_response(
         // stays in sync across both gate callsites.
         violations_json.push(crate::plan_check::duplicate_violation_to_tagged_json(v));
     }
-    let total = scope_violations.len() + audit_violations.len() + dup_violations.len();
+    for v in cli_violations {
+        // Shared helper with `plan_check.rs` so both callsites
+        // render the cli-output-contracts violation shape identically.
+        violations_json.push(crate::plan_check::cli_output_violation_to_tagged_json(v));
+    }
+    for v in del_violations {
+        violations_json.push(crate::plan_check::deletion_sweep_violation_to_tagged_json(
+            v,
+        ));
+    }
+    for v in tomb_violations {
+        violations_json.push(crate::plan_check::tombstone_checklist_violation_to_tagged_json(v));
+    }
+    for v in verify_violations {
+        violations_json.push(crate::plan_check::verify_references_violation_to_tagged_json(v));
+    }
+    let total = scope_violations.len()
+        + audit_violations.len()
+        + dup_violations.len()
+        + cli_violations.len()
+        + del_violations.len()
+        + tomb_violations.len()
+        + verify_violations.len();
     // Reuse the message builder from plan_check so both gate
     // callsites render identical wording. plan_extract adds the
     // path-specific "Edit the plan, then re-run /flow:flow-plan"
@@ -381,6 +485,10 @@ fn violations_response(
         scope_violations.len(),
         audit_violations.len(),
         dup_violations.len(),
+        cli_violations.len(),
+        del_violations.len(),
+        tomb_violations.len(),
+        verify_violations.len(),
         total,
     );
     json!({
@@ -485,14 +593,27 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
         let audit_violations = audit_scan(&plan_content, &plan_abs);
         let test_corpus = TestCorpus::from_repo(&root);
         let dup_violations = dup_scan(&plan_content, &plan_abs, &test_corpus);
+        let cli_violations = cli_scan(&plan_content, &plan_abs);
+        let del_violations = del_scan(&plan_content, &plan_abs);
+        let tomb_violations = tomb_scan(&plan_content, &plan_abs);
+        let verify_index = DefinitionIndex::from_repo(&root);
+        let verify_violations = verify_scan(&plan_content, &plan_abs, &verify_index);
         if !scope_violations.is_empty()
             || !audit_violations.is_empty()
             || !dup_violations.is_empty()
+            || !cli_violations.is_empty()
+            || !del_violations.is_empty()
+            || !tomb_violations.is_empty()
+            || !verify_violations.is_empty()
         {
             return Ok(violations_response(
                 &scope_violations,
                 &audit_violations,
                 &dup_violations,
+                &cli_violations,
+                &del_violations,
+                &tomb_violations,
+                &verify_violations,
                 "resumed",
             ));
         }
@@ -701,6 +822,34 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
     // Promote headings: ### → ##, #### → ###
     let promoted = promote_headings(&plan_section);
 
+    // Plan-phase Gate 4: detect truncation in the issue body
+    // before writing the plan file. An unclosed fence at EOF or
+    // a task-count mismatch between source and promoted content
+    // signals the issue body was truncated mid-content. Return
+    // an error response with `truncated: true` so the skill's
+    // Fast Path Done can halt auto-advance.
+    if let Some((expected, actual)) = detect_truncation(&plan_section, &promoted) {
+        let _ = append_log(
+            &root,
+            &branch,
+            &format!(
+                "[Phase 2] plan-extract — truncation detected (expected {} tasks, got {}) in issue body (exit 0)",
+                expected, actual
+            ),
+        );
+        return Ok(json!({
+            "status": "error",
+            "path": "extracted",
+            "truncated": true,
+            "expected_task_count": expected,
+            "actual_task_count": actual,
+            "message": format!(
+                "Plan-extract truncation detected: expected {} tasks, got {}. The issue body appears to be cut off (likely an unclosed fenced code block at EOF). Edit the issue body to restore the missing content, then re-run /flow:flow-plan.",
+                expected, actual
+            ),
+        }));
+    }
+
     // Write plan file
     let plan_abs = FlowPaths::new(&root, &branch).plan_file();
     // Derive the relative path from the absolute path. `FlowPaths::new`
@@ -727,7 +876,19 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
     let audit_violations = audit_scan(&promoted, &plan_abs);
     let test_corpus = TestCorpus::from_repo(&root);
     let dup_violations = dup_scan(&promoted, &plan_abs, &test_corpus);
-    if !scope_violations.is_empty() || !audit_violations.is_empty() || !dup_violations.is_empty() {
+    let cli_violations = cli_scan(&promoted, &plan_abs);
+    let del_violations = del_scan(&promoted, &plan_abs);
+    let tomb_violations = tomb_scan(&promoted, &plan_abs);
+    let verify_index = DefinitionIndex::from_repo(&root);
+    let verify_violations = verify_scan(&promoted, &plan_abs, &verify_index);
+    if !scope_violations.is_empty()
+        || !audit_violations.is_empty()
+        || !dup_violations.is_empty()
+        || !cli_violations.is_empty()
+        || !del_violations.is_empty()
+        || !tomb_violations.is_empty()
+        || !verify_violations.is_empty()
+    {
         // Violations: enter phase + record files + return. Single
         // commit_state so the `?` Err arm is reachable via a
         // readonly-state fixture routed through this branch. Setting
@@ -750,10 +911,14 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
             &root,
             &branch,
             &format!(
-                "[Phase 2] plan-extract — plan-check violations (scope {} / audit {} / dup {}) in {} (exit 0)",
+                "[Phase 2] plan-extract — plan-check violations (scope {} / audit {} / dup {} / cli {} / del {} / tomb {} / verify {}) in {} (exit 0)",
                 scope_violations.len(),
                 audit_violations.len(),
                 dup_violations.len(),
+                cli_violations.len(),
+                del_violations.len(),
+                tomb_violations.len(),
+                verify_violations.len(),
                 plan_rel
             ),
         );
@@ -761,6 +926,10 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
             &scope_violations,
             &audit_violations,
             &dup_violations,
+            &cli_violations,
+            &del_violations,
+            &tomb_violations,
+            &verify_violations,
             "extracted",
         ));
     }
