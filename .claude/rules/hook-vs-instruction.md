@@ -81,6 +81,16 @@ insufficient:
   block is suppressed so user-only skills' confirmation prompts
   fire mid-autonomous. See `.claude/rules/user-only-skills.md`
   Layer 2.
+- **Voluntary turn-end during autonomous in-progress phases** —
+  `stop_continue::check_autonomous_in_progress` refuses the Stop
+  event with `{"decision":"block"}` and an autonomous-mode reason
+  when the current phase is in-progress AND configured `auto` AND
+  `_continue_pending` is empty. Closes the text-only-stop hole
+  that PreToolUse hooks cannot reach: a model that ends the turn
+  with prose alone (no tool call) is invisible to PreToolUse, but
+  the Stop hook fires and refuses the turn-end. The block runs
+  AFTER `check_first_stop` and `check_continue` so discussion
+  mode and multi-child-skill chains keep their semantics.
 - **Model invocation of user-only skills** —
   `validate-skill` rejects Skill tool calls naming
   `flow:flow-abort`, `flow:flow-reset`, `flow:flow-release`, or

@@ -198,10 +198,11 @@ Account-window snapshots are captured at every state-mutating transition by `src
 
 ### Auto-Advance Architecture
 
-Two layers:
+Three layers:
 
 1. The phase completion command returns `continue_action` (`"invoke"` or `"ask"`) and optionally `continue_target` in its JSON. Skill HARD-GATEs parse `continue_action` to decide whether to auto-invoke the next phase or prompt the user.
 2. `phase_complete()` writes `_auto_continue` to the state file when `continue_action` is `"invoke"`. The `validate-ask-user` PreToolUse hook reads this and auto-answers any `AskUserQuestion` that fires — safety net for cases where the model ignores the HARD-GATE.
+3. **Autonomous Stop Enforcement.** The Stop hook (`stop_continue::run()`) refuses voluntary turn-end via `check_autonomous_in_progress` when the current phase is `in_progress` AND configured `auto` AND `_continue_pending` is empty — closing the text-only-stop hole that PreToolUse hooks cannot reach. PreToolUse fires on tool calls, so a model that ends the turn with prose alone (no tool call) is invisible to it; the Stop hook fires on the Stop event itself. Composed AFTER `check_first_stop` and `check_continue` so discussion-mode and multi-child-skill chains keep their semantics. See `.claude/rules/autonomous-phase-discipline.md` Enforcement section.
 
 Block-first ordering: when the current phase's `phases.<current_phase>.status == "in_progress"` AND `skills.<current_phase>.continue == "auto"`, `validate-ask-user` returns exit 2 instead of auto-answering. The block path precedes the auto-answer path. The `in_progress` scope is load-bearing: the next phase's status is still `"pending"` until `phase_enter()` runs, so the completing skill's HARD-GATE prompt to approve transitions is NOT blocked even when the next phase is auto. `phase_enter()` clears `_auto_continue`, `_continue_pending`, `_continue_context`. See `.claude/rules/autonomous-phase-discipline.md`.
 

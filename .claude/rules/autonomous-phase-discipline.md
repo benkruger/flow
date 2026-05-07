@@ -21,6 +21,12 @@ During any phase with `continue: auto`:
 - Never unilaterally decide the flow is "too big" and ask whether
   to continue — autonomy means the user already answered that
   question when they chose `--auto`.
+- Never end the turn voluntarily without producing a tool call.
+  When context is exhausted, commit the in-flight work at a natural
+  boundary; the Stop-hook predicate
+  (`stop_continue::check_autonomous_in_progress`) refuses a turn-end
+  during an in-progress autonomous phase, so a model that "stops
+  with text" gets blocked into continuing.
 
 If Claude feels the urge to pause because of context pressure, a
 long-running task, or uncertainty about scope: commit the in-flight
@@ -61,7 +67,9 @@ response.
 
 ## Enforcement
 
-The prose rule above is backed by a mechanical PreToolUse hook.
+The prose rule above is backed by two mechanical hooks. The first
+gates `AskUserQuestion`; the second gates the Stop event itself.
+
 The `validate-ask-user` hook
 (`src/hooks/validate_ask_user.rs::validate()`) refuses
 `AskUserQuestion` tool calls with exit 2 when the state file
@@ -93,6 +101,20 @@ window, `_auto_continue` behaves unchanged.
 
 The blocked tool call returns the rejection message to the
 model via stderr so the session adapts instead of stalling.
+
+The Stop hook (`stop_continue::run()`) refuses a voluntary
+turn-end with `{"decision":"block"}` when
+`phases.<current_phase>.status == "in_progress"` AND
+`skills.<current_phase>.continue == "auto"` (Simple `"auto"` and
+Detailed `{"continue":"auto"}` shapes both recognized) AND
+`_continue_pending` is empty. The block runs after
+`check_first_stop` and `check_continue` so discussion mode and
+multi-child-skill chains keep their semantics. The block reason
+instructs user stop intent to route through `/flow:flow-abort`
+or `/flow:flow-note`. PreToolUse hooks cannot observe a turn-end
+with no tool call — only a Stop hook can — so this predicate
+closes the text-only-stop hole that `validate-ask-user` cannot
+reach.
 
 ## User-Only Skill Carve-Out
 

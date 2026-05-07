@@ -11,9 +11,9 @@ use std::process::{Command, Stdio};
 
 use flow_rs::commands::clear_blocked::clear_blocked;
 use flow_rs::hooks::stop_continue::{
-    capture_session_id, check_continue, check_discussion_mode, check_first_stop,
-    format_block_output, format_conditional_continue_reason, set_blocked_idle, set_tab_color,
-    DISCUSSION_BLOCK_REASON,
+    capture_session_id, check_autonomous_in_progress, check_continue, check_discussion_mode,
+    check_first_stop, format_block_output, format_conditional_continue_reason, set_blocked_idle,
+    set_tab_color, DISCUSSION_BLOCK_REASON,
 };
 use serde_json::{json, Value};
 
@@ -1174,5 +1174,407 @@ fn run_subprocess_continue_pending_uses_format_block_output() {
         reason.contains("child skill 'flow-commit' has returned"),
         "format_block_output reason must name the pending skill: {}",
         reason
+    );
+}
+
+// --- check_autonomous_in_progress ---
+
+#[test]
+fn check_autonomous_in_progress_returns_no_block_when_state_file_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("nonexistent.json");
+    let result = check_autonomous_in_progress(&path);
+    assert!(!result.should_block);
+    assert!(result.skill.is_none());
+    assert!(result.context.is_none());
+}
+
+#[test]
+fn check_autonomous_in_progress_returns_no_block_when_state_unparseable() {
+    let dir = tempfile::tempdir().unwrap();
+    // Empty file
+    let empty = dir.path().join("empty.json");
+    fs::write(&empty, "").unwrap();
+    assert!(!check_autonomous_in_progress(&empty).should_block);
+
+    // Invalid JSON
+    let invalid = dir.path().join("invalid.json");
+    fs::write(&invalid, "{not json").unwrap();
+    assert!(!check_autonomous_in_progress(&invalid).should_block);
+
+    // Wrong root type (array)
+    let array = dir.path().join("array.json");
+    fs::write(&array, "[1, 2, 3]").unwrap();
+    assert!(!check_autonomous_in_progress(&array).should_block);
+}
+
+#[test]
+fn check_autonomous_in_progress_returns_no_block_when_current_phase_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    // Empty current_phase string
+    let empty_phase = dir.path().join("empty_phase.json");
+    let state = json!({"current_phase": ""});
+    fs::write(&empty_phase, serde_json::to_string(&state).unwrap()).unwrap();
+    assert!(!check_autonomous_in_progress(&empty_phase).should_block);
+
+    // Missing current_phase key
+    let missing_phase = dir.path().join("missing_phase.json");
+    let state = json!({"branch": "feat"});
+    fs::write(&missing_phase, serde_json::to_string(&state).unwrap()).unwrap();
+    assert!(!check_autonomous_in_progress(&missing_phase).should_block);
+}
+
+#[test]
+fn check_autonomous_in_progress_returns_no_block_when_phase_status_pending() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    // Transition window: current_phase advanced but phase_enter not yet
+    // run, so status is still "pending".
+    let state = json!({
+        "current_phase": "flow-code",
+        "phases": {"flow-code": {"status": "pending"}},
+        "skills": {"flow-code": "auto"}
+    });
+    fs::write(&path, serde_json::to_string(&state).unwrap()).unwrap();
+    assert!(!check_autonomous_in_progress(&path).should_block);
+}
+
+#[test]
+fn check_autonomous_in_progress_returns_no_block_when_phase_status_complete() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    let state = json!({
+        "current_phase": "flow-code",
+        "phases": {"flow-code": {"status": "complete"}},
+        "skills": {"flow-code": "auto"}
+    });
+    fs::write(&path, serde_json::to_string(&state).unwrap()).unwrap();
+    assert!(!check_autonomous_in_progress(&path).should_block);
+}
+
+#[test]
+fn check_autonomous_in_progress_returns_no_block_when_skill_config_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    let state = json!({
+        "current_phase": "flow-code",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {}
+    });
+    fs::write(&path, serde_json::to_string(&state).unwrap()).unwrap();
+    assert!(!check_autonomous_in_progress(&path).should_block);
+}
+
+#[test]
+fn check_autonomous_in_progress_returns_no_block_when_skill_simple_manual() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    let state = json!({
+        "current_phase": "flow-code",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": "manual"}
+    });
+    fs::write(&path, serde_json::to_string(&state).unwrap()).unwrap();
+    assert!(!check_autonomous_in_progress(&path).should_block);
+}
+
+#[test]
+fn check_autonomous_in_progress_returns_no_block_when_skill_detailed_manual() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    let state = json!({
+        "current_phase": "flow-code",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": {"continue": "manual"}}
+    });
+    fs::write(&path, serde_json::to_string(&state).unwrap()).unwrap();
+    assert!(!check_autonomous_in_progress(&path).should_block);
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_in_progress_and_skill_simple_auto() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    let state = json!({
+        "current_phase": "flow-code",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": "auto"}
+    });
+    fs::write(&path, serde_json::to_string(&state).unwrap()).unwrap();
+    let result = check_autonomous_in_progress(&path);
+    assert!(result.should_block);
+    assert_eq!(result.skill.as_deref(), Some("autonomous-stop-refused"));
+    assert!(result.context.is_some());
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_in_progress_and_skill_detailed_auto() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    let state = json!({
+        "current_phase": "flow-code",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": {"continue": "auto", "commit": "auto"}}
+    });
+    fs::write(&path, serde_json::to_string(&state).unwrap()).unwrap();
+    let result = check_autonomous_in_progress(&path);
+    assert!(result.should_block);
+    assert_eq!(result.skill.as_deref(), Some("autonomous-stop-refused"));
+    assert!(result.context.is_some());
+}
+
+#[test]
+fn check_autonomous_in_progress_block_message_names_current_phase() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    let state = json!({
+        "current_phase": "flow-code",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": "auto"}
+    });
+    fs::write(&path, serde_json::to_string(&state).unwrap()).unwrap();
+    let result = check_autonomous_in_progress(&path);
+    let context = result.context.expect("context present");
+    assert!(
+        context.contains("flow-code"),
+        "context must name current phase: {}",
+        context
+    );
+}
+
+#[test]
+fn check_autonomous_in_progress_block_message_mentions_flow_abort() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    let state = json!({
+        "current_phase": "flow-plan",
+        "phases": {"flow-plan": {"status": "in_progress"}},
+        "skills": {"flow-plan": "auto"}
+    });
+    fs::write(&path, serde_json::to_string(&state).unwrap()).unwrap();
+    let result = check_autonomous_in_progress(&path);
+    let context = result.context.expect("context present");
+    assert!(
+        context.contains("/flow:flow-abort"),
+        "context must mention /flow:flow-abort: {}",
+        context
+    );
+}
+
+// State file with current_phase=flow-code, status=in_progress,
+// skills.flow-code="auto", _stop_instructed=true (so check_first_stop
+// falls through), no _continue_pending → run() invokes
+// check_autonomous_in_progress which blocks with skill
+// "autonomous-stop-refused". The output-formatting matcher routes the
+// block context directly as the reason (bypass format_block_output).
+#[test]
+fn subprocess_stop_hook_blocks_voluntary_stop_in_autonomous_in_progress_phase() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    Command::new("git")
+        .args(["init", "--initial-branch", "main"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.email", "t@t"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "t"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    fs::write(root.join("README.md"), "x").unwrap();
+    Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "init"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+
+    let state_dir = root.join(".flow-states");
+    fs::create_dir_all(state_dir.join("main")).unwrap();
+    let state = json!({
+        "branch": "main",
+        "current_phase": "flow-code",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": "auto"},
+        "_stop_instructed": true
+    });
+    fs::write(
+        state_dir.join("main").join("state.json"),
+        serde_json::to_string_pretty(&state).unwrap(),
+    )
+    .unwrap();
+
+    let (code, stdout, _stderr) = run_hook(&root, r#"{"session_id": "s1"}"#);
+    assert_eq!(code, 0);
+    let last = stdout
+        .lines()
+        .rfind(|l| l.trim_start().starts_with('{'))
+        .unwrap_or_else(|| panic!("no JSON in stdout: {}", stdout));
+    let json: Value = serde_json::from_str(last).unwrap();
+    assert_eq!(json["decision"], "block");
+    let reason = json["reason"].as_str().unwrap_or("");
+    assert!(
+        reason.contains("Autonomous mode"),
+        "reason must say `Autonomous mode`: {}",
+        reason
+    );
+    assert!(
+        reason.contains("/flow:flow-abort"),
+        "reason must mention /flow:flow-abort: {}",
+        reason
+    );
+}
+
+// --- check_autonomous_in_progress normalization (security-gates.md) ---
+//
+// Each test below asserts the gate still blocks under a state-file value
+// that defeats raw byte equality: trailing/leading whitespace, mixed case,
+// embedded NUL. Without normalization a hand-edited or hostile state file
+// could silently bypass the autonomous-stop gate per security-gates.md
+// "Normalize Before Comparing".
+
+fn write_state(path: &std::path::Path, status: Value, skill: Value) {
+    let state = json!({
+        "current_phase": "flow-code",
+        "phases": {"flow-code": {"status": status}},
+        "skills": {"flow-code": skill},
+    });
+    fs::write(path, serde_json::to_string(&state).unwrap()).unwrap();
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_status_has_trailing_whitespace() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    write_state(&path, json!("in_progress "), json!("auto"));
+    assert!(
+        check_autonomous_in_progress(&path).should_block,
+        "trailing-whitespace status must normalize and still block"
+    );
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_status_has_leading_whitespace() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    write_state(&path, json!(" in_progress"), json!("auto"));
+    assert!(
+        check_autonomous_in_progress(&path).should_block,
+        "leading-whitespace status must normalize and still block"
+    );
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_status_is_mixed_case() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    write_state(&path, json!("In_Progress"), json!("auto"));
+    assert!(
+        check_autonomous_in_progress(&path).should_block,
+        "mixed-case status must normalize (case-fold) and still block"
+    );
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_status_has_embedded_nul() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    write_state(&path, json!("in_progress\u{0000}"), json!("auto"));
+    assert!(
+        check_autonomous_in_progress(&path).should_block,
+        "NUL-padded status must normalize and still block"
+    );
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_simple_skill_has_trailing_whitespace() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    write_state(&path, json!("in_progress"), json!("auto "));
+    assert!(
+        check_autonomous_in_progress(&path).should_block,
+        "trailing-whitespace Simple skill must normalize and still block"
+    );
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_simple_skill_is_uppercase() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    write_state(&path, json!("in_progress"), json!("AUTO"));
+    assert!(
+        check_autonomous_in_progress(&path).should_block,
+        "uppercase Simple skill must normalize and still block"
+    );
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_simple_skill_has_embedded_nul() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    write_state(&path, json!("in_progress"), json!("auto\u{0000}"));
+    assert!(
+        check_autonomous_in_progress(&path).should_block,
+        "NUL-padded Simple skill must normalize and still block"
+    );
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_detailed_skill_continue_is_uppercase() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    write_state(&path, json!("in_progress"), json!({"continue": "AUTO"}));
+    assert!(
+        check_autonomous_in_progress(&path).should_block,
+        "uppercase Detailed-form continue must normalize and still block"
+    );
+}
+
+#[test]
+fn check_autonomous_in_progress_blocks_when_detailed_skill_continue_has_trailing_whitespace() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    write_state(&path, json!("in_progress"), json!({"continue": "auto "}));
+    assert!(
+        check_autonomous_in_progress(&path).should_block,
+        "trailing-whitespace Detailed-form continue must normalize and still block"
+    );
+}
+
+// --- check_autonomous_in_progress oversized state file (byte cap) ---
+
+#[test]
+fn check_autonomous_in_progress_no_block_when_state_file_exceeds_byte_cap() {
+    // Write a state file that exceeds STATE_FILE_BYTE_CAP (4 MB). The
+    // capped read truncates mid-string, the JSON parse fails, and the
+    // function fails open (no block). This proves the cap actually
+    // bounds the read — without it, the read would consume the full
+    // 5 MB and only fail at parse time after a successful unbounded
+    // allocation.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    // 5 MB padding inside a string field, wrapping a state otherwise
+    // valid for blocking. The padding pushes the file past the 4 MB cap.
+    let padding = "x".repeat(5 * 1024 * 1024);
+    let state = json!({
+        "current_phase": "flow-code",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": "auto"},
+        "padding": padding,
+    });
+    fs::write(&path, serde_json::to_string(&state).unwrap()).unwrap();
+    let result = check_autonomous_in_progress(&path);
+    assert!(
+        !result.should_block,
+        "state file exceeding byte cap must fail-open (truncated read produces malformed JSON)"
     );
 }
