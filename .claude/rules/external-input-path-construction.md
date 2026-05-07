@@ -62,7 +62,11 @@ into a filesystem path or file open:
 3. **Enforce a documented size cap on every external read.**
    `BufReader::new(file.take(BYTE_CAP))` is the canonical
    pattern. The cap lives as a module-level `const` with a doc
-   comment naming the worst-case scenario it bounds.
+   comment naming the worst-case scenario it bounds. The cap
+   applies whether the read is keyed off a state-derived path
+   OR is part of a directory walk that reads each file the
+   walker yields — both shapes can encounter generated, golden,
+   or hostile files larger than the function's working memory.
 4. **Document the validation contract in the function's doc
    comment.** Name the rejected character classes, the
    prefix-containment requirement, and the byte cap. Future
@@ -119,24 +123,50 @@ When in doubt, treat as state-derived and validate.
   constant carries a doc comment naming the long-autonomous-flow
   scenario it bounds.
 
+`src/verify_references_scanner.rs::index_dir` is the canonical
+walk example:
+
+- Walks `<root>/tests/` and `<root>/src/` recursively, reading
+  each `.rs` file into the definition index.
+- `INDEX_RS_BYTE_CAP = 4 MB` constant with doc comment naming
+  the generated/golden source file scenario it bounds.
+- `File::open(path)? .take(INDEX_RS_BYTE_CAP).read_to_string(&mut content)`
+  caps every per-file read in the loop. Generated parser
+  output, vendored fixture files, and hostile content all
+  truncate at the cap rather than allocating unbounded memory.
+- All filesystem errors (read_dir, File::open, read_to_string)
+  swallow to `continue` rather than `.expect()`. The walk is
+  best-effort: a missed definition produces a benign
+  false-positive violation that the author can resolve via
+  opt-out, but a panic crashes the entire `bin/flow plan-check`
+  subprocess and blocks Plan-phase completion.
+
 ## Plan-Phase Trigger
 
-When a plan task proposes a new function that reads a
-state-derived or env-derived string and uses it in filesystem
-path construction or `fs::*::open`, the plan's Risks section
-must enumerate:
+When a plan task proposes a new function that reads files from
+the filesystem — whether the read is keyed off a state-derived
+string OR is part of a recursive walk that reads each file the
+walker yields — the plan's Risks section must enumerate:
 
-1. **Source.** Where does the string enter the process? (state
-   field, env var, JSON parse, CLI flag, etc.)
-2. **Sink.** What construction does the string flow into?
+1. **Source.** Where does the string enter the process, OR
+   what subtree does the walker traverse? (state field, env
+   var, JSON parse, CLI flag, OR walk root + descent rules.)
+2. **Sink.** What construction does the string flow into, OR
+   what file-open call does the walker make per entry?
    (`format!`, `Path::join`, `PathBuf::from`, `fs::File::open`,
-   etc.)
+   `fs::read_to_string`, etc.)
 3. **Validator.** Which `is_safe_<purpose>` function (or
-   equivalent positive validator) gates the construction?
+   equivalent positive validator) gates the construction? For
+   walks, name the per-entry filter (extension check, name
+   filter, file-type check) that limits which files are read.
 4. **Cap.** For every file read, the byte cap that bounds I/O.
+   This applies to direct `read_to_string` calls AND to walks
+   that read each yielded file. A plan that lists "walk
+   `tests/` for `.rs` files and read each one" without a
+   `BYTE_CAP` constant is incomplete.
 
-A plan that proposes a new external-input read without naming
-all four is incomplete.
+A plan that proposes a new external-input read OR a new
+filesystem walk without naming all four is incomplete.
 
 ## How to Apply
 
@@ -153,15 +183,48 @@ state-derived string and uses it in path construction:
 3. For file reads, declare the byte cap as a module-level
    `const` with a doc comment, then wrap the reader in
    `BufReader::new(file.take(THAT_CAP))`.
-4. Test every rejection class — empty, `.`, `..`, traversal,
+4. For filesystem walks, apply the cap to every per-entry
+   read, not only to a single state-derived read.
+5. Test every rejection class — empty, `.`, `..`, traversal,
    NUL byte, prefix-escape, oversized read. The tests live
    alongside the validator, not at the consumer.
 
 **Code Review phase.** The reviewer agent and adversarial
-agent check every new state-derived path-construction site for
-the validator. Findings tagged "path traversal via X" or
-"arbitrary file read via Y" are Real findings that get fixed
-in the same PR per `.claude/rules/code-review-scope.md`.
+agent check every new state-derived path-construction site
+AND every new filesystem walk for the validator and the byte
+cap. Findings tagged "path traversal via X", "arbitrary file
+read via Y", or "unbounded read in walk Z" are Real findings
+that get fixed in the same PR per
+`.claude/rules/code-review-scope.md`.
+
+## No `.expect()` on Filesystem Reads in Hooks or CLI Subcommands
+
+Hook scripts (`src/hooks/*.rs`) and CLI subcommands
+(`src/*.rs::run_impl`) run under user-visible session lifecycle.
+A `.expect()` on `fs::read_dir`, `fs::symlink_metadata`,
+`fs::File::open`, or `fs::read_to_string` produces a Rust panic
+and backtrace at the user's terminal — the same blast radius as
+a panicking constructor invariant. Per
+`.claude/rules/external-input-validation.md` "Hook callsite
+discipline," hooks must never construct branch-scoped state via
+`FlowPaths::new`; the same discipline applies to filesystem
+operations: hooks and CLI subcommands must use `match`, `?`, or
+`.ok()` chained to a non-panicking fallback (early return, skip
+the entry, swallow to `continue`).
+
+The `.expect("...")` carve-out from
+`.claude/rules/testability-means-simplicity.md` "When the test
+resists the real production path" remains valid for unreachable
+arms — but the exception must be paired with proof that the arm
+is genuinely unreachable from any production path. A `.expect()`
+on `fs::read_dir(<repo_subtree>)` is reachable when the subtree
+is unreadable (chmod 0, transient I/O failure, race with
+concurrent removal); the test is what proves reachability or
+the absence of it. The pattern in
+`src/verify_references_scanner.rs::index_dir` is the canonical
+example: every filesystem error swallows to `continue`, with
+the sole `.expect("symlink_metadata succeeds on freshly-iterated
+read_dir entry")` reserved for the genuinely TOCTOU-only branch.
 
 ## Cross-References
 
