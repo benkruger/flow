@@ -33,6 +33,7 @@ use crate::phase_config::load_phase_config;
 use crate::phase_transition::{phase_complete, phase_enter};
 use crate::render_pr_body::render_body;
 use crate::scope_enumeration::{scan as scope_scan, Violation};
+use crate::tombstone_checklist_scanner::{scan as tomb_scan, Violation as TombViolation};
 use crate::update_pr_body::gh_set_body;
 use crate::utils::extract_issue_numbers;
 
@@ -350,6 +351,7 @@ fn violations_response(
     dup_violations: &[DupViolation],
     cli_violations: &[CliViolation],
     del_violations: &[DelViolation],
+    tomb_violations: &[TombViolation],
     path_label: &str,
 ) -> Value {
     let mut violations_json: Vec<Value> = Vec::new();
@@ -382,13 +384,19 @@ fn violations_response(
         violations_json.push(crate::plan_check::cli_output_violation_to_tagged_json(v));
     }
     for v in del_violations {
-        violations_json.push(crate::plan_check::deletion_sweep_violation_to_tagged_json(v));
+        violations_json.push(crate::plan_check::deletion_sweep_violation_to_tagged_json(
+            v,
+        ));
+    }
+    for v in tomb_violations {
+        violations_json.push(crate::plan_check::tombstone_checklist_violation_to_tagged_json(v));
     }
     let total = scope_violations.len()
         + audit_violations.len()
         + dup_violations.len()
         + cli_violations.len()
-        + del_violations.len();
+        + del_violations.len()
+        + tomb_violations.len();
     // Reuse the message builder from plan_check so both gate
     // callsites render identical wording. plan_extract adds the
     // path-specific "Edit the plan, then re-run /flow:flow-plan"
@@ -399,6 +407,7 @@ fn violations_response(
         dup_violations.len(),
         cli_violations.len(),
         del_violations.len(),
+        tomb_violations.len(),
         total,
     );
     json!({
@@ -505,11 +514,13 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
         let dup_violations = dup_scan(&plan_content, &plan_abs, &test_corpus);
         let cli_violations = cli_scan(&plan_content, &plan_abs);
         let del_violations = del_scan(&plan_content, &plan_abs);
+        let tomb_violations = tomb_scan(&plan_content, &plan_abs);
         if !scope_violations.is_empty()
             || !audit_violations.is_empty()
             || !dup_violations.is_empty()
             || !cli_violations.is_empty()
             || !del_violations.is_empty()
+            || !tomb_violations.is_empty()
         {
             return Ok(violations_response(
                 &scope_violations,
@@ -517,6 +528,7 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
                 &dup_violations,
                 &cli_violations,
                 &del_violations,
+                &tomb_violations,
                 "resumed",
             ));
         }
@@ -753,11 +765,13 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
     let dup_violations = dup_scan(&promoted, &plan_abs, &test_corpus);
     let cli_violations = cli_scan(&promoted, &plan_abs);
     let del_violations = del_scan(&promoted, &plan_abs);
+    let tomb_violations = tomb_scan(&promoted, &plan_abs);
     if !scope_violations.is_empty()
         || !audit_violations.is_empty()
         || !dup_violations.is_empty()
         || !cli_violations.is_empty()
         || !del_violations.is_empty()
+        || !tomb_violations.is_empty()
     {
         // Violations: enter phase + record files + return. Single
         // commit_state so the `?` Err arm is reachable via a
@@ -781,12 +795,13 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
             &root,
             &branch,
             &format!(
-                "[Phase 2] plan-extract — plan-check violations (scope {} / audit {} / dup {} / cli {} / del {}) in {} (exit 0)",
+                "[Phase 2] plan-extract — plan-check violations (scope {} / audit {} / dup {} / cli {} / del {} / tomb {}) in {} (exit 0)",
                 scope_violations.len(),
                 audit_violations.len(),
                 dup_violations.len(),
                 cli_violations.len(),
                 del_violations.len(),
+                tomb_violations.len(),
                 plan_rel
             ),
         );
@@ -796,6 +811,7 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
             &dup_violations,
             &cli_violations,
             &del_violations,
+            &tomb_violations,
             "extracted",
         ));
     }

@@ -270,7 +270,15 @@ fn has_negation_prefix(line: &str, match_start: usize) -> bool {
         None => prefix.as_str(),
     };
     const NEGATIONS: &[&str] = &[
-        "not", "never", "avoid", "don't", "won't", "cannot", "doesn't", "shouldn't", "mustn't",
+        "not",
+        "never",
+        "avoid",
+        "don't",
+        "won't",
+        "cannot",
+        "doesn't",
+        "shouldn't",
+        "mustn't",
     ];
     current_sentence
         .split_whitespace()

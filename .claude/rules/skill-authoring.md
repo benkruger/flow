@@ -103,7 +103,7 @@ task comes before the implementation task it validates.
 
 When a plan removes a named feature from any source file — SKILL.md
 content, Rust functions, Rust structs or enums, `.claude/rules/`
-files, config axes, external dependencies — include a tombstone test
+files, config axes, external dependencies — include a tombstone test <!-- tombstone-checklist: not-a-tombstone -->
 task before the removal tasks. The tombstone test asserts the
 removed identifier does NOT appear in the modified files. This
 applies equally to skill removals and Rust source removals — the

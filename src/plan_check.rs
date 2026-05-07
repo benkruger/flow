@@ -35,6 +35,7 @@ use crate::external_input_audit;
 use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::scope_enumeration::scan;
+use crate::tombstone_checklist_scanner::{self};
 
 /// CLI arguments for the plan-check subcommand.
 #[derive(Parser, Debug)]
@@ -137,12 +138,14 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let dup_violations = duplicate_test_coverage::scan(&content, &plan_path, &test_corpus);
     let cli_violations = cli_output_contract_scanner::scan(&content, &plan_path);
     let del_violations = deletion_sweep_scanner::scan(&content, &plan_path);
+    let tomb_violations = tombstone_checklist_scanner::scan(&content, &plan_path);
 
     if scope_violations.is_empty()
         && audit_violations.is_empty()
         && dup_violations.is_empty()
         && cli_violations.is_empty()
         && del_violations.is_empty()
+        && tomb_violations.is_empty()
     {
         return Ok(json!({"status": "ok"}));
     }
@@ -175,18 +178,23 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     for v in &del_violations {
         violations_json.push(deletion_sweep_violation_to_tagged_json(v));
     }
+    for v in &tomb_violations {
+        violations_json.push(tombstone_checklist_violation_to_tagged_json(v));
+    }
 
     let total = scope_violations.len()
         + audit_violations.len()
         + dup_violations.len()
         + cli_violations.len()
-        + del_violations.len();
+        + del_violations.len()
+        + tomb_violations.len();
     let message = build_violation_message(
         scope_violations.len(),
         audit_violations.len(),
         dup_violations.len(),
         cli_violations.len(),
         del_violations.len(),
+        tomb_violations.len(),
         total,
     );
 
@@ -257,6 +265,24 @@ pub fn deletion_sweep_violation_to_tagged_json(
     })
 }
 
+/// Serialize a tombstone-checklist violation with its extra
+/// `missing_items` field naming which of the five checklist
+/// items are absent from the plan window.
+///
+/// Shared with `src/plan_extract.rs::violations_response`.
+pub fn tombstone_checklist_violation_to_tagged_json(
+    v: &crate::tombstone_checklist_scanner::Violation,
+) -> Value {
+    json!({
+        "file": v.file.display().to_string(),
+        "line": v.line,
+        "phrase": v.phrase,
+        "context": v.context,
+        "rule": "tombstone-checklist",
+        "missing_items": v.missing_items,
+    })
+}
+
 /// Build a human-readable summary message that names each scanner's
 /// count when non-zero. The message must tell the author which rule
 /// file to consult for each violation class.
@@ -272,6 +298,7 @@ pub fn build_violation_message(
     dup_count: usize,
     cli_count: usize,
     del_count: usize,
+    tomb_count: usize,
     total: usize,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
@@ -311,6 +338,14 @@ pub fn build_violation_message(
              nearby sweep evidence (see \
              .claude/rules/docs-with-behavior.md \"Scope Enumeration (Rename Side)\")",
             del_count
+        ));
+    }
+    if tomb_count > 0 {
+        parts.push(format!(
+            "{} tombstone-checklist violation(s): tombstone proposal(s) lack \
+             the five-item checklist (see \
+             .claude/rules/tombstone-tests.md \"Plan-phase responsibility\")",
+            tomb_count
         ));
     }
     format!("{} plan-check violation(s): {}.", total, parts.join("; "))

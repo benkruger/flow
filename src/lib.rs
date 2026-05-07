@@ -64,6 +64,7 @@ pub mod start_init;
 pub mod start_workspace;
 pub mod state;
 pub mod tombstone_audit;
+pub mod tombstone_checklist_scanner;
 pub mod tui;
 pub mod tui_data;
 pub mod tui_terminal;

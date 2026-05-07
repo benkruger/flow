@@ -108,8 +108,7 @@ fn fenced_block_trigger_ignored() {
 
 #[test]
 fn opt_out_on_trigger_line_suppresses() {
-    let content =
-        "Remove `old_long_function_name`. <!-- deletion-sweep: not-a-deletion --> end.\n";
+    let content = "Remove `old_long_function_name`. <!-- deletion-sweep: not-a-deletion --> end.\n";
     assert_clean(content);
 }
 
@@ -121,15 +120,13 @@ fn opt_out_directly_above_suppresses() {
 
 #[test]
 fn opt_out_two_lines_above_with_blank_suppresses() {
-    let content =
-        "<!-- deletion-sweep: not-a-deletion -->\n\nRemove `old_long_function_name`.\n";
+    let content = "<!-- deletion-sweep: not-a-deletion -->\n\nRemove `old_long_function_name`.\n";
     assert_clean(content);
 }
 
 #[test]
 fn opt_out_three_lines_above_does_not_suppress() {
-    let content =
-        "<!-- deletion-sweep: not-a-deletion -->\n\n\nRemove `old_long_function_name`.\n";
+    let content = "<!-- deletion-sweep: not-a-deletion -->\n\n\nRemove `old_long_function_name`.\n";
     assert_eq!(scan(content, &fixture_path()).len(), 1);
 }
 
