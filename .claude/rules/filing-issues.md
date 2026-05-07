@@ -110,6 +110,51 @@ what the code actually does — not a guess about what it might
 do. A cold-start session should be able to act on the issue
 without re-doing the investigation.
 
+## Value Test Before Filing
+
+Before filing any issue derived from a FLOW phase finding,
+apply the same value test that
+`.claude/rules/code-review-scope.md` applies to Code Review
+findings — adapted for the issue-filing decision:
+
+> **Was the gap caught by another phase gate AND remediated in
+> this PR (code fix, rule clarification, or new rule)?**
+>
+> - If yes → the system already closed the gap. Record it in
+>   the commit message and the Learn report. Do not file an
+>   issue.
+> - If no → the gap is open. File it.
+
+The trap to avoid: framing "Plan phase didn't catch X but Code
+Review did" as a process gap. Code Review IS part of the
+process. The cognitive-isolation design (four sub-agents)
+exists precisely to catch what the Plan author missed. A
+Code-Review-caught-and-fixed violation is the system working,
+not a gap.
+
+A real Tenant 1 process gap looks like one of:
+
+- A class of bug where no phase gate would have caught it —
+  the bug shipped, was discovered post-merge, and nothing in
+  the existing process would have prevented it.
+- A workflow step that broke (skill error, hook misfire, state
+  corruption) and the error path was undefined or destructive.
+- An async/dangling operation: a background agent that never
+  reported back, a state mutation without a paired commit, a
+  notification that never fired.
+
+A real Tenant 2 enforcement escalation looks like:
+
+- A rule that was clear, applicable, and ignored AND the same
+  violation has been observed across multiple flows — pattern,
+  not one-off — AND instruction-level enforcement has
+  demonstrably failed to fix it.
+
+When in doubt, do not file. The cost of an un-filed real issue
+is one more flow surfacing it; the cost of a filed bogus issue
+is triage time on every future session that opens the issue
+list.
+
 ## Repo Routing
 
 Most issue-filing paths target the current project (omit `--repo`):

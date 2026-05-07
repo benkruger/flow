@@ -225,15 +225,35 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<
 **Tenant 1 — Process gaps.** Findings where the FLOW plugin's workflow
 broke or was missing something, including dangling async operations
 (background agent invocations without result handling) and missing
-automation. Route to Step 6 (file issues).
+automation. Apply the value test from
+`.claude/rules/filing-issues.md` "Value Test Before Filing" before
+routing:
+
+> Was the gap caught by another phase gate AND remediated in this
+> PR (code fix, rule clarification, or new rule)?
+
+If yes → the system already closed the gap. Record it in the commit
+message and the Learn report. Do NOT route to Step 6. Dismiss with
+the rationale "caught by Code Review and remediated in this PR — no
+open gap." If no → real gap, route to Step 6.
+
+The trap: framing "Plan phase didn't catch X but Code Review did"
+as a process gap. Code Review IS part of the process. The
+cognitive-isolation design exists precisely to catch what the Plan
+author missed. A Code-Review-caught-and-fixed violation is the
+system working, not a gap.
 
 **Tenant 2 — Rule compliance.** Findings where an existing rule was
 violated. For each violation, note the learn-analyst's enforcement
 assessment:
 
 - Rule was unclear or ambiguous → route to Step 3 (clarify rule)
-- Rule was clear but ignored → route to Step 3 (clarify rule) AND
-  route to Step 6 (file enforcement escalation issue)
+- Rule was clear but ignored → route to Step 3 (clarify rule). Apply
+  the same value test before filing an enforcement escalation issue:
+  has the same violation been observed across multiple flows
+  (pattern, not one-off) AND has instruction-level enforcement
+  demonstrably failed to fix it? If yes, route to Step 6. If no,
+  the rule clarification is sufficient.
 
 **Tenant 3 — Missing rules.** Findings where no rule covers the
 situation but should. Route to Step 3 (create new rule).
