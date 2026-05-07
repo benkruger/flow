@@ -1,27 +1,38 @@
 //! Plan-check: scan the current plan file for Plan-phase rule
 //! violations.
 //!
-//! This command is the Plan-phase gate that aggregates three scanners
-//! — `src/scope_enumeration.rs::scan` (universal-coverage prose
-//! without a named sibling list), `src/external_input_audit.rs::scan`
-//! (panic/assert tightening proposals without a paired callsite
-//! audit table), and
-//! `src/duplicate_test_coverage.rs::scan` (proposed test names that
-//! collide with existing tests in the corpus). Invoked from
-//! `skills/flow-plan/SKILL.md` Step 4 before
-//! `phase-transition --action complete`, the gate refuses to let the
-//! Plan phase finish if any scanner finds violations. Each violation
-//! in the JSON response carries a `rule` field naming which scanner
-//! fired, so the skill's repair loop can point the author at the
-//! right fix. The extracted and resume paths in
-//! `src/plan_extract.rs` invoke the same three scanners against the
-//! promoted plan content before `complete_plan_phase` to gate the
-//! same class of mistakes for pre-planned issues.
+//! This command is the Plan-phase gate that aggregates seven
+//! scanners:
 //!
-//! All four callsites (standard, extracted, resume, and the
-//! committed-prose contract test) share the same scanner modules so
-//! the trigger vocabulary, opt-out grammars, and rule tagging cannot
-//! drift between the three paths.
+//! - `src/scope_enumeration.rs::scan` — universal-coverage prose
+//!   without a named sibling list.
+//! - `src/external_input_audit.rs::scan` — panic/assert tightening
+//!   proposals without a paired callsite audit table.
+//! - `src/duplicate_test_coverage.rs::scan` — proposed test names
+//!   that collide with existing tests in the corpus.
+//! - `src/cli_output_contract_scanner.rs::scan` — flag/subcommand
+//!   proposals without the four-item output contract block.
+//! - `src/deletion_sweep_scanner.rs::scan` — delete/rename
+//!   proposals without nearby sweep evidence.
+//! - `src/tombstone_checklist_scanner.rs::scan` — tombstone
+//!   proposals without the five-item checklist.
+//! - `src/verify_references_scanner.rs::scan` — backtick-quoted
+//!   identifiers in `## Tasks` not defined as `fn <name>(`
+//!   anywhere under `tests/` or `src/`.
+//!
+//! Invoked from `skills/flow-plan/SKILL.md` Step 4 before
+//! `phase-transition --action complete`, the gate refuses to let
+//! the Plan phase finish if any scanner finds violations. Each
+//! violation in the JSON response carries a `rule` field naming
+//! which scanner fired, so the skill's repair loop can point the
+//! author at the right fix. The extracted and resume paths in
+//! `src/plan_extract.rs` invoke the same seven scanners against
+//! the promoted plan content before `complete_plan_phase` to gate
+//! the same class of mistakes for pre-planned issues.
+//!
+//! All callsites (standard, extracted, resume) share the same
+//! scanner modules so the trigger vocabulary, opt-out grammars,
+//! and rule tagging cannot drift between the three paths.
 
 use std::path::{Path, PathBuf};
 

@@ -173,13 +173,16 @@ pub fn scan(content: &str, source: &Path) -> Vec<Violation> {
 }
 
 /// Returns the list of contract item keys that are NOT covered by
-/// prose within the next `WINDOW_NON_BLANK_LINES` non-blank lines
-/// forward of the trigger. An empty Vec means all four items were
-/// found and the trigger is compliant.
+/// prose within `WINDOW_NON_BLANK_LINES` non-blank lines starting
+/// at the trigger line itself. Including the trigger line lets a
+/// compact one-line proposal ("add a new flag with output format
+/// JSON, exit codes 0/1, error messages on stderr, fallback none")
+/// satisfy compliance without a separate paragraph. An empty Vec
+/// means all four items were found and the trigger is compliant.
 fn missing_contract_items(lines: &[&str], trigger_idx: usize, fenced: &[bool]) -> Vec<String> {
     let mut found = vec![false; CONTRACT_ITEMS.len()];
     let mut non_blank = 0;
-    for (i, line) in lines.iter().enumerate().skip(trigger_idx + 1) {
+    for (i, line) in lines.iter().enumerate().skip(trigger_idx) {
         if fenced[i] {
             continue;
         }

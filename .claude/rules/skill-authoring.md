@@ -107,7 +107,7 @@ files, config axes, external dependencies — include a tombstone test <!-- tomb
 task before the removal tasks. The tombstone test asserts the
 removed identifier does NOT appear in the modified files. This
 applies equally to skill removals and Rust source removals — the
-`.claude/rules/tombstone-tests.md` "When to Add" criterion is
+`.claude/rules/tombstone-tests.md` "When to Add" criterion is <!-- tombstone-checklist: not-a-tombstone -->
 universal and covers every intentional removal of a named feature,
 not just skill-scoped ones. Without a tombstone, the removal has no
 CI-visible protection.

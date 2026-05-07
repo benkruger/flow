@@ -9,13 +9,13 @@
 //! ## Trigger vocabulary
 //!
 //! The trigger fires when plan prose proposes a tombstone — a
-//! line containing "tombstone" (case-insensitive) AND a
-//! propose-verb (`add`, `ship`, `introduce`, `include`) on the
-//! same line, OR a code fenced block containing
-//! `Tombstone:.*PR #<digits>` (the canonical tombstone comment
-//! shape). The propose-verb requirement keeps the trigger
-//! conservative — prose discussing tombstones generally
-//! ("tombstones live in `tests/`") does not fire.
+//! line containing a tombstone noun phrase ("tombstone test",
+//! "tombstone-test", "tombstone tests", "tombstone-tests",
+//! "tombstone for") AND a propose-verb (`add`, `ship`,
+//! `introduce`, `include`) on the same line. The propose-verb
+//! requirement keeps the trigger conservative — prose discussing
+//! tombstones generally ("tombstones live in `tests/`") does not
+//! fire.
 //!
 //! ## Compliance proof
 //!
@@ -102,12 +102,17 @@ pub fn scan(content: &str, source: &Path) -> Vec<Violation> {
             continue;
         }
         let lower = line.to_lowercase();
-        // Require "tombstone test" or "tombstone for" — the noun
-        // phrases plan proposals use. Bare "tombstone" mid-prose
-        // (e.g. "tombstones live in tests/", "tombstone-audit
-        // subcommand") describes existing infrastructure rather
-        // than proposing a new one.
-        if !(lower.contains("tombstone test") || lower.contains("tombstone for")) {
+        // Require a tombstone noun phrase. Both space and hyphen
+        // variants ("tombstone test", "tombstone-test", "tombstone
+        // tests", "tombstone-tests", "tombstone for") are
+        // recognized — plan prose uses both. Bare "tombstone"
+        // mid-prose (e.g. "tombstones live in tests/",
+        // "tombstone-audit subcommand") describes existing
+        // infrastructure rather than proposing a new one.
+        if !(lower.contains("tombstone test")
+            || lower.contains("tombstone-test")
+            || lower.contains("tombstone for"))
+        {
             continue;
         }
         let trig = match trigger_regex().find(&lower) {
