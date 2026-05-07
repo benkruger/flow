@@ -310,10 +310,7 @@ fn promote_headings(content: &str) -> String {
 /// The check is conservative: only an unclosed fence at EOF or a
 /// task-count mismatch fires the gate. False positives would
 /// block legitimate plans, so the gate accepts ambiguous cases.
-pub fn detect_truncation(
-    source: &str,
-    promoted: &str,
-) -> Option<(usize, usize)> {
+pub fn detect_truncation(source: &str, promoted: &str) -> Option<(usize, usize)> {
     let expected = count_tasks(source);
     let actual = count_tasks_after_promotion(promoted);
     if has_unclosed_fence(source) || has_unclosed_fence(promoted) {

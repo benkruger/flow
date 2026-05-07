@@ -217,13 +217,19 @@ See `.claude/rules/concurrency-model.md` "Mechanical Enforcement" and `.claude/r
 
 ### Plan-Phase Gates
 
-Phase 2 gates completion on three scanners that share `bin/flow plan-check`:
+Phase 2 gates completion on seven scanners that share `bin/flow plan-check`:
 
 - `src/scope_enumeration.rs::scan` — universal-coverage prose without a named sibling list
 - `src/external_input_audit.rs::scan` — panic/assert tightening proposals without a paired callsite source-classification audit table
 - `src/duplicate_test_coverage.rs::scan` — proposed test names that normalize to an existing test in `tests/**/*.rs`
+- `src/cli_output_contract_scanner.rs::scan` — flag/subcommand proposals without the four-item contract block (output format, exit codes, error messages, fallback) <!-- cli-output-contracts: not-a-new-flag -->
+- `src/deletion_sweep_scanner.rs::scan` — delete/rename proposals without nearby sweep evidence (file bullets, Exploration heading, or table row)
+- `src/tombstone_checklist_scanner.rs::scan` — tombstone proposals without the five-item checklist (protection target, assertion kind, stability argument, bypass list, file-resurrection pair)
+- `src/verify_references_scanner.rs::scan` — backtick-quoted identifiers in `## Tasks` that are not defined as `fn <name>(` somewhere under `tests/` or `src/`
 
-All three run at three callsites: standard path (`src/plan_check.rs`), pre-decomposed extracted path, and resume path (both in `src/plan_extract.rs`). Each violation carries a `rule` field tying it to its rule file. Contract tests in `tests/scope_enumeration.rs` and `tests/external_input_audit.rs` lock the committed prose corpus against drift.
+All seven run at three callsites: standard path (`src/plan_check.rs`), pre-decomposed extracted path, and resume path (both in `src/plan_extract.rs`). Each violation carries a `rule` field tying it to its rule file. Contract tests in `tests/scope_enumeration.rs`, `tests/external_input_audit.rs`, `tests/cli_output_contract_corpus.rs`, `tests/deletion_sweep_corpus.rs`, and `tests/tombstone_checklist_corpus.rs` lock the committed prose corpus against drift. `tests/verify_references_corpus.rs` and `tests/duplicate_test_coverage.rs` ship as documented empty markers per `.claude/rules/tests-guard-real-regressions.md` "Corpus-scan viability check."
+
+`src/plan_extract.rs::detect_truncation` is a separate truncation gate that scans the issue body and post-promotion content for unclosed fenced code blocks at EOF and task-count mismatches between source (`#### Task N:`) and promoted (`### Task N:`) headings. On truncation, plan-extract refuses to write the plan file and returns `{"status":"error","truncated":true,"expected_task_count":N,"actual_task_count":M}` so the skill's Fast Path Done halts auto-advance.
 
 ### Tombstone Lifecycle
 
@@ -266,5 +272,9 @@ When developing FLOW itself, point Claude Code at the local plugin source via `c
 - **External-input audit for panic/assert tightenings** — see `.claude/rules/external-input-audit-gate.md`.
 - **Extract-helper branch enumeration for refactor plans** — see `.claude/rules/extract-helper-refactor.md`.
 - **Duplicate test coverage for proposed test names** — see `.claude/rules/duplicate-test-coverage.md`.
+- **CLI output contracts for flags or subcommands that produce consumed output** — see `.claude/rules/cli-output-contracts.md`. <!-- cli-output-contracts: not-a-new-flag -->
+- **Deletion-sweep evidence for delete/rename proposals** — see `.claude/rules/docs-with-behavior.md` "Scope Enumeration (Rename Side)".
+- **Tombstone five-item checklist for tombstone proposals** — see `.claude/rules/tombstone-tests.md` "Plan-phase responsibility".
+- **Verify cited identifiers exist as `fn` definitions** — see `.claude/rules/skill-authoring.md` "Verify Test Function References in Issues".
 - **No `run_in_background` during FLOW phases**; `bin/flow` is never allowed in the background — see `.claude/rules/ci-is-a-gate.md`.
 - **User evidence is ground truth** — when a user provides screenshots or logs that contradict your code analysis, trust the evidence. Your code reading is a hypothesis; the user's evidence is an observation.

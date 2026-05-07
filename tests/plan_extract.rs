@@ -2176,10 +2176,7 @@ exit 1
         assert_eq!(code, 0);
         assert_eq!(json["status"], "error");
         assert_eq!(json["truncated"], true);
-        assert!(json["message"]
-            .as_str()
-            .unwrap()
-            .contains("truncation"));
+        assert!(json["message"].as_str().unwrap().contains("truncation"));
     }
 
     #[test]
