@@ -80,7 +80,7 @@ exception unlocks where the diff lives, never how it lands.
 Flow-commit runs CI and is never bypassed regardless of phrasing.
 
 The exception above is rule-level. The hook described in
-"Mechanical Enforcement" below is stricter: Layer 10 mechanically
+"Mechanical Enforcement" below is stricter: Layer 9 mechanically
 blocks any `git ... commit` or `bin/flow ... finalize-commit`
 invocation whose effective cwd resolves either to the integration
 branch OR to a feature branch with an active FLOW state file,
@@ -96,7 +96,7 @@ context-sensitive predicate the model could rationalize past.
 
 ### Mechanical Enforcement
 
-The `validate-pretool` PreToolUse hook's Layer 10 mechanically
+The `validate-pretool` PreToolUse hook's Layer 9 mechanically
 rejects direct commit invocations whose effective cwd resolves
 either to the integration branch named by `default_branch_in` OR
 to a feature branch with an active FLOW state file at
@@ -117,7 +117,7 @@ by basename suffix so absolute paths like
   re-evaluated through the same matcher.
 - **`git -C <other_repo> commit ...`** — branch resolution reads
   from BOTH the hook's process cwd AND the `-C` argument's path,
-  and Layer 10 blocks if EITHER resolves to its own integration
+  and Layer 9 blocks if EITHER resolves to its own integration
   branch.
 - **`bin/flow <flag> finalize-commit`** — the `bin/flow` arm
   matches `finalize-commit` as any subsequent token, not just
@@ -126,7 +126,7 @@ by basename suffix so absolute paths like
 
 ### Active-Flow Trigger
 
-Layer 10 fires in two contexts. The integration-branch context
+Layer 9 fires in two contexts. The integration-branch context
 above defends against direct commits on the trunk. The
 **active-flow context** defends against direct commits in any
 feature-branch worktree that already has a FLOW lifecycle
@@ -152,7 +152,7 @@ surface during a flow.
 The pre-flow editing scenario remains unblocked: if no state
 file exists at `.flow-states/<branch>/state.json` (the user
 hasn't run `/flow:flow-start` yet), the active-flow predicate
-returns false and Layer 10 stays silent. The gate fires only
+returns false and Layer 9 stays silent. The gate fires only
 once a flow is genuinely active.
 
 **Skill-commit carve-out.** The active-flow gate would otherwise
@@ -212,7 +212,7 @@ rather than an accident:
 
 These limitations are documented v1 boundaries, not security
 holes. The default-no-edit-on-the-base-branch discipline
-above remains the primary instrument; Layer 10 is the
+above remains the primary instrument; Layer 9 is the
 merge-conflict trip-wire for the shapes Claude is most likely to
 produce by accident.
 

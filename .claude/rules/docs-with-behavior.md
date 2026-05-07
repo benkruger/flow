@@ -180,17 +180,39 @@ asserts a guard applies universally to a code family without
 naming its members — see `.claude/rules/scope-enumeration.md`.
 
 When renaming a command, replacing a subcommand, or fixing
-documentation drift, grep all files for the old identifier before
-writing the plan:
+documentation drift, grep all files for **every** old identifier
+the change removes or renames — not just the obvious one. A
+single PR often touches multiple identifiers simultaneously:
+removing a feature deletes its symbol name AND any prose phrase
+that named the behavior; renumbering a numbered concept (e.g.
+"Layer 8" → "Layer 9") leaves stale references to the description
+("file-read commands") that named the OLD layer's purpose. The
+Plan phase must enumerate every identifier the change touches
+before running the grep sweep.
 
-```text
-grep -r "<old-name>" docs/ skills/ tests/ CLAUDE.md .claude/rules/
-```
+The discipline is two-step:
+
+1. **Identifier inventory.** Before writing the plan, list every
+   string the change removes or renames. For a feature removal,
+   that includes: the symbol name (e.g. `FILE_READ_COMMANDS`),
+   the prose name (e.g. "file-read commands"), the layer
+   number/identifier (e.g. "Layer 8"), and any other mnemonic
+   the prose corpus uses for the same concept. For a rename,
+   that includes: the old name AND the OLD prose phrasing that
+   referenced it.
+2. **Per-identifier grep.** Run a separate grep for each
+   identifier in the inventory:
+
+   ```text
+   grep -r "<identifier-1>" docs/ skills/ tests/ CLAUDE.md .claude/rules/
+   grep -r "<identifier-2>" docs/ skills/ tests/ CLAUDE.md .claude/rules/
+   ```
 
 Every matching file is in-scope regardless of what the issue body
 or plan names. This applies both reactively (fixing drift) and
 proactively (renaming a command as part of a feature). The Plan
-phase must enumerate the full scope, not echo the issue's file list.
+phase must enumerate the full scope, not echo the issue's file
+list.
 
 When adding a NEW concept (field, panel line, widget, configuration
 axis), scope enumeration runs the other direction: there is no "old

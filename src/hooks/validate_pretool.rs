@@ -1,7 +1,7 @@
 //! PreToolUse hook validator for Bash and Agent tool calls.
 //!
 //! For Bash calls, checks the command against blocked patterns (compound
-//! commands, redirection, file-read commands, deny list, whitelist).
+//! commands, redirection, deny list, whitelist).
 //!
 //! For Agent calls, blocks `general-purpose` sub-agents during active
 //! FLOW phases. Custom plugin agents (`flow:*`) and specialized types
@@ -17,7 +17,7 @@ use serde_json::Value;
 
 use super::{
     build_permission_regexes, detect_branch_from_path, find_settings_and_root_from, is_flow_active,
-    read_hook_input, resolve_main_root, FILE_READ_COMMANDS,
+    read_hook_input, resolve_main_root,
 };
 use crate::flow_paths::FlowPaths;
 use crate::git::{current_branch_in, default_branch_in};
@@ -26,11 +26,10 @@ use crate::git::{current_branch_in, default_branch_in};
 ///
 /// Returns `(allowed, message)`. Message is empty if allowed.
 ///
-/// Layers 1-8 (compound commands, redirection, exec prefix, blanket
-/// restore, git diff with file args, deny list, file-read commands)
-/// are always enforced.
+/// Layers 1-7 (compound commands, redirection, exec prefix, blanket
+/// restore, git diff with file args, deny list) are always enforced.
 ///
-/// Layer 9 (whitelist enforcement) is only enforced when both settings
+/// Layer 8 (whitelist enforcement) is only enforced when both settings
 /// are provided AND `flow_active` is true.
 pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (bool, String) {
     // Layer 1: Block compound commands and command substitution at the
@@ -91,6 +90,47 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
         );
     }
 
+    // Layer 4: Block destructive `find` flag forms structurally.
+    // `find` with -exec, -execdir, -ok, -okdir, or -delete runs
+    // arbitrary commands or recursively unlinks files. UNIVERSAL_ALLOW
+    // permits `Bash(find *)` for read-only invocations (the safe
+    // default with no destructive flag); this layer rejects the
+    // destructive shapes regardless of `settings.json` content or
+    // `flow_active` state, so the protection holds during the
+    // pre-prime upgrade window AND outside FLOW phases. Tokenization
+    // via `split_whitespace` catches path-omitted forms like
+    // `find -exec rm /etc/passwd \;` and `find -delete` (find
+    // defaults the path to `.` when absent) that a regex pattern
+    // with a required path slot would silently pass.
+    //
+    // The check matches the literal command name `find` plus any
+    // absolute-path variant ending with `/find`. Bash-quoted
+    // (`'find'`) or escape-prefixed (`\find`) shapes are not caught
+    // here — the same gap exists for every settings-driven layer in
+    // this hook because they also tokenize on the literal command
+    // string.
+    const FIND_DESTRUCTIVE_FLAGS: &[&str] = &["-exec", "-execdir", "-ok", "-okdir", "-delete"];
+    let mut find_tokens = stripped.split_whitespace();
+    let first_token = find_tokens.next();
+    let is_find_command =
+        first_token == Some("find") || first_token.is_some_and(|t| t.ends_with("/find"));
+    if is_find_command {
+        for token in find_tokens {
+            if FIND_DESTRUCTIVE_FLAGS.contains(&token) {
+                return (
+                    false,
+                    format!(
+                        "BLOCKED: 'find' with destructive flag '{}' is forbidden. \
+                         `-exec`, `-execdir`, `-ok`, `-okdir`, and `-delete` \
+                         run arbitrary commands or unlink files. Use Glob to \
+                         discover paths and Read to inspect them.",
+                        token
+                    ),
+                );
+            }
+        }
+    }
+
     // Layer 5: Block blanket restore (git restore . wipes all changes)
     if stripped == "git restore ." {
         return (
@@ -134,22 +174,7 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
         }
     }
 
-    // Layer 8: Block file-read commands
-    let first_word = stripped.split_whitespace().next().unwrap_or("");
-    if FILE_READ_COMMANDS.contains(&first_word) {
-        return (
-            false,
-            format!(
-                "BLOCKED: '{}' is not allowed. \
-                 Use the dedicated tool instead \
-                 (Read for cat/head/tail, Grep for grep/rg, \
-                 Glob for find/ls).",
-                first_word
-            ),
-        );
-    }
-
-    // Layer 9: Whitelist check — only during an active flow
+    // Layer 8: Whitelist check — only during an active flow
     if let Some(settings) = settings {
         if flow_active {
             let allow_regexes = build_permission_regexes(settings, "allow");
@@ -315,7 +340,7 @@ fn is_bin_flow_token(token: &str) -> bool {
 /// Strip leading and trailing single quotes, then leading and
 /// trailing double quotes, from a shell token. Bash dequotes command
 /// names before exec, so `'git' commit` runs the same as `git
-/// commit` — Layer 10 must too. The `trim_matches` chain strips ALL
+/// commit` — Layer 9 must too. The `trim_matches` chain strips ALL
 /// leading and trailing quote characters of each kind, not a
 /// matched pair, which is a permissive v1 heuristic: the worst case
 /// is over-stripping a malformed token (e.g. `'git` becomes `git`
@@ -366,7 +391,7 @@ where
 /// Extract the value of a `-C <path>` argument from a `git ...`
 /// command, if present. Returns the path as a borrowed slice of
 /// `stripped` for the caller to convert to a `PathBuf`. Used by
-/// Layer 10 to also resolve the branch from git's effective cwd
+/// Layer 9 to also resolve the branch from git's effective cwd
 /// when `-C` shifts it away from the hook's process cwd.
 fn extract_dash_c_path(stripped: &str) -> Option<&str> {
     let mut tokens = stripped.split_whitespace();
@@ -378,7 +403,7 @@ fn extract_dash_c_path(stripped: &str) -> Option<&str> {
     None
 }
 
-/// Recognize a direct commit invocation that Layer 10 must block
+/// Recognize a direct commit invocation that Layer 9 must block
 /// when the effective cwd is on the integration branch. v1 matches:
 /// `git ... commit` (skipping `-c k=v` and `-C path` between `git`
 /// and the subcommand), `bin/flow ... finalize-commit` (matched by
@@ -402,7 +427,7 @@ fn is_commit_invocation_inner(stripped: &str) -> bool {
     if is_bin_flow_token(first) {
         // bin/flow today exposes no global flags between launcher
         // and subcommand, but a future addition (`--verbose`,
-        // `--log-level <value>`, etc.) must not bypass Layer 10.
+        // `--log-level <value>`, etc.) must not bypass Layer 9.
         // Match `finalize-commit` as any subsequent token rather
         // than the immediate next token. False-positive risk is
         // negligible: split_whitespace tokenization preserves
@@ -414,7 +439,7 @@ fn is_commit_invocation_inner(stripped: &str) -> bool {
     false
 }
 
-/// Compose the Layer 10 block message naming the integration branch.
+/// Compose the Layer 9 block message naming the integration branch.
 /// The message is a fixed-shape string the contract tests assert on
 /// (must contain `BLOCKED` and the branch name) and the user-facing
 /// guidance directing the engineer at `/flow:flow-commit`.
@@ -422,12 +447,12 @@ fn commit_block_message(branch: &str) -> String {
     format!(
         "BLOCKED: direct commits on the integration branch '{}' are not allowed. \
          Run /flow:flow-commit from a feature worktree instead. \
-         This block is mechanical (Layer 10).",
+         This block is mechanical (Layer 9).",
         branch
     )
 }
 
-/// Compose the Layer 10 block message naming the active flow's branch.
+/// Compose the Layer 9 block message naming the active flow's branch.
 /// Returned when a commit invocation lands in a feature-branch worktree
 /// that has an active FLOW state file. The message must contain
 /// `BLOCKED`, the literal phrase "active flow", and the
@@ -437,17 +462,17 @@ fn commit_block_message_active_flow(branch: &str) -> String {
     format!(
         "BLOCKED: direct commits during an active flow on '{}' are not allowed. \
          Run /flow:flow-commit instead so CI runs through the gate. \
-         This block is mechanical (Layer 10).",
+         This block is mechanical (Layer 9).",
         branch
     )
 }
 
-/// Run Layer 10's commit-during-flow check against the effective cwd.
+/// Run Layer 9's commit-during-flow check against the effective cwd.
 /// Returns `Some(message)` when the check fires (the command is a
 /// commit invocation AND at least one candidate cwd either resolves
 /// to the integration branch OR has an active FLOW state file); the
 /// caller eprintlns the message and exits 2. Returns `None` when
-/// Layer 10 does not block — either the command is not a commit
+/// Layer 9 does not block — either the command is not a commit
 /// invocation, no candidate cwd is in a git repo / FLOW project, or
 /// every resolved branch differs from its own integration branch and
 /// has no active state file.
@@ -455,7 +480,7 @@ fn commit_block_message_active_flow(branch: &str) -> String {
 /// Candidates are the hook's process cwd plus any `-C <path>`
 /// argument extracted from the command — `git -C <other> commit`
 /// shifts git's effective cwd onto `<other>`, so each candidate must
-/// be checked. Layer 10 blocks if EITHER candidate triggers either
+/// be checked. Layer 9 blocks if EITHER candidate triggers either
 /// predicate.
 ///
 /// Per-candidate predicate ordering: integration-branch fires before
@@ -590,7 +615,7 @@ fn is_finalize_commit_inner(stripped: &str) -> bool {
 /// true iff `_continue_pending` is the string `"commit"`. Fail-closed:
 /// returns false on any read or parse error (file unreadable, JSON
 /// parse failure, key absent, wrong type). The fail-closed default
-/// preserves Layer 10's block when the marker cannot be definitively
+/// preserves Layer 9's block when the marker cannot be definitively
 /// confirmed.
 ///
 /// `FlowPaths::try_new` is called with `.expect()` because every
@@ -786,7 +811,7 @@ pub fn run() {
         std::process::exit(2);
     }
 
-    // Layer 10: block direct commit invocations when the hook's
+    // Layer 9: block direct commit invocations when the hook's
     // effective cwd resolves either to the integration branch named
     // by `default_branch_in` OR to a feature branch with an active
     // FLOW state file at `.flow-states/<branch>/state.json`. Layered
@@ -794,7 +819,7 @@ pub fn run() {
     // validate() because validate() does not receive cwd — adding it
     // would expand the function's signature across every existing
     // caller. Commands blocked by Layers 1-9 never reach this point;
-    // Layer 10 fires only when the command passes all preceding
+    // Layer 9 fires only when the command passes all preceding
     // structural gates AND is a commit invocation routed through one
     // of the two trigger contexts.
     if let Some(cwd_path) = cwd.as_deref() {

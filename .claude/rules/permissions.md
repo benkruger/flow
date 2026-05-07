@@ -100,6 +100,104 @@ SKILL.md bash command in the diff against the diff's allow-list
 changes. A SKILL.md bash command without a matching allow-list
 entry is a Real finding fixed in Step 4.
 
+## Plan-Phase Verification of FLOW_DENY Pattern Additions
+
+When a plan adds entries to `FLOW_DENY` (`src/prime_check.rs`),
+the patterns are glob-shaped strings that `permission_to_regex`
+converts into anchored regular expressions: `Bash(find * -exec *)`
+becomes `^find .* \-exec .*$`. The literal whitespace between
+glob stars is REQUIRED in the matched input — `*` matches "zero
+or more characters" but it does NOT swallow its surrounding
+literal-space anchors. A pattern with a path slot like
+`Bash(find * -exec *)` therefore silently passes any invocation
+that omits the path token (`find -exec rm \;`), because the
+regex demands `find␣<chars>␣-exec␣<chars>` and the input lacks
+the second space.
+
+The Plan phase must enumerate bypass variants before adding the
+patterns to `FLOW_DENY`. For every proposed pattern:
+
+1. **Mentally compile.** Apply `permission_to_regex` by hand:
+   escape regex metacharacters, replace `\*` with `.*`, anchor
+   with `^...$`. Write the regex on the plan task description.
+2. **Enumerate invocation shapes.** For the command being
+   denied, list every grammatically valid form:
+   - Required-argument forms (`find . -exec rm \;`)
+   - Optional-argument forms (`find -exec rm \;` — `find`
+     defaults the path to `.`)
+   - Flag-only forms (`find -delete` — recursive deletion of
+     cwd)
+   - Multi-arg forms (`find . -name x -delete -print`)
+   - Whitespace variants (multiple spaces, tabs)
+3. **Match each shape against the regex.** For every shape that
+   the regex DOES NOT match, the pattern is incomplete. Either
+   add additional patterns to cover the gap, or change the
+   pattern shape (`*X` and `X*` allow the literal-space anchor
+   to vanish into the wildcard).
+4. **Decide pattern strategy.** When the bypass surface is wide
+   enough that a regex pattern cannot cover every shape without
+   over-matching, prefer a structural check in
+   `src/hooks/validate_pretool.rs` that tokenizes the command
+   and rejects destructive flags by name. Reference: Layer 4 in
+   `validate-pretool` rejects `find` with `-exec` /
+   `-execdir` / `-ok` / `-okdir` / `-delete` regardless of
+   path arity, replacing the buggy regex-pattern-driven approach
+   that required a non-empty path slot.
+
+A plan that proposes new `FLOW_DENY` regex patterns without this
+enumeration is incomplete. Code Review's adversarial agent will
+catch the bypass — but at the cost of a full review cycle, a
+pattern revert, and a structural-layer rewrite that the Plan
+phase could have produced directly.
+
+## Removing a Settings-Based Guard: Upgrade-Window Discipline
+
+`FLOW_DENY` and `UNIVERSAL_ALLOW` reach target projects through
+`/flow:flow-prime` writing to `.claude/settings.json`. The
+`compute_config_hash` invariant forces re-prime on version
+upgrade, but the upgrade is GATED by the user running a FLOW
+phase that calls `prime-check`. Until that runs, the project
+sits with stale settings — old allow list, old deny list — even
+though the upgraded plugin code is loaded.
+
+When a Plan proposes REMOVING a settings-driven guard (deleting
+a Layer that read deny patterns, removing a hardcoded check that
+the new design plans to replace via FLOW_DENY entries, etc.),
+the Plan must enumerate the upgrade-window gap explicitly:
+
+1. **Identify the protection being removed.** Name the layer,
+   gate, or hook the Plan deletes. Identify the input shape it
+   was protecting against.
+2. **Identify the replacement.** What new mechanism takes over?
+   `FLOW_DENY` entries? `UNIVERSAL_ALLOW` revisions? A different
+   structural check?
+3. **Map the dependency on settings.json.** Does the
+   replacement require `settings.json` to be re-primed? If yes,
+   the upgrade window is open: any session running with the
+   upgraded plugin and the OLD `settings.json` has neither the
+   removed protection nor the replacement.
+4. **Decide the closure strategy.** Three options, in order of
+   preference:
+   - **Structural backup.** Add a hardcoded check in
+     `src/hooks/validate_pretool.rs` (or equivalent) that does
+     not depend on settings.json. The check fires regardless of
+     the user's prime state. Reference: Layer 4's tokenized
+     find-safety check is the canonical example.
+   - **Forced re-prime.** Bump `config_hash` so the next session
+     start blocks until the user re-primes. The Plan must verify
+     that `prime_check` returns `error` on hash mismatch (not
+     `auto_upgraded`) so the user actually re-primes.
+   - **Accept the gap.** Document in the plan's Risks section
+     that pre-reprime sessions are exposed, name the threat
+     model the gap accepts, and explain why a structural backup
+     would be over-engineering.
+
+A plan that removes a settings-based guard without naming all
+four (protection, replacement, settings dependency, closure
+strategy) is incomplete. Code Review's pre-mortem agent will
+catch the gap as a security regression — but at the cost of a
+review cycle that the Plan phase could have prevented.
+
 ## Never Remove Without Explicit Ask
 
 When editing `.claude/settings.json`, only add entries — never
