@@ -460,3 +460,16 @@ pub fn add_phase_snapshots(state: &mut Value, key: &str, enter_n: i64, complete_
     state["phases"][key]["window_at_complete"] =
         snapshot_value("S1", complete_n, "claude-opus-4-7");
 }
+
+/// Write a transcript JSONL fixture under
+/// `<home>/.claude/projects/<project_id>/session.jsonl` so the path
+/// satisfies `is_safe_transcript_path` validation. Used by
+/// `transcript_walker` and `validate_skill` tests to build controlled
+/// JSONL content with arbitrary user/assistant turns.
+pub fn transcript_fixture(home: &Path, project_id: &str, jsonl: &str) -> PathBuf {
+    let dir = home.join(".claude").join("projects").join(project_id);
+    fs::create_dir_all(&dir).expect("create transcript fixture dir");
+    let path = dir.join("session.jsonl");
+    fs::write(&path, jsonl).expect("write transcript fixture");
+    path
+}

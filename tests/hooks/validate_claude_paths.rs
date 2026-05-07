@@ -134,6 +134,74 @@ fn test_error_message_mentions_write_rule() {
     assert!(msg.contains("--content-file"));
 }
 
+// --- ~/.claude/projects/ transcript path block ---
+//
+// The block fires regardless of flow_active because transcript
+// tampering can subvert validate-skill's user-only block.
+
+#[test]
+fn validate_claude_paths_blocks_edit_in_claude_projects() {
+    let (allowed, msg) = validate("/Users/ben/.claude/projects/abc/session.jsonl", true);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("transcript"));
+}
+
+#[test]
+fn validate_claude_paths_blocks_write_in_claude_projects() {
+    // Same path family — validate doesn't distinguish Edit vs Write
+    // (the hook is registered for both matchers separately in
+    // hooks.json). Test asserts the block fires for either tool.
+    let (allowed, msg) = validate("/Users/ben/.claude/projects/abc/session.jsonl", true);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn validate_claude_paths_blocks_in_claude_projects_when_no_flow_active() {
+    // Distinguishing property: unlike .claude/rules, the transcript
+    // block fires even when no flow is active. Pre-flow and
+    // post-flow tampering must be blocked too.
+    let (allowed, msg) = validate("/Users/ben/.claude/projects/abc/session.jsonl", false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("transcript"));
+}
+
+#[test]
+fn validate_claude_paths_allows_edit_in_other_paths_under_home() {
+    // .claude/rules pre-existing behavior preserved — without an
+    // active flow, .claude/rules edits pass through.
+    let (allowed, msg) = validate("/Users/ben/.claude/rules/foo.md", false);
+    assert!(allowed);
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn validate_claude_paths_blocks_nested_claude_projects() {
+    let (allowed, msg) = validate("/Users/ben/.claude/projects/abc/subdir/deep.jsonl", false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn validate_claude_paths_case_insensitive_claude_projects_match() {
+    // macOS APFS is case-insensitive — `.CLAUDE/Projects/` resolves
+    // to the same inode as `.claude/projects/`. The block matches
+    // both casings.
+    let (allowed, msg) = validate("/Users/ben/.CLAUDE/Projects/abc/session.jsonl", false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn validate_claude_paths_allows_claude_projects_substring_in_filename() {
+    // `.claude_projects` (no separator) is not the transcript
+    // family — must not match.
+    let (allowed, _msg) = validate("/Users/ben/foo/.claude_projects/x", true);
+    assert!(allowed);
+}
+
 // --- run_impl_main tests (drive find_project_root_in branches) ---
 
 fn seed_active_flow_fixture(root: &Path, branch: &str) -> std::path::PathBuf {

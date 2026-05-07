@@ -1,6 +1,6 @@
 //! PreToolUse hook for AskUserQuestion — enforces autonomous-phase discipline.
 //!
-//! Three outcomes, evaluated in order:
+//! Four outcomes, evaluated in order:
 //!
 //! 1. **Block** (exit 2, stderr message) — when the current phase is
 //!    mid-execution (`phases.<current_phase>.status == "in_progress"`)
@@ -11,22 +11,32 @@
 //!    `phase_complete()` advances `current_phase` but before
 //!    `phase_enter()` sets the next phase to in_progress) are not
 //!    blocked.
-//! 2. **Auto-answer** (exit 0, JSON on stdout) — when `_auto_continue`
+//! 2. **User-only skill carve-out** — when `validate` would have
+//!    blocked the prompt but the persisted transcript shows the most
+//!    recent assistant Skill tool_use targets a skill in
+//!    `crate::hooks::transcript_walker::USER_ONLY_SKILLS`
+//!    (`flow:flow-abort`, `flow:flow-reset`, `flow:flow-release`,
+//!    `flow:flow-prime`). Allows the confirmation prompt to fire so
+//!    user-only skills' destructive-operation gates do not deadlock
+//!    when invoked from inside an in-progress autonomous phase.
+//! 3. **Auto-answer** (exit 0, JSON on stdout) — when `_auto_continue`
 //!    is set and the block did not fire. Answers the AskUserQuestion
 //!    with the successor skill command so phase transitions advance
 //!    even if the skill's HARD-GATE was ignored.
-//! 3. **Allow** (exit 0, no stdout) — otherwise. The tool call passes
+//! 4. **Allow** (exit 0, no stdout) — otherwise. The tool call passes
 //!    through to Claude Code's normal permission system.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
 use super::read_hook_input;
 use crate::flow_paths::FlowPaths;
 use crate::git::{current_branch, project_root};
+use crate::hooks::transcript_walker::most_recent_skill_in_user_only_set;
 use crate::lock::mutate_state;
 use crate::utils::now;
+use crate::window_snapshot::home_dir_or_empty;
 
 /// Write `_blocked` timestamp to the state file.
 ///
@@ -145,6 +155,25 @@ pub fn validate(state_path: Option<&Path>) -> (bool, String, Option<Value>) {
     )
 }
 
+/// Returns `true` when the most recent assistant tool_use Skill
+/// invocation in the transcript at `transcript_path` targets a
+/// skill in `crate::hooks::transcript_walker::USER_ONLY_SKILLS`.
+/// Returns `false` when `transcript_path` is `None`, when the
+/// validator rejects the path (not under `<home>/.claude/projects/`,
+/// NUL-byte, relative), or when no Skill tool_use is found before
+/// the most recent user turn.
+///
+/// Companion to `run_impl_main`: when validate would have blocked
+/// the AskUserQuestion under autonomous-phase discipline and this
+/// helper returns `true`, the block is suppressed so user-only
+/// skills can fire their confirmation prompts mid-autonomous-flow.
+pub fn user_only_skill_carve_out_applies(transcript_path: Option<&Path>, home: &Path) -> bool {
+    match transcript_path {
+        Some(p) => most_recent_skill_in_user_only_set(p, home),
+        None => false,
+    }
+}
+
 /// Decision produced by `run_impl_main` — translates to exit code +
 /// side effect in `run()`.
 #[derive(Debug)]
@@ -161,19 +190,21 @@ enum HookAction {
 }
 
 /// Pure decision core for the validate-ask-user hook. Accepts the
-/// parsed stdin payload, current git branch, and project root as
-/// parameters. Called from `run()` with live inputs; integration
-/// tests drive the decision tree by spawning the hook subprocess
-/// with controlled state fixtures.
+/// parsed stdin payload, current git branch, project root, and
+/// `$HOME` as parameters. Called from `run()` with live inputs;
+/// integration tests drive the decision tree by spawning the hook
+/// subprocess with controlled state fixtures.
 fn run_impl_main(
     hook_input: Option<Value>,
     branch: Option<String>,
     project_root: &Path,
+    home: &Path,
 ) -> HookAction {
     // No stdin input — nothing to gate on.
-    if hook_input.is_none() {
-        return HookAction::Allow;
-    }
+    let input = match hook_input {
+        Some(v) => v,
+        None => return HookAction::Allow,
+    };
 
     let branch = match branch {
         Some(b) => b,
@@ -187,12 +218,27 @@ fn run_impl_main(
         None => return HookAction::Allow,
     };
 
+    let transcript_path: Option<PathBuf> = input
+        .get("transcript_path")
+        .and_then(|v| v.as_str())
+        .map(PathBuf::from);
+
     let (allowed, message, hook_response) = validate(Some(&state_path));
-    // Block path: `set_blocked` is intentionally not called — the
-    // hook refused the tool call at the gate, so there is no
-    // "blocked-while-executing" timestamp to record. `_blocked` is
-    // only written when an AskUserQuestion was actually delivered.
     if !allowed {
+        // Carve-out: user-only skills' confirmation prompts fire
+        // even during in_progress + auto. Only fires when the
+        // transcript walker confirms the most recent assistant
+        // Skill tool_use call targets a user-only skill — meaning
+        // the user just typed the slash command and the resulting
+        // confirmation prompt is part of that user-initiated flow.
+        if user_only_skill_carve_out_applies(transcript_path.as_deref(), home) {
+            return HookAction::AllowWithMark(state_path);
+        }
+        // `set_blocked` is intentionally not called — the hook
+        // refused the tool call at the gate, so there is no
+        // "blocked-while-executing" timestamp to record. `_blocked`
+        // is only written when an AskUserQuestion was actually
+        // delivered.
         return HookAction::Block(message);
     }
     if let Some(response) = hook_response {
@@ -207,7 +253,8 @@ pub fn run() {
     let hook_input = read_hook_input();
     let branch = current_branch();
     let root = project_root();
-    match run_impl_main(hook_input, branch, &root) {
+    let home = home_dir_or_empty();
+    match run_impl_main(hook_input, branch, &root, &home) {
         HookAction::Allow => std::process::exit(0),
         HookAction::Block(msg) => {
             eprintln!("{}", msg);

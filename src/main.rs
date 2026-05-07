@@ -435,6 +435,10 @@ enum HookCommands {
     /// Enforce auto-continue for AskUserQuestion prompts.
     #[command(name = "validate-ask-user")]
     ValidateAskUser,
+    /// Block model invocation of user-only Skill tool calls
+    /// (flow-abort, flow-reset, flow-release, flow-prime).
+    #[command(name = "validate-skill")]
+    ValidateSkill,
     /// Stop hook: continuation gating, blocked-flag management, tab color.
     #[command(name = "stop-continue")]
     StopContinue,
@@ -832,6 +836,7 @@ fn main() {
             HookCommands::ValidateClaudePaths => hooks::validate_claude_paths::run(),
             HookCommands::ValidateWorktreePaths => hooks::validate_worktree_paths::run(),
             HookCommands::ValidateAskUser => hooks::validate_ask_user::run(),
+            HookCommands::ValidateSkill => hooks::validate_skill::run(),
             HookCommands::StopContinue => hooks::stop_continue::run(),
             HookCommands::StopFailure => hooks::stop_failure::run(),
             HookCommands::PostCompact => hooks::post_compact::run(),

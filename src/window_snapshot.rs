@@ -147,7 +147,15 @@ fn is_safe_session_id(s: &str) -> bool {
 /// transcripts always live under that directory; values pointing
 /// elsewhere are corrupted state and read attempts could leak
 /// arbitrary file contents into snapshot fields.
-fn is_safe_transcript_path(path: &Path, home: &Path) -> bool {
+///
+/// Cross-module consumer: `src/hooks/transcript_walker.rs` validates
+/// the same `transcript_path` string before reading the JSONL
+/// session log to gate user-only skill invocations and the
+/// validate-ask-user carve-out. Per
+/// `.claude/rules/external-input-path-construction.md`, the same
+/// validator runs at every state-derived path-construction site so
+/// the prefix-containment contract is enforced once.
+pub fn is_safe_transcript_path(path: &Path, home: &Path) -> bool {
     if path.as_os_str().is_empty() {
         return false;
     }

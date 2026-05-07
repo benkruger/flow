@@ -65,6 +65,15 @@
             "command": "${CLAUDE_PLUGIN_ROOT}/bin/flow hook validate-ask-user"
           }
         ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/flow hook validate-skill"
+          }
+        ]
       }
     ],
     "PostToolUse": [

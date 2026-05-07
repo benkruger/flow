@@ -172,7 +172,9 @@ pub fn read_hook_input() -> Option<Value> {
 pub mod post_compact;
 pub mod stop_continue;
 pub mod stop_failure;
+pub mod transcript_walker;
 pub mod validate_ask_user;
 pub mod validate_claude_paths;
 pub mod validate_pretool;
+pub mod validate_skill;
 pub mod validate_worktree_paths;

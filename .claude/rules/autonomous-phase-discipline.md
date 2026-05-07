@@ -94,9 +94,18 @@ window, `_auto_continue` behaves unchanged.
 The blocked tool call returns the rejection message to the
 model via stderr so the session adapts instead of stalling.
 
-**Known limitation.** `/flow:flow-abort --manual` calls
-`AskUserQuestion` for its destructive-operation confirmation. If
-the user invokes it during an in-progress autonomous phase, the
-hook blocks that confirmation. Workaround: invoke with `--auto`
-to skip the confirmation, or accept the block by switching the
-current phase to `manual` before aborting.
+## User-Only Skill Carve-Out
+
+When a user types `/flow:flow-abort`, `/flow:flow-reset`,
+`/flow:flow-release`, or `/flow:flow-prime` mid-flow, the resulting
+skill invocation often fires an `AskUserQuestion` for
+destructive-operation confirmation. The autonomous-phase block
+above would otherwise reject that confirmation, deadlocking the
+abort. `validate-ask-user::user_only_skill_carve_out_applies`
+suppresses the block when the most recent assistant Skill tool_use
+call (since the most recent user turn) targets a skill in
+`crate::hooks::transcript_walker::USER_ONLY_SKILLS`. The carve-out
+is the user-direction signal — a Skill call to a user-only skill
+can only have arrived because the user typed the slash command,
+which `validate-skill` Layer 1 enforces. See
+`.claude/rules/user-only-skills.md` Layer 2 for the full design.
