@@ -242,7 +242,6 @@ if [ "$PER_FILE" = "1" ]; then
     exit 1
   fi
   src_file="${test_file/#tests\//src/}"
-  bin_name="$(basename "$test_file" .rs)"
 
   # `-E 'binary(...)'` filters which compiled binaries RUN. Without
   # `--test <name>` cargo still COMPILES all ~112 test binaries in
@@ -251,7 +250,21 @@ if [ "$PER_FILE" = "1" ]; then
   # compilation to the single mirrored binary, dropping per-file
   # wall time from ~2m to ~10–30s on a lib edit. The `-E` filter is
   # kept as belt-and-suspenders.
-  NEXTEST_ARGS=(--test "${bin_name}" --status-level none --final-status-level fail -E "binary(${bin_name})")
+  #
+  # tests/<subdir>/<name>.rs uses Cargo's directory-form auto-
+  # discovery: one binary per directory, named after the directory,
+  # with sibling files declared as modules in <subdir>/main.rs. The
+  # binary name is the directory basename and the per-module filter
+  # scopes execution to the requested file's `mod` block. Top-level
+  # tests/<name>.rs keeps the file-basename binary mapping.
+  if [[ "$test_file" == tests/*/* ]]; then
+    bin_name="$(basename "$(dirname "$test_file")")"
+    module_name="$(basename "$test_file" .rs)"
+    NEXTEST_ARGS=(--test "${bin_name}" --status-level none --final-status-level fail -E "binary(${bin_name}) and test(/^${module_name}::/)")
+  else
+    bin_name="$(basename "$test_file" .rs)"
+    NEXTEST_ARGS=(--test "${bin_name}" --status-level none --final-status-level fail -E "binary(${bin_name})")
+  fi
   COV_ARGS=(--no-cfg-coverage --no-clean)
 
   if [ "$AUDIT_MODE" = "1" ]; then
