@@ -462,6 +462,73 @@ fn test_deny_runs_before_allow() {
     assert!(msg.to_lowercase().contains("deny"));
 }
 
+// --- find -exec/-execdir/-ok/-okdir/-delete deny coverage ---
+
+/// Build a synthetic settings JSON whose `permissions.deny` list
+/// matches the five `find` patterns the FLOW_DENY constant carries.
+/// The tests below feed this JSON to `validate()` so Layer 7's
+/// regex-compilation + match path is exercised against the same
+/// shapes a primed target project would inherit from `FLOW_DENY`.
+fn find_deny_settings() -> Value {
+    json!({
+        "permissions": {
+            "allow": ["Bash(find *)"],
+            "deny": [
+                "Bash(find * -exec *)",
+                "Bash(find * -execdir *)",
+                "Bash(find * -ok *)",
+                "Bash(find * -okdir *)",
+                "Bash(find * -delete*)",
+            ]
+        }
+    })
+}
+
+#[test]
+fn test_deny_blocks_find_exec() {
+    let s = find_deny_settings();
+    let (allowed, msg) = validate("find . -name x -exec rm {} \\;", Some(&s), true);
+    assert!(!allowed);
+    assert!(msg.to_lowercase().contains("deny"));
+    assert!(msg.contains("-exec"));
+}
+
+#[test]
+fn test_deny_blocks_find_execdir() {
+    let s = find_deny_settings();
+    let (allowed, msg) = validate("find . -execdir rm {} \\;", Some(&s), true);
+    assert!(!allowed);
+    assert!(msg.to_lowercase().contains("deny"));
+    assert!(msg.contains("-execdir"));
+}
+
+#[test]
+fn test_deny_blocks_find_ok() {
+    let s = find_deny_settings();
+    let (allowed, msg) = validate("find . -ok rm {} \\;", Some(&s), true);
+    assert!(!allowed);
+    assert!(msg.to_lowercase().contains("deny"));
+    assert!(msg.contains("-ok"));
+}
+
+#[test]
+fn test_deny_blocks_find_okdir() {
+    let s = find_deny_settings();
+    let (allowed, msg) = validate("find . -okdir rm {} \\;", Some(&s), true);
+    assert!(!allowed);
+    assert!(msg.to_lowercase().contains("deny"));
+    assert!(msg.contains("-okdir"));
+}
+
+#[test]
+fn test_deny_blocks_find_delete() {
+    let s = find_deny_settings();
+    let (allowed, msg) = validate("find . -name x -delete", Some(&s), true);
+    assert!(!allowed);
+    assert!(msg.to_lowercase().contains("deny"));
+    assert!(msg.contains("-delete"));
+}
+
 // --- Redirect blocking ---
 
 #[test]
