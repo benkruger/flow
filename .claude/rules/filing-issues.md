@@ -143,6 +143,45 @@ A real Tenant 1 process gap looks like one of:
   reported back, a state mutation without a paired commit, a
   notification that never fired.
 
+### Friction Is Not a Process Gap
+
+A scanner that fires correctly, an opt-out the author had to
+type, a repair round that resolved the violation — these are
+the gate doing its job. They are NOT process gaps, even when
+the friction feels excessive in a single flow. Specifically,
+none of the following count as Tenant 1 findings:
+
+- "The scanner over-fired and I had to add N opt-out comments."
+- "Plan-check rejected my plan twice before it cleared."
+- "The rule required me to enumerate X items in a table."
+- "I had to write a manual workaround the rule documents."
+
+These are the cost of the rule the project chose to enforce.
+The rule already has an opt-out grammar OR a documented
+workaround OR a published cost; using it is not a gap.
+
+A friction report becomes filable only when ALL three hold:
+
+1. **Recurrence across flows.** The same friction has been
+   observed in three or more separate flows by Learn-phase
+   findings, not anticipated as one-off in the current flow.
+2. **Cost is disproportionate.** The opt-out count, repair
+   rounds, or workaround steps exceed what the rule's design
+   intended (read the rule file's Plan-phase Trigger section —
+   if the friction is what the rule names as the cost, it is
+   intended).
+3. **A concrete cheaper enforcement exists.** The filer can
+   name a specific scanner refinement, opt-out grammar
+   extension, or rule-vocabulary change that would reduce
+   friction without losing the gate's protective intent.
+
+If any of (1)–(3) is missing, do not file. Single-flow
+friction is not a signal — it is one data point, and the
+project's curated-closed scanner philosophy
+(see `.claude/rules/scope-enumeration.md`
+"Vocabulary Extensibility") explicitly prefers some friction
+over false-positive sweeps from premature scanner expansion.
+
 A real Tenant 2 enforcement escalation looks like:
 
 - A rule that was clear, applicable, and ignored AND the same
