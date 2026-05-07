@@ -36,6 +36,7 @@ use crate::flow_paths::FlowPaths;
 use crate::git::{project_root, resolve_branch};
 use crate::scope_enumeration::scan;
 use crate::tombstone_checklist_scanner::{self};
+use crate::verify_references_scanner::{self, DefinitionIndex};
 
 /// CLI arguments for the plan-check subcommand.
 #[derive(Parser, Debug)]
@@ -139,6 +140,8 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let cli_violations = cli_output_contract_scanner::scan(&content, &plan_path);
     let del_violations = deletion_sweep_scanner::scan(&content, &plan_path);
     let tomb_violations = tombstone_checklist_scanner::scan(&content, &plan_path);
+    let verify_index = DefinitionIndex::from_repo(&root);
+    let verify_violations = verify_references_scanner::scan(&content, &plan_path, &verify_index);
 
     if scope_violations.is_empty()
         && audit_violations.is_empty()
@@ -146,6 +149,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         && cli_violations.is_empty()
         && del_violations.is_empty()
         && tomb_violations.is_empty()
+        && verify_violations.is_empty()
     {
         return Ok(json!({"status": "ok"}));
     }
@@ -181,13 +185,17 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     for v in &tomb_violations {
         violations_json.push(tombstone_checklist_violation_to_tagged_json(v));
     }
+    for v in &verify_violations {
+        violations_json.push(verify_references_violation_to_tagged_json(v));
+    }
 
     let total = scope_violations.len()
         + audit_violations.len()
         + dup_violations.len()
         + cli_violations.len()
         + del_violations.len()
-        + tomb_violations.len();
+        + tomb_violations.len()
+        + verify_violations.len();
     let message = build_violation_message(
         scope_violations.len(),
         audit_violations.len(),
@@ -195,6 +203,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         cli_violations.len(),
         del_violations.len(),
         tomb_violations.len(),
+        verify_violations.len(),
         total,
     );
 
@@ -283,6 +292,23 @@ pub fn tombstone_checklist_violation_to_tagged_json(
     })
 }
 
+/// Serialize a verify-references violation with its extra
+/// `identifier` field naming the cited-but-missing identifier.
+///
+/// Shared with `src/plan_extract.rs::violations_response`.
+pub fn verify_references_violation_to_tagged_json(
+    v: &crate::verify_references_scanner::Violation,
+) -> Value {
+    json!({
+        "file": v.file.display().to_string(),
+        "line": v.line,
+        "phrase": v.phrase,
+        "context": v.context,
+        "rule": "verify-references",
+        "identifier": v.identifier,
+    })
+}
+
 /// Build a human-readable summary message that names each scanner's
 /// count when non-zero. The message must tell the author which rule
 /// file to consult for each violation class.
@@ -292,6 +318,7 @@ pub fn tombstone_checklist_violation_to_tagged_json(
 /// repair loop renders consistent output regardless of which path
 /// triggered the failure. `pub(crate)` so `plan_extract.rs` can
 /// call it directly.
+#[allow(clippy::too_many_arguments)]
 pub fn build_violation_message(
     scope_count: usize,
     audit_count: usize,
@@ -299,6 +326,7 @@ pub fn build_violation_message(
     cli_count: usize,
     del_count: usize,
     tomb_count: usize,
+    verify_count: usize,
     total: usize,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
@@ -346,6 +374,14 @@ pub fn build_violation_message(
              the five-item checklist (see \
              .claude/rules/tombstone-tests.md \"Plan-phase responsibility\")",
             tomb_count
+        ));
+    }
+    if verify_count > 0 {
+        parts.push(format!(
+            "{} verify-references violation(s): cited identifier(s) not found \
+             as `fn <name>(` definitions (see \
+             .claude/rules/skill-authoring.md \"Verify Test Function References in Issues\")",
+            verify_count
         ));
     }
     format!("{} plan-check violation(s): {}.", total, parts.join("; "))

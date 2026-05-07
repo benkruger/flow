@@ -36,6 +36,9 @@ use crate::scope_enumeration::{scan as scope_scan, Violation};
 use crate::tombstone_checklist_scanner::{scan as tomb_scan, Violation as TombViolation};
 use crate::update_pr_body::gh_set_body;
 use crate::utils::extract_issue_numbers;
+use crate::verify_references_scanner::{
+    scan as verify_scan, DefinitionIndex, Violation as VerifyViolation,
+};
 
 /// Extract and fast-track pre-decomposed plans, or prepare state for model-driven planning.
 #[derive(Parser, Debug)]
@@ -345,6 +348,7 @@ fn count_tasks_any_level(content: &str) -> usize {
 /// gate callsite with one parser. Each violation carries a `rule`
 /// field naming the scanner that fired so the repair loop can point
 /// the user at the right rule file.
+#[allow(clippy::too_many_arguments)]
 fn violations_response(
     scope_violations: &[Violation],
     audit_violations: &[AuditViolation],
@@ -352,6 +356,7 @@ fn violations_response(
     cli_violations: &[CliViolation],
     del_violations: &[DelViolation],
     tomb_violations: &[TombViolation],
+    verify_violations: &[VerifyViolation],
     path_label: &str,
 ) -> Value {
     let mut violations_json: Vec<Value> = Vec::new();
@@ -391,12 +396,16 @@ fn violations_response(
     for v in tomb_violations {
         violations_json.push(crate::plan_check::tombstone_checklist_violation_to_tagged_json(v));
     }
+    for v in verify_violations {
+        violations_json.push(crate::plan_check::verify_references_violation_to_tagged_json(v));
+    }
     let total = scope_violations.len()
         + audit_violations.len()
         + dup_violations.len()
         + cli_violations.len()
         + del_violations.len()
-        + tomb_violations.len();
+        + tomb_violations.len()
+        + verify_violations.len();
     // Reuse the message builder from plan_check so both gate
     // callsites render identical wording. plan_extract adds the
     // path-specific "Edit the plan, then re-run /flow:flow-plan"
@@ -408,6 +417,7 @@ fn violations_response(
         cli_violations.len(),
         del_violations.len(),
         tomb_violations.len(),
+        verify_violations.len(),
         total,
     );
     json!({
@@ -515,12 +525,15 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
         let cli_violations = cli_scan(&plan_content, &plan_abs);
         let del_violations = del_scan(&plan_content, &plan_abs);
         let tomb_violations = tomb_scan(&plan_content, &plan_abs);
+        let verify_index = DefinitionIndex::from_repo(&root);
+        let verify_violations = verify_scan(&plan_content, &plan_abs, &verify_index);
         if !scope_violations.is_empty()
             || !audit_violations.is_empty()
             || !dup_violations.is_empty()
             || !cli_violations.is_empty()
             || !del_violations.is_empty()
             || !tomb_violations.is_empty()
+            || !verify_violations.is_empty()
         {
             return Ok(violations_response(
                 &scope_violations,
@@ -529,6 +542,7 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
                 &cli_violations,
                 &del_violations,
                 &tomb_violations,
+                &verify_violations,
                 "resumed",
             ));
         }
@@ -766,12 +780,15 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
     let cli_violations = cli_scan(&promoted, &plan_abs);
     let del_violations = del_scan(&promoted, &plan_abs);
     let tomb_violations = tomb_scan(&promoted, &plan_abs);
+    let verify_index = DefinitionIndex::from_repo(&root);
+    let verify_violations = verify_scan(&promoted, &plan_abs, &verify_index);
     if !scope_violations.is_empty()
         || !audit_violations.is_empty()
         || !dup_violations.is_empty()
         || !cli_violations.is_empty()
         || !del_violations.is_empty()
         || !tomb_violations.is_empty()
+        || !verify_violations.is_empty()
     {
         // Violations: enter phase + record files + return. Single
         // commit_state so the `?` Err arm is reachable via a
@@ -795,13 +812,14 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
             &root,
             &branch,
             &format!(
-                "[Phase 2] plan-extract — plan-check violations (scope {} / audit {} / dup {} / cli {} / del {} / tomb {}) in {} (exit 0)",
+                "[Phase 2] plan-extract — plan-check violations (scope {} / audit {} / dup {} / cli {} / del {} / tomb {} / verify {}) in {} (exit 0)",
                 scope_violations.len(),
                 audit_violations.len(),
                 dup_violations.len(),
                 cli_violations.len(),
                 del_violations.len(),
                 tomb_violations.len(),
+                verify_violations.len(),
                 plan_rel
             ),
         );
@@ -812,6 +830,7 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
             &cli_violations,
             &del_violations,
             &tomb_violations,
+            &verify_violations,
             "extracted",
         ));
     }
