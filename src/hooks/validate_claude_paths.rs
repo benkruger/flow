@@ -1,10 +1,21 @@
-//! PreToolUse hook that blocks Edit/Write on .claude/rules/, .claude/skills/,
-//! and CLAUDE.md during active FLOW phases, redirecting to bin/flow write-rule.
+//! PreToolUse hook that blocks Edit/Write on:
+//!
+//! 1. `.claude/rules/`, `.claude/skills/`, and `CLAUDE.md` — only during
+//!    active FLOW phases. Redirects to `bin/flow write-rule`.
+//! 2. `~/.claude/projects/` (the Claude Code persisted transcript root)
+//!    — in ALL contexts, not just active flows. Transcript tampering
+//!    could subvert `validate-skill`'s user-only block by injecting a
+//!    fake user `<command-name>` line, so the block fires regardless of
+//!    flow state. Reads remain allowed because the transcript walkers in
+//!    `validate-skill` and `validate-ask-user` need to scan the file
+//!    themselves; the hook is registered for Edit/Write tools only in
+//!    `hooks/hooks.json`.
 //!
 //! Fires on Edit and Write tool calls.
 //!
-//! Exit 0 — allow (path is not protected, or no FLOW phase active)
-//! Exit 2 — block (path is protected and FLOW phase is active)
+//! Exit 0 — allow (path is not protected, or no FLOW phase active and
+//!          path is not in the always-protected transcript root)
+//! Exit 2 — block
 
 use std::path::Path;
 
@@ -12,12 +23,56 @@ use super::{detect_branch_from_path, is_flow_active, read_hook_input, resolve_ma
 use crate::flow_paths::FlowStatesDir;
 use crate::protected_paths::is_protected_path;
 
+/// Returns `true` when `file_path` passes through a `.claude/projects/`
+/// directory at any depth. The Claude Code harness persists session
+/// transcripts under `<home>/.claude/projects/<project_id>/<session>.jsonl`;
+/// any Edit/Write to that family of paths is a tampering vector for
+/// `validate-skill`'s user-only-skill block, so blocked across all
+/// contexts (not just active flows).
+///
+/// Matching is ASCII-case-insensitive for `.claude` and `projects` so a
+/// caller on a case-insensitive filesystem (macOS APFS/HFS+ by default)
+/// cannot bypass the gate by writing to `.CLAUDE/Projects/...` —
+/// matches the same discipline used by `is_protected_path`.
+fn is_transcript_path(file_path: &str) -> bool {
+    let path = Path::new(file_path);
+    let components: Vec<&str> = path
+        .components()
+        .filter_map(|c| c.as_os_str().to_str())
+        .collect();
+    for (i, comp) in components.iter().enumerate() {
+        if comp.eq_ignore_ascii_case(".claude") && i + 1 < components.len() {
+            let next = components[i + 1];
+            if next.eq_ignore_ascii_case("projects") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Validate that an Edit/Write on this path is allowed.
 ///
 /// Returns `(allowed, message)`.
 pub fn validate(file_path: &str, flow_active: bool) -> (bool, String) {
     if file_path.is_empty() {
         return (true, String::new());
+    }
+
+    // Transcript paths blocked regardless of flow_active. Tampering
+    // with the persisted transcript can subvert validate-skill's
+    // user-only block by injecting a fake user `<command-name>`
+    // line; the block must fire even pre-flow / post-flow.
+    if is_transcript_path(file_path) {
+        return (
+            false,
+            "BLOCKED: `~/.claude/projects/` is the persisted Claude Code \
+             transcript root. Edit/Write is forbidden because tampering \
+             with the transcript can subvert validate-skill's user-only \
+             skill block. Read access is preserved for the transcript \
+             walkers."
+                .to_string(),
+        );
     }
 
     if !flow_active {

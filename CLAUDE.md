@@ -215,6 +215,16 @@ Layer 9 mechanically blocks direct commit invocations (`git ... commit`, `bin/fl
 
 See `.claude/rules/concurrency-model.md` "Mechanical Enforcement" and `.claude/rules/permissions.md`.
 
+### User-Only Skill Enforcement
+
+Four FLOW skills are reserved for direct user invocation: `/flow:flow-abort`, `/flow:flow-reset`, `/flow:flow-release`, and `/flow:flow-prime`. The model must never invoke them. Three independent mechanical layers enforce this:
+
+1. **Layer 1 — `validate-skill` (PreToolUse:Skill)**. `src/hooks/validate_skill.rs` blocks Skill tool calls naming a user-only skill unless the persisted transcript at `transcript_path` shows the most recent user-role turn typed `<command-name>/<skill></command-name>`. Backed by `src/hooks/transcript_walker.rs::last_user_message_invokes_skill`.
+2. **Layer 2 — `validate-ask-user` carve-out**. `src/hooks/validate_ask_user.rs::user_only_skill_carve_out_applies` allows `AskUserQuestion` to fire even during in-progress autonomous phases when the most recent assistant Skill tool_use call (since the most recent user turn) targets a user-only skill. Resolves the abort-during-autonomous-flow deadlock.
+3. **Layer 3 — `validate-claude-paths` transcript root lockdown**. `src/hooks/validate_claude_paths.rs::is_transcript_path` blocks Edit/Write on `~/.claude/projects/` regardless of flow state. Tampering with the persisted transcript would subvert Layer 1's user-invocation check.
+
+The transcript walker (`src/hooks/transcript_walker.rs`) is shared infrastructure between Layer 1 and Layer 2. `USER_ONLY_SKILLS` is the authoritative list. Reads are capped at `TRANSCRIPT_BYTE_CAP` (50 MB) per `.claude/rules/external-input-path-construction.md`. See `.claude/rules/user-only-skills.md` for the full design and the per-skill threat-shape rationale.
+
 ### Plan-Phase Gates
 
 Phase 2 gates completion on seven scanners that share `bin/flow plan-check`:
@@ -277,4 +287,5 @@ When developing FLOW itself, point Claude Code at the local plugin source via `c
 - **Tombstone five-item checklist for tombstone proposals** — see `.claude/rules/tombstone-tests.md` "Plan-phase responsibility".
 - **Verify cited identifiers exist as `fn` definitions** — see `.claude/rules/skill-authoring.md` "Verify Test Function References in Issues".
 - **No `run_in_background` during FLOW phases**; `bin/flow` is never allowed in the background — see `.claude/rules/ci-is-a-gate.md`.
+- **User-only skills (model must never invoke)** — see `.claude/rules/user-only-skills.md`. The model must not invoke `/flow:flow-abort`, `/flow:flow-reset`, `/flow:flow-release`, or `/flow:flow-prime`; the user types these directly.
 - **User evidence is ground truth** — when a user provides screenshots or logs that contradict your code analysis, trust the evidence. Your code reading is a hypothesis; the user's evidence is an observation.

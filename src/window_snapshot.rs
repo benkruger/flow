@@ -147,7 +147,15 @@ fn is_safe_session_id(s: &str) -> bool {
 /// transcripts always live under that directory; values pointing
 /// elsewhere are corrupted state and read attempts could leak
 /// arbitrary file contents into snapshot fields.
-fn is_safe_transcript_path(path: &Path, home: &Path) -> bool {
+///
+/// Cross-module consumer: `src/hooks/transcript_walker.rs` validates
+/// the same `transcript_path` string before reading the JSONL
+/// session log to gate user-only skill invocations and the
+/// validate-ask-user carve-out. Per
+/// `.claude/rules/external-input-path-construction.md`, the same
+/// validator runs at every state-derived path-construction site so
+/// the prefix-containment contract is enforced once.
+pub fn is_safe_transcript_path(path: &Path, home: &Path) -> bool {
     if path.as_os_str().is_empty() {
         return false;
     }
@@ -156,6 +164,18 @@ fn is_safe_transcript_path(path: &Path, home: &Path) -> bool {
     }
     if !path.is_absolute() {
         return false;
+    }
+    // Reject any ParentDir (`..`) component. `Path::starts_with` is a
+    // lexical component-wise prefix check that does NOT canonicalize
+    // `..` segments — `<home>/.claude/projects/../../etc/passwd`
+    // passes `starts_with(<home>/.claude/projects)` even though
+    // `File::open` resolves it to `<home>/etc/passwd`. Refusing
+    // ParentDir components closes the traversal-bypass surface
+    // without paying the canonicalize() syscall cost on every call.
+    for component in path.components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            return false;
+        }
     }
     let expected_prefix = home.join(".claude").join("projects");
     path.starts_with(&expected_prefix)

@@ -5,8 +5,23 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use flow_rs::hooks::validate_ask_user::{set_blocked, validate};
+use flow_rs::hooks::validate_ask_user::{set_blocked, user_only_skill_carve_out_applies, validate};
 use serde_json::{json, Value};
+
+/// Build a JSONL transcript fixture under
+/// `<home>/.claude/projects/p/session.jsonl`. Returns the path.
+/// Inlined here rather than imported from `tests/common/mod.rs`
+/// because subdirectory tests use `#[path = "../common/mod.rs"]
+/// mod common;` and we already have `mod common;` indirectly via
+/// other tests in this module — keeping this helper self-contained
+/// avoids the import dance.
+fn carve_out_transcript_fixture(home: &Path, jsonl: &str) -> std::path::PathBuf {
+    let dir = home.join(".claude").join("projects").join("p");
+    fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("session.jsonl");
+    fs::write(&path, jsonl).unwrap();
+    path
+}
 
 fn write_state(dir: &Path, branch: &str, state: &Value) -> std::path::PathBuf {
     let branch_dir = dir.join(".flow-states").join(branch);
@@ -589,4 +604,193 @@ fn run_subprocess_sets_blocked_on_allow_path() {
     assert_eq!(code, 0);
     let updated: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert!(updated.get("_blocked").is_some(), "state: {:?}", updated);
+}
+
+// --- user_only_skill_carve_out_applies ---
+
+#[test]
+fn validate_ask_user_carve_out_allows_when_user_only_skill_in_transcript_during_in_progress_auto() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"do something\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-abort\"}}]}}\n";
+    let path = carve_out_transcript_fixture(home, jsonl);
+    assert!(user_only_skill_carve_out_applies(Some(&path), home));
+}
+
+#[test]
+fn validate_ask_user_carve_out_does_not_apply_when_skill_not_user_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"check\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-create-issue\"}}]}}\n";
+    let path = carve_out_transcript_fixture(home, jsonl);
+    assert!(!user_only_skill_carve_out_applies(Some(&path), home));
+}
+
+#[test]
+fn validate_ask_user_carve_out_does_not_apply_when_no_recent_skill_invocation() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    // Transcript contains only a user turn — walker hits the user
+    // turn without finding any Skill tool_use call. Carve-out
+    // returns false; existing block stands.
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hello\"}}\n";
+    let path = carve_out_transcript_fixture(home, jsonl);
+    assert!(!user_only_skill_carve_out_applies(Some(&path), home));
+}
+
+#[test]
+fn validate_ask_user_carve_out_does_not_apply_when_transcript_path_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    // No transcript path at all — carve-out cannot fire. Existing
+    // block stands.
+    assert!(!user_only_skill_carve_out_applies(None, home));
+}
+
+#[test]
+fn validate_ask_user_unaffected_when_phase_not_in_progress_auto() {
+    // Pre-existing behavior preserved: when validate would NOT have
+    // blocked (manual phase), the carve-out is irrelevant. Verify
+    // the existing validate path returns allow without invoking the
+    // carve-out helper.
+    let dir = tempfile::tempdir().unwrap();
+    let state = json!({
+        "current_phase": "flow-code",
+        "branch": "test",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": {"continue": "manual"}},
+    });
+    let path = write_state(dir.path(), "test", &state);
+    let (allowed, _msg, _resp) = validate(Some(&path));
+    assert!(allowed);
+}
+
+#[test]
+fn validate_ask_user_carve_out_subprocess_allows_during_in_progress_auto() {
+    // Subprocess test for the integrated carve-out behavior:
+    // state file has in_progress + auto, transcript has assistant
+    // Skill invocation of flow:flow-abort. The hook would normally
+    // block, but the carve-out fires and allows.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    Command::new("git")
+        .args(["init", "--initial-branch=test", "."])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.email", "x@y.z"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "X"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    let state = json!({
+        "current_phase": "flow-code",
+        "branch": "test",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": {"continue": "auto"}},
+    });
+    write_state(&root, "test", &state);
+
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-abort\"}}]}}\n";
+    let transcript = carve_out_transcript_fixture(&root, jsonl);
+    let payload = json!({"transcript_path": transcript.to_string_lossy()});
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["hook", "validate-ask-user"])
+        .current_dir(&root)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", &root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(payload.to_string().as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    // Without the carve-out the in_progress + auto block would
+    // exit 2. Verify it exited 0 and stderr is empty.
+    assert_eq!(
+        output.status.code().unwrap_or(-1),
+        0,
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn validate_ask_user_block_persists_when_no_carve_out_during_in_progress_auto() {
+    // Subprocess test: state file has in_progress + auto and the
+    // transcript has NO Skill tool_use. The hook should still
+    // block — carve-out does not fire.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    Command::new("git")
+        .args(["init", "--initial-branch=test", "."])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.email", "x@y.z"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "X"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    let state = json!({
+        "current_phase": "flow-code",
+        "branch": "test",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": {"continue": "auto"}},
+    });
+    write_state(&root, "test", &state);
+
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hello\"}}\n";
+    let transcript = carve_out_transcript_fixture(&root, jsonl);
+    let payload = json!({"transcript_path": transcript.to_string_lossy()});
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["hook", "validate-ask-user"])
+        .current_dir(&root)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", &root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(payload.to_string().as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code().unwrap_or(-1), 2);
+    assert!(String::from_utf8_lossy(&output.stderr).contains("BLOCKED"));
 }

@@ -74,11 +74,30 @@ insufficient:
 - **`AskUserQuestion` during an autonomous in-progress phase**
   — `validate-ask-user` rejects with exit 2 when
   `phases.<current_phase>.status == "in_progress"` AND
-  `skills.<current_phase>.continue == "auto"`.
+  `skills.<current_phase>.continue == "auto"`. Carve-out: when
+  the most recent assistant Skill tool_use call (since the most
+  recent user turn) targets a skill in
+  `crate::hooks::transcript_walker::USER_ONLY_SKILLS`, the
+  block is suppressed so user-only skills' confirmation prompts
+  fire mid-autonomous. See `.claude/rules/user-only-skills.md`
+  Layer 2.
+- **Model invocation of user-only skills** —
+  `validate-skill` rejects Skill tool calls naming
+  `flow:flow-abort`, `flow:flow-reset`, `flow:flow-release`, or
+  `flow:flow-prime` when the most recent user-role turn in the
+  persisted transcript does NOT contain a matching
+  `<command-name>/<skill></command-name>` substring. See
+  `.claude/rules/user-only-skills.md` Layer 1.
 - **Edit/Write on `.claude/` paths during a flow** —
   `validate-claude-paths` redirects to
   `bin/flow write-rule` for `CLAUDE.md`,
   `.claude/rules/`, and `.claude/skills/`.
+- **Edit/Write on `~/.claude/projects/` (transcript root) in
+  any context** — `validate-claude-paths` rejects Edit/Write
+  regardless of flow state. The transcript file backs Layer 1's
+  user-invocation check; tampering would defeat
+  `validate-skill`. Read access is preserved for the walker
+  itself. See `.claude/rules/user-only-skills.md` Layer 3.
 - **Edit/Write on shared config files inside a worktree** —
   `validate-worktree-paths` rejects modifications to
   `.gitignore`, `.gitattributes`, `Makefile`, etc., without
