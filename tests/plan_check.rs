@@ -505,16 +505,17 @@ fn relative_override_joins_project_root() {
 
 #[test]
 fn message_names_only_scope_when_audit_count_is_zero() {
-    let m = build_violation_message(2, 0, 0, 2);
+    let m = build_violation_message(2, 0, 0, 0, 2);
     assert!(m.contains("2 universal-coverage"));
     assert!(m.contains("scope-enumeration.md"));
     assert!(!m.contains("panic/assert"));
     assert!(!m.contains("duplicate-test-coverage"));
+    assert!(!m.contains("cli-output-contract"));
 }
 
 #[test]
 fn message_names_only_audit_when_scope_count_is_zero() {
-    let m = build_violation_message(0, 3, 0, 3);
+    let m = build_violation_message(0, 3, 0, 0, 3);
     assert!(m.contains("3 panic/assert"));
     assert!(m.contains("external-input-audit-gate.md"));
     assert!(!m.contains("universal-coverage"));
@@ -522,7 +523,7 @@ fn message_names_only_audit_when_scope_count_is_zero() {
 
 #[test]
 fn message_names_only_duplicate_when_others_are_zero() {
-    let m = build_violation_message(0, 0, 2, 2);
+    let m = build_violation_message(0, 0, 2, 0, 2);
     assert!(m.contains("2 duplicate-test-coverage"));
     assert!(m.contains("duplicate-test-coverage.md"));
     assert!(!m.contains("universal-coverage"));
@@ -530,15 +531,27 @@ fn message_names_only_duplicate_when_others_are_zero() {
 }
 
 #[test]
-fn message_names_all_three_rules_when_all_have_violations() {
-    let m = build_violation_message(2, 1, 3, 6);
+fn message_names_only_cli_when_others_are_zero() {
+    let m = build_violation_message(0, 0, 0, 2, 2);
+    assert!(m.contains("2 cli-output-contract"));
+    assert!(m.contains("cli-output-contracts.md"));
+    assert!(!m.contains("universal-coverage"));
+    assert!(!m.contains("panic/assert"));
+    assert!(!m.contains("duplicate-test-coverage"));
+}
+
+#[test]
+fn message_names_all_four_rules_when_all_have_violations() {
+    let m = build_violation_message(2, 1, 3, 4, 10);
     assert!(m.contains("2 universal-coverage"));
     assert!(m.contains("1 panic/assert"));
     assert!(m.contains("3 duplicate-test-coverage"));
+    assert!(m.contains("4 cli-output-contract"));
     assert!(m.contains("scope-enumeration.md"));
     assert!(m.contains("external-input-audit-gate.md"));
     assert!(m.contains("duplicate-test-coverage.md"));
-    assert!(m.contains("6 plan-check violation"));
+    assert!(m.contains("cli-output-contracts.md"));
+    assert!(m.contains("10 plan-check violation"));
 }
 
 #[test]
@@ -699,4 +712,62 @@ fn run_impl_returns_ok_when_both_scanners_clean() {
     let _ = std::fs::remove_file(&tmp);
 
     assert_eq!(result["status"], "ok");
+}
+
+// --- cli-output-contracts (Gate 1) integration ---
+
+#[test]
+fn plan_check_flags_cli_output_contract_violation() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "test-feature");
+    // A plan that proposes a new flag with consumed stdout but
+    // omits the four-item contract block must be rejected by the
+    // gate.
+    let plan =
+        "## Tasks\n\nIntroduce a new flag with consumed stdout. No contract block follows.\n";
+    write_plan(dir.path(), ".flow-states/test-feature-plan.md", plan);
+    write_state(
+        dir.path(),
+        "test-feature",
+        Some(".flow-states/test-feature-plan.md"),
+    );
+
+    let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "error");
+    let violations = json["violations"].as_array().expect("violations array");
+    let cli_violations: Vec<_> = violations
+        .iter()
+        .filter(|v| v["rule"] == "cli-output-contracts")
+        .collect();
+    assert_eq!(cli_violations.len(), 1);
+    let v = cli_violations[0];
+    assert!(v["missing_items"].is_array());
+    let missing = v["missing_items"].as_array().unwrap();
+    assert_eq!(missing.len(), 4);
+    assert!(json["message"]
+        .as_str()
+        .unwrap()
+        .contains("cli-output-contract"));
+}
+
+#[test]
+fn plan_check_passes_cli_output_contract_with_full_block() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "test-feature");
+    let plan = "## Tasks\n\nIntroduce a new flag with consumed stdout.\n\n\
+        Output format: JSON.\n\
+        Exit codes: 0 ok, 1 error.\n\
+        Error messages: stderr names the failure class.\n\
+        Fallback: none — fail closed.\n";
+    write_plan(dir.path(), ".flow-states/test-feature-plan.md", plan);
+    write_state(
+        dir.path(),
+        "test-feature",
+        Some(".flow-states/test-feature-plan.md"),
+    );
+
+    let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "ok");
 }

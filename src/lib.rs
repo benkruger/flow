@@ -10,6 +10,7 @@ pub mod check_freshness;
 pub mod check_phase;
 pub mod ci;
 pub mod cleanup;
+pub mod cli_output_contract_scanner;
 pub mod close_issue;
 pub mod close_issues;
 pub mod commands;

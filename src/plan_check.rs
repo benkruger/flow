@@ -28,6 +28,7 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 use serde_json::{json, Value};
 
+use crate::cli_output_contract_scanner::{self};
 use crate::duplicate_test_coverage::{self, TestCorpus};
 use crate::external_input_audit;
 use crate::flow_paths::FlowPaths;
@@ -133,8 +134,13 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let audit_violations = external_input_audit::scan(&content, &plan_path);
     let test_corpus = TestCorpus::from_repo(&root);
     let dup_violations = duplicate_test_coverage::scan(&content, &plan_path, &test_corpus);
+    let cli_violations = cli_output_contract_scanner::scan(&content, &plan_path);
 
-    if scope_violations.is_empty() && audit_violations.is_empty() && dup_violations.is_empty() {
+    if scope_violations.is_empty()
+        && audit_violations.is_empty()
+        && dup_violations.is_empty()
+        && cli_violations.is_empty()
+    {
         return Ok(json!({"status": "ok"}));
     }
 
@@ -160,12 +166,19 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     for v in &dup_violations {
         violations_json.push(duplicate_violation_to_tagged_json(v));
     }
+    for v in &cli_violations {
+        violations_json.push(cli_output_violation_to_tagged_json(v));
+    }
 
-    let total = scope_violations.len() + audit_violations.len() + dup_violations.len();
+    let total = scope_violations.len()
+        + audit_violations.len()
+        + dup_violations.len()
+        + cli_violations.len();
     let message = build_violation_message(
         scope_violations.len(),
         audit_violations.len(),
         dup_violations.len(),
+        cli_violations.len(),
         total,
     );
 
@@ -198,6 +211,27 @@ pub fn duplicate_violation_to_tagged_json(v: &duplicate_test_coverage::Violation
     })
 }
 
+/// Serialize a cli-output-contracts violation with its extra
+/// `missing_items` field so the skill's repair loop can name which
+/// of the four contract items (output_format, exit_codes,
+/// error_messages, fallback) the author still needs to add.
+///
+/// Shared with `src/plan_extract.rs::violations_response` — both
+/// callsites MUST produce the same JSON shape so the skill renders
+/// consistent output regardless of which path triggered the failure.
+pub fn cli_output_violation_to_tagged_json(
+    v: &crate::cli_output_contract_scanner::Violation,
+) -> Value {
+    json!({
+        "file": v.file.display().to_string(),
+        "line": v.line,
+        "phrase": v.phrase,
+        "context": v.context,
+        "rule": "cli-output-contracts",
+        "missing_items": v.missing_items,
+    })
+}
+
 /// Build a human-readable summary message that names each scanner's
 /// count when non-zero. The message must tell the author which rule
 /// file to consult for each violation class.
@@ -211,6 +245,7 @@ pub fn build_violation_message(
     scope_count: usize,
     audit_count: usize,
     dup_count: usize,
+    cli_count: usize,
     total: usize,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
@@ -234,6 +269,14 @@ pub fn build_violation_message(
              collide with existing tests (see \
              .claude/rules/duplicate-test-coverage.md)",
             dup_count
+        ));
+    }
+    if cli_count > 0 {
+        parts.push(format!(
+            "{} cli-output-contract violation(s): new flag/subcommand proposal(s) \
+             lack the four-item contract block (see \
+             .claude/rules/cli-output-contracts.md)",
+            cli_count
         ));
     }
     format!("{} plan-check violation(s): {}.", total, parts.join("; "))
