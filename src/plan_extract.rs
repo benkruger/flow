@@ -292,6 +292,80 @@ fn promote_headings(content: &str) -> String {
     result
 }
 
+/// Plan-phase Gate 4 — plan-extract truncation gate.
+///
+/// Detects whether the issue body fed to plan-extract was
+/// truncated mid-content. The most reliable signal is an unclosed
+/// fenced code block at EOF — when the issue body cuts off inside
+/// a fenced block, the issue was truncated. Returns
+/// `Some((expected, actual))` when truncation is detected, `None`
+/// when the content is intact.
+///
+/// `expected` and `actual` are the source `#### Task N:` count
+/// and the post-promotion `### Task N:` count respectively. The
+/// promote_headings transform is deterministic, so a mismatch
+/// indicates either an unclosed fenced block at EOF (which
+/// suppressed task headings) or some other parse failure.
+///
+/// The check is conservative: only an unclosed fence at EOF or a
+/// task-count mismatch fires the gate. False positives would
+/// block legitimate plans, so the gate accepts ambiguous cases.
+pub fn detect_truncation(
+    source: &str,
+    promoted: &str,
+) -> Option<(usize, usize)> {
+    let expected = count_tasks(source);
+    let actual = count_tasks_after_promotion(promoted);
+    if has_unclosed_fence(source) || has_unclosed_fence(promoted) {
+        return Some((expected, actual));
+    }
+    if expected != actual {
+        return Some((expected, actual));
+    }
+    None
+}
+
+/// Count `### Task N:` headings in the post-promotion content.
+fn count_tasks_after_promotion(content: &str) -> usize {
+    let mut count = 0;
+    let mut in_code_block = false;
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_code_block = !in_code_block;
+            continue;
+        }
+        if !in_code_block && trimmed.starts_with("### Task ") {
+            count += 1;
+        }
+    }
+    count
+}
+
+/// Returns `true` when the content has an unclosed fenced code
+/// block at EOF (an opening ` ``` ` or `~~~` with no matching
+/// close).
+fn has_unclosed_fence(content: &str) -> bool {
+    let mut open: Option<char> = None;
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") {
+            open = match open {
+                Some('`') => None,
+                Some(_) => open,
+                None => Some('`'),
+            };
+        } else if trimmed.starts_with("~~~") {
+            open = match open {
+                Some('~') => None,
+                Some(_) => open,
+                None => Some('~'),
+            };
+        }
+    }
+    open.is_some()
+}
+
 /// Count `#### Task N:` headings in the content (pre-promotion format).
 fn count_tasks(content: &str) -> usize {
     let mut count = 0;
@@ -750,6 +824,34 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
 
     // Promote headings: ### → ##, #### → ###
     let promoted = promote_headings(&plan_section);
+
+    // Plan-phase Gate 4: detect truncation in the issue body
+    // before writing the plan file. An unclosed fence at EOF or
+    // a task-count mismatch between source and promoted content
+    // signals the issue body was truncated mid-content. Return
+    // an error response with `truncated: true` so the skill's
+    // Fast Path Done can halt auto-advance.
+    if let Some((expected, actual)) = detect_truncation(&plan_section, &promoted) {
+        let _ = append_log(
+            &root,
+            &branch,
+            &format!(
+                "[Phase 2] plan-extract — truncation detected (expected {} tasks, got {}) in issue body (exit 0)",
+                expected, actual
+            ),
+        );
+        return Ok(json!({
+            "status": "error",
+            "path": "extracted",
+            "truncated": true,
+            "expected_task_count": expected,
+            "actual_task_count": actual,
+            "message": format!(
+                "Plan-extract truncation detected: expected {} tasks, got {}. The issue body appears to be cut off (likely an unclosed fenced code block at EOF). Edit the issue body to restore the missing content, then re-run /flow:flow-plan.",
+                expected, actual
+            ),
+        }));
+    }
 
     // Write plan file
     let plan_abs = FlowPaths::new(&root, &branch).plan_file();

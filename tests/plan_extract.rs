@@ -2,6 +2,79 @@ mod common;
 
 use common::flow_states_dir;
 
+use flow_rs::plan_extract::detect_truncation;
+
+// --- detect_truncation (Gate 4) ---
+
+#[test]
+fn detect_truncation_returns_none_for_intact_content() {
+    let source = "#### Task 1: Foo\n\nDo X.\n\n#### Task 2: Bar\n\nDo Y.\n";
+    let promoted = "### Task 1: Foo\n\nDo X.\n\n### Task 2: Bar\n\nDo Y.\n";
+    assert_eq!(detect_truncation(source, promoted), None);
+}
+
+#[test]
+fn detect_truncation_fires_on_unclosed_fence_in_source() {
+    let source = "#### Task 1: Foo\n\nDo X.\n\n```\nfn foo() {}\n";
+    let promoted = "### Task 1: Foo\n\nDo X.\n\n```\nfn foo() {}\n";
+    let result = detect_truncation(source, promoted);
+    assert!(result.is_some());
+}
+
+#[test]
+fn detect_truncation_fires_on_task_count_mismatch() {
+    let source = "#### Task 1: Foo\n\n#### Task 2: Bar\n\n#### Task 3: Baz\n";
+    let promoted = "### Task 1: Foo\n\n### Task 2: Bar\n";
+    let result = detect_truncation(source, promoted);
+    assert_eq!(result, Some((3, 2)));
+}
+
+#[test]
+fn detect_truncation_handles_empty_content() {
+    assert_eq!(detect_truncation("", ""), None);
+}
+
+#[test]
+fn detect_truncation_balanced_fences_clean() {
+    let source = "#### Task 1: Foo\n\n```\nfn foo() {}\n```\n";
+    let promoted = "### Task 1: Foo\n\n```\nfn foo() {}\n```\n";
+    assert_eq!(detect_truncation(source, promoted), None);
+}
+
+#[test]
+fn detect_truncation_unclosed_tilde_fence() {
+    let source = "#### Task 1: Foo\n\n~~~\nfoo\n";
+    let promoted = "### Task 1: Foo\n\n~~~\nfoo\n";
+    assert!(detect_truncation(source, promoted).is_some());
+}
+
+#[test]
+fn detect_truncation_mixed_fence_types_unbalanced() {
+    // Open with ``` then open with ~~~ before closing. The first
+    // unclosed type wins.
+    let source = "#### Task 1\n\n```\n~~~\n";
+    let promoted = "### Task 1\n\n```\n~~~\n";
+    assert!(detect_truncation(source, promoted).is_some());
+}
+
+#[test]
+fn detect_truncation_balanced_tilde_fences_clean() {
+    // ~~~ open and ~~~ close — covers the Some('~') => None arm.
+    let source = "#### Task 1\n\n~~~\nfoo\n~~~\n";
+    let promoted = "### Task 1\n\n~~~\nfoo\n~~~\n";
+    assert_eq!(detect_truncation(source, promoted), None);
+}
+
+#[test]
+fn detect_truncation_tilde_open_then_backtick_treated_as_content() {
+    // ~~~ opens; ``` while inside ~~~ does NOT close it (different
+    // fence type). Covers the Some(_) => open arm of the backtick
+    // branch — open stays Some('~') even when ``` is encountered.
+    let source = "#### Task 1\n\n~~~\n```\n~~~\n";
+    let promoted = "### Task 1\n\n~~~\n```\n~~~\n";
+    assert_eq!(detect_truncation(source, promoted), None);
+}
+
 // Unit tests for now-private helpers removed — all coverage is
 // driven through the `integration` subprocess module below via
 // `bin/flow plan-extract` against fixture repos.
@@ -2076,6 +2149,37 @@ exit 1
             .filter(|v| v["rule"] == "verify-references")
             .collect();
         assert_eq!(verify_violations.len(), 1);
+    }
+
+    #[test]
+    fn test_extracted_path_flags_truncation() {
+        // Issue body with unclosed fence at EOF — Gate 4
+        // detects the truncation before writing the plan file.
+        let dir = tempfile::tempdir().unwrap();
+        setup_git_repo(dir.path(), "test-feature");
+        let state = make_plan_state("Closes #222", |_| {});
+        setup_state(dir.path(), "test-feature", &state);
+
+        let stub_dir = create_gh_stub(
+            dir.path(),
+            r###"#!/bin/bash
+if [[ "$1" == "issue" && "$2" == "view" ]]; then
+    echo '{"number":222,"title":"Truncated","body":"## Implementation Plan\n\n### Context\n\nC.\n\n### Tasks\n\n#### Task 1: Foo\n\n```\nfn foo() {}\n","labels":[{"name":"Decomposed"}]}'
+    exit 0
+fi
+exit 1
+"###,
+        );
+
+        let (code, json) =
+            run_plan_extract_with_gh(dir.path(), &["--branch", "test-feature"], &stub_dir);
+        assert_eq!(code, 0);
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["truncated"], true);
+        assert!(json["message"]
+            .as_str()
+            .unwrap()
+            .contains("truncation"));
     }
 
     #[test]
