@@ -164,6 +164,20 @@ It is NOT required for:
 - **Whitespace or formatting adjustments** to code the plan sketched
   as pseudocode.
 - **Test-function renames** that stay within the plan's stated scope.
+- **Implementation-detail changes within an unchanged signature** —
+  selecting a different filesystem syscall (e.g., `Path::exists()`
+  versus `Path::symlink_metadata().is_err()`) when both produce
+  identical fail-open semantics, restructuring `match` arms into
+  `.ok().and_then(...)` chains, swapping equivalent standard-library
+  primitives, or other refactorings that leave the public signature,
+  return type, and observable behavior unchanged. These are routine
+  Code-phase implementation choices — not "interface prototype"
+  deviations. Code Review may still flag them as architecture or
+  simplicity findings, but they do not require a `bin/flow log`
+  entry to satisfy this rule. The trigger for logging is a change
+  the Plan phase would have written differently if it had known —
+  not a change the Plan phase happened to sketch in pseudocode that
+  Code phase polished into idiomatic Rust.
 
 ### How to Apply (Deviation Logging)
 
