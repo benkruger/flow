@@ -505,17 +505,18 @@ fn relative_override_joins_project_root() {
 
 #[test]
 fn message_names_only_scope_when_audit_count_is_zero() {
-    let m = build_violation_message(2, 0, 0, 0, 2);
+    let m = build_violation_message(2, 0, 0, 0, 0, 2);
     assert!(m.contains("2 universal-coverage"));
     assert!(m.contains("scope-enumeration.md"));
     assert!(!m.contains("panic/assert"));
     assert!(!m.contains("duplicate-test-coverage"));
     assert!(!m.contains("cli-output-contract"));
+    assert!(!m.contains("deletion-sweep"));
 }
 
 #[test]
 fn message_names_only_audit_when_scope_count_is_zero() {
-    let m = build_violation_message(0, 3, 0, 0, 3);
+    let m = build_violation_message(0, 3, 0, 0, 0, 3);
     assert!(m.contains("3 panic/assert"));
     assert!(m.contains("external-input-audit-gate.md"));
     assert!(!m.contains("universal-coverage"));
@@ -523,7 +524,7 @@ fn message_names_only_audit_when_scope_count_is_zero() {
 
 #[test]
 fn message_names_only_duplicate_when_others_are_zero() {
-    let m = build_violation_message(0, 0, 2, 0, 2);
+    let m = build_violation_message(0, 0, 2, 0, 0, 2);
     assert!(m.contains("2 duplicate-test-coverage"));
     assert!(m.contains("duplicate-test-coverage.md"));
     assert!(!m.contains("universal-coverage"));
@@ -532,7 +533,7 @@ fn message_names_only_duplicate_when_others_are_zero() {
 
 #[test]
 fn message_names_only_cli_when_others_are_zero() {
-    let m = build_violation_message(0, 0, 0, 2, 2);
+    let m = build_violation_message(0, 0, 0, 2, 0, 2);
     assert!(m.contains("2 cli-output-contract"));
     assert!(m.contains("cli-output-contracts.md"));
     assert!(!m.contains("universal-coverage"));
@@ -541,17 +542,27 @@ fn message_names_only_cli_when_others_are_zero() {
 }
 
 #[test]
-fn message_names_all_four_rules_when_all_have_violations() {
-    let m = build_violation_message(2, 1, 3, 4, 10);
+fn message_names_only_deletion_when_others_are_zero() {
+    let m = build_violation_message(0, 0, 0, 0, 5, 5);
+    assert!(m.contains("5 deletion-sweep"));
+    assert!(m.contains("Scope Enumeration"));
+    assert!(!m.contains("universal-coverage"));
+    assert!(!m.contains("cli-output-contract"));
+}
+
+#[test]
+fn message_names_all_five_rules_when_all_have_violations() {
+    let m = build_violation_message(2, 1, 3, 4, 5, 15);
     assert!(m.contains("2 universal-coverage"));
     assert!(m.contains("1 panic/assert"));
     assert!(m.contains("3 duplicate-test-coverage"));
     assert!(m.contains("4 cli-output-contract"));
+    assert!(m.contains("5 deletion-sweep"));
     assert!(m.contains("scope-enumeration.md"));
     assert!(m.contains("external-input-audit-gate.md"));
     assert!(m.contains("duplicate-test-coverage.md"));
     assert!(m.contains("cli-output-contracts.md"));
-    assert!(m.contains("10 plan-check violation"));
+    assert!(m.contains("15 plan-check violation"));
 }
 
 #[test]
@@ -760,6 +771,55 @@ fn plan_check_passes_cli_output_contract_with_full_block() {
         Exit codes: 0 ok, 1 error.\n\
         Error messages: stderr names the failure class.\n\
         Fallback: none — fail closed.\n";
+    write_plan(dir.path(), ".flow-states/test-feature-plan.md", plan);
+    write_state(
+        dir.path(),
+        "test-feature",
+        Some(".flow-states/test-feature-plan.md"),
+    );
+
+    let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "ok");
+}
+
+// --- deletion-sweep (Gate 2) integration ---
+
+#[test]
+fn plan_check_flags_deletion_sweep_violation() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "test-feature");
+    // A plan that proposes removing a named identifier without
+    // sweep evidence (file bullets or Exploration heading) must
+    // be rejected.
+    let plan = "## Tasks\n\nRemove `old_legacy_helper_fn`. No sweep follows.\n";
+    write_plan(dir.path(), ".flow-states/test-feature-plan.md", plan);
+    write_state(
+        dir.path(),
+        "test-feature",
+        Some(".flow-states/test-feature-plan.md"),
+    );
+
+    let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "error");
+    let violations = json["violations"].as_array().expect("violations array");
+    let del_violations: Vec<_> = violations
+        .iter()
+        .filter(|v| v["rule"] == "deletion-sweep")
+        .collect();
+    assert_eq!(del_violations.len(), 1);
+    assert_eq!(del_violations[0]["identifier"], "old_legacy_helper_fn");
+    assert!(json["message"].as_str().unwrap().contains("deletion-sweep"));
+}
+
+#[test]
+fn plan_check_passes_deletion_sweep_with_evidence() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "test-feature");
+    let plan = "## Tasks\n\nRemove `old_legacy_helper_fn`.\n\n\
+        ## Exploration\n\n\
+        Files affected:\n";
     write_plan(dir.path(), ".flow-states/test-feature-plan.md", plan);
     write_state(
         dir.path(),

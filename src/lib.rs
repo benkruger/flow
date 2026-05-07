@@ -22,6 +22,7 @@ pub mod complete_preflight;
 pub mod create_milestone;
 pub mod create_sub_issue;
 pub mod cwd_scope;
+pub mod deletion_sweep_scanner;
 pub mod dispatch;
 pub mod duplicate_test_coverage;
 pub mod error;

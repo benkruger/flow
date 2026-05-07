@@ -29,6 +29,7 @@ use clap::Parser;
 use serde_json::{json, Value};
 
 use crate::cli_output_contract_scanner::{self};
+use crate::deletion_sweep_scanner::{self};
 use crate::duplicate_test_coverage::{self, TestCorpus};
 use crate::external_input_audit;
 use crate::flow_paths::FlowPaths;
@@ -135,11 +136,13 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let test_corpus = TestCorpus::from_repo(&root);
     let dup_violations = duplicate_test_coverage::scan(&content, &plan_path, &test_corpus);
     let cli_violations = cli_output_contract_scanner::scan(&content, &plan_path);
+    let del_violations = deletion_sweep_scanner::scan(&content, &plan_path);
 
     if scope_violations.is_empty()
         && audit_violations.is_empty()
         && dup_violations.is_empty()
         && cli_violations.is_empty()
+        && del_violations.is_empty()
     {
         return Ok(json!({"status": "ok"}));
     }
@@ -169,16 +172,21 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     for v in &cli_violations {
         violations_json.push(cli_output_violation_to_tagged_json(v));
     }
+    for v in &del_violations {
+        violations_json.push(deletion_sweep_violation_to_tagged_json(v));
+    }
 
     let total = scope_violations.len()
         + audit_violations.len()
         + dup_violations.len()
-        + cli_violations.len();
+        + cli_violations.len()
+        + del_violations.len();
     let message = build_violation_message(
         scope_violations.len(),
         audit_violations.len(),
         dup_violations.len(),
         cli_violations.len(),
+        del_violations.len(),
         total,
     );
 
@@ -232,6 +240,23 @@ pub fn cli_output_violation_to_tagged_json(
     })
 }
 
+/// Serialize a deletion-sweep violation with its extra
+/// `identifier` field naming the proposed-for-deletion symbol.
+///
+/// Shared with `src/plan_extract.rs::violations_response`.
+pub fn deletion_sweep_violation_to_tagged_json(
+    v: &crate::deletion_sweep_scanner::Violation,
+) -> Value {
+    json!({
+        "file": v.file.display().to_string(),
+        "line": v.line,
+        "phrase": v.phrase,
+        "context": v.context,
+        "rule": "deletion-sweep",
+        "identifier": v.identifier,
+    })
+}
+
 /// Build a human-readable summary message that names each scanner's
 /// count when non-zero. The message must tell the author which rule
 /// file to consult for each violation class.
@@ -246,6 +271,7 @@ pub fn build_violation_message(
     audit_count: usize,
     dup_count: usize,
     cli_count: usize,
+    del_count: usize,
     total: usize,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
@@ -277,6 +303,14 @@ pub fn build_violation_message(
              lack the four-item contract block (see \
              .claude/rules/cli-output-contracts.md)",
             cli_count
+        ));
+    }
+    if del_count > 0 {
+        parts.push(format!(
+            "{} deletion-sweep violation(s): delete/rename proposal(s) lack \
+             nearby sweep evidence (see \
+             .claude/rules/docs-with-behavior.md \"Scope Enumeration (Rename Side)\")",
+            del_count
         ));
     }
     format!("{} plan-check violation(s): {}.", total, parts.join("; "))

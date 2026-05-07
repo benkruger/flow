@@ -23,6 +23,7 @@ use std::process::Command;
 
 use crate::cli_output_contract_scanner::{scan as cli_scan, Violation as CliViolation};
 use crate::commands::log::append_log;
+use crate::deletion_sweep_scanner::{scan as del_scan, Violation as DelViolation};
 use crate::duplicate_test_coverage::{scan as dup_scan, TestCorpus, Violation as DupViolation};
 use crate::external_input_audit::{scan as audit_scan, Violation as AuditViolation};
 use crate::flow_paths::FlowPaths;
@@ -348,6 +349,7 @@ fn violations_response(
     audit_violations: &[AuditViolation],
     dup_violations: &[DupViolation],
     cli_violations: &[CliViolation],
+    del_violations: &[DelViolation],
     path_label: &str,
 ) -> Value {
     let mut violations_json: Vec<Value> = Vec::new();
@@ -379,10 +381,14 @@ fn violations_response(
         // render the cli-output-contracts violation shape identically.
         violations_json.push(crate::plan_check::cli_output_violation_to_tagged_json(v));
     }
+    for v in del_violations {
+        violations_json.push(crate::plan_check::deletion_sweep_violation_to_tagged_json(v));
+    }
     let total = scope_violations.len()
         + audit_violations.len()
         + dup_violations.len()
-        + cli_violations.len();
+        + cli_violations.len()
+        + del_violations.len();
     // Reuse the message builder from plan_check so both gate
     // callsites render identical wording. plan_extract adds the
     // path-specific "Edit the plan, then re-run /flow:flow-plan"
@@ -392,6 +398,7 @@ fn violations_response(
         audit_violations.len(),
         dup_violations.len(),
         cli_violations.len(),
+        del_violations.len(),
         total,
     );
     json!({
@@ -497,16 +504,19 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
         let test_corpus = TestCorpus::from_repo(&root);
         let dup_violations = dup_scan(&plan_content, &plan_abs, &test_corpus);
         let cli_violations = cli_scan(&plan_content, &plan_abs);
+        let del_violations = del_scan(&plan_content, &plan_abs);
         if !scope_violations.is_empty()
             || !audit_violations.is_empty()
             || !dup_violations.is_empty()
             || !cli_violations.is_empty()
+            || !del_violations.is_empty()
         {
             return Ok(violations_response(
                 &scope_violations,
                 &audit_violations,
                 &dup_violations,
                 &cli_violations,
+                &del_violations,
                 "resumed",
             ));
         }
@@ -742,10 +752,12 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
     let test_corpus = TestCorpus::from_repo(&root);
     let dup_violations = dup_scan(&promoted, &plan_abs, &test_corpus);
     let cli_violations = cli_scan(&promoted, &plan_abs);
+    let del_violations = del_scan(&promoted, &plan_abs);
     if !scope_violations.is_empty()
         || !audit_violations.is_empty()
         || !dup_violations.is_empty()
         || !cli_violations.is_empty()
+        || !del_violations.is_empty()
     {
         // Violations: enter phase + record files + return. Single
         // commit_state so the `?` Err arm is reachable via a
@@ -769,11 +781,12 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
             &root,
             &branch,
             &format!(
-                "[Phase 2] plan-extract — plan-check violations (scope {} / audit {} / dup {} / cli {}) in {} (exit 0)",
+                "[Phase 2] plan-extract — plan-check violations (scope {} / audit {} / dup {} / cli {} / del {}) in {} (exit 0)",
                 scope_violations.len(),
                 audit_violations.len(),
                 dup_violations.len(),
                 cli_violations.len(),
+                del_violations.len(),
                 plan_rel
             ),
         );
@@ -782,6 +795,7 @@ pub fn run_impl_with_root(args: &Args, root: PathBuf) -> Result<Value, String> {
             &audit_violations,
             &dup_violations,
             &cli_violations,
+            &del_violations,
             "extracted",
         ));
     }
