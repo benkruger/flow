@@ -4017,3 +4017,62 @@ fn flow_reset_invokes_cleanup_all_dry_run_and_live() {
         "skills/flow-reset/SKILL.md must invoke `cleanup . --all` without --dry-run (Step 3 execute)"
     );
 }
+
+// --- assess-issues rule content contracts ---
+//
+// `.claude/rules/assess-issues.md` is the rule the issue-triage agent
+// depends on. The three contracts below lock in (a) the canonical
+// "code actually does" phrasing against the historical `issue actually
+// does` typo shape, (b) the unreferenced-files coverage bullet, and
+// (c) the `gh pr list --search` / `git log --grep` shipped-but-not-
+// closed investigation move. Each test guards a distinct regression:
+// a deletion of any of the three lines fails CI immediately.
+
+fn read_assess_issues_rule() -> String {
+    let path = common::repo_root()
+        .join(".claude")
+        .join("rules")
+        .join("assess-issues.md");
+    std::fs::read_to_string(&path).expect(".claude/rules/assess-issues.md must exist")
+}
+
+#[test]
+fn test_assess_issues_rule_has_no_typo() {
+    let content = read_assess_issues_rule();
+    assert!(
+        content.contains("what the existing code\nactually does")
+            || content.contains("what the existing code actually does")
+            || content.contains("the code actually does"),
+        ".claude/rules/assess-issues.md must phrase the comparison as 'what the (existing) code actually does'"
+    );
+    assert!(
+        !content.contains("what the issue actually does"),
+        ".claude/rules/assess-issues.md must NOT contain the typo 'what the issue actually does'"
+    );
+}
+
+#[test]
+fn test_assess_issues_rule_covers_unreferenced_files() {
+    let content = read_assess_issues_rule();
+    assert!(
+        content.contains("If the issue names no files"),
+        ".claude/rules/assess-issues.md must cover the unreferenced-files case starting with 'If the issue names no files'"
+    );
+    assert!(
+        content.contains("search the codebase for the behavior"),
+        ".claude/rules/assess-issues.md must instruct searching the codebase for the described behavior when no files are referenced"
+    );
+}
+
+#[test]
+fn test_assess_issues_rule_includes_pr_search_step() {
+    let content = read_assess_issues_rule();
+    assert!(
+        content.contains("gh pr list --search"),
+        ".claude/rules/assess-issues.md must instruct checking `gh pr list --search` for already-shipped work"
+    );
+    assert!(
+        content.contains("git log --all --grep"),
+        ".claude/rules/assess-issues.md must instruct checking `git log --all --grep` for already-shipped work"
+    );
+}
