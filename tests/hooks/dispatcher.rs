@@ -8,14 +8,12 @@
 //! and `src/hooks/stop_continue.rs` were tested only via in-process unit tests
 //! that bypassed the clap wiring, stdin reading, and branch resolution layers.
 
-mod common;
-
 use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
 
-use common::flow_states_dir;
+use crate::common::flow_states_dir;
 
 use serde_json::{json, Value};
 

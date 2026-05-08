@@ -4,15 +4,9 @@
 //! `tool_input`, `transcript_path`, and `home` fixtures. Subprocess
 //! integration test (`subprocess_validate_skill_blocks_user_only_invocation_without_user_command`
 //! and siblings) lives below the unit tests and exercises the
-//! compiled binary.
-//!
-//! Lives at the top-level `tests/` path rather than the mirrored
-//! `tests/hooks/validate_skill.rs` because the `[[test]]` stanza
-//! addition required for subdirectory tests was blocked by the
-//! validate-worktree-paths shared-config hook in autonomous mode.
-//! See the deviation log entry on this branch.
-
-mod common;
+//! compiled binary. `transcript_fixture` reaches in from
+//! `tests/common/mod.rs` via `crate::common` because
+//! `tests/hooks/main.rs` declares the path-aliased common module.
 
 use std::io::Write;
 use std::path::Path;
@@ -57,7 +51,7 @@ fn validate_blocks_when_user_only_skill_lacks_user_invocation() {
     // `<command-name>` tag. Layer 1 must block.
     let jsonl =
         "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"unrelated message\"}}\n";
-    let path = common::transcript_fixture(home, "p", jsonl);
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
     let tool_input = json!({"skill": "flow:flow-abort"});
     let (allowed, msg) = validate(&tool_input, Some(&path), home);
     assert!(!allowed);
@@ -69,7 +63,7 @@ fn validate_allows_when_user_only_skill_has_user_invocation() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}}\n";
-    let path = common::transcript_fixture(home, "p", jsonl);
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
     let tool_input = json!({"skill": "flow:flow-abort"});
     let (allowed, msg) = validate(&tool_input, Some(&path), home);
     assert!(allowed);
@@ -81,7 +75,7 @@ fn validate_block_message_names_skill() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"unrelated\"}}\n";
-    let path = common::transcript_fixture(home, "p", jsonl);
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
     let tool_input = json!({"skill": "flow:flow-abort"});
     let (_, msg) = validate(&tool_input, Some(&path), home);
     assert!(msg.contains("`flow:flow-abort`"));
@@ -92,7 +86,7 @@ fn validate_block_message_references_rule_file() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"unrelated\"}}\n";
-    let path = common::transcript_fixture(home, "p", jsonl);
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
     let tool_input = json!({"skill": "flow:flow-abort"});
     let (_, msg) = validate(&tool_input, Some(&path), home);
     assert!(msg.contains(".claude/rules/user-only-skills.md"));
@@ -211,7 +205,7 @@ fn validate_blocks_user_prose_mention_of_command_marker() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"can you describe what <command-name>/flow:flow-abort</command-name> does?\"}}\n";
-    let path = common::transcript_fixture(home, "p", jsonl);
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
     let tool_input = json!({"skill": "flow:flow-abort"});
     let (allowed, msg) = validate(&tool_input, Some(&path), home);
     assert!(!allowed);
@@ -244,7 +238,7 @@ fn run_hook_subprocess(stdin_input: &str) -> (i32, String, String) {
 }
 
 fn write_jsonl_fixture(home: &Path, jsonl: &str) -> std::path::PathBuf {
-    common::transcript_fixture(home, "p", jsonl)
+    crate::common::transcript_fixture(home, "p", jsonl)
 }
 
 #[test]

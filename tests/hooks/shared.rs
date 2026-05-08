@@ -1,13 +1,11 @@
 //! Tests for shared hook utilities (src/hooks/mod.rs).
 
-mod common;
-
 use std::fs;
 use std::path::Path;
 
 use serde_json::json;
 
-use common::flow_states_dir;
+use crate::common::flow_states_dir;
 use flow_rs::hooks;
 
 // === find_settings_and_root_from ===
