@@ -472,6 +472,7 @@ fn step_key_order_matches_expected() {
         keys,
         vec![
             "pr_close",
+            "adversarial_probe",
             "worktree",
             "remote_branch",
             "local_branch",
@@ -495,6 +496,7 @@ fn step_key_order_with_pull() {
         keys,
         vec![
             "pr_close",
+            "adversarial_probe",
             "worktree",
             "remote_branch",
             "local_branch",
@@ -1466,5 +1468,248 @@ fn cleanup_all_pr_number_string_coerces_via_tolerant_i64() {
     assert_eq!(
         flow["pr_number"], 5678,
         "pr_number string must coerce to integer"
+    );
+}
+
+// --- delete_adversarial_probe ---
+//
+// Phase 6 cleanup explicitly disposes of the Code Review adversarial
+// probe before `git worktree remove` removes the worktree directory.
+// The step's outcome surfaces in the `steps` JSON as
+// `"adversarial_probe"` so users have an audit-trail entry of the
+// disposal. The probe path is resolved by spawning the worktree's
+// `bin/test --adversarial-path`; the file is removed via
+// `fs::remove_file` (no permission allow-list dependency, idempotent
+// on `NotFound`).
+//
+// Test coverage maps to the documented outcomes:
+// - `"deleted"` — probe present in worktree, file removed
+// - `"missing"` — bin/test resolves a path but file not present
+// - `"skipped"` — bin/test exits 2 (unconfigured), bin/test missing,
+//   or worktree directory missing
+// - subdirectory variant per EXCLUDE_ENTRIES (RSpec/Rails) handled
+
+/// Write an executable `bin/test` that prints `path` on
+/// `--adversarial-path` and exits 0. Simulates a configured project.
+fn write_bin_test_with_adversarial_path(worktree: &Path, path: &str) {
+    let bin_dir = worktree.join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    let script = format!(
+        "#!/usr/bin/env bash\nset -eu\nif [ \"${{1:-}}\" = \"--adversarial-path\" ]; then\n  printf '%s\\n' '{}'\n  exit 0\nfi\nexit 0\n",
+        path
+    );
+    let bin_test = bin_dir.join("test");
+    fs::write(&bin_test, script).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(&bin_test).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&bin_test, perms).unwrap();
+}
+
+/// Write an executable `bin/test` that exits 2 with a stderr
+/// message — simulates an unconfigured stub the user has not yet
+/// set up.
+fn write_bin_test_unconfigured(worktree: &Path) {
+    let bin_dir = worktree.join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    let script = "#!/usr/bin/env bash\nif [ \"${1:-}\" = \"--adversarial-path\" ]; then\n  printf 'unconfigured\\n' 1>&2\n  exit 2\nfi\nexit 0\n";
+    let bin_test = bin_dir.join("test");
+    fs::write(&bin_test, script).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(&bin_test).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&bin_test, perms).unwrap();
+}
+
+#[test]
+fn cleanup_deletes_adversarial_probe_when_present() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let wt_rel = setup_feature(dir.path(), "test-feature");
+    let wt = dir.path().join(&wt_rel);
+
+    write_bin_test_with_adversarial_path(&wt, "tests/test_adversarial_flow.rs");
+
+    let probe = wt.join("tests/test_adversarial_flow.rs");
+    fs::create_dir_all(probe.parent().unwrap()).unwrap();
+    fs::write(&probe, "// adversarial probe\n").unwrap();
+
+    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
+    let steps = steps_from(&value);
+    assert_eq!(
+        steps["adversarial_probe"], "deleted",
+        "probe present in worktree must be removed by delete_adversarial_probe"
+    );
+}
+
+#[test]
+fn cleanup_adversarial_probe_in_subdirectory_variant_deleted() {
+    // Subdirectory variant per `EXCLUDE_ENTRIES` (RSpec/Rails layout).
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let wt_rel = setup_feature(dir.path(), "test-feature");
+    let wt = dir.path().join(&wt_rel);
+
+    write_bin_test_with_adversarial_path(&wt, "spec/adversarial_flow_spec.rb");
+
+    let probe = wt.join("spec/adversarial_flow_spec.rb");
+    fs::create_dir_all(probe.parent().unwrap()).unwrap();
+    fs::write(&probe, "# adversarial probe\n").unwrap();
+
+    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
+    let steps = steps_from(&value);
+    assert_eq!(
+        steps["adversarial_probe"], "deleted",
+        "subdirectory-variant probe must be removed via the bin/test-resolved path"
+    );
+}
+
+#[test]
+fn cleanup_adversarial_probe_missing_when_path_resolves_but_file_absent() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let wt_rel = setup_feature(dir.path(), "test-feature");
+    let wt = dir.path().join(&wt_rel);
+
+    write_bin_test_with_adversarial_path(&wt, "tests/test_adversarial_flow.rs");
+    // No probe file created — bin/test resolves a path but it is absent.
+
+    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
+    let steps = steps_from(&value);
+    assert_eq!(
+        steps["adversarial_probe"], "missing",
+        "resolved path with no probe file must report \"missing\""
+    );
+}
+
+#[test]
+fn cleanup_adversarial_probe_skipped_when_bin_test_exits_two() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let wt_rel = setup_feature(dir.path(), "test-feature");
+    let wt = dir.path().join(&wt_rel);
+
+    write_bin_test_unconfigured(&wt);
+
+    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
+    let steps = steps_from(&value);
+    assert_eq!(
+        steps["adversarial_probe"], "skipped",
+        "unconfigured bin/test (exit 2) must skip the probe step"
+    );
+}
+
+#[test]
+fn cleanup_adversarial_probe_skipped_when_bin_test_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let wt_rel = setup_feature(dir.path(), "test-feature");
+    // No bin/test in the worktree.
+
+    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
+    let steps = steps_from(&value);
+    assert_eq!(
+        steps["adversarial_probe"], "skipped",
+        "missing bin/test must skip the probe step (no path to resolve)"
+    );
+}
+
+#[test]
+fn cleanup_adversarial_probe_skipped_when_worktree_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    // setup_feature NOT called — worktree directory does not exist.
+    let wt_rel = ".worktrees/test-feature";
+
+    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", wt_rel, None, false));
+    let steps = steps_from(&value);
+    assert_eq!(
+        steps["adversarial_probe"], "skipped",
+        "missing worktree must skip the probe step"
+    );
+}
+
+#[test]
+fn cleanup_adversarial_probe_skipped_when_bin_test_prints_empty() {
+    // bin/test exits 0 but prints empty stdout — protects against a
+    // misconfigured project whose `bin/test --adversarial-path` is
+    // wired up but returns nothing useful.
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let wt_rel = setup_feature(dir.path(), "test-feature");
+    let wt = dir.path().join(&wt_rel);
+
+    let bin_dir = wt.join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    let script = "#!/usr/bin/env bash\nexit 0\n";
+    let bin_test = bin_dir.join("test");
+    fs::write(&bin_test, script).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(&bin_test).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&bin_test, perms).unwrap();
+
+    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
+    let steps = steps_from(&value);
+    assert_eq!(
+        steps["adversarial_probe"], "skipped",
+        "empty stdout from bin/test must skip — no path to resolve"
+    );
+}
+
+#[test]
+fn cleanup_deletes_adversarial_probe_at_absolute_path() {
+    // bin/test returns an absolute path. The cleanup step must use
+    // the path verbatim (not join it onto the worktree root).
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let wt_rel = setup_feature(dir.path(), "test-feature");
+    let wt = dir.path().join(&wt_rel);
+
+    // Pick an absolute path for the probe — inside the worktree but
+    // referenced absolutely so the production code's
+    // `Path::is_absolute` branch fires.
+    let probe = wt.join("tests/test_adversarial_flow.rs");
+    fs::create_dir_all(probe.parent().unwrap()).unwrap();
+    fs::write(&probe, "// adversarial probe\n").unwrap();
+    let abs_probe_str = probe.to_string_lossy().to_string();
+
+    write_bin_test_with_adversarial_path(&wt, &abs_probe_str);
+
+    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
+    let steps = steps_from(&value);
+    assert_eq!(
+        steps["adversarial_probe"], "deleted",
+        "absolute probe path must be honored verbatim"
+    );
+    assert!(
+        !probe.exists(),
+        "probe file at absolute path must be removed"
+    );
+}
+
+#[test]
+fn cleanup_adversarial_probe_failed_when_path_is_directory() {
+    // `bin/test --adversarial-path` resolves to a path that points at
+    // a DIRECTORY. `fs::remove_file` returns a non-NotFound error
+    // (EISDIR/EPERM depending on platform). The step must report the
+    // failure rather than swallowing it as "missing" or "deleted".
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path());
+    let wt_rel = setup_feature(dir.path(), "test-feature");
+    let wt = dir.path().join(&wt_rel);
+
+    write_bin_test_with_adversarial_path(&wt, "tests/probe_dir");
+
+    // Create a directory at the resolved path.
+    let probe_dir = wt.join("tests/probe_dir");
+    fs::create_dir_all(&probe_dir).unwrap();
+
+    let (value, _) = run_impl_main(&args_for(dir.path(), "test-feature", &wt_rel, None, false));
+    let steps = steps_from(&value);
+    assert!(
+        steps["adversarial_probe"].starts_with("failed:"),
+        "directory at probe path must surface as a `failed:` outcome, got: {}",
+        steps["adversarial_probe"]
     );
 }

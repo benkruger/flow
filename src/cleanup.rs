@@ -159,6 +159,60 @@ fn label_result(ok: bool, ok_label: &str, output: &str) -> String {
     }
 }
 
+/// Remove the Code Review adversarial probe file from the worktree
+/// before `git worktree remove` disposes of the worktree directory.
+/// Per `.claude/rules/ephemeral-file-cleanup.md`, running this step
+/// BEFORE worktree removal makes the disposal explicit in the JSON
+/// `steps` output rather than a silent side-effect of the
+/// `git worktree remove --force` later in the same cleanup pass.
+///
+/// The probe path is resolved by spawning the worktree's
+/// `bin/test --adversarial-path`. The file is removed via
+/// `fs::remove_file` (which works regardless of any caller's
+/// permission allow-list and tolerates `NotFound` as `"missing"`).
+///
+/// Outcomes:
+///
+/// - `"deleted"` — probe present and removed.
+/// - `"missing"` — `bin/test` resolved a path but no file is at that
+///   path (the adversarial agent never wrote one, or Step 4 already
+///   reconciled the probe per
+///   `.claude/rules/adversarial-probe-lifecycle.md`).
+/// - `"skipped"` — worktree directory missing, `bin/test` missing,
+///   `bin/test` exited non-zero (unconfigured stub), or its stdout is
+///   empty.
+/// - `"failed: <reason>"` — `fs::remove_file` failed with a reason
+///   other than `NotFound` (permissions, filesystem error).
+fn delete_adversarial_probe(project_root: &Path, worktree: &str) -> String {
+    let wt_path = project_root.join(worktree);
+    if !wt_path.is_dir() {
+        return "skipped".to_string();
+    }
+    let bin_test = wt_path.join("bin").join("test");
+    if !bin_test.is_file() {
+        return "skipped".to_string();
+    }
+    let bin_test_str = bin_test.to_string_lossy().to_string();
+    let (ok, output) = run_cmd(&[&bin_test_str, "--adversarial-path"], &wt_path);
+    if !ok {
+        return "skipped".to_string();
+    }
+    let probe_rel = output.trim();
+    if probe_rel.is_empty() {
+        return "skipped".to_string();
+    }
+    let probe_path = if Path::new(probe_rel).is_absolute() {
+        std::path::PathBuf::from(probe_rel)
+    } else {
+        wt_path.join(probe_rel)
+    };
+    match fs::remove_file(&probe_path) {
+        Ok(()) => "deleted".to_string(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "missing".to_string(),
+        Err(e) => format!("failed: {}", e),
+    }
+}
+
 /// Recursively remove `<.flow-states>/<branch>/` and everything inside
 /// it. The branch directory holds every per-branch artifact (state
 /// file, log, plan, DAG, frozen phases, CI sentinel, timings,
@@ -202,6 +256,18 @@ pub fn cleanup(
     } else {
         steps.insert("pr_close".to_string(), "skipped".to_string());
     }
+
+    // Dispose of the Code Review adversarial probe explicitly before
+    // worktree removal so the disposal lands in the steps JSON as an
+    // audit trail entry rather than a silent side-effect of
+    // `git worktree remove`. Must run BEFORE the worktree-removal
+    // step per `.claude/rules/skill-authoring.md` "Cleanup Script
+    // Step Ordering" — once the worktree is removed,
+    // `bin/test --adversarial-path` no longer resolves.
+    steps.insert(
+        "adversarial_probe".to_string(),
+        delete_adversarial_probe(project_root, worktree),
+    );
 
     // Remove worktree (the subsequent `git worktree remove --force`
     // also disposes of any worktree-internal scratch like `tmp/`, so a

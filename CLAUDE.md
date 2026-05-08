@@ -287,6 +287,7 @@ When developing FLOW itself, point Claude Code at the local plugin source via `c
 - **Deletion-sweep evidence for delete/rename proposals** — see `.claude/rules/docs-with-behavior.md` "Scope Enumeration (Rename Side)".
 - **Tombstone five-item checklist for tombstone proposals** — see `.claude/rules/tombstone-tests.md` "Plan-phase responsibility".
 - **Verify cited identifiers exist as `fn` definitions** — see `.claude/rules/skill-authoring.md` "Verify Test Function References in Issues".
+- **Ephemeral worktree-internal artifact cleanup** — disposed before `git worktree remove` via `fs::remove_file` for permission-safe, audit-trailed removal — see `.claude/rules/ephemeral-file-cleanup.md`.
 - **No `run_in_background` during FLOW phases**; `bin/flow` is never allowed in the background — see `.claude/rules/ci-is-a-gate.md`.
 - **User-only skills (model must never invoke)** — see `.claude/rules/user-only-skills.md`. The model must not invoke `/flow:flow-abort`, `/flow:flow-reset`, `/flow:flow-release`, or `/flow:flow-prime`; the user types these directly.
 - **User evidence is ground truth** — when a user provides screenshots or logs that contradict your code analysis, trust the evidence. Your code reading is a hypothesis; the user's evidence is an observation.
