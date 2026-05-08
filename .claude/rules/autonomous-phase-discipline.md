@@ -185,6 +185,69 @@ advisory — the prose rule above is the primary instrument and
 the targeted guard is the merge-conflict trip-wire for the
 specific shape the conversation surfaces most often.
 
+## Explicit User Pause Directives
+
+The autonomous-mode block above protects against model-initiated
+pauses — interruptions the user did not ask for. It does NOT
+override **explicit user directives** to pause. When the user
+types a pause instruction in plain English ("pause until I get
+back", "stop here and wait", "pause after the next agent
+returns"), the directive overrides the autonomous configuration
+for the scope the user named. The model honors the pause at the
+next natural boundary the user identified and stays halted until
+the user explicitly says to continue.
+
+The two surfaces are not in conflict. The autonomous-mode rule
+forbids self-imposed pauses ("want me to continue?"). The user-
+directive rule honors user-imposed pauses ("pause and wait"). The
+distinguishing test: did the user type the pause instruction in
+the conversation, or is the model imagining a pause point on its
+own?
+
+### Mechanical interaction with the Stop hook
+
+`stop_continue::check_autonomous_in_progress` refuses a voluntary
+turn-end during in-progress autonomous phases regardless of why
+the model wants to stop. The hook cannot distinguish a user-
+directed pause from a self-imposed pause — both surface as
+"voluntary stop with no `_continue_pending`." When the hook
+refuses, the model has three sanctioned responses:
+
+1. **Capture the user's correction via `/flow:flow-note`.** The
+   note records the directive without ending the flow. After
+   capture, hold position by responding to the user's message
+   directly; do NOT advance to the next skill instruction. The
+   conversational pause IS the honored pause — Stop-hook
+   refusals do not require the model to keep advancing past the
+   user's directive. Once the model emits prose acknowledging
+   the pause and the user replies (continue or otherwise), the
+   model resumes per the user's reply.
+2. **Continue at the lowest-side-effect boundary.** When the
+   user has named a future boundary ("pause AFTER X returns"),
+   complete the work up to that boundary, then capture and
+   acknowledge. Do not skip ahead to a later boundary just
+   because the hook refused; the user's named boundary is the
+   commitment.
+3. **Treat `/flow:flow-abort` as the escape hatch only when the
+   user explicitly asks to abort.** The hook's block message
+   suggests `/flow:flow-abort` as the route for stop intent,
+   but abort is destructive — closes the PR, deletes the
+   branch, removes the worktree. Never invoke it for a pause.
+
+Per `.claude/rules/user-only-skills.md`, the user types
+`/flow:flow-abort` themselves; the model never invokes it.
+
+### Resumption discipline
+
+When the user says "continue" or otherwise indicates resumption,
+proceed from where the pause halted. Do not re-survey the
+landscape, do not re-summarize what would be done, do not ask
+"sure?" — the user has answered. The directive that ended the
+pause is also the directive that re-authorizes the autonomous
+configuration; the model is back in the same `continue: auto`
+state it was in before the pause, and the same discipline
+applies (no self-imposed pauses, commit at natural boundaries).
+
 ## User-Only Skill Carve-Out
 
 The autonomous-phase block above protects against model-initiated
