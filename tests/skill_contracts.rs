@@ -373,6 +373,50 @@ fn learn_analyst_agent_has_design_note() {
     );
 }
 
+// --- END-OF-FINDINGS marker contract ---
+//
+// Three context-rich/high-investigation agents — reviewer,
+// learn-analyst, documentation — declare a literal `END-OF-FINDINGS`
+// completion marker in their Output Format section so the
+// flow-code-review skill can detect maxTurns truncation by marker
+// absence rather than guessing from prose shape. Per-file siblings
+// (rather than a single coordinated test) because each agent's
+// regression is independent: a refactor or accidental edit to one
+// agent's Output Format that drops the marker breaks the skill's
+// truncation detection for THAT agent only. Per-file failure output
+// names the drifted agent immediately.
+
+fn assert_agent_output_format_declares_end_of_findings(agent_basename: &str) {
+    let c = common::read_agent(agent_basename);
+    let tail_at_heading = c
+        .split_once("## Output Format")
+        .map(|(_, tail)| tail)
+        .unwrap_or_else(|| panic!("{agent_basename} must have ## Output Format section"));
+    let subsection = tail_at_heading
+        .split_once("\n## ")
+        .map(|(section, _)| section)
+        .unwrap_or(tail_at_heading);
+    assert!(
+        subsection.contains("END-OF-FINDINGS"),
+        "{agent_basename} Output Format must declare the literal `END-OF-FINDINGS` completion marker so the flow-code-review skill can detect maxTurns truncation by marker absence (see .claude/rules/cognitive-isolation.md \"Context Budget + Truncation Recovery\")"
+    );
+}
+
+#[test]
+fn reviewer_agent_declares_end_of_findings_marker() {
+    assert_agent_output_format_declares_end_of_findings("reviewer.md");
+}
+
+#[test]
+fn learn_analyst_agent_declares_end_of_findings_marker() {
+    assert_agent_output_format_declares_end_of_findings("learn-analyst.md");
+}
+
+#[test]
+fn documentation_agent_declares_end_of_findings_marker() {
+    assert_agent_output_format_declares_end_of_findings("documentation.md");
+}
+
 #[test]
 fn learn_no_onboarding_subagent() {
     let c = common::read_skill("flow-learn");

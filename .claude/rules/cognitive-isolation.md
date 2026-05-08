@@ -31,8 +31,9 @@ context is a design choice matched to the agent's task:
   forces independent investigation, surfacing risks and coverage gaps
   that pre-supplied context would mask. The whitespace filter preserves
   turn budget on PRs with formatting changes. The documentation agent
-  receives doc paths but must investigate the codebase independently for
-  comprehension barriers before reading documentation for drift.
+  receives a narrowed list of doc paths derived from the diff (see
+  `skills/flow-code-review/SKILL.md` Step 1) so its investigation
+  surface stays bounded on moderately-sized PRs.
 
 This asymmetry is intentional. See `agents/pre-mortem.md` Design
 Note for the full rationale and `agents/reviewer.md` Design Note
@@ -43,9 +44,112 @@ for the cross-reference.
 Claude Code sub-agents stop silently after reaching their
 `maxTurns` ceiling. They produce no error signal — the response
 simply ends mid-sentence. The parent skill detects this by
-checking the returned output for expected structural markers
-(section headers, Finding blocks). Absence of markers means
-the agent was truncated, not that it found nothing.
+checking the returned output for the literal `END-OF-FINDINGS`
+completion marker every high-investigation agent declares in its
+Output Format section. Absence of the marker means the agent was
+truncated, not that it found nothing. See "Context Budget +
+Truncation Recovery" below for the recovery path.
+
+## Context Budget + Truncation Recovery
+
+The `maxTurns` ceiling is the soft enforcer of agent context
+budget, but agents that walk large investigation surfaces (full
+`docs/` tree, full `src/` tree across many files, all rule files)
+routinely exhaust it before producing findings — autocompact-
+thrash on moderately-sized PRs has been observed at 362% context
+utilization with zero findings returned. The discipline below
+makes truncation detectable AND recoverable instead of silent and
+lossy.
+
+### Target context utilization
+
+Aim for **250–300% maximum context utilization** at agent return
+time. Beyond ~300%, autocompact-thrash dominates and the agent
+spends its remaining turns paging context in and out without
+producing analysis. Two levers keep the budget bounded:
+
+- **Narrow the investigation surface upstream.** The skill computes
+  a narrowed list of artifacts (doc paths, file families, tenant
+  scope) and embeds it in the agent prompt instead of pointing at
+  a directory root. Reference: the documentation agent's
+  `DOC_PATHS:` contract, derived by
+  `skills/flow-code-review/SKILL.md` Step 1 from
+  `git diff --name-only`.
+- **Split when narrowing is not enough.** When even the narrowed
+  surface exceeds the budget, partition the input and re-invoke
+  the agent once per partition. See "Partition strategies" below.
+
+### Completion-marker contract
+
+Every high-investigation agent (reviewer, learn-analyst,
+documentation) declares a literal `## END-OF-FINDINGS` marker as
+the final output of its response. The marker tells the parent
+skill the agent reached the natural end of its analysis rather
+than running out of turns mid-finding.
+
+The marker is a structural contract, not advice. The skill
+detects truncation by **marker absence** rather than by guessing
+from prose shape (mid-sentence ends, missing expected categories)
+— absence is unambiguous.
+
+A contract test in `tests/skill_contracts.rs` asserts every
+high-investigation agent declares the marker in its Output Format
+section (`reviewer_agent_declares_end_of_findings_marker`,
+`learn_analyst_agent_declares_end_of_findings_marker`,
+`documentation_agent_declares_end_of_findings_marker`). New
+high-investigation agents added to `agents/` MUST declare the
+marker AND extend the contract test with a per-agent sibling.
+
+### Skill-side detection and re-invocation
+
+When the parent skill receives an agent's response:
+
+1. **Marker present.** The agent reached natural end. Use the
+   findings as-is; proceed to triage.
+2. **Marker absent.** The agent was truncated. Re-invoke the agent
+   with a narrower scope per the partition strategies below, then
+   combine findings across the multiple invocations.
+
+The re-invocation is the recovery path. Without it, truncated
+agents silently produce zero findings — the documentation agent
+in particular ships nothing on moderately-sized PRs.
+
+### Partition strategies
+
+Three partitions cover the cases observed:
+
+- **Split-by-file-family.** Partition the diff by directory
+  family (`src/`, `tests/`, `agents/`, `skills/`, `.claude/`,
+  `docs/`). Re-invoke the agent once per partition that contains
+  changes. Combine findings across the runs. Best for agents
+  whose investigation cost scales with file count (documentation,
+  reviewer).
+- **Split-by-finding-type.** Partition the agent's task by tenant
+  or finding category (architecture, simplicity, correctness,
+  security; or for learn-analyst, the three category tenants).
+  Re-invoke once per category with explicit instruction to scope
+  output to that category. Best for agents whose investigation
+  cost scales with the breadth of categories examined (reviewer,
+  learn-analyst).
+- **Split-by-phase.** When the diff spans multiple FLOW phases
+  (Plan-phase rule changes, Code-phase implementation, Code
+  Review-phase agent changes), partition by phase. Best for
+  documentation drift checks where each phase has its own doc
+  surface.
+
+The skill chooses the partition based on what the agent's Input
+contract suggests: `DOC_PATHS:`-driven agents partition by file
+family; tenant-driven agents partition by finding type. When in
+doubt, file family is the safest default.
+
+### When to surface to user
+
+A re-invocation that itself returns without the marker is a
+double-truncation — the partition was still too large. The skill
+surfaces the truncated agent in the triage summary rather than
+splitting infinitely. The user decides whether to accept partial
+coverage or rerun Code Review against a smaller subset of the
+diff.
 
 ## Never Break the Session
 
@@ -84,3 +188,8 @@ When adding a sub-agent for cognitive isolation:
   frontmatter (unsupported by Claude Code's plugin agent system)
 - Invoke it in the foreground so the parent session receives
   results and continues
+- For high-investigation agents (full repo walks, large doc
+  trees), declare the `## END-OF-FINDINGS` completion marker in
+  Output Format AND add a per-agent sibling test in
+  `tests/skill_contracts.rs` per "Completion-marker contract"
+  above

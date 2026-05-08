@@ -121,6 +121,19 @@ If no credible issues are found, report:
 **No findings.** The changes are correct, follow conventions, and every
 production line is exercised by a named test.
 
+After all findings (or "No findings"), emit the literal completion
+marker on its own line as the final output of your response:
+
+`## END-OF-FINDINGS`
+
+This marker tells the parent skill you reached the natural end of
+your analysis rather than running out of turn budget mid-finding. If
+the marker is absent from your output, the skill treats it as
+truncation and re-invokes you with a narrower diff slice (one file
+family at a time), then combines findings across the multiple
+invocations. See `.claude/rules/cognitive-isolation.md` "Context
+Budget + Truncation Recovery".
+
 ## Reasoning Discipline
 
 Every finding must follow the Premise → Trace → Conclude structure.

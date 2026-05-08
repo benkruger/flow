@@ -146,6 +146,20 @@ If you complete analysis of a category and find nothing, report:
 
 **No [category] findings.** [Brief explanation of what was checked.]
 
+After all findings across all three categories (or the "No findings"
+reports for empty categories), emit the literal completion marker on
+its own line as the final output of your response:
+
+`## END-OF-FINDINGS`
+
+This marker tells the parent skill you reached the natural end of
+your analysis rather than running out of turn budget mid-finding. If
+the marker is absent from your output, the skill treats it as
+truncation and re-invokes you with a narrower scope (one tenant or
+one file family at a time), then combines findings across the
+multiple invocations. See `.claude/rules/cognitive-isolation.md`
+"Context Budget + Truncation Recovery".
+
 ## Rules
 
 - You are read-only — never modify any files

@@ -55,6 +55,16 @@ likely affected by the diff (Step 1 derives the list from
 `git diff --name-only`), investigating only those paths so its turn
 budget stays bounded on moderately-sized PRs.
 
+After agents return, the skill checks each high-investigation agent
+(reviewer, learn-analyst, documentation) for the literal
+`END-OF-FINDINGS` completion marker. Marker absence means the agent
+was truncated by `maxTurns` exhaustion; the skill re-invokes that
+agent with a narrower partition (file family for documentation,
+tenant family for reviewer/learn-analyst) and combines findings
+across the multiple invocations. See
+`.claude/rules/cognitive-isolation.md` "Context Budget + Truncation
+Recovery".
+
 ### Step 3 — Triage
 
 Classify each finding as **Real** (fix) or **False positive**

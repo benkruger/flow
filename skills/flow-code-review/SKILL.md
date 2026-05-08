@@ -408,6 +408,40 @@ Prefix the prompt with:
 
 Wait for all agents to return.
 
+**Detect truncation and recover.**
+
+For each high-investigation agent (reviewer, learn-analyst,
+documentation), check whether the returned output contains the
+literal `END-OF-FINDINGS` completion marker as the final
+structural element. Marker absence means the agent was truncated
+by `maxTurns` exhaustion (see
+`.claude/rules/cognitive-isolation.md` "Context Budget +
+Truncation Recovery").
+
+When truncation is detected on an agent:
+
+1. Identify the partition strategy. For documentation (a
+   `DOC_PATHS:`-driven agent), partition the diff by file family
+   (`src/`, `tests/`, `agents/`, `skills/`, `.claude/`, `docs/`).
+   For reviewer, partition by tenant family (architecture +
+   simplicity vs. correctness + security). For learn-analyst,
+   partition by tenant (process gap, rule compliance, missing
+   rule).
+2. Re-invoke the truncated agent once per non-empty partition,
+   with the scope narrowed to that partition only. Keep the
+   agent's other inputs (plan, CLAUDE.md, rules, narrowed
+   doc-paths list) unchanged.
+3. Combine findings from every invocation as if they had come
+   from a single run. Each finding still maps to one of the
+   six tenants for triage in Step 3.
+
+If a re-invocation itself returns without the completion marker,
+that is double-truncation — the partition was still too large.
+Note the agent as truncated in the triage summary (Step 3)
+rather than splitting infinitely. The user decides whether to
+accept partial coverage or rerun Code Review on a smaller
+subset of the diff.
+
 The probe file lives inside the worktree's test tree, so worktree removal at Phase 6 Complete (or `/flow:flow-abort`) disposes of it automatically as a side effect of `git worktree remove`. The basename glob is also pre-listed in `.git/info/exclude` (`test_adversarial_flow.*`, `*_adversarial_flow_test.rb`) so the throwaway probe never appears in a user's `git status` output alongside intentional changes.
 
 Record step completion:
@@ -467,11 +501,22 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<
 
 ### Truncation check
 
-Examine each agent's output for expected structure. Valid output contains
-`**Finding` blocks with category labels or explicit "No findings" markers.
-If an agent's output ends mid-sentence or is missing expected categories,
-the agent exhausted its turn budget. Note the incomplete agent in the
-triage table so the user knows coverage was partial.
+Step 2's recovery path re-invokes any agent that returned without the
+`END-OF-FINDINGS` completion marker (per
+`.claude/rules/cognitive-isolation.md` "Context Budget + Truncation
+Recovery"), so by Step 3 every high-investigation agent's output
+either ends with the marker (natural completion) or has been
+re-invoked across partitions until it does — with the combined
+findings already merged into a single set for that agent.
+
+The remaining truncation-detection responsibility in Step 3 is for
+the **double-truncation** case: an agent whose Step 2 re-invocation
+itself returned without the marker. Note that agent in the triage
+summary so the user knows coverage was partial. Pre-mortem and
+adversarial agents do not declare the marker (their investigation
+surface is naturally bounded by the diff itself); judge their
+completeness by whether they produced at least one structured
+`**Finding` block or an explicit "No findings" report.
 
 ### Triage summary
 
