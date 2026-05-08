@@ -643,6 +643,7 @@ fn test_all_agents_specify_model() {
         ("pre-mortem.md", "sonnet"),
         ("learn-analyst.md", "haiku"),
         ("documentation.md", "haiku"),
+        ("issue-triage.md", "sonnet"),
     ]
     .into_iter()
     .collect();
@@ -678,6 +679,123 @@ fn test_all_agents_specify_model() {
             file_name,
             model,
             expected.unwrap()
+        );
+    }
+}
+
+// --- issue-triage agent contract ---
+//
+// `agents/issue-triage.md` is the PM-lens triage agent. The three
+// contracts below lock in (a) frontmatter shape (name, model, tools,
+// disallowedTools), (b) the canonical 10-question lens count and
+// ordering, and (c) the 5-field verdict card. Each test guards a
+// distinct regression: silent model downgrade or permission
+// widening, dropped/added questions, verdict-card field drift.
+
+fn read_issue_triage_agent() -> String {
+    let path = common::agents_dir().join("issue-triage.md");
+    fs::read_to_string(&path).expect("agents/issue-triage.md must exist")
+}
+
+#[test]
+fn test_issue_triage_agent_frontmatter() {
+    let path = common::agents_dir().join("issue-triage.md");
+    let frontmatter = parse_agent_frontmatter(&path);
+    let mapping = frontmatter.as_mapping().unwrap();
+
+    let name = mapping
+        .get(serde_yaml::Value::String("name".to_string()))
+        .and_then(|v| v.as_str())
+        .expect("issue-triage frontmatter missing name");
+    assert_eq!(
+        name, "issue-triage",
+        "issue-triage agent name must be 'issue-triage'"
+    );
+
+    let model = mapping
+        .get(serde_yaml::Value::String("model".to_string()))
+        .and_then(|v| v.as_str())
+        .expect("issue-triage frontmatter missing model");
+    assert_eq!(
+        model, "sonnet",
+        "issue-triage agent must use model=sonnet for parity with reviewer/pre-mortem"
+    );
+
+    let tools = mapping
+        .get(serde_yaml::Value::String("tools".to_string()))
+        .and_then(|v| v.as_str())
+        .expect("issue-triage frontmatter missing tools");
+    for required in ["Read", "Glob", "Grep", "Bash"] {
+        assert!(
+            tools.contains(required),
+            "issue-triage tools must include {required}: got {tools:?}"
+        );
+    }
+
+    let disallowed = mapping
+        .get(serde_yaml::Value::String("disallowedTools".to_string()))
+        .and_then(|v| v.as_str())
+        .expect("issue-triage frontmatter missing disallowedTools — Edit and Write must be explicitly forbidden");
+    for forbidden in ["Edit", "Write"] {
+        assert!(
+            disallowed.contains(forbidden),
+            "issue-triage disallowedTools must include {forbidden}: got {disallowed:?}"
+        );
+    }
+}
+
+#[test]
+fn test_issue_triage_agent_enumerates_ten_questions() {
+    let content = read_issue_triage_agent();
+    // Lock count + ordering of the 10-question lens. Each marker is a
+    // distinct heading or numbered prompt the agent must answer.
+    let markers = [
+        "1. Real",
+        "2. Still real",
+        "3. Framing",
+        "4. What",
+        "5. Why care",
+        "6. Who",
+        "7. Urgency",
+        "8. How would this be fixed",
+        "9. What success looks like",
+        "10. Risk of the fix",
+    ];
+    let mut last_pos: Option<usize> = None;
+    for marker in markers {
+        let pos = content.find(marker).unwrap_or_else(|| {
+            panic!("agents/issue-triage.md must enumerate question marker {marker:?}")
+        });
+        if let Some(prev) = last_pos {
+            assert!(
+                pos > prev,
+                "agents/issue-triage.md question {marker:?} appears out of order"
+            );
+        }
+        last_pos = Some(pos);
+    }
+}
+
+#[test]
+fn test_issue_triage_agent_verdict_card_fields() {
+    let content = read_issue_triage_agent();
+    // Lock the five verdict-card fields and the canonical disposition set.
+    for field in [
+        "Disposition",
+        "Summary",
+        "Evidence",
+        "Confidence",
+        "This flips if",
+    ] {
+        assert!(
+            content.contains(field),
+            "agents/issue-triage.md verdict card must include field: {field}"
+        );
+    }
+    for disposition in ["close", "decompose", "keep-open", "fix-now"] {
+        assert!(
+            content.contains(disposition),
+            "agents/issue-triage.md must enumerate disposition: {disposition}"
         );
     }
 }
