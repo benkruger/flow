@@ -1,4 +1,4 @@
-//! Stop hook composed of three predicates that may refuse a turn-end.
+//! Stop hook composed of four predicates that may refuse a turn-end.
 //!
 //! `run()` evaluates them in order:
 //!
@@ -8,10 +8,21 @@
 //! 2. `check_continue` — on subsequent stops, forces continuation
 //!    when `_continue_pending=<skill_name>` is set, supporting
 //!    multi-child-skill chains.
-//! 3. `check_autonomous_in_progress` — when the current phase is
+//! 3. `check_prose_pause_at_task_entry` — at a Code-phase task-entry
+//!    boundary in autonomous mode, refuses a voluntary turn-end when
+//!    the most recent assistant message contains a prose question
+//!    outside code blocks and produced no tool_use. Targeted catch
+//!    for the AskUserQuestion-bypass shape; cites the recovery rule
+//!    in its block message. See
+//!    `.claude/rules/autonomous-phase-discipline.md` "Prose-Based
+//!    Pauses Bypass AskUserQuestion".
+//! 4. `check_autonomous_in_progress` — when the current phase is
 //!    in-progress AND configured `auto` AND `_continue_pending` is
 //!    empty, refuses a voluntary turn-end. Closes the
-//!    text-only-stop hole that PreToolUse hooks cannot reach.
+//!    text-only-stop hole that PreToolUse hooks cannot reach. Runs
+//!    AFTER the prose-pause guard so its more specific message wins
+//!    for the prose-pause shape; other text-only stops fall through
+//!    here.
 //!
 //! Fail-open with error reporting: any error allows the stop (exit 0,
 //! no block output), but writes a diagnostic to stderr and attempts to
@@ -653,6 +664,265 @@ pub fn check_autonomous_in_progress(state_path: &Path) -> ContinueResult {
     }
 }
 
+/// Returns true when `body` contains a `?` outside fenced code
+/// blocks (` ``` ... ``` `) and inline code spans (` `...` `).
+///
+/// The detector is a single-pass byte walker. Lines opening or
+/// closing a fenced block (any line whose first non-whitespace
+/// characters are three backticks) toggle the fenced-block state
+/// and are skipped entirely. Inside non-fenced lines, paired
+/// backticks toggle inline-code state and `?` matches only when
+/// neither flag is set. Tilde fences (`~~~`) and indented code
+/// blocks are not recognized — the prose-pause failure mode
+/// surfaces in standard markdown produced by the model itself,
+/// which uses backtick fences exclusively.
+pub fn body_has_question_outside_code(body: &str) -> bool {
+    let mut in_fenced = false;
+    for line in body.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") {
+            in_fenced = !in_fenced;
+            continue;
+        }
+        if in_fenced {
+            continue;
+        }
+        let mut in_inline = false;
+        for ch in line.chars() {
+            if ch == '`' {
+                in_inline = !in_inline;
+            } else if ch == '?' && !in_inline {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Walks the persisted transcript JSONL backward from EOF and
+/// returns information about the most recent assistant turn:
+/// `(combined_text, had_tool_use)`.
+///
+/// `combined_text` is every `text` block's `text` field joined by
+/// newline. `had_tool_use` is true when any block in the turn has
+/// `type == "tool_use"`. Walks backward, stops at the first
+/// `assistant` turn, and returns `None` when a `user` turn appears
+/// before any `assistant` turn (the model has not produced an
+/// assistant turn since the last user message).
+///
+/// Reads the LAST 50 MB of the file via seek-to-tail to bound I/O
+/// per `.claude/rules/external-input-path-construction.md`. A
+/// transcript larger than the cap loses old turns from the head;
+/// the most recent turns the predicate cares about always sit in
+/// the tail. Mid-line truncation at the seek point fails JSON
+/// parse and is silently skipped by the walker.
+fn last_assistant_text_and_tool_use(path: &Path) -> Option<(String, bool)> {
+    use std::io::{Seek, SeekFrom};
+    const TRANSCRIPT_CAP: u64 = 50 * 1024 * 1024;
+    let mut file = File::open(path).ok()?;
+    // `metadata()` and `seek()` on a freshly-opened regular file are
+    // TOCTOU-only failure surfaces — a test cannot reproduce either
+    // without root-level interference. `.expect()` here mirrors the
+    // discipline in `crate::hooks::transcript_walker::read_capped`
+    // per `.claude/rules/external-input-path-construction.md` "No
+    // `.expect()` on Filesystem Reads in Hooks" exception. The
+    // reachable failure surface is `File::open` (handled above with
+    // `.ok()?`) and `read_to_string` (handled below — can fail on
+    // non-UTF-8 transcript content).
+    let file_len = file
+        .metadata()
+        .expect("metadata succeeds on freshly-opened regular file (TOCTOU-only)")
+        .len();
+    let start = file_len.saturating_sub(TRANSCRIPT_CAP);
+    file.seek(SeekFrom::Start(start))
+        .expect("seek to non-negative absolute offset succeeds on regular file (TOCTOU-only)");
+    let mut reader = BufReader::new(file);
+    let mut buf = String::new();
+    reader.read_to_string(&mut buf).ok()?;
+
+    for line in buf.lines().rev() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let turn: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let turn_type = turn.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        if turn_type == "user" {
+            return None;
+        }
+        if turn_type != "assistant" {
+            continue;
+        }
+        let blocks = match turn
+            .get("message")
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_array())
+        {
+            Some(b) => b,
+            None => continue,
+        };
+        let mut text = String::new();
+        let mut had_tool_use = false;
+        for block in blocks {
+            let block_type = block.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            if block_type == "text" {
+                if let Some(t) = block.get("text").and_then(|v| v.as_str()) {
+                    if !text.is_empty() {
+                        text.push('\n');
+                    }
+                    text.push_str(t);
+                }
+            } else if block_type == "tool_use" {
+                had_tool_use = true;
+            }
+        }
+        return Some((text, had_tool_use));
+    }
+    None
+}
+
+/// Refuse a voluntary turn-end when the model produced a prose
+/// question at a Code-phase task-entry boundary in autonomous mode.
+///
+/// Closes the gap between `validate-ask-user` (which only catches
+/// `AskUserQuestion` tool calls) and `check_autonomous_in_progress`
+/// (which has a generic stop-intent message). When all seven
+/// guards hold, this predicate fires with a message citing the
+/// recovery rule so the model can classify and resume execution.
+///
+/// Seven guards (any one false → no block):
+///
+/// 1. `current_phase == "flow-code"`
+/// 2. `phases.flow-code.status == "in_progress"`
+/// 3. `skills.flow-code.continue == "auto"` (Simple or Detailed shape)
+/// 4. `code_task == 0` (canonical task-entry boundary)
+/// 5. `_continue_pending` is empty (mid-skill-chain pauses excluded)
+/// 6. The most recent assistant transcript turn contains a `?`
+///    outside fenced code blocks and inline code spans
+/// 7. The most recent assistant transcript turn contains no
+///    `tool_use` block (Stop signal received without progress)
+///
+/// Composed into `run()` BEFORE `check_autonomous_in_progress` so
+/// the more specific message wins for the prose-pause shape;
+/// other text-only stops fall through to the generic predicate.
+///
+/// Read window per `.claude/rules/hook-state-timing.md`:
+/// `current_phase`, `phases.<N>.status`, `skills.<N>`,
+/// `code_task`, `_continue_pending` are all written by
+/// `phase_enter` / `phase_finalize` / `set_timestamp` BEFORE the
+/// Stop signal fires. The `current_phase == "flow-code"` plus
+/// `phases.flow-code.status == "in_progress"` pair confines the
+/// guard to actively-executing Code-phase windows, so transition-
+/// boundary races (between `phase_complete` and `phase_enter` of
+/// the next phase) cannot trip it.
+pub fn check_prose_pause_at_task_entry(
+    state_path: &Path,
+    transcript_path: Option<&str>,
+) -> ContinueResult {
+    let no_block = || ContinueResult {
+        should_block: false,
+        skill: None,
+        context: None,
+    };
+    let transcript_path = match transcript_path {
+        Some(p) if !p.is_empty() => Path::new(p),
+        _ => return no_block(),
+    };
+    if !state_path.exists() {
+        return no_block();
+    }
+    let state: Value = match File::open(state_path).ok().and_then(|f| {
+        let mut buf = String::new();
+        let _ = BufReader::new(f.take(STATE_FILE_BYTE_CAP)).read_to_string(&mut buf);
+        serde_json::from_str::<Value>(&buf).ok()
+    }) {
+        Some(v) => v,
+        None => return no_block(),
+    };
+
+    let current_phase = state
+        .get("current_phase")
+        .and_then(|v| v.as_str())
+        .map(normalize_gate_input)
+        .unwrap_or_default();
+    if current_phase != "flow-code" {
+        return no_block();
+    }
+
+    let phase_status = state
+        .get("phases")
+        .and_then(|p| p.get("flow-code"))
+        .and_then(|p| p.get("status"))
+        .and_then(|v| v.as_str())
+        .map(normalize_gate_input)
+        .unwrap_or_default();
+    if phase_status != "in_progress" {
+        return no_block();
+    }
+
+    let skill_entry = state.get("skills").and_then(|s| s.get("flow-code"));
+    let is_auto = match skill_entry {
+        Some(v) if v.as_str().map(normalize_gate_input).as_deref() == Some("auto") => true,
+        Some(v) => {
+            v.get("continue")
+                .and_then(|c| c.as_str())
+                .map(normalize_gate_input)
+                .as_deref()
+                == Some("auto")
+        }
+        None => false,
+    };
+    if !is_auto {
+        return no_block();
+    }
+
+    let code_task = crate::utils::tolerant_i64(state.get("code_task").unwrap_or(&Value::Null));
+    if code_task != 0 {
+        return no_block();
+    }
+
+    let pending = state
+        .get("_continue_pending")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if !pending.is_empty() {
+        return no_block();
+    }
+
+    let (body, had_tool_use) = match last_assistant_text_and_tool_use(transcript_path) {
+        Some(x) => x,
+        None => return no_block(),
+    };
+    if had_tool_use {
+        return no_block();
+    }
+    if !body_has_question_outside_code(&body) {
+        return no_block();
+    }
+
+    ContinueResult {
+        should_block: true,
+        skill: Some("autonomous-stop-refused".to_string()),
+        context: Some(
+            "Autonomous-mode prose-based pause detected at Code phase task-entry \
+             boundary. The current task has not advanced (code_task=0) and the \
+             previous response contained a question outside any code block. \
+             Per `.claude/rules/autonomous-phase-discipline.md` \"Prose-Based \
+             Pauses Bypass AskUserQuestion\", text-only pauses defeat the \
+             validate-ask-user gate by routing around the AskUserQuestion tool. \
+             Resume execution: classify the situation per \
+             `.claude/rules/autonomous-flow-self-recovery.md` (mechanical → \
+             fix in-flow; substantive → AskUserQuestion subject to \
+             validate-ask-user). If the prose was a legitimate task-completion \
+             summary, advance code_task and proceed to the next task."
+                .to_string(),
+        ),
+    }
+}
+
 /// Run the stop-continue hook (entry point).
 ///
 /// Uses `resolve_branch` for `--branch` override support. Calls
@@ -685,6 +955,27 @@ pub fn run() {
     // subsequent child skill completions need check_continue to fire.
     if !result.should_block {
         result = check_continue(&hook_input, &state_path);
+    }
+
+    // Prose-pause task-entry guard: a more targeted catch for
+    // text-only stops at the Code-phase task-entry boundary that
+    // contain a question. Composed BEFORE
+    // `check_autonomous_in_progress` so the more specific message
+    // (citing the recovery rule) wins for the prose-pause shape;
+    // text-only stops outside the seven-guard window fall through
+    // to the generic autonomous-stop-refused predicate. Reads
+    // `transcript_path` from the hook input, not state, so the
+    // current session's transcript is consulted.
+    if !result.should_block {
+        // Match form avoids a closure-instantiation region the
+        // existing run() subprocess test surface does not reach;
+        // reads `transcript_path` from the hook input, not state,
+        // so the current session's transcript is consulted.
+        let transcript_path = match hook_input.get("transcript_path") {
+            Some(v) => v.as_str(),
+            None => None,
+        };
+        result = check_prose_pause_at_task_entry(&state_path, transcript_path);
     }
 
     // Autonomous-stop refusal: when the current phase is in-progress

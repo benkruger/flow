@@ -116,6 +116,75 @@ with no tool call — only a Stop hook can — so this predicate
 closes the text-only-stop hole that `validate-ask-user` cannot
 reach.
 
+## Prose-Based Pauses Bypass `AskUserQuestion`
+
+The autonomous-mode discipline above forbids `AskUserQuestion`
+prompts that the user did not ask for, and the
+`validate-ask-user` hook enforces it mechanically — but only on
+`AskUserQuestion` tool calls. A model that emits the question as
+plain text and ends the turn without any tool call routes around
+the AskUserQuestion gate entirely. Every prose-pause is the same
+interruption shape, just expressed in a different surface.
+
+The pattern looks like this: at a Code-phase task-entry boundary
+in autonomous mode, instead of starting the TDD cycle, the model
+writes 2-4 questions as a prose response and stops. No tool call
+fires, so `validate-ask-user` does not see anything to block. The
+existing autonomous-stop-refused predicate
+(`stop_continue::check_autonomous_in_progress`) does refuse a
+voluntary turn-end with no `_continue_pending` set, but its
+generic block message points the model at `/flow:flow-abort` or
+`/flow:flow-note` — guidance designed for "stop intent," not for
+"resume execution." The targeted task-entry guard below gives a
+more specific message that names the recovery rule.
+
+### Failure modes
+
+The pattern surfaces in three shapes, all forbidden:
+
+- **Questions in plain text** at a task-entry boundary: "Should I
+  proceed?", "Want me to also do Y?", "Confirm intent on Z?".
+- **"Want me to..." / "Let me know..." / "Ready when you are"
+  sign-offs** at task-entry boundaries — the same shape, just
+  phrased as deferral instead of an explicit question.
+- **Multi-option enumeration without an explicit user request** —
+  "I could do A, B, or C" laid out as a menu when nothing in the
+  conversation asked for choices.
+
+### Mechanical enforcement
+
+`stop_continue::run` runs a task-entry guard
+(`check_prose_pause_at_task_entry`) BEFORE
+`check_autonomous_in_progress`. The guard fires only when ALL of:
+
+1. `phases.<current_phase>.status == "in_progress"`
+2. `skills.<current_phase>.continue == "auto"`
+3. `current_phase == "flow-code"` (Code phase scope only — Plan,
+   Code Review, and Learn boundaries each have their own task
+   shape and need separate analysis before this guard extends to
+   them)
+4. `code_task == 0` (no Code-phase task has been committed yet —
+   the canonical task-entry boundary; later prose-pauses fall
+   through to the broader `check_autonomous_in_progress` block)
+5. `_continue_pending` is not set (mid-skill-chain pauses where
+   the parent skill is awaiting a child completion are excluded)
+6. The last assistant message in the persisted transcript
+   contains a `?` outside fenced code blocks and inline code
+   spans
+7. The last assistant message was NOT followed by a tool_use
+   block (Stop event received without any tool call)
+
+When all seven hold, the hook refuses the Stop event with a
+block message that cites both this rule and
+`.claude/rules/autonomous-flow-self-recovery.md`, instructing the
+model to classify the situation as mechanical (resume execution)
+or substantive (call AskUserQuestion subject to validate-
+ask-user, which the autonomous-phase block will then evaluate).
+Pause shapes outside this guard's seven-condition window remain
+advisory — the prose rule above is the primary instrument and
+the targeted guard is the merge-conflict trip-wire for the
+specific shape the conversation surfaces most often.
+
 ## User-Only Skill Carve-Out
 
 The autonomous-phase block above protects against model-initiated
