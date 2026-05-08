@@ -253,6 +253,45 @@ Commit section then fires unchanged — it runs after
 actually produced. Do not skip `/flow:flow-commit` even when you
 already know the diff will be empty.
 
+### Discovery output handling
+
+Some discovery commands during Code phase produce output longer than
+the Bash tool's display buffer can return inline. `bin/flow ci --lint`
+after a wide ignore-list removal can emit ~50 violation lines; a
+plain `git grep` over a deletion target can return hundreds of
+matches. When the buffer is exceeded the tool truncates the middle,
+so any violation enumeration based on the inline output silently
+misses entries. Bash redirection to a temp file would be the natural
+workaround, but `validate-pretool` Layer 2 blocks bare `>` redirects
+under the FLOW permission model, so the discipline below uses
+existing artifacts and dedicated tools instead.
+
+Apply this when a discovery command's output is enumerable (lint
+violations, grep hits, file lists) AND the rough output size could
+exceed a screen of text. Skip it for short queries (one-line counts,
+single-file reads) where inline output is sufficient.
+
+**For `bin/flow ci` and its single-phase variants** (`--format`,
+`--lint`, `--build`, `--test`): the runner already writes the
+full unabridged stdout-plus-stderr stream to a log file. The path
+appears in the runner's footer (`Full log: …-ci-last.log`) and is
+also predictable: `<project_root>/.flow-states/<branch>-ci-last.log`.
+Use the Read tool on that path to see every violation line — the
+Read tool is unaffected by the Bash tool's display-buffer cap.
+
+**For grep-style enumeration** (line-by-line file searches): use
+the Grep tool directly. Grep returns matches in a structured form
+that bypasses the Bash display buffer; pass `output_mode: "content"`
+with `-n` for line-numbered hits, or `output_mode: "files_with_matches"`
+when only the file list matters.
+
+**For arbitrary commands without a built-in log file**: the FLOW
+permission model does not allow ad-hoc shell redirection to `/tmp/`,
+so enumeration must come from a tool that returns structured output.
+Glob and Grep cover most cases; for richer output, prefer running
+the command in narrower passes (e.g., one directory at a time) so
+each pass fits inline.
+
 ### Before Starting a Task
 
 Persist the task name to the state file for TUI display:

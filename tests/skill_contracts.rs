@@ -1861,6 +1861,32 @@ fn code_has_plan_test_verification() {
 }
 
 #[test]
+fn code_skill_has_discovery_output_handling_preamble() {
+    // The flow-code skill must carry a "Discovery output handling"
+    // section that names the truncation problem (Bash tool display
+    // buffer drops the middle of long output) and tells the model
+    // which existing artifacts (CI log file, Grep tool) to read
+    // instead. Without the preamble, violation enumeration based
+    // on inline output silently misses entries — the bug
+    // motivating this contract.
+    //
+    // The contract is the literal phrase "discovery output
+    // handling" (case-insensitive) so a future re-titling that
+    // drops the recognizable name fails the test.
+    let c = common::read_skill("flow-code");
+    let lower = c.to_ascii_lowercase();
+    assert!(
+        lower.contains("discovery output handling"),
+        "Code skill must contain a 'Discovery output handling' \
+         preamble that names the long-output truncation problem \
+         and points at existing artifacts (CI log file, Grep \
+         tool) the model should use instead of inline output. \
+         The phrase 'discovery output handling' (case-insensitive) \
+         was not found."
+    );
+}
+
+#[test]
 fn code_documents_measurement_only_task_pathway() {
     let c = common::read_skill("flow-code");
     assert!(

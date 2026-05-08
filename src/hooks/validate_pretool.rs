@@ -301,8 +301,7 @@ fn is_fd_redirect_at(bytes: &[u8], idx: usize) -> bool {
     let cur = bytes.get(idx).copied();
     let prev = idx.checked_sub(1).and_then(|i| bytes.get(i).copied());
     let next = bytes.get(idx + 1).copied();
-    (cur == Some(b'&') && prev == Some(b'>'))
-        || (cur == Some(b'>') && next == Some(b'&'))
+    (cur == Some(b'&') && prev == Some(b'>')) || (cur == Some(b'>') && next == Some(b'&'))
 }
 
 /// Compound-operator predicate for `scan_unquoted`. Returns the matched
