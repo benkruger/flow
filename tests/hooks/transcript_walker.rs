@@ -3,7 +3,7 @@
 //! Drives `last_user_message_invokes_skill` and
 //! `most_recent_skill_in_user_only_set` through controlled JSONL
 //! fixtures via `transcript_fixture` (in `tests/common/mod.rs`,
-//! reachable as `crate::crate::common::transcript_fixture` because
+//! reachable as `crate::common::transcript_fixture` because
 //! `tests/hooks/main.rs` declares the path-aliased common module).
 //! Each line in the fixture is a Claude Code transcript turn whose
 //! top-level `type` field carries the `user`/`assistant` role
