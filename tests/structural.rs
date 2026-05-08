@@ -643,6 +643,7 @@ fn test_all_agents_specify_model() {
         ("pre-mortem.md", "sonnet"),
         ("learn-analyst.md", "haiku"),
         ("documentation.md", "haiku"),
+        ("issue-triage.md", "sonnet"),
     ]
     .into_iter()
     .collect();
@@ -678,6 +679,169 @@ fn test_all_agents_specify_model() {
             file_name,
             model,
             expected.unwrap()
+        );
+    }
+}
+
+// --- issue-triage agent contract ---
+//
+// `agents/issue-triage.md` is the PM-lens triage agent. The three
+// contracts below lock in (a) frontmatter shape (name, model, tools,
+// disallowedTools), (b) the canonical 10-question lens count and
+// ordering, and (c) the 5-field verdict card. Each test guards a
+// distinct regression: silent model downgrade or permission
+// widening, dropped/added questions, verdict-card field drift.
+
+fn read_issue_triage_agent() -> String {
+    let path = common::agents_dir().join("issue-triage.md");
+    fs::read_to_string(&path).expect("agents/issue-triage.md must exist")
+}
+
+/// Parse a comma-separated YAML scalar value into a sorted list of
+/// trimmed tokens. The frontmatter `tools` and `disallowedTools`
+/// values are written as YAML comma-separated strings (e.g.
+/// `tools: Read, Glob, Grep, Bash`); `as_str()` returns the
+/// concatenated string, and we split-trim to recover the canonical
+/// list so contract assertions can do exact-equality checks rather
+/// than substring matches (per adversarial findings A4/A5 — a
+/// substring check accepts `Read_Editor` as if it were `Read`).
+fn split_tools(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+#[test]
+fn test_issue_triage_agent_frontmatter() {
+    let path = common::agents_dir().join("issue-triage.md");
+    let frontmatter = parse_agent_frontmatter(&path);
+    let mapping = frontmatter.as_mapping().unwrap();
+
+    let name = mapping
+        .get(serde_yaml::Value::String("name".to_string()))
+        .and_then(|v| v.as_str())
+        .expect("issue-triage frontmatter missing name");
+    assert_eq!(
+        name, "issue-triage",
+        "issue-triage agent name must be 'issue-triage'"
+    );
+
+    let model = mapping
+        .get(serde_yaml::Value::String("model".to_string()))
+        .and_then(|v| v.as_str())
+        .expect("issue-triage frontmatter missing model");
+    assert_eq!(
+        model, "sonnet",
+        "issue-triage agent must use model=sonnet for parity with reviewer/pre-mortem"
+    );
+
+    // Exact-equality check on each tool token: split on `,`, trim,
+    // require the set to equal {Read, Glob, Grep, Bash}. Substring
+    // matching would accept malformed `Read_Editor` as if it were
+    // `Read` (A4).
+    let tools_raw = mapping
+        .get(serde_yaml::Value::String("tools".to_string()))
+        .and_then(|v| v.as_str())
+        .expect("issue-triage frontmatter missing tools");
+    let tools = split_tools(tools_raw);
+    let expected_tools: std::collections::HashSet<&str> =
+        ["Read", "Glob", "Grep", "Bash"].into_iter().collect();
+    let actual_tools: std::collections::HashSet<&str> = tools.iter().map(|s| s.as_str()).collect();
+    assert_eq!(
+        actual_tools, expected_tools,
+        "issue-triage tools must be exactly {{Read, Glob, Grep, Bash}}: got {tools_raw:?}"
+    );
+
+    // Same exact-equality discipline for disallowedTools (A5 —
+    // `Edit_Self` would substring-match `Edit` while leaving the
+    // real Edit tool enabled).
+    let disallowed_raw = mapping
+        .get(serde_yaml::Value::String("disallowedTools".to_string()))
+        .and_then(|v| v.as_str())
+        .expect("issue-triage frontmatter missing disallowedTools — Edit and Write must be explicitly forbidden");
+    let disallowed = split_tools(disallowed_raw);
+    let expected_disallowed: std::collections::HashSet<&str> =
+        ["Edit", "Write"].into_iter().collect();
+    let actual_disallowed: std::collections::HashSet<&str> =
+        disallowed.iter().map(|s| s.as_str()).collect();
+    assert_eq!(
+        actual_disallowed, expected_disallowed,
+        "issue-triage disallowedTools must be exactly {{Edit, Write}}: got {disallowed_raw:?}"
+    );
+}
+
+#[test]
+fn test_issue_triage_agent_enumerates_ten_questions() {
+    let content = read_issue_triage_agent();
+    // Each marker must appear as a line whose trimmed prefix
+    // begins with `### N. <heading>`. Line-prefix anchoring
+    // defeats prose-mention bypass (A3) — the previous
+    // `content.find()` accepted matches anywhere in the file
+    // including inside running prose like "answer question 1.
+    // Real?". The line must START with the marker, which
+    // structurally identifies a heading regardless of whether
+    // it lives inside the agent's Output Format fenced
+    // template or in prose elsewhere.
+    let markers = [
+        "### 1. Real",
+        "### 2. Still real",
+        "### 3. Framing",
+        "### 4. What",
+        "### 5. Why care",
+        "### 6. Who",
+        "### 7. Urgency",
+        "### 8. How would this be fixed",
+        "### 9. What success looks like",
+        "### 10. Risk of the fix",
+    ];
+
+    let mut found: Vec<Option<usize>> = vec![None; markers.len()];
+    for (idx, line) in content.lines().enumerate() {
+        let trimmed = line.trim_start();
+        for (i, marker) in markers.iter().enumerate() {
+            if found[i].is_none() && trimmed.starts_with(marker) {
+                found[i] = Some(idx);
+                break;
+            }
+        }
+    }
+
+    let mut last_line: Option<usize> = None;
+    for (i, marker) in markers.iter().enumerate() {
+        let line = found[i].unwrap_or_else(|| {
+            panic!("agents/issue-triage.md must enumerate question marker {marker:?} as a `### ` line prefix")
+        });
+        if let Some(prev) = last_line {
+            assert!(
+                line > prev,
+                "agents/issue-triage.md question {marker:?} appears out of order (line {line}, previous {prev})"
+            );
+        }
+        last_line = Some(line);
+    }
+}
+
+#[test]
+fn test_issue_triage_agent_verdict_card_fields() {
+    let content = read_issue_triage_agent();
+    // Lock the five verdict-card fields and the canonical disposition set.
+    for field in [
+        "Disposition",
+        "Summary",
+        "Evidence",
+        "Confidence",
+        "This flips if",
+    ] {
+        assert!(
+            content.contains(field),
+            "agents/issue-triage.md verdict card must include field: {field}"
+        );
+    }
+    for disposition in ["close", "decompose", "keep-open", "fix-now"] {
+        assert!(
+            content.contains(disposition),
+            "agents/issue-triage.md must enumerate disposition: {disposition}"
         );
     }
 }

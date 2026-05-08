@@ -17,6 +17,24 @@ confirming the issue's assertions. Grep snippets show fragments
 but miss surrounding changes that may have already addressed
 the problem.
 
+## When the Issue Names No Files
+
+If the issue names no files, search the codebase for the behavior
+described, then read the implementation. The grep is to locate
+code, not to confirm the issue. After locating the relevant code,
+return to step 3 of Required Steps and compare current behavior
+against the issue's claims independently.
+
+## Check for Already-Shipped Work
+
+Before assessing relevance, check `gh pr list --search "<issue
+number>"` and `git log --all --grep "#<issue number>"` for
+already-shipped work. A merged PR that referenced the issue
+without closing it is strong evidence the work shipped — verify
+by reading the cited code rather than trusting the PR title alone.
+If the work shipped but the issue remained open, the issue may
+describe a follow-up gap or may be ready to close.
+
 ## Existing Code Does Not Mean "Already Done"
 
 When DAG analysis or codebase exploration reveals code that
