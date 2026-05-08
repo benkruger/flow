@@ -1689,6 +1689,149 @@ fn cleanup_deletes_adversarial_probe_at_absolute_path() {
 }
 
 #[test]
+fn cleanup_adversarial_probe_rejects_path_traversal_via_relative_path() {
+    // `bin/test --adversarial-path` prints `../../escape_target.txt`.
+    // delete_adversarial_probe joins onto wt_path, producing
+    // <worktree>/../../escape_target.txt which resolves to a file
+    // outside the worktree. The containment guard
+    // (resolve_probe_inside_worktree) must reject this rather than
+    // allowing fs::remove_file to delete an out-of-worktree file.
+    let dir = tempfile::tempdir().unwrap();
+    let project_root = dir.path().canonicalize().unwrap();
+    setup_git_repo(&project_root);
+    let wt_rel = setup_feature(&project_root, "test-feature");
+    let wt = project_root.join(&wt_rel);
+
+    let escape_target = project_root.join("escape_target.txt");
+    fs::write(&escape_target, "DO NOT DELETE — outside worktree\n").unwrap();
+    assert!(escape_target.exists(), "fixture sentinel must exist");
+
+    write_bin_test_with_adversarial_path(&wt, "../../escape_target.txt");
+
+    let (value, _) = run_impl_main(&args_for(
+        &project_root,
+        "test-feature",
+        &wt_rel,
+        None,
+        false,
+    ));
+    let steps = steps_from(&value);
+
+    assert_eq!(
+        steps["adversarial_probe"], "skipped",
+        "relative-path traversal must be rejected as `skipped`, got: {}",
+        steps["adversarial_probe"]
+    );
+    assert!(
+        escape_target.exists(),
+        "out-of-worktree file must still exist after the rejected probe path"
+    );
+}
+
+#[test]
+fn cleanup_adversarial_probe_rejects_absolute_path_outside_worktree() {
+    // `bin/test --adversarial-path` prints an absolute path that is
+    // outside the worktree. The absolute branch must canonicalize and
+    // verify worktree containment rather than accepting the path
+    // verbatim.
+    let dir = tempfile::tempdir().unwrap();
+    let project_root = dir.path().canonicalize().unwrap();
+    setup_git_repo(&project_root);
+    let wt_rel = setup_feature(&project_root, "test-feature");
+    let wt = project_root.join(&wt_rel);
+
+    let sibling_dir = dir.path().join("sibling");
+    fs::create_dir_all(&sibling_dir).unwrap();
+    let escape_target = sibling_dir.canonicalize().unwrap().join("escape.txt");
+    fs::write(&escape_target, "outside worktree sentinel\n").unwrap();
+    assert!(escape_target.exists(), "fixture sentinel must exist");
+
+    let abs_str = escape_target.to_string_lossy().to_string();
+    write_bin_test_with_adversarial_path(&wt, &abs_str);
+
+    let (value, _) = run_impl_main(&args_for(
+        &project_root,
+        "test-feature",
+        &wt_rel,
+        None,
+        false,
+    ));
+    let steps = steps_from(&value);
+
+    assert_eq!(
+        steps["adversarial_probe"], "skipped",
+        "absolute path outside worktree must be rejected as `skipped`, got: {}",
+        steps["adversarial_probe"]
+    );
+    assert!(
+        escape_target.exists(),
+        "out-of-worktree file at absolute path must still exist"
+    );
+}
+
+#[test]
+fn cleanup_adversarial_probe_rejects_path_terminating_in_dotdot() {
+    // bin/test prints a path terminating in `..` (over a non-existent
+    // intermediate component). `Path::file_name()` returns None for
+    // paths terminating in `..`, so the helper bails out with None
+    // rather than walking up forever or accepting the path.
+    let dir = tempfile::tempdir().unwrap();
+    let project_root = dir.path().canonicalize().unwrap();
+    setup_git_repo(&project_root);
+    let wt_rel = setup_feature(&project_root, "test-feature");
+    let wt = project_root.join(&wt_rel);
+
+    write_bin_test_with_adversarial_path(&wt, "nonexistent_dir/..");
+
+    let (value, _) = run_impl_main(&args_for(
+        &project_root,
+        "test-feature",
+        &wt_rel,
+        None,
+        false,
+    ));
+    let steps = steps_from(&value);
+
+    assert_eq!(
+        steps["adversarial_probe"], "skipped",
+        "path terminating in `..` over non-existent components must be rejected"
+    );
+}
+
+#[test]
+fn cleanup_adversarial_probe_rejects_missing_path_outside_worktree() {
+    // bin/test prints a path whose deepest existing ancestor is
+    // outside the worktree. The walker climbs to the existing
+    // ancestor, canonicalizes, re-appends the suffix — and the final
+    // starts_with(wt_canon) check rejects.
+    let dir = tempfile::tempdir().unwrap();
+    let project_root = dir.path().canonicalize().unwrap();
+    setup_git_repo(&project_root);
+    let wt_rel = setup_feature(&project_root, "test-feature");
+    let wt = project_root.join(&wt_rel);
+
+    // `<wt>/../external_missing/file.txt` walks up to the project
+    // root (existing), then re-appends `external_missing/file.txt`
+    // to land at `<project_root>/external_missing/file.txt` — outside
+    // the worktree, even though no component on the path exists yet.
+    write_bin_test_with_adversarial_path(&wt, "../external_missing/file.txt");
+
+    let (value, _) = run_impl_main(&args_for(
+        &project_root,
+        "test-feature",
+        &wt_rel,
+        None,
+        false,
+    ));
+    let steps = steps_from(&value);
+
+    assert_eq!(
+        steps["adversarial_probe"], "skipped",
+        "missing path whose canonicalized ancestor lies outside the worktree must be rejected"
+    );
+}
+
+#[test]
 fn cleanup_adversarial_probe_failed_when_path_is_directory() {
     // `bin/test --adversarial-path` resolves to a path that points at
     // a DIRECTORY. `fs::remove_file` returns a non-NotFound error

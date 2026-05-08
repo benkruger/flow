@@ -36,7 +36,7 @@
 
 use std::fs;
 use std::io::{BufReader, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use clap::Parser;
@@ -159,6 +159,74 @@ fn label_result(ok: bool, ok_label: &str, output: &str) -> String {
     }
 }
 
+/// Resolve `probe_path` against the filesystem and return the
+/// canonical form contained inside `wt_canon`, or `None` when the
+/// path falls outside the worktree or cannot be resolved.
+///
+/// `bin/test --adversarial-path` is project-owned bash whose stdout
+/// flows directly into `fs::remove_file`. Per
+/// `.claude/rules/external-input-path-construction.md`, every
+/// state-derived/external-input string flowing into a filesystem
+/// path must pass a positive validator before the syscall.
+///
+/// Strategy: walk up `probe_path` until an ancestor exists on disk,
+/// canonicalize that ancestor (which collapses any `..` segments in
+/// the existing prefix and resolves any symlinks), then re-append
+/// the stripped suffix. The final path is checked for
+/// `starts_with(wt_canon)`. Three cases collapse to the same code:
+///
+/// - Probe exists (file or symlink) — `exists()` is true on first
+///   iteration; canonicalize collapses traversals and resolves
+///   symlinks; the final containment check decides.
+/// - Probe doesn't exist but its parent does — first iteration
+///   pushes the basename; second iteration finds the parent exists,
+///   canonicalizes, re-appends, and the final containment check
+///   decides. The probe is then "missing" (resolution succeeded;
+///   the file is just absent).
+/// - Probe and several ancestors don't exist — the loop walks
+///   further up before finding an existing ancestor.
+///
+/// `Path::file_name()` returns `None` for paths terminating in
+/// `..`, `.`, `/`, or empty — the `?` operator bails out with
+/// `None` for any such pathological input.
+fn resolve_probe_inside_worktree(probe_path: &Path, wt_canon: &Path) -> Option<PathBuf> {
+    let mut anchor = probe_path.to_path_buf();
+    let mut suffix: Vec<std::ffi::OsString> = Vec::new();
+    while !anchor.exists() {
+        let name = anchor.file_name()?.to_owned();
+        suffix.push(name);
+        // `file_name()` returned `Some(Normal-component)`, so the
+        // path has a proper trailing component and `parent()` is
+        // guaranteed `Some` here. `.expect()` documents the
+        // unreachable arm rather than papering it with a runtime
+        // check that the type system proves cannot fire.
+        anchor = anchor
+            .parent()
+            .expect("file_name() Some implies parent() Some")
+            .to_path_buf();
+    }
+    // `anchor.exists()` returned true above (loop exited), so the
+    // path resolves to an inode the kernel can see. canonicalize()
+    // on the same path uses the same syscall semantics; the only
+    // way it returns Err is a TOCTOU race where permissions or the
+    // path itself change between two adjacent syscalls, which no
+    // production caller can trigger. `.expect()` per the
+    // unreachable-arm carve-out in
+    // `.claude/rules/testability-means-simplicity.md`.
+    let canonical_anchor = anchor
+        .canonicalize()
+        .expect("anchor.exists() returned true; canonicalize is unreachable absent a TOCTOU race");
+    let mut full = canonical_anchor;
+    for seg in suffix.iter().rev() {
+        full.push(seg);
+    }
+    if full.starts_with(wt_canon) {
+        Some(full)
+    } else {
+        None
+    }
+}
+
 /// Remove the Code Review adversarial probe file from the worktree
 /// before `git worktree remove` disposes of the worktree directory.
 /// Per `.claude/rules/ephemeral-file-cleanup.md`, running this step
@@ -171,18 +239,30 @@ fn label_result(ok: bool, ok_label: &str, output: &str) -> String {
 /// `fs::remove_file` (which works regardless of any caller's
 /// permission allow-list and tolerates `NotFound` as `"missing"`).
 ///
+/// `bin/test` is project-owned bash whose stdout flows into
+/// `fs::remove_file`; its stdout is treated as untrusted input per
+/// `.claude/rules/external-input-path-construction.md`. The resolved
+/// probe path is canonicalized and verified to be contained inside
+/// the canonicalized worktree directory before any deletion. A path
+/// that resolves outside the worktree (`../../etc/passwd`,
+/// `/Users/.../authorized_keys`) returns `"skipped"` and the file
+/// is not touched.
+///
 /// Outcomes:
 ///
-/// - `"deleted"` — probe present and removed.
-/// - `"missing"` — `bin/test` resolved a path but no file is at that
-///   path (the adversarial agent never wrote one, or Step 4 already
-///   reconciled the probe per
+/// - `"deleted"` — probe present, contained inside the worktree, and
+///   removed.
+/// - `"missing"` — path resolved to a worktree-internal location but
+///   no file is there (the adversarial agent never wrote one, or
+///   Step 4 already reconciled the probe per
 ///   `.claude/rules/adversarial-probe-lifecycle.md`).
 /// - `"skipped"` — worktree directory missing, `bin/test` missing,
-///   `bin/test` exited non-zero (unconfigured stub), or its stdout is
-///   empty.
+///   `bin/test` exited non-zero (unconfigured stub), its stdout is
+///   empty, the worktree path cannot be canonicalized, or the
+///   resolved probe path falls outside the worktree.
 /// - `"failed: <reason>"` — `fs::remove_file` failed with a reason
-///   other than `NotFound` (permissions, filesystem error).
+///   other than `NotFound` (permissions, filesystem error,
+///   `EISDIR`).
 fn delete_adversarial_probe(project_root: &Path, worktree: &str) -> String {
     let wt_path = project_root.join(worktree);
     if !wt_path.is_dir() {
@@ -201,10 +281,23 @@ fn delete_adversarial_probe(project_root: &Path, worktree: &str) -> String {
     if probe_rel.is_empty() {
         return "skipped".to_string();
     }
-    let probe_path = if Path::new(probe_rel).is_absolute() {
-        std::path::PathBuf::from(probe_rel)
+    let candidate = if Path::new(probe_rel).is_absolute() {
+        PathBuf::from(probe_rel)
     } else {
         wt_path.join(probe_rel)
+    };
+    // `wt_path.is_dir()` returned true above, so the directory
+    // exists and the kernel can stat it. canonicalize() on an
+    // existing directory only fails via TOCTOU permission
+    // revocation between adjacent syscalls — unreachable in
+    // production. `.expect()` per the unreachable-arm carve-out in
+    // `.claude/rules/testability-means-simplicity.md`.
+    let wt_canon = wt_path
+        .canonicalize()
+        .expect("wt_path.is_dir() returned true; canonicalize is unreachable absent a TOCTOU race");
+    let probe_path = match resolve_probe_inside_worktree(&candidate, &wt_canon) {
+        Some(p) => p,
+        None => return "skipped".to_string(),
     };
     match fs::remove_file(&probe_path) {
         Ok(()) => "deleted".to_string(),

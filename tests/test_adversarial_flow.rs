@@ -1,7 +1,10 @@
-//! Adversarial probe consumed during Phase 4 Code Review. The agent's
-//! tests revealed real bugs (helper/hook divergence, first-occurrence
-//! semantics) that were fixed in Step 4. The proper regression
-//! guards for those behaviors live in `tests/flow_paths.rs` and
-//! `tests/hooks/validate_worktree_paths.rs`. Worktree removal at
-//! Phase 6 Complete disposes of this file as a side effect of
-//! `git worktree remove`.
+//! Adversarial probe path for Code Review Phase 4.
+//!
+//! Untracked (in `.git/info/exclude` per `EXCLUDE_ENTRIES` in
+//! `src/prime_check.rs`); the adversarial agent writes its
+//! one-shot probe assertions here during Code Review and the file
+//! is reconciled per `.claude/rules/adversarial-probe-lifecycle.md`
+//! after Step 4 fixes land. Worktree removal at Phase 6 disposes
+//! of the file as a side effect; the explicit
+//! `delete_adversarial_probe` step in `src/cleanup.rs` lands the
+//! disposal in the JSON `steps` audit trail.
