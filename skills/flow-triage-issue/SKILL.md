@@ -1,9 +1,9 @@
 ---
-name: flow-triage-issues
+name: flow-triage-issue
 description: "Triage a single open GitHub issue from a PM lens. Reads code, checks for already-shipped work, returns a verdict in {close, decompose, keep-open, fix-now} with confidence and a flip-condition. Renders and stops — no side effects."
 ---
 
-# FLOW Triage Issues
+# FLOW Triage Issue
 
 Run a structured per-issue triage from a PM-with-engineering-literacy
 lens. Dispatches the `issue-triage` sub-agent in the foreground, which
@@ -16,7 +16,7 @@ verbatim and STOPS — the PM acts manually.
 ## Usage
 
 ```text
-/flow:flow-triage-issues <issue-number>
+/flow:flow-triage-issue <issue-number>
 ```
 
 The argument is a positive integer issue number in the current
@@ -39,7 +39,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v1.1.0 — flow:flow-triage-issues — STARTING
+  FLOW v1.1.0 — flow:flow-triage-issue — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -69,9 +69,9 @@ treats as flags.
 
 ````markdown
 ```text
-Error: /flow:flow-triage-issues requires a positive integer issue number.
+Error: /flow:flow-triage-issue requires a positive integer issue number.
 Got: <argument>
-Usage: /flow:flow-triage-issues <issue-number>
+Usage: /flow:flow-triage-issue <issue-number>
 ```
 ````
 
@@ -185,7 +185,7 @@ Output the following banner in your response (not via Bash) inside a fenced code
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v1.1.0 — flow:flow-triage-issues — COMPLETE
+  ✓ FLOW v1.1.0 — flow:flow-triage-issue — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````

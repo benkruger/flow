@@ -1,17 +1,17 @@
 ---
-title: /flow-triage-issues
+title: /flow-triage-issue
 nav_order: 16
 parent: Skills
 ---
 
-# /flow-triage-issues
+# /flow-triage-issue
 
 **Phase:** Any
 
 **Usage:**
 
 ```text
-/flow-triage-issues <issue-number>
+/flow-triage-issue <issue-number>
 ```
 
 Triage a single open GitHub issue from a senior-PM-with-engineering-literacy

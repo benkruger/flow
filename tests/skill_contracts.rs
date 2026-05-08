@@ -4077,9 +4077,9 @@ fn test_assess_issues_rule_includes_pr_search_step() {
     );
 }
 
-// --- flow-triage-issues skill content contracts ---
+// --- flow-triage-issue skill content contracts ---
 //
-// `skills/flow-triage-issues/SKILL.md` is a thin dispatcher. The three
+// `skills/flow-triage-issue/SKILL.md` is a thin dispatcher. The three
 // contracts below lock in (a) the no-side-effects HARD-GATE that
 // forbids auto-close, auto-label, auto-comment, and auto-skill
 // invocation; (b) the canonical 4-disposition closed set; and (c) the
@@ -4098,17 +4098,17 @@ fn test_assess_issues_rule_includes_pr_search_step() {
 fn extract_hard_gate_block(content: &str) -> String {
     let open = content
         .find("<HARD-GATE>")
-        .expect("skills/flow-triage-issues/SKILL.md must contain <HARD-GATE> opening tag");
+        .expect("skills/flow-triage-issue/SKILL.md must contain <HARD-GATE> opening tag");
     let after_open = open + "<HARD-GATE>".len();
     let close_offset = content[after_open..]
         .find("</HARD-GATE>")
-        .expect("skills/flow-triage-issues/SKILL.md must contain </HARD-GATE> closing tag");
+        .expect("skills/flow-triage-issue/SKILL.md must contain </HARD-GATE> closing tag");
     content[after_open..after_open + close_offset].to_string()
 }
 
 #[test]
-fn test_flow_triage_issues_skill_has_no_side_effects_hard_gate() {
-    let content = common::read_skill("flow-triage-issues");
+fn test_flow_triage_issue_skill_has_no_side_effects_hard_gate() {
+    let content = common::read_skill("flow-triage-issue");
     // Bind the assertions to the actual <HARD-GATE>...</HARD-GATE>
     // block so prose elsewhere in the file cannot satisfy the
     // checks (per adversarial findings A2/A6/A9/A12/A13/A16).
@@ -4117,32 +4117,32 @@ fn test_flow_triage_issues_skill_has_no_side_effects_hard_gate() {
     for forbidden in ["auto-close", "auto-label", "auto-comment"] {
         assert!(
             gate_lower.contains(forbidden),
-            "skills/flow-triage-issues/SKILL.md HARD-GATE block must explicitly forbid {forbidden}"
+            "skills/flow-triage-issue/SKILL.md HARD-GATE block must explicitly forbid {forbidden}"
         );
     }
     // The "never close" prohibition must live inside the HARD-GATE
     // block so a removed or empty gate fails the test.
     assert!(
         gate_lower.contains("close") && gate_lower.contains("not"),
-        "skills/flow-triage-issues/SKILL.md HARD-GATE block must forbid closing issues"
+        "skills/flow-triage-issue/SKILL.md HARD-GATE block must forbid closing issues"
     );
     // The "no auto-invocation of skills" prohibition must live
     // inside the HARD-GATE block.
     assert!(
         gate_lower.contains("invoke any skill") || gate_lower.contains("auto-invocation"),
-        "skills/flow-triage-issues/SKILL.md HARD-GATE block must forbid Skill tool invocation after rendering the verdict"
+        "skills/flow-triage-issue/SKILL.md HARD-GATE block must forbid Skill tool invocation after rendering the verdict"
     );
 }
 
 #[test]
-fn test_flow_triage_issues_skill_disposition_set_is_canonical() {
-    let content = common::read_skill("flow-triage-issues");
+fn test_flow_triage_issue_skill_disposition_set_is_canonical() {
+    let content = common::read_skill("flow-triage-issue");
     let lower = content.to_lowercase();
     // Canonical four must be present.
     for disposition in ["close", "decompose", "keep-open", "fix-now"] {
         assert!(
             content.contains(disposition),
-            "skills/flow-triage-issues/SKILL.md must enumerate disposition: {disposition}"
+            "skills/flow-triage-issue/SKILL.md must enumerate disposition: {disposition}"
         );
     }
     // Closed-set check: extract every quoted token inside
@@ -4170,7 +4170,7 @@ fn test_flow_triage_issues_skill_disposition_set_is_canonical() {
     for token in &bullet_tokens {
         assert!(
             allowed.contains(token.as_str()),
-            "skills/flow-triage-issues/SKILL.md HARD-GATE enumerates unsanctioned disposition bullet: {token:?}. The closed set is exactly {{close, decompose, keep-open, fix-now}} plus the Out-of-scope envelope."
+            "skills/flow-triage-issue/SKILL.md HARD-GATE enumerates unsanctioned disposition bullet: {token:?}. The closed set is exactly {{close, decompose, keep-open, fix-now}} plus the Out-of-scope envelope."
         );
     }
     // Defense in depth: forbid common alternative tokens
@@ -4186,15 +4186,15 @@ fn test_flow_triage_issues_skill_disposition_set_is_canonical() {
     .expect("forbidden disposition regex");
     if let Some(m) = forbidden_re.find(&lower) {
         panic!(
-            "skills/flow-triage-issues/SKILL.md must NOT mention forbidden alternative disposition token: {:?}",
+            "skills/flow-triage-issue/SKILL.md must NOT mention forbidden alternative disposition token: {:?}",
             m.as_str()
         );
     }
 }
 
 #[test]
-fn test_flow_triage_issues_skill_dispatches_issue_triage_agent() {
-    let content = common::read_skill("flow-triage-issues");
+fn test_flow_triage_issue_skill_dispatches_issue_triage_agent() {
+    let content = common::read_skill("flow-triage-issue");
     // The skill MUST dispatch issue-triage in its Step 2 dispatch
     // instruction. Bind the check to the dispatch-instruction
     // context (the line containing "Invoke the" + "sub-agent")
@@ -4206,14 +4206,14 @@ fn test_flow_triage_issues_skill_dispatches_issue_triage_agent() {
         .any(|line| line.contains("issue-triage") && line.contains("sub-agent"));
     assert!(
         dispatch_line_present,
-        "skills/flow-triage-issues/SKILL.md must contain a dispatch instruction line that names the `issue-triage` sub-agent (e.g. 'Invoke the `issue-triage` sub-agent ...')"
+        "skills/flow-triage-issue/SKILL.md must contain a dispatch instruction line that names the `issue-triage` sub-agent (e.g. 'Invoke the `issue-triage` sub-agent ...')"
     );
     // The skill must NOT route through general-purpose — that agent
     // ignores tool restrictions in its prompt and is forbidden during
     // active flows by .claude/rules/skill-authoring.md "Sub-Agent Safety".
     assert!(
         !content.contains("general-purpose"),
-        "skills/flow-triage-issues/SKILL.md must NOT use general-purpose sub-agent"
+        "skills/flow-triage-issue/SKILL.md must NOT use general-purpose sub-agent"
     );
 }
 
