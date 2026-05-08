@@ -170,8 +170,23 @@ tool:
 - `subagent_type`: `"flow:learn-analyst"`
 - `description`: `"Compliance audit and process analysis"`
 
-Provide all artifacts in the prompt with labeled sections:
+Provide all artifacts in the prompt with labeled sections, plus
+the framing block below so the agent rewards filtering rather
+than producing:
 
+> FRAMING:
+> Most Learn phases produce zero findings. Your job is to filter,
+> not to find things to say. Apply the two-gate test to every
+> candidate finding before reporting it:
+> (1) Forward-facing — would a future session who has never read
+> this PR understand and apply the principle? If no, drop.
+> (2) Value — was the gap caught and remediated in this PR? If
+> yes, drop (the system already closed it).
+> "No findings" in any category is the most common correct answer.
+> Return only findings that pass both gates. If all categories
+> produce zero, say so explicitly with "No findings" markers — do
+> NOT invent findings to fill sections.
+>
 > DIFF:
 > (full diff output)
 >
@@ -211,16 +226,48 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=1
 Take the learn-analyst findings and sort them into three buckets
 matching the three tenants.
 
-**Generalization filter.** For each finding, ask: "What general
-principle, applicable to future work in this project, would prevent this
-class of problem?" If a finding cannot be expressed as a forward-looking
-principle — if it only describes the specific code that was just fixed —
-drop it. It is a description of what happened, not a learning. For each
-dropped finding, record it:
+**Default is zero artifacts.** Most Learn phases produce no rule
+edits and no filed issues. The skill is an audit, not a writing
+prompt: a finding's first stop is the filter, not the routing
+table. If you find yourself reaching for an artifact, default
+back to "drop and record in commit message" until the finding
+proves it deserves more.
+
+**Two-gate filter.** Every candidate finding must pass BOTH
+tests below before it can produce any artifact (rule edit or
+issue). If a finding fails either, drop it and record it as
+dismissed:
+
+1. **Forward-facing test.** A future session who has never read
+   this PR must be able to understand and apply the rule. If
+   the rule's only example is the current PR, or the principle
+   only makes sense given the incident that produced it, the
+   finding is incident provenance — drop it. Per
+   `.claude/rules/forward-facing-authoring.md`: "If the rule
+   only makes sense when the reader knows the specific incident
+   that spawned it, the finding is too incident-specific to
+   codify."
+2. **Value test.** If the gap was caught by another phase gate
+   AND remediated in this PR (code fix, rule clarification, or
+   new rule), the system already closed the gap. Drop it. Per
+   `.claude/rules/filing-issues.md` "Value Test Before Filing":
+   a Code-Review-caught-and-fixed violation is the system
+   working, not a gap.
+
+For each dropped finding, record the dismissal:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<reason>" --outcome "dismissed" --phase "flow-learn"
 ```
+
+What survives both filters: patterns observed across multiple
+PRs (recurring violations the agent saw in prior flows), classes
+of bug this PR caught but couldn't fix structurally (open gaps
+with explicit follow-up scope), rules that are clear but
+consistently ignored across flows. What does NOT survive:
+"here's what we did differently this time," "here's the
+specific bug we just hit and fixed," rule clarifications whose
+only example is the current PR.
 
 **Tenant 1 — Process gaps.** Findings where the FLOW plugin's workflow
 broke or was missing something, including dangling async operations
@@ -309,10 +356,12 @@ destination:
 **Merge clustered findings.** If multiple findings target the same
 file, merge them into a single edit rather than separate writes.
 
-**Mandatory output constraint.** Every finding that survives the
-generalization filter must produce at least one concrete artifact — a
-rule edit or a GitHub issue. Findings too specific to generalize were
-already dropped in Step 2.
+**Zero-artifact default carries through.** Step 2's two-gate
+filter is the source of truth — if a finding made it past both
+gates, it has earned its artifact (rule edit or GitHub issue).
+If Step 2 dropped everything, Step 3 produces nothing and that
+is the correct outcome. Do not invent artifacts to fill the
+section. Most Learn phases land here with an empty list.
 
 ### Writing rules
 
