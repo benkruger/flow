@@ -87,6 +87,52 @@ use the opt-out comment instead of a forced list.
 - **Agent prompts and issue bodies** — not mechanically enforced;
   the rule is the primary instrument.
 
+## Plan-Phase Directory Enumerations
+
+The scanner catches universal-quantifier-plus-code-family-noun
+phrasings — see the Vocabulary section above. It does NOT catch a
+sibling failure mode: a plan task that operates on every file in a
+directory but cites a *count* instead of a list. Phrases such as
+"5 existing subdirectory hook tests" or "the 7 files in
+`tests/hooks/`" look concrete but are blind enumerations — the
+count substitutes for naming the members, and any file the plan
+author missed when counting stays invisible to Code phase.
+
+The cost of a missed file: when the Code phase consolidates a
+directory or relocates files within it, an unnamed sibling can
+collide with the new layout. The plan exploration that should
+have surfaced the collision didn't, because the unnamed sibling
+was never enumerated.
+
+The discipline:
+
+- **When a plan task operates on a directory tree**, the
+  Exploration must enumerate the tree's contents either via a
+  Glob result (each matched path on its own line) or an explicit
+  bullet list with every file basename. Counts like "5 hook
+  tests" or "all files in `tests/foo/`" are insufficient.
+- **When a plan task relocates or consolidates files in a
+  directory**, the Exploration must list every existing file in
+  that directory (and its parent if the consolidation reaches up)
+  so the Code phase can audit for naming collisions, dependency
+  loops, or orphaned siblings before execution.
+- **When the plan author cites a count**, they must back the
+  count with the enumeration on the same or adjacent lines. "5
+  existing subdirectory hook tests (`stop_continue`,
+  `validate_ask_user`, `validate_claude_paths`, `validate_pretool`,
+  `validate_worktree_paths`)" is acceptable; "5 existing
+  subdirectory hook tests" alone is not.
+
+This discipline is currently enforced by the rule prose and
+Plan-phase author discipline, not the scanner. The trigger surface
+("count + directory phrase" without an adjacent enumeration) has
+not been added to `SCOPE_TRIGGER_PATTERN` because it would
+generate false positives on legitimate prose mentioning counts in
+non-actionable contexts (e.g., a Risks section noting "5 of the 8
+stanzas live under `tests/hooks/`"). The Plan-phase reviewer is
+the primary enforcer; Code-phase failures (collisions, missed
+files) surface as the secondary tripwire.
+
 ## Opt-Out Comments
 
 Two line-level opt-out comments are recognized by the scanner:
