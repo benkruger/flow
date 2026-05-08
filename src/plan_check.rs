@@ -103,26 +103,51 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let root = project_root();
 
     // Resolve the plan file path: --plan-file wins over state file.
-    let plan_path = match &args.plan_file {
-        Some(path) => resolve_plan_file_override(&root, path),
+    // The state-file path also carries the diagnostics inputs
+    // (the relative `files.plan` value and the state file path)
+    // so the missing-plan error can name every resolution input.
+    // The override path has no state-file context and falls back
+    // to the simpler message shape.
+    let (plan_path, diagnostics) = match &args.plan_file {
+        Some(path) => (resolve_plan_file_override(&root, path), None),
         None => match resolve_plan_file_from_state(&root, args.branch.as_deref())? {
-            Ok(path) => path,
+            Ok(resolved) => {
+                let ResolvedPlanFromState {
+                    path,
+                    relative,
+                    state_file,
+                } = resolved;
+                (path, Some((relative, state_file)))
+            }
             Err(err_json) => return Ok(err_json),
         },
     };
 
     // Read the plan file contents. A missing file is a business
     // response (the state may point at a stale path); I/O errors
-    // other than NotFound are infrastructure failures.
+    // other than NotFound are infrastructure failures. When the
+    // resolution came from the state file, the error message names
+    // the resolved absolute path, the relative `files.plan` value,
+    // AND the state file path so the model can patch state in-flow
+    // per `.claude/rules/autonomous-flow-self-recovery.md`.
     let content = match std::fs::read_to_string(&plan_path) {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(json!({
-                "status": "error",
-                "message": format!(
-                    "Plan file not found: {}. The state file points at a path that does not exist.",
+            let message = match &diagnostics {
+                Some((relative, state_file)) => format!(
+                    "Plan file not found at {} (relative path '{}' from state file at {}).",
+                    plan_path.display(),
+                    relative,
+                    state_file.display()
+                ),
+                None => format!(
+                    "Plan file not found: {}. The --plan-file override points at a path that does not exist.",
                     plan_path.display()
                 ),
+            };
+            return Ok(json!({
+                "status": "error",
+                "message": message,
             }));
         }
         Err(e) => {
@@ -433,17 +458,39 @@ pub fn resolve_plan_file_override(root: &Path, path: &str) -> PathBuf {
     }
 }
 
+/// Resolution success carrying every input the caller may need to
+/// emit a path-resolution-failure diagnostic.
+///
+/// `path` is the absolute plan-file path (project root joined with
+/// `relative` when `relative` is non-absolute; `relative` itself
+/// otherwise). `relative` is the literal `files.plan` (or legacy
+/// `plan_file`) string from the state file. `state_file` is the
+/// state file the relative value was read from.
+///
+/// Plumbing all three through the resolver lets `run_impl` produce
+/// a missing-plan error that names every resolution input, so an
+/// autonomous-mode caller can patch state without prompting the
+/// user (per `.claude/rules/autonomous-flow-self-recovery.md`).
+#[derive(Debug)]
+pub struct ResolvedPlanFromState {
+    pub path: PathBuf,
+    pub relative: String,
+    pub state_file: PathBuf,
+}
+
 /// Resolve the plan file path from the state file's `files.plan`
 /// field (with legacy fallback to top-level `plan_file`).
 ///
 /// Outer `Result` captures infrastructure failures (I/O, JSON parse
 /// errors — become `Err` → exit 1). Inner `Result` captures business
 /// failures (missing state, missing field — become `Ok(Value)` →
-/// exit 0 with `"status":"error"`).
+/// exit 0 with `"status":"error"`). The success payload carries the
+/// resolved path, the relative state value, and the state file path
+/// so callers can build rich diagnostics on a downstream read failure.
 pub fn resolve_plan_file_from_state(
     root: &Path,
     branch_override: Option<&str>,
-) -> Result<Result<PathBuf, Value>, String> {
+) -> Result<Result<ResolvedPlanFromState, Value>, String> {
     let branch = match resolve_branch(branch_override, root) {
         Some(b) => b,
         None => {
@@ -501,7 +548,11 @@ pub fn resolve_plan_file_from_state(
         });
 
     match plan_rel {
-        Some(rel) => Ok(Ok(root.join(rel))),
+        Some(rel) => Ok(Ok(ResolvedPlanFromState {
+            path: root.join(rel),
+            relative: rel.to_string(),
+            state_file: state_path,
+        })),
         None => Ok(Err(json!({
             "status": "error",
             "message": "State file has no plan file set (files.plan is null). \

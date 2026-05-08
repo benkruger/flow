@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use flow_rs::duplicate_test_coverage;
 use flow_rs::plan_check::{
     build_violation_message, duplicate_violation_to_tagged_json, resolve_plan_file_from_state,
-    resolve_plan_file_override, run_impl, Args,
+    resolve_plan_file_override, run_impl, Args, ResolvedPlanFromState,
 };
 use std::process::Command;
 
@@ -423,6 +423,115 @@ fn plan_check_errors_when_plan_file_missing() {
         .contains("not found"));
 }
 
+// --- Diagnostics: missing-plan error names every resolution input ---
+//
+// When the plan file resolves from `files.plan` and the resolved
+// path does not exist, the autonomous-flow recovery rule asks the
+// model to fix path mismatches in-flow rather than prompting the
+// user. To do that the model needs every input that participated
+// in path construction: the resolved absolute path, the relative
+// `files.plan` value the state file holds, and the path of the
+// state file the model can edit. The original error message named
+// only the resolved path, leaving the model to reverse-engineer
+// where to look — exactly the friction Fix 3 closes.
+
+#[test]
+fn plan_check_missing_plan_message_includes_resolved_absolute_path() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "test-feature");
+    write_state(
+        dir.path(),
+        "test-feature",
+        Some(".flow-states/test-feature/plan.md"),
+    );
+
+    let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "error");
+    let msg = json["message"].as_str().unwrap_or("");
+    // The resolved path is project_root + relative; on macOS the
+    // tempdir resolves through `/private/var/...`. The message must
+    // name the resolved path verbatim so the model can Read it.
+    assert!(
+        msg.contains("test-feature/plan.md"),
+        "missing-plan message must name the resolved plan path; got: {msg}"
+    );
+}
+
+#[test]
+fn plan_check_missing_plan_message_includes_relative_files_plan() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "test-feature");
+    let plan_rel = ".flow-states/test-feature/plan.md";
+    write_state(dir.path(), "test-feature", Some(plan_rel));
+
+    let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "error");
+    let msg = json["message"].as_str().unwrap_or("");
+    // The exact relative string the state file holds should appear
+    // in the message so the model can compare it against the actual
+    // plan path on disk and patch state if they disagree.
+    assert!(
+        msg.contains(plan_rel),
+        "missing-plan message must name the relative `files.plan` value '{plan_rel}'; got: {msg}"
+    );
+}
+
+#[test]
+fn plan_check_missing_plan_message_includes_state_file_path() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo(dir.path(), "test-feature");
+    write_state(
+        dir.path(),
+        "test-feature",
+        Some(".flow-states/test-feature/plan.md"),
+    );
+
+    let (code, json) = run_plan_check(dir.path(), &["--branch", "test-feature"]);
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "error");
+    let msg = json["message"].as_str().unwrap_or("");
+    // The state file path tells the model where to edit if the
+    // `files.plan` value is wrong. Match against the basename
+    // `state.json` plus the per-branch directory token so symlink
+    // canonicalization on macOS does not destabilize the assertion.
+    assert!(
+        msg.contains("state.json"),
+        "missing-plan message must name the state file path; got: {msg}"
+    );
+    assert!(
+        msg.contains(".flow-states/test-feature"),
+        "missing-plan message must name the per-branch state dir; got: {msg}"
+    );
+}
+
+#[test]
+fn plan_check_missing_plan_with_absolute_files_plan_includes_diagnostics() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    setup_git_repo(&root, "test-feature");
+    // Pass an absolute path in `files.plan` (uncommon but supported
+    // because `Path::join(root, abs)` returns just `abs`). The
+    // diagnostics still apply: relative-string and state-file path.
+    let abs_plan = root.join(".flow-states/test-feature/plan.md");
+    let abs_str = abs_plan.to_str().unwrap().to_string();
+    write_state(&root, "test-feature", Some(&abs_str));
+
+    let (code, json) = run_plan_check(&root, &["--branch", "test-feature"]);
+    assert_eq!(code, 0);
+    assert_eq!(json["status"], "error");
+    let msg = json["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains(&abs_str),
+        "absolute `files.plan` must appear in the message; got: {msg}"
+    );
+    assert!(
+        msg.contains("state.json"),
+        "missing-plan message must still name the state file when files.plan is absolute; got: {msg}"
+    );
+}
+
 // --- --plan-file override ---
 
 #[test]
@@ -690,10 +799,12 @@ fn resolve_plan_file_from_state_legacy_plan_file_fallback() {
     std::fs::write(&state_path, r#"{"plan_file": "legacy-plan.md"}"#).unwrap();
 
     let result = resolve_plan_file_from_state(root, Some(branch));
-    let path = result
+    let resolved: ResolvedPlanFromState = result
         .expect("outer Result should be Ok")
         .expect("inner Result should be Ok");
-    assert_eq!(path, root.join("legacy-plan.md"));
+    assert_eq!(resolved.path, root.join("legacy-plan.md"));
+    assert_eq!(resolved.relative, "legacy-plan.md");
+    assert_eq!(resolved.state_file, state_path);
 }
 
 #[test]
