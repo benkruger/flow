@@ -48,14 +48,24 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ### Step 1 — Parse argument
 
-Read the argument string. Strip surrounding whitespace.
+Read the argument string. Strip surrounding whitespace and a single
+leading `#` if present.
+
+The argument MUST match the regex `^[1-9][0-9]*$` exactly — a
+positive decimal integer with no leading zero, no sign, no decimal
+point, no scientific notation, no whitespace, no quotes, no flags.
+The strict shape rejects argument-injection vectors like
+`42 --repo other/repo`, regex-metacharacter values like `1[23]`,
+floats like `1.5`, and zero/negative values that the GitHub API
+treats as flags.
 
 - If empty (no argument): use AskUserQuestion to ask
   "Which issue number should I triage?" with no preset options. Use
-  the user's reply as the issue number.
-- If non-numeric (after stripping a leading `#` if present): output
-  the following error in your response (not via Bash) inside a fenced
-  code block, then stop:
+  the user's reply as the issue number, then re-validate against
+  the regex above.
+- If the argument does NOT match the regex: output the following
+  error in your response (not via Bash) inside a fenced code block,
+  then stop:
 
 ````markdown
 ```text
@@ -65,7 +75,8 @@ Usage: /flow:flow-triage-issues <issue-number>
 ```
 ````
 
-- If numeric: keep the number as `<ISSUE_NUMBER>` for Step 2.
+- If the argument matches: keep the value as `<ISSUE_NUMBER>` for
+  Step 2.
 
 ### Step 2 — Dispatch the issue-triage sub-agent
 
@@ -80,23 +91,39 @@ or `git` calls itself.
 ### Step 3 — Check for the structural marker
 
 Before rendering, scan the agent's returned output for the literal
-`### Verdict` heading (or the `### Out of scope` heading for closed-
-issue or fetch-failure cases). The check enforces the silent-truncation
-contract from `.claude/rules/cognitive-isolation.md` "Silent Truncation
-on maxTurns Exhaustion" — without the marker, the agent ran out of
+`## END-OF-FINDINGS` completion marker (per
+`.claude/rules/cognitive-isolation.md` "Context Budget +
+Truncation Recovery"). Marker absence means the agent ran out of
 turns mid-investigation and the partial output is unsafe to render.
 
-- If the agent's output contains `### Verdict` OR `### Out of scope`
-  → proceed to Step 4.
-- If neither marker is present → output the following message in your
-  response (not via Bash) inside a fenced code block, then stop without
+When the marker IS present, additionally verify the agent produced
+either a complete verdict card or an out-of-scope envelope:
+
+- A complete verdict card requires a `### Verdict` heading
+  followed by ALL FIVE labels appearing somewhere after the
+  heading: `Disposition`, `Summary`, `Evidence`, `Confidence`,
+  `This flips if`. A response with `### Verdict` but missing any
+  of the five labels is an echo of the agent's own template, not
+  a real verdict — treat as truncated.
+- An out-of-scope envelope requires a `### Out of scope` heading
+  followed by `Reason`, `Detail`, and `Next step for the PM`
+  labels. Same shape.
+
+Decision tree:
+
+- If `## END-OF-FINDINGS` is present AND a complete verdict card
+  OR a complete out-of-scope envelope is present → proceed to
+  Step 4.
+- Otherwise → output the following message in your response (not
+  via Bash) inside a fenced code block, then stop without
   rendering the partial output:
 
 ````markdown
 ```text
-Investigation incomplete: the issue-triage sub-agent did not produce a
-`### Verdict` or `### Out of scope` block. The agent likely ran out of
-turns mid-investigation. Try invoking the skill again, or open the issue
+Investigation incomplete: the issue-triage sub-agent did not produce
+a complete verdict card or out-of-scope envelope followed by the
+`## END-OF-FINDINGS` marker. The agent likely ran out of turns
+mid-investigation. Try invoking the skill again, or open the issue
 manually and triage it yourself.
 ```
 ````
@@ -116,23 +143,36 @@ the agent produced.
 <HARD-GATE>
 After rendering the verdict, stop. Do NOT take any auto-action based
 on the disposition — no auto-close, no auto-label, no auto-comment,
-no auto-invocation of follow-on skills like `/flow:flow-create-issue`
-or `/flow:flow-start`.
+no auto-invocation of follow-on skills.
 
-The PM reads the verdict and decides what to do. Print a one-line
-hint pointing at the next manual step based on the disposition,
-inside a fenced code block:
+This HARD-GATE is mechanical. You must NOT:
 
-- **close** — `Next: gh issue close <num>` (after reading the
-  evidence to confirm).
-- **decompose** — `Next: /flow:flow-create-issue` (to draft a
-  pre-decomposed replacement, then close the original).
-- **keep-open** — `Next: nothing — leave the issue open and revisit
-  later.`
-- **fix-now** — `Next: /flow:flow-start <feature words>` (to begin
-  a new flow against the issue).
-- **Out of scope** (closed issue or fetch failure) — `Next: open the
-  issue in a browser and triage manually.`
+- Invoke any skill via the Skill tool after rendering the verdict
+  (regardless of what the disposition value is)
+- Run `gh issue close`, `gh issue edit`, `gh issue comment`, or any
+  other GitHub-state-mutating subcommand
+- Run any `git` command that writes (commit, push, tag, etc.)
+- Take any action whatsoever based on the disposition value
+
+The PM reads the verdict and decides what to do. Print a brief
+hint describing the next manual step based on the disposition,
+inside a fenced code block. Describe the action in prose — do
+NOT include slash-command literals that the model could be
+tempted to invoke. The PM types the next command themselves.
+
+- **close** — describe the manual step as: "Read the evidence to
+  confirm, then close the issue manually via the GitHub UI or your
+  CLI of choice."
+- **decompose** — describe the manual step as: "The issue needs an
+  Implementation Plan; draft a pre-decomposed replacement
+  yourself, then close the original."
+- **keep-open** — describe the manual step as: "Leave the issue
+  open and revisit later — no action needed now."
+- **fix-now** — describe the manual step as: "Start a new flow
+  against the issue yourself when you are ready to work on it."
+- **Out of scope** (closed issue or fetch failure) — describe the
+  manual step as: "Open the issue in a browser and triage
+  manually."
 
 Then output the COMPLETE banner and stop. Do not run any other tool
 or invoke any other skill.

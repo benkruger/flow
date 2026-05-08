@@ -57,7 +57,7 @@ Phase gates enforced by `bin/flow check-phase` (`src/check_phase.rs`). Back-tran
 - `hooks/hooks.json` — hook registration
 - `.claude/settings.json` — project permissions (git rebase denied)
 - `docs/` — GitHub Pages site; `docs/reference/flow-state-schema.md` for state file schema
-- `agents/*.md` — six custom plugin sub-agents (ci-fixer, reviewer, pre-mortem, adversarial, learn-analyst, documentation)
+- `agents/*.md` — seven custom plugin sub-agents (ci-fixer, reviewer, pre-mortem, adversarial, learn-analyst, documentation, issue-triage)
 - `src/*.rs` — Rust source for all `bin/flow` subcommands. Per-module purpose lives in module doc comments.
 - `bin/flow` — Rust dispatcher (auto-rebuilds when source is newer than binary)
 - `bin/{format,lint,build,test}` — FLOW's own dogfood scripts
@@ -136,7 +136,7 @@ The base branch's `target/` is a long-lived build surface across many source gen
 ### Sub-Agents
 
 <!-- duplicate-test-coverage: not-a-new-test -->
-Six custom plugin sub-agents in `agents/*.md` — tiered by task complexity: opus (ci-fixer, adversarial), sonnet (reviewer, pre-mortem), haiku (learn-analyst, documentation). Agent frontmatter must only use supported keys (`name`, `description`, `model`, `effort`, `maxTurns`, `tools`, `disallowedTools`, `skills`, `memory`, `background`, `isolation`) — `test_agent_frontmatter_only_supported_keys` enforces this. The global `PreToolUse` hook (`bin/flow hook validate-pretool`) enforces Bash and Agent tool restrictions across all agents. See `.claude/rules/cognitive-isolation.md`.
+Seven custom plugin sub-agents in `agents/*.md` — tiered by task complexity: opus (ci-fixer, adversarial), sonnet (reviewer, pre-mortem, issue-triage), haiku (learn-analyst, documentation). Agent frontmatter must only use supported keys (`name`, `description`, `model`, `effort`, `maxTurns`, `tools`, `disallowedTools`, `skills`, `memory`, `background`, `isolation`) — `test_agent_frontmatter_only_supported_keys` enforces this. The global `PreToolUse` hook (`bin/flow hook validate-pretool`) enforces Bash and Agent tool restrictions across all agents. See `.claude/rules/cognitive-isolation.md`.
 
 When adding or modifying an agent's `maxTurns` budget, read peer agents' frontmatter to maintain parity.
 

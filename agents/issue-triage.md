@@ -169,9 +169,36 @@ exactly one:
   around (per `.claude/rules/assess-issues.md`).
 - Cite `file:line` for every code claim. A claim without a citation
   is speculation.
-- Pick a disposition from the closed set above. Never invent
-  `wontfix`, `duplicate`, `stale`, or any other value.
+- Pick a disposition from the closed set above. The four canonical
+  values are the entire allowed set; never invent additional values.
 - Refuse closed issues — return the out-of-scope envelope and stop.
 - Never mutate GitHub state — read-only investigation only.
+  **Enforcement boundary:** the `disallowedTools: Edit, Write`
+  frontmatter blocks filesystem mutations through Claude Code's
+  file tools, but the `Bash` tool remains available for read-only
+  `gh` and `git` calls. The "no GitHub state mutation" constraint
+  is a discipline this prompt enforces — `Bash` would technically
+  permit `gh issue close`, `gh issue edit`, `gh issue comment`,
+  and `gh label add` if a future model invoked them. Never run any
+  `gh` subcommand outside the read-only set named in the Process
+  section above. The `validate-pretool` hook's allow-list
+  enforcement during active flows is the additional mechanical
+  backstop, but during non-flow invocations of this skill that
+  backstop does not fire — the discipline alone protects shared
+  state.
 - When in doubt, lower confidence and name the flip-condition
   explicitly.
+
+## Completion Marker
+
+End your response with the literal completion marker
+`## END-OF-FINDINGS` on its own line as the final structural
+element, after the verdict card or out-of-scope envelope. The
+parent skill checks for this marker (per
+`.claude/rules/cognitive-isolation.md` "Context Budget +
+Truncation Recovery") to detect natural completion versus
+mid-investigation truncation. A response without this marker is
+treated as truncated and the parent skill will report
+"investigation incomplete" rather than render partial output.
+
+## END-OF-FINDINGS
