@@ -7,13 +7,10 @@
 //! isolation; subprocess tests guard the `main.rs` `SetTimestamp`
 //! arm wiring plus the end-to-end dispatch chain.
 
-#[path = "../common/mod.rs"]
-mod common;
-
 use std::fs;
 use std::process::Command;
 
-use common::flow_states_dir;
+use crate::common::flow_states_dir;
 use regex::Regex;
 use serde_json::{json, Value};
 
