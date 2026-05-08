@@ -748,6 +748,54 @@ fn test_blocks_leading_ampersand_defensive() {
     assert!(msg.contains("Compound commands"));
 }
 
+#[test]
+fn test_blocks_amp_redirect_to_file_with_space() {
+    // `cmd >& outfile` is bash file-redirect syntax (redirects
+    // both stdout and stderr to a file named outfile). The
+    // `is_fd_redirect_at` helper must NOT carve this out — Layer 2
+    // (redirect detector) must still see the `>` as a structural
+    // redirect operator. Without the digit/`-`-after-`&`
+    // constraint, this shape silently bypassed both gates.
+    let (allowed, msg) = validate("cmd >& outfile", None, true);
+    assert!(
+        !allowed,
+        "`cmd >& outfile` is a file-redirect that should still block — got msg={msg:?}"
+    );
+}
+
+#[test]
+fn test_blocks_amp_redirect_to_relative_file() {
+    let (allowed, msg) = validate("echo hello >& output.log", None, true);
+    assert!(
+        !allowed,
+        "`echo hello >& output.log` is a file-redirect that should still block — got msg={msg:?}"
+    );
+}
+
+#[test]
+fn test_blocks_amp_redirect_with_letter_target() {
+    // `>&letter` (no space) is also bash file-redirect — `letter`
+    // is not a digit or `-`, so it is not a valid FD target.
+    let (allowed, msg) = validate("cmd >&letter", None, true);
+    assert!(
+        !allowed,
+        "`cmd >&letter` is a file-redirect that should still block — got msg={msg:?}"
+    );
+}
+
+#[test]
+fn test_blocks_amp_redirect_at_input_start() {
+    // `>& outfile` at idx=0 is still file-redirect syntax. The
+    // helper's `>` arm fires at idx=0 (next=`&`, after_amp=` ` →
+    // not a digit/`-`), so it correctly returns false and Layer 2
+    // catches the `>`.
+    let (allowed, _msg) = validate(">& outfile", None, true);
+    assert!(
+        !allowed,
+        "`>& outfile` at input start is still a file redirect"
+    );
+}
+
 // --- run_in_background blocking ---
 
 #[test]

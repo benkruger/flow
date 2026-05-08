@@ -284,11 +284,22 @@ where
 /// `>&2`, and `2>&-`. Returns true when:
 ///
 /// - `bytes[idx] == b'&'` AND the immediately preceding byte is `>`
+///   AND the immediately following byte is an ASCII digit or `-`
 ///   (the `&` participates in `>&<digit>` or `>&-` as a redirect
-///   target marker, not as bash backgrounding), OR
+///   target marker, not as bash backgrounding and not as the
+///   left half of `>& outfile` file-redirect syntax), OR
 /// - `bytes[idx] == b'>'` AND the immediately following byte is `&`
-///   (the `>` opens an FD-redirect of the form `>&...`, not a
-///   file-output redirect).
+///   AND the byte after `&` is an ASCII digit or `-` (the `>` opens
+///   an FD-redirect of the form `>&<digit>...`, not a `>& outfile`
+///   file-redirect that bash interprets as redirecting both stdout
+///   and stderr to a file named `outfile`).
+///
+/// The digit-or-`-` constraint after `&` is load-bearing: bash's
+/// `>& word` shape redirects both stdout and stderr to a file named
+/// `word`. Without the constraint, the helper would carve out
+/// `cmd >& outfile` as if it were FD-redirect, defeating Layer 2's
+/// file-redirect block. The constraint narrows the carve-out to the
+/// only grammatically valid FD targets.
 ///
 /// Both predicates (compound-op and redirect) consult this helper
 /// to skip FD-redirect bytes so common shapes like `cargo test 2>&1`
@@ -296,12 +307,18 @@ where
 /// `&1 cmd`) returns false here and is caught by the bare-`&` arm
 /// of `compound_op_predicate`. Plain `>` not followed by `&` (e.g.
 /// `cmd > /tmp/out`, `cmd >> file`) returns false here and is
-/// caught by `redirect_predicate`.
+/// caught by `redirect_predicate`. `>&` followed by anything other
+/// than a digit or `-` (e.g. `>& outfile`, `>&letter`) also returns
+/// false so Layer 2 still blocks file-redirect shapes.
 fn is_fd_redirect_at(bytes: &[u8], idx: usize) -> bool {
     let cur = bytes.get(idx).copied();
     let prev = idx.checked_sub(1).and_then(|i| bytes.get(i).copied());
     let next = bytes.get(idx + 1).copied();
-    (cur == Some(b'&') && prev == Some(b'>')) || (cur == Some(b'>') && next == Some(b'&'))
+    let after_amp = bytes.get(idx + 2).copied();
+    let next_is_fd_target = matches!(next, Some(b'0'..=b'9') | Some(b'-'));
+    let after_amp_is_fd_target = matches!(after_amp, Some(b'0'..=b'9') | Some(b'-'));
+    (cur == Some(b'&') && prev == Some(b'>') && next_is_fd_target)
+        || (cur == Some(b'>') && next == Some(b'&') && after_amp_is_fd_target)
 }
 
 /// Compound-operator predicate for `scan_unquoted`. Returns the matched

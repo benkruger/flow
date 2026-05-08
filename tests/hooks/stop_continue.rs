@@ -6,7 +6,7 @@
 
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use flow_rs::commands::clear_blocked::clear_blocked;
@@ -897,6 +897,19 @@ fn test_discussion_mode_cleared_on_continue_pending() {
 /// `ENXIO` regardless of the host's tty state, forcing the Err
 /// path deterministically.
 fn run_hook(cwd: &Path, stdin_input: &str) -> (i32, String, String) {
+    run_hook_inner(cwd, stdin_input, None)
+}
+
+/// Variant that overrides `HOME` for the subprocess so the prose-
+/// pause guard's `is_safe_transcript_path` validator resolves
+/// `<HOME>/.claude/projects/` against the test fixture's tempdir
+/// instead of the real user home. Tests that drive the prose-pause
+/// path through the full Stop hook MUST go through this helper.
+fn run_hook_with_home(cwd: &Path, stdin_input: &str, home: &Path) -> (i32, String, String) {
+    run_hook_inner(cwd, stdin_input, Some(home))
+}
+
+fn run_hook_inner(cwd: &Path, stdin_input: &str, home: Option<&Path>) -> (i32, String, String) {
     use std::os::unix::process::CommandExt;
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
     cmd.args(["hook", "stop-continue"])
@@ -905,6 +918,9 @@ fn run_hook(cwd: &Path, stdin_input: &str) -> (i32, String, String) {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(home_path) = home {
+        cmd.env("HOME", home_path);
+    }
     // SAFETY: `setsid()` is async-signal-safe. The closure allocates
     // nothing and either returns Ok or propagates the errno error.
     unsafe {
@@ -1088,7 +1104,15 @@ fn run_subprocess_prose_pause_blocks_when_transcript_path_present() {
         serde_json::to_string_pretty(&state).unwrap(),
     )
     .unwrap();
-    let transcript = root.join("transcript.jsonl");
+    // Construct transcript at `<HOME>/.claude/projects/` so the
+    // is_safe_transcript_path validator inside
+    // `check_prose_pause_at_task_entry` accepts it. Override HOME
+    // for the subprocess to point at the test root, isolating from
+    // the real user home per
+    // `.claude/rules/subprocess-test-hygiene.md`.
+    let projects = root.join(".claude").join("projects");
+    fs::create_dir_all(&projects).unwrap();
+    let transcript = projects.join("transcript.jsonl");
     let assistant = json!({
         "type": "assistant",
         "message": {"content": [{"type": "text", "text": "Should I proceed?"}]}
@@ -1099,7 +1123,7 @@ fn run_subprocess_prose_pause_blocks_when_transcript_path_present() {
         r#"{{"session_id": "s1", "transcript_path": "{}"}}"#,
         transcript.to_str().unwrap()
     );
-    let (code, stdout, _stderr) = run_hook(&root, &stdin);
+    let (code, stdout, _stderr) = run_hook_with_home(&root, &stdin, &root);
     assert_eq!(code, 0);
     // Block output appears as the last JSON line on stdout.
     let last = stdout
@@ -1710,6 +1734,54 @@ fn body_with_question_after_fenced_block_detects() {
     assert!(body_has_question_outside_code(body));
 }
 
+#[test]
+fn body_with_url_query_string_returns_false() {
+    // The `?` in a URL query string is not a prose question — it is
+    // followed by an alphanumeric character (the parameter name).
+    // The detector must not falsely fire on URLs in legitimate
+    // task-summary text.
+    let body = "Done. See https://example.com?foo=bar for details.";
+    assert!(
+        !body_has_question_outside_code(body),
+        "URL query string should NOT register as a prose question"
+    );
+}
+
+#[test]
+fn body_with_url_at_end_of_sentence_returns_false() {
+    let body = "Filed at https://github.com/owner/repo/issues/42?tab=comments. Done.";
+    assert!(
+        !body_has_question_outside_code(body),
+        "URL with `?tab=...` mid-prose should not register as a question"
+    );
+}
+
+#[test]
+fn body_with_unclosed_inline_backtick_detects_question() {
+    // `Should I use `option_a?` — single backtick opens an inline
+    // span that never closes. The previous implementation tracked
+    // in_inline state and swallowed the `?` after the unclosed
+    // backtick. Counting backticks per line and falling back to
+    // no-inline tracking when odd handles this naturally.
+    let body = "Should I use `option_a?";
+    assert!(
+        body_has_question_outside_code(body),
+        "Unclosed inline backtick must not swallow trailing `?`"
+    );
+}
+
+#[test]
+fn body_with_question_inside_paired_backticks_returns_false() {
+    // Sanity check: paired backticks still suppress the `?` between
+    // them (e.g., "the `?` operator"). Only odd counts disable
+    // tracking.
+    let body = "The `?` operator propagates errors in Rust.";
+    assert!(
+        !body_has_question_outside_code(body),
+        "`?` inside paired backticks must still be suppressed"
+    );
+}
+
 // --- check_prose_pause_at_task_entry (integration tests) ---
 
 /// Build a minimal state JSON for the prose-pause guard.
@@ -1753,11 +1825,24 @@ fn write_assistant_transcript(path: &Path, body: &str, had_tool_use: bool) {
     fs::write(path, serde_json::to_string(&line).unwrap()).unwrap();
 }
 
+/// Construct a transcript path under `<home>/.claude/projects/` so
+/// `check_prose_pause_at_task_entry`'s `is_safe_transcript_path`
+/// validator accepts it. Tests pass `dir.path()` as `home` to
+/// isolate from the real `$HOME` per
+/// `.claude/rules/testing-gotchas.md` "Rust Parallel Test Env Var
+/// Races." Creates the parent directory; caller writes the
+/// transcript content (or leaves it absent for missing-file tests).
+fn safe_transcript_path(home: &Path, name: &str) -> PathBuf {
+    let projects = home.join(".claude").join("projects");
+    fs::create_dir_all(&projects).unwrap();
+    projects.join(name)
+}
+
 #[test]
 fn prose_pause_blocks_when_all_seven_conditions_match() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -1772,7 +1857,11 @@ fn prose_pause_blocks_when_all_seven_conditions_match() {
     .unwrap();
     write_assistant_transcript(&transcript, "Should I proceed with Task 1?", false);
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(result.should_block);
     let context = result.context.unwrap();
     assert!(context.contains("prose-based pause"));
@@ -1784,7 +1873,7 @@ fn prose_pause_blocks_when_all_seven_conditions_match() {
 fn prose_pause_allows_when_phase_is_not_flow_code() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -1799,7 +1888,11 @@ fn prose_pause_allows_when_phase_is_not_flow_code() {
     .unwrap();
     write_assistant_transcript(&transcript, "Should I proceed?", false);
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(!result.should_block);
 }
 
@@ -1807,7 +1900,7 @@ fn prose_pause_allows_when_phase_is_not_flow_code() {
 fn prose_pause_allows_when_status_not_in_progress() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -1822,7 +1915,11 @@ fn prose_pause_allows_when_status_not_in_progress() {
     .unwrap();
     write_assistant_transcript(&transcript, "Should I proceed?", false);
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(!result.should_block);
 }
 
@@ -1830,7 +1927,7 @@ fn prose_pause_allows_when_status_not_in_progress() {
 fn prose_pause_allows_when_skill_not_auto() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -1845,7 +1942,11 @@ fn prose_pause_allows_when_skill_not_auto() {
     .unwrap();
     write_assistant_transcript(&transcript, "Should I proceed?", false);
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(!result.should_block);
 }
 
@@ -1853,7 +1954,7 @@ fn prose_pause_allows_when_skill_not_auto() {
 fn prose_pause_allows_when_code_task_advanced() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -1868,7 +1969,11 @@ fn prose_pause_allows_when_code_task_advanced() {
     .unwrap();
     write_assistant_transcript(&transcript, "Should I proceed?", false);
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(!result.should_block);
 }
 
@@ -1876,7 +1981,7 @@ fn prose_pause_allows_when_code_task_advanced() {
 fn prose_pause_allows_when_continue_pending_set() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -1891,7 +1996,11 @@ fn prose_pause_allows_when_continue_pending_set() {
     .unwrap();
     write_assistant_transcript(&transcript, "Should I proceed?", false);
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(!result.should_block);
 }
 
@@ -1899,7 +2008,7 @@ fn prose_pause_allows_when_continue_pending_set() {
 fn prose_pause_allows_when_last_assistant_had_tool_use() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -1916,7 +2025,11 @@ fn prose_pause_allows_when_last_assistant_had_tool_use() {
     // is making progress, not stalling on a prose question.
     write_assistant_transcript(&transcript, "Should I proceed?", true);
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(!result.should_block);
 }
 
@@ -1924,7 +2037,7 @@ fn prose_pause_allows_when_last_assistant_had_tool_use() {
 fn prose_pause_allows_when_no_question_in_text() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -1939,7 +2052,11 @@ fn prose_pause_allows_when_no_question_in_text() {
     .unwrap();
     write_assistant_transcript(&transcript, "Implementing the helper now.", false);
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(!result.should_block);
 }
 
@@ -1947,7 +2064,7 @@ fn prose_pause_allows_when_no_question_in_text() {
 fn prose_pause_allows_when_skill_config_detailed_object_auto() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -1963,7 +2080,11 @@ fn prose_pause_allows_when_skill_config_detailed_object_auto() {
     write_assistant_transcript(&transcript, "Should I proceed?", false);
 
     // Detailed shape with continue=auto IS auto — guard fires.
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(result.should_block);
 }
 
@@ -1984,7 +2105,7 @@ fn prose_pause_allows_when_no_transcript_path() {
     )
     .unwrap();
 
-    let result = check_prose_pause_at_task_entry(&state_path, None);
+    let result = check_prose_pause_at_task_entry(&state_path, None, dir.path());
     assert!(!result.should_block);
 }
 
@@ -1992,10 +2113,14 @@ fn prose_pause_allows_when_no_transcript_path() {
 fn prose_pause_allows_when_state_file_missing() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("nonexistent.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     write_assistant_transcript(&transcript, "Should I proceed?", false);
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(!result.should_block);
 }
 
@@ -2015,9 +2140,13 @@ fn prose_pause_allows_when_transcript_file_missing() {
         .unwrap(),
     )
     .unwrap();
-    let transcript = dir.path().join("missing.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "missing.jsonl");
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(!result.should_block);
 }
 
@@ -2026,10 +2155,14 @@ fn prose_pause_allows_when_state_unparseable() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
     fs::write(&state_path, "{not valid json").unwrap();
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     write_assistant_transcript(&transcript, "Should I proceed?", false);
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(!result.should_block);
 }
 
@@ -2037,7 +2170,7 @@ fn prose_pause_allows_when_state_unparseable() {
 fn prose_pause_allows_when_transcript_has_no_assistant_turn() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -2057,7 +2190,11 @@ fn prose_pause_allows_when_transcript_has_no_assistant_turn() {
     });
     fs::write(&transcript, serde_json::to_string(&user_line).unwrap()).unwrap();
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(!result.should_block);
 }
 
@@ -2065,7 +2202,7 @@ fn prose_pause_allows_when_transcript_has_no_assistant_turn() {
 fn prose_pause_allows_when_transcript_is_empty() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -2083,7 +2220,11 @@ fn prose_pause_allows_when_transcript_is_empty() {
     // of last_assistant_text_and_tool_use.
     fs::write(&transcript, "").unwrap();
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(!result.should_block);
 }
 
@@ -2091,7 +2232,7 @@ fn prose_pause_allows_when_transcript_is_empty() {
 fn prose_pause_blocks_when_transcript_has_blank_lines_before_assistant() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -2117,7 +2258,11 @@ fn prose_pause_blocks_when_transcript_has_blank_lines_before_assistant() {
     );
     fs::write(&transcript, body).unwrap();
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(result.should_block);
 }
 
@@ -2125,7 +2270,7 @@ fn prose_pause_blocks_when_transcript_has_blank_lines_before_assistant() {
 fn prose_pause_blocks_when_invalid_json_is_after_assistant_turn() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -2152,7 +2297,11 @@ fn prose_pause_blocks_when_invalid_json_is_after_assistant_turn() {
     );
     fs::write(&transcript, body).unwrap();
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(result.should_block);
 }
 
@@ -2160,7 +2309,7 @@ fn prose_pause_blocks_when_invalid_json_is_after_assistant_turn() {
 fn prose_pause_blocks_when_text_block_missing_text_field() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -2186,7 +2335,11 @@ fn prose_pause_blocks_when_text_block_missing_text_field() {
     });
     fs::write(&transcript, serde_json::to_string(&assistant).unwrap()).unwrap();
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(result.should_block);
 }
 
@@ -2194,7 +2347,7 @@ fn prose_pause_blocks_when_text_block_missing_text_field() {
 fn prose_pause_blocks_when_transcript_has_invalid_json_lines() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -2219,7 +2372,11 @@ fn prose_pause_blocks_when_transcript_has_invalid_json_lines() {
     );
     fs::write(&transcript, body).unwrap();
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(result.should_block);
 }
 
@@ -2227,7 +2384,7 @@ fn prose_pause_blocks_when_transcript_has_invalid_json_lines() {
 fn prose_pause_blocks_when_transcript_has_system_turn_before_assistant() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -2254,7 +2411,11 @@ fn prose_pause_blocks_when_transcript_has_system_turn_before_assistant() {
     );
     fs::write(&transcript, body).unwrap();
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(result.should_block);
 }
 
@@ -2262,7 +2423,7 @@ fn prose_pause_blocks_when_transcript_has_system_turn_before_assistant() {
 fn prose_pause_blocks_when_assistant_turn_has_no_content_array() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -2290,7 +2451,11 @@ fn prose_pause_blocks_when_assistant_turn_has_no_content_array() {
     );
     fs::write(&transcript, body).unwrap();
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(result.should_block);
 }
 
@@ -2298,7 +2463,7 @@ fn prose_pause_blocks_when_assistant_turn_has_no_content_array() {
 fn prose_pause_blocks_with_multi_text_block_assistant_turn() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -2323,7 +2488,11 @@ fn prose_pause_blocks_with_multi_text_block_assistant_turn() {
     });
     fs::write(&transcript, serde_json::to_string(&assistant).unwrap()).unwrap();
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(result.should_block);
 }
 
@@ -2331,7 +2500,7 @@ fn prose_pause_blocks_with_multi_text_block_assistant_turn() {
 fn prose_pause_allows_when_transcript_has_non_utf8_bytes() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -2349,7 +2518,11 @@ fn prose_pause_allows_when_transcript_has_non_utf8_bytes() {
     // of last_assistant_text_and_tool_use's read step.
     fs::write(&transcript, [0xFFu8, 0xFE, 0xFD, 0xFC]).unwrap();
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(!result.should_block);
 }
 
@@ -2357,7 +2530,7 @@ fn prose_pause_allows_when_transcript_has_non_utf8_bytes() {
 fn prose_pause_blocks_with_thinking_block_alongside_text() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
@@ -2383,15 +2556,129 @@ fn prose_pause_blocks_with_thinking_block_alongside_text() {
     });
     fs::write(&transcript, serde_json::to_string(&assistant).unwrap()).unwrap();
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(result.should_block);
+}
+
+#[test]
+fn prose_pause_allows_when_transcript_path_outside_safe_prefix() {
+    // A transcript path NOT under `<home>/.claude/projects/`
+    // must be rejected by `is_safe_transcript_path`. Without this
+    // gate, the walker would happily open any user-readable file —
+    // an arbitrary-file-read surface per
+    // `.claude/rules/external-input-path-construction.md`.
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&prose_pause_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            0,
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    // Transcript at `<dir>/evil.jsonl` — outside the canonical
+    // `<dir>/.claude/projects/` prefix.
+    let evil = dir.path().join("evil.jsonl");
+    write_assistant_transcript(&evil, "Should I proceed?", false);
+
+    let result =
+        check_prose_pause_at_task_entry(&state_path, Some(evil.to_str().unwrap()), dir.path());
+    assert!(
+        !result.should_block,
+        "transcript_path outside ~/.claude/projects/ must be rejected before any open"
+    );
+}
+
+#[test]
+fn prose_pause_allows_when_transcript_path_uses_parent_dir_traversal() {
+    // Even with a path that lexically starts with the canonical
+    // prefix, `..` components must be rejected — the validator
+    // performs a lexical (non-canonicalizing) prefix check, and
+    // ParentDir components would let a hostile path escape via
+    // `<home>/.claude/projects/../../etc/passwd`.
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&prose_pause_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            0,
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    // Construct path with `..` segments, even though the prefix
+    // appears to match.
+    let traversal = dir
+        .path()
+        .join(".claude")
+        .join("projects")
+        .join("..")
+        .join("..")
+        .join("etc")
+        .join("passwd");
+
+    let result =
+        check_prose_pause_at_task_entry(&state_path, Some(traversal.to_str().unwrap()), dir.path());
+    assert!(
+        !result.should_block,
+        "Path with `..` components must be rejected by is_safe_transcript_path"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn prose_pause_allows_when_transcript_is_fifo_outside_safe_prefix() {
+    // A FIFO at a path outside the safe prefix is rejected before
+    // any open(2) — preventing the Stop hook from blocking
+    // indefinitely on a read-only FIFO with no writer. The validator
+    // gate is enough; no FIFO-specific logic is needed.
+    use std::ffi::CString;
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&prose_pause_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            0,
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    // Create a FIFO at a path outside the safe prefix.
+    let fifo = dir.path().join("evil.fifo");
+    let cpath = CString::new(fifo.to_str().unwrap()).unwrap();
+    let rc = unsafe { libc::mkfifo(cpath.as_ptr(), 0o644) };
+    assert_eq!(rc, 0, "mkfifo failed");
+
+    let result =
+        check_prose_pause_at_task_entry(&state_path, Some(fifo.to_str().unwrap()), dir.path());
+    assert!(
+        !result.should_block,
+        "FIFO at path outside safe prefix must be rejected before open"
+    );
 }
 
 #[test]
 fn prose_pause_allows_when_skills_key_missing() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");
-    let transcript = dir.path().join("transcript.jsonl");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
     // State has no `skills` key at all — exercises the
     // `None => false` arm of the skill-config match.
     let state = json!({
@@ -2404,6 +2691,10 @@ fn prose_pause_allows_when_skills_key_missing() {
     fs::write(&state_path, serde_json::to_string(&state).unwrap()).unwrap();
     write_assistant_transcript(&transcript, "Should I proceed?", false);
 
-    let result = check_prose_pause_at_task_entry(&state_path, Some(transcript.to_str().unwrap()));
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
     assert!(!result.should_block);
 }

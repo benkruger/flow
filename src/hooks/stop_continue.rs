@@ -665,17 +665,35 @@ pub fn check_autonomous_in_progress(state_path: &Path) -> ContinueResult {
 }
 
 /// Returns true when `body` contains a `?` outside fenced code
-/// blocks (` ``` ... ``` `) and inline code spans (` `...` `).
+/// blocks (` ``` ... ``` `) and inline code spans (` `...` `) AND
+/// the `?` is not embedded in a URL-like token.
 ///
-/// The detector is a single-pass byte walker. Lines opening or
-/// closing a fenced block (any line whose first non-whitespace
-/// characters are three backticks) toggle the fenced-block state
-/// and are skipped entirely. Inside non-fenced lines, paired
-/// backticks toggle inline-code state and `?` matches only when
-/// neither flag is set. Tilde fences (`~~~`) and indented code
-/// blocks are not recognized — the prose-pause failure mode
-/// surfaces in standard markdown produced by the model itself,
-/// which uses backtick fences exclusively.
+/// The detector is a single-pass walker over each line. Lines whose
+/// first non-whitespace characters are three backticks toggle the
+/// fenced-block state and are skipped entirely.
+///
+/// Inside non-fenced lines, the walker first counts backticks. An
+/// even count means the backticks are paired and inline-code
+/// tracking suppresses `?` between them; an odd count means at
+/// least one unclosed inline span (e.g. a typo'd "Should I use
+/// `option_a?"), and the walker disables inline tracking entirely
+/// so the trailing `?` is not silently swallowed by the unclosed
+/// span. The odd-count fallback prevents an unclosed-backtick
+/// false negative — the prose is still a question even if the
+/// markdown is malformed.
+///
+/// `?` matches only when not followed by an alphanumeric
+/// character. URL query strings (`?foo=bar`), HTTP-style
+/// placeholders (`?utm_source=...`), and similar non-question
+/// shapes have an alphanumeric character immediately after the
+/// `?`, so they are excluded from the prose-question count. A
+/// real prose question's `?` is followed by whitespace,
+/// punctuation, or end of line.
+///
+/// Tilde fences (`~~~`) and indented code blocks are not
+/// recognized — the prose-pause failure mode surfaces in
+/// standard markdown produced by the model itself, which uses
+/// backtick fences exclusively.
 pub fn body_has_question_outside_code(body: &str) -> bool {
     let mut in_fenced = false;
     for line in body.lines() {
@@ -687,12 +705,28 @@ pub fn body_has_question_outside_code(body: &str) -> bool {
         if in_fenced {
             continue;
         }
+        // Count backticks on the line. Odd count => unclosed inline
+        // span (typo'd or malformed); disable inline tracking so the
+        // walker still sees the `?`. Even count => backticks are
+        // paired; track inline state normally.
+        let backtick_count = line.bytes().filter(|&b| b == b'`').count();
+        let track_inline = backtick_count % 2 == 0;
         let mut in_inline = false;
-        for ch in line.chars() {
-            if ch == '`' {
+        let chars: Vec<char> = line.chars().collect();
+        for (i, &ch) in chars.iter().enumerate() {
+            if ch == '`' && track_inline {
                 in_inline = !in_inline;
             } else if ch == '?' && !in_inline {
-                return true;
+                // Suppress `?` when immediately followed by an
+                // alphanumeric character — URL query strings and
+                // similar non-question shapes pack characters right
+                // after the `?`, while real prose questions have
+                // whitespace, punctuation, or end-of-line after.
+                let next = chars.get(i + 1).copied();
+                let suppressed = next.map(|c| c.is_alphanumeric()).unwrap_or(false);
+                if !suppressed {
+                    return true;
+                }
             }
         }
     }
@@ -821,6 +855,7 @@ fn last_assistant_text_and_tool_use(path: &Path) -> Option<(String, bool)> {
 pub fn check_prose_pause_at_task_entry(
     state_path: &Path,
     transcript_path: Option<&str>,
+    home: &Path,
 ) -> ContinueResult {
     let no_block = || ContinueResult {
         should_block: false,
@@ -831,6 +866,22 @@ pub fn check_prose_pause_at_task_entry(
         Some(p) if !p.is_empty() => Path::new(p),
         _ => return no_block(),
     };
+    // Reject transcript paths that escape the canonical
+    // `<home>/.claude/projects/` prefix per
+    // `.claude/rules/external-input-path-construction.md`. Closes
+    // two attack vectors at once: arbitrary file read via path
+    // traversal (the walker would otherwise open any user-readable
+    // file) and Stop-hook hang via FIFO/named-pipe paths
+    // (`File::open` blocks indefinitely with no writer, defeating
+    // the read-cap that bounds regular-file I/O). The same
+    // validator gates `transcript_walker::read_capped` for the
+    // user-only-skill carve-out. `home` is passed in (rather than
+    // read from `$HOME` inside) so tests can isolate from the real
+    // `$HOME` without env-var races per
+    // `.claude/rules/testing-gotchas.md`.
+    if !crate::window_snapshot::is_safe_transcript_path(transcript_path, home) {
+        return no_block();
+    }
     if !state_path.exists() {
         return no_block();
     }
@@ -970,12 +1021,17 @@ pub fn run() {
         // Match form avoids a closure-instantiation region the
         // existing run() subprocess test surface does not reach;
         // reads `transcript_path` from the hook input, not state,
-        // so the current session's transcript is consulted.
+        // so the current session's transcript is consulted. `home`
+        // is computed via `home_dir_or_empty` so the prose-pause
+        // guard can validate the transcript path's canonical prefix
+        // before opening the file (defends against path traversal
+        // and FIFO-deadlock attacks).
         let transcript_path = match hook_input.get("transcript_path") {
             Some(v) => v.as_str(),
             None => None,
         };
-        result = check_prose_pause_at_task_entry(&state_path, transcript_path);
+        let home = crate::window_snapshot::home_dir_or_empty();
+        result = check_prose_pause_at_task_entry(&state_path, transcript_path, &home);
     }
 
     // Autonomous-stop refusal: when the current phase is in-progress
