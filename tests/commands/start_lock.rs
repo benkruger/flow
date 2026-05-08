@@ -7,9 +7,6 @@
 //! loop uses `thread::sleep` with real short intervals when a test
 //! needs to cross the retry boundary.
 
-#[path = "../common/mod.rs"]
-mod common;
-
 use std::fs;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

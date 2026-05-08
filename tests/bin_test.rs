@@ -198,6 +198,77 @@ fn file_mode_invokes_rustc_test() {
     );
 }
 
+/// `bin/test tests/<subdir>/<name>.rs` resolves to one binary per
+/// directory: `--test <subdir>` plus a `test(/^<name>::/)` module
+/// filter. Without the per-directory `main.rs` layout, sibling files
+/// in `tests/hooks/` and `tests/commands/` are not auto-discovered by
+/// Cargo unless they are also listed as `[[test]]` stanzas in
+/// `Cargo.toml`. The migration replaces the stanzas with a per-
+/// directory `main.rs` declaring siblings as `mod`, so the per-file
+/// runner must address them via the directory-level binary name and
+/// scope test execution to the requested module.
+#[test]
+fn bin_test_per_file_handles_subdirectory_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let bin_dir = dir.path().join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+
+    let real_script = common::bin_dir().join("test");
+    let script_content = fs::read_to_string(&real_script).unwrap();
+    let target = bin_dir.join("test");
+    fs::write(&target, &script_content).unwrap();
+    let mut perms = fs::metadata(&target).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&target, perms).unwrap();
+
+    let test_subdir = dir.path().join("tests/hooks");
+    fs::create_dir_all(&test_subdir).unwrap();
+    fs::write(test_subdir.join("stop_continue.rs"), "// fixture").unwrap();
+
+    let src_subdir = dir.path().join("src/hooks");
+    fs::create_dir_all(&src_subdir).unwrap();
+    fs::write(src_subdir.join("stop_continue.rs"), "// fixture").unwrap();
+
+    let mock_bin = dir.path().join("mock_bin");
+    fs::create_dir_all(&mock_bin).unwrap();
+    let log_file = dir.path().join("cargo_log");
+    fs::write(
+        mock_bin.join("cargo"),
+        format!(
+            "#!/usr/bin/env bash\necho \"$*\" >> \"{}\"\nif [ \"$1\" = \"llvm-cov\" ] && [ \"${{2:-}}\" = \"report\" ]; then\n  echo 'stop_continue.rs   10   0   100.00%   5   0   100.00%   20   0   100.00%   0   0   -'\nfi\nexit 0\n",
+            log_file.display()
+        ),
+    )
+    .unwrap();
+    let mut perms = fs::metadata(mock_bin.join("cargo")).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(mock_bin.join("cargo"), perms).unwrap();
+
+    let path = format!("{}:{}", mock_bin.display(), std::env::var("PATH").unwrap());
+    let output = Command::new(&target)
+        .arg("tests/hooks/stop_continue.rs")
+        .current_dir(dir.path())
+        .env("PATH", &path)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let logged = fs::read_to_string(&log_file).unwrap();
+    assert!(
+        logged.contains("--test hooks"),
+        "expected --test hooks (subdirectory binary name), got: {}",
+        logged
+    );
+    assert!(
+        logged.contains("test(/^stop_continue::/)"),
+        "expected nextest module filter test(/^stop_continue::/), got: {}",
+        logged
+    );
+}
+
 /// bin/test propagates a nonzero exit code from cargo nextest.
 #[test]
 fn propagates_failure_exit() {

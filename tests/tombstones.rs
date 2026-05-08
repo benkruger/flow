@@ -333,6 +333,34 @@ fn test_no_weak_coverage_language_in_prose_corpus() {
     );
 }
 
+// --- Cargo.toml `[[test]]` stanza removal ---
+//
+// `Cargo.toml` is package and dependency configuration, not test
+// registration. `bin/dependencies` is the only sanctioned editor.
+// Subdirectory test discovery uses Cargo's directory-form layout
+// (`tests/<subdir>/main.rs` declaring siblings as `mod`); top-level
+// `tests/<name>.rs` files are auto-discovered by the integration-test
+// glob. The `[[test]]` stanza is dead weight in this codebase and
+// re-introducing one creates a duplicate binary registration that
+// silently doubles test execution. The byte-substring assertion is
+// safe: TOML has no `concat!`/`format!`/constant-assembly mechanism
+// that could synthesize the literal `[[test]]` from split parts.
+
+#[test]
+fn test_cargo_toml_no_test_stanzas() {
+    // Tombstone: removed in PR #1375. Must not return.
+    let root = common::repo_root();
+    let path = root.join("Cargo.toml");
+    let content = fs::read_to_string(&path).expect("Cargo.toml must exist");
+    assert!(
+        !content.contains("[[test]]"),
+        "Cargo.toml must not contain `[[test]]` stanzas — use \
+         `tests/<subdir>/main.rs` directory-form auto-discovery for \
+         subdirectory tests, and rely on the top-level `tests/*.rs` \
+         glob for flat-layout tests. See `.claude/rules/test-placement.md`."
+    );
+}
+
 // Stale tombstones for PR #1176, PR #1154, PR #1258, and PR #1344
 // removed — each PR merged before the oldest open PR was created,
 // so no active branch can resurrect the deleted code via merge

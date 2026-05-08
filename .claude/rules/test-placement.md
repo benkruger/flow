@@ -44,22 +44,61 @@ Three secondary wins fall out of the placement rule:
   - `src/commands/set_timestamp.rs` →
     `tests/commands/set_timestamp.rs`
   - `src/hooks/stop_continue.rs` → `tests/hooks/stop_continue.rs`
-- Each test file under a `tests/` subdirectory requires a
-  `[[test]]` stanza in `Cargo.toml` naming the test and pointing
-  at its path. Top-level `tests/*.rs` files do not need a stanza
-  (Cargo auto-registers them). A contract test keeps the stanzas
-  in sync with the `tests/**/*.rs` tree so additions and removals
-  cannot drift.
+- Cargo registers test binaries via auto-discovery — the
+  `Cargo.toml` manifest never carries `[[test]]` stanzas for any
+  test in this codebase. Two layouts cover every case:
+  - **Top-level tests** (`tests/<name>.rs`) — Cargo's default
+    integration-test glob discovers them automatically; one binary
+    per file, named after the file basename.
+  - **Subdirectory tests** (`tests/<subdir>/<name>.rs`) — Cargo's
+    directory form discovers ONE binary per directory rooted at
+    `tests/<subdir>/main.rs`. Sibling files become modules of that
+    binary ONLY when declared via `mod <name>;` in `main.rs`.
+    The binary is named after the directory (e.g. `tests/hooks/`
+    produces a `hooks` binary; sibling `tests/hooks/<name>.rs`
+    files become `hooks::<name>` modules).
+- `Cargo.toml` is package and dependency configuration, not test
+  registration. `bin/dependencies` is the only sanctioned editor;
+  routine test-adding work must never touch it. Per
+  `.claude/rules/permissions.md` "Shared Config Files," every
+  engineer-visible edit to `Cargo.toml` requires explicit user
+  permission.
 - Shared test helpers live in `tests/common/mod.rs`. Top-level
-  tests use `mod common;`. Subdirectory tests import via
-  `#[path = "../common/mod.rs"] mod common;` (adjust the
-  `../` depth for deeper subdirs).
+  tests import them via `mod common;` at the file top.
+  Subdirectory tests delegate the path-aliased declaration to the
+  directory's `main.rs` (one `#[path = "../common/mod.rs"] mod
+  common;` line in `main.rs`); each sibling module references
+  helpers as `crate::common::<name>` rather than redeclaring the
+  module locally.
 - Tests drive the subject through `pub` items exposed by the crate
   (library `pub` functions, `pub` types, `run_impl_main` seams, the
   compiled binary via `CARGO_BIN_EXE_flow-rs`). A test that cannot
   be written against the public surface is a signal that the public
   surface is incomplete — add the seam, do not expose the private
   helper.
+
+### Subdirectory `main.rs` shape
+
+A canonical subdirectory entry point looks like:
+
+```rust
+//! Cargo's directory-form auto-discover layout for `tests/<subdir>/`.
+
+#[path = "../common/mod.rs"]
+mod common;
+
+mod first_sibling;
+mod second_sibling;
+mod third_sibling;
+
+#[allow(dead_code)]
+fn main() {}
+```
+
+The `#[allow(dead_code)] fn main() {}` body satisfies Rust's
+binary-target requirement; the `--test` harness replaces it at test
+build time with the auto-generated test runner that collects every
+`#[test]` function reachable from the declared modules.
 
 ### Meta-tests without a src counterpart
 
@@ -127,8 +166,9 @@ No other escapes exist. If a src file is flagged:
 **New code.** Write the test file at the mirrored path under
 `tests/` first. If the subject src file doesn't exist yet, its
 public surface is what the test exercises — design the public API
-from the test side. Add a `[[test]]` stanza to `Cargo.toml` if the
-test is under a subdirectory.
+from the test side. For a subdirectory mirror, ensure the
+directory's `main.rs` declares the new file as a `mod`; never add a
+`[[test]]` stanza to `Cargo.toml`.
 
 **Migrating inline tests out of src.** Open `src/<path>/<name>.rs`
 and create its mirror at `tests/<path>/<name>.rs` (or open the
@@ -210,17 +250,12 @@ test:
    A `pub` addition whose justification is "the test needs it" is
    forbidden no matter how the wording is dressed up. The
    justification must name a real caller in real production code.
-4. If the new test file sits under a `tests/` subdirectory, add a
-   `[[test]]` stanza to `Cargo.toml`:
-
-   ```toml
-   [[test]]
-   name = "<name>"
-   path = "tests/<path>/<name>.rs"
-   ```
-
-   Use `#[path = "../common/mod.rs"] mod common;` at the top of
-   the subdirectory test file to access shared helpers.
+4. If the new test file lives under a `tests/` subdirectory, declare
+   it as a `mod <name>;` line in the directory's `main.rs`. Never
+   add `[[test]]` stanzas to `Cargo.toml` — the directory-form
+   layout handles registration. Reference shared helpers as
+   `crate::common::<name>` (the path-aliased common module is
+   declared once in `main.rs`).
 5. Run `bin/test tests/<path>/<name>.rs` and iterate until the
    mirrored src file reads 100/100/100.
 
@@ -230,13 +265,13 @@ at `tests/<name>.rs` but mirrors a src file under a subdirectory
 `src/commands/set_timestamp.rs`), move it to the mirrored path:
 
 1. `git mv tests/<name>.rs tests/<path>/<name>.rs`.
-2. Add the `[[test]]` stanza in `Cargo.toml`.
-3. Replace `mod common;` with
-   `#[path = "../common/mod.rs"] mod common;` (adjust depth).
+2. Add a `mod <name>;` line to `tests/<path>/main.rs` so the
+   directory's binary picks the file up. Never add a `[[test]]`
+   stanza.
+3. Drop the file's local `mod common;` declaration (the
+   directory's `main.rs` declares it path-aliased) and rewrite
+   `common::*` references to `crate::common::*`.
 4. Verify `bin/test tests/<path>/<name>.rs` still runs the tests.
-
-No test logic changes in the relocation — just file position and
-the two mechanical follow-ups.
 
 **Migrating section markers.** The `// --- <primary_name> ---`
 grouping convention from `.claude/rules/rust-patterns.md` still
