@@ -676,6 +676,126 @@ fn test_allows_arrow_in_flag() {
     assert!(msg.is_empty());
 }
 
+// --- FD-redirect pass-through ---
+//
+// `2>&1`, `>&2`, `2>&-`, `2>&1 1>&2` are file-descriptor redirect
+// forms — the `&` is the redirect-target marker, not the bash
+// backgrounding operator. These must pass Layer 1 (compound-op
+// detector) and Layer 2 (redirect detector) so common test commands
+// like `cargo test 2>&1` and `bin/flow ci 2>&1` are not falsely
+// blocked. Plain `&` backgrounding (`cmd & wait`) and bare `&` at
+// command start (`&1 cmd`) still block.
+
+#[test]
+fn test_allows_fd_redirect_2_to_1() {
+    let (allowed, msg) = validate("cargo test 2>&1", None, true);
+    assert!(allowed, "cargo test 2>&1 should pass — got msg={msg:?}");
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn test_allows_fd_redirect_to_stderr() {
+    let (allowed, msg) = validate("echo oops >&2", None, true);
+    assert!(allowed, "echo oops >&2 should pass — got msg={msg:?}");
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn test_allows_fd_redirect_close() {
+    let (allowed, msg) = validate("cmd 2>&-", None, true);
+    assert!(allowed, "cmd 2>&- should pass — got msg={msg:?}");
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn test_allows_fd_redirect_swap() {
+    let (allowed, msg) = validate("cmd 2>&1 1>&2", None, true);
+    assert!(allowed, "cmd 2>&1 1>&2 should pass — got msg={msg:?}");
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn test_allows_quoted_command_with_fd_redirect() {
+    let (allowed, msg) = validate("echo 'cmd 2>&1'", None, true);
+    assert!(allowed, "quoted 'cmd 2>&1' should pass — got msg={msg:?}");
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn test_blocks_compound_with_fd_redirect_still_blocks_pipe() {
+    // `2>&1` itself passes, but the `|` later in the line still
+    // blocks at Layer 1's compound-op gate.
+    let (allowed, msg) = validate("cmd 2>&1 | grep foo", None, true);
+    assert!(!allowed);
+    assert!(msg.contains("Compound commands"));
+}
+
+#[test]
+fn test_blocks_bare_ampersand_backgrounding() {
+    // `cmd & wait` — bare `&` between commands is backgrounding,
+    // not FD-redirect. Must still block.
+    let (allowed, msg) = validate("cmd & wait", None, true);
+    assert!(!allowed);
+    assert!(msg.contains("Compound commands"));
+}
+
+#[test]
+fn test_blocks_leading_ampersand_defensive() {
+    // `&1 cmd` — `&` at start with no preceding `>`. Not a valid
+    // FD-redirect form; defensively block as backgrounding-shaped.
+    let (allowed, msg) = validate("&1 cmd", None, true);
+    assert!(!allowed);
+    assert!(msg.contains("Compound commands"));
+}
+
+#[test]
+fn test_blocks_amp_redirect_to_file_with_space() {
+    // `cmd >& outfile` is bash file-redirect syntax (redirects
+    // both stdout and stderr to a file named outfile). The
+    // `is_fd_redirect_at` helper must NOT carve this out — Layer 2
+    // (redirect detector) must still see the `>` as a structural
+    // redirect operator. Without the digit/`-`-after-`&`
+    // constraint, this shape silently bypassed both gates.
+    let (allowed, msg) = validate("cmd >& outfile", None, true);
+    assert!(
+        !allowed,
+        "`cmd >& outfile` is a file-redirect that should still block — got msg={msg:?}"
+    );
+}
+
+#[test]
+fn test_blocks_amp_redirect_to_relative_file() {
+    let (allowed, msg) = validate("echo hello >& output.log", None, true);
+    assert!(
+        !allowed,
+        "`echo hello >& output.log` is a file-redirect that should still block — got msg={msg:?}"
+    );
+}
+
+#[test]
+fn test_blocks_amp_redirect_with_letter_target() {
+    // `>&letter` (no space) is also bash file-redirect — `letter`
+    // is not a digit or `-`, so it is not a valid FD target.
+    let (allowed, msg) = validate("cmd >&letter", None, true);
+    assert!(
+        !allowed,
+        "`cmd >&letter` is a file-redirect that should still block — got msg={msg:?}"
+    );
+}
+
+#[test]
+fn test_blocks_amp_redirect_at_input_start() {
+    // `>& outfile` at idx=0 is still file-redirect syntax. The
+    // helper's `>` arm fires at idx=0 (next=`&`, after_amp=` ` →
+    // not a digit/`-`), so it correctly returns false and Layer 2
+    // catches the `>`.
+    let (allowed, _msg) = validate(">& outfile", None, true);
+    assert!(
+        !allowed,
+        "`>& outfile` at input start is still a file redirect"
+    );
+}
+
 // --- run_in_background blocking ---
 
 #[test]

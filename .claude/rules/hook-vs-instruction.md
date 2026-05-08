@@ -91,6 +91,25 @@ insufficient:
   the Stop hook fires and refuses the turn-end. The block runs
   AFTER `check_first_stop` and `check_continue` so discussion
   mode and multi-child-skill chains keep their semantics.
+- **Prose-based pauses at Code-phase task-entry boundaries** —
+  `stop_continue::check_prose_pause_at_task_entry` refuses the
+  Stop event with `{"decision":"block"}` and a prose-pause reason
+  when ALL seven guards hold: `current_phase == "flow-code"`,
+  `phases.flow-code.status == "in_progress"`,
+  `skills.flow-code.continue == "auto"`, `code_task == 0`,
+  `_continue_pending` is empty, the most recent assistant
+  transcript turn contains a `?` outside fenced code blocks and
+  inline code spans, and the most recent assistant turn
+  contains no `tool_use` block. Composed BEFORE
+  `check_autonomous_in_progress` so its more specific message
+  (citing `.claude/rules/autonomous-flow-self-recovery.md`) wins
+  for the prose-pause shape; other text-only stops fall through
+  to the generic predicate. Closes the AskUserQuestion-bypass
+  surface where a model emits a prose question and ends the turn
+  without any tool call (validate-ask-user only fires on
+  `AskUserQuestion` tool calls). See
+  `.claude/rules/autonomous-phase-discipline.md` "Prose-Based
+  Pauses Bypass AskUserQuestion".
 - **Model invocation of user-only skills** —
   `validate-skill` rejects Skill tool calls naming
   `flow:flow-abort`, `flow:flow-reset`, `flow:flow-release`, or
