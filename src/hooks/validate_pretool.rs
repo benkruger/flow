@@ -280,6 +280,31 @@ where
     Ok(None)
 }
 
+/// Recognize file-descriptor redirect bytes in shapes like `2>&1`,
+/// `>&2`, and `2>&-`. Returns true when:
+///
+/// - `bytes[idx] == b'&'` AND the immediately preceding byte is `>`
+///   (the `&` participates in `>&<digit>` or `>&-` as a redirect
+///   target marker, not as bash backgrounding), OR
+/// - `bytes[idx] == b'>'` AND the immediately following byte is `&`
+///   (the `>` opens an FD-redirect of the form `>&...`, not a
+///   file-output redirect).
+///
+/// Both predicates (compound-op and redirect) consult this helper
+/// to skip FD-redirect bytes so common shapes like `cargo test 2>&1`
+/// pass through. Bare `&` not preceded by `>` (e.g. `cmd & wait`,
+/// `&1 cmd`) returns false here and is caught by the bare-`&` arm
+/// of `compound_op_predicate`. Plain `>` not followed by `&` (e.g.
+/// `cmd > /tmp/out`, `cmd >> file`) returns false here and is
+/// caught by `redirect_predicate`.
+fn is_fd_redirect_at(bytes: &[u8], idx: usize) -> bool {
+    let cur = bytes.get(idx).copied();
+    let prev = idx.checked_sub(1).and_then(|i| bytes.get(i).copied());
+    let next = bytes.get(idx + 1).copied();
+    (cur == Some(b'&') && prev == Some(b'>'))
+        || (cur == Some(b'>') && next == Some(b'&'))
+}
+
 /// Compound-operator predicate for `scan_unquoted`. Returns the matched
 /// operator when the byte at `i` begins a structural shell operator:
 /// compound commands (`&&`, `||`, `|`, `;`), backgrounding (bare `&`),
@@ -291,10 +316,14 @@ where
 fn compound_op_predicate(bytes: &[u8], i: usize) -> Option<&'static str> {
     match bytes[i] {
         b'&' if bytes.get(i + 1) == Some(&b'&') => Some("&&"),
-        // Bare `&` is the shell backgrounding operator. It is always
-        // structural in Normal state — bash spawns the command as a
-        // detached process, defeating the CI gate and race-free state
-        // mutations that `bin/flow` subcommands require.
+        // The bare-`&` arm matches the shell backgrounding operator —
+        // bash spawns the command as a detached process, defeating
+        // the CI gate and race-free state mutations that `bin/flow`
+        // subcommands require. The `is_fd_redirect_at` check skips
+        // `&` bytes that participate in FD-redirect shapes like
+        // `2>&1`, `>&2`, and `2>&-`, where `&` is a redirect target
+        // marker rather than backgrounding.
+        b'&' if is_fd_redirect_at(bytes, i) => None,
         b'&' => Some("&"),
         b'|' if bytes.get(i + 1) == Some(&b'|') => Some("||"),
         b'|' => Some("|"),
@@ -316,14 +345,19 @@ fn compound_op_predicate(bytes: &[u8], i: usize) -> Option<&'static str> {
 /// Redirect predicate for `scan_unquoted`. Returns `Some(">")` when the
 /// byte at `i` is an unquoted `>` that is NOT immediately preceded by
 /// `=` (the carve-out for flag-value patterns like
-/// `git log --format=>%s`). The `-` carve-out the original byte scanner
-/// allowed is gone — an adversarial case like `echo foo-->/tmp/out`
-/// exploited it to slip an unquoted redirect past Layer 2.
+/// `git log --format=>%s`) and is NOT part of an FD-redirect shape
+/// like `2>&1` or `>&2` (consulted via `is_fd_redirect_at`). The `-`
+/// carve-out the original byte scanner allowed is gone — an
+/// adversarial case like `echo foo-->/tmp/out` exploited it to slip
+/// an unquoted redirect past Layer 2.
 fn redirect_predicate(bytes: &[u8], i: usize) -> Option<&'static str> {
     if bytes[i] != b'>' {
         return None;
     }
     if i > 0 && bytes[i - 1] == b'=' {
+        return None;
+    }
+    if is_fd_redirect_at(bytes, i) {
         return None;
     }
     Some(">")
