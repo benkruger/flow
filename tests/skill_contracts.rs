@@ -4076,3 +4076,77 @@ fn test_assess_issues_rule_includes_pr_search_step() {
         ".claude/rules/assess-issues.md must instruct checking `git log --all --grep` for already-shipped work"
     );
 }
+
+// --- flow-triage-issues skill content contracts ---
+//
+// `skills/flow-triage-issues/SKILL.md` is a thin dispatcher. The three
+// contracts below lock in (a) the no-side-effects HARD-GATE that
+// forbids auto-close, auto-label, auto-comment, and auto-skill
+// invocation; (b) the canonical 4-disposition closed set; and (c) the
+// dispatch target — the issue-triage sub-agent, never general-purpose
+// or any other agent. Each test guards a distinct regression: a
+// missing HARD-GATE invites side-effect creep, a drifted disposition
+// set invents new outcomes the agent never produces, and a wrong
+// dispatch target sends the model into an unbounded sub-agent.
+
+#[test]
+fn test_flow_triage_issues_skill_has_no_side_effects_hard_gate() {
+    let content = common::read_skill("flow-triage-issues");
+    let lower = content.to_lowercase();
+    assert!(
+        content.contains("HARD-GATE"),
+        "skills/flow-triage-issues/SKILL.md must contain a HARD-GATE block"
+    );
+    for forbidden in ["auto-close", "auto-label", "auto-comment"] {
+        assert!(
+            lower.contains(forbidden),
+            "skills/flow-triage-issues/SKILL.md HARD-GATE must explicitly forbid {forbidden}"
+        );
+    }
+    assert!(
+        lower.contains("never close") || lower.contains("never closes"),
+        "skills/flow-triage-issues/SKILL.md must forbid closing issues"
+    );
+    assert!(
+        lower.contains("never auto-invoke") || lower.contains("never auto-invokes"),
+        "skills/flow-triage-issues/SKILL.md must forbid auto-invocation of follow-on skills"
+    );
+}
+
+#[test]
+fn test_flow_triage_issues_skill_disposition_set_is_canonical() {
+    let content = common::read_skill("flow-triage-issues");
+    for disposition in ["close", "decompose", "keep-open", "fix-now"] {
+        assert!(
+            content.contains(disposition),
+            "skills/flow-triage-issues/SKILL.md must enumerate disposition: {disposition}"
+        );
+    }
+    // Forbid drift toward common alternative dispositions. The
+    // disposition set is closed in v1; expanding it requires a
+    // separate design conversation per the issue body's Out of Scope
+    // section.
+    let lower = content.to_lowercase();
+    for forbidden in ["wontfix", "won't fix", "duplicate", "stale"] {
+        assert!(
+            !lower.contains(forbidden),
+            "skills/flow-triage-issues/SKILL.md must NOT enumerate forbidden disposition: {forbidden}"
+        );
+    }
+}
+
+#[test]
+fn test_flow_triage_issues_skill_dispatches_issue_triage_agent() {
+    let content = common::read_skill("flow-triage-issues");
+    assert!(
+        content.contains("issue-triage"),
+        "skills/flow-triage-issues/SKILL.md must dispatch the issue-triage sub-agent"
+    );
+    // The skill must NOT route through general-purpose — that agent
+    // ignores tool restrictions in its prompt and is forbidden during
+    // active flows by .claude/rules/skill-authoring.md "Sub-Agent Safety".
+    assert!(
+        !content.contains("general-purpose"),
+        "skills/flow-triage-issues/SKILL.md must NOT use general-purpose sub-agent"
+    );
+}
