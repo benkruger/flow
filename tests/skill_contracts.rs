@@ -372,6 +372,29 @@ fn learn_analyst_agent_has_design_note() {
     );
 }
 
+// --- Agent Output Format subsection extractor ---
+//
+// Both the END-OF-FINDINGS marker contract and the code_read field
+// contract assert content inside an agent's `## Output Format`
+// section. Each contract uses a bounded slice so a refactor that
+// guts the section is detected even when an unrelated sibling
+// section still mentions the asserted token (see
+// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions
+// in Contract Tests"). Extracting the bounded-slice walk into a
+// shared helper keeps the section boundary one source of truth.
+
+fn read_agent_output_format_section(agent_basename: &str) -> String {
+    let c = common::read_agent(agent_basename);
+    let tail_at_heading = c
+        .split_once("## Output Format")
+        .map(|(_, tail)| tail.to_string())
+        .unwrap_or_else(|| panic!("{agent_basename} must have ## Output Format section"));
+    tail_at_heading
+        .split_once("\n## ")
+        .map(|(section, _)| section.to_string())
+        .unwrap_or(tail_at_heading)
+}
+
 // --- END-OF-FINDINGS marker contract ---
 //
 // Three context-rich/high-investigation agents — reviewer,
@@ -386,15 +409,7 @@ fn learn_analyst_agent_has_design_note() {
 // names the drifted agent immediately.
 
 fn assert_agent_output_format_declares_end_of_findings(agent_basename: &str) {
-    let c = common::read_agent(agent_basename);
-    let tail_at_heading = c
-        .split_once("## Output Format")
-        .map(|(_, tail)| tail)
-        .unwrap_or_else(|| panic!("{agent_basename} must have ## Output Format section"));
-    let subsection = tail_at_heading
-        .split_once("\n## ")
-        .map(|(section, _)| section)
-        .unwrap_or(tail_at_heading);
+    let subsection = read_agent_output_format_section(agent_basename);
     assert!(
         subsection.contains("END-OF-FINDINGS"),
         "{agent_basename} Output Format must declare the literal `END-OF-FINDINGS` completion marker so the flow-code-review skill can detect maxTurns truncation by marker absence (see .claude/rules/cognitive-isolation.md \"Context Budget + Truncation Recovery\")"
@@ -414,6 +429,40 @@ fn learn_analyst_agent_declares_end_of_findings_marker() {
 #[test]
 fn documentation_agent_declares_end_of_findings_marker() {
     assert_agent_output_format_declares_end_of_findings("documentation.md");
+}
+
+// --- code_read field contract ---
+//
+// The pre-mortem agent's safety value depends on the agent actually
+// executing the Premise → Trace → Conclude reasoning discipline. A
+// structural `code_read` field in the Output Format finding block
+// converts "the agent verified the code" from an implicit claim into
+// a required output: triage that sees a non-conforming or missing
+// `code_read` value can dismiss the finding immediately, and skipped
+// Trace steps leave a structural gap rather than a plausible-looking
+// prose finding. The contract test guards against an accidental edit
+// or refactor that drops the field.
+//
+// Scope: pre-mortem only. The other agents that follow the same
+// reasoning discipline (reviewer, ci-fixer deep-diagnosis mode,
+// adversarial — see .claude/rules/semi-formal-reasoning.md) do not
+// yet declare the field; they are tracked separately rather than
+// scope-expanded here. The assertion is structural rather than a
+// loose substring match: it requires the bullet-shaped declaration
+// `- **code_read:**` so a future edit that demotes the field to a
+// prose mention or a code-block example would not satisfy the test.
+
+fn assert_agent_output_format_declares_code_read(agent_basename: &str) {
+    let subsection = read_agent_output_format_section(agent_basename);
+    assert!(
+        subsection.contains("- **code_read:**"),
+        "{agent_basename} Output Format must declare a `code_read` field as a bullet (`- **code_read:**`) naming the file:line_range the agent verified via Read or Grep, so triage can detect findings produced from the diff alone without an actual codebase trace (see .claude/rules/semi-formal-reasoning.md). The bullet-shaped assertion guards against future edits that demote the field to a prose mention or code-block example."
+    );
+}
+
+#[test]
+fn pre_mortem_agent_declares_code_read_field() {
+    assert_agent_output_format_declares_code_read("pre-mortem.md");
 }
 
 // --- Halt instructions wrapped in fix-first HARD-GATE ---
