@@ -12,7 +12,10 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, Ke
 use ratatui::backend::TestBackend;
 use ratatui::{Frame, Terminal};
 
-use flow_rs::tui::{list_row_phase_label, DrawFn, EventSourceFn, TuiApp, TuiAppPlatform, View};
+use flow_rs::tui::{
+    detail_pane_phase_header, list_row_phase_label, DrawFn, EventSourceFn, TuiApp, TuiAppPlatform,
+    View,
+};
 use flow_rs::tui_data::{
     AccountMetrics, FlowSummary, IssueSummary, OrchestrationItem, OrchestrationSummary,
     PhaseStepCounter, TimelineEntry,
@@ -208,6 +211,40 @@ fn test_render_detail_panel_phases() {
     assert!(output.contains("[x]"));
     assert!(output.contains("[>]"));
     assert!(output.contains("[ ]"));
+}
+
+#[test]
+fn test_render_detail_panel_renders_phase_step_header_when_counter_present() {
+    let mut app = make_app();
+    let mut flow = make_flow("Counter Feature", "Code", 2);
+    flow.state = serde_json::json!({
+        "branch": "counter-feature",
+        "repo": "test/repo",
+        "current_phase": "flow-code",
+        "code_task": 3,
+        "code_tasks_total": 7,
+        "code_task_name": "implement_helper",
+    });
+    app.flows = vec![flow];
+    let output = render_to_string(&app, 120, 40);
+    assert!(
+        output.contains("Phase 2 (Code) \u{2014} step 3 of 7: implement_helper"),
+        "expected detail-pane header in output, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn test_render_detail_panel_omits_phase_step_header_when_counter_missing() {
+    let mut app = make_app();
+    let flow = make_flow("No Counter", "Code", 2);
+    app.flows = vec![flow];
+    let output = render_to_string(&app, 120, 40);
+    assert!(
+        !output.contains("Phase 2 (Code) \u{2014} step"),
+        "header should not render without a counter; got:\n{}",
+        output
+    );
 }
 
 /// Build a valid-FlowState Value with one phase carrying non-zero
@@ -545,6 +582,70 @@ fn test_render_tasks_view_no_plan() {
     app.view = View::Tasks;
     let output = render_to_string(&app, 80, 40);
     assert!(output.contains("No plan file."));
+}
+
+// --- detail_pane_phase_header ---
+
+#[test]
+fn test_detail_header_code_with_name() {
+    let c = PhaseStepCounter {
+        phase_label: "Code",
+        phase_number: 2,
+        current: 3,
+        total: 7,
+        name: Some("implement_helper".to_string()),
+    };
+    assert_eq!(
+        detail_pane_phase_header(Some(&c)),
+        Some("Phase 2 (Code) \u{2014} step 3 of 7: implement_helper".to_string())
+    );
+}
+
+#[test]
+fn test_detail_header_code_no_name() {
+    let c = PhaseStepCounter {
+        phase_label: "Code",
+        phase_number: 2,
+        current: 1,
+        total: 4,
+        name: None,
+    };
+    assert_eq!(
+        detail_pane_phase_header(Some(&c)),
+        Some("Phase 2 (Code) \u{2014} step 1 of 4".to_string())
+    );
+}
+
+#[test]
+fn test_detail_header_none_counter() {
+    assert_eq!(detail_pane_phase_header(None), None);
+}
+
+#[test]
+fn test_detail_header_zero_total() {
+    let c = PhaseStepCounter {
+        phase_label: "Code",
+        phase_number: 2,
+        current: 1,
+        total: 0,
+        name: None,
+    };
+    assert_eq!(detail_pane_phase_header(Some(&c)), None);
+}
+
+#[test]
+fn test_detail_header_start_with_name() {
+    let c = PhaseStepCounter {
+        phase_label: "Start",
+        phase_number: 1,
+        current: 2,
+        total: 5,
+        name: Some("CI gate".to_string()),
+    };
+    assert_eq!(
+        detail_pane_phase_header(Some(&c)),
+        Some("Phase 1 (Start) \u{2014} step 2 of 5: CI gate".to_string())
+    );
 }
 
 // --- list_row_phase_label ---

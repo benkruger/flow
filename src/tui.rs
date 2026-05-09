@@ -31,6 +31,28 @@ use crate::utils::format_tokens;
 /// Auto-refresh interval.
 const REFRESH_MS: u64 = 2000;
 
+/// Build the prominent detail-pane phase header above the timeline.
+///
+/// Result shape: `"Phase {phase_number} ({phase_label}) — step {current} of {total}: {name}"`.
+/// The `: {name}` suffix is dropped when `counter.name` is `None`.
+/// Returns `None` when `counter` is `None` (no header to show) or when
+/// `total <= 0` (no meaningful X-of-Y).
+pub fn detail_pane_phase_header(counter: Option<&PhaseStepCounter>) -> Option<String> {
+    let c = counter?;
+    if c.total <= 0 {
+        return None;
+    }
+    let name_suffix = c
+        .name
+        .as_ref()
+        .map(|n| format!(": {}", n))
+        .unwrap_or_default();
+    Some(format!(
+        "Phase {} ({}) \u{2014} step {} of {}{}",
+        c.phase_number, c.phase_label, c.current, c.total, name_suffix
+    ))
+}
+
 /// Build the phase-column label for a list-pane row.
 ///
 /// Result shape: `"{phase_number}: {phase_name}"` always, with a
@@ -831,6 +853,21 @@ impl TuiApp {
             Rect::new(area.x, area.y + row as u16, area.width, 1),
         );
         row += 2;
+
+        // Prominent X-of-Y header above the timeline (skipped when the
+        // active phase carries no counter — e.g., a flow that has just
+        // entered Start and has not yet stamped start_step).
+        if let Some(header) = detail_pane_phase_header(phase_step_counter(&flow.state).as_ref()) {
+            let header_line = Paragraph::new(Line::from(Span::styled(
+                format!("  {}", header),
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+            frame.render_widget(
+                header_line,
+                Rect::new(area.x, area.y + row as u16, area.width, 1),
+            );
+            row += 2;
+        }
 
         // Phase timeline
         for entry in &flow.timeline {
