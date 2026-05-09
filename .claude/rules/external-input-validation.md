@@ -99,10 +99,22 @@ The reference implementation is `FlowPaths::try_new`:
 
 FLOW hooks (`src/hooks/*.rs`) run under Claude Code's session
 lifecycle. A panic inside a hook crashes the session's tool call
-and surfaces as a user-visible failure. Hooks must use
-`FlowPaths::try_new` and pattern-match on the `Option` — `None`
+and surfaces as a user-visible failure. Hooks default to
+`FlowPaths::try_new` with a pattern-match on the `Option` — `None`
 maps to "no active flow on this branch" (early return, or `exit 0`
-for standalone hook binaries) rather than `.expect("<boundary>")`.
+for standalone hook binaries).
+
+**Structurally-provable carve-out.** When the branch reaches the
+hook through a value chain that the OS itself cannot violate
+(e.g., `Path::file_name()` always yields a single path component
+with no `/`, so a branch derived from filesystem-walk output is
+structurally `/`-free), the hook may chain
+`.expect("<boundary message naming the structural invariant>")`
+on `try_new` instead of pattern-matching. The `.expect` is
+documentation of the OS-level guarantee, not a reachable panic
+— a panic would require the kernel to violate filesystem
+semantics. The boundary message must name the invariant
+explicitly so a future reader can verify the proof.
 
 The current hook inventory that receives a branch from git includes
 `stop_continue.rs`, `stop_failure.rs`, `post_compact.rs`,
@@ -122,9 +134,12 @@ hook panic.
 The CLI subcommand entry inventory that receives a branch via
 `--branch` (and therefore must guard with `FlowPaths::try_new` and
 treat `None` as a structured-error path, OR pre-validate via
-`FlowPaths::is_valid_branch`) includes `src/complete_fast.rs:read_state`.
-Any new CLI subcommand that accepts `--branch` and constructs a
-`FlowPaths` must follow the same discipline.
+`FlowPaths::is_valid_branch`) includes `src/complete_fast.rs:read_state`,
+`src/start_step.rs`, `src/start_finalize.rs`, `src/start_gate.rs`,
+`src/start_workspace.rs`, `src/finalize_commit.rs`, and
+`src/commands/init_state.rs::create_state` (when `--branch` override
+is supplied). Any new CLI subcommand that accepts `--branch` and
+constructs a `FlowPaths` must follow the same discipline.
 
 ### Code Review enforcement
 

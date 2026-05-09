@@ -45,11 +45,22 @@ pub struct Args {
 /// touching host state.
 pub fn run_impl_main(args: &Args, root: &Path) -> (Value, i32) {
     let branch = &args.branch;
-    // `args.branch` is the canonical branch name produced by start-init's
-    // `branch_name()` sanitizer; production callers cannot reach this
-    // arm with an invalid branch.
-    let paths = FlowPaths::try_new(root, branch)
-        .expect("args.branch is start-init pipeline output (branch_name-sanitized)");
+    // `args.branch` is clap-supplied — external input. Pattern-match
+    // and surface a structured error per
+    // `.claude/rules/external-input-validation.md` "CLI subcommand
+    // entry callsite discipline".
+    let paths = match FlowPaths::try_new(root, branch) {
+        Some(p) => p,
+        None => {
+            return (
+                json!({
+                    "status": "error",
+                    "message": format!("Invalid branch name: {:?}", branch),
+                }),
+                1,
+            );
+        }
+    };
     let state_path = paths.state_file();
 
     if !state_path.exists() {

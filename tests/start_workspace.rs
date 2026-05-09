@@ -884,6 +884,31 @@ fn start_workspace_corrupt_state_returns_backfill_error() {
 // below when a state file's `pr_url` is a typical github.com URL.
 
 #[test]
+fn start_workspace_slash_branch_returns_structured_error() {
+    // `args.branch` from clap; CLI surface accepts slash-bearing
+    // values. Pattern-match per
+    // `.claude/rules/external-input-validation.md` and surface a
+    // structured error rather than panic.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    let args = Args {
+        description: "slash-feature".to_string(),
+        branch: "feature/foo".to_string(),
+        prompt_file: None,
+    };
+    let (v, _code) = run_impl_main(&args, &root, &root);
+    assert_eq!(v["status"], "error");
+    assert!(
+        v["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Invalid branch name"),
+        "expected Invalid branch error, got: {:?}",
+        v
+    );
+}
+
+#[test]
 fn start_workspace_run_impl_main_err_path() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();

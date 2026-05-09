@@ -1028,6 +1028,35 @@ fn read_state_direct(root: &std::path::Path, branch: &str) -> Value {
 }
 
 #[test]
+fn lib_create_state_slash_branch_returns_invalid_branch_error() {
+    // `branch` arrives from `--branch` override (clap-supplied —
+    // external input). A slash-bearing branch fails
+    // FlowPaths::is_valid_branch. create_state pattern-matches and
+    // returns an "Invalid branch name" error per
+    // `.claude/rules/external-input-validation.md` "CLI subcommand
+    // entry callsite discipline" — no panic.
+    let dir = tempfile::tempdir().unwrap();
+    let result = create_state(
+        dir.path(),
+        "feature/foo",
+        "main",
+        None,
+        "test prompt",
+        None,
+        None,
+        None,
+        "",
+    );
+    assert!(result.is_err(), "expected Err, got: {:?}", result);
+    let err = result.unwrap_err();
+    assert!(
+        err.contains("Invalid branch name"),
+        "expected Invalid branch error, got: {}",
+        err
+    );
+}
+
+#[test]
 fn lib_create_state_writes_valid_json() {
     let dir = tempfile::tempdir().unwrap();
     create_state(

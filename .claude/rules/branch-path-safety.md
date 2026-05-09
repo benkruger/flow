@@ -20,23 +20,25 @@ nested subdirectory the discovery scanners cannot see.
 ## The Rule
 
 Branch names that flow into a `.flow-states/` or `.worktrees/`
-path must reach the filesystem through one of three guards:
+path must reach the filesystem through one of two guards:
 
 1. **`FlowPaths::try_new(root, branch)`** — returns `None`
-   when the branch fails `is_valid_branch`. Treat `None` as "no
-   active flow" (early return, structured error, or skip step).
-2. **`FlowPaths::new(root, branch)`** — use ONLY when the branch
-   was already validated upstream (copied from the state-file
-   `branch` field written by `branch_name()` at flow-start, or
-   produced by `init_state` after sanitization). The panicking
-   constructor is reserved for callers holding a guaranteed-valid
-   branch.
-3. **`FlowPaths::is_valid_branch(&branch)` pre-validation** —
+   when the branch fails `is_valid_branch`. Pattern-match on
+   the `Option`: callers that source the branch from outside
+   the process (CLI `--branch`, git output, hooks) treat
+   `None` as "no active flow" (early return, structured
+   error, or skip step). Callers that hold a branch already
+   validated upstream may chain `.expect("<boundary>")` with
+   a doc-comment naming the upstream sanitizer
+   (`branch_name()`, state-file keyspace, prior `try_new`
+   pattern-match) — the `.expect` is documentation, not a
+   panic vector.
+2. **`FlowPaths::is_valid_branch(&branch)` pre-validation** —
    call before any other path construction; reject the input
    with a structured error if the predicate returns false.
 
 Direct `format!` interpolation that puts a branch into a
-`.flow-states/` or `.worktrees/` path without one of these three
+`.flow-states/` or `.worktrees/` path without one of these
 guards is forbidden. The path escape is silent and the cleanup
 blast radius is unbounded.
 
@@ -67,10 +69,10 @@ callsites that accept the same branch input — both families
 flow user input into path construction.
 
 **Code phase.** Use `FlowPaths::try_new` by default for any
-external-source branch. Reserve `FlowPaths::new` for branches
-that came from a known-validated source (state file's own
-`branch` field, `branch_name()` output). Never write
-`format!(".flow-states/{}", branch)` or
+external-source branch and pattern-match on the `Option`.
+Callers that hold a branch already validated upstream chain
+`.expect("<boundary>")` with a doc-comment naming the
+sanitizer. Never write `format!(".flow-states/{}", branch)` or
 `format!(".worktrees/{}", branch)` without the guard.
 
 **Code Review phase.** <!-- scope-enumeration: imperative -->
@@ -86,8 +88,7 @@ accepts a branch.
   prose discipline for fallible constructors.
 - `.claude/rules/external-input-audit-gate.md` — the Plan-phase
   gate that requires a callsite audit table.
-- `src/flow_paths.rs` — `FlowPaths::is_valid_branch`,
-  `FlowPaths::new`, and `FlowPaths::try_new` are the canonical
-  guards.
+- `src/flow_paths.rs` — `FlowPaths::is_valid_branch` and
+  `FlowPaths::try_new` are the canonical guards.
 - `tests/flow_paths.rs` — coverage for every rejection class
   through every entry point.

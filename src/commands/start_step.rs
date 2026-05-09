@@ -60,12 +60,25 @@ pub fn resolve_flow_bin(
 /// execs into a subcommand via bin/flow.
 pub fn run(step: i64, branch: &str, subcommand: Vec<String>) {
     let root = project_root();
-    // `branch` arrives from clap; production callers (start-init
-    // pipeline) supply `branch_name()`-sanitized values, so `try_new`
-    // is the standard constructor and `expect` documents the boundary.
-    let state_path = FlowPaths::try_new(&root, branch)
-        .expect("start-step branch is start-init pipeline output (branch_name-sanitized)")
-        .state_file();
+    // `branch` arrives from clap (`--branch <name>`) — external
+    // input. Per `.claude/rules/external-input-validation.md` "CLI
+    // subcommand entry callsite discipline", pattern-match the
+    // fallible constructor and surface a structured error rather
+    // than panicking.
+    let paths = match FlowPaths::try_new(&root, branch) {
+        Some(p) => p,
+        None => {
+            println!(
+                "{}",
+                json!({
+                    "status": "error",
+                    "message": format!("Invalid branch name: {:?}", branch),
+                })
+            );
+            std::process::exit(1);
+        }
+    };
+    let state_path = paths.state_file();
 
     let updated = update_step(&state_path, step);
 
