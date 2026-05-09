@@ -202,10 +202,16 @@ all describe problems in the user's code.
 
 FLOW process bugs — problems with the plugin itself — must target
 `benkruger/flow`. Pass `--repo benkruger/flow --label "Flow"` when
-filing against the plugin repo. Two skills support this:
+filing against the plugin repo. The Phase 5 `flow-learn` skill is
+the only skill that routes process gaps cross-repo automatically:
 
 - `flow-learn` (Phase 5) — files process gap issues with `--repo`
-- `flow-create-issue` — asks the user which repo before filing
+
+`flow-create-issue` is the related capture skill but it always files
+to the **current** repo (no `--repo` flag) — it does not prompt for
+a target. To file a FLOW process bug manually from a target project,
+invoke `bin/flow issue --repo benkruger/flow --label "Flow"` directly
+rather than going through `flow-create-issue`.
 
 When in doubt, ask the user. Filing against the wrong repo is
 worse than one extra question.
