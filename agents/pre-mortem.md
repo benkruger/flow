@@ -94,10 +94,13 @@ For each finding, produce a structured block:
 - **Blast radius:** What systems or users would be affected
 - **What tests missed:** Which test gaps allowed this to ship
 - **Severity:** Critical / High / Medium / Low
-- **code_read:** `<file>:<line_range>` — the source location you
-  read with Read or Grep to verify the Trace step. Cite the file
-  and line range you actually inspected, not the diff hunk.
-  Required for every finding.
+- **code_read:** `<file>:<line_range>[, <file>:<line_range>...]` —
+  one or more source locations you read with Read or Grep to
+  verify the Trace step, comma-separated when the Trace spans
+  multiple files. Cite the file and line range you actually
+  inspected, not the diff hunk. For multi-file Traces, list every
+  load-bearing read so triage can audit each one. Required for
+  every finding.
 - **Evidence:** Specific file paths and line references from the diff
 
 If no credible failure modes are found, report:
@@ -155,6 +158,7 @@ For each finding:
 3. Blast radius
 4. What tests missed
 5. Severity
-6. Evidence
+6. code_read
+7. Evidence
 
 Or: "No findings" if no credible failure modes exist.
