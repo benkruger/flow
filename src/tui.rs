@@ -23,11 +23,38 @@ use ratatui::Frame;
 use serde_json::Value;
 
 use crate::flow_paths::FlowPaths;
-use crate::tui_data::{self, AccountMetrics, FlowSummary, OrchestrationSummary};
+use crate::tui_data::{
+    self, phase_step_counter, AccountMetrics, FlowSummary, OrchestrationSummary, PhaseStepCounter,
+};
 use crate::utils::format_tokens;
 
 /// Auto-refresh interval.
 const REFRESH_MS: u64 = 2000;
+
+/// Build the phase-column label for a list-pane row.
+///
+/// Result shape: `"{phase_number}: {phase_name}"` always, with a
+/// `" {current}/{total}"` suffix when `counter` is `Some` and `total > 0`,
+/// followed by ` ({annotation})` when annotation is non-empty. The
+/// counter suffix gives users a quick X-of-Y read without expanding
+/// the row.
+pub fn list_row_phase_label(
+    phase_number: usize,
+    phase_name: &str,
+    counter: Option<&PhaseStepCounter>,
+    annotation: &str,
+) -> String {
+    let mut out = format!("{}: {}", phase_number, phase_name);
+    if let Some(c) = counter {
+        if c.total > 0 {
+            out.push_str(&format!(" {}/{}", c.current, c.total));
+        }
+    }
+    if !annotation.is_empty() {
+        out.push_str(&format!(" ({})", annotation));
+    }
+    out
+}
 
 /// Boxed draw closure passed into [`TuiApp::run_event_loop`]. The
 /// inner `&mut dyn FnMut(&mut Frame)` is the render callback the
@@ -609,10 +636,13 @@ impl TuiApp {
         let col_data: Vec<(String, String, String, String, String)> = self.flows[..list_end]
             .iter()
             .map(|flow| {
-                let mut phase_info = format!("{}: {}", flow.phase_number, flow.phase_name);
-                if !flow.annotation.is_empty() {
-                    phase_info.push_str(&format!(" ({})", flow.annotation));
-                }
+                let counter = phase_step_counter(&flow.state);
+                let phase_info = list_row_phase_label(
+                    flow.phase_number,
+                    &flow.phase_name,
+                    counter.as_ref(),
+                    &flow.annotation,
+                );
                 let pr_info = flow
                     .pr_number
                     .map(|n| format!("PR #{}", n))

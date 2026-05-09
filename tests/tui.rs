@@ -12,10 +12,10 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, Ke
 use ratatui::backend::TestBackend;
 use ratatui::{Frame, Terminal};
 
-use flow_rs::tui::{DrawFn, EventSourceFn, TuiApp, TuiAppPlatform, View};
+use flow_rs::tui::{list_row_phase_label, DrawFn, EventSourceFn, TuiApp, TuiAppPlatform, View};
 use flow_rs::tui_data::{
     AccountMetrics, FlowSummary, IssueSummary, OrchestrationItem, OrchestrationSummary,
-    TimelineEntry,
+    PhaseStepCounter, TimelineEntry,
 };
 
 // --- Helpers ---
@@ -545,6 +545,103 @@ fn test_render_tasks_view_no_plan() {
     app.view = View::Tasks;
     let output = render_to_string(&app, 80, 40);
     assert!(output.contains("No plan file."));
+}
+
+// --- list_row_phase_label ---
+
+fn pc(label: &'static str, num: u8, current: i64, total: i64) -> PhaseStepCounter {
+    PhaseStepCounter {
+        phase_label: label,
+        phase_number: num,
+        current,
+        total,
+        name: None,
+    }
+}
+
+#[test]
+fn test_list_row_label_start_present() {
+    let c = pc("Start", 1, 2, 5);
+    assert_eq!(
+        list_row_phase_label(1, "Start", Some(&c), ""),
+        "1: Start 2/5"
+    );
+}
+
+#[test]
+fn test_list_row_label_start_missing() {
+    assert_eq!(list_row_phase_label(1, "Start", None, ""), "1: Start");
+}
+
+#[test]
+fn test_list_row_label_code_present() {
+    let c = pc("Code", 2, 3, 7);
+    assert_eq!(list_row_phase_label(2, "Code", Some(&c), ""), "2: Code 3/7");
+}
+
+#[test]
+fn test_list_row_label_code_missing() {
+    assert_eq!(list_row_phase_label(2, "Code", None, ""), "2: Code");
+}
+
+#[test]
+fn test_list_row_label_code_review_present() {
+    let c = pc("Code Review", 3, 2, 4);
+    assert_eq!(
+        list_row_phase_label(3, "Code Review", Some(&c), ""),
+        "3: Code Review 2/4"
+    );
+}
+
+#[test]
+fn test_list_row_label_code_review_missing() {
+    assert_eq!(
+        list_row_phase_label(3, "Code Review", None, ""),
+        "3: Code Review"
+    );
+}
+
+#[test]
+fn test_list_row_label_learn_present() {
+    let c = pc("Learn", 4, 5, 7);
+    assert_eq!(
+        list_row_phase_label(4, "Learn", Some(&c), ""),
+        "4: Learn 5/7"
+    );
+}
+
+#[test]
+fn test_list_row_label_learn_missing() {
+    assert_eq!(list_row_phase_label(4, "Learn", None, ""), "4: Learn");
+}
+
+#[test]
+fn test_list_row_label_complete_present() {
+    let c = pc("Complete", 5, 4, 6);
+    assert_eq!(
+        list_row_phase_label(5, "Complete", Some(&c), ""),
+        "5: Complete 4/6"
+    );
+}
+
+#[test]
+fn test_list_row_label_complete_missing() {
+    assert_eq!(list_row_phase_label(5, "Complete", None, ""), "5: Complete");
+}
+
+#[test]
+fn test_list_row_label_appends_annotation() {
+    let c = pc("Code", 2, 3, 7);
+    assert_eq!(
+        list_row_phase_label(2, "Code", Some(&c), "task 3 of 7"),
+        "2: Code 3/7 (task 3 of 7)"
+    );
+}
+
+#[test]
+fn test_list_row_label_zero_total_skips_counter() {
+    let c = pc("Code", 2, 1, 0);
+    assert_eq!(list_row_phase_label(2, "Code", Some(&c), ""), "2: Code");
 }
 
 // --- Input handling ---
