@@ -245,8 +245,12 @@ re-present the draft. If the feedback is substantial (changes the
 problem understanding or approach), re-run `decompose:decompose` with
 the updated understanding and re-transform. If the feedback is
 editorial (wording, scope adjustments), edit the draft directly.
-After revising, re-present the draft and ask the same
-AskUserQuestion. Iterate as many times as needed.
+**When in doubt, treat the feedback as substantial and re-run
+`decompose:decompose`** — the safe default is the conservative action
+(per `.claude/rules/skill-authoring.md` "Safe Defaults for Subjective
+Classification"); editing a draft built on a misaligned decompose ships
+an incorrect Implementation Plan. After revising, re-present the draft
+and ask the same AskUserQuestion. Iterate as many times as needed.
 
 **If "Cancel"** → stop without filing. Do not write the body file. Do
 not output the COMPLETE banner.

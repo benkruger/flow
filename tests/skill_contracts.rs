@@ -2524,10 +2524,20 @@ fn create_issue_has_starting_banner() {
 
 #[test]
 fn create_issue_has_ask_user_gate() {
+    // Bound the assertion to the `## File` HARD-GATE section so a future
+    // edit that gutted the section (leaving "AskUserQuestion" only in
+    // the Hard Rules prose) cannot satisfy the test vacuously. Per
+    // .claude/rules/testing-gotchas.md "Subsection-Local Assertions in
+    // Contract Tests".
     let c = common::read_skill("flow-create-issue");
+    let tail = c
+        .split_once("\n## File\n")
+        .map(|(_, t)| t)
+        .expect("flow-create-issue must have a `## File` section");
+    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
     assert!(
-        c.contains("AskUserQuestion"),
-        "Skill must have an AskUserQuestion gate"
+        section.contains("AskUserQuestion"),
+        "flow-create-issue `## File` section must fire AskUserQuestion"
     );
 }
 
@@ -2542,19 +2552,46 @@ fn create_issue_has_conversation_gate() {
 
 #[test]
 fn create_issue_has_implementation_plan_section() {
+    // Bound the assertion to the `## Transform + Draft` section so a
+    // future edit that gutted the section (leaving "Implementation
+    // Plan" only in intro/Hard-Rules prose) cannot satisfy the test
+    // vacuously. Also assert the FLOW-PLAN sentinel is documented so
+    // bin/flow plan-from-issue extraction stays valid.
     let c = common::read_skill("flow-create-issue");
+    let tail = c
+        .split_once("\n## Transform + Draft\n")
+        .map(|(_, t)| t)
+        .expect("flow-create-issue must have a `## Transform + Draft` section");
+    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
     assert!(
-        c.contains("Implementation Plan"),
-        "Skill must produce Implementation Plan"
+        section.contains("Implementation Plan"),
+        "`## Transform + Draft` must produce an Implementation Plan section"
+    );
+    assert!(
+        section.contains("FLOW-PLAN-BEGIN") && section.contains("FLOW-PLAN-END"),
+        "`## Transform + Draft` must wrap the plan in FLOW-PLAN sentinels"
     );
 }
 
 #[test]
 fn create_issue_has_prior_decompose_detection() {
+    // Bound the assertion to the `## Decompose` section so a future
+    // edit that removed the prior-decompose branching cannot pass via
+    // the skill's name, the `--force-decompose` flag prose, or the
+    // `/decompose:decompose` Skill invocation references elsewhere.
     let c = common::read_skill("flow-create-issue");
+    let tail = c
+        .split_once("\n## Decompose\n")
+        .map(|(_, t)| t)
+        .expect("flow-create-issue must have a `## Decompose` section");
+    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
     assert!(
-        c.contains("decompose") || c.contains("prior"),
-        "Skill must detect prior decompose output"
+        section.contains("implementation-focused decompose output"),
+        "`## Decompose` must check for prior implementation-focused decompose output"
+    );
+    assert!(
+        section.contains("--force-decompose"),
+        "`## Decompose` must document the --force-decompose escape branch"
     );
 }
 
@@ -2574,6 +2611,15 @@ fn create_issue_usage_documents_force_decompose() {
 // constants, method-chain splits) does not apply — the target
 // medium is plain text, and no macro can synthesize the asserted
 // substrings without writing them verbatim into the Markdown.
+//
+// Markdown-shape bypasses still apply: Markdown headings render the
+// same visually for "Step Dispatch", "step dispatch", "STEP DISPATCH",
+// and per-step banners can resurrect with a different cardinality
+// (`Step 1 of 3`). The string-literal tombstones below normalize to
+// lowercase before comparing per .claude/rules/security-gates.md
+// "Normalize Before Comparing"; the per-step-banner tombstone uses
+// a regex over the `Step N of M` shape per
+// .claude/rules/tombstone-tests.md "Two kinds of tombstone".
 
 #[test]
 fn flow_create_issue_no_step_id_flag() {
@@ -2588,9 +2634,12 @@ fn flow_create_issue_no_step_id_flag() {
 #[test]
 fn flow_create_issue_no_step_dispatch_section() {
     // Tombstone: removed in PR #1387. Must not return.
-    let c = common::read_skill("flow-create-issue");
+    // Case-normalized comparison per .claude/rules/security-gates.md
+    // "Normalize Before Comparing" — Markdown headings render the same
+    // visually for "Step Dispatch", "step dispatch", "STEP DISPATCH".
+    let c = common::read_skill("flow-create-issue").to_ascii_lowercase();
     assert!(
-        !c.contains("Step Dispatch"),
+        !c.contains("step dispatch"),
         "flow-create-issue must not reintroduce a Step Dispatch section"
     );
 }
@@ -2598,9 +2647,10 @@ fn flow_create_issue_no_step_dispatch_section() {
 #[test]
 fn flow_create_issue_no_resume_check_section() {
     // Tombstone: removed in PR #1387. Must not return.
-    let c = common::read_skill("flow-create-issue");
+    // Case-normalized comparison per .claude/rules/security-gates.md.
+    let c = common::read_skill("flow-create-issue").to_ascii_lowercase();
     assert!(
-        !c.contains("Resume Check"),
+        !c.contains("resume check"),
         "flow-create-issue must not reintroduce a Resume Check section"
     );
 }
@@ -2608,14 +2658,17 @@ fn flow_create_issue_no_resume_check_section() {
 #[test]
 fn flow_create_issue_no_per_step_banners() {
     // Tombstone: removed in PR #1387. Must not return.
+    // Structural assertion per .claude/rules/tombstone-tests.md
+    // "Two kinds of tombstone" — match the banner SHAPE, not a fixed
+    // denominator. The intent is "no per-step banners in a single-
+    // pipeline skill" regardless of total step count, so a future
+    // resurrection as `Step 1 of 3` (or any other cardinality) must
+    // also fire the tombstone.
     let c = common::read_skill("flow-create-issue");
+    let re = regex::Regex::new(r"Step \d+ of \d+").unwrap();
     assert!(
-        !c.contains("Step 1 of 2"),
-        "flow-create-issue must not reintroduce 'Step 1 of 2' banner"
-    );
-    assert!(
-        !c.contains("Step 2 of 2"),
-        "flow-create-issue must not reintroduce 'Step 2 of 2' banner"
+        !re.is_match(&c),
+        "flow-create-issue must not reintroduce per-step banners (`Step N of M` shape)"
     );
 }
 
@@ -2652,9 +2705,10 @@ fn flow_create_issue_no_proceed_to_draft_option() {
 #[test]
 fn flow_create_issue_no_redecompose_option() {
     // Tombstone: removed in PR #1387. Must not return.
-    let c = common::read_skill("flow-create-issue");
+    // Case-normalized comparison per .claude/rules/security-gates.md.
+    let c = common::read_skill("flow-create-issue").to_ascii_lowercase();
     assert!(
-        !c.contains("Re-decompose"),
+        !c.contains("re-decompose"),
         "flow-create-issue must not reintroduce 'Re-decompose' option"
     );
 }
