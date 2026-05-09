@@ -90,6 +90,40 @@ fn test_hook_no_state_file_exits_zero() {
 }
 
 #[test]
+fn test_hook_slash_branch_exits_zero() {
+    // When git reports a legitimate slash-containing branch
+    // (`feature/foo`, `dependabot/...`), `FlowPaths::try_new` returns
+    // None and `run()` short-circuits via the slash-branch arm. Must
+    // exit 0 without panicking.
+    let dir = tempfile::tempdir().unwrap();
+    let _ = Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output();
+
+    let mut cmd = flow_rs();
+    cmd.arg("set-blocked")
+        .env("FLOW_SIMULATE_BRANCH", "feature/foo")
+        .current_dir(dir.path())
+        .stdin(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    {
+        use std::io::Write;
+        let stdin = child.stdin.as_mut().unwrap();
+        stdin.write_all(b"{}").unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code().unwrap(), 0);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked at"),
+        "set-blocked panicked on slash branch; stderr: {}",
+        stderr
+    );
+}
+
+#[test]
 fn test_hook_no_current_branch_exits_zero() {
     // No git, no FLOW_SIMULATE_BRANCH → current_branch returns None →
     // `None => return` arm in run().

@@ -92,6 +92,14 @@ pub struct Args {
     /// `bin/flow ci --test -- hooks` or `bin/flow ci --test --file path`.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     pub trailing: Vec<String>,
+    /// Caller-supplied rationale for this CI run, surfaced as a
+    /// one-line stderr banner `CI: <reason>` before tool spawn so
+    /// users see why each CI invocation is happening. When None, the
+    /// runner infers the reason from sentinel state (no sentinel,
+    /// stale sentinel) or emits the skip banner if the sentinel
+    /// matches the current tree.
+    #[arg(long)]
+    pub reason: Option<String>,
 }
 
 impl Args {
@@ -187,7 +195,139 @@ pub fn any_tool_is_stub(tools: &[CiTool]) -> bool {
 ///
 /// Also used by [`crate::finalize_commit::run_impl`] to refresh the sentinel after a clean commit.
 pub fn sentinel_path(root: &Path, branch: &str) -> PathBuf {
-    FlowPaths::new(root, branch).ci_sentinel()
+    // Callers (`run_once`, `run_with_retry`, `finalize_commit`) reach
+    // this helper only with a branch that has already passed
+    // `cwd_scope::enforce` or arrived from the start-init pipeline —
+    // both `branch_name()`-sanitized boundaries.
+    FlowPaths::try_new(root, branch)
+        .expect(
+            "ci sentinel_path caller validates branch via cwd_scope::enforce or upstream pipeline",
+        )
+        .ci_sentinel()
+}
+
+/// Maximum character count for the banner payload before truncation,
+/// including any ellipsis suffix. Caps the blast radius of an
+/// untrusted `--reason` CLI flag whose sink is a one-line stderr
+/// banner; per `.claude/rules/external-input-validation.md` the
+/// validator for a format-only sink is a length cap.
+const REASON_MAX_CHARS: usize = 200;
+
+/// Normalize a caller-supplied `--reason` payload into a single-line
+/// banner string, or `None` when the payload would produce an empty
+/// or whitespace-only banner.
+///
+/// Three transformations apply, in order:
+///
+/// 1. Replace every Unicode control character with a single space —
+///    `\n` would otherwise close the banner line and let a caller
+///    inject a forged `CI: skipped — sentinel matches HEAD` line on
+///    the next line; `\r` would rewrite the rendered terminal line
+///    over the `CI:` prefix. Replacing rather than dropping preserves
+///    word boundaries when a caller pasted multi-line text.
+/// 2. Trim leading and trailing whitespace.
+/// 3. Truncate to `REASON_MAX_CHARS` characters, replacing the last
+///    character with `…` when the input exceeds the cap, so the
+///    banner stays one line even on hostile input.
+///
+/// Returns `None` when the cleaned string is empty so callers fall
+/// through to the inferred-reason branches in `emit_ci_banner`
+/// rather than emitting a content-free `CI: ` line.
+fn sanitize_reason(reason: &str) -> Option<String> {
+    let cleaned: String = reason
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect::<String>()
+        .trim()
+        .to_string();
+    if cleaned.is_empty() {
+        return None;
+    }
+    if cleaned.chars().count() > REASON_MAX_CHARS {
+        let prefix: String = cleaned.chars().take(REASON_MAX_CHARS - 1).collect();
+        Some(format!("{}…", prefix))
+    } else {
+        Some(cleaned)
+    }
+}
+
+/// Result of consulting the CI sentinel for the current branch's
+/// tree snapshot. The runner uses this to decide both which banner
+/// (if any) to narrate and whether to skip the tool dispatch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SentinelOutcome {
+    /// Sentinel content equals the current tree snapshot; the run
+    /// can be skipped.
+    Matches,
+    /// Sentinel exists but its content differs from the current
+    /// snapshot (or could not be read), so CI must re-verify.
+    Stale,
+    /// No sentinel file exists for this branch yet.
+    Absent,
+    /// Sentinel was not consulted: a single-phase flag was set,
+    /// `--force` was passed, or no branch could be resolved.
+    Skipped,
+}
+
+/// Determine the sentinel outcome without running any tools.
+///
+/// Mirrors the inputs `run_impl` already inspects (selected phase,
+/// `--force`, resolved branch) so a single call captures every
+/// case the banner and the skip-return need to distinguish.
+/// `tree_snapshot` is computed only when a sentinel actually exists
+/// — the absent and skipped paths short-circuit before the hash.
+fn compute_sentinel_outcome(
+    cwd: &Path,
+    root: &Path,
+    selected: Option<&str>,
+    force: bool,
+    resolved_branch: Option<&str>,
+    simulate_branch: Option<&str>,
+) -> SentinelOutcome {
+    if selected.is_some() || force {
+        return SentinelOutcome::Skipped;
+    }
+    let Some(branch) = resolved_branch else {
+        return SentinelOutcome::Skipped;
+    };
+    let sentinel = sentinel_path(root, branch);
+    if !sentinel.exists() {
+        return SentinelOutcome::Absent;
+    }
+    let snapshot = tree_snapshot(cwd, simulate_branch);
+    match fs::read_to_string(&sentinel) {
+        Ok(content) if content == snapshot => SentinelOutcome::Matches,
+        _ => SentinelOutcome::Stale,
+    }
+}
+
+/// Emit a one-line stderr banner narrating why CI is running (or
+/// being skipped).
+///
+/// Skip-path priority: when `outcome` is `Matches`, the banner
+/// always reads `CI: skipped — sentinel matches HEAD` regardless of
+/// any caller-supplied `reason` — the truth at the call site is
+/// "we are not running CI", and a stale `--reason` would mislead.
+/// Otherwise caller-supplied `reason` is run through
+/// [`sanitize_reason`] (control-character stripping, whitespace
+/// trim, truncation) and takes precedence. When the sanitized
+/// reason is `None`, the runner infers from `outcome`: `Stale` and
+/// `Absent` each have a fixed message, and `Skipped` (single-phase,
+/// force, detached HEAD) stays silent.
+fn emit_ci_banner(reason: Option<&str>, outcome: SentinelOutcome) {
+    let sanitized = reason.and_then(sanitize_reason);
+    let line = match (outcome, sanitized) {
+        (SentinelOutcome::Matches, _) => "CI: skipped — sentinel matches HEAD".to_string(),
+        (_, Some(r)) => format!("CI: {}", r),
+        (SentinelOutcome::Stale, None) => {
+            "CI: sentinel stale (tree changed) — re-verifying".to_string()
+        }
+        (SentinelOutcome::Absent, None) => {
+            "CI: no recent sentinel — establishing baseline".to_string()
+        }
+        (SentinelOutcome::Skipped, None) => return,
+    };
+    eprintln!("{}", line);
 }
 
 /// Format an elapsed-ms count as a short human string: `523ms`,
@@ -785,29 +925,36 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
     let resolved_branch = crate::git::resolve_branch_in(args.branch.as_deref(), cwd, root);
     let selected = args.selected_phase();
 
-    // Sentinel skip check — only when running all four phases.
-    // Single-phase runs (--format/--lint/--build/--test) bypass the
-    // sentinel because one tool passing does not satisfy the
-    // all-four-passed contract the sentinel encodes.
-    if selected.is_none() && !args.force {
-        if let Some(ref branch) = resolved_branch {
-            let snapshot = tree_snapshot(cwd, args.simulate_branch.as_deref());
-            let sentinel = sentinel_path(root, branch);
-            if sentinel.exists() {
-                if let Ok(content) = fs::read_to_string(&sentinel) {
-                    if content == snapshot {
-                        return (
-                            json!({
-                                "status": "ok",
-                                "skipped": true,
-                                "reason": "no changes since last CI pass",
-                            }),
-                            0,
-                        );
-                    }
-                }
-            }
-        }
+    // Compute sentinel state once; reused for the banner narration
+    // and the skip-return decision below. Single-phase runs
+    // (`--format`/`--lint`/`--build`/`--test`) and `--force` map to
+    // `Skipped`; detached HEAD also maps to `Skipped` because no
+    // per-branch sentinel can be looked up.
+    let outcome = compute_sentinel_outcome(
+        cwd,
+        root,
+        selected,
+        args.force,
+        resolved_branch.as_deref(),
+        args.simulate_branch.as_deref(),
+    );
+
+    // Narrate the run before any tool spawn or sentinel-skip return.
+    // Wired before the empty-tool-list check inside run_once /
+    // run_with_retry so the empty case still produces a banner when
+    // a caller supplies `--reason` or the runner infers one from
+    // sentinel state.
+    emit_ci_banner(args.reason.as_deref(), outcome);
+
+    if matches!(outcome, SentinelOutcome::Matches) {
+        return (
+            json!({
+                "status": "ok",
+                "skipped": true,
+                "reason": "no changes since last CI pass",
+            }),
+            0,
+        );
     }
 
     let mut tools = bin_tool_sequence(cwd);

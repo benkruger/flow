@@ -26,20 +26,26 @@ with an out-of-scope envelope.
 
 ## Concurrency
 
-This skill mutates exactly one piece of GitHub state on the triaged
-issue: a "Triage In-Progress" label that the skill applies at the
-start of triage and removes before the COMPLETE banner. It never
-closes, comments on, or applies any other label. The label is a
-passive observability signal — a second PM running
-`/flow:flow-triage-issue` on an issue already labeled sees the
-in-progress signal in the GitHub UI before invoking; it is NOT a
-mutex, so concurrent triages of the same issue are tolerated and
-whichever invocation removes the label last wins. If the skill
-crashes between the add and remove, the label persists; manual
-removal from the GitHub UI is the recovery path. The sub-agent's
-`gh issue view` and `gh pr list` calls remain read-only; the agent
-itself never mutates state. Multiple parallel triages on different
-issues are safe.
+This skill mutates two surfaces of GitHub state. **Per triage**, it
+applies a "Triage In-Progress" label assignment to the issue at the
+start of triage and removes it before the COMPLETE banner.
+**One-time per repository**, Step 2 also creates the
+"Triage In-Progress" label in the repository's label registry on
+the first triage in a fresh repo — the registry write is idempotent
+in intent (the steady-state path checks for existence first and
+skips the create). The skill never closes, comments on, or applies
+any other label.
+
+The per-issue label assignment is a passive observability signal —
+a second PM running `/flow:flow-triage-issue` on an issue already
+labeled sees the in-progress signal in the GitHub UI before
+invoking; it is NOT a mutex, so concurrent triages of the same
+issue are tolerated and whichever invocation removes the label
+last wins. If the skill crashes between the add and remove, the
+label persists; manual removal from the GitHub UI is the recovery
+path. The sub-agent's `gh issue view` and `gh pr list` calls
+remain read-only; the agent itself never mutates state. Multiple
+parallel triages on different issues are safe.
 
 ## Announce
 
@@ -96,22 +102,37 @@ sessions can see at a glance that the issue is being triaged. The
 label is passive — it does not block other invocations — but it
 makes parallel work visible in the GitHub UI.
 
-First, ensure the label exists in the repository. The first triage
-in a fresh repo would otherwise fail because `gh issue edit
---add-label` rejects unknown labels:
+First, check whether the label already exists in the repository.
+`gh issue edit --add-label` rejects unknown labels, so a fresh
+repo needs the label created before the per-issue assignment can
+land:
+
+```bash
+gh label list --search "Triage In-Progress" --json name
+```
+
+Parse the JSON output. The result is a JSON array — empty `[]`
+means the label is absent and must be created; any non-empty array
+containing an entry whose `name` field equals "Triage In-Progress"
+means the label already exists and the create call must be
+skipped.
+
+If the list-search is empty (no existing label), create it:
 
 ```bash
 gh label create "Triage In-Progress" --description "PM is currently triaging this issue" --color FFA500
 ```
 
-Treat a non-zero exit code from `gh label create` as benign when
-the failure message says the label already exists — that is the
-steady-state path after the first triage in the repo. Any other
-failure (auth error, network failure) should stop the skill with
-a brief error message. Do not retry on the "already exists" path
-— proceed directly to the next command.
+If `gh label create` fails for any reason in this branch (network,
+auth, permission), halt the skill and surface the error to the
+user — do NOT proceed to add-label, because the assignment will
+also fail.
 
-Then add the label to the issue:
+If the list-search returned a non-empty array containing
+"Triage In-Progress", skip the create call entirely and proceed
+to the assignment.
+
+Add the label to the issue:
 
 ```bash
 gh issue edit <issue_number> --add-label "Triage In-Progress"
@@ -202,16 +223,21 @@ gh issue edit <issue_number> --remove-label "Triage In-Progress"
 ### Step 7 — STOP
 
 <HARD-GATE>
-After rendering the verdict, stop. Do NOT take any auto-action based
-on the disposition — no auto-close, no auto-label, no auto-comment,
-no auto-invocation of follow-on skills.
+After Step 6's label-removal completes, stop. Do NOT take any
+auto-action based on the disposition — no auto-close, no
+auto-label, no auto-comment, no auto-invocation of follow-on
+skills. The Step 6 label-remove is the LAST mutation this skill
+performs; everything below this gate is post-cleanup.
 
-This HARD-GATE is mechanical. You must NOT:
+This HARD-GATE is mechanical. After Step 6 completes you must NOT:
 
 - Invoke any skill via the Skill tool after rendering the verdict
   (regardless of what the disposition value is)
-- Run `gh issue close`, `gh issue edit`, `gh issue comment`, or any
-  other GitHub-state-mutating subcommand
+- Run any further `gh issue close`, `gh issue edit`,
+  `gh issue comment`, or any other GitHub-state-mutating
+  subcommand (Step 6's `gh issue edit ... --remove-label` was the
+  final permitted invocation; no further `gh issue edit` calls are
+  permitted from this point)
 - Run any `git` command that writes (commit, push, tag, etc.)
 - Take any action whatsoever based on the disposition value
 
@@ -252,7 +278,10 @@ Output the following banner in your response (not via Bash) inside a fenced code
 - Never close issues. The skill never runs `gh issue close`.
 - Never comment on issues. The skill never runs `gh issue comment`.
 - Never apply or remove labels other than the "Triage In-Progress"
-  marker the skill manages itself in Steps 2 and 6.
+  marker the skill manages itself: applied in Step 2, removed in
+  Step 6 on the happy path, and also removed in Step 4's
+  truncation early-stop branch so every exit path leaves the
+  issue free of the label.
 - Never auto-invoke `/flow:flow-create-issue`, `/flow:flow-start`, or
   any other skill based on the verdict. The PM acts manually.
 - v1: open issues only. The agent refuses closed issues with the

@@ -285,11 +285,13 @@ fn format_status_no_state_exits_1() {
     assert!(stdout.is_empty(), "No stdout expected. Got: {}", stdout);
 }
 
-/// Regression guard: `format-status` must not panic when the user is
-/// on a slash-containing git branch. Before `FlowPaths::try_new`,
-/// FlowPaths::new panicked via assert! on slash-containing branches,
-/// crashing `run_format_status` for users with standard git branch
-/// naming conventions (`feature/foo`, `fix/*`, `user/*`).
+/// Regression guard: `format-status` must not panic when the user
+/// is on a slash-containing git branch. Slash-bearing branches
+/// (`feature/foo`, `fix/*`, `user/*`, `dependabot/*`) are
+/// legitimate git branch names but fail FLOW's path-safety
+/// `is_valid_branch` check; `format-status` treats them as "no
+/// active flow" and surfaces a structured error rather than
+/// crashing.
 #[test]
 fn format_status_does_not_panic_on_slash_branch() {
     let dir = tempfile::tempdir().unwrap();

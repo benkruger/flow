@@ -433,7 +433,15 @@ pub fn run_impl_main(
     }
 
     let (_state_path, state, matched_branch) = &results[0];
-    let frozen_path = FlowPaths::new(root, matched_branch).frozen_phases();
+    // `matched_branch` is a directory name from `find_state_files`'
+    // enumeration of `.flow-states/`; directory names cannot contain
+    // `/`. `try_new` is the standard constructor — `expect` documents
+    // the boundary.
+    let frozen_path = FlowPaths::try_new(root, matched_branch)
+        .expect(
+            "matched_branch comes from .flow-states/ directory enumeration (no slashes possible)",
+        )
+        .frozen_phases();
     let phase_config = if frozen_path.exists() {
         load_phase_config(&frozen_path).ok()
     } else {

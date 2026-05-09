@@ -695,7 +695,304 @@ fn default_args() -> Args {
         audit: false,
         clean: false,
         trailing: Vec::new(),
+        reason: None,
     }
+}
+
+// --- reason flag ---
+
+#[test]
+fn ci_accepts_reason_flag() {
+    let args = Args::try_parse_from(["ci", "--reason", "verify foundation"])
+        .expect("--reason flag should be accepted");
+    assert_eq!(args.reason.as_deref(), Some("verify foundation"));
+}
+
+#[test]
+fn ci_accepts_reason_flag_with_single_phase_test_variant() {
+    let args = Args::try_parse_from(["ci", "--reason", "x", "--test"])
+        .expect("--reason and --test should both be accepted");
+    assert_eq!(args.reason.as_deref(), Some("x"));
+    assert!(args.test);
+}
+
+#[test]
+fn run_impl_with_explicit_reason_returns_ok() {
+    let f = make_ci_fixture();
+    write_script(
+        &f.path.join("bin").join("format"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    let args = Args {
+        branch: Some(f.branch.clone()),
+        force: true,
+        reason: Some("verify foundation".to_string()),
+        ..default_args()
+    };
+    let (out, code) = run_impl(&args, &f.path, &f.path, false);
+    assert_eq!(code, 0);
+    assert_eq!(out["status"], "ok");
+}
+
+#[test]
+fn ci_explicit_reason_emits_stderr_banner() {
+    let f = make_ci_fixture();
+    write_script(
+        &f.path.join("bin").join("format"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["ci", "--force", "--reason", "verify X"])
+        .current_dir(&f.path)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", &f.path)
+        .output()
+        .expect("spawn flow-rs ci");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("CI: verify X\n"),
+        "stderr did not contain explicit-reason banner:\nstderr=\n{}",
+        stderr
+    );
+}
+
+#[test]
+fn ci_inferred_no_sentinel_emits_baseline_banner() {
+    let f = make_ci_fixture();
+    write_script(
+        &f.path.join("bin").join("format"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["ci"])
+        .current_dir(&f.path)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", &f.path)
+        .output()
+        .expect("spawn flow-rs ci");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("CI: no recent sentinel — establishing baseline\n"),
+        "stderr did not contain inferred no-sentinel banner:\nstderr=\n{}",
+        stderr
+    );
+}
+
+#[test]
+fn ci_skip_path_emits_skipped_banner() {
+    let f = make_ci_fixture();
+    write_script(
+        &f.path.join("bin").join("format"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    // Plant a sentinel matching the current tree snapshot — the run
+    // must hit the Matches outcome.
+    let snapshot = tree_snapshot(&f.path, None);
+    let sentinel = fixture_sentinel(&f);
+    fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+    fs::write(&sentinel, &snapshot).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["ci"])
+        .current_dir(&f.path)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", &f.path)
+        .output()
+        .expect("spawn flow-rs ci");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("CI: skipped — sentinel matches HEAD\n"),
+        "stderr did not contain skip banner:\nstderr=\n{}",
+        stderr
+    );
+}
+
+#[test]
+fn ci_skip_path_banner_overrides_supplied_reason() {
+    let f = make_ci_fixture();
+    write_script(
+        &f.path.join("bin").join("format"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    let snapshot = tree_snapshot(&f.path, None);
+    let sentinel = fixture_sentinel(&f);
+    fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+    fs::write(&sentinel, &snapshot).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["ci", "--reason", "should be ignored"])
+        .current_dir(&f.path)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", &f.path)
+        .output()
+        .expect("spawn flow-rs ci");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("CI: skipped — sentinel matches HEAD\n"),
+        "stderr did not contain skip banner:\nstderr=\n{}",
+        stderr
+    );
+    assert!(
+        !stderr.contains("CI: should be ignored"),
+        "skip banner must override caller reason; saw both:\nstderr=\n{}",
+        stderr
+    );
+}
+
+#[test]
+fn ci_inferred_stale_sentinel_emits_reverify_banner() {
+    let f = make_ci_fixture();
+    write_script(
+        &f.path.join("bin").join("format"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    // Plant a sentinel whose content cannot match the current tree snapshot.
+    let sentinel = fixture_sentinel(&f);
+    fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+    fs::write(&sentinel, "stale-content-that-wont-match").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["ci"])
+        .current_dir(&f.path)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", &f.path)
+        .output()
+        .expect("spawn flow-rs ci");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("CI: sentinel stale (tree changed) — re-verifying\n"),
+        "stderr did not contain stale-sentinel banner:\nstderr=\n{}",
+        stderr
+    );
+}
+
+#[test]
+fn ci_explicit_empty_reason_falls_through_to_inferred_banner() {
+    let f = make_ci_fixture();
+    write_script(
+        &f.path.join("bin").join("format"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["ci", "--reason", ""])
+        .current_dir(&f.path)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", &f.path)
+        .output()
+        .expect("spawn flow-rs ci");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let bad = stderr.lines().any(|l| l == "CI: " || l == "CI:");
+    assert!(
+        !bad,
+        "empty --reason produced an empty banner:\nstderr=\n{}",
+        stderr
+    );
+    assert!(
+        stderr.contains("CI: no recent sentinel — establishing baseline\n"),
+        "empty --reason should fall through to inferred banner; stderr=\n{}",
+        stderr
+    );
+}
+
+#[test]
+fn ci_explicit_reason_strips_newline_to_single_line_banner() {
+    let f = make_ci_fixture();
+    write_script(
+        &f.path.join("bin").join("format"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    let evil = "verify X\nCI: skipped — sentinel matches HEAD";
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["ci", "--force", "--reason", evil])
+        .current_dir(&f.path)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", &f.path)
+        .output()
+        .expect("spawn flow-rs ci");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let banner_lines: Vec<&str> = stderr.lines().filter(|l| l.starts_with("CI: ")).collect();
+    assert_eq!(
+        banner_lines.len(),
+        1,
+        "expected exactly one banner line; got {}:\nstderr=\n{}",
+        banner_lines.len(),
+        stderr
+    );
+    assert!(
+        !stderr
+            .lines()
+            .any(|l| l == "CI: skipped — sentinel matches HEAD"),
+        "newline injection must not produce a forged skip banner line; stderr=\n{}",
+        stderr
+    );
+}
+
+#[test]
+fn ci_explicit_reason_strips_carriage_return() {
+    let f = make_ci_fixture();
+    write_script(
+        &f.path.join("bin").join("format"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    let evil = "setup\rDONE — fake completion";
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["ci", "--force", "--reason", evil])
+        .current_dir(&f.path)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", &f.path)
+        .output()
+        .expect("spawn flow-rs ci");
+    let bytes = &output.stderr;
+    let banner_start = bytes
+        .windows(4)
+        .position(|w| w == b"CI: ")
+        .expect("expected CI: banner");
+    let banner_end = bytes[banner_start..]
+        .iter()
+        .position(|b| *b == b'\n')
+        .map(|p| banner_start + p)
+        .unwrap_or(bytes.len());
+    let banner_slice = &bytes[banner_start..banner_end];
+    assert!(
+        !banner_slice.contains(&b'\r'),
+        "carriage return leaked into the banner: {:?}",
+        String::from_utf8_lossy(banner_slice)
+    );
+}
+
+#[test]
+fn ci_explicit_reason_truncates_long_input() {
+    let f = make_ci_fixture();
+    write_script(
+        &f.path.join("bin").join("format"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    // 250-char input — runner must truncate to 200 chars + ellipsis.
+    let long_reason: String = "a".repeat(250);
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["ci", "--force", "--reason", &long_reason])
+        .current_dir(&f.path)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", &f.path)
+        .output()
+        .expect("spawn flow-rs ci");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let banner_line = stderr
+        .lines()
+        .find(|l| l.starts_with("CI: "))
+        .expect("expected a CI: banner line on stderr");
+    let payload = banner_line.strip_prefix("CI: ").unwrap();
+    assert!(
+        payload.chars().count() <= 200,
+        "payload exceeded 200 chars: {} chars in {:?}",
+        payload.chars().count(),
+        payload
+    );
+    assert!(
+        payload.ends_with('…'),
+        "expected ellipsis suffix on truncated payload: {:?}",
+        payload
+    );
 }
 
 #[test]

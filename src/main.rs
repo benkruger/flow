@@ -550,11 +550,14 @@ fn main() {
             let root_for_state = root.clone();
             let root_for_repo = root.clone();
             let state_reader = move || -> Option<String> {
-                flow_rs::git::resolve_branch(None, &root_for_state).and_then(|branch| {
-                    let state_path =
-                        flow_rs::flow_paths::FlowPaths::new(&root_for_state, &branch).state_file();
-                    std::fs::read_to_string(&state_path).ok()
-                })
+                // `resolve_branch` returns the raw current branch from
+                // git, which may legitimately contain `/`
+                // (`feature/foo`, `dependabot/...`). Use `try_new` so
+                // those branches map to "no state file" instead of
+                // panicking on the path-safety check.
+                let branch = flow_rs::git::resolve_branch(None, &root_for_state)?;
+                let paths = flow_rs::flow_paths::FlowPaths::try_new(&root_for_state, &branch)?;
+                std::fs::read_to_string(paths.state_file()).ok()
             };
             let repo_resolver =
                 move || -> Option<String> { flow_rs::github::detect_repo(Some(&root_for_repo)) };

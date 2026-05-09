@@ -45,9 +45,8 @@ use crate::git::{read_base_branch, resolve_branch, BASE_BRANCH_MISSING_PREFIX};
 /// Per `.claude/rules/external-input-validation.md` and
 /// `.claude/rules/branch-path-safety.md`, `--branch` overrides come
 /// from the shell (untrusted) and must route through
-/// `FlowPaths::try_new` rather than `FlowPaths::new` so a
-/// slash-containing or empty branch produces a structured error
-/// rather than a panic.
+/// `FlowPaths::try_new` so a slash-containing or empty branch
+/// surfaces as a structured error.
 pub fn run_impl_main(
     branch_override: Option<&str>,
     root: &Path,

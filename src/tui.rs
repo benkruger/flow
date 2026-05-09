@@ -1079,8 +1079,15 @@ impl TuiApp {
             Rect::new(area.x + 2, area.y, area.width.saturating_sub(2), 1),
         );
 
-        // Read log file
-        let log_path = FlowPaths::new(&self.root, &flow.branch).log_file();
+        // Read log file. `flow.branch` is a directory name from
+        // `.flow-states/` enumeration; directory names cannot contain
+        // `/`. `try_new` is the standard constructor; `expect`
+        // documents the boundary.
+        let log_path = FlowPaths::try_new(&self.root, &flow.branch)
+            .expect(
+                "flow.branch comes from .flow-states/ directory enumeration (no slashes possible)",
+            )
+            .log_file();
         let log_content = std::fs::read_to_string(&log_path).ok();
         let entries = tui_data::parse_log_entries(
             log_content.as_deref().unwrap_or(""),

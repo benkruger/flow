@@ -61,8 +61,22 @@ pub struct Args {
 pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
     let branch = &args.branch;
 
-    // Update TUI step counter
-    let state_path = FlowPaths::new(root, branch).state_file();
+    // Update TUI step counter. `args.branch` is clap-supplied —
+    // external input. Pattern-match and surface a structured error
+    // per `.claude/rules/external-input-validation.md` "CLI
+    // subcommand entry callsite discipline".
+    let state_path = match FlowPaths::try_new(root, branch) {
+        Some(p) => p.state_file(),
+        None => {
+            return (
+                json!({
+                    "status": "error",
+                    "message": format!("Invalid branch name: {:?}", branch),
+                }),
+                1,
+            );
+        }
+    };
     update_step(&state_path, 2);
 
     // Read the integration branch the user is working off of (captured
@@ -94,6 +108,18 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
     }
 
     // Step 2: CI baseline (single attempt — see module doc).
+    //
+    // The runner's inferred banner says "no recent sentinel" /
+    // "sentinel stale" — accurate but generic. start_gate knows
+    // the call targets the BASE BRANCH, so we narrate the more
+    // specific reason here. The runner overrides with the skip
+    // banner when the sentinel matches, so passing a reason in
+    // the stale case never lies about a run that didn't happen.
+    let baseline_reason = if ci::sentinel_path(root, &base_branch).exists() {
+        "base branch advanced since last CI — re-verifying".to_string()
+    } else {
+        "no recent base-branch CI sentinel — establishing baseline".to_string()
+    };
     let ci_args = ci::Args {
         force: false,
         retry: 1,
@@ -106,6 +132,7 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
         audit: false,
         clean: false,
         trailing: Vec::new(),
+        reason: Some(baseline_reason),
     };
     let (ci_result, _ci_code) = ci::run_impl(&ci_args, cwd, root, false);
     let _ = append_log(
@@ -193,6 +220,7 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
         audit: false,
         clean: false,
         trailing: Vec::new(),
+        reason: Some("dependencies upgraded — verifying base branch".to_string()),
     };
     let (post_ci_result, _post_ci_code) = ci::run_impl(&post_ci_args, cwd, root, false);
     let _ = append_log(

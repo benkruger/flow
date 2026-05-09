@@ -34,7 +34,14 @@ pub fn run() {
     };
 
     let root = project_root();
-    let state_path = FlowPaths::new(&root, &branch).state_file();
+    // Hook callsite: branch came from `git branch --show-current`
+    // and may carry `/`. Treat slash-containing branches as "no
+    // active flow" — same posture as the detached-HEAD branch above.
+    let paths = match FlowPaths::try_new(&root, &branch) {
+        Some(p) => p,
+        None => return,
+    };
+    let state_path = paths.state_file();
 
     clear_blocked(&state_path);
 }

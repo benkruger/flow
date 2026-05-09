@@ -155,7 +155,11 @@ pub fn freeze_phases(
     project_root: &Path,
     branch: &str,
 ) -> std::io::Result<()> {
-    let paths = FlowPaths::new(project_root, branch);
+    // Caller is the start-init pipeline, which supplies a
+    // `branch_name()`-sanitized branch — `try_new` is the standard
+    // constructor; `expect` documents the boundary.
+    let paths = FlowPaths::try_new(project_root, branch)
+        .expect("freeze_phases caller (start-init pipeline) provides branch_name-sanitized branch");
     paths.ensure_branch_dir()?;
     std::fs::copy(phases_json_path, paths.frozen_phases())?;
     Ok(())

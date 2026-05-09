@@ -216,7 +216,13 @@ pub(crate) fn initial_commit_push_pr(
     prompt: &str,
     base_branch: &str,
 ) -> Result<(String, u32), SetupError> {
-    let commit_msg_path = FlowPaths::new(root, branch).commit_msg();
+    // `branch` is the same value `run_impl_with_paths` already
+    // validated via `FlowPaths::try_new` pattern-match upstream;
+    // reaching this internal helper implies the branch passed
+    // is_valid_branch.
+    let commit_msg_path = FlowPaths::try_new(root, branch)
+        .expect("branch validated by run_impl_with_paths pattern-match upstream")
+        .commit_msg();
     // `init-state` ran before `start-workspace` and called
     // `paths.ensure_branch_dir()` while writing `state.json`, so
     // `<root>/.flow-states/<branch>/` exists. A failure here would
@@ -278,8 +284,19 @@ fn run_impl_with_paths(args: &Args, root: &Path, cwd: &Path) -> Value {
     let branch = &args.branch;
     let feature_title = derive_feature(branch);
 
-    // Update TUI step counter
-    let state_path = FlowPaths::new(root, branch).state_file();
+    // Update TUI step counter. `args.branch` is clap-supplied —
+    // external input. Pattern-match and surface a structured error
+    // per `.claude/rules/external-input-validation.md` "CLI
+    // subcommand entry callsite discipline".
+    let state_path = match FlowPaths::try_new(root, branch) {
+        Some(p) => p.state_file(),
+        None => {
+            return json!({
+                "status": "error",
+                "message": format!("Invalid branch name: {:?}", branch),
+            });
+        }
+    };
     update_step(&state_path, 3);
 
     // Read state file once: relative_cwd routes the agent into a

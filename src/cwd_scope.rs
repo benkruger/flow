@@ -73,7 +73,15 @@ pub fn enforce(cwd: &Path, project_root: &Path) -> Result<(), String> {
         None => return Ok(()),
     };
 
-    let state_path = FlowPaths::new(project_root, &branch).state_file();
+    // Branch came from git output. Slash-containing values like
+    // `feature/foo` or `dependabot/...` are legitimate git branches
+    // but fail FLOW's path-safety check; treat them as "no active
+    // flow" — same shape as the no-state-file branch below.
+    let paths = match FlowPaths::try_new(project_root, &branch) {
+        Some(p) => p,
+        None => return Ok(()),
+    };
+    let state_path = paths.state_file();
     if !state_path.exists() {
         return Ok(());
     }

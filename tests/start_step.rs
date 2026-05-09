@@ -53,6 +53,37 @@ fn start_step_updates_state_and_prints_json() {
 }
 
 #[test]
+fn start_step_slash_branch_returns_structured_error() {
+    // `--branch` from clap; a slash-bearing branch fails
+    // FlowPaths::is_valid_branch. Pattern-match per
+    // `.claude/rules/external-input-validation.md` "CLI subcommand
+    // entry callsite discipline" — exit 1 with structured error,
+    // no panic.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+
+    let output = run_start_step(&repo, &["--step", "1", "--branch", "feature/foo"]);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked at"),
+        "start-step panicked on slash branch; stderr: {}",
+        stderr
+    );
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Invalid branch name"),
+        "expected Invalid branch error, got: {:?}",
+        data
+    );
+}
+
+#[test]
 fn start_step_no_state_file_reports_skipped() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());

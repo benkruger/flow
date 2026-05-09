@@ -415,6 +415,35 @@ fn test_slack_success_heals_wrong_notifications_type() {
 // --- Library-level tests (run_impl_main with TempDir fixtures) ---
 
 #[test]
+fn test_finalize_slash_branch_returns_structured_error() {
+    // `args.branch` is clap-supplied. A slash-bearing branch
+    // (`feature/foo`, `dependabot/...`) is a legitimate git branch
+    // but fails FlowPaths::is_valid_branch. The CLI surface must
+    // surface a structured error per
+    // `.claude/rules/external-input-validation.md` "CLI subcommand
+    // entry callsite discipline" — never a panic.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    let args = Args {
+        branch: "feature/foo".to_string(),
+        pr_url: None,
+        auto: false,
+    };
+
+    let (value, code) = run_impl_main(&args, &root);
+    assert_eq!(code, 1);
+    assert_eq!(value["status"], "error");
+    assert!(
+        value["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Invalid branch name"),
+        "expected Invalid branch error, got: {:?}",
+        value
+    );
+}
+
+#[test]
 fn test_finalize_missing_state_file() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();

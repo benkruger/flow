@@ -1352,6 +1352,51 @@ fn flow_rs_no_recursion() -> Command {
     cmd
 }
 
+/// Exercises run_impl's slash-branch arm: a clap-supplied branch
+/// containing `/` (e.g., `feature/foo`) reaches `FlowPaths::try_new`
+/// which returns None. run_impl pattern-matches and surfaces a
+/// structured "Invalid branch name" error per
+/// `.claude/rules/external-input-validation.md` "CLI subcommand
+/// entry callsite discipline" — never a panic.
+#[test]
+fn finalize_commit_slash_branch_returns_invalid_branch_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let msg_path = root.join("msg.txt");
+    fs::write(&msg_path, "subject\n").unwrap();
+
+    let output = flow_rs_no_recursion()
+        .args(["finalize-commit", msg_path.to_str().unwrap(), "feature/foo"])
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked at"),
+        "finalize-commit panicked on slash branch; stderr: {}",
+        stderr
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let last = stdout
+        .lines()
+        .rfind(|l| l.trim_start().starts_with('{'))
+        .unwrap_or_else(|| panic!("no JSON in stdout: {}", stdout));
+    let json: Value = serde_json::from_str(last).unwrap();
+    assert_eq!(json["status"], "error");
+    assert!(
+        json["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Invalid branch name"),
+        "expected Invalid branch error, got: {:?}",
+        json
+    );
+}
+
 // Exercises run_impl_main's Err arm: empty message-file / branch args →
 // run_impl returns Err → run_impl_main wraps as {"step":"args"} + exit 1.
 #[test]
@@ -1465,4 +1510,38 @@ fn run_impl_main_ok_status_ok_exits_0() {
         .unwrap_or_else(|| panic!("no JSON in stdout: {}", stdout));
     let json: Value = serde_json::from_str(last).unwrap();
     assert_eq!(json["status"], "ok");
+}
+
+// --- CI reason banner ---
+
+#[test]
+fn finalize_commit_passes_ci_reason() {
+    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let clone_path = clone_dir.path();
+
+    fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .output()
+            .unwrap(),
+    );
+
+    let msg_path = clone_path.join(".flow-commit-msg");
+    fs::write(&msg_path, "Test commit.").unwrap();
+
+    // No sentinel — CI runs and the explicit reason wins.
+
+    let output = flow_rs_no_recursion()
+        .args(["finalize-commit", msg_path.to_str().unwrap(), "main"])
+        .current_dir(clone_path)
+        .output()
+        .expect("spawn flow-rs");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("CI: verifying commit before git commit\n"),
+        "expected finalize_commit's explicit reason banner; stderr=\n{}",
+        stderr
+    );
 }

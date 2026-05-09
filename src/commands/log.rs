@@ -23,7 +23,14 @@ use crate::utils;
 /// POSIX filesystems). Write errors from `writeln!` are ignored for
 /// the same reason; callers treat log failures as non-fatal.
 pub fn append_log(root: &Path, branch: &str, message: &str) -> Result<(), std::io::Error> {
-    let paths = FlowPaths::new(root, branch);
+    // `branch` arrives from many callers including hooks that read it
+    // from filesystem-derived sources. Treat invalid branches as a
+    // best-effort no-op (consistent with the function's other
+    // failure-swallowing posture) rather than panicking.
+    let paths = match FlowPaths::try_new(root, branch) {
+        Some(p) => p,
+        None => return Ok(()),
+    };
     paths.ensure_branch_dir()?;
     let log_path = paths.log_file();
     let timestamp = utils::now();

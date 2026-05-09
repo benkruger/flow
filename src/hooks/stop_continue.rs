@@ -54,7 +54,19 @@ pub struct ContinueResult {
 fn log_diag(root: Option<&Path>, branch: Option<&str>, message: &str) {
     eprintln!("[FLOW stop-continue] {}", message);
     if let (Some(root), Some(branch)) = (root, branch) {
-        let log_path = FlowPaths::new(root, branch).log_file();
+        // `branch` was extracted via `derive_root_branch` from a
+        // state-file path's directory `file_name()` — a single
+        // path component that cannot contain `/` by OS-level
+        // invariants. The boundary is structurally provable, so
+        // `.expect()` documents the guarantee without introducing
+        // a reachable panic. Per
+        // `.claude/rules/external-input-validation.md` "Hook
+        // callsite discipline", the pattern-match default is the
+        // safe choice, with the structurally-provable carve-out
+        // documented there.
+        let log_path = FlowPaths::try_new(root, branch)
+            .expect("branch is a path-component file_name — no slashes possible")
+            .log_file();
         if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&log_path) {
             let _ = writeln!(f, "{} [stop-continue] {}", now(), message);
         }

@@ -167,6 +167,23 @@ fn enforce_state_path_is_directory_returns_ok() {
 }
 
 #[test]
+fn cwd_scope_does_not_panic_on_slash_branch() {
+    // A git branch with a `/` (e.g. `feature/foo`, `dependabot/...`)
+    // is a legitimate git branch name but fails
+    // `FlowPaths::is_valid_branch`. Treat it as "no active flow" —
+    // the same shape the early-return for non-git or missing-state
+    // already produces.
+    let dir = tempfile::tempdir().unwrap();
+    init_git_repo(dir.path(), "feature/foo");
+    let result = enforce(dir.path(), dir.path());
+    assert!(
+        result.is_ok(),
+        "enforce must not panic on slash-containing branches; got: {:?}",
+        result
+    );
+}
+
+#[test]
 fn enforce_canonicalize_fallback_nonexistent_relative_cwd() {
     // When `relative_cwd` names a subdirectory that does not yet exist
     // on disk, expected.canonicalize() fails and the fallback returns

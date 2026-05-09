@@ -148,6 +148,7 @@ fn ci_decider(root: &Path, cwd: &Path, branch: &str, tree_changed: bool) -> (boo
         audit: false,
         clean: false,
         trailing: Vec::new(),
+        reason: Some("verifying tree is clean before Complete merge".to_string()),
     };
     let (ci_result, ci_code) = ci::run_impl(&ci_args, cwd, root, false);
     if ci_code != 0 {
