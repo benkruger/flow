@@ -649,3 +649,283 @@ fn test_tombstones_no_naming_violations() {
         violations.join("\n")
     );
 }
+
+// --- scan_stability_docs_violations ---
+//
+// Pure helper used by `test_tombstones_no_stability_docs_violations` to
+// enforce the literal-tombstone stability checklist from
+// `.claude/rules/tombstone-tests.md` "Literal tombstones — stability
+// checklist". For every `#[test] fn` whose body contains a `.contains(`
+// call (the byte-substring shape) AND whose preceding `///` doc block
+// carries a `Tombstone:.*?PR #N` marker with N at or above the sentinel
+// PR, the helper checks the doc block for a stability argument —
+// case-insensitive substring match on `concat`, `format`, or
+// `constant`. A tombstone above the sentinel that uses a
+// byte-substring assertion without one of those keywords in its doc
+// block is a violation.
+//
+// The sentinel scopes enforcement to tombstones added in this PR and
+// later. Existing tombstones below the sentinel are out of scope —
+// retrofitting `///` blocks onto every existing byte-substring
+// tombstone would expand the diff far past the rule the contract
+// test enforces forward.
+
+/// Sentinel PR number for `test_tombstones_no_stability_docs_violations`.
+///
+/// Tombstones whose `Tombstone:.*?PR #N` marker has N at or above this
+/// value MUST carry a `///` doc block that mentions one of `concat`,
+/// `format`, or `constant` (case-insensitive). Tombstones below the
+/// sentinel are out of scope — they were authored before this scanner
+/// existed.
+///
+/// Effective from PR #1397 (the PR that introduces this contract
+/// test). When raising the sentinel, update the value here and verify
+/// every newly-in-scope tombstone passes the contract test.
+const STABILITY_DOCS_SENTINEL_PR: u32 = 1397;
+
+fn scan_stability_docs_violations(
+    content: &str,
+    sentinel_pr: u32,
+    exclusions: &[&str],
+) -> Vec<String> {
+    let test_fn_re = Regex::new(r"#\[test\]\s+fn\s+(\w+)\s*\(").unwrap();
+    let tombstone_re = Regex::new(r"Tombstone:.*?PR #(\d+)").unwrap();
+    let mut violations = Vec::new();
+
+    let matches: Vec<_> = test_fn_re.captures_iter(content).collect();
+    for (i, cap) in matches.iter().enumerate() {
+        let name = cap.get(1).unwrap().as_str();
+        if exclusions.contains(&name) {
+            continue;
+        }
+
+        let body_start = cap.get(0).unwrap().end();
+        let body_end = matches
+            .get(i + 1)
+            .map(|next| next.get(0).unwrap().start())
+            .unwrap_or(content.len());
+        let body = &content[body_start..body_end];
+        if !body.contains(".contains(") {
+            continue;
+        }
+
+        let test_start = cap.get(0).unwrap().start();
+        let preceding = &content[..test_start];
+        let mut doc_lines: Vec<&str> = Vec::new();
+        for line in preceding.lines().rev() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("///") {
+                doc_lines.push(line);
+            } else {
+                break;
+            }
+        }
+        doc_lines.reverse();
+        let doc_block = doc_lines.join("\n");
+
+        let pr_num: u32 = match tombstone_re.captures(&doc_block) {
+            Some(c) => c.get(1).unwrap().as_str().parse().unwrap_or(0),
+            None => continue,
+        };
+        if pr_num < sentinel_pr {
+            continue;
+        }
+
+        let lower = doc_block.to_lowercase();
+        let has_keyword =
+            lower.contains("concat") || lower.contains("format") || lower.contains("constant");
+        if !has_keyword {
+            let line = content[..test_start].matches('\n').count() + 1;
+            violations.push(format!(
+                "line {}: {} (PR #{}) — `///` doc block missing stability keyword (concat/format/constant)",
+                line, name, pr_num
+            ));
+        }
+    }
+    violations
+}
+
+#[test]
+fn test_stability_scanner_no_violations_for_doc_with_concat_keyword() {
+    let fixture = concat!(
+        "/// ",
+        "Tombstone: removed in PR #1500. Must not return.\n",
+        "///\n",
+        "/// The literal is stable per the concat! analysis: the\n",
+        "/// runtime resolver reads a fixed identifier.\n",
+        "#[",
+        "test",
+        "]\nfn test_x_no_y() {\n",
+        "    let s = \"foo\";\n",
+        "    assert!(s.contains(\"foo\"));\n",
+        "}\n",
+    );
+    let violations = scan_stability_docs_violations(fixture, 1397, &[]);
+    assert!(
+        violations.is_empty(),
+        "doc block with `concat` keyword should pass: {:?}",
+        violations
+    );
+}
+
+#[test]
+fn test_stability_scanner_no_false_negative_for_missing_keyword() {
+    let fixture = concat!(
+        "/// ",
+        "Tombstone: removed in PR #1500. Must not return.\n",
+        "///\n",
+        "/// File-existence guard with no stability argument.\n",
+        "#[",
+        "test",
+        "]\nfn test_x_no_y() {\n",
+        "    let s = \"foo\";\n",
+        "    assert!(s.contains(\"foo\"));\n",
+        "}\n",
+    );
+    let violations = scan_stability_docs_violations(fixture, 1397, &[]);
+    assert_eq!(
+        violations.len(),
+        1,
+        "expected 1 violation for doc block missing keyword: {:?}",
+        violations
+    );
+    assert!(violations[0].contains("test_x_no_y"));
+    assert!(violations[0].contains("1500"));
+}
+
+#[test]
+fn test_stability_scanner_no_violations_for_below_sentinel_pr() {
+    let fixture = concat!(
+        "/// ",
+        "Tombstone: removed in PR #100. Must not return.\n",
+        "///\n",
+        "/// File-existence guard with no stability argument.\n",
+        "#[",
+        "test",
+        "]\nfn test_x_no_y() {\n",
+        "    let s = \"foo\";\n",
+        "    assert!(s.contains(\"foo\"));\n",
+        "}\n",
+    );
+    let violations = scan_stability_docs_violations(fixture, 1397, &[]);
+    assert!(
+        violations.is_empty(),
+        "PR below sentinel is out of scope: {:?}",
+        violations
+    );
+}
+
+#[test]
+fn test_stability_scanner_no_violations_for_test_without_contains_call() {
+    let fixture = concat!(
+        "/// ",
+        "Tombstone: removed in PR #1500. Must not return.\n",
+        "///\n",
+        "/// File-existence guard.\n",
+        "#[",
+        "test",
+        "]\nfn test_x_no_y() {\n",
+        "    assert!(!path.exists());\n",
+        "}\n",
+    );
+    let violations = scan_stability_docs_violations(fixture, 1397, &[]);
+    assert!(
+        violations.is_empty(),
+        "test without .contains( body should be ignored: {:?}",
+        violations
+    );
+}
+
+#[test]
+fn test_stability_scanner_no_violations_for_excluded_names() {
+    let fixture = concat!(
+        "/// ",
+        "Tombstone: removed in PR #1500. Must not return.\n",
+        "///\n",
+        "/// No stability keyword here.\n",
+        "#[",
+        "test",
+        "]\nfn test_excluded_no_check() {\n",
+        "    let s = \"foo\";\n",
+        "    s.contains(\"foo\");\n",
+        "}\n",
+    );
+    let violations = scan_stability_docs_violations(fixture, 1397, &["test_excluded_no_check"]);
+    assert!(
+        violations.is_empty(),
+        "excluded name should be skipped: {:?}",
+        violations
+    );
+}
+
+#[test]
+fn test_stability_scanner_no_false_negative_for_uppercase_keyword_variants() {
+    let fixture_upper = concat!(
+        "/// ",
+        "Tombstone: removed in PR #1500. Must not return.\n",
+        "///\n",
+        "/// Argued via FORMAT reassembly check.\n",
+        "#[",
+        "test",
+        "]\nfn test_uppercase_no_check() {\n",
+        "    let s = \"foo\";\n",
+        "    s.contains(\"foo\");\n",
+        "}\n",
+    );
+    let violations = scan_stability_docs_violations(fixture_upper, 1397, &[]);
+    assert!(
+        violations.is_empty(),
+        "uppercase FORMAT should match case-insensitively: {:?}",
+        violations
+    );
+
+    let fixture_mixed = concat!(
+        "/// ",
+        "Tombstone: removed in PR #1500. Must not return.\n",
+        "///\n",
+        "/// Argued via Constant declaration check.\n",
+        "#[",
+        "test",
+        "]\nfn test_mixed_case_no_check() {\n",
+        "    let s = \"foo\";\n",
+        "    s.contains(\"foo\");\n",
+        "}\n",
+    );
+    let violations = scan_stability_docs_violations(fixture_mixed, 1397, &[]);
+    assert!(
+        violations.is_empty(),
+        "mixed-case Constant should match case-insensitively: {:?}",
+        violations
+    );
+}
+
+// --- test_tombstones_no_stability_docs_violations ---
+//
+// Contract test enforcing the literal-tombstone stability checklist
+// against the live `tests/tombstones.rs` source. Reads the file at
+// runtime, calls `scan_stability_docs_violations` with the sentinel
+// PR (`STABILITY_DOCS_SENTINEL_PR`) and the contract-test exclusion
+// list, and asserts the violations vector is empty. Existing
+// tombstones with PR #N below the sentinel are out of scope; new
+// tombstones at or above the sentinel must carry a `///` doc block
+// with at least one of the stability keywords.
+
+#[test]
+fn test_tombstones_no_stability_docs_violations() {
+    let root = common::repo_root();
+    let path = root.join("tests").join("tombstones.rs");
+    let content = fs::read_to_string(&path).expect("tests/tombstones.rs must exist");
+    let exclusions: &[&str] = &[
+        "test_tombstones_no_naming_violations",
+        "test_tombstones_no_stability_docs_violations",
+    ];
+    let violations =
+        scan_stability_docs_violations(&content, STABILITY_DOCS_SENTINEL_PR, exclusions);
+    assert!(
+        violations.is_empty(),
+        "Literal-tombstone stability checklist violations \
+         (see .claude/rules/tombstone-tests.md \
+         `Literal tombstones — stability checklist`):\n\n{}",
+        violations.join("\n")
+    );
+}
