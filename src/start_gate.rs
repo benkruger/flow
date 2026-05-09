@@ -106,6 +106,7 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
         audit: false,
         clean: false,
         trailing: Vec::new(),
+        reason: None,
     };
     let (ci_result, _ci_code) = ci::run_impl(&ci_args, cwd, root, false);
     let _ = append_log(
@@ -193,6 +194,7 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
         audit: false,
         clean: false,
         trailing: Vec::new(),
+        reason: None,
     };
     let (post_ci_result, _post_ci_code) = ci::run_impl(&post_ci_args, cwd, root, false);
     let _ = append_log(

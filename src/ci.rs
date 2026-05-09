@@ -92,6 +92,14 @@ pub struct Args {
     /// `bin/flow ci --test -- hooks` or `bin/flow ci --test --file path`.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     pub trailing: Vec<String>,
+    /// Caller-supplied rationale for this CI run, surfaced as a
+    /// one-line stderr banner `CI: <reason>` before tool spawn so
+    /// users see why each CI invocation is happening. When None, the
+    /// runner infers the reason from sentinel state (no sentinel,
+    /// stale sentinel) or emits the skip banner if the sentinel
+    /// matches the current tree.
+    #[arg(long)]
+    pub reason: Option<String>,
 }
 
 impl Args {
@@ -188,6 +196,19 @@ pub fn any_tool_is_stub(tools: &[CiTool]) -> bool {
 /// Also used by [`crate::finalize_commit::run_impl`] to refresh the sentinel after a clean commit.
 pub fn sentinel_path(root: &Path, branch: &str) -> PathBuf {
     FlowPaths::new(root, branch).ci_sentinel()
+}
+
+/// Emit a one-line stderr banner narrating why CI is running.
+///
+/// Writes `CI: <reason>\n` to stderr when `reason` is `Some`, and is
+/// silent otherwise. The inferred-reason fallback (no sentinel /
+/// sentinel stale) and the skip-path banner are layered on by
+/// subsequent commits; this foundation covers the explicit branch
+/// only.
+fn emit_ci_banner(reason: Option<&str>) {
+    if let Some(r) = reason {
+        eprintln!("CI: {}", r);
+    }
 }
 
 /// Format an elapsed-ms count as a short human string: `523ms`,
@@ -784,6 +805,12 @@ pub fn run_impl(args: &Args, cwd: &Path, root: &Path, flow_ci_running: bool) -> 
 
     let resolved_branch = crate::git::resolve_branch_in(args.branch.as_deref(), cwd, root);
     let selected = args.selected_phase();
+
+    // Narrate the run before any tool spawn or sentinel-skip return.
+    // Wired before the empty-tool-list check inside run_once /
+    // run_with_retry so the empty case still produces a banner when
+    // a caller supplies --reason.
+    emit_ci_banner(args.reason.as_deref());
 
     // Sentinel skip check — only when running all four phases.
     // Single-phase runs (--format/--lint/--build/--test) bypass the

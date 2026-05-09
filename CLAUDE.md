@@ -99,6 +99,7 @@ Skills are pure Markdown (`skills/<name>/SKILL.md`). The only executable code is
 - Fail-fast tool ordering (format → lint → build → test)
 - Stable JSON output contract
 - Cwd-drift guard via `cwd_scope::enforce`
+- Stderr banner narrating CI rationale (caller-supplied via `--reason` or runner-inferred from sentinel state)
 
 `bin/flow ci` always invokes the **worktree-root** scripts. For mono-repo flows started inside a service subdirectory, `ci::run_impl` normalizes cwd to the worktree root before scanning for `bin/<tool>` scripts. A repo with no `bin/{format,lint,build,test}` scripts is a hard error.
 

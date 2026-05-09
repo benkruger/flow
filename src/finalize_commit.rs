@@ -236,6 +236,7 @@ pub fn run_impl(
             audit: false,
             clean: false,
             trailing: Vec::new(),
+            reason: None,
         };
         let (ci_result, ci_code) = crate::ci::run_impl(&ci_args, cwd, root, false);
 

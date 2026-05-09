@@ -695,7 +695,43 @@ fn default_args() -> Args {
         audit: false,
         clean: false,
         trailing: Vec::new(),
+        reason: None,
     }
+}
+
+// --- reason flag ---
+
+#[test]
+fn ci_accepts_reason_flag() {
+    let args = Args::try_parse_from(["ci", "--reason", "verify foundation"])
+        .expect("--reason flag should be accepted");
+    assert_eq!(args.reason.as_deref(), Some("verify foundation"));
+}
+
+#[test]
+fn ci_accepts_reason_flag_with_single_phase_test_variant() {
+    let args = Args::try_parse_from(["ci", "--reason", "x", "--test"])
+        .expect("--reason and --test should both be accepted");
+    assert_eq!(args.reason.as_deref(), Some("x"));
+    assert!(args.test);
+}
+
+#[test]
+fn run_impl_with_explicit_reason_runs_and_emits_banner_branch() {
+    let f = make_ci_fixture();
+    write_script(
+        &f.path.join("bin").join("format"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    let args = Args {
+        branch: Some(f.branch.clone()),
+        force: true,
+        reason: Some("verify foundation".to_string()),
+        ..default_args()
+    };
+    let (out, code) = run_impl(&args, &f.path, &f.path, false);
+    assert_eq!(code, 0);
+    assert_eq!(out["status"], "ok");
 }
 
 #[test]
