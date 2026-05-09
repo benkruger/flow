@@ -304,7 +304,7 @@ fn full_state() {
     state["dag_file"] = json!(dag_file.to_string_lossy().to_string());
     state["transcript_path"] = json!("/path/to/session.jsonl");
     state["issues_filed"] = json!([{
-        "label": "Flow",
+        "label": "Tech Debt",
         "title": "Test issue",
         "url": "https://github.com/test/test/issues/1",
         "phase_name": "Learn"
@@ -505,7 +505,7 @@ fn section_order() {
     state["dag_file"] = json!(dag_file.to_string_lossy().to_string());
     state["transcript_path"] = json!("/path/to/session.jsonl");
     state["issues_filed"] = json!([{
-        "label": "Flow",
+        "label": "Tech Debt",
         "title": "Issue",
         "url": "https://github.com/t/t/issues/1",
         "phase_name": "Learn"

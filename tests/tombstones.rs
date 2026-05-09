@@ -1178,6 +1178,161 @@ fn test_flow_paths_no_new_constructor() {
     );
 }
 
+// --- Flow label removal (PR #1408) ---
+
+/// Tombstone: removed in PR #1408. Must not return.
+///
+/// Issue #1405 removed the redundant `Flow` label from the
+/// `benkruger/flow` issue tracker. Every issue filed there is
+/// already plugin-related — the label conveyed no information.
+/// The tombstone scans every prose-corpus surface named in
+/// `.claude/rules/docs-with-behavior.md` "Feature-Configurable
+/// Prose Generalization" so a future contributor cannot resurrect
+/// the flag in any documentation surface:
+///
+/// 1. `--label "Flow"` arguments in skill bash blocks
+///    (`skills/**/SKILL.md`).
+/// 2. `--label "Flow"` arguments in rule prose
+///    (`.claude/rules/*.md`).
+/// 3. `--label "Flow"` arguments in agent prompts (`agents/*.md`).
+/// 4. `--label "Flow"` arguments in Jekyll/marketing docs
+///    (`docs/**/*.md`).
+/// 5. `--label "Flow"` arguments in `README.md`.
+/// 6. `--label "Flow"` arguments in `CLAUDE.md`.
+/// 7. `"Flow"` as a slice element in
+///    `src/analyze_issues.rs::LABEL_CATEGORIES`.
+///
+/// Stability per `.claude/rules/tombstone-tests.md` "Literal
+/// tombstones — stability checklist":
+///
+/// 1. `concat!`: not applicable to markdown files (no Rust
+///    macros). For `LABEL_CATEGORIES` a future author could
+///    reassemble `"Flow"` via `concat!("Fl", "ow")`, but the
+///    bounded scan over the slice block plus the no-incentive
+///    argument (the categorization removal would have to be
+///    deliberately undone) makes this implausible.
+/// 2. `format!`: cannot produce a slice element at compile
+///    time, and markdown files have no runtime reassembly.
+/// 3. Split constants: a future author could declare
+///    `const FLOW_LABEL: &str = "Flow"` and reference it inside
+///    the slice. The bounded `LABEL_CATEGORIES` scan would miss
+///    the named-constant resurrection — but the resurrection
+///    would also require re-introducing the const definition,
+///    which is reviewable code and would fail the issue's
+///    intent.
+/// 4. Method chains: not applicable to slice literals or to
+///    `--label "Flow"` invocations (the flag name and value are
+///    one shell token sequence).
+///
+/// Bypasses considered and rejected:
+///
+/// - `--label 'Flow'` (single quotes): scanned alongside the
+///   double-quoted form.
+/// - `--label  "Flow"` (extra whitespace): markdown convention
+///   normalizes whitespace to a single space; reviewer would
+///   catch the deviation.
+/// - `"Flow In-Progress"` and `"Flow"` substring collision:
+///   sibling labels legitimately contain `Flow`. The scanner
+///   matches only the exact `--label "Flow"` and `--label
+///   'Flow'` argument forms, and the LABEL_CATEGORIES check
+///   uses bounded-slice scanning over the named const block to
+///   match `"Flow",` (with comma) — the entry is always
+///   followed by a comma in slice literals.
+/// - Markdown files committed with `.markdown` extension: the
+///   directory walker filters on `.md` only. The codebase uses
+///   `.md` exclusively; a `.markdown` file in any of the scanned
+///   surfaces would be a pre-existing convention violation that
+///   reviewer-agent inspection would catch independently.
+#[test]
+fn test_filing_no_flow_label() {
+    let root = common::repo_root();
+
+    // The six prose-corpus surfaces. Directory entries are scanned
+    // recursively for `.md` files; single-file entries are read
+    // directly so `README.md` and `CLAUDE.md` (at the repo root)
+    // do not require walking the whole repo.
+    let dir_surfaces: &[(&str, std::path::PathBuf)] = &[
+        ("skills/**/SKILL.md", root.join("skills")),
+        (".claude/rules/*.md", root.join(".claude").join("rules")),
+        ("agents/*.md", root.join("agents")),
+        ("docs/**/*.md", root.join("docs")),
+    ];
+    let file_surfaces: &[(&str, std::path::PathBuf)] = &[
+        ("README.md", root.join("README.md")),
+        ("CLAUDE.md", root.join("CLAUDE.md")),
+    ];
+
+    for (label, dir) in dir_surfaces {
+        let hits = scan_for_flow_label_arg(dir, "md");
+        assert!(
+            hits.is_empty(),
+            "{} must not contain `--label \"Flow\"` — \
+             the redundant Flow label was removed in PR #1408. \
+             Offending files: {:?}",
+            label,
+            hits
+        );
+    }
+
+    for (label, path) in file_surfaces {
+        if let Ok(content) = fs::read_to_string(path) {
+            assert!(
+                !content.contains("--label \"Flow\"") && !content.contains("--label 'Flow'"),
+                "{} must not contain `--label \"Flow\"` — \
+                 the redundant Flow label was removed in PR #1408.",
+                label
+            );
+        }
+    }
+
+    // LABEL_CATEGORIES must not list "Flow" as a category.
+    let analyze_path = root.join("src").join("analyze_issues.rs");
+    let analyze = fs::read_to_string(&analyze_path).expect("src/analyze_issues.rs must exist");
+    let tail_at_const = analyze
+        .split_once("LABEL_CATEGORIES: &[&str] = &[")
+        .map(|(_, t)| t)
+        .expect("LABEL_CATEGORIES const must exist in src/analyze_issues.rs");
+    let const_block = tail_at_const
+        .split_once("];")
+        .map(|(b, _)| b)
+        .unwrap_or(tail_at_const);
+    assert!(
+        !const_block.contains("\"Flow\""),
+        "src/analyze_issues.rs::LABEL_CATEGORIES must not contain `\"Flow\"` — \
+         the redundant Flow label was removed in PR #1408."
+    );
+}
+
+/// Recursively scans `dir` for files with the given extension and
+/// returns the paths that contain `--label "Flow"` or
+/// `--label 'Flow'` as a literal substring. Used by
+/// [`test_filing_no_flow_label`].
+fn scan_for_flow_label_arg(dir: &Path, ext: &str) -> Vec<PathBuf> {
+    let mut hits = Vec::new();
+    let entries = match fs::read_dir(dir) {
+        Ok(it) => it,
+        Err(_) => return hits,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            hits.extend(scan_for_flow_label_arg(&path, ext));
+            continue;
+        }
+        if path.extension().and_then(|e| e.to_str()) != Some(ext) {
+            continue;
+        }
+        let content = match fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        if content.contains("--label \"Flow\"") || content.contains("--label 'Flow'") {
+            hits.push(path);
+        }
+    }
+    hits
+}
+
 // --- flow-review identifier rename tombstones ---
 //
 // Phase 3 was renamed from `flow-code-review` to `flow-review` for
