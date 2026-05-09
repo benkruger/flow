@@ -14,14 +14,14 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> String {
     let order = [
         "flow-start",
         "flow-code",
-        "flow-code-review",
+        "flow-review",
         "flow-learn",
         "flow-complete",
     ];
     let names = [
         ("flow-start", "Start"),
         ("flow-code", "Code"),
-        ("flow-code-review", "Code Review"),
+        ("flow-review", "Code Review"),
         ("flow-learn", "Learn"),
         ("flow-complete", "Complete"),
     ];
@@ -233,7 +233,7 @@ fn frozen_phases_file_is_used() {
     let (code, json) = run(dir.path(), "flow-code", "complete", &[]);
     assert_eq!(code, 0);
     assert_eq!(json["status"], "ok");
-    assert_eq!(json["next_phase"], "flow-code-review");
+    assert_eq!(json["next_phase"], "flow-review");
 }
 
 #[test]
@@ -249,7 +249,7 @@ fn falls_back_without_frozen_phases() {
 
     let (code, json) = run(dir.path(), "flow-code", "complete", &[]);
     assert_eq!(code, 0);
-    assert_eq!(json["next_phase"], "flow-code-review");
+    assert_eq!(json["next_phase"], "flow-review");
 }
 
 #[test]
@@ -635,7 +635,7 @@ fn enter_flow_complete() {
             ("flow-start", "complete"),
             ("flow-code", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "complete"),
+            ("flow-review", "complete"),
             ("flow-learn", "complete"),
         ],
     );
@@ -651,11 +651,11 @@ fn enter_flow_complete() {
 }
 
 #[test]
-fn enter_non_code_review_does_not_set_code_review_step() {
+fn enter_non_code_review_does_not_set_review_step() {
     let mut state = make_state_value("flow-start", &[("flow-start", "complete")]);
     phase_enter(&mut state, "flow-code", None);
 
-    assert!(state.get("code_review_step").is_none() || state["code_review_step"].is_null());
+    assert!(state.get("review_step").is_none() || state["review_step"].is_null());
 }
 
 #[test]
@@ -789,12 +789,12 @@ fn complete_sets_all_fields() {
     assert_eq!(result["action"], "complete");
     assert!(result.get("cumulative_seconds").is_some());
     assert!(result.get("formatted_time").is_some());
-    assert_eq!(result["next_phase"], "flow-code-review");
+    assert_eq!(result["next_phase"], "flow-review");
 
     assert_eq!(state["phases"]["flow-code"]["status"], "complete");
     assert!(state["phases"]["flow-code"]["completed_at"].is_string());
     assert!(state["phases"]["flow-code"]["session_started_at"].is_null());
-    assert_eq!(state["current_phase"], "flow-code-review");
+    assert_eq!(state["current_phase"], "flow-review");
 }
 
 #[test]
@@ -831,16 +831,10 @@ fn complete_next_phase_override() {
         &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
 
-    let result = phase_complete(
-        &mut state,
-        "flow-code",
-        Some("flow-code-review"),
-        None,
-        None,
-    );
+    let result = phase_complete(&mut state, "flow-code", Some("flow-review"), None, None);
 
-    assert_eq!(result["next_phase"], "flow-code-review");
-    assert_eq!(state["current_phase"], "flow-code-review");
+    assert_eq!(result["next_phase"], "flow-review");
+    assert_eq!(state["current_phase"], "flow-review");
 }
 
 #[test]
@@ -894,13 +888,13 @@ fn complete_uses_custom_phase_order() {
     let custom_order: Vec<String> = vec![
         "flow-start".into(),
         "flow-code".into(),
-        "flow-code-review".into(),
+        "flow-review".into(),
     ];
 
     let result = phase_complete(&mut state, "flow-code", None, Some(&custom_order), None);
 
-    assert_eq!(result["next_phase"], "flow-code-review");
-    assert_eq!(state["current_phase"], "flow-code-review");
+    assert_eq!(result["next_phase"], "flow-review");
+    assert_eq!(state["current_phase"], "flow-review");
 }
 
 #[test]
@@ -911,7 +905,7 @@ fn complete_terminal_phase_auto_next() {
             ("flow-start", "complete"),
             ("flow-code", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "complete"),
+            ("flow-review", "complete"),
             ("flow-learn", "complete"),
             ("flow-complete", "in_progress"),
         ],
@@ -932,7 +926,7 @@ fn complete_flow_complete_with_next_phase() {
             ("flow-start", "complete"),
             ("flow-code", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "complete"),
+            ("flow-review", "complete"),
             ("flow-learn", "complete"),
             ("flow-complete", "in_progress"),
         ],
@@ -1406,7 +1400,7 @@ fn run_impl_main_complete_with_next_phase_and_reason_exercises_closures() {
     let (out, code) = run_impl_main(
         "flow-code",
         "complete",
-        Some("flow-code-review"),
+        Some("flow-review"),
         Some("test"),
         Some("approach pivot"),
         dir.path(),
@@ -1414,7 +1408,7 @@ fn run_impl_main_complete_with_next_phase_and_reason_exercises_closures() {
     );
     assert_eq!(code, 0);
     assert_eq!(out["status"], "ok");
-    assert_eq!(out["next_phase"], "flow-code-review");
+    assert_eq!(out["next_phase"], "flow-review");
 }
 
 /// In a non-git cwd with no `--branch` override, `resolve_branch`
@@ -1719,7 +1713,7 @@ fn complete_flow_code_captures_diff_stats() {
     let result = phase_complete(&mut state, "flow-code", None, None, None);
 
     assert_eq!(result["status"], "ok");
-    assert_eq!(result["next_phase"], "flow-code-review");
+    assert_eq!(result["next_phase"], "flow-review");
     assert!(state.get("diff_stats").is_some());
     assert!(state["diff_stats"].get("files_changed").is_some());
     assert!(state["diff_stats"].get("captured_at").is_some());

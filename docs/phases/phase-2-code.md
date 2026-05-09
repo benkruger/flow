@@ -86,5 +86,5 @@ By the end of Phase 3:
 
 ## What Comes Next
 
-Phase 4: Code Review (`/flow-code-review`) — four steps: clarity with convention
+Phase 4: Code Review (`/flow-review`) — four steps: clarity with convention
 compliance, correctness with rule compliance, safety, and parallel agent reviews.

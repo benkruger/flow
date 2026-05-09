@@ -274,8 +274,7 @@ pub fn format_complete_summary(state: &Value, closed_issues: Option<&[Value]>) -
 
     // Findings sections (between Timeline and Artifacts)
     if let Some(findings_arr) = findings {
-        let cr_lines =
-            phase_findings_section(findings_arr, "flow-code-review", "Code Review Findings");
+        let cr_lines = phase_findings_section(findings_arr, "flow-review", "Code Review Findings");
         lines.extend(cr_lines);
         let learn_lines = phase_findings_section(findings_arr, "flow-learn", "Learn Findings");
         lines.extend(learn_lines);

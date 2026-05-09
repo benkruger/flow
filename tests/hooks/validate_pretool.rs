@@ -2391,7 +2391,7 @@ fn layer_10_passes_git_commit_in_unrelated_git_repo() {
 // --- layer_10_skill_commit_carveout ---
 //
 // The legitimate skill-driven commit path is `/flow:flow-commit` →
-// `bin/flow finalize-commit`. The flow-code, flow-code-review, and
+// `bin/flow finalize-commit`. The flow-code, flow-review, and
 // flow-learn skills all set `_continue_pending=commit` on the state
 // file immediately before invoking /flow:flow-commit, so the field is
 // the marker Layer 9 checks. When the carve-out fires, the hook

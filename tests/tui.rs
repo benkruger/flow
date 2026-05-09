@@ -76,7 +76,7 @@ fn make_flow(feature: &str, phase: &str, phase_num: usize) -> FlowSummary {
                 annotation: "step 3 of 4".to_string(),
             },
             TimelineEntry {
-                key: "flow-code-review".to_string(),
+                key: "flow-review".to_string(),
                 name: "Code Review".to_string(),
                 number: 3,
                 status: "pending".to_string(),
@@ -271,7 +271,7 @@ fn make_flow_with_token_snapshots() -> FlowSummary {
                 "window_at_enter": snap_enter,
                 "window_at_complete": snap_complete
             },
-            "flow-code-review": {
+            "flow-review": {
                 "name": "Code Review", "status": "pending", "started_at": null,
                 "completed_at": null, "session_started_at": null,
                 "cumulative_seconds": 0, "visit_count": 0
@@ -342,12 +342,7 @@ fn test_render_detail_panel_token_table_breaks_when_viewport_overflows() {
     // With a small viewport, the loop must break before all 5 land.
     let snap_enter = flow.state["phases"]["flow-code"]["window_at_enter"].clone();
     let snap_complete = flow.state["phases"]["flow-code"]["window_at_complete"].clone();
-    for key in [
-        "flow-start",
-        "flow-code-review",
-        "flow-learn",
-        "flow-complete",
-    ] {
+    for key in ["flow-start", "flow-review", "flow-learn", "flow-complete"] {
         flow.state["phases"][key]["window_at_enter"] = snap_enter.clone();
         flow.state["phases"][key]["window_at_complete"] = snap_complete.clone();
     }
