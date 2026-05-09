@@ -13,8 +13,8 @@ use ratatui::backend::TestBackend;
 use ratatui::{Frame, Terminal};
 
 use flow_rs::tui::{
-    build_iterm_open_worktree_script, detail_pane_phase_header, list_row_phase_label, DrawFn,
-    EventSourceFn, TuiApp, TuiAppPlatform, View,
+    apply_filter_key, build_iterm_open_worktree_script, detail_pane_phase_header,
+    flow_matches_filter, list_row_phase_label, DrawFn, EventSourceFn, TuiApp, TuiAppPlatform, View,
 };
 use flow_rs::tui_data::{
     AccountMetrics, FlowSummary, IssueSummary, OrchestrationItem, OrchestrationSummary,
@@ -582,6 +582,196 @@ fn test_render_tasks_view_no_plan() {
     app.view = View::Tasks;
     let output = render_to_string(&app, 80, 40);
     assert!(output.contains("No plan file."));
+}
+
+// --- apply_filter_key + flow_matches_filter ---
+
+#[test]
+fn test_filter_slash_inactive_enters_input() {
+    let mut q: Option<String> = None;
+    let mut active = false;
+    apply_filter_key(&mut q, &mut active, KeyCode::Char('/'));
+    assert!(active);
+    assert_eq!(q, Some(String::new()));
+}
+
+#[test]
+fn test_filter_other_key_inactive_no_op() {
+    let mut q: Option<String> = None;
+    let mut active = false;
+    apply_filter_key(&mut q, &mut active, KeyCode::Char('a'));
+    assert!(!active);
+    assert_eq!(q, None);
+}
+
+#[test]
+fn test_filter_char_active_appends() {
+    let mut q: Option<String> = Some(String::new());
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Char('a'));
+    apply_filter_key(&mut q, &mut active, KeyCode::Char('b'));
+    assert_eq!(q, Some("ab".to_string()));
+    assert!(active);
+}
+
+#[test]
+fn test_filter_backspace_active_pops() {
+    let mut q: Option<String> = Some("ab".to_string());
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Backspace);
+    assert_eq!(q, Some("a".to_string()));
+}
+
+#[test]
+fn test_filter_backspace_empty_query_no_underflow() {
+    let mut q: Option<String> = Some(String::new());
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Backspace);
+    assert_eq!(q, Some(String::new()));
+}
+
+#[test]
+fn test_filter_enter_with_query_persists() {
+    let mut q: Option<String> = Some("foo".to_string());
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Enter);
+    assert!(!active);
+    assert_eq!(q, Some("foo".to_string()));
+}
+
+#[test]
+fn test_filter_enter_with_empty_query_clears() {
+    let mut q: Option<String> = Some(String::new());
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Enter);
+    assert!(!active);
+    assert_eq!(q, None);
+}
+
+#[test]
+fn test_filter_char_with_none_query_is_no_op() {
+    // Defensive arm: input_active=true with query=None — Char input
+    // is a no-op rather than auto-creating Some("").
+    let mut q: Option<String> = None;
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Char('a'));
+    assert_eq!(q, None);
+    assert!(active);
+}
+
+#[test]
+fn test_filter_backspace_with_none_query_is_no_op() {
+    // Defensive arm: input_active=true with query=None — Backspace
+    // is a no-op rather than panicking.
+    let mut q: Option<String> = None;
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Backspace);
+    assert_eq!(q, None);
+    assert!(active);
+}
+
+#[test]
+fn test_filter_enter_with_none_query_is_no_op() {
+    // Defensive arm: input_active=true with query=None shouldn't
+    // arise from the state machine's own transitions, but if a caller
+    // hand-constructs this state, Enter must still finalize cleanly.
+    let mut q: Option<String> = None;
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Enter);
+    assert!(!active);
+    assert_eq!(q, None);
+}
+
+#[test]
+fn test_filter_esc_clears_query() {
+    let mut q: Option<String> = Some("foo".to_string());
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Esc);
+    assert!(!active);
+    assert_eq!(q, None);
+}
+
+#[test]
+fn test_filter_slash_with_committed_query_re_enters_input() {
+    let mut q: Option<String> = Some("foo".to_string());
+    let mut active = false;
+    apply_filter_key(&mut q, &mut active, KeyCode::Char('/'));
+    assert!(active);
+    assert_eq!(q, Some("foo".to_string()));
+}
+
+#[test]
+fn test_filter_other_key_active_no_op() {
+    let mut q: Option<String> = Some("a".to_string());
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Up);
+    assert_eq!(q, Some("a".to_string()));
+    assert!(active);
+}
+
+#[test]
+fn test_filter_backspace_inactive_no_query_returns_false() {
+    let mut q: Option<String> = None;
+    let mut active = false;
+    apply_filter_key(&mut q, &mut active, KeyCode::Backspace);
+    assert_eq!(q, None);
+    assert!(!active);
+}
+
+#[test]
+fn test_visibility_input_active_shows_all() {
+    assert!(flow_matches_filter("anything", Some("xyz"), true));
+    assert!(flow_matches_filter("anything", None, true));
+}
+
+#[test]
+fn test_visibility_query_none_shows_all() {
+    assert!(flow_matches_filter("anything", None, false));
+}
+
+#[test]
+fn test_visibility_query_empty_shows_all() {
+    assert!(flow_matches_filter("anything", Some(""), false));
+}
+
+#[test]
+fn test_visibility_query_substring_match_case_insensitive() {
+    assert!(flow_matches_filter("MyFeature", Some("feat"), false));
+    assert!(flow_matches_filter("myfeature", Some("FEAT"), false));
+}
+
+#[test]
+fn test_visibility_query_no_match() {
+    assert!(!flow_matches_filter("alpha-branch", Some("zeta"), false));
+}
+
+#[test]
+fn test_input_slash_enters_filter_mode() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.handle_key(key(KeyCode::Char('/')));
+    assert!(app.filter_input_active);
+    assert_eq!(app.filter_query, Some(String::new()));
+}
+
+#[test]
+fn test_input_filter_typing_appends_to_query() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key(KeyCode::Char('a')));
+    app.handle_key(key(KeyCode::Char('b')));
+    assert_eq!(app.filter_query, Some("ab".to_string()));
+}
+
+#[test]
+fn test_input_filter_q_does_not_quit_in_input_mode() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key(KeyCode::Char('q')));
+    assert!(app.running, "q should not quit during filter input");
+    assert_eq!(app.filter_query, Some("q".to_string()));
 }
 
 // --- build_iterm_open_worktree_script ---

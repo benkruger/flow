@@ -31,6 +31,74 @@ use crate::utils::format_tokens;
 /// Auto-refresh interval.
 const REFRESH_MS: u64 = 2000;
 
+/// Apply a key event to the filter state machine (`filter_query` +
+/// `filter_input_active`). Pure helper — operates entirely on the
+/// passed mutable refs so tests can drive transitions without a full
+/// `TuiApp`.
+///
+/// State transitions:
+///
+/// - Inactive → `/`  → active, query becomes `Some("")` if it was
+///   `None`; an existing committed query persists (so `/` re-enters
+///   the same query for editing).
+/// - Active → `<char>` → query gets the char appended.
+/// - Active → Backspace → query pops one char (no-op when empty).
+/// - Active → Enter → inactive, query persists when non-empty,
+///   becomes `None` when empty.
+/// - Active → Esc → inactive AND query cleared to `None`.
+/// - Other keys are ignored in both modes.
+pub fn apply_filter_key(query: &mut Option<String>, input_active: &mut bool, key: KeyCode) {
+    if !*input_active {
+        if matches!(key, KeyCode::Char('/')) {
+            *input_active = true;
+            if query.is_none() {
+                *query = Some(String::new());
+            }
+        }
+        return;
+    }
+
+    match key {
+        KeyCode::Char(c) => {
+            if let Some(q) = query.as_mut() {
+                q.push(c);
+            }
+        }
+        KeyCode::Backspace => {
+            if let Some(q) = query.as_mut() {
+                q.pop();
+            }
+        }
+        KeyCode::Enter => {
+            *input_active = false;
+            if let Some(q) = query.as_ref() {
+                if q.is_empty() {
+                    *query = None;
+                }
+            }
+        }
+        KeyCode::Esc => {
+            *input_active = false;
+            *query = None;
+        }
+        _ => {}
+    }
+}
+
+/// Decide whether a flow row should be visible under the current
+/// filter state. `input_active` mode shows everything (so the row
+/// list doesn't churn while the user types); a committed non-empty
+/// query gates rows by case-insensitive branch substring match.
+pub fn flow_matches_filter(branch: &str, query: Option<&str>, input_active: bool) -> bool {
+    if input_active {
+        return true;
+    }
+    match query {
+        Some(q) if !q.is_empty() => branch.to_lowercase().contains(&q.to_lowercase()),
+        _ => true,
+    }
+}
+
 /// Build the prominent detail-pane phase header above the timeline.
 ///
 /// Result shape: `"Phase {phase_number} ({phase_label}) — step {current} of {total}: {name}"`.
@@ -185,6 +253,13 @@ pub struct TuiApp {
     pub issue_selected: usize,
     pub metrics: AccountMetrics,
     pub platform: TuiAppPlatform,
+    /// Filter query for the list pane. `None` = no filter, `Some(s)`
+    /// where s is non-empty = branch substring filter, `Some("")` =
+    /// editing an empty query (treated as no filter for visibility).
+    pub filter_query: Option<String>,
+    /// True while the user is typing into the filter — chars append,
+    /// Backspace pops, Enter commits, Esc cancels.
+    pub filter_input_active: bool,
 }
 
 impl TuiApp {
@@ -223,6 +298,8 @@ impl TuiApp {
                 stale: true,
             },
             platform,
+            filter_query: None,
+            filter_input_active: false,
         }
     }
 
@@ -318,6 +395,17 @@ impl TuiApp {
             return;
         }
 
+        // Filter input mode preempts the normal dispatch so chars
+        // append to the query instead of triggering shortcuts.
+        if self.filter_input_active {
+            apply_filter_key(
+                &mut self.filter_query,
+                &mut self.filter_input_active,
+                key.code,
+            );
+            return;
+        }
+
         match key.code {
             KeyCode::Char('q') => self.running = false,
             KeyCode::Right => self.active_tab = 1.min(self.active_tab + 1),
@@ -349,6 +437,13 @@ impl TuiApp {
                 self.issue_selected = 0;
             }
             KeyCode::Enter => self.open_worktree(),
+            KeyCode::Char('/') => {
+                apply_filter_key(
+                    &mut self.filter_query,
+                    &mut self.filter_input_active,
+                    KeyCode::Char('/'),
+                );
+            }
             KeyCode::Char('o') => {
                 self.open_worktree_shell();
             }
@@ -685,10 +780,23 @@ impl TuiApp {
         // Cross-tab indicator
         let orch_issue = self.get_orch_issue_in_progress();
 
-        let list_end = self.flows.len().min(max_y.saturating_sub(18));
+        // Apply the filter before truncating so list_end counts only
+        // visible rows, keeping the viewport calculations correct.
+        let filtered_flows: Vec<&FlowSummary> = self
+            .flows
+            .iter()
+            .filter(|flow| {
+                flow_matches_filter(
+                    &flow.branch,
+                    self.filter_query.as_deref(),
+                    self.filter_input_active,
+                )
+            })
+            .collect();
+        let list_end = filtered_flows.len().min(max_y.saturating_sub(18));
 
         // Pre-compute column data
-        let col_data: Vec<(String, String, String, String, String)> = self.flows[..list_end]
+        let col_data: Vec<(String, String, String, String, String)> = filtered_flows[..list_end]
             .iter()
             .map(|flow| {
                 let counter = phase_step_counter(&flow.state);
@@ -772,11 +880,11 @@ impl TuiApp {
         )));
         frame.render_widget(hdr_line, Rect::new(area.x, area.y + 3, area.width, 1));
 
-        // Flow rows. `list_end = self.flows.len().min(max_y - 18)`
+        // Flow rows. `list_end = filtered_flows.len().min(max_y - 18)`
         // already bounds `i` so `row = 4 + i <= max_y - 15`, which is
         // always less than the panel's footer row at `max_y - 1`. No
         // additional clamp is needed inside the loop.
-        for (i, flow) in self.flows.iter().enumerate().take(list_end) {
+        for (i, flow) in filtered_flows.iter().enumerate().take(list_end) {
             let row = 4 + i;
 
             let marker = if i == self.selected {
