@@ -1,9 +1,8 @@
 //! Integration tests for `bin/flow status` — the presentation wrapper
-//! around `format_status::run_impl_main` that adds the banner header
-//! and fenced-code panel envelope.
+//! around `format_status::run_impl_main` that adds a fenced-code panel
+//! envelope.
 
 use flow_rs::status::run_impl_main;
-use flow_rs::utils::read_version;
 use serde_json::{json, Value};
 
 mod common;
@@ -65,7 +64,7 @@ fn write_state_file(root: &std::path::Path, branch: &str, state: &Value) {
 // --- run_impl_main library-level tests ---
 
 #[test]
-fn status_run_impl_main_success_wraps_panel_with_banner_and_fence() {
+fn status_run_impl_main_success_wraps_panel_with_fence() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     let state = make_state("flow-start", &[("flow-start", "in_progress")]);
@@ -73,31 +72,20 @@ fn status_run_impl_main_success_wraps_panel_with_banner_and_fence() {
 
     let (text, code) = run_impl_main(Some("only-feature"), &root).expect("ok path");
     assert_eq!(code, 0);
-
-    // Banner header + fenced text envelope around the panel content.
-    let version = read_version();
-    assert!(
-        text.contains(&format!("FLOW v{} — flow:status — STARTING", version)),
-        "expected banner header with version, got:\n{}",
-        text
-    );
     assert!(
         text.contains("```text"),
-        "expected fenced `text` opener, got:\n{}",
+        "expected fenced text opener, got:\n{}",
         text
     );
-    // The wrapped panel content should still surface the feature.
-    // make_state hardcodes branch="test-feature" → derive_feature → "Test Feature".
     assert!(
         text.contains("Feature : Test Feature"),
         "expected wrapped panel content, got:\n{}",
         text
     );
-    // Fence must close.
     let fence_count = text.matches("```").count();
     assert!(
         fence_count >= 2,
-        "expected at least two fence markers (open + close), got {} in:\n{}",
+        "expected at least two fence markers, got {} in:\n{}",
         fence_count,
         text
     );
@@ -109,15 +97,12 @@ fn status_run_impl_main_no_state_returns_no_flow_message_exits_0() {
     let root = dir.path().canonicalize().unwrap();
 
     let (text, code) = run_impl_main(Some("absent-branch"), &root).expect("ok path");
-    // Hoisted into binary: no-state now exits 0 with the message on stdout
-    // (not 1 with empty stdout as format-status does).
     assert_eq!(code, 0);
     assert!(
         text.contains("No FLOW feature in progress"),
         "expected no-flow message on stdout, got:\n{}",
         text
     );
-    // Wrapped in fenced code block.
     assert!(
         text.contains("```text"),
         "expected fenced text opener, got:\n{}",
@@ -126,36 +111,37 @@ fn status_run_impl_main_no_state_returns_no_flow_message_exits_0() {
 }
 
 #[test]
-fn status_run_impl_main_branch_resolution_err_returns_err_2() {
-    // When no --branch override is supplied AND the cwd is not a git
-    // repo, `resolve_branch` returns None and run_impl_main returns
-    // Err(("Could not determine current branch", 2)) — surfaced by the
-    // CLI arm via stderr + exit 2.
+fn status_run_impl_main_branch_resolution_err_renders_error_at_exit_0() {
+    // When `format_status::run_impl_main` returns `Err((_, 2))` (no
+    // git repo, no override → `resolve_branch` returns None), the
+    // wrapper converts the error into a fenced "Status unavailable"
+    // message at exit 0 so phase skills' bash blocks always surface
+    // useful stdout content. Forces the Err arm by passing None and
+    // a tempdir with no git repo and no `.flow-states/` entries.
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    // Set HOME so resolve_branch doesn't fall through to host git state.
-    let prev_ceiling = std::env::var("GIT_CEILING_DIRECTORIES").ok();
-    // Use process-level isolation via a dedicated tempdir cwd. We cannot
-    // mutate process env without races, so this test exercises the Err
-    // branch via the in-process call only when resolve_branch returns
-    // None — which it will here because the tempdir has no .git/.
-    let _ = prev_ceiling; // keep variable referenced
-    let result = run_impl_main(None, &root);
-    // Allow either result — the host may have a current branch detected
-    // via git's parent search. The important assertion is shape: when
-    // Err is returned, code must be 2.
-    if let Err((msg, code)) = result {
-        assert_eq!(code, 2);
-        assert!(
-            msg.contains("Could not determine current branch"),
-            "expected branch-resolution err message, got: {}",
-            msg
-        );
-    }
-    // If the host's git found a branch, the test is exercised at the
-    // subprocess level by `status_subprocess_branch_resolution_err_exits_2`
-    // below, which uses GIT_CEILING_DIRECTORIES to block git from
-    // walking up.
+    // Set GIT_CEILING_DIRECTORIES via env var unavailable in-process;
+    // instead, ensure resolve_branch sees no git context by making
+    // `root` a brand-new tempdir whose ancestors do not reach a git
+    // repo via the in-process current_dir. The library-level call
+    // operates on the explicit `root` argument for state-file
+    // discovery (no state files → empty results) — but
+    // resolve_branch still queries the host git context. The
+    // subprocess test below covers the branch-resolution-Err path
+    // through GIT_CEILING_DIRECTORIES; this in-process call may
+    // exercise either branch depending on host state. Both branches
+    // are valid: panel render OR no-flow message OR error-fenced
+    // message. The assertion is that the wrapper never panics and
+    // always returns Ok with fenced stdout.
+    let result =
+        run_impl_main(None, &root).expect("ok path — wrapper never returns Err for valid --branch");
+    let (text, code) = result;
+    assert_eq!(code, 0);
+    assert!(
+        text.contains("```text"),
+        "expected fenced text envelope on every Ok path, got:\n{}",
+        text
+    );
 }
 
 #[test]
@@ -205,18 +191,116 @@ fn status_run_impl_main_multi_flow_wraps_multi_panel() {
         "expected multi-panel header, got:\n{}",
         text
     );
-    // Wrapped in banner + fence even for multi-panel.
-    let version = read_version();
-    assert!(
-        text.contains(&format!("FLOW v{} — flow:status — STARTING", version)),
-        "expected banner around multi-panel, got:\n{}",
-        text
-    );
     assert!(
         text.contains("```text"),
         "expected fenced text opener around multi-panel, got:\n{}",
         text
     );
+}
+
+// --- Empty-panel / corrupted-state regression (F10, F11) ---
+
+#[test]
+fn status_run_impl_main_null_phases_returns_no_flow_message_not_empty_fence() {
+    // format_status::format_panel returns String::new() when
+    // state["phases"] is null or non-object. Without the empty-panel
+    // guard, the wrapper would emit a fenced block with no content.
+    // The wrapper now treats empty-panel as no-state and surfaces
+    // the no-flow message.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let branch_dir = root.join(".flow-states").join("corrupted");
+    std::fs::create_dir_all(&branch_dir).unwrap();
+    let body = json!({
+        "schema_version": 1,
+        "branch": "corrupted",
+        "current_phase": "flow-start",
+        "phases": null,
+    });
+    std::fs::write(branch_dir.join("state.json"), body.to_string()).unwrap();
+
+    let (text, code) = run_impl_main(Some("corrupted"), &root).expect("ok path");
+    assert_eq!(code, 0);
+    assert!(
+        text.contains("No FLOW feature in progress"),
+        "expected no-flow message for null phases, got:\n{}",
+        text
+    );
+}
+
+#[test]
+fn status_run_impl_main_string_phases_returns_no_flow_message_not_empty_fence() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let branch_dir = root.join(".flow-states").join("corrupted");
+    std::fs::create_dir_all(&branch_dir).unwrap();
+    let body = json!({
+        "schema_version": 1,
+        "branch": "corrupted",
+        "current_phase": "flow-start",
+        "phases": "not-an-object",
+    });
+    std::fs::write(branch_dir.join("state.json"), body.to_string()).unwrap();
+
+    let (text, code) = run_impl_main(Some("corrupted"), &root).expect("ok path");
+    assert_eq!(code, 0);
+    assert!(
+        text.contains("No FLOW feature in progress"),
+        "expected no-flow message for non-object phases, got:\n{}",
+        text
+    );
+}
+
+// --- Branch override validation (F4, F5) ---
+
+#[test]
+fn status_run_impl_main_rejects_empty_branch_override() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let result = run_impl_main(Some(""), &root);
+    let (msg, code) = result.expect_err("empty --branch must reject");
+    assert_eq!(code, 1);
+    assert!(
+        msg.contains("Invalid --branch"),
+        "expected invalid-branch error message, got: {}",
+        msg
+    );
+}
+
+#[test]
+fn status_run_impl_main_rejects_dot_branch_override() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let result = run_impl_main(Some("."), &root);
+    let (_, code) = result.expect_err("'.' --branch must reject");
+    assert_eq!(code, 1);
+}
+
+#[test]
+fn status_run_impl_main_rejects_dotdot_branch_override() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let result = run_impl_main(Some(".."), &root);
+    let (_, code) = result.expect_err("'..' --branch must reject");
+    assert_eq!(code, 1);
+}
+
+#[test]
+fn status_run_impl_main_rejects_slash_branch_override() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let result = run_impl_main(Some("feature/foo"), &root);
+    let (_, code) = result.expect_err("slash-containing --branch must reject");
+    assert_eq!(code, 1);
+}
+
+#[test]
+fn status_run_impl_main_rejects_nul_byte_branch_override() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let result = run_impl_main(Some("foo\0bar"), &root);
+    let (_, code) = result.expect_err("NUL-byte --branch must reject");
+    assert_eq!(code, 1);
 }
 
 // --- Subprocess tests ---
@@ -243,18 +327,13 @@ fn status_subprocess_exits_0_with_valid_state() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("FLOW v"),
-        "expected banner on stdout, got: {}",
-        stdout
-    );
-    assert!(
-        stdout.contains("flow:status — STARTING"),
-        "expected banner header, got: {}",
-        stdout
-    );
-    assert!(
         stdout.contains("```text"),
         "expected fenced text envelope, got: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("Current Status"),
+        "expected inner panel header, got: {}",
         stdout
     );
 }
@@ -263,9 +342,6 @@ fn status_subprocess_exits_0_with_valid_state() {
 fn status_subprocess_no_state_exits_0_emits_no_flow_message() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    // Initialize a git repo so resolve_branch succeeds with a current
-    // branch; the no-state branch is reached because no .flow-states
-    // entries exist for any branch.
     std::process::Command::new("git")
         .args(["init", "-b", "fresh"])
         .current_dir(&root)
@@ -286,7 +362,7 @@ fn status_subprocess_no_state_exits_0_emits_no_flow_message() {
     assert_eq!(
         output.status.code(),
         Some(0),
-        "expected exit 0 (hoisted into binary), stderr: {}",
+        "expected exit 0, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -295,15 +371,14 @@ fn status_subprocess_no_state_exits_0_emits_no_flow_message() {
         "expected no-flow message on stdout, got: {}",
         stdout
     );
-    assert!(
-        stdout.contains("```text"),
-        "expected fenced text envelope around no-flow message, got: {}",
-        stdout
-    );
 }
 
 #[test]
-fn status_subprocess_branch_resolution_err_exits_2() {
+fn status_subprocess_branch_resolution_err_renders_error_on_stdout() {
+    // Phase skills' bash blocks print stdout verbatim. The binary
+    // converts branch-resolution failure into a fenced "Status
+    // unavailable" message on stdout at exit 0 so the bash block
+    // surfaces a useful notice instead of an empty fence.
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_flow-rs"))
@@ -315,32 +390,46 @@ fn status_subprocess_branch_resolution_err_exits_2() {
         .expect("spawn flow-rs status");
     assert_eq!(
         output.status.code(),
-        Some(2),
-        "expected exit 2 from branch-resolution failure\nstdout: {}\nstderr: {}",
+        Some(0),
+        "expected exit 0 (error hoisted to stdout), stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Status unavailable"),
+        "expected fenced error message on stdout, got: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("```text"),
+        "expected fenced text envelope around error, got: {}",
+        stdout
+    );
+}
+
+#[test]
+fn status_subprocess_invalid_branch_override_exits_1() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["status", "--branch", ".."])
+        .current_dir(&root)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .output()
+        .expect("spawn flow-rs status");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "expected exit 1 for invalid --branch, stdout: {}\nstderr: {}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("Could not determine current branch"),
-        "expected branch-resolve error in stderr, got: {}",
+        stderr.contains("Invalid --branch"),
+        "expected invalid-branch error on stderr, got: {}",
         stderr
-    );
-}
-
-#[test]
-fn status_banner_includes_version_from_read_version() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().canonicalize().unwrap();
-    let state = make_state("flow-start", &[("flow-start", "in_progress")]);
-    write_state_file(&root, "v-feature", &state);
-
-    let (text, _code) = run_impl_main(Some("v-feature"), &root).expect("ok path");
-    let version = read_version();
-    assert!(
-        text.contains(&format!("FLOW v{}", version)),
-        "expected `FLOW v{}` from read_version() in banner, got:\n{}",
-        version,
-        text
     );
 }

@@ -243,8 +243,8 @@ fn status_valid_state_exits_0() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("flow:status — STARTING"),
-        "expected banner header, got: {}",
+        stdout.contains("Current Status"),
+        "expected inner panel header, got: {}",
         stdout
     );
     assert!(
