@@ -546,12 +546,11 @@ fn test_mutate_state_failure_returns_error() {
 /// Subprocess: `phase-enter --branch <slash-branch>` exercises the
 /// `FlowPaths::try_new` None branch for a slash-containing branch
 /// inside `resolve_state`. Returns structured error with exit 0, no
-/// panic. Guards the regression where `resolve_state` used
-/// `FlowPaths::new` (panicking) and any slash branch like
-/// `feature/foo` would crash the CLI. Consumer: every skill and hook
-/// that invokes `bin/flow phase-enter` during an active flow —
-/// per `.claude/rules/external-input-validation.md`, CLI `--branch`
-/// overrides must never panic.
+/// panic. Consumer: every skill and hook that invokes `bin/flow
+/// phase-enter` during an active flow — per
+/// `.claude/rules/external-input-validation.md`, CLI `--branch`
+/// overrides must never panic on slash-containing branches that
+/// git permits.
 #[test]
 fn test_slash_branch_returns_structured_error_no_panic() {
     let dir = tempfile::tempdir().unwrap();
