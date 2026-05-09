@@ -757,6 +757,55 @@ fn ci_explicit_reason_emits_stderr_banner() {
 }
 
 #[test]
+fn ci_inferred_no_sentinel_emits_baseline_banner() {
+    let f = make_ci_fixture();
+    write_script(
+        &f.path.join("bin").join("format"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["ci"])
+        .current_dir(&f.path)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", &f.path)
+        .output()
+        .expect("spawn flow-rs ci");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("CI: no recent sentinel — establishing baseline\n"),
+        "stderr did not contain inferred no-sentinel banner:\nstderr=\n{}",
+        stderr
+    );
+}
+
+#[test]
+fn ci_inferred_stale_sentinel_emits_reverify_banner() {
+    let f = make_ci_fixture();
+    write_script(
+        &f.path.join("bin").join("format"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    // Plant a sentinel whose content cannot match the current tree snapshot.
+    let sentinel = fixture_sentinel(&f);
+    fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+    fs::write(&sentinel, "stale-content-that-wont-match").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["ci"])
+        .current_dir(&f.path)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", &f.path)
+        .output()
+        .expect("spawn flow-rs ci");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("CI: sentinel stale (tree changed) — re-verifying\n"),
+        "stderr did not contain stale-sentinel banner:\nstderr=\n{}",
+        stderr
+    );
+}
+
+#[test]
 fn ci_explicit_reason_truncates_long_input() {
     let f = make_ci_fixture();
     write_script(
