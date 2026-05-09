@@ -101,6 +101,21 @@ pub fn enforce(cwd: &Path, project_root: &Path) -> Result<(), String> {
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
+    // Per `.claude/rules/external-input-path-construction.md`: state-
+    // derived strings flowing into `Path::join` and shell-bearing
+    // interpolation must pass a positive validator. An attacker (or
+    // a corrupt state file) supplying `..`, `/etc`, or a `"`-bearing
+    // value would otherwise relax the prefix check or break the
+    // `cd "<expected>"` recovery line. Fail closed: a state file
+    // with an unsafe `relative_cwd` is corrupt; the user must fix
+    // it before any state-mutating subcommand runs.
+    if !FlowPaths::is_safe_relative_cwd(relative_cwd) {
+        return Err(format!(
+            "Invalid relative_cwd in state file: {:?}. Must be empty or a relative path with no `..` segments, no leading `/`, no NUL bytes, and no `\"` characters. State file may be corrupt; fix `relative_cwd` in `.flow-states/<branch>/state.json` or restart the flow.",
+            relative_cwd
+        ));
+    }
+
     // current_branch_in(cwd) succeeded above, so cwd is a live
     // git-managed directory: `git rev-parse --show-toplevel` must
     // succeed too. Any failure here is a race (cwd removed mid-call)
@@ -131,10 +146,18 @@ pub fn enforce(cwd: &Path, project_root: &Path) -> Result<(), String> {
     let expected_canon = expected.canonicalize().unwrap_or_else(|_| expected.clone());
 
     if !cwd_canon.starts_with(&expected_canon) {
+        // Reaching this branch implies relative_cwd is non-empty:
+        // when relative_cwd is empty, expected equals worktree_root,
+        // and current_branch_in succeeding above guarantees cwd is a
+        // descendant of worktree_root — so starts_with always holds.
+        // The mono-repo hint and the copy-pasteable `cd "<expected>"`
+        // line therefore always apply on the err path.
         return Err(format!(
-            "cwd drift: expected {} (or a subdirectory), current {}. cd to the expected directory before running bin/flow commands.",
+            "This is a mono-repo flow (subdir: {}). Session cwd likely lost between skill invocations. cwd drift: expected {} (or a subdirectory), current {}. Run:\ncd \"{}\"",
+            relative_cwd,
             expected_canon.display(),
-            cwd_canon.display()
+            cwd_canon.display(),
+            expected_canon.display()
         ));
     }
 

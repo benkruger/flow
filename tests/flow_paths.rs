@@ -300,6 +300,82 @@ fn try_new_returns_none_for_nul_branch() {
     assert!(FlowPaths::try_new("/p", "branch\0name").is_none());
 }
 
+// --- is_safe_relative_cwd ---
+//
+// Per `.claude/rules/external-input-path-construction.md`, a state-
+// derived `relative_cwd` value flowing into `Path::join` and into the
+// `cd "<worktree_cwd>"` shell-bearing instruction must pass a positive
+// validator. These tests pin the validator's accept/reject surface for
+// every rejection class the rule names: empty (allowed — root sentinel),
+// single and nested non-empty paths (allowed), absolute paths (rejected),
+// `..` and `.` segments (rejected), NUL bytes (rejected), `"`
+// (rejected). Consumers: `cwd_scope::enforce`, `phase_enter::run_impl`.
+
+#[test]
+fn is_safe_relative_cwd_accepts_empty() {
+    assert!(FlowPaths::is_safe_relative_cwd(""));
+}
+
+#[test]
+fn is_safe_relative_cwd_accepts_single_component() {
+    assert!(FlowPaths::is_safe_relative_cwd("api"));
+}
+
+#[test]
+fn is_safe_relative_cwd_accepts_nested_components() {
+    assert!(FlowPaths::is_safe_relative_cwd("packages/api"));
+}
+
+#[test]
+fn is_safe_relative_cwd_rejects_absolute_path() {
+    assert!(!FlowPaths::is_safe_relative_cwd("/etc"));
+}
+
+#[test]
+fn is_safe_relative_cwd_rejects_backslash_absolute() {
+    assert!(!FlowPaths::is_safe_relative_cwd("\\windows"));
+}
+
+#[test]
+fn is_safe_relative_cwd_rejects_parent_traversal() {
+    assert!(!FlowPaths::is_safe_relative_cwd(".."));
+}
+
+#[test]
+fn is_safe_relative_cwd_rejects_parent_in_middle() {
+    assert!(!FlowPaths::is_safe_relative_cwd("api/../etc"));
+}
+
+#[test]
+fn is_safe_relative_cwd_rejects_dot_segment() {
+    assert!(!FlowPaths::is_safe_relative_cwd("."));
+}
+
+#[test]
+fn is_safe_relative_cwd_rejects_dot_in_middle() {
+    assert!(!FlowPaths::is_safe_relative_cwd("api/./b"));
+}
+
+#[test]
+fn is_safe_relative_cwd_rejects_nul_byte() {
+    assert!(!FlowPaths::is_safe_relative_cwd("api\0b"));
+}
+
+#[test]
+fn is_safe_relative_cwd_rejects_double_quote() {
+    assert!(!FlowPaths::is_safe_relative_cwd("api\"b"));
+}
+
+#[test]
+fn is_safe_relative_cwd_rejects_trailing_slash() {
+    assert!(!FlowPaths::is_safe_relative_cwd("api/"));
+}
+
+#[test]
+fn is_safe_relative_cwd_rejects_double_slash() {
+    assert!(!FlowPaths::is_safe_relative_cwd("api//b"));
+}
+
 // --- FlowStatesDir ---
 
 #[test]

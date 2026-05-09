@@ -183,6 +183,118 @@ fn cwd_scope_does_not_panic_on_slash_branch() {
     );
 }
 
+/// Regression: when enforce returns an error, the message must
+/// contain a `cd "<absolute_path>"` line so the user can copy-paste
+/// the recovery command. Triggered via the standard mismatch path
+/// (relative_cwd="api", cwd at worktree root). Without the cd line,
+/// the user has to mentally reconstruct the path from the prose.
+/// Consumer: every Bash-tool error surface that reports cwd_scope
+/// failures.
+#[test]
+fn cwd_drift_error_includes_copy_pasteable_cd_command() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git_repo(&root, "feature-x");
+    write_state(&root, "feature-x", "api");
+    let result = enforce(&root, &root);
+    let msg = result.unwrap_err();
+    let expected_cd = format!(r#"cd "{}/api""#, root.display());
+    assert!(
+        msg.contains(&expected_cd),
+        "error must contain copy-pasteable `{}`; got: {}",
+        expected_cd,
+        msg
+    );
+}
+
+/// Regression: when enforce errors with a non-empty relative_cwd,
+/// the message must include a hint that this is a mono-repo flow
+/// and that cwd was likely lost between skill invocations. Without
+/// the hint, mono-repo users see a generic cwd-drift error and miss
+/// the recovery context. Consumer: same as the root-flow test —
+/// every Bash-tool error surface reporting cwd_scope failures in a
+/// mono-repo setup.
+#[test]
+fn cwd_drift_error_includes_monorepo_hint_for_subdir_flow() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git_repo(&root, "feature-x");
+    write_state(&root, "feature-x", "api");
+    let result = enforce(&root, &root);
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("mono-repo"),
+        "error must mention 'mono-repo' for non-empty relative_cwd; got: {}",
+        msg
+    );
+    assert!(
+        msg.contains("api"),
+        "error must name the subdir from relative_cwd; got: {}",
+        msg
+    );
+}
+
+/// Regression: state file with `relative_cwd=".."` would silently
+/// disable the cwd guard if validation were missing — `expected`
+/// becomes the parent of the worktree and `cwd.starts_with(expected)`
+/// holds for every cwd inside `.worktrees/`. Per
+/// `.claude/rules/external-input-path-construction.md`, an unsafe
+/// state-file value must fail closed with a structured error. Consumer:
+/// every state-mutating bin/flow subcommand that calls cwd_scope.
+#[test]
+fn enforce_rejects_traversal_relative_cwd() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git_repo(&root, "feature-x");
+    write_state(&root, "feature-x", "..");
+    let result = enforce(&root, &root);
+    assert!(result.is_err(), "traversal `..` must fail closed");
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("Invalid relative_cwd"),
+        "error must name the validation failure; got: {}",
+        msg
+    );
+}
+
+/// Regression: state file with absolute `relative_cwd="/etc"` would
+/// otherwise let `Path::join` replace the worktree root entirely. Same
+/// fail-closed posture and consumer as the traversal case.
+#[test]
+fn enforce_rejects_absolute_relative_cwd() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git_repo(&root, "feature-x");
+    write_state(&root, "feature-x", "/etc");
+    let result = enforce(&root, &root);
+    assert!(result.is_err(), "absolute path must fail closed");
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("Invalid relative_cwd"),
+        "error must name the validation failure; got: {}",
+        msg
+    );
+}
+
+/// Regression: state file with `relative_cwd` containing `"` would
+/// otherwise corrupt the `cd "<expected>"` recovery line in the err
+/// message. Same fail-closed posture and consumer.
+#[test]
+fn enforce_rejects_double_quote_relative_cwd() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git_repo(&root, "feature-x");
+    write_state(&root, "feature-x", "api\"injected");
+    let result = enforce(&root, &root);
+    assert!(result.is_err(), "double-quote must fail closed");
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("Invalid relative_cwd"),
+        "error must name the validation failure; got: {}",
+        msg
+    );
+}
+
 #[test]
 fn enforce_canonicalize_fallback_nonexistent_relative_cwd() {
     // When `relative_cwd` names a subdirectory that does not yet exist

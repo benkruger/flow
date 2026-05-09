@@ -916,6 +916,154 @@ fn phase_enter_args_clap_derives_covered() {
     assert!(args.steps_total.is_none());
 }
 
+/// Regression: state file with an unsafe `relative_cwd` (traversal,
+/// absolute path, NUL, or double-quote) must fail closed in
+/// phase-enter rather than letting the unsafe value flow into
+/// `Path::join` for `worktree_cwd` or into the skill's
+/// `cd "<worktree_cwd>"` instruction. Per
+/// `.claude/rules/external-input-path-construction.md`. Consumer:
+/// every phase skill that re-anchors cwd via the response.
+#[test]
+fn phase_enter_rejects_unsafe_relative_cwd() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "unsafe-rel-cwd";
+    let repo = create_git_repo(dir.path(), branch);
+    let state_dir = flow_states_dir(&repo);
+    let branch_dir = state_dir.join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(
+        branch_dir.join("state.json"),
+        serde_json::to_string(&json!({
+            "branch": branch,
+            "relative_cwd": "/etc",
+            "current_phase": "flow-start",
+            "phases": {
+                "flow-start": {"status": "complete"}
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
+    assert_eq!(output.status.code(), Some(0));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    let msg = data["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("Invalid relative_cwd"),
+        "unsafe relative_cwd must produce a structured error; got: {}",
+        msg
+    );
+}
+
+/// Verify phase-enter response includes `relative_cwd: ""` and
+/// `worktree_cwd` equal to `worktree_path` for a root-level flow.
+/// Regression: a session resuming after context loss reads
+/// `worktree_cwd` from the phase-enter response to re-anchor cwd; the
+/// field must always be present, including for root-level flows where
+/// it equals `worktree_path`. Consumer: every phase skill that runs
+/// `cd "<worktree_cwd>"` after invoking `phase-enter`.
+#[test]
+fn phase_enter_response_includes_relative_cwd_for_root_flow() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "root-flow-cwd";
+    let repo = create_git_repo(dir.path(), branch);
+    create_state(&repo, branch, "flow-start", "complete", None);
+
+    let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
+    assert_eq!(output.status.code(), Some(0));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(
+        data["relative_cwd"], "",
+        "root-level flow must report relative_cwd=\"\""
+    );
+    let wt_cwd = data["worktree_cwd"]
+        .as_str()
+        .expect("worktree_cwd must be present in response");
+    let wt_path = data["worktree_path"]
+        .as_str()
+        .expect("worktree_path must be present in response");
+    assert_eq!(
+        wt_cwd, wt_path,
+        "root-level flow: worktree_cwd must equal worktree_path"
+    );
+}
+
+/// Verify phase-enter response carries `relative_cwd: "api"` and
+/// `worktree_cwd` equal to `<worktree_path>/api` for a mono-repo
+/// flow started inside `api/`. Regression: a session resuming after
+/// context loss in a mono-repo flow needs `worktree_cwd` to include
+/// the subdir suffix so `cd "<worktree_cwd>"` re-anchors at the
+/// correct subtree. Consumer: same skills as the root-flow case.
+#[test]
+fn phase_enter_response_includes_worktree_cwd_for_subdir_flow() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "subdir-flow-cwd";
+    let repo = create_git_repo(dir.path(), branch);
+
+    Command::new("git")
+        .args(["checkout", branch])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+
+    let api_dir = repo.join("api");
+    fs::create_dir_all(&api_dir).unwrap();
+
+    let state_dir = flow_states_dir(&repo);
+    let branch_dir = state_dir.join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(
+        branch_dir.join("state.json"),
+        serde_json::to_string(&json!({
+            "branch": branch,
+            "relative_cwd": "api",
+            "current_phase": "flow-start",
+            "phases": {
+                "flow-start": {"status": "complete"}
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["phase-enter", "--phase", "flow-code", "--branch", branch])
+        .current_dir(&api_dir)
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let last = stdout.trim().lines().last().unwrap_or("");
+    let data: Value = serde_json::from_str(last).unwrap_or(json!({}));
+    assert_eq!(data["status"], "ok");
+    assert_eq!(
+        data["relative_cwd"], "api",
+        "mono-repo flow must echo state's relative_cwd"
+    );
+    let wt_cwd = data["worktree_cwd"]
+        .as_str()
+        .expect("worktree_cwd must be present in response");
+    let wt_path = data["worktree_path"]
+        .as_str()
+        .expect("worktree_path must be present in response");
+    assert_eq!(
+        wt_cwd,
+        format!("{}/api", wt_path),
+        "mono-repo flow: worktree_cwd must be worktree_path joined with relative_cwd"
+    );
+}
+
 /// Covers the implicit `None` arm of all five `if let Some(x) = field`
 /// blocks that build the response (pr_number, pr_url, feature,
 /// slack_thread_ts, plan_file). State has none of the optional fields

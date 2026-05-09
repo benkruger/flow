@@ -32,8 +32,9 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-enter --phase flow-learn --steps-total 7
 Parse the JSON output. If `"status": "error"`, STOP and show the error.
 
 If `"status": "ok"`, capture the returned fields:
-`project_root`, `branch`, `worktree_path`, `pr_number`, `pr_url`,
-`feature`, `slack_thread_ts`, `plan_file`, and `mode` (commit + continue).
+`project_root`, `branch`, `worktree_path`, `worktree_cwd`,
+`relative_cwd`, `pr_number`, `pr_url`, `feature`, `slack_thread_ts`,
+`plan_file`, and `mode` (commit + continue).
 
 </HARD-GATE>
 
@@ -44,6 +45,21 @@ internally.
 
 Use `<worktree_path>` for CLAUDE.md and `.claude/rules/` edits.
 Use `<project_root>` for `.flow-states/` paths only.
+
+## Re-anchor cwd
+
+Mono-repo flows started inside a subdirectory (e.g. `api/`) capture
+that path as `relative_cwd` and rely on cwd staying at
+`<worktree>/<relative_cwd>` so subsequent `bin/flow` calls pass the
+cwd-drift guard. Context loss between skill invocations can reset cwd
+to the main repo root; the bash block below re-anchors regardless of
+how the session got here. Substitute the `worktree_cwd` value from the
+phase-enter response — a no-op for root-level flows (where it equals
+`worktree_path`) and a real re-anchor for mono-repo flows.
+
+```bash
+cd "<worktree_cwd>"
+```
 
 ## Three Tenants
 

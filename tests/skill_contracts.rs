@@ -372,6 +372,29 @@ fn learn_analyst_agent_has_design_note() {
     );
 }
 
+// --- Agent Output Format subsection extractor ---
+//
+// Both the END-OF-FINDINGS marker contract and the code_read field
+// contract assert content inside an agent's `## Output Format`
+// section. Each contract uses a bounded slice so a refactor that
+// guts the section is detected even when an unrelated sibling
+// section still mentions the asserted token (see
+// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions
+// in Contract Tests"). Extracting the bounded-slice walk into a
+// shared helper keeps the section boundary one source of truth.
+
+fn read_agent_output_format_section(agent_basename: &str) -> String {
+    let c = common::read_agent(agent_basename);
+    let tail_at_heading = c
+        .split_once("## Output Format")
+        .map(|(_, tail)| tail.to_string())
+        .unwrap_or_else(|| panic!("{agent_basename} must have ## Output Format section"));
+    tail_at_heading
+        .split_once("\n## ")
+        .map(|(section, _)| section.to_string())
+        .unwrap_or(tail_at_heading)
+}
+
 // --- END-OF-FINDINGS marker contract ---
 //
 // Three context-rich/high-investigation agents — reviewer,
@@ -386,15 +409,7 @@ fn learn_analyst_agent_has_design_note() {
 // names the drifted agent immediately.
 
 fn assert_agent_output_format_declares_end_of_findings(agent_basename: &str) {
-    let c = common::read_agent(agent_basename);
-    let tail_at_heading = c
-        .split_once("## Output Format")
-        .map(|(_, tail)| tail)
-        .unwrap_or_else(|| panic!("{agent_basename} must have ## Output Format section"));
-    let subsection = tail_at_heading
-        .split_once("\n## ")
-        .map(|(section, _)| section)
-        .unwrap_or(tail_at_heading);
+    let subsection = read_agent_output_format_section(agent_basename);
     assert!(
         subsection.contains("END-OF-FINDINGS"),
         "{agent_basename} Output Format must declare the literal `END-OF-FINDINGS` completion marker so the flow-review skill can detect maxTurns truncation by marker absence (see .claude/rules/cognitive-isolation.md \"Context Budget + Truncation Recovery\")"
@@ -414,6 +429,40 @@ fn learn_analyst_agent_declares_end_of_findings_marker() {
 #[test]
 fn documentation_agent_declares_end_of_findings_marker() {
     assert_agent_output_format_declares_end_of_findings("documentation.md");
+}
+
+// --- code_read field contract ---
+//
+// The pre-mortem agent's safety value depends on the agent actually
+// executing the Premise → Trace → Conclude reasoning discipline. A
+// structural `code_read` field in the Output Format finding block
+// converts "the agent verified the code" from an implicit claim into
+// a required output: triage that sees a non-conforming or missing
+// `code_read` value can dismiss the finding immediately, and skipped
+// Trace steps leave a structural gap rather than a plausible-looking
+// prose finding. The contract test guards against an accidental edit
+// or refactor that drops the field.
+//
+// Scope: pre-mortem only. The other agents that follow the same
+// reasoning discipline (reviewer, ci-fixer deep-diagnosis mode,
+// adversarial — see .claude/rules/semi-formal-reasoning.md) do not
+// yet declare the field; they are tracked separately rather than
+// scope-expanded here. The assertion is structural rather than a
+// loose substring match: it requires the bullet-shaped declaration
+// `- **code_read:**` so a future edit that demotes the field to a
+// prose mention or a code-block example would not satisfy the test.
+
+fn assert_agent_output_format_declares_code_read(agent_basename: &str) {
+    let subsection = read_agent_output_format_section(agent_basename);
+    assert!(
+        subsection.contains("- **code_read:**"),
+        "{agent_basename} Output Format must declare a `code_read` field as a bullet (`- **code_read:**`) naming the file:line_range the agent verified via Read or Grep, so triage can detect findings produced from the diff alone without an actual codebase trace (see .claude/rules/semi-formal-reasoning.md). The bullet-shaped assertion guards against future edits that demote the field to a prose mention or code-block example."
+    );
+}
+
+#[test]
+fn pre_mortem_agent_declares_code_read_field() {
+    assert_agent_output_format_declares_code_read("pre-mortem.md");
 }
 
 // --- Halt instructions wrapped in fix-first HARD-GATE ---
@@ -1713,6 +1762,91 @@ fn phase_enter_skills_no_action_enter() {
             name
         );
     }
+}
+
+/// Returns the slice of `content` between the first `phase-enter`
+/// invocation and the `## Resume Check` heading. Used by per-skill
+/// re-anchor tests to bound the assertion scope per
+/// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions
+/// in Contract Tests".
+fn slice_between_phase_enter_and_resume_check(content: &str) -> &str {
+    let after_enter = content
+        .split_once("phase-enter --phase")
+        .map(|(_, t)| t)
+        .expect("phase-enter --phase invocation must exist");
+    after_enter
+        .split_once("\n## Resume Check")
+        .map(|(s, _)| s)
+        .unwrap_or(after_enter)
+}
+
+/// Returns true when `bounded` contains `target` inside a fenced
+/// ```bash``` block. The model only executes `bash` fences; if the
+/// instruction lives in prose or a different fence type the cwd
+/// never re-anchors at runtime. The search walks every `bash` fence
+/// in the slice and checks the body up to the next closing fence
+/// for `target`.
+fn bash_fence_contains(bounded: &str, target: &str) -> bool {
+    let mut rest = bounded;
+    while let Some((_, after_open)) = rest.split_once("```bash") {
+        let body_end = after_open.find("\n```").unwrap_or(after_open.len());
+        let body = &after_open[..body_end];
+        if body.contains(target) {
+            return true;
+        }
+        rest = &after_open[body_end..];
+    }
+    false
+}
+
+/// Regression: flow-code/SKILL.md must instruct `cd "<worktree_cwd>"`
+/// inside a bash fence between the phase-enter HARD-GATE and the
+/// Resume Check. Without this, a session resuming Code phase after
+/// context loss has no way to re-anchor cwd, and every subsequent
+/// bin/flow call fails with cwd_scope::enforce blocking. The bash
+/// fence is load-bearing: the model only executes ` ```bash ` blocks,
+/// so a future regression that moves the instruction into prose
+/// would silently disable runtime cd. Consumer: every Code-phase
+/// session running on a mono-repo flow.
+#[test]
+fn flow_code_re_anchors_cwd_after_phase_enter() {
+    let c = common::read_skill("flow-code");
+    let bounded = slice_between_phase_enter_and_resume_check(&c);
+    assert!(
+        bash_fence_contains(bounded, r#"cd "<worktree_cwd>""#),
+        "flow-code/SKILL.md must instruct `cd \"<worktree_cwd>\"` inside a bash fence between phase-enter and Resume Check"
+    );
+}
+
+/// Regression: flow-code-review/SKILL.md must instruct
+/// `cd "<worktree_cwd>"` inside a bash fence between the phase-enter
+/// HARD-GATE and the Resume Check. Without this, a session resuming
+/// Code Review after context loss cannot re-anchor cwd at runtime
+/// (the model only executes bash fences). Consumer: every Code-
+/// Review-phase session running on a mono-repo flow.
+#[test]
+fn flow_code_review_re_anchors_cwd_after_phase_enter() {
+    let c = common::read_skill("flow-code-review");
+    let bounded = slice_between_phase_enter_and_resume_check(&c);
+    assert!(
+        bash_fence_contains(bounded, r#"cd "<worktree_cwd>""#),
+        "flow-code-review/SKILL.md must instruct `cd \"<worktree_cwd>\"` inside a bash fence between phase-enter and Resume Check"
+    );
+}
+
+/// Regression: flow-learn/SKILL.md must instruct `cd "<worktree_cwd>"`
+/// inside a bash fence between the phase-enter HARD-GATE and the
+/// Resume Check. Without this, a session resuming Learn after context
+/// loss cannot re-anchor cwd at runtime. Consumer: every Learn-phase
+/// session running on a mono-repo flow.
+#[test]
+fn flow_learn_re_anchors_cwd_after_phase_enter() {
+    let c = common::read_skill("flow-learn");
+    let bounded = slice_between_phase_enter_and_resume_check(&c);
+    assert!(
+        bash_fence_contains(bounded, r#"cd "<worktree_cwd>""#),
+        "flow-learn/SKILL.md must instruct `cd \"<worktree_cwd>\"` inside a bash fence between phase-enter and Resume Check"
+    );
 }
 
 #[test]

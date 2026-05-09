@@ -96,6 +96,45 @@ impl FlowPaths {
             && !branch.contains('\0')
     }
 
+    /// Positive validator for `relative_cwd` values read from the
+    /// state file. Per
+    /// `.claude/rules/external-input-path-construction.md`, every
+    /// state-derived string that flows into `Path::join` or a shell-
+    /// bearing literal must pass a positive validator before
+    /// construction. Accepts:
+    ///
+    /// - the empty string (the root-flow sentinel)
+    /// - non-empty paths whose every `/`-separated component is
+    ///   non-empty and is not `.` or `..`
+    ///
+    /// Rejects:
+    ///
+    /// - leading `/` or `\` (absolute paths — `Path::join` would
+    ///   replace `worktree_path` entirely)
+    /// - any `..` or `.` component (path traversal)
+    /// - empty components from leading or duplicate slashes
+    /// - `\0` (NUL bytes truncate paths in implementation-defined
+    ///   ways)
+    /// - `"` (double quotes break shell-bearing interpolation in
+    ///   `cd "<worktree_cwd>"` and the cwd_scope error message)
+    pub fn is_safe_relative_cwd(s: &str) -> bool {
+        if s.is_empty() {
+            return true;
+        }
+        if s.starts_with('/') || s.starts_with('\\') {
+            return false;
+        }
+        if s.contains('\0') || s.contains('"') {
+            return false;
+        }
+        for component in s.split('/') {
+            if component.is_empty() || component == "." || component == ".." {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Sole constructor — returns `Some(FlowPaths)` when `branch`
     /// passes `is_valid_branch`, `None` otherwise. Callers that hold
     /// a branch already validated upstream (state-file keyspace,
