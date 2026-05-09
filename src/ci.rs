@@ -258,33 +258,37 @@ fn compute_sentinel_outcome(
 /// Emit a one-line stderr banner narrating why CI is running (or
 /// being skipped).
 ///
-/// Writes `CI: <payload>\n` to stderr based on `(reason, outcome)`:
-/// caller-supplied `reason` takes precedence and is truncated to
-/// `REASON_MAX_CHARS` characters (last char replaced with `…` when
-/// the input exceeds the cap). When `reason` is `None`, the runner
-/// infers a banner from the sentinel outcome — `Stale` and `Absent`
-/// each have a fixed message; `Matches` and `Skipped` stay silent
-/// in this commit (the skip-path banner lands in a later commit).
+/// Skip-path priority: when `outcome` is `Matches`, the banner
+/// always reads `CI: skipped — sentinel matches HEAD` regardless of
+/// any caller-supplied `reason` — the truth at the call site is
+/// "we are not running CI", and a stale `--reason` would mislead.
+/// Otherwise caller-supplied `reason` takes precedence and is
+/// truncated to `REASON_MAX_CHARS` characters (last char replaced
+/// with `…` when the input exceeds the cap). When `reason` is
+/// `None`, the runner infers from `outcome`: `Stale` and `Absent`
+/// each have a fixed message, and `Skipped` (single-phase, force,
+/// detached HEAD) stays silent.
 fn emit_ci_banner(reason: Option<&str>, outcome: SentinelOutcome) {
-    if let Some(r) = reason {
-        let payload = if r.chars().count() > REASON_MAX_CHARS {
-            let prefix: String = r.chars().take(REASON_MAX_CHARS - 1).collect();
-            format!("{}…", prefix)
-        } else {
-            r.to_string()
-        };
-        eprintln!("CI: {}", payload);
-        return;
-    }
-    match outcome {
-        SentinelOutcome::Stale => {
-            eprintln!("CI: sentinel stale (tree changed) — re-verifying");
+    let line = match (outcome, reason) {
+        (SentinelOutcome::Matches, _) => "CI: skipped — sentinel matches HEAD".to_string(),
+        (_, Some(r)) => {
+            let payload = if r.chars().count() > REASON_MAX_CHARS {
+                let prefix: String = r.chars().take(REASON_MAX_CHARS - 1).collect();
+                format!("{}…", prefix)
+            } else {
+                r.to_string()
+            };
+            format!("CI: {}", payload)
         }
-        SentinelOutcome::Absent => {
-            eprintln!("CI: no recent sentinel — establishing baseline");
+        (SentinelOutcome::Stale, None) => {
+            "CI: sentinel stale (tree changed) — re-verifying".to_string()
         }
-        SentinelOutcome::Matches | SentinelOutcome::Skipped => {}
-    }
+        (SentinelOutcome::Absent, None) => {
+            "CI: no recent sentinel — establishing baseline".to_string()
+        }
+        (SentinelOutcome::Skipped, None) => return,
+    };
+    eprintln!("{}", line);
 }
 
 /// Format an elapsed-ms count as a short human string: `523ms`,

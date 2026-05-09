@@ -779,6 +779,67 @@ fn ci_inferred_no_sentinel_emits_baseline_banner() {
 }
 
 #[test]
+fn ci_skip_path_emits_skipped_banner() {
+    let f = make_ci_fixture();
+    write_script(
+        &f.path.join("bin").join("format"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    // Plant a sentinel matching the current tree snapshot — the run
+    // must hit the Matches outcome.
+    let snapshot = tree_snapshot(&f.path, None);
+    let sentinel = fixture_sentinel(&f);
+    fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+    fs::write(&sentinel, &snapshot).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["ci"])
+        .current_dir(&f.path)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", &f.path)
+        .output()
+        .expect("spawn flow-rs ci");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("CI: skipped — sentinel matches HEAD\n"),
+        "stderr did not contain skip banner:\nstderr=\n{}",
+        stderr
+    );
+}
+
+#[test]
+fn ci_skip_path_banner_overrides_supplied_reason() {
+    let f = make_ci_fixture();
+    write_script(
+        &f.path.join("bin").join("format"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    let snapshot = tree_snapshot(&f.path, None);
+    let sentinel = fixture_sentinel(&f);
+    fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
+    fs::write(&sentinel, &snapshot).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["ci", "--reason", "should be ignored"])
+        .current_dir(&f.path)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", &f.path)
+        .output()
+        .expect("spawn flow-rs ci");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("CI: skipped — sentinel matches HEAD\n"),
+        "stderr did not contain skip banner:\nstderr=\n{}",
+        stderr
+    );
+    assert!(
+        !stderr.contains("CI: should be ignored"),
+        "skip banner must override caller reason; saw both:\nstderr=\n{}",
+        stderr
+    );
+}
+
+#[test]
 fn ci_inferred_stale_sentinel_emits_reverify_banner() {
     let f = make_ci_fixture();
     write_script(
