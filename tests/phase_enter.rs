@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use common::flow_states_dir;
-use flow_rs::phase_enter::resolve_mode;
+use flow_rs::phase_enter::{migrate_skills_keys, resolve_mode};
 use serde_json::{json, Value};
 
 // --- Test helpers ---
@@ -964,4 +964,93 @@ fn phase_enter_response_omits_absent_optional_fields() {
         "slack_thread_ts must be absent"
     );
     assert!(data.get("plan_file").is_none(), "plan_file must be absent");
+}
+
+// --- migrate_skills_keys ---
+
+/// State files written by the prior plugin version store the
+/// Code Review skill config under the legacy phase identifier
+/// `flow-code-review`. The migration runs at the top of the
+/// `phase_enter` mutate_state closure so the canonical key
+/// `flow-review` is in place before the autonomous-discipline
+/// hooks (validate_ask_user, stop_continue) read
+/// `skills.<current_phase>` on the next mutation.
+#[test]
+fn migrate_skills_keys_renames_legacy_flow_code_review_to_flow_review() {
+    let mut state = json!({
+        "skills": {
+            "flow-start": {"continue": "auto"},
+            "flow-code-review": {"commit": "auto", "continue": "auto"},
+        }
+    });
+    migrate_skills_keys(&mut state);
+    let skills = state["skills"].as_object().unwrap();
+    assert!(
+        !skills.contains_key("flow-code-review"),
+        "legacy key must be removed after migration"
+    );
+    let canonical = skills.get("flow-review").expect("canonical key present");
+    assert_eq!(canonical["commit"], "auto");
+    assert_eq!(canonical["continue"], "auto");
+}
+
+/// When the canonical key already exists in `skills`, the
+/// migration is a no-op — the user's explicit configuration
+/// under the canonical key is never overwritten by a stale
+/// legacy entry. The legacy entry is left in place; idempotency
+/// matters more than cleanup because the canonical key is the
+/// only one downstream hooks read.
+#[test]
+fn migrate_skills_keys_skips_when_canonical_already_present() {
+    let mut state = json!({
+        "skills": {
+            "flow-code-review": {"commit": "manual", "continue": "manual"},
+            "flow-review": {"commit": "auto", "continue": "auto"},
+        }
+    });
+    migrate_skills_keys(&mut state);
+    let skills = state["skills"].as_object().unwrap();
+    let canonical = skills.get("flow-review").expect("canonical preserved");
+    assert_eq!(canonical["commit"], "auto");
+    assert_eq!(canonical["continue"], "auto");
+    // The legacy entry is left untouched; the canonical entry wins.
+    assert!(skills.contains_key("flow-code-review"));
+}
+
+/// State files without a `skills` object (older schemas, hand-
+/// edited fixtures) are a no-op. The migration must not panic
+/// or auto-vivify a `skills` field — that would corrupt state
+/// shapes the downstream typed deserialization expects.
+#[test]
+fn migrate_skills_keys_no_op_when_skills_missing() {
+    let mut state = json!({"current_phase": "flow-review"});
+    migrate_skills_keys(&mut state);
+    assert!(state.get("skills").is_none());
+}
+
+/// State whose `skills` field is the wrong type (string, array,
+/// number, null) is a no-op. The migration must not panic on
+/// `as_object_mut()` returning `None`.
+#[test]
+fn migrate_skills_keys_no_op_when_skills_wrong_type() {
+    let mut state = json!({"skills": "manual"});
+    migrate_skills_keys(&mut state);
+    assert_eq!(state["skills"], "manual");
+}
+
+/// State files with neither the legacy nor the canonical key
+/// are a no-op for the rename pair. The migration must not
+/// fabricate a canonical entry from nothing — only existing
+/// legacy values transfer across.
+#[test]
+fn migrate_skills_keys_no_op_when_neither_key_present() {
+    let mut state = json!({
+        "skills": {
+            "flow-start": {"continue": "auto"},
+        }
+    });
+    migrate_skills_keys(&mut state);
+    let skills = state["skills"].as_object().unwrap();
+    assert!(!skills.contains_key("flow-review"));
+    assert!(!skills.contains_key("flow-code-review"));
 }

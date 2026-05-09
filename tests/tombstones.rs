@@ -1252,6 +1252,66 @@ fn test_claude_rules_dir_no_code_review_scope_file() {
 
 /// Tombstone: removed in PR #1402. Must not return.
 ///
+/// File-existence guard for the renamed Phase 3 doc page. The doc
+/// was moved from `docs/phases/phase-3-code-review.md` to
+/// `docs/phases/phase-3-review.md` in the same PR via `git mv` to
+/// match the renamed phase identifier. Per
+/// `.claude/rules/tombstone-tests.md` "Two kinds of tombstone —
+/// file-resurrection threats", a deleted doc path needs a
+/// file-existence tombstone so a merge-conflict resurrection of
+/// the old path produces a duplicate doc that the GitHub Pages
+/// generator would render as a separate page. The check uses
+/// `Path::exists()` directly because the target is a worktree-
+/// tracked file path, not a string literal — the concat!/format!
+/// reassembly bypass classes do not apply to filesystem paths
+/// checked at runtime.
+#[test]
+fn test_docs_phases_dir_no_phase_3_code_review_file() {
+    let root = common::repo_root();
+    let path = root
+        .join("docs")
+        .join("phases")
+        .join("phase-3-code-review.md");
+    assert!(
+        !path.exists(),
+        "docs/phases/phase-3-code-review.md must not exist — the \
+         doc was renamed to docs/phases/phase-3-review.md in PR \
+         #1402. A `git mv` reversal or merge-conflict resurrection \
+         of the old path would re-introduce a duplicate Phase 3 \
+         doc page."
+    );
+}
+
+/// Tombstone: removed in PR #1402. Must not return.
+///
+/// File-existence guard for the renamed Code Review skill doc
+/// page. The doc was moved from `docs/skills/flow-code-review.md`
+/// to `docs/skills/flow-review.md` in the same PR via `git mv` to
+/// match the renamed skill directory. Per
+/// `.claude/rules/tombstone-tests.md` "Two kinds of tombstone —
+/// file-resurrection threats", a deleted doc path needs a
+/// file-existence tombstone so a merge-conflict resurrection of
+/// the old path produces a duplicate doc that the GitHub Pages
+/// generator would render as a separate page. The check uses
+/// `Path::exists()` directly because the target is a worktree-
+/// tracked file path, not a string literal — the concat!/format!
+/// reassembly bypass classes do not apply to filesystem paths
+/// checked at runtime.
+#[test]
+fn test_docs_skills_dir_no_flow_code_review_file() {
+    let root = common::repo_root();
+    let path = root.join("docs").join("skills").join("flow-code-review.md");
+    assert!(
+        !path.exists(),
+        "docs/skills/flow-code-review.md must not exist — the doc \
+         was renamed to docs/skills/flow-review.md in PR #1402. A \
+         `git mv` reversal or merge-conflict resurrection of the \
+         old path would re-introduce a duplicate skill doc page."
+    );
+}
+
+/// Tombstone: removed in PR #1402. Must not return.
+///
 /// Asserts the canonical phase machine in `flow-phases.json` does
 /// NOT contain the old phase identifier `"flow-code-review"` in
 /// either the `order` array or the `phases` map. Bare byte-substring

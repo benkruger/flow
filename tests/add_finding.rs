@@ -158,6 +158,51 @@ fn add_finding_code_review_rejects_filed() {
     assert!(msg.to_lowercase().contains("code review") || msg.contains("code-review"));
 }
 
+/// Lock the legacy phase identifier acceptance in
+/// `CODE_REVIEW_GATE_PHASES`. State files written by older plugin
+/// versions store `current_phase: "flow-code-review"`; the rename
+/// adds `"flow-review"` as the canonical identifier and accepts
+/// the legacy form so in-flight flows mid-upgrade still trigger
+/// the filing ban. Without this test, narrowing
+/// `CODE_REVIEW_GATE_PHASES` back to `["flow-review"]` would
+/// silently allow `--outcome filed --phase flow-code-review` from
+/// older sessions to bypass the gate.
+#[test]
+fn add_finding_code_review_rejects_filed_via_legacy_phase_identifier() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let state = json!({
+        "branch": "legacy",
+        "current_phase": "flow-code-review",
+        "findings": []
+    });
+    write_state(&repo, "legacy", &state);
+
+    let output = run_add_finding(
+        &repo,
+        &[
+            "--finding",
+            "needs follow up",
+            "--reason",
+            "not in scope",
+            "--outcome",
+            "filed",
+            "--phase",
+            "flow-code-review",
+            "--branch",
+            "legacy",
+            "--issue-url",
+            "https://github.com/o/r/issues/9",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    let msg = data["message"].as_str().unwrap_or("");
+    assert!(msg.to_lowercase().contains("code review") || msg.contains("code-review"));
+}
+
 #[test]
 fn add_finding_allows_filed_outside_code_review() {
     let dir = tempfile::tempdir().unwrap();
