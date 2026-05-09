@@ -416,6 +416,39 @@ fn documentation_agent_declares_end_of_findings_marker() {
     assert_agent_output_format_declares_end_of_findings("documentation.md");
 }
 
+// --- code_read field contract ---
+//
+// The pre-mortem agent's safety value depends on the agent actually
+// executing the Premise → Trace → Conclude reasoning discipline. A
+// structural `code_read` field in the Output Format finding block
+// converts "the agent verified the code" from an implicit claim into
+// a required output: triage that sees a non-conforming or missing
+// `code_read` value can dismiss the finding immediately, and skipped
+// Trace steps leave a structural gap rather than a plausible-looking
+// prose finding. The contract test guards against an accidental edit
+// or refactor that drops the field.
+
+fn assert_agent_output_format_declares_code_read(agent_basename: &str) {
+    let c = common::read_agent(agent_basename);
+    let tail_at_heading = c
+        .split_once("## Output Format")
+        .map(|(_, tail)| tail)
+        .unwrap_or_else(|| panic!("{agent_basename} must have ## Output Format section"));
+    let subsection = tail_at_heading
+        .split_once("\n## ")
+        .map(|(section, _)| section)
+        .unwrap_or(tail_at_heading);
+    assert!(
+        subsection.contains("code_read"),
+        "{agent_basename} Output Format must declare a `code_read` field naming the file:line_range the agent verified via Read or Grep, so triage can detect findings produced from the diff alone without an actual codebase trace (see .claude/rules/semi-formal-reasoning.md)"
+    );
+}
+
+#[test]
+fn pre_mortem_agent_declares_code_read_field() {
+    assert_agent_output_format_declares_code_read("pre-mortem.md");
+}
+
 // --- Halt instructions wrapped in fix-first HARD-GATE ---
 //
 // When a phase skill instructs the model to halt the workflow on an

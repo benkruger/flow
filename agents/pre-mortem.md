@@ -94,6 +94,10 @@ For each finding, produce a structured block:
 - **Blast radius:** What systems or users would be affected
 - **What tests missed:** Which test gaps allowed this to ship
 - **Severity:** Critical / High / Medium / Low
+- **code_read:** `<file>:<line_range>` — the source location you
+  read with Read or Grep to verify the Trace step. Cite the file
+  and line range you actually inspected, not the diff hunk.
+  Required for every finding.
 - **Evidence:** Specific file paths and line references from the diff
 
 If no credible failure modes are found, report:
@@ -114,8 +118,12 @@ file path and line range from the diff that triggers the concern.
 
 **Trace.** Walk the execution path step by step. Name each function,
 branch, or condition you traverse. Use Read or Grep to verify each
-step — do not assume behavior from names alone. If a step in the
-trace contradicts your premise, stop and discard the finding.
+step — do not assume behavior from names alone. Record the file and
+line range you read in the finding's `code_read` field. A finding
+without a `code_read` is not compliant — the schema requires it
+because diff-only reasoning produces findings structurally
+indistinguishable from real Trace executions. If a step in the trace
+contradicts your premise, stop and discard the finding.
 
 **Conclude.** State whether the failure mode is confirmed or
 refuted by the trace. A confirmed finding becomes a structured
