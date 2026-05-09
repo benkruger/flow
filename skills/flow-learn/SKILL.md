@@ -582,7 +582,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo benkruger/flow --title "<issue_title
 After each successful issue, record it:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --title "<issue_title>" --url "<issue_url>" --phase "flow-learn"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Tech Debt" --title "<issue_title>" --url "<issue_url>" --phase "flow-learn"
 ```
 
 After each filed issue, also record the finding:
