@@ -355,12 +355,9 @@ fn test_no_weak_coverage_language_in_prose_corpus() {
 //   directory, the Commands::Qa* clap variants, and the
 //   `Bash(rm -rf *.qa-repos*)` allow-list entry. The maintainer QAs
 //   locally via --plugin-dir instead.
-// PR #1383: Phase 2 (Plan) deletion — the plan now travels inside the
-//   GitHub issue body wrapped in `<!-- FLOW-PLAN-BEGIN -->` /
-//   `<!-- FLOW-PLAN-END -->` sentinels, extracted by `bin/flow
-//   plan-from-issue` at flow-start. The flow-plan skill, the
-//   plan_extract / plan_check sources, the seven Plan-phase gate
-//   scanners, the four scanner rule files, the `flow-plan` entry in
-//   `flow-phases.json`, the `FlowPlan` Phase variant in `src/state.rs`,
-//   the `plan_step` / `plan_steps_total` state fields, and the
-//   `plan_step` STEP_COUNTER_FIELDS entry are all gone.
+// PR #1383: Phase 2 (Plan) lifecycle phase, the flow-plan skill,
+//   plan_extract / plan_check / scanner sources, plan_step state
+//   fields, FlowPlan enum variant, scanner rule files, and the
+//   Phase 2 docs page. Plans now travel inside issue bodies via
+//   the FLOW-PLAN-BEGIN / FLOW-PLAN-END sentinels extracted by
+//   bin/flow plan-from-issue at flow-start.
