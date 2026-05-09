@@ -4,7 +4,7 @@ description: "PM-lens issue triage. Receives an issue number, fetches via gh, re
 model: sonnet
 tools: Read, Glob, Grep, Bash
 disallowedTools: Edit, Write
-maxTurns: 40
+maxTurns: 100
 ---
 
 # PM-Lens Issue Triage
