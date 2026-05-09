@@ -14,12 +14,10 @@ This skill requires prior brainstorming context in the conversation. The user mu
 ```text
 /flow:flow-create-issue
 /flow:flow-create-issue --force-decompose
-/flow:flow-create-issue --step 2 --id <id>
 ```
 
 - `/flow:flow-create-issue` — start from the Conversation Gate
 - `/flow:flow-create-issue --force-decompose` — force a fresh decompose even when prior implementation-focused output exists in the conversation
-- `/flow:flow-create-issue --step 2 --id <id>` — self-invocation: skip to Step 2 (Transform + Draft + File)
 
 ## Concurrency
 
@@ -39,28 +37,6 @@ At the very start, output the following banner in your response (not via Bash) i
 ```
 ````
 
-## Step Dispatch
-
-If `--step N --id <id>` was passed, this is a self-invocation from a
-previous step. The `--id` flag carries the session-scoped identifier
-generated in Step 1. Skip the Announce banner and jump directly to the
-Resume Check, using the provided `<id>` for all file paths.
-
-- `--step 2 --id <id>` → Resume Check dispatches to Step 2
-- `--force-decompose` (no `--step`) → Conversation Gate, then Step 1 bypasses Prior Decompose Detection
-
-If no `--step` flag was passed, proceed to the Conversation Gate.
-
-## Resume Check
-
-Use the Read tool to read `.flow-states/create-issue-<id>.json`, where
-`<id>` is the session identifier from the `--id` flag. If no `--id` flag
-was passed (first run), there is no file to read — proceed to the
-Conversation Gate.
-
-- If the file does not exist, proceed to the Conversation Gate (first run).
-- If `create_issue_step` is `1` — Step 1 is done. Skip to Step 2.
-
 ---
 
 ## Conversation Gate
@@ -70,7 +46,7 @@ brainstorming context — a problem that was explored, a solution that was
 discussed and agreed upon. This skill captures solutions, it does not
 discover them.
 
-**Signals that context exists** — proceed to Step 1:
+**Signals that context exists** — proceed to Capture:
 
 - Prior `/decompose:decompose` output in the conversation
 - Extended back-and-forth about a problem and its solution
@@ -92,7 +68,7 @@ If no brainstorming context exists, output this guidance and stop:
 > iterate on a solution, then invoke `/flow:flow-create-issue` when
 > you have an agreed approach."
 
-Do not proceed to Step 1, propose direct edits, commit changes, or take
+Do not proceed to Capture, propose direct edits, commit changes, or take
 any action outside this skill without brainstorming context in the
 conversation.
 
@@ -100,23 +76,16 @@ conversation.
 
 ---
 
-## Step 1 — Capture + Decompose Implementation
-
-Output in your response (not via Bash) inside a fenced code block:
-
-````markdown
-```text
-  ── Step 1 of 2: Capture + Decompose Implementation ──
-```
-````
+## Capture
 
 Generate a short session ID by running
 `${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id` via the Bash tool. This ID
-scopes all file paths for this session.
+scopes the body file path (`.flow-issue-body-<id>`) so concurrent
+`flow-create-issue` invocations cannot collide on the same temp file.
 
 **Capture the problem sections** from the conversation context. Synthesize
-the discussion into these structured sections — do not re-analyze or
-re-explore, just distill what was already discussed:
+the discussion into these structured sections in working memory — do not
+re-analyze or re-explore, just distill what was already discussed:
 
 - **Problem** — What is broken, missing, or inadequate. Include observable
   behavior, evidence from the codebase (file paths, line numbers), and user
@@ -128,10 +97,9 @@ re-explore, just distill what was already discussed:
 - **Out of Scope** — Explicit boundaries to prevent scope creep.
 - **Context** — Business reason, architectural constraints, or design decisions.
 
-Write these captured sections to `.flow-states/create-issue-<id>-capture.md`
-using the Write tool.
+---
 
-### Prior Decompose Detection
+## Decompose
 
 Check the conversation for prior `/decompose:decompose` output that is
 implementation-focused. Implementation-focused output contains all of:
@@ -142,21 +110,16 @@ high-level framing without actionable task structure — does not qualify.
 
 **If the conversation contains implementation-focused decompose output
 AND `--force-decompose` was NOT passed:** the existing decompose
-synthesis is sufficient. Skip the decompose invocation below. Write
-`{"create_issue_step": 1}` to `.flow-states/create-issue-<id>.json`
-using the Write tool. Invoke `flow:flow-create-issue --step 2 --id <id>`
-using the Skill tool as your final action. Do not output anything else
-after this invocation.
+synthesis is sufficient. Skip the decompose invocation below and
+proceed directly to Transform + Draft.
 
 **If the conversation contains only problem-analysis decompose output
 (no tasks, no file targets), or no prior decompose output exists, or
-`--force-decompose` was passed:** continue with the decompose invocation
-below.
-
-**Decompose the implementation.** Invoke `decompose:decompose` via the Skill
-tool with an implementation-focused prompt. The prompt must make clear that
-the problem and solution are already agreed — decompose should structure the
-implementation into tasks, not re-analyze the problem.
+`--force-decompose` was passed:** invoke `decompose:decompose` via the
+Skill tool with an implementation-focused prompt. The prompt must make
+clear that the problem and solution are already agreed — decompose
+should structure the implementation into tasks, not re-analyze the
+problem.
 
 Example prompt structure:
 
@@ -168,64 +131,19 @@ Example prompt structure:
 >
 > [Key files and patterns identified during brainstorming]"
 
-The decompose output will produce a structured DAG with nodes, dependencies,
+The decompose output produces a structured DAG with nodes, dependencies,
 and a synthesis — this becomes the foundation for the Implementation Plan.
-
-<HARD-GATE>
-
-After decompose returns, ask the user to review using AskUserQuestion with
-structured parameters:
-
-- **question**: "Review the implementation decomposition above. How would you like to proceed?"
-- **header**: "Decompose"
-- **options**:
-  - label: "Proceed to draft", description: "Move to the draft and file step"
-  - label: "Iterate", description: "Re-run decompose with your feedback"
-  - label: "Cancel", description: "Stop without filing an issue"
-
-**If "Proceed to draft"** → write `{"create_issue_step": 1}` to
-`.flow-states/create-issue-<id>.json` using the Write tool.
-
-Invoke `flow:flow-create-issue --step 2 --id <id>` using the Skill tool
-as your final action. Do not output anything else after this invocation.
-
-**If "Iterate"** → re-invoke `decompose:decompose` with the user's
-feedback, present the updated synthesis, and ask again.
-
-**If "Cancel"** → clean up the capture file:
-
-```bash
-rm .flow-states/create-issue-<id>-capture.md
-```
-
-Stop. Do not file an issue.
-
-Do not proceed to Step 2 without explicit user approval.
-
-</HARD-GATE>
 
 ---
 
-## Step 2 — Transform + Draft + File
+## Transform + Draft
 
-Output in your response (not via Bash) inside a fenced code block:
-
-````markdown
-```text
-  ── Step 2 of 2: Transform + Draft + File ──
-```
-````
-
-Use the Read tool to read `.flow-states/create-issue-<id>.json` to confirm
-this is a valid self-invocation.
-
-### Transform Decompose Output into Implementation Plan
-
-Take the decompose synthesis from the conversation — either from a prior
-`/decompose:decompose` invocation (when Step 1 skipped decompose) or from
-Step 1's decompose invocation — and transform it into an
-Implementation Plan section that matches the plan file format used by
-`flow-plan`. The Implementation Plan must contain these subsections:
+Take the decompose synthesis from the conversation — either from a
+prior `/decompose:decompose` invocation (when the Decompose step
+skipped a fresh invocation) or from the invocation you just ran — and
+transform it into an Implementation Plan section that matches the plan
+file format used by `flow-plan`. The Implementation Plan must contain
+these subsections:
 
 - **Context** — What the user wants to build and why
 - **Exploration** — What exists in the codebase, affected files, patterns discovered
@@ -250,11 +168,8 @@ headings in the plan file after heading promotion by `flow-plan`).
 
 ### Combine into Issue Body
 
-Read the captured problem sections from
-`.flow-states/create-issue-<id>-capture.md` using the Read tool.
-
-Combine the captured sections with the Implementation Plan into a single
-issue body. The section order must be:
+Combine the captured problem sections with the Implementation Plan
+into a single issue body in working memory. The section order must be:
 
 **Problem** (from capture) → **Acceptance Criteria** (from capture) →
 **Implementation Plan** (from transform, wrapped between sentinels —
@@ -303,83 +218,48 @@ Present the full draft inline in the response — both title and body. Do
 not tell the user to look at a file. Render it as a formatted markdown
 block so the user can review every detail.
 
-### Repo Detection
+---
 
-Before presenting the filing options, detect the current repository:
-
-```bash
-git remote get-url origin
-```
-
-If the URL contains `benkruger/flow`, this is the FLOW plugin repo itself.
-Both "Target project" and "FLOW plugin" would resolve to the same
-repository, so skip the repo selection and present a simplified prompt.
+## File
 
 <HARD-GATE>
 
-**If the current repo is `benkruger/flow`**, ask the user to review the
-draft using AskUserQuestion with structured parameters:
+After presenting the draft, ask the user to confirm via AskUserQuestion
+with structured parameters:
 
 - **question**: "Review the draft above. Ready to file?"
 - **header**: "File Issue"
 - **options**:
-  - label: "File issue", description: "File against the current project with decomposed label"
+  - label: "File issue", description: "File against the current repo with the decomposed label"
   - label: "Revise draft", description: "Edit the draft based on your feedback"
-  - label: "Re-decompose", description: "Restart from scratch with a new decomposition"
+  - label: "Cancel", description: "Stop without filing an issue"
 
-**If the current repo is NOT `benkruger/flow`**, ask the user to review
-the draft and choose where to file using AskUserQuestion with structured
-parameters:
-
-- **question**: "Review the draft above. Where should this issue be filed?"
-- **header**: "File Issue"
-- **options**:
-  - label: "Target project", description: "File against the current project"
-  - label: "FLOW plugin", description: "File against benkruger/flow"
-  - label: "Revise draft", description: "Edit the draft based on your feedback"
-  - label: "Re-decompose", description: "Restart from scratch with a new decomposition"
-
-Do not proceed to file the issue, propose direct edits, commit changes,
-or take any action outside this skill without explicit user approval via
+Do not file the issue, propose direct edits, commit changes, or take
+any action outside this skill without explicit user approval via
 AskUserQuestion — even if the answer appears obvious from context.
 
-**If "File issue"** (FLOW repo) or **"Target project"** → file the issue
-using the target project path (see Filing below).
+**If "File issue"** → proceed to Filing below.
 
-**If "FLOW plugin"** → file the issue using the FLOW plugin path (see
-Filing below).
+**If "Revise draft"** → revise based on the user's feedback and
+re-present the draft. If the feedback is substantial (changes the
+problem understanding or approach), re-run `decompose:decompose` with
+the updated understanding and re-transform. If the feedback is
+editorial (wording, scope adjustments), edit the draft directly.
+After revising, re-present the draft and ask the same
+AskUserQuestion. Iterate as many times as needed.
 
-**If "Revise draft"** → revise the draft based on feedback and re-present.
-If the feedback is substantial (changes the problem understanding or
-approach), re-run `decompose:decompose` with the updated understanding.
-If the feedback is editorial (wording, scope adjustments), revise the
-draft directly. After revision, ask again with the same AskUserQuestion.
-
-**If "Re-decompose"** → clean up session files first:
-
-```bash
-rm .flow-states/create-issue-<id>.json
-```
-
-```bash
-rm .flow-states/create-issue-<id>-capture.md
-```
-
-Then invoke `flow:flow-create-issue --force-decompose` using the Skill
-tool as your final action (no `--step` or `--id` flags — restart from
-scratch with forced decompose to bypass Prior Decompose Detection). Do
-not output anything else after this invocation.
-
-Iterate as many times as needed. The issue is not filed until the user
-explicitly chooses a filing target.
+**If "Cancel"** → stop without filing. Do not write the body file. Do
+not output the COMPLETE banner.
 
 </HARD-GATE>
 
-### Filing
+---
 
-Write the issue body to `.flow-issue-body-<id>` in the project root using the Write tool.
+## Filing
 
-**If target project:**
+Write the issue body to `.flow-issue-body-<id>` in the project root
+using the Write tool. Then file it against the current repo (no
+`--repo` flag — `flow-create-issue` always files where the user is):
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<issue_title>" --body-file .flow-issue-body-<id> --label decomposed
@@ -389,28 +269,6 @@ Record the issue in the state file (no-op if no FLOW feature is active):
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
-```
-
-**If FLOW plugin bug:**
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo benkruger/flow --title "<issue_title>" --body-file .flow-issue-body-<id> --label "Flow"
-```
-
-Record the issue in the state file (no-op if no FLOW feature is active):
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flow" --title "<issue_title>" --url "<issue_url>" --phase flow-create-issue
-```
-
-Clean up session files:
-
-```bash
-rm .flow-states/create-issue-<id>.json
-```
-
-```bash
-rm .flow-states/create-issue-<id>-capture.md
 ```
 
 Display the issue URL to the user, then output the COMPLETE banner:
@@ -425,11 +283,10 @@ Display the issue URL to the user, then output the COMPLETE banner:
 
 ## Hard Rules
 
-- Never file an issue without explicit user approval — the Step 2 AskUserQuestion is the mandatory gate
+- Never file an issue without explicit user approval — the AskUserQuestion before filing is the mandatory gate
 - Never tell the user to "look at" a file — render all content inline
 - Never use Bash to print banners — output them as text in your response
 - The issue body must be self-contained — a fresh session with no memory of this conversation must be able to execute it
 - Always use the Write tool to create body files (`.flow-issue-body-<id>`) — never pass body text as a CLI argument
 - Never delete the body file — the `bin/flow issue` script handles cleanup
-- Step 1 ends by invoking the skill itself as the final action — Step 2 is terminal
 - The Implementation Plan section must use heading levels that match the plan file format after promotion by `flow-plan` (### in the issue becomes ## in the plan file)

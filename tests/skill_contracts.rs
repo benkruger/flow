@@ -2514,53 +2514,20 @@ fn flow_abort_removes_labels() {
 // --- Create issue skill ---
 
 #[test]
-fn create_issue_has_step_dispatch() {
-    let c = common::read_skill("flow-create-issue");
-    assert!(
-        c.contains("Step Dispatch") || c.contains("step dispatch") || c.contains("--step"),
-        "flow-create-issue must have Step Dispatch section"
-    );
-}
-
-#[test]
-fn create_issue_usage_documents_step_flag() {
-    let c = common::read_skill("flow-create-issue");
-    assert!(c.contains("--step"), "Usage must document --step forms");
-}
-
-#[test]
-fn create_issue_steps_have_banners() {
+fn create_issue_has_starting_banner() {
     let c = common::read_skill("flow-create-issue");
     assert!(
         c.contains("STARTING") || c.contains("banner"),
-        "Each step must have banner"
+        "Skill must have STARTING banner"
     );
 }
 
 #[test]
-fn create_issue_steps_1_2_have_ask_user() {
+fn create_issue_has_ask_user_gate() {
     let c = common::read_skill("flow-create-issue");
     assert!(
         c.contains("AskUserQuestion"),
-        "Steps 1 and 2 must have AskUserQuestion gates"
-    );
-}
-
-#[test]
-fn create_issue_step_1_self_invokes() {
-    let c = common::read_skill("flow-create-issue");
-    assert!(
-        c.contains("--step"),
-        "Step 1 must self-invoke with --step flag"
-    );
-}
-
-#[test]
-fn create_issue_has_resume_check() {
-    let c = common::read_skill("flow-create-issue");
-    assert!(
-        c.contains("Resume") || c.contains("resume"),
-        "flow-create-issue must have Resume Check"
+        "Skill must have an AskUserQuestion gate"
     );
 }
 
@@ -2574,38 +2541,20 @@ fn create_issue_has_conversation_gate() {
 }
 
 #[test]
-fn create_issue_step2_has_implementation_plan_section() {
+fn create_issue_has_implementation_plan_section() {
     let c = common::read_skill("flow-create-issue");
     assert!(
         c.contains("Implementation Plan"),
-        "Step 2 must produce Implementation Plan"
+        "Skill must produce Implementation Plan"
     );
 }
 
 #[test]
-fn create_issue_has_repo_routing() {
-    let c = common::read_skill("flow-create-issue");
-    assert!(
-        c.contains("benkruger/flow") || c.contains("repo"),
-        "flow-create-issue must route plugin bugs to benkruger/flow"
-    );
-}
-
-#[test]
-fn create_issue_skips_repo_selection_in_flow_repo() {
-    let c = common::read_skill("flow-create-issue");
-    assert!(
-        c.contains("FLOW repo") || c.contains("flow repo") || c.contains("plugin repo"),
-        "Must skip repo selection in FLOW repo"
-    );
-}
-
-#[test]
-fn create_issue_step1_has_prior_decompose_detection() {
+fn create_issue_has_prior_decompose_detection() {
     let c = common::read_skill("flow-create-issue");
     assert!(
         c.contains("decompose") || c.contains("prior"),
-        "Step 1 must detect prior decompose output"
+        "Skill must detect prior decompose output"
     );
 }
 
@@ -2618,12 +2567,95 @@ fn create_issue_usage_documents_force_decompose() {
     );
 }
 
+// --- flow-create-issue tombstones ---
+//
+// Stability argument: SKILL.md is Markdown prose, not Rust code,
+// so the literal-stability bypass list (concat!, format!, named
+// constants, method-chain splits) does not apply — the target
+// medium is plain text, and no macro can synthesize the asserted
+// substrings without writing them verbatim into the Markdown.
+
 #[test]
-fn create_issue_step2_redecompose_uses_force_flag() {
+fn flow_create_issue_no_step_id_flag() {
+    // Tombstone: removed in PR #1387. Must not return.
     let c = common::read_skill("flow-create-issue");
     assert!(
-        c.contains("--force-decompose"),
-        "Re-decompose must use --force-decompose"
+        !c.contains("--step 2 --id"),
+        "flow-create-issue must not reintroduce --step/--id self-invocation"
+    );
+}
+
+#[test]
+fn flow_create_issue_no_step_dispatch_section() {
+    // Tombstone: removed in PR #1387. Must not return.
+    let c = common::read_skill("flow-create-issue");
+    assert!(
+        !c.contains("Step Dispatch"),
+        "flow-create-issue must not reintroduce a Step Dispatch section"
+    );
+}
+
+#[test]
+fn flow_create_issue_no_resume_check_section() {
+    // Tombstone: removed in PR #1387. Must not return.
+    let c = common::read_skill("flow-create-issue");
+    assert!(
+        !c.contains("Resume Check"),
+        "flow-create-issue must not reintroduce a Resume Check section"
+    );
+}
+
+#[test]
+fn flow_create_issue_no_per_step_banners() {
+    // Tombstone: removed in PR #1387. Must not return.
+    let c = common::read_skill("flow-create-issue");
+    assert!(
+        !c.contains("Step 1 of 2"),
+        "flow-create-issue must not reintroduce 'Step 1 of 2' banner"
+    );
+    assert!(
+        !c.contains("Step 2 of 2"),
+        "flow-create-issue must not reintroduce 'Step 2 of 2' banner"
+    );
+}
+
+#[test]
+fn flow_create_issue_no_repo_detection() {
+    // Tombstone: removed in PR #1387. Must not return.
+    let c = common::read_skill("flow-create-issue");
+    assert!(
+        !c.contains("git remote get-url origin"),
+        "flow-create-issue must not reintroduce repo detection via git remote"
+    );
+}
+
+#[test]
+fn flow_create_issue_no_state_or_capture_files() {
+    // Tombstone: removed in PR #1387. Must not return.
+    let c = common::read_skill("flow-create-issue");
+    assert!(
+        !c.contains(".flow-states/create-issue-"),
+        "flow-create-issue must not reintroduce per-session state or capture files"
+    );
+}
+
+#[test]
+fn flow_create_issue_no_proceed_to_draft_option() {
+    // Tombstone: removed in PR #1387. Must not return.
+    let c = common::read_skill("flow-create-issue");
+    assert!(
+        !c.contains("Proceed to draft"),
+        "flow-create-issue must not reintroduce 'Proceed to draft' option"
+    );
+}
+
+#[test]
+fn flow_create_issue_no_redecompose_option() {
+    // Tombstone: removed in PR #1387. Must not return.
+    let c = common::read_skill("flow-create-issue");
+    assert!(
+        !c.contains("Re-decompose"),
+        "flow-create-issue must not reintroduce 'Re-decompose' option"
     );
 }
 
