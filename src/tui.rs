@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use crossterm::event::{Event, KeyCode, KeyEvent};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -259,6 +259,11 @@ impl TuiApp {
 
     /// Handle a key event and update state.
     pub fn handle_key(&mut self, key: KeyEvent) {
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.running = false;
+            return;
+        }
+
         if self.confirming_abort {
             self.handle_abort_confirm(key);
             return;
@@ -917,7 +922,7 @@ impl TuiApp {
     }
 
     fn render_list_footer(&self, frame: &mut Frame, area: Rect) {
-        let footer_text = " [\u{2190}\u{2192}] Tab  [\u{2191}\u{2193}] Navigate  [Enter] Worktree  [p] PR  [i] Issues  [I] Issue  [t] Tasks  [l] Log  [a] Abort  [r] Refresh  [q] Quit";
+        let footer_text = " [\u{2190}\u{2192}] Tab  [\u{2191}\u{2193}] Navigate  [Enter] Worktree  [p] PR  [i] Issues  [I] Issue  [t] Tasks  [l] Log  [a] Abort  [r] Refresh  [q] Quit  Ctrl-C/q quit";
         let footer = Paragraph::new(Line::from(Span::styled(
             footer_text,
             Style::default().add_modifier(Modifier::DIM),
@@ -935,7 +940,7 @@ impl TuiApp {
         if self.orch_data.is_none() {
             let msg = Paragraph::new(Line::from("  No orchestration running."));
             frame.render_widget(msg, Rect::new(area.x, area.y + 5, area.width, 1));
-            let footer_text = " [\u{2190}\u{2192}] Tab  [r] Refresh  [q] Quit";
+            let footer_text = " [\u{2190}\u{2192}] Tab  [r] Refresh  [q] Quit  Ctrl-C/q quit";
             let footer = Paragraph::new(Line::from(Span::styled(
                 footer_text,
                 Style::default().add_modifier(Modifier::DIM),
@@ -1044,7 +1049,7 @@ impl TuiApp {
 
         // Footer
         let footer_text =
-            " [\u{2190}\u{2192}] Tab  [\u{2191}\u{2193}] Navigate  [i] Issue  [r] Refresh  [q] Quit";
+            " [\u{2190}\u{2192}] Tab  [\u{2191}\u{2193}] Navigate  [i] Issue  [r] Refresh  [q] Quit  Ctrl-C/q quit";
         let footer = Paragraph::new(Line::from(Span::styled(
             footer_text,
             Style::default().add_modifier(Modifier::DIM),
@@ -1111,7 +1116,7 @@ impl TuiApp {
         }
 
         // Footer
-        let footer_text = " [Esc] Back  [q] Quit";
+        let footer_text = " [Esc] Back  [q] Quit  Ctrl-C/q quit";
         let footer = Paragraph::new(Line::from(Span::styled(
             footer_text,
             Style::default().add_modifier(Modifier::DIM),
@@ -1188,7 +1193,8 @@ impl TuiApp {
         }
 
         // Footer
-        let footer_text = " [Esc] Back  [Enter] Open  [\u{2191}\u{2193}] Navigate  [q] Quit";
+        let footer_text =
+            " [Esc] Back  [Enter] Open  [\u{2191}\u{2193}] Navigate  [q] Quit  Ctrl-C/q quit";
         let footer = Paragraph::new(Line::from(Span::styled(
             footer_text,
             Style::default().add_modifier(Modifier::DIM),
@@ -1245,7 +1251,7 @@ impl TuiApp {
         }
 
         // Footer
-        let footer_text = " [Esc] Back  [q] Quit";
+        let footer_text = " [Esc] Back  [q] Quit  Ctrl-C/q quit";
         let footer = Paragraph::new(Line::from(Span::styled(
             footer_text,
             Style::default().add_modifier(Modifier::DIM),

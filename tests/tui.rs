@@ -557,6 +557,27 @@ fn test_input_quit() {
 }
 
 #[test]
+fn test_input_ctrl_c_quits() {
+    let mut app = make_app();
+    let ctrl_c = KeyEvent {
+        code: KeyCode::Char('c'),
+        modifiers: KeyModifiers::CONTROL,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    };
+    app.handle_key(ctrl_c);
+    assert!(!app.running);
+}
+
+#[test]
+fn test_input_plain_c_does_not_quit() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.handle_key(key(KeyCode::Char('c')));
+    assert!(app.running);
+}
+
+#[test]
 fn test_input_navigate_up_down() {
     let mut app = make_app();
     app.flows = vec![
