@@ -38,6 +38,7 @@ These skills are available at any point in the workflow, regardless of phase.
 | [`/flow-abort`](flow-abort.md) | Abandon the current feature — close PR, delete branch, remove worktree |
 | [`/flow-reset`](flow-reset.md) | Remove all FLOW artifacts — close PRs, delete worktrees/branches/state files/lock entries |
 | [`/flow-config`](flow-config.md) | Display current configuration — version and per-skill autonomy |
+| [`/flow-skills`](flow-skills.md) | Display the FLOW skill catalog grouped by user role — Maintainer and Private buckets render only inside the FLOW plugin repo |
 | [`/flow-doc-sync`](flow-doc-sync.md) | Full codebase documentation accuracy review — reports drift between code and docs |
 | [`/flow-hygiene`](flow-hygiene.md) | Audit instruction corpus health — CLAUDE.md, rules, and memory for staleness, misplacement, duplication, and contradictions |
 | [`/flow-issues`](flow-issues.md) | Fetch open issues, categorize, prioritize, and display a dashboard with recommended work order. Supports readiness filters (`--ready`, `--blocked`, `--decomposed`, `--quick-start`) and narrowing filters (`--label`, `--milestone`) |

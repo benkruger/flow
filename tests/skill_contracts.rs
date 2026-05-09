@@ -3898,3 +3898,102 @@ fn issue_triage_agent_declares_end_of_findings_marker() {
         "agents/issue-triage.md must declare the literal `## END-OF-FINDINGS` completion marker"
     );
 }
+
+// --- flow-skills coverage and admin/maintainer membership ---
+
+#[test]
+fn flow_skills_lists_every_skill_exactly_once() {
+    // Named regression: a new skill is added under `skills/<name>/`
+    // but `flow-skills` SKILL.md is not updated, so
+    // `/flow:flow-skills` shows a stale list. Named consumer: the
+    // user typing `/flow:flow-skills`. Each skill must appear
+    // exactly once across the bucket tables, formatted as either
+    // `` `/flow:<name>` `` for plugin skills or `` `/<name>` ``
+    // for the maintainer-private `flow-release`.
+    let content = common::read_skill("flow-skills");
+    let mut expected: Vec<String> = common::all_skill_names();
+    expected.push("flow-release".to_string());
+    for name in &expected {
+        let primary = format!("`/flow:{}`", name);
+        let alt = format!("`/{}`", name);
+        let count = content.matches(&primary).count() + content.matches(&alt).count();
+        assert_eq!(
+            count, 1,
+            "skills/flow-skills/SKILL.md must reference {} exactly once across its bucket tables (found {})",
+            name, count
+        );
+    }
+}
+
+#[test]
+fn flow_skills_admin_and_maintainer_match_user_only() {
+    // Named regression: `USER_ONLY_SKILLS` in
+    // `src/hooks/transcript_walker.rs` is edited (skill added or
+    // removed) but `flow-skills` SKILL.md is not updated, so the
+    // documentation drifts from mechanical enforcement. Named
+    // consumer: the user typing `/flow:flow-skills` to learn which
+    // skills are user-only.
+    //
+    // Section assertions are bounded via `split_once` per
+    // `.claude/rules/testing-gotchas.md` "Subsection-Local
+    // Assertions in Contract Tests" so unrelated sections cannot
+    // satisfy the assertion.
+    let walker = common::repo_root()
+        .join("src")
+        .join("hooks")
+        .join("transcript_walker.rs");
+    let walker_src =
+        std::fs::read_to_string(&walker).expect("src/hooks/transcript_walker.rs must exist");
+
+    // Extract USER_ONLY_SKILLS members from the constant literal.
+    let const_tail = walker_src
+        .split_once("pub const USER_ONLY_SKILLS:")
+        .map(|(_, tail)| tail)
+        .expect("USER_ONLY_SKILLS constant must exist");
+    let const_body = const_tail
+        .split_once("];")
+        .map(|(body, _)| body)
+        .expect("USER_ONLY_SKILLS constant must close with `];`");
+    let entry_re = Regex::new(r#""(flow:flow-[a-z0-9-]+)""#).expect("regex must compile");
+    let user_only_entries: Vec<String> = entry_re
+        .captures_iter(const_body)
+        .map(|c| c[1].to_string())
+        .collect();
+    assert!(
+        !user_only_entries.is_empty(),
+        "expected USER_ONLY_SKILLS to declare at least one entry"
+    );
+
+    let content = common::read_skill("flow-skills");
+
+    // Bound assertions to the Admin and Maintainer subsections.
+    fn subsection<'a>(content: &'a str, heading: &str) -> &'a str {
+        let tail = content
+            .split_once(heading)
+            .map(|(_, t)| t)
+            .unwrap_or_else(|| panic!("flow-skills SKILL.md missing heading `{}`", heading));
+        tail.split_once("\n## ")
+            .map(|(s, _)| s)
+            .unwrap_or_else(|| tail.split_once("\n### ").map(|(s, _)| s).unwrap_or(tail))
+    }
+
+    let admin_section = subsection(&content, "### Admin");
+    let maintainer_section = subsection(&content, "### Maintainer");
+
+    for entry in &user_only_entries {
+        let bare = entry.strip_prefix("flow:").unwrap_or(entry.as_str());
+        if entry == "flow:flow-release" {
+            assert!(
+                maintainer_section.contains(bare),
+                "Maintainer section of skills/flow-skills/SKILL.md must reference `{}`",
+                bare
+            );
+        } else {
+            assert!(
+                admin_section.contains(bare),
+                "Admin section of skills/flow-skills/SKILL.md must reference `{}`",
+                bare
+            );
+        }
+    }
+}

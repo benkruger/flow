@@ -146,6 +146,7 @@ Available at any point in the workflow:
 | `/flow-abort` | Abandon feature — close PR, delete remote branch, remove worktree, delete state |
 | `/flow-reset` | Remove all FLOW artifacts — close PRs, delete worktrees/branches/state files |
 | `/flow-config` | Display current configuration — version and per-skill autonomy |
+| `/flow-skills` | Display the FLOW skill catalog grouped by user role — Maintainer and Private buckets render only inside the FLOW plugin repo |
 | `/flow-doc-sync` | Full codebase documentation accuracy review — reports drift between code and docs |
 | `/flow-hygiene` | Audit instruction corpus health — CLAUDE.md, rules, and memory for staleness, misplacement, duplication, and contradictions |
 | `/flow-issues` | Fetch open issues, categorize, prioritize, and display a dashboard. Supports readiness filters |
