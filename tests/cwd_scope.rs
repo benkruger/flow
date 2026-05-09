@@ -183,6 +183,57 @@ fn cwd_scope_does_not_panic_on_slash_branch() {
     );
 }
 
+/// Regression: when enforce returns an error, the message must
+/// contain a `cd "<absolute_path>"` line so the user can copy-paste
+/// the recovery command. Triggered via the standard mismatch path
+/// (relative_cwd="api", cwd at worktree root). Without the cd line,
+/// the user has to mentally reconstruct the path from the prose.
+/// Consumer: every Bash-tool error surface that reports cwd_scope
+/// failures.
+#[test]
+fn cwd_drift_error_includes_cd_command_for_root_flow() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git_repo(&root, "feature-x");
+    write_state(&root, "feature-x", "api");
+    let result = enforce(&root, &root);
+    let msg = result.unwrap_err();
+    let expected_cd = format!(r#"cd "{}/api""#, root.display());
+    assert!(
+        msg.contains(&expected_cd),
+        "error must contain copy-pasteable `{}`; got: {}",
+        expected_cd,
+        msg
+    );
+}
+
+/// Regression: when enforce errors with a non-empty relative_cwd,
+/// the message must include a hint that this is a mono-repo flow
+/// and that cwd was likely lost between skill invocations. Without
+/// the hint, mono-repo users see a generic cwd-drift error and miss
+/// the recovery context. Consumer: same as the root-flow test —
+/// every Bash-tool error surface reporting cwd_scope failures in a
+/// mono-repo setup.
+#[test]
+fn cwd_drift_error_includes_monorepo_hint_for_subdir_flow() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git_repo(&root, "feature-x");
+    write_state(&root, "feature-x", "api");
+    let result = enforce(&root, &root);
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("mono-repo"),
+        "error must mention 'mono-repo' for non-empty relative_cwd; got: {}",
+        msg
+    );
+    assert!(
+        msg.contains("api"),
+        "error must name the subdir from relative_cwd; got: {}",
+        msg
+    );
+}
+
 #[test]
 fn enforce_canonicalize_fallback_nonexistent_relative_cwd() {
     // When `relative_cwd` names a subdirectory that does not yet exist

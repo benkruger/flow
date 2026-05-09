@@ -131,10 +131,18 @@ pub fn enforce(cwd: &Path, project_root: &Path) -> Result<(), String> {
     let expected_canon = expected.canonicalize().unwrap_or_else(|_| expected.clone());
 
     if !cwd_canon.starts_with(&expected_canon) {
+        // Reaching this branch implies relative_cwd is non-empty:
+        // when relative_cwd is empty, expected equals worktree_root,
+        // and current_branch_in succeeding above guarantees cwd is a
+        // descendant of worktree_root — so starts_with always holds.
+        // The mono-repo hint and the copy-pasteable `cd "<expected>"`
+        // line therefore always apply on the err path.
         return Err(format!(
-            "cwd drift: expected {} (or a subdirectory), current {}. cd to the expected directory before running bin/flow commands.",
+            "This is a mono-repo flow (subdir: {}). Session cwd likely lost between skill invocations. cwd drift: expected {} (or a subdirectory), current {}. Run:\ncd \"{}\"",
+            relative_cwd,
             expected_canon.display(),
-            cwd_canon.display()
+            cwd_canon.display(),
+            expected_canon.display()
         ));
     }
 
