@@ -284,11 +284,13 @@ fn run_impl(args: &Args, root: &Path, cwd: &Path) -> Result<Value, String> {
     }
 
     // Update step counter for TUI (step 1 = init). The state file
-    // lives at `.flow-states/<branch>/state.json` per FlowPaths; the
-    // pre-validated `branch_name(...)` output cannot fail
-    // is_valid_branch, so panicking-`new` is safe here.
+    // lives at `.flow-states/<branch>/state.json` per FlowPaths.
+    // `branch` is `branch_name(...)` output, sanitized at the top
+    // of start-init — `try_new` cannot return None here.
     let _ = state_dir; // kept above for the pre-init create_dir_all
-    let state_path = FlowPaths::new(root, &branch).state_file();
+    let state_path = FlowPaths::try_new(root, &branch)
+        .expect("branch is branch_name() output, sanitized upstream")
+        .state_file();
     update_step(&state_path, 1);
 
     // Capture account-window snapshot at flow-start. Fail-open per

@@ -216,7 +216,9 @@ pub(crate) fn initial_commit_push_pr(
     prompt: &str,
     base_branch: &str,
 ) -> Result<(String, u32), SetupError> {
-    let commit_msg_path = FlowPaths::new(root, branch).commit_msg();
+    let commit_msg_path = FlowPaths::try_new(root, branch)
+        .expect("branch is start-init pipeline output (branch_name-sanitized)")
+        .commit_msg();
     // `init-state` ran before `start-workspace` and called
     // `paths.ensure_branch_dir()` while writing `state.json`, so
     // `<root>/.flow-states/<branch>/` exists. A failure here would
@@ -278,8 +280,12 @@ fn run_impl_with_paths(args: &Args, root: &Path, cwd: &Path) -> Value {
     let branch = &args.branch;
     let feature_title = derive_feature(branch);
 
-    // Update TUI step counter
-    let state_path = FlowPaths::new(root, branch).state_file();
+    // Update TUI step counter. `args.branch` is start-init's
+    // `branch_name()` output (sanitized upstream); `try_new` is the
+    // standard constructor — `expect` documents the boundary.
+    let state_path = FlowPaths::try_new(root, branch)
+        .expect("args.branch is start-init pipeline output (branch_name-sanitized)")
+        .state_file();
     update_step(&state_path, 3);
 
     // Read state file once: relative_cwd routes the agent into a

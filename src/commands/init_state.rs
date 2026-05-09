@@ -106,7 +106,11 @@ pub fn create_state(
         state.insert("start_steps_total".into(), json!(total));
     }
 
-    let paths = FlowPaths::new(project_root, branch);
+    // `branch` is start-init's `branch_name()` output, sanitized
+    // upstream — `try_new` is the standard constructor; `expect`
+    // documents the boundary.
+    let paths = FlowPaths::try_new(project_root, branch)
+        .expect("create_state caller (start-init) provides branch_name-sanitized branch");
     if let Err(e) = paths.ensure_branch_dir() {
         return Err(format!("Cannot create branch state directory: {}", e));
     }

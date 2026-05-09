@@ -61,8 +61,12 @@ pub struct Args {
 pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
     let branch = &args.branch;
 
-    // Update TUI step counter
-    let state_path = FlowPaths::new(root, branch).state_file();
+    // Update TUI step counter. `args.branch` is start-init's
+    // `branch_name()` output (sanitized upstream); `try_new` is the
+    // standard constructor — `expect` documents the boundary.
+    let state_path = FlowPaths::try_new(root, branch)
+        .expect("args.branch is start-init pipeline output (branch_name-sanitized)")
+        .state_file();
     update_step(&state_path, 2);
 
     // Read the integration branch the user is working off of (captured
