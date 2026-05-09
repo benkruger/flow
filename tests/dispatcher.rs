@@ -115,6 +115,145 @@ fn no_subcommand_exits_1() {
     assert_eq!(output.status.code(), Some(1), "No subcommand should exit 1");
 }
 
+// --- status ---
+
+/// `bin/flow status` is the presentation wrapper that hoists the
+/// no-flow message into the binary. Unlike `format-status` which
+/// returns exit 1 with empty stdout when no state file exists, the
+/// `status` subcommand emits the no-flow notice on stdout at exit 0
+/// so consumer skills can print stdout verbatim without branching
+/// on exit code.
+#[test]
+fn status_no_state_exits_0() {
+    let dir = tempfile::tempdir().unwrap();
+    Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .arg("status")
+        .current_dir(dir.path())
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "status with no state file should exit 0 (hoisted into binary)"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("No FLOW feature in progress"),
+        "expected no-flow message on stdout, got: {}",
+        stdout
+    );
+}
+
+#[test]
+fn status_valid_state_exits_0() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    Command::new("git")
+        .args(["init", "-b", "test-branch"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+
+    // Write a minimal state file the subcommand can find.
+    let branch_dir = root.join(".flow-states").join("test-branch");
+    std::fs::create_dir_all(&branch_dir).unwrap();
+    let state = serde_json::json!({
+        "schema_version": 1,
+        "branch": "test-branch",
+        "started_at": "2026-01-01T00:00:00-08:00",
+        "current_phase": "flow-start",
+        "phases": {
+            "flow-start": {
+                "name": "Start",
+                "status": "in_progress",
+                "started_at": null,
+                "completed_at": null,
+                "session_started_at": null,
+                "cumulative_seconds": 0,
+                "visit_count": 0,
+            },
+            "flow-code": {
+                "name": "Code",
+                "status": "pending",
+                "started_at": null,
+                "completed_at": null,
+                "session_started_at": null,
+                "cumulative_seconds": 0,
+                "visit_count": 0,
+            },
+            "flow-code-review": {
+                "name": "Code Review",
+                "status": "pending",
+                "started_at": null,
+                "completed_at": null,
+                "session_started_at": null,
+                "cumulative_seconds": 0,
+                "visit_count": 0,
+            },
+            "flow-learn": {
+                "name": "Learn",
+                "status": "pending",
+                "started_at": null,
+                "completed_at": null,
+                "session_started_at": null,
+                "cumulative_seconds": 0,
+                "visit_count": 0,
+            },
+            "flow-complete": {
+                "name": "Complete",
+                "status": "pending",
+                "started_at": null,
+                "completed_at": null,
+                "session_started_at": null,
+                "cumulative_seconds": 0,
+                "visit_count": 0,
+            },
+        },
+    });
+    std::fs::write(branch_dir.join("state.json"), state.to_string()).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .arg("status")
+        .current_dir(&root)
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "status with valid state should exit 0, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("flow:status — STARTING"),
+        "expected banner header, got: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("```text"),
+        "expected fenced text envelope, got: {}",
+        stdout
+    );
+}
+
 // --- format-status ---
 
 #[test]

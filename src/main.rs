@@ -51,6 +51,7 @@ use flow_rs::start_finalize;
 use flow_rs::start_gate;
 use flow_rs::start_init;
 use flow_rs::start_workspace;
+use flow_rs::status;
 use flow_rs::tombstone_audit;
 use flow_rs::tui_data;
 use flow_rs::update_deps;
@@ -313,6 +314,14 @@ enum Commands {
     /// Format the FLOW status panel for display.
     #[command(name = "format-status")]
     FormatStatus {
+        /// Override branch for state file lookup
+        #[arg(long)]
+        branch: Option<String>,
+    },
+
+    /// Show the FLOW status panel wrapped in a banner + fenced block.
+    #[command(name = "status")]
+    Status {
         /// Override branch for state file lookup
         #[arg(long)]
         branch: Option<String>,
@@ -714,6 +723,16 @@ fn main() {
         Some(Commands::FormatStatus { branch }) => {
             let root = project_root();
             match format_status::run_impl_main(branch.as_deref(), &root) {
+                Ok((text, code)) => flow_rs::dispatch::dispatch_text(&text, code),
+                Err((msg, code)) => {
+                    eprintln!("{}", msg);
+                    process::exit(code);
+                }
+            }
+        }
+        Some(Commands::Status { branch }) => {
+            let root = project_root();
+            match status::run_impl_main(branch.as_deref(), &root) {
                 Ok((text, code)) => flow_rs::dispatch::dispatch_text(&text, code),
                 Err((msg, code)) => {
                     eprintln!("{}", msg);
