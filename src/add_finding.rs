@@ -72,11 +72,18 @@ const CODE_REVIEW_ALLOWED_OUTCOMES: &[&str] = &["fixed", "dismissed"];
 /// to `VALID_OUTCOMES` later that semantically means "defer") is
 /// rejected. Other phases pass unchanged.
 ///
-/// See `.claude/rules/code-review-scope.md` — Code Review triage has
+/// Phase identifiers that the Code Review filing gate fires on.
+/// Both the canonical `flow-review` (written by current skills) and
+/// the legacy alias `flow-code-review` (from older plugin versions
+/// or in-flight state files) are recognized so the gate cannot be
+/// bypassed by either form during the compat window.
+const CODE_REVIEW_GATE_PHASES: &[&str] = &["flow-review", "flow-code-review"];
+
+/// See `.claude/rules/review-scope.md` — Code Review triage has
 /// two outcomes (Real / False positive); there is no filing path.
 fn code_review_filing_gate(outcome: &str, phase: &str) -> Option<String> {
     let phase_norm = normalize_gate_input(phase);
-    if phase_norm != "flow-code-review" {
+    if !CODE_REVIEW_GATE_PHASES.contains(&phase_norm.as_str()) {
         return None;
     }
     let outcome_norm = normalize_gate_input(outcome);
@@ -84,7 +91,7 @@ fn code_review_filing_gate(outcome: &str, phase: &str) -> Option<String> {
         return None;
     }
     Some(format!(
-        "Outcome '{}' is not valid for phase 'flow-code-review'. \
+        "Outcome '{}' is not valid for phase 'flow-review'. \
          Code Review triage has two outcomes: 'fixed' (real findings, \
          fix in Step 4) and 'dismissed' (false positives). All real \
          findings are fixed during Code Review — there is no filing \
@@ -95,7 +102,7 @@ fn code_review_filing_gate(outcome: &str, phase: &str) -> Option<String> {
 
 /// Strip NULs and surrounding whitespace, then lowercase. Used by the
 /// gate so that whitespace/case/NUL variants of "filed" or
-/// "flow-code-review" cannot bypass the check.
+/// "flow-review" cannot bypass the check.
 fn normalize_gate_input(s: &str) -> String {
     s.replace('\0', "").trim().to_ascii_lowercase()
 }

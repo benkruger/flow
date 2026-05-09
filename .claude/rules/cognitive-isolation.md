@@ -32,7 +32,7 @@ context is a design choice matched to the agent's task:
   that pre-supplied context would mask. The whitespace filter preserves
   turn budget on PRs with formatting changes. The documentation agent
   receives a narrowed list of doc paths derived from the diff (see
-  `skills/flow-code-review/SKILL.md` Step 1) so its investigation
+  `skills/flow-review/SKILL.md` Step 1) so its investigation
   surface stays bounded on moderately-sized PRs.
 
 This asymmetry is intentional. See `agents/pre-mortem.md` Design
@@ -73,7 +73,7 @@ producing analysis. Two levers keep the budget bounded:
   scope) and embeds it in the agent prompt instead of pointing at
   a directory root. Reference: the documentation agent's
   `DOC_PATHS:` contract, derived by
-  `skills/flow-code-review/SKILL.md` Step 1 from
+  `skills/flow-review/SKILL.md` Step 1 from
   `git diff --name-only`.
 - **Split when narrowing is not enough.** When even the narrowed
   surface exceeds the budget, partition the input and re-invoke

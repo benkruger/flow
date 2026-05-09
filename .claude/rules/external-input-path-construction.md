@@ -195,7 +195,7 @@ AND every new filesystem walk for the validator and the byte
 cap. Findings tagged "path traversal via X", "arbitrary file
 read via Y", or "unbounded read in walk Z" are Real findings
 that get fixed in the same PR per
-`.claude/rules/code-review-scope.md`.
+`.claude/rules/review-scope.md`.
 
 ## No `.expect()` on Filesystem Reads in Hooks or CLI Subcommands
 

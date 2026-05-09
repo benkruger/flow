@@ -25,7 +25,7 @@ fn phase_order_has_five_phases() {
 fn phase_names_match_order() {
     let names = phase_names();
     assert_eq!(names.get("flow-start").unwrap(), "Start");
-    assert_eq!(names.get("flow-code-review").unwrap(), "Code Review");
+    assert_eq!(names.get("flow-review").unwrap(), "Code Review");
     assert_eq!(names.len(), 5);
 }
 
@@ -40,7 +40,7 @@ fn phase_numbers_are_one_indexed() {
 fn phase_number_returns_one_indexed() {
     assert_eq!(phase_number("flow-start"), 1);
     assert_eq!(phase_number("flow-code"), 2);
-    assert_eq!(phase_number("flow-code-review"), 3);
+    assert_eq!(phase_number("flow-review"), 3);
     assert_eq!(phase_number("flow-learn"), 4);
     assert_eq!(phase_number("flow-complete"), 5);
 }
@@ -243,7 +243,7 @@ fn auto_skills_preserves_insertion_order() {
         vec![
             "flow-start",
             "flow-code",
-            "flow-code-review",
+            "flow-review",
             "flow-learn",
             "flow-complete",
             "flow-abort",

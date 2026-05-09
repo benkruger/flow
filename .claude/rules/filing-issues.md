@@ -114,7 +114,7 @@ without re-doing the investigation.
 
 Before filing any issue derived from a FLOW phase finding,
 apply the same value test that
-`.claude/rules/code-review-scope.md` applies to Code Review
+`.claude/rules/review-scope.md` applies to Code Review
 findings — adapted for the issue-filing decision:
 
 > **Was the gap caught by another phase gate AND remediated in

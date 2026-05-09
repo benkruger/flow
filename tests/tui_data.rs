@@ -112,13 +112,9 @@ fn test_step_names_start_has_entries() {
 #[test]
 fn test_step_names_code_review_has_entries() {
     let names = step_names();
-    let cr = names.get("flow-code-review").unwrap();
+    let cr = names.get("flow-review").unwrap();
     for key in 1..=4 {
-        assert!(
-            cr.contains_key(&key),
-            "missing key {} in flow-code-review",
-            key
-        );
+        assert!(cr.contains_key(&key), "missing key {} in flow-review", key);
     }
     assert_eq!(cr.len(), 4);
 }
@@ -440,13 +436,13 @@ fn test_phase_timeline_code_task_name_empty_string() {
 // --- phase_timeline: Code Review ---
 
 #[test]
-fn test_phase_timeline_code_review_step_zero() {
+fn test_phase_timeline_review_step_zero() {
     let state = make_state(
-        "flow-code-review",
+        "flow-review",
         &[
             ("flow-start", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "in_progress"),
+            ("flow-review", "in_progress"),
         ],
     );
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
@@ -456,14 +452,14 @@ fn test_phase_timeline_code_review_step_zero() {
 #[test]
 fn test_phase_timeline_code_review_annotation() {
     let mut state = make_state(
-        "flow-code-review",
+        "flow-review",
         &[
             ("flow-start", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "in_progress"),
+            ("flow-review", "in_progress"),
         ],
     );
-    state["code_review_step"] = json!(2);
+    state["review_step"] = json!(2);
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
     assert_eq!(timeline[2].annotation, "security review - step 3 of 4");
 }
@@ -471,29 +467,29 @@ fn test_phase_timeline_code_review_annotation() {
 #[test]
 fn test_phase_timeline_code_review_complete() {
     let mut state = make_state(
-        "flow-code-review",
+        "flow-review",
         &[
             ("flow-start", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "in_progress"),
+            ("flow-review", "in_progress"),
         ],
     );
-    state["code_review_step"] = json!(4);
+    state["review_step"] = json!(4);
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
     assert_eq!(timeline[2].annotation, "");
 }
 
 #[test]
-fn test_phase_timeline_code_review_step_four() {
+fn test_phase_timeline_review_step_four() {
     let mut state = make_state(
-        "flow-code-review",
+        "flow-review",
         &[
             ("flow-start", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "in_progress"),
+            ("flow-review", "in_progress"),
         ],
     );
-    state["code_review_step"] = json!(3);
+    state["review_step"] = json!(3);
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
     assert_eq!(timeline[2].annotation, "agent reviews - step 4 of 4");
 }
@@ -519,7 +515,7 @@ fn test_phase_timeline_learn_annotation() {
         &[
             ("flow-start", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "complete"),
+            ("flow-review", "complete"),
             ("flow-learn", "in_progress"),
         ],
     );
@@ -536,7 +532,7 @@ fn test_phase_timeline_learn_step_zero() {
         &[
             ("flow-start", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "complete"),
+            ("flow-review", "complete"),
             ("flow-learn", "in_progress"),
         ],
     );
@@ -554,7 +550,7 @@ fn test_phase_timeline_complete_annotation() {
         &[
             ("flow-start", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "complete"),
+            ("flow-review", "complete"),
             ("flow-learn", "complete"),
             ("flow-complete", "in_progress"),
         ],
@@ -572,7 +568,7 @@ fn test_phase_timeline_complete_step_zero() {
         &[
             ("flow-start", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "complete"),
+            ("flow-review", "complete"),
             ("flow-learn", "complete"),
             ("flow-complete", "in_progress"),
         ],
@@ -589,7 +585,7 @@ fn test_phase_timeline_complete_step_one() {
         &[
             ("flow-start", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "complete"),
+            ("flow-review", "complete"),
             ("flow-learn", "complete"),
             ("flow-complete", "in_progress"),
         ],
@@ -799,7 +795,7 @@ fn test_flow_summary_issues_populated() {
             "label": "Tech Debt",
             "title": "Extract helper for date parsing",
             "url": "https://github.com/test/test/issues/42",
-            "phase": "flow-code-review",
+            "phase": "flow-review",
             "phase_name": "Code Review",
         },
         {
@@ -1446,11 +1442,11 @@ fn test_load_all_flows_sorted_by_phase_then_feature() {
 
     // Flow in Code Review phase (phase 3) — branch "alpha" sorts first alphabetically
     let mut code_state = make_state(
-        "flow-code-review",
+        "flow-review",
         &[
             ("flow-start", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "in_progress"),
+            ("flow-review", "in_progress"),
         ],
     );
     code_state["branch"] = json!("alpha-feature");

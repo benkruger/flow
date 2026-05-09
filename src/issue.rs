@@ -54,9 +54,16 @@ pub struct Args {
     pub override_code_review_ban: bool,
 }
 
+/// Phase identifiers that the Code Review issue-filing gate fires
+/// on. Both the canonical `flow-review` (written by current skills)
+/// and the legacy alias `flow-code-review` (from older plugin
+/// versions or in-flight state files) are recognized so the gate
+/// cannot be bypassed by either form during the compat window.
+const CODE_REVIEW_PHASES: &[&str] = &["flow-review", "flow-code-review"];
+
 /// Returns a rejection message when the active flow is in Phase 4
 /// Code Review and the override flag is not set. Enforces the
-/// code-review-scope rule: Code Review triage has two outcomes (Real,
+/// review-scope rule: Code Review triage has two outcomes (Real,
 /// False positive); there is no filing path. The ban ensures real
 /// findings are fixed while context is fresh — filing defers work that
 /// a future session would rediscover from zero at full lifecycle cost.
@@ -86,10 +93,11 @@ pub(crate) fn should_reject_for_code_review(
     }
     // Defense in depth: serde_json's default last-wins behavior on
     // duplicate keys lets a crafted state file like
-    // `{"current_phase":"flow-code-review","current_phase":"flow-learn"}`
-    // bypass the gate when the parsed value is read normally. Scan the
-    // raw content for ANY occurrence of `"current_phase"` followed by a
-    // value that normalizes to `flow-code-review`. If any match, reject.
+    // `{"current_phase":"flow-review","current_phase":"flow-learn"}`
+    // bypass the gate when the parsed value is read normally. Scan
+    // the raw content for ANY occurrence of `"current_phase"`
+    // followed by a value that normalizes to one of
+    // `CODE_REVIEW_PHASES`. If any match, reject.
     if raw_contains_code_review_phase(content) {
         return Some(code_review_block_message());
     }
@@ -108,7 +116,7 @@ pub(crate) fn should_reject_for_code_review(
             ));
         }
     };
-    if phase_norm == "flow-code-review" {
+    if CODE_REVIEW_PHASES.contains(&phase_norm.as_str()) {
         Some(code_review_block_message())
     } else {
         None
@@ -136,7 +144,7 @@ fn raw_contains_code_review_phase(content: &str) -> bool {
                 if let Some(end_quote) = value_body.find('"') {
                     let value = &value_body[..end_quote];
                     let normalized = value.replace('\0', "").trim().to_ascii_lowercase();
-                    if normalized == "flow-code-review" {
+                    if CODE_REVIEW_PHASES.contains(&normalized.as_str()) {
                         return true;
                     }
                 }

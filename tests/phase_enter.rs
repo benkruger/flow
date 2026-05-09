@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use common::flow_states_dir;
-use flow_rs::phase_enter::resolve_mode;
+use flow_rs::phase_enter::{migrate_skills_keys, resolve_mode};
 use serde_json::{json, Value};
 
 // --- Test helpers ---
@@ -108,9 +108,9 @@ fn create_state(
                 "cumulative_seconds": 0,
                 "visit_count": 0
             },
-            "flow-code-review": {
+            "flow-review": {
                 "name": "Code Review",
-                "status": if prev_phase == "flow-code-review" { prev_status } else { "pending" },
+                "status": if prev_phase == "flow-review" { prev_status } else { "pending" },
                 "started_at": null,
                 "completed_at": null,
                 "session_started_at": null,
@@ -217,7 +217,7 @@ fn test_code_review_phase_happy_path() {
         &repo,
         &[
             "--phase",
-            "flow-code-review",
+            "flow-review",
             "--branch",
             branch,
             "--steps-total",
@@ -227,14 +227,14 @@ fn test_code_review_phase_happy_path() {
     assert_eq!(output.status.code(), Some(0));
     let data = parse_output(&output);
     assert_eq!(data["status"], "ok");
-    assert_eq!(data["phase"], "flow-code-review");
+    assert_eq!(data["phase"], "flow-review");
 
     // State should have step counters set
     let state_path = flow_states_dir(&repo).join(branch).join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
-    assert_eq!(state["phases"]["flow-code-review"]["status"], "in_progress");
-    assert_eq!(state["code_review_steps_total"], 4);
-    assert_eq!(state["code_review_step"], 0);
+    assert_eq!(state["phases"]["flow-review"]["status"], "in_progress");
+    assert_eq!(state["review_steps_total"], 4);
+    assert_eq!(state["review_step"], 0);
 }
 
 #[test]
@@ -242,7 +242,7 @@ fn test_learn_phase_happy_path() {
     let dir = tempfile::tempdir().unwrap();
     let branch = "learn-happy";
     let repo = create_git_repo(dir.path(), branch);
-    create_state(&repo, branch, "flow-code-review", "complete", None);
+    create_state(&repo, branch, "flow-review", "complete", None);
 
     let output = run_phase_enter(
         &repo,
@@ -275,7 +275,7 @@ fn test_gate_failure_previous_phase_not_complete() {
     let repo = create_git_repo(dir.path(), branch);
     create_state(&repo, branch, "flow-code", "in_progress", None);
 
-    let output = run_phase_enter(&repo, &["--phase", "flow-code-review", "--branch", branch]);
+    let output = run_phase_enter(&repo, &["--phase", "flow-review", "--branch", branch]);
     assert_eq!(output.status.code(), Some(0)); // Application error, not process error
     let data = parse_output(&output);
     assert_eq!(data["status"], "error");
@@ -338,7 +338,7 @@ fn test_mode_defaults_code_review() {
         &repo,
         &[
             "--phase",
-            "flow-code-review",
+            "flow-review",
             "--branch",
             branch,
             "--steps-total",
@@ -363,13 +363,7 @@ fn test_mode_defaults_learn() {
     let branch = "mode-learn";
     let repo = create_git_repo(dir.path(), branch);
     // No skills config → defaults
-    create_state(
-        &repo,
-        branch,
-        "flow-code-review",
-        "complete",
-        Some(json!({})),
-    );
+    create_state(&repo, branch, "flow-review", "complete", Some(json!({})));
 
     let output = run_phase_enter(
         &repo,
@@ -399,7 +393,7 @@ fn test_step_counter_field_names() {
     // Verify the field name derivation for all 3 applicable phases
     let dir = tempfile::tempdir().unwrap();
 
-    // Code Review: flow-code-review → code_review_steps_total, code_review_step
+    // Code Review: flow-review → review_steps_total, review_step
     let branch = "counter-cr";
     let repo = create_git_repo(dir.path(), branch);
     create_state(&repo, branch, "flow-code", "complete", None);
@@ -407,7 +401,7 @@ fn test_step_counter_field_names() {
         &repo,
         &[
             "--phase",
-            "flow-code-review",
+            "flow-review",
             "--branch",
             branch,
             "--steps-total",
@@ -419,15 +413,15 @@ fn test_step_counter_field_names() {
         &fs::read_to_string(flow_states_dir(&repo).join(branch).join("state.json")).unwrap(),
     )
     .unwrap();
-    assert_eq!(state["code_review_steps_total"], 4);
-    assert_eq!(state["code_review_step"], 0);
+    assert_eq!(state["review_steps_total"], 4);
+    assert_eq!(state["review_step"], 0);
     // Verify the wrong field names are NOT present
-    assert!(state.get("flow_code_review_steps_total").is_none());
+    assert!(state.get("flow_review_steps_total").is_none());
 
     // Learn: flow-learn → learn_steps_total, learn_step
     let branch2 = "counter-learn";
     let repo2 = create_git_repo(&dir.path().join("sub"), branch2);
-    create_state(&repo2, branch2, "flow-code-review", "complete", None);
+    create_state(&repo2, branch2, "flow-review", "complete", None);
     let output2 = run_phase_enter(
         &repo2,
         &[
@@ -1118,4 +1112,93 @@ fn phase_enter_response_omits_absent_optional_fields() {
         "slack_thread_ts must be absent"
     );
     assert!(data.get("plan_file").is_none(), "plan_file must be absent");
+}
+
+// --- migrate_skills_keys ---
+
+/// State files written by the prior plugin version store the
+/// Code Review skill config under the legacy phase identifier
+/// `flow-code-review`. The migration runs at the top of the
+/// `phase_enter` mutate_state closure so the canonical key
+/// `flow-review` is in place before the autonomous-discipline
+/// hooks (validate_ask_user, stop_continue) read
+/// `skills.<current_phase>` on the next mutation.
+#[test]
+fn migrate_skills_keys_renames_legacy_flow_code_review_to_flow_review() {
+    let mut state = json!({
+        "skills": {
+            "flow-start": {"continue": "auto"},
+            "flow-code-review": {"commit": "auto", "continue": "auto"},
+        }
+    });
+    migrate_skills_keys(&mut state);
+    let skills = state["skills"].as_object().unwrap();
+    assert!(
+        !skills.contains_key("flow-code-review"),
+        "legacy key must be removed after migration"
+    );
+    let canonical = skills.get("flow-review").expect("canonical key present");
+    assert_eq!(canonical["commit"], "auto");
+    assert_eq!(canonical["continue"], "auto");
+}
+
+/// When the canonical key already exists in `skills`, the
+/// migration is a no-op — the user's explicit configuration
+/// under the canonical key is never overwritten by a stale
+/// legacy entry. The legacy entry is left in place; idempotency
+/// matters more than cleanup because the canonical key is the
+/// only one downstream hooks read.
+#[test]
+fn migrate_skills_keys_skips_when_canonical_already_present() {
+    let mut state = json!({
+        "skills": {
+            "flow-code-review": {"commit": "manual", "continue": "manual"},
+            "flow-review": {"commit": "auto", "continue": "auto"},
+        }
+    });
+    migrate_skills_keys(&mut state);
+    let skills = state["skills"].as_object().unwrap();
+    let canonical = skills.get("flow-review").expect("canonical preserved");
+    assert_eq!(canonical["commit"], "auto");
+    assert_eq!(canonical["continue"], "auto");
+    // The legacy entry is left untouched; the canonical entry wins.
+    assert!(skills.contains_key("flow-code-review"));
+}
+
+/// State files without a `skills` object (older schemas, hand-
+/// edited fixtures) are a no-op. The migration must not panic
+/// or auto-vivify a `skills` field — that would corrupt state
+/// shapes the downstream typed deserialization expects.
+#[test]
+fn migrate_skills_keys_no_op_when_skills_missing() {
+    let mut state = json!({"current_phase": "flow-review"});
+    migrate_skills_keys(&mut state);
+    assert!(state.get("skills").is_none());
+}
+
+/// State whose `skills` field is the wrong type (string, array,
+/// number, null) is a no-op. The migration must not panic on
+/// `as_object_mut()` returning `None`.
+#[test]
+fn migrate_skills_keys_no_op_when_skills_wrong_type() {
+    let mut state = json!({"skills": "manual"});
+    migrate_skills_keys(&mut state);
+    assert_eq!(state["skills"], "manual");
+}
+
+/// State files with neither the legacy nor the canonical key
+/// are a no-op for the rename pair. The migration must not
+/// fabricate a canonical entry from nothing — only existing
+/// legacy values transfer across.
+#[test]
+fn migrate_skills_keys_no_op_when_neither_key_present() {
+    let mut state = json!({
+        "skills": {
+            "flow-start": {"continue": "auto"},
+        }
+    });
+    migrate_skills_keys(&mut state);
+    let skills = state["skills"].as_object().unwrap();
+    assert!(!skills.contains_key("flow-review"));
+    assert!(!skills.contains_key("flow-code-review"));
 }

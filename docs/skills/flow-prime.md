@@ -56,7 +56,7 @@ The chosen configuration is stored in `.flow.json` under a `skills` key:
     "flow-start": {"continue": "manual"},
     "flow-plan": {"continue": "auto"},
     "flow-code": {"commit": "manual", "continue": "manual"},
-    "flow-code-review": {"commit": "auto", "continue": "auto"},
+    "flow-review": {"commit": "auto", "continue": "auto"},
     "flow-learn": {"commit": "auto", "continue": "auto"},
     "flow-abort": "auto",
     "flow-complete": "auto"

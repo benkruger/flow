@@ -28,12 +28,17 @@ fn flow_rs() -> Command {
 
 // --- is_step_counter_field ---
 
-/// Each of the four named step counters returns `true` from the
-/// helper. Locks the closed enumeration that decides whether to
-/// capture a `StepSnapshot` after a `set-timestamp` mutation.
+/// Each named step counter returns `true` from the helper. Locks
+/// the closed enumeration that decides whether to capture a
+/// `StepSnapshot` after a `set-timestamp` mutation. Both
+/// `review_step` (canonical, written by current skills) and
+/// `code_review_step` (legacy alias from older plugin versions)
+/// are recognized so neither name silently skips the snapshot
+/// capture during the compat window.
 #[test]
 fn is_step_counter_field_returns_true_for_each_named_field() {
     assert!(is_step_counter_field("code_task"));
+    assert!(is_step_counter_field("review_step"));
     assert!(is_step_counter_field("code_review_step"));
     assert!(is_step_counter_field("learn_step"));
     assert!(is_step_counter_field("complete_step"));
@@ -174,10 +179,10 @@ fn test_apply_updates_now_magic_value() {
 
 #[test]
 fn test_apply_updates_integer_coercion() {
-    let mut state = json!({"code_review_step": 0});
-    let updates = apply_updates(&mut state, &["code_review_step=1".to_string()]).unwrap();
-    assert_eq!(state["code_review_step"], 1);
-    assert!(state["code_review_step"].is_i64());
+    let mut state = json!({"review_step": 0});
+    let updates = apply_updates(&mut state, &["review_step=1".to_string()]).unwrap();
+    assert_eq!(state["review_step"], 1);
+    assert!(state["review_step"].is_i64());
     assert_eq!(updates[0].value, json!(1));
 }
 
@@ -695,10 +700,10 @@ fn test_cli_branch_flag() {
 fn test_cli_integer_coercion() {
     let dir = tempfile::tempdir().unwrap();
     let mut state = make_cli_state();
-    state["code_review_step"] = json!(0);
+    state["review_step"] = json!(0);
     setup_cli_state(dir.path(), "test-feature", &state);
 
-    let (code, output) = run_cli(dir.path(), &["--set", "code_review_step=1"]);
+    let (code, output) = run_cli(dir.path(), &["--set", "review_step=1"]);
     assert_eq!(code, 0);
     assert_eq!(output["updates"][0]["value"], 1);
 
@@ -709,8 +714,8 @@ fn test_cli_integer_coercion() {
     )
     .unwrap();
     let on_disk: Value = serde_json::from_str(&content).unwrap();
-    assert_eq!(on_disk["code_review_step"], 1);
-    assert!(on_disk["code_review_step"].is_i64());
+    assert_eq!(on_disk["review_step"], 1);
+    assert!(on_disk["review_step"].is_i64());
 }
 
 #[test]

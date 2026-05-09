@@ -600,7 +600,7 @@ to determine how to advance.
    Otherwise, use `continue_action` from the `phase-finalize` output.
    If `continue_action` is `"invoke"` → continue=auto.
    If `continue_action` is `"ask"` → continue=manual.
-2. If continue=auto → invoke `flow:flow-code-review` directly using the Skill tool.
+2. If continue=auto → invoke `flow:flow-review` directly using the Skill tool.
    Do NOT run `bin/flow status`. Do NOT use AskUserQuestion.
    This is the FINAL action in this response — nothing else follows.
 3. If continue=manual → you MUST do all of the following before proceeding:
@@ -618,9 +618,9 @@ to determine how to advance.
    c. If "I have a correction or learning to capture":
       ask what to capture, invoke `/flow:flow-note`, then re-ask with
       only "Yes, start Phase 3 now" and "Not yet"
-   d. If Yes → invoke `flow:flow-code-review` using the Skill tool
+   d. If Yes → invoke `flow:flow-review` using the Skill tool
    e. If Not yet → print the paused banner below
-   f. Do NOT invoke `flow:flow-code-review` until the user responds
+   f. Do NOT invoke `flow:flow-review` until the user responds
 
 Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 
@@ -632,7 +632,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 ```text
 ══════════════════════════════════════════════════
   ◆ FLOW — Paused
-  Run /flow:flow-code-review when ready.
+  Run /flow:flow-review when ready.
 ══════════════════════════════════════════════════
 ```
 ````

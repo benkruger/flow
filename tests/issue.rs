@@ -810,7 +810,7 @@ fn default_args() -> Args {
 #[test]
 fn gate_blocks_when_current_phase_is_code_review() {
     let dir = tempfile::tempdir().unwrap();
-    let state = || Some(r#"{"current_phase":"flow-code-review"}"#.to_string());
+    let state = || Some(r#"{"current_phase":"flow-review"}"#.to_string());
     let repo = || Some("owner/name".to_string());
     let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
     assert_eq!(code, 1);
@@ -879,7 +879,7 @@ fn gate_fails_closed_when_current_phase_missing() {
 #[test]
 fn gate_fails_closed_when_current_phase_is_array() {
     let dir = tempfile::tempdir().unwrap();
-    let state = || Some(r#"{"current_phase":["flow-code-review"]}"#.to_string());
+    let state = || Some(r#"{"current_phase":["flow-review"]}"#.to_string());
     let repo = || Some("owner/name".to_string());
     let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
     assert_eq!(code, 1);
@@ -892,7 +892,7 @@ fn gate_fails_closed_when_current_phase_is_array() {
 #[test]
 fn gate_fails_closed_when_state_has_bom() {
     let dir = tempfile::tempdir().unwrap();
-    let state = || Some("\u{feff}{\"current_phase\":\"flow-code-review\"}".to_string());
+    let state = || Some("\u{feff}{\"current_phase\":\"flow-review\"}".to_string());
     let repo = || Some("owner/name".to_string());
     let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
     assert_eq!(code, 1);
@@ -939,7 +939,7 @@ fn gate_allows_when_state_is_whitespace_only() {
 #[test]
 fn gate_blocks_when_current_phase_is_whitespace_padded() {
     let dir = tempfile::tempdir().unwrap();
-    let state = || Some(r#"{"current_phase":" flow-code-review "}"#.to_string());
+    let state = || Some(r#"{"current_phase":" flow-review "}"#.to_string());
     let repo = || Some("owner/name".to_string());
     let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
     assert_eq!(code, 1);
@@ -959,7 +959,7 @@ fn gate_blocks_when_current_phase_is_uppercase() {
 #[test]
 fn gate_blocks_when_current_phase_has_trailing_nul() {
     let dir = tempfile::tempdir().unwrap();
-    let state = || Some("{\"current_phase\":\"flow-code-review\\u0000\"}".to_string());
+    let state = || Some("{\"current_phase\":\"flow-review\\u0000\"}".to_string());
     let repo = || Some("owner/name".to_string());
     let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
     assert_eq!(code, 1);
@@ -970,7 +970,7 @@ fn gate_blocks_when_current_phase_has_trailing_nul() {
 fn gate_blocks_when_current_phase_duplicate_key_serde_last_wins() {
     let dir = tempfile::tempdir().unwrap();
     let state =
-        || Some(r#"{"current_phase":"flow-code-review","current_phase":"flow-learn"}"#.to_string());
+        || Some(r#"{"current_phase":"flow-review","current_phase":"flow-learn"}"#.to_string());
     let repo = || Some("owner/name".to_string());
     let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
     assert_eq!(code, 1);
@@ -981,7 +981,7 @@ fn gate_blocks_when_current_phase_duplicate_key_serde_last_wins() {
 fn gate_blocks_when_duplicate_key_in_reverse_order() {
     let dir = tempfile::tempdir().unwrap();
     let state =
-        || Some(r#"{"current_phase":"flow-learn","current_phase":"flow-code-review"}"#.to_string());
+        || Some(r#"{"current_phase":"flow-learn","current_phase":"flow-review"}"#.to_string());
     let repo = || Some("owner/name".to_string());
     let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
     assert_eq!(code, 1);
@@ -1010,7 +1010,7 @@ fn gate_raw_scanner_advances_past_current_phase_without_colon() {
 fn gate_fails_closed_when_current_phase_value_has_no_closing_quote() {
     // Covers the raw scanner's `value_body.find('"')` None fallthrough.
     let dir = tempfile::tempdir().unwrap();
-    let state = || Some(r#"{"current_phase":"flow-code-review"#.to_string());
+    let state = || Some(r#"{"current_phase":"flow-review"#.to_string());
     let repo = || Some("owner/name".to_string());
     let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
     assert_eq!(code, 1);
@@ -1117,7 +1117,7 @@ fn run_impl_main_state_file_no_repo_no_resolver_errors() {
 #[test]
 fn run_impl_main_blocked_by_code_review_returns_error_tuple() {
     let dir = tempfile::tempdir().unwrap();
-    let state = || Some(r#"{"current_phase":"flow-code-review"}"#.to_string());
+    let state = || Some(r#"{"current_phase":"flow-review"}"#.to_string());
     let repo = || Some("owner/name".to_string());
     let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
     assert_eq!(value["status"], "error");
@@ -1129,7 +1129,7 @@ fn run_impl_main_blocked_by_code_review_returns_error_tuple() {
 fn gate_override_bypasses_code_review_block() {
     // Covers the `if override_flag { return None; }` early return.
     let dir = tempfile::tempdir().unwrap();
-    let state = || Some(r#"{"current_phase":"flow-code-review"}"#.to_string());
+    let state = || Some(r#"{"current_phase":"flow-review"}"#.to_string());
     let repo = || Some("owner/name".to_string());
     let mut args = default_args();
     args.override_code_review_ban = true;

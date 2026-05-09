@@ -46,7 +46,7 @@ fn empty_state() -> FlowState {
         code_task: None,
         code_tasks_total: None,
         code_task_name: None,
-        code_review_step: None,
+        review_step: None,
         learn_step: None,
         learn_steps_total: None,
         complete_step: None,

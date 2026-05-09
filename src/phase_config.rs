@@ -26,7 +26,7 @@ pub struct PhaseConfig {
 pub const PHASE_ORDER: &[&str] = &[
     "flow-start",
     "flow-code",
-    "flow-code-review",
+    "flow-review",
     "flow-learn",
     "flow-complete",
 ];
@@ -36,7 +36,7 @@ pub fn phase_names() -> IndexMap<String, String> {
     let mut m = IndexMap::new();
     m.insert("flow-start".into(), "Start".into());
     m.insert("flow-code".into(), "Code".into());
-    m.insert("flow-code-review".into(), "Code Review".into());
+    m.insert("flow-review".into(), "Code Review".into());
     m.insert("flow-learn".into(), "Learn".into());
     m.insert("flow-complete".into(), "Complete".into());
     m
@@ -47,7 +47,7 @@ pub fn commands() -> IndexMap<String, String> {
     let mut m = IndexMap::new();
     m.insert("flow-start".into(), "/flow:flow-start".into());
     m.insert("flow-code".into(), "/flow:flow-code".into());
-    m.insert("flow-code-review".into(), "/flow:flow-code-review".into());
+    m.insert("flow-review".into(), "/flow:flow-review".into());
     m.insert("flow-learn".into(), "/flow:flow-learn".into());
     m.insert("flow-complete".into(), "/flow:flow-complete".into());
     m
@@ -87,7 +87,7 @@ pub fn auto_skills() -> IndexMap<String, SkillConfig> {
     let mut review = IndexMap::new();
     review.insert("commit".into(), "auto".into());
     review.insert("continue".into(), "auto".into());
-    m.insert("flow-code-review".into(), SkillConfig::Detailed(review));
+    m.insert("flow-review".into(), SkillConfig::Detailed(review));
 
     let mut learn = IndexMap::new();
     learn.insert("commit".into(), "auto".into());

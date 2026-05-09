@@ -1332,3 +1332,202 @@ fn scan_for_flow_label_arg(dir: &Path, ext: &str) -> Vec<PathBuf> {
     }
     hits
 }
+
+// --- flow-review identifier rename tombstones ---
+//
+// Phase 3 was renamed from `flow-code-review` to `flow-review` for
+// naming consistency across the 5-phase family. The tombstones below
+// lock the rename in `flow-phases.json` (the canonical phase
+// machine), `src/phase_config.rs` (the Rust constants that mirror
+// it), and `skills/flow-code-review/` (the renamed skill directory).
+// The serde alias on `Phase::FlowCodeReview` and the legacy-key
+// reads in `src/tui_data.rs` deliberately preserve the old identifier
+// for state-file compat — those callsites are NOT covered by these
+// tombstones.
+
+/// Tombstone: removed in PR #1402. Must not return.
+///
+/// File-existence guard for the renamed skill directory. The skill
+/// was moved from `skills/flow-code-review/` to `skills/flow-review/`
+/// in the same PR via `git mv`. Per `.claude/rules/tombstone-tests.md`
+/// "Two kinds of tombstone — file-resurrection threats", the deleted
+/// source-file path needs a file-existence tombstone paired with the
+/// byte-substring tombstones below so a `#[path =
+/// "../flow-code-review/SKILL.md"]` re-aliasing or merge-conflict
+/// resurrection of the old path fails CI immediately. The check uses
+/// `Path::exists()` directly because the protection target is a
+/// directory in the worktree-tracked filesystem, not a string
+/// literal — the constant-string concat!/format! reassembly bypass
+/// classes do not apply to filesystem paths checked at runtime.
+#[test]
+fn test_skills_dir_no_flow_code_review_subdir() {
+    let root = common::repo_root();
+    let path = root.join("skills").join("flow-code-review");
+    assert!(
+        !path.exists(),
+        "skills/flow-code-review/ must not exist — the skill \
+         directory was renamed to skills/flow-review/ in PR #1402. \
+         A `git mv` reversal or merge-conflict resurrection of the \
+         old path would re-introduce the legacy SKILL.md alongside \
+         the new one and confuse the plugin loader."
+    );
+}
+
+/// Tombstone: removed in PR #1402. Must not return.
+///
+/// File-existence guard for the renamed Code Review scope rule
+/// file. The rule was moved from `.claude/rules/code-review-scope.md`
+/// to `.claude/rules/review-scope.md` in the same PR via `git mv`.
+/// Per `.claude/rules/tombstone-tests.md` "Two kinds of tombstone —
+/// file-resurrection threats", a deleted rule path needs a
+/// file-existence tombstone so a merge-conflict resurrection of the
+/// old path produces a duplicate rule file — both copies would be
+/// loaded into the rule corpus and cross-references in sibling
+/// rules would become ambiguous. The check uses `Path::exists()`
+/// directly because the target is a worktree-tracked file path, not
+/// a string literal — the concat!/format! reassembly bypass classes
+/// do not apply to filesystem paths checked at runtime.
+#[test]
+fn test_claude_rules_dir_no_code_review_scope_file() {
+    let root = common::repo_root();
+    let path = root
+        .join(".claude")
+        .join("rules")
+        .join("code-review-scope.md");
+    assert!(
+        !path.exists(),
+        ".claude/rules/code-review-scope.md must not exist — the \
+         rule was renamed to .claude/rules/review-scope.md in PR \
+         #1402. A `git mv` reversal or merge-conflict resurrection \
+         of the old path would re-introduce the legacy rule \
+         alongside the new one and create ambiguous \
+         cross-references."
+    );
+}
+
+/// Tombstone: removed in PR #1402. Must not return.
+///
+/// File-existence guard for the renamed Phase 3 doc page. The doc
+/// was moved from `docs/phases/phase-3-code-review.md` to
+/// `docs/phases/phase-3-review.md` in the same PR via `git mv` to
+/// match the renamed phase identifier. Per
+/// `.claude/rules/tombstone-tests.md` "Two kinds of tombstone —
+/// file-resurrection threats", a deleted doc path needs a
+/// file-existence tombstone so a merge-conflict resurrection of
+/// the old path produces a duplicate doc that the GitHub Pages
+/// generator would render as a separate page. The check uses
+/// `Path::exists()` directly because the target is a worktree-
+/// tracked file path, not a string literal — the concat!/format!
+/// reassembly bypass classes do not apply to filesystem paths
+/// checked at runtime.
+#[test]
+fn test_docs_phases_dir_no_phase_3_code_review_file() {
+    let root = common::repo_root();
+    let path = root
+        .join("docs")
+        .join("phases")
+        .join("phase-3-code-review.md");
+    assert!(
+        !path.exists(),
+        "docs/phases/phase-3-code-review.md must not exist — the \
+         doc was renamed to docs/phases/phase-3-review.md in PR \
+         #1402. A `git mv` reversal or merge-conflict resurrection \
+         of the old path would re-introduce a duplicate Phase 3 \
+         doc page."
+    );
+}
+
+/// Tombstone: removed in PR #1402. Must not return.
+///
+/// File-existence guard for the renamed Code Review skill doc
+/// page. The doc was moved from `docs/skills/flow-code-review.md`
+/// to `docs/skills/flow-review.md` in the same PR via `git mv` to
+/// match the renamed skill directory. Per
+/// `.claude/rules/tombstone-tests.md` "Two kinds of tombstone —
+/// file-resurrection threats", a deleted doc path needs a
+/// file-existence tombstone so a merge-conflict resurrection of
+/// the old path produces a duplicate doc that the GitHub Pages
+/// generator would render as a separate page. The check uses
+/// `Path::exists()` directly because the target is a worktree-
+/// tracked file path, not a string literal — the concat!/format!
+/// reassembly bypass classes do not apply to filesystem paths
+/// checked at runtime.
+#[test]
+fn test_docs_skills_dir_no_flow_code_review_file() {
+    let root = common::repo_root();
+    let path = root.join("docs").join("skills").join("flow-code-review.md");
+    assert!(
+        !path.exists(),
+        "docs/skills/flow-code-review.md must not exist — the doc \
+         was renamed to docs/skills/flow-review.md in PR #1402. A \
+         `git mv` reversal or merge-conflict resurrection of the \
+         old path would re-introduce a duplicate skill doc page."
+    );
+}
+
+/// Tombstone: removed in PR #1402. Must not return.
+///
+/// Asserts the canonical phase machine in `flow-phases.json` does
+/// NOT contain the old phase identifier `"flow-code-review"` in
+/// either the `order` array or the `phases` map. Bare byte-substring
+/// is sufficient because JSON keys are parsed as literal string data;
+/// the phase identifier cannot be assembled at JSON-parse time via
+/// `concat!`, `format!`, or split constants — every JSON producer
+/// must emit the full literal in a single string token. The runtime
+/// reader is `phase_config::load_phase_config`, which deserializes
+/// the keys directly into a Vec<String> / IndexMap; renaming the
+/// identifier without updating this file leaves the data file's
+/// keys mismatched with the Rust constants in `phase_config.rs`.
+#[test]
+fn test_flow_phases_json_no_old_phase_identifier() {
+    let root = common::repo_root();
+    let path = root.join("flow-phases.json");
+    let content = fs::read_to_string(&path).expect("flow-phases.json must exist");
+    assert!(
+        !content.contains("flow-code-review"),
+        "flow-phases.json must not contain the old phase identifier \
+         'flow-code-review' — the phase was renamed to 'flow-review' \
+         in PR #1402. The serde alias on Phase::FlowCodeReview keeps \
+         legacy state files readable, but the canonical phase machine \
+         must emit the new identifier."
+    );
+}
+
+/// Tombstone: removed in PR #1402. Must not return.
+///
+/// Asserts `src/phase_config.rs` does NOT contain the old phase
+/// identifier `"flow-code-review"`. The four production callsites
+/// (PHASE_ORDER, phase_names(), commands(), auto_skills()) write the
+/// identifier as inline string literals; the byte-substring check
+/// holds because:
+///   1. `concat!` reassembly: theoretically possible
+///      (`concat!("flow-", "code-review")`) but no production reason
+///      — these are constant-time literals consumed by IndexMap
+///      inserts, not runtime composition.
+///   2. `format!` reassembly: cannot produce a `const`-eligible
+///      string at compile time, and every callsite is in a
+///      `const`/`fn` body that a future maintainer would write as
+///      a literal.
+///   3. Named constant reference: would centralize the literal in a
+///      `const PHASE_KEY: &str = ...` that the byte-substring check
+///      would then match against. This file deliberately uses
+///      inline literals as the source of truth — the convention is
+///      stable enough that introducing a constant indirection would
+///      itself be a reviewable change.
+///   4. Method chains / split args: not applicable; the literal is
+///      a single positional argument to `IndexMap::insert`.
+#[test]
+fn test_phase_config_rs_no_old_phase_identifier() {
+    let root = common::repo_root();
+    let path = root.join("src").join("phase_config.rs");
+    let content = fs::read_to_string(&path).expect("src/phase_config.rs must exist");
+    assert!(
+        !content.contains("flow-code-review"),
+        "src/phase_config.rs must not contain the old phase \
+         identifier 'flow-code-review' — the phase was renamed to \
+         'flow-review' in PR #1402. The serde alias on \
+         Phase::FlowCodeReview lives in src/state.rs (intentionally \
+         retained); src/phase_config.rs is the Rust mirror of \
+         flow-phases.json and must use the new identifier."
+    );
+}

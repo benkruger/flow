@@ -121,23 +121,24 @@ fn every_docs_skill_page_has_a_skill_dir() {
 fn every_phase_has_a_docs_page() {
     let phases = common::load_phases();
     let numbers = phase_number();
-    for (key, phase) in phases["phases"].as_object().unwrap() {
+    for (key, _phase) in phases["phases"].as_object().unwrap() {
         let num = numbers[key];
-        let name = phase["name"]
-            .as_str()
-            .unwrap()
-            .to_lowercase()
-            .replace(' ', "-");
+        // Derive the doc filename from the phase identifier (key)
+        // rather than the display name. The phase identifier is the
+        // canonical short name (`flow-review` → `review`); the display
+        // name (`Code Review`) preserves human-readable labeling but
+        // is decoupled from the filename.
+        let short = key.strip_prefix("flow-").unwrap_or(key);
         let doc = common::docs_dir()
             .join("phases")
-            .join(format!("phase-{}-{}.md", num, name));
+            .join(format!("phase-{}-{}.md", num, short));
         assert!(
             doc.exists(),
             "Phase {} ({}) has no docs/phases/phase-{}-{}.md",
             num,
-            phase["name"].as_str().unwrap(),
+            key,
             num,
-            name
+            short
         );
     }
 }
@@ -149,14 +150,10 @@ fn phase_docs_contain_correct_command() {
     let numbers = phase_number();
     for (key, phase) in phases["phases"].as_object().unwrap() {
         let num = numbers[key];
-        let name = phase["name"]
-            .as_str()
-            .unwrap()
-            .to_lowercase()
-            .replace(' ', "-");
+        let short = key.strip_prefix("flow-").unwrap_or(key);
         let doc_path = common::docs_dir()
             .join("phases")
-            .join(format!("phase-{}-{}.md", num, name));
+            .join(format!("phase-{}-{}.md", num, short));
         let content = fs::read_to_string(&doc_path).unwrap();
         // Docs use /flow-start, not /flow:flow-start
         let user_command = phase["command"].as_str().unwrap().replace("/flow:", "/");
@@ -164,7 +161,7 @@ fn phase_docs_contain_correct_command() {
             content.contains(&user_command),
             "docs/phases/phase-{}-{}.md does not mention command '{}'",
             num,
-            name,
+            short,
             user_command
         );
     }
@@ -178,10 +175,10 @@ fn phase_docs_have_correct_title() {
     for (key, phase) in phases["phases"].as_object().unwrap() {
         let num = numbers[key];
         let phase_name = phase["name"].as_str().unwrap();
-        let name_lower = phase_name.to_lowercase().replace(' ', "-");
+        let short = key.strip_prefix("flow-").unwrap_or(key);
         let doc_path = common::docs_dir()
             .join("phases")
-            .join(format!("phase-{}-{}.md", num, name_lower));
+            .join(format!("phase-{}-{}.md", num, short));
         let content = fs::read_to_string(&doc_path).unwrap();
         let pattern = format!(r"Phase {}\s*:\s*{}", num, regex::escape(phase_name));
         let re = Regex::new(&pattern).unwrap();
@@ -189,7 +186,7 @@ fn phase_docs_have_correct_title() {
             re.is_match(&content),
             "docs/phases/phase-{}-{}.md missing 'Phase {}: {}' in title",
             num,
-            name_lower,
+            short,
             num,
             phase_name
         );
