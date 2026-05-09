@@ -7,7 +7,16 @@
 //! detection, no scanner gates — the issue is the plan, the markers
 //! delimit it, end of contract.
 
-use flow_rs::plan_from_issue::{extract_plan, ExtractError, PLAN_BODY_BYTE_CAP};
+mod common;
+
+use std::fs;
+use std::path::Path;
+use std::process::{Command, Output};
+
+use common::{create_gh_stub, create_git_repo_with_remote, parse_output};
+use flow_rs::plan_from_issue::{
+    extract_plan, write_plan, ExtractError, FetchError, WriteError, PLAN_BODY_BYTE_CAP,
+};
 
 const BEGIN: &str = "<!-- FLOW-PLAN-BEGIN -->";
 const END: &str = "<!-- FLOW-PLAN-END -->";
@@ -156,4 +165,382 @@ fn extract_error_display_empty() {
 fn extract_error_display_too_large() {
     let msg = format!("{}", ExtractError::TooLarge);
     assert!(msg.contains("MiB") || msg.contains("cap"));
+}
+
+// --- write_plan ---
+
+#[test]
+fn write_plan_writes_content_to_canonical_path() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let path = write_plan(&root, "feature-x", "## Plan\n\nContent.\n").unwrap();
+    let written = fs::read_to_string(&path).unwrap();
+    assert_eq!(written, "## Plan\n\nContent.\n");
+    assert!(path.ends_with(".flow-states/feature-x/plan.md"));
+}
+
+#[test]
+fn write_plan_creates_branch_subdirectory_when_missing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let path = write_plan(&root, "fresh", "content").unwrap();
+    assert!(path.exists());
+    assert!(path.parent().unwrap().exists());
+}
+
+#[test]
+fn write_plan_overwrites_existing_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    write_plan(&root, "ow", "first").unwrap();
+    let path = write_plan(&root, "ow", "second").unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), "second");
+}
+
+#[test]
+fn write_plan_rejects_branch_with_slash() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let err = write_plan(&root, "feat/x", "content").unwrap_err();
+    assert!(matches!(err, WriteError::InvalidBranch(_)));
+}
+
+#[test]
+fn write_plan_rejects_empty_branch() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let err = write_plan(&root, "", "content").unwrap_err();
+    assert!(matches!(err, WriteError::InvalidBranch(_)));
+}
+
+#[test]
+fn write_plan_rejects_dot_branch() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let err = write_plan(&root, ".", "content").unwrap_err();
+    assert!(matches!(err, WriteError::InvalidBranch(_)));
+}
+
+#[test]
+fn write_plan_io_error_when_root_is_a_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    // Create a file at .flow-states so create_dir_all fails with NotADirectory.
+    fs::write(root.join(".flow-states"), "blocking file").unwrap();
+    let err = write_plan(&root, "blocked", "content").unwrap_err();
+    assert!(matches!(err, WriteError::Io(_)));
+}
+
+#[test]
+fn write_plan_io_error_when_plan_path_is_a_directory() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    // Pre-create plan.md as a directory so fs::write fails AFTER
+    // ensure_branch_dir succeeds — exercises the post-mkdir Io branch.
+    fs::create_dir_all(root.join(".flow-states/dirpath/plan.md")).unwrap();
+    let err = write_plan(&root, "dirpath", "content").unwrap_err();
+    assert!(matches!(err, WriteError::Io(_)));
+    let msg = format!("{}", err);
+    assert!(msg.contains("filesystem error"));
+}
+
+// --- WriteError Display ---
+
+#[test]
+fn write_error_display_invalid_branch() {
+    let msg = format!("{}", WriteError::InvalidBranch("feat/x".to_string()));
+    assert!(msg.contains("invalid branch"));
+    assert!(msg.contains("feat/x"));
+}
+
+#[test]
+fn write_error_display_io() {
+    let msg = format!("{}", WriteError::Io("disk full".to_string()));
+    assert!(msg.contains("filesystem"));
+    assert!(msg.contains("disk full"));
+}
+
+// --- FetchError Display ---
+
+#[test]
+fn fetch_error_display_issue_not_found() {
+    let msg = format!("{}", FetchError::IssueNotFound { issue: 42 });
+    assert!(msg.contains("42"));
+    assert!(msg.contains("not found"));
+}
+
+#[test]
+fn fetch_error_display_issue_closed() {
+    let msg = format!("{}", FetchError::IssueClosed { issue: 99 });
+    assert!(msg.contains("99"));
+    assert!(msg.contains("closed"));
+}
+
+#[test]
+fn fetch_error_display_gh_failed() {
+    let msg = format!("{}", FetchError::GhFailed("auth needed".to_string()));
+    assert!(msg.contains("gh"));
+    assert!(msg.contains("auth needed"));
+}
+
+// --- bin/flow plan-from-issue (subprocess tests) ---
+
+fn flow_rs_no_recursion() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.env_remove("FLOW_CI_RUNNING");
+    cmd
+}
+
+fn run_plan_from_issue(repo: &Path, args: &[&str], stub_dir: &Path) -> Output {
+    let path_env = format!(
+        "{}:{}",
+        stub_dir.to_string_lossy(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    flow_rs_no_recursion()
+        .arg("plan-from-issue")
+        .args(args)
+        .current_dir(repo)
+        .env("PATH", &path_env)
+        .env("HOME", repo)
+        .env("GH_TOKEN", "invalid")
+        .env("CLAUDE_PLUGIN_ROOT", env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn plan_from_issue_happy_path_writes_plan_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    // Fake gh returns a JSON body wrapping a sentinel-delimited plan.
+    let body = "Prelude.\\n<!-- FLOW-PLAN-BEGIN -->\\n## Plan\\nContent.\\n<!-- FLOW-PLAN-END -->\\nPostlude.";
+    let stub_dir = create_gh_stub(
+        &repo,
+        &format!(
+            "#!/bin/bash\necho '{{\"body\":\"{}\",\"state\":\"OPEN\"}}'\nexit 0\n",
+            body
+        ),
+    );
+
+    let output = run_plan_from_issue(
+        &repo,
+        &["--issue", "42", "--branch", "feat-test"],
+        &stub_dir,
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["branch"], "feat-test");
+    assert_eq!(data["issue"], 42);
+    assert!(data["plan_path"]
+        .as_str()
+        .unwrap()
+        .ends_with(".flow-states/feat-test/plan.md"));
+
+    let plan_path = data["plan_path"].as_str().unwrap();
+    let written = fs::read_to_string(plan_path).unwrap();
+    assert!(written.contains("## Plan"));
+    assert!(written.contains("Content."));
+}
+
+#[test]
+fn plan_from_issue_returns_issue_not_found_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let stub_dir = create_gh_stub(
+        &repo,
+        "#!/bin/bash\necho 'GraphQL: Could not resolve to an Issue with the number of 999.' >&2\nexit 1\n",
+    );
+
+    let output = run_plan_from_issue(&repo, &["--issue", "999", "--branch", "feat-x"], &stub_dir);
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["reason"], "issue_not_found");
+    assert_eq!(data["issue"], 999);
+}
+
+#[test]
+fn plan_from_issue_returns_issue_closed_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let stub_dir = create_gh_stub(
+        &repo,
+        "#!/bin/bash\necho '{\"body\":\"closed issue body\",\"state\":\"CLOSED\"}'\nexit 0\n",
+    );
+
+    let output = run_plan_from_issue(&repo, &["--issue", "100", "--branch", "feat-y"], &stub_dir);
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["reason"], "issue_closed");
+    assert_eq!(data["issue"], 100);
+}
+
+#[test]
+fn plan_from_issue_returns_gh_fetch_failed_for_other_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let stub_dir = create_gh_stub(
+        &repo,
+        "#!/bin/bash\necho 'authentication required' >&2\nexit 1\n",
+    );
+
+    let output = run_plan_from_issue(&repo, &["--issue", "5", "--branch", "feat-z"], &stub_dir);
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["reason"], "gh_fetch_failed");
+}
+
+#[test]
+fn plan_from_issue_returns_plan_markers_missing_when_body_has_no_sentinels() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let stub_dir = create_gh_stub(
+        &repo,
+        "#!/bin/bash\necho '{\"body\":\"plain prose with no sentinels\",\"state\":\"OPEN\"}'\nexit 0\n",
+    );
+
+    let output = run_plan_from_issue(&repo, &["--issue", "1", "--branch", "f"], &stub_dir);
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["reason"], "plan_markers_missing");
+}
+
+#[test]
+fn plan_from_issue_returns_plan_markers_malformed_when_only_begin_present() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let stub_dir = create_gh_stub(
+        &repo,
+        "#!/bin/bash\necho '{\"body\":\"<!-- FLOW-PLAN-BEGIN --> content\",\"state\":\"OPEN\"}'\nexit 0\n",
+    );
+
+    let output = run_plan_from_issue(&repo, &["--issue", "2", "--branch", "fe"], &stub_dir);
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["reason"], "plan_markers_malformed");
+}
+
+#[test]
+fn plan_from_issue_returns_plan_empty_when_content_between_markers_is_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let stub_dir = create_gh_stub(
+        &repo,
+        "#!/bin/bash\necho '{\"body\":\"<!-- FLOW-PLAN-BEGIN -->   <!-- FLOW-PLAN-END -->\",\"state\":\"OPEN\"}'\nexit 0\n",
+    );
+
+    let output = run_plan_from_issue(&repo, &["--issue", "3", "--branch", "fee"], &stub_dir);
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["reason"], "plan_empty");
+}
+
+#[test]
+fn plan_from_issue_returns_invalid_branch_error_for_slash_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let stub_dir = create_gh_stub(
+        &repo,
+        "#!/bin/bash\necho '{\"body\":\"<!-- FLOW-PLAN-BEGIN -->\\nplan\\n<!-- FLOW-PLAN-END -->\",\"state\":\"OPEN\"}'\nexit 0\n",
+    );
+
+    let output = run_plan_from_issue(
+        &repo,
+        &["--issue", "4", "--branch", "feat/slash"],
+        &stub_dir,
+    );
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["reason"], "invalid_branch");
+}
+
+#[test]
+fn plan_from_issue_gh_spawn_failure_returns_gh_fetch_failed() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    // Empty PATH so gh cannot be located.
+    let output = flow_rs_no_recursion()
+        .args(["plan-from-issue", "--issue", "1", "--branch", "f"])
+        .current_dir(&repo)
+        .env("PATH", "")
+        .env("HOME", &repo)
+        .env("CLAUDE_PLUGIN_ROOT", env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .unwrap();
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["reason"], "gh_fetch_failed");
+    assert!(data["message"]
+        .as_str()
+        .unwrap()
+        .to_lowercase()
+        .contains("spawn"));
+}
+
+#[test]
+fn plan_from_issue_returns_gh_fetch_failed_when_gh_outputs_garbage_json() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let stub_dir = create_gh_stub(&repo, "#!/bin/bash\necho 'not valid json at all'\nexit 0\n");
+
+    let output = run_plan_from_issue(&repo, &["--issue", "7", "--branch", "fa"], &stub_dir);
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["reason"], "gh_fetch_failed");
+    assert!(data["message"].as_str().unwrap().contains("parse json"));
+}
+
+#[test]
+fn plan_from_issue_returns_write_failed_when_flow_states_blocked_by_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    // Pre-create a file at .flow-states/ so create_dir_all for the
+    // branch subdirectory cannot succeed.
+    fs::write(repo.join(".flow-states"), "blocking file").unwrap();
+    let stub_dir = create_gh_stub(
+        &repo,
+        "#!/bin/bash\necho '{\"body\":\"<!-- FLOW-PLAN-BEGIN -->\\nplan\\n<!-- FLOW-PLAN-END -->\",\"state\":\"OPEN\"}'\nexit 0\n",
+    );
+
+    let output = run_plan_from_issue(&repo, &["--issue", "8", "--branch", "blocked"], &stub_dir);
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["reason"], "write_failed");
+}
+
+#[test]
+fn plan_from_issue_returns_plan_too_large_when_body_exceeds_cap() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    // Build a body that exceeds PLAN_BODY_BYTE_CAP. Echo a JSON document
+    // whose body field is a long quoted string between sentinels.
+    let padding_chars = PLAN_BODY_BYTE_CAP + 100;
+    let stub_script = format!(
+        "#!/bin/bash\nprintf '{{\\\"body\\\":\\\"<!-- FLOW-PLAN-BEGIN -->%*s<!-- FLOW-PLAN-END -->\\\",\\\"state\\\":\\\"OPEN\\\"}}\\n' {} ' '\nexit 0\n",
+        padding_chars
+    );
+    let stub_dir = create_gh_stub(&repo, &stub_script);
+
+    let output = run_plan_from_issue(&repo, &["--issue", "9", "--branch", "huge"], &stub_dir);
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["reason"], "plan_too_large");
 }

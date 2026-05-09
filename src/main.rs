@@ -44,6 +44,7 @@ use flow_rs::phase_finalize;
 use flow_rs::phase_transition;
 use flow_rs::plan_check;
 use flow_rs::plan_extract;
+use flow_rs::plan_from_issue;
 use flow_rs::prime_check;
 use flow_rs::prime_setup;
 use flow_rs::promote_permissions;
@@ -367,6 +368,10 @@ enum Commands {
     /// Extract pre-decomposed plan or prepare state for model-driven planning.
     #[command(name = "plan-extract")]
     PlanExtract(plan_extract::Args),
+
+    /// Fetch issue body and extract sentinel-delimited plan.
+    #[command(name = "plan-from-issue")]
+    PlanFromIssue(plan_from_issue::Args),
 
     /// Render complete PR body from state
     #[command(name = "render-pr-body")]
@@ -782,6 +787,11 @@ fn main() {
         }
         Some(Commands::PlanExtract(args)) => {
             flow_rs::dispatch::dispatch_ok_result_json(plan_extract::run_impl(&args));
+        }
+        Some(Commands::PlanFromIssue(args)) => {
+            let root = flow_rs::git::project_root();
+            let (value, code) = plan_from_issue::run_impl_main(&args, &root);
+            flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::RenderPrBody(args)) => {
             let (value, code) = render_pr_body::run_impl_main(&args);
