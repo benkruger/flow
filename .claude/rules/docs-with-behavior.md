@@ -58,9 +58,7 @@ a skill that invokes one or more sub-agents, the plan's Exploration
 table MUST enumerate every affected agent file by path — not "the
 four review agents" or "the agents that take the diff," but each
 one by name (e.g. `agents/reviewer.md`, `agents/pre-mortem.md`,
-`agents/adversarial.md`, `agents/documentation.md`). The
-enumeration is the same discipline as
-`.claude/rules/scope-enumeration.md` "Vocabulary": a universal
+`agents/adversarial.md`, `agents/documentation.md`). A universal
 quantifier on a code family must carry a named list. The Code
 Review reviewer agent cross-checks plan Exploration against the
 agents whose Input sections appear in the staged diff and flags
@@ -174,10 +172,7 @@ describe the post-refactor state.
 ## Scope Enumeration (Rename Side)
 
 This section covers the **rename side** of enumeration — when
-fixing drift caused by a renamed or removed identifier. For the
-sibling rule covering **coverage claims** — plan prose that
-asserts a guard applies universally to a code family without
-naming its members — see `.claude/rules/scope-enumeration.md`.
+fixing drift caused by a renamed or removed identifier.
 
 When renaming a command, replacing a subcommand, or fixing
 documentation drift, grep all files for **every** old identifier
@@ -222,6 +217,80 @@ every SKILL.md that invokes `format-status` or `format-complete-summary`
 in a bash block. For a state field, that means `flow-state-schema.md`,
 every SKILL.md that reads the field in a bash block, and every agent
 `## Input` section that may reference it.
+
+### Exercise vs Reference for Deletions
+
+When the deletion target is a state-machine element — a phase, a
+public module, a public type, a config axis, or any structural
+construct that downstream tests EXERCISE through their assertions
+(not just reference by string) — the Plan phase must split the
+test-impact inventory into two columns and pre-classify every
+exercise test before Code phase begins.
+
+**Why.** Reference-only tests retarget mechanically: a `replace_all`
+on the deleted identifier across `tests/` produces a clean diff and
+the test still asserts the same thing about a sibling element.
+Exercise tests do not — they encode the deleted element's
+mechanics. A test that calls `phase_complete(state, "flow-plan")`
+or asserts `timeline[2].name == "Plan"` is bound to the deleted
+phase by its assertion shape, not by a string. Mechanical
+retargeting produces tests that compile and run but assert wrong
+invariants. The cascade of "compiling but semantically broken"
+tests surfaces only at runtime, mid-Code, with CI red and no clean
+recovery path.
+
+**The two-column inventory.** During Plan phase, for each
+deletion target, build a table:
+
+| Test | Touches deleted element via | Disposition |
+|---|---|---|
+| `tests/foo.rs::test_bar` | `current_phase: "flow-plan"` (string fixture only — Plan phase is created/destroyed at runtime, not asserted) | Mechanical retarget: change fixture string to a surviving phase |
+| `tests/timeline.rs::test_plan_step_zero` | `timeline[2].annotation == "decomposing - step 1 of 4"` (asserts deleted phase's per-step annotation contract) | Delete: the asserted contract belongs to a phase that no longer exists |
+| `tests/phase_transition.rs::test_complete_sets_all_fields` | `phase_complete(state, "flow-plan")` then `assert_eq!(state["next_phase"], "flow-code")` (exercises transition mechanics from deleted phase) | Rewrite: assert the transition contract for a surviving adjacent phase |
+
+**Disposition vocabulary.** Each row classifies as one of:
+
+- **Mechanical retarget** — the test references the deleted
+  element only by string (fixture key, log line, error message
+  substring). A bulk rename produces a correct test.
+- **Delete** — the test asserts a contract that belongs uniquely
+  to the deleted element. No surviving sibling holds the same
+  contract. Removing the test is correct because the assertion
+  becomes meaningless after deletion.
+- **Rewrite** — the test asserts a transition or relational
+  contract that involves the deleted element AND a surviving
+  one. The relational property survives in some form (e.g.
+  "completing a phase advances current_phase to the next"); the
+  test's specifics need to be re-pointed at a surviving
+  adjacent pair.
+
+**The discovery method.** Reference enumeration is a grep over
+the deleted identifier as a string. Exercise enumeration requires
+reading each matched test's body for assertion patterns — a grep
+finds the candidate set, but the disposition column requires
+opening the test and naming what it actually asserts.
+
+**Plan-phase task placement.** The two-column inventory belongs
+in the plan's Exploration section, not Tasks. Tasks reference
+the inventory and group by disposition: one Code task per
+mechanical-retarget batch, one Code task per delete batch, one
+Code task per rewrite (each rewrite is its own task because the
+assertion surgery is non-mechanical).
+
+**Code-phase verification.** Before any commit that completes
+deletion of the structural element, re-grep the test corpus for
+the deleted identifier. Every remaining hit must map to a row in
+the inventory whose disposition is "mechanical retarget complete"
+(string updated) — otherwise the cascade is incomplete and the
+remaining tests will fail at runtime.
+
+The trigger that activates this rule is "the plan deletes a
+state-machine element." When the deletion target is purely a
+prose entry, a doc reference, or a non-asserted internal helper,
+the rename-side enumeration above is sufficient. The exercise-vs-
+reference split applies specifically when downstream tests
+exercise the deleted element's mechanics through their
+assertions.
 
 ## How to Apply
 

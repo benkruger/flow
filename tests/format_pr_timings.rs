@@ -10,7 +10,6 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
     let phase_names = flow_rs::phase_config::phase_names();
     let all_phases = [
         "flow-start",
-        "flow-plan",
         "flow-code",
         "flow-code-review",
         "flow-learn",
@@ -49,7 +48,6 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
 fn test_all_complete() {
     let all_phases = [
         "flow-start",
-        "flow-plan",
         "flow-code",
         "flow-code-review",
         "flow-learn",
@@ -58,7 +56,6 @@ fn test_all_complete() {
     let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
     let mut state = make_state("flow-complete", &statuses);
     state["phases"]["flow-start"]["cumulative_seconds"] = json!(36);
-    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(945);
     state["phases"]["flow-code"]["cumulative_seconds"] = json!(328);
     state["phases"]["flow-code-review"]["cumulative_seconds"] = json!(500);
     state["phases"]["flow-learn"]["cumulative_seconds"] = json!(352);
@@ -71,7 +68,7 @@ fn test_all_complete() {
         result
     );
     assert!(result.contains("| Start |"), "Result:\n{}", result);
-    assert!(result.contains("| Plan |"), "Result:\n{}", result);
+    assert!(result.contains("| Code |"), "Result:\n{}", result);
     assert!(result.contains("| Code Review |"), "Result:\n{}", result);
     assert!(result.contains("| **Total** |"), "Result:\n{}", result);
 }
@@ -82,16 +79,15 @@ fn test_partial_state() {
         "flow-code",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
+            ("flow-code", "complete"),
             ("flow-code", "in_progress"),
         ],
     );
     state["phases"]["flow-start"]["cumulative_seconds"] = json!(30);
-    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(600);
+    state["phases"]["flow-code"]["cumulative_seconds"] = json!(600);
 
     let result = format_timings_table(&state, false);
     assert!(result.contains("| Start |"), "Result:\n{}", result);
-    assert!(result.contains("| Plan |"), "Result:\n{}", result);
     assert!(result.contains("| Code |"), "Result:\n{}", result);
     // Pending phases with 0 seconds should show <1m
     assert!(result.contains("| Complete |"), "Result:\n{}", result);
@@ -103,19 +99,18 @@ fn test_started_only() {
         "flow-code",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
+            ("flow-code", "complete"),
             ("flow-code", "in_progress"),
         ],
     );
     state["phases"]["flow-start"]["started_at"] = json!("2026-01-01T00:00:00Z");
     state["phases"]["flow-start"]["cumulative_seconds"] = json!(30);
-    state["phases"]["flow-plan"]["started_at"] = json!("2026-01-01T00:01:00Z");
-    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(300);
+    state["phases"]["flow-code"]["started_at"] = json!("2026-01-01T00:01:00Z");
+    state["phases"]["flow-code"]["cumulative_seconds"] = json!(300);
     state["phases"]["flow-code"]["started_at"] = json!("2026-01-01T00:06:00Z");
 
     let result = format_timings_table(&state, true);
     assert!(result.contains("| Start |"), "Result:\n{}", result);
-    assert!(result.contains("| Plan |"), "Result:\n{}", result);
     assert!(result.contains("| Code |"), "Result:\n{}", result);
     assert!(!result.contains("| Code Review |"), "Result:\n{}", result);
     assert!(!result.contains("| Learn |"), "Result:\n{}", result);
@@ -127,7 +122,6 @@ fn test_started_only() {
 fn test_uses_format_time() {
     let all_phases = [
         "flow-start",
-        "flow-plan",
         "flow-code",
         "flow-code-review",
         "flow-learn",
@@ -135,7 +129,7 @@ fn test_uses_format_time() {
     ];
     let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
     let mut state = make_state("flow-complete", &statuses);
-    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(3700);
+    state["phases"]["flow-code"]["cumulative_seconds"] = json!(3700);
 
     let result = format_timings_table(&state, false);
     // 3700 seconds = 1h 1m
@@ -150,7 +144,6 @@ fn test_cumulative_seconds_as_string() {
     // as the integer 945.
     let all_phases = [
         "flow-start",
-        "flow-plan",
         "flow-code",
         "flow-code-review",
         "flow-learn",
@@ -158,7 +151,7 @@ fn test_cumulative_seconds_as_string() {
     ];
     let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
     let mut state = make_state("flow-complete", &statuses);
-    state["phases"]["flow-plan"]["cumulative_seconds"] = json!("945");
+    state["phases"]["flow-code"]["cumulative_seconds"] = json!("945");
 
     let result = format_timings_table(&state, false);
     // 945 seconds = 15m
@@ -170,7 +163,6 @@ fn test_cli_writes_output_file() {
     let dir = tempfile::tempdir().unwrap();
     let all_phases = [
         "flow-start",
-        "flow-plan",
         "flow-code",
         "flow-code-review",
         "flow-learn",
@@ -179,7 +171,7 @@ fn test_cli_writes_output_file() {
     let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
     let mut state = make_state("flow-complete", &statuses);
     state["phases"]["flow-start"]["cumulative_seconds"] = json!(60);
-    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(300);
+    state["phases"]["flow-code"]["cumulative_seconds"] = json!(300);
 
     let state_file = dir.path().join("state.json");
     std::fs::write(&state_file, serde_json::to_string(&state).unwrap()).unwrap();
@@ -242,7 +234,6 @@ fn test_cli_happy_path() {
     let dir = tempfile::tempdir().unwrap();
     let all_phases = [
         "flow-start",
-        "flow-plan",
         "flow-code",
         "flow-code-review",
         "flow-learn",
@@ -282,7 +273,6 @@ fn run_impl_write_error_returns_err() {
 
     let all_phases = [
         "flow-start",
-        "flow-plan",
         "flow-code",
         "flow-code-review",
         "flow-learn",
@@ -368,7 +358,6 @@ fn run_impl_main_happy_path_ok_with_json_value() {
     let dir = tempfile::tempdir().unwrap();
     let all_phases = [
         "flow-start",
-        "flow-plan",
         "flow-code",
         "flow-code-review",
         "flow-learn",

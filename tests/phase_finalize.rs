@@ -82,18 +82,9 @@ fn create_state(repo: &Path, branch: &str, current_phase: &str, skills_continue:
                 "cumulative_seconds": 0,
                 "visit_count": 1
             },
-            "flow-plan": {
-                "name": "Plan",
-                "status": if current_phase == "flow-plan" { "in_progress" } else if current_phase == "flow-start" { "pending" } else { "complete" },
-                "started_at": null,
-                "completed_at": null,
-                "session_started_at": null,
-                "cumulative_seconds": 0,
-                "visit_count": 0
-            },
             "flow-code": {
                 "name": "Code",
-                "status": if current_phase == "flow-code" { "in_progress" } else { "pending" },
+                "status": if current_phase == "flow-code" { "in_progress" } else if current_phase == "flow-start" { "pending" } else { "complete" },
                 "started_at": if current_phase == "flow-code" { Some("2026-01-01T00:02:00-08:00") } else { None },
                 "completed_at": null,
                 "session_started_at": if current_phase == "flow-code" { Some("2026-01-01T00:02:00-08:00") } else { None },
@@ -438,7 +429,6 @@ fn test_frozen_phase_config_used() {
     let frozen_config = json!({
         "order": [
             "flow-start",
-            "flow-plan",
             "flow-code",
             "flow-code-review",
             "flow-learn",
@@ -446,7 +436,6 @@ fn test_frozen_phase_config_used() {
         ],
         "commands": {
             "flow-start": "/flow:flow-start",
-            "flow-plan": "/flow:flow-plan",
             "flow-code": "/flow:flow-code",
             "flow-code-review": "/flow:flow-code-review",
             "flow-learn": "/flow:flow-learn",
@@ -454,7 +443,6 @@ fn test_frozen_phase_config_used() {
         },
         "phase_names": {
             "flow-start": "Start",
-            "flow-plan": "Plan",
             "flow-code": "Code",
             "flow-code-review": "Code Review",
             "flow-learn": "Learn",
@@ -582,7 +570,6 @@ fn phase_finalize_write_state(root: &std::path::Path, branch: &str, current_phas
 
     let phase_order = [
         "flow-start",
-        "flow-plan",
         "flow-code",
         "flow-code-review",
         "flow-learn",
@@ -783,7 +770,7 @@ fn subprocess_slack_preexisting_array_appends_instead_of_resetting() {
         .join("state.json");
     let mut state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     state["slack_notifications"] = json!([
-        {"phase": "flow-plan", "ts": "0000.0000", "thread_ts": "1111.2222", "message": "prior"}
+        {"phase": "flow-start", "ts": "0000.0000", "thread_ts": "1111.2222", "message": "prior"}
     ]);
     fs::write(&state_path, state.to_string()).unwrap();
 
@@ -826,7 +813,7 @@ fn subprocess_slack_preexisting_array_appends_instead_of_resetting() {
         2,
         "existing entry preserved, new one appended"
     );
-    assert_eq!(notifs[0]["phase"], "flow-plan"); // existing
+    assert_eq!(notifs[0]["phase"], "flow-start"); // existing
     assert_eq!(notifs[1]["phase"], "flow-code"); // new
 }
 
@@ -1003,10 +990,9 @@ fn finalize_loads_frozen_config_when_present() {
     phase_finalize_write_state(root, "branch-frozen", "flow-code");
 
     let frozen = json!({
-        "order": ["flow-start", "flow-plan", "flow-code", "flow-code-review", "flow-learn", "flow-complete"],
+        "order": ["flow-start", "flow-code", "flow-code-review", "flow-learn", "flow-complete"],
         "phases": {
             "flow-start": {"name": "Start", "command": "/flow:flow-start"},
-            "flow-plan": {"name": "Plan", "command": "/flow:flow-plan"},
             "flow-code": {"name": "Code", "command": "/flow:flow-code"},
             "flow-code-review": {"name": "Code Review", "command": "/flow:flow-code-review"},
             "flow-learn": {"name": "Learn", "command": "/flow:flow-learn"},

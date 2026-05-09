@@ -176,13 +176,13 @@ fn state_file_has_null_pr_fields() {
 }
 
 #[test]
-fn state_file_has_all_6_phases() {
+fn state_file_has_all_5_phases() {
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
-    run_init_state(dir.path(), &["six phases test"]);
-    let state = read_state_file(dir.path(), "six-phases-test");
+    run_init_state(dir.path(), &["five phases test"]);
+    let state = read_state_file(dir.path(), "five-phases-test");
     let phases = state["phases"].as_object().unwrap();
-    assert_eq!(phases.len(), 6);
+    assert_eq!(phases.len(), 5);
     assert_eq!(phases["flow-start"]["name"], "Start");
     assert_eq!(phases["flow-code-review"]["name"], "Code Review");
 }
@@ -207,7 +207,6 @@ fn state_file_other_phases_pending() {
     run_init_state(dir.path(), &["pending phases test"]);
     let state = read_state_file(dir.path(), "pending-phases-test");
     for key in [
-        "flow-plan",
         "flow-code",
         "flow-code-review",
         "flow-learn",
@@ -1122,9 +1121,8 @@ fn lib_create_state_has_six_phases() {
     .unwrap();
     let state = read_state_direct(dir.path(), "six-phases");
     let phases = state["phases"].as_object().unwrap();
-    assert_eq!(phases.len(), 6);
+    assert_eq!(phases.len(), 5);
     assert_eq!(phases["flow-start"]["name"], "Start");
-    assert_eq!(phases["flow-plan"]["name"], "Plan");
     assert_eq!(phases["flow-code"]["name"], "Code");
     assert_eq!(phases["flow-code-review"]["name"], "Code Review");
     assert_eq!(phases["flow-learn"]["name"], "Learn");
@@ -1171,7 +1169,6 @@ fn lib_create_state_other_phases_pending() {
     .unwrap();
     let state = read_state_direct(dir.path(), "pending-test");
     for key in [
-        "flow-plan",
         "flow-code",
         "flow-code-review",
         "flow-learn",

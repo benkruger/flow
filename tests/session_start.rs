@@ -69,7 +69,6 @@ fn make_state_json(branch: &str, current_phase: &str) -> String {
         "prompt": "test feature",
         "phases": {
             "flow-start": { "name": "Start", "status": "complete", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 1 },
-            "flow-plan": { "name": "Plan", "status": "complete", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 1 },
             "flow-code": { "name": "Code", "status": "in_progress", "started_at": null, "completed_at": null, "session_started_at": "2026-01-01T00:00:00-08:00", "cumulative_seconds": 0, "visit_count": 1 },
             "flow-code-review": { "name": "Code Review", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0 },
             "flow-learn": { "name": "Learn", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0 },

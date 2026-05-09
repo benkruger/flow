@@ -10,7 +10,6 @@ use flow_rs::state::{ModelTokens, Phase, PhaseStatus, SkillConfig, StepSnapshot,
 fn phase_serialize_all_variants() {
     let cases = [
         (Phase::FlowStart, "\"flow-start\""),
-        (Phase::FlowPlan, "\"flow-plan\""),
         (Phase::FlowCode, "\"flow-code\""),
         (Phase::FlowCodeReview, "\"flow-code-review\""),
         (Phase::FlowLearn, "\"flow-learn\""),
@@ -64,7 +63,7 @@ fn phase_as_indexmap_key() {
     map.insert(Phase::FlowCode, "code");
     assert_eq!(map.get(&Phase::FlowStart), Some(&"start"));
     assert_eq!(map.get(&Phase::FlowCode), Some(&"code"));
-    assert_eq!(map.get(&Phase::FlowPlan), None);
+    assert_eq!(map.get(&Phase::FlowLearn), None);
 }
 
 #[test]

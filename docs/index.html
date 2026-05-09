@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FLOW — Software Development Lifecycle for Claude Code</title>
-  <meta name="description" content="An opinionated 6-phase software development lifecycle plugin for Claude Code. Plan-first, TDD. Every feature, same phases, no shortcuts. Language-agnostic — every project owns its toolchain via repo-local bin/* delegation.">
+  <meta name="description" content="An opinionated 5-phase software development lifecycle plugin for Claude Code. Issue-driven, TDD. Every feature, same phases, no shortcuts. Language-agnostic — every project owns its toolchain via repo-local bin/* delegation.">
   <style>
     :root {
       --bg: #ffffff;
@@ -494,9 +494,9 @@
 
   <header>
     <h1><a href="https://github.com/benkruger/flow" style="color: inherit; text-decoration: none;"><span>FLOW</span></a></h1>
-    <p class="tagline">An opinionated 6-phase software development lifecycle for Claude Code. Every feature follows the same phases in the same order. No shortcuts. Supports <span class="highlight-phrase">Rails</span>, <span class="highlight-phrase">Python</span>, <span class="highlight-phrase">iOS</span>, <span class="highlight-phrase">Go</span>, and <span class="highlight-phrase">Rust</span>.</p>
+    <p class="tagline">An opinionated 5-phase software development lifecycle for Claude Code. Every feature follows the same phases in the same order. No shortcuts. Supports <span class="highlight-phrase">Rails</span>, <span class="highlight-phrase">Python</span>, <span class="highlight-phrase">iOS</span>, <span class="highlight-phrase">Go</span>, and <span class="highlight-phrase">Rust</span>.</p>
     <div class="stat-bar">
-      <div class="stat"><strong>6</strong> Phases</div>
+      <div class="stat"><strong>5</strong> Phases</div>
       <div class="stat"><strong>4</strong> Review Lenses</div>
       <div class="stat"><strong>0</strong> Dependencies</div>
     </div>
@@ -532,36 +532,31 @@
   <!-- HOW -->
   <section>
     <h2>How</h2>
-    <p>Every feature goes through <span class="highlight-phrase">6 phases</span>. Each phase must complete before the next one starts. If something was missed, go back. Opus for planning, code, and review. Sonnet for sub-agent reviews.</p>
+    <p>Every feature goes through <span class="highlight-phrase">5 phases</span>. Each phase must complete before the next one starts. If something was missed, go back. Opus for code and review. Sonnet for sub-agent reviews.</p>
 
     <div class="pipeline">
       <div class="pipeline-step">
         <div class="step-num">1</div>
         <span class="step-label">Start</span>
-        <span class="step-detail">Lock, CI baseline, dependencies on the integration branch, CI post-deps, worktree + PR</span>
+        <span class="step-detail">Lock, CI baseline, dependencies on the integration branch, CI post-deps, worktree + PR; plan extracted from issue body sentinels</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">2</div>
-        <span class="step-label">Plan</span>
-        <span class="step-detail">DAG decompose plugin &mdash; dependency analysis, explore codebase, ordered tasks with risks</span>
-      </div>
-      <div class="pipeline-step">
-        <div class="step-num">3</div>
         <span class="step-label">Code</span>
         <span class="step-detail">Test first, then implement, review every diff, commit per task</span>
       </div>
       <div class="pipeline-step">
-        <div class="step-num">4</div>
+        <div class="step-num">3</div>
         <span class="step-label">Code Review</span>
         <span class="step-detail">Six tenants assessed by four cognitively isolated agents (reviewer, pre-mortem, adversarial, documentation) &mdash; gather, launch, triage, fix</span>
       </div>
       <div class="pipeline-step">
-        <div class="step-num">5</div>
+        <div class="step-num">4</div>
         <span class="step-label">Learn</span>
         <span class="step-detail">Capture what went wrong, route corrections to permanent homes</span>
       </div>
       <div class="pipeline-step">
-        <div class="step-num">6</div>
+        <div class="step-num">5</div>
         <span class="step-label">Complete</span>
         <span class="step-detail">Close issues referenced in prompt, merge PR, clean up, done</span>
       </div>
@@ -585,7 +580,7 @@
       <tbody>
         <tr><td>Fully autonomous</td><td>All skills auto for both axes &mdash; zero prompts</td></tr>
         <tr><td>Fully manual</td><td>Every diff reviewed, every phase transition confirmed</td></tr>
-        <tr><td>Recommended</td><td>Auto where safe (Code Review), manual where judgment matters (Code, Plan)</td></tr>
+        <tr><td>Recommended</td><td>Auto where safe (Code Review), manual where judgment matters (Code)</td></tr>
         <tr><td>Customize</td><td>Choose per skill and per axis</td></tr>
       </tbody>
     </table>
@@ -748,7 +743,7 @@
     </div>
 
     <h3>Batch Orchestration</h3>
-    <p>Feed the issue graph into <code>/flow-orchestrate</code> and let FLOW process them overnight. Each issue runs through all 6 phases autonomously. Wake up to a morning report.</p>
+    <p>Feed the issue graph into <code>/flow-orchestrate</code> and let FLOW process them overnight. Each issue runs through all 5 phases autonomously. Wake up to a morning report.</p>
 
     <div class="pipeline">
       <div class="pipeline-step">
@@ -810,7 +805,7 @@ Duration: <span class="t-accent">6h 27m</span>
       <div class="cool-card-front">
         <span class="cool-icon">&#9654;</span>
         <div class="cool-headline">Phase Updates</div>
-        <p class="cool-desc">Start, Plan, Code, Code Review, Learn, Complete &mdash; each phase posts its outcome and timing as a thread reply.</p>
+        <p class="cool-desc">Start, Code, Code Review, Learn, Complete &mdash; each phase posts its outcome and timing as a thread reply.</p>
       </div>
 
       <div class="cool-card-front">
@@ -831,12 +826,11 @@ Duration: <span class="t-accent">6h 27m</span>
         <tr><th>Command</th><th>Phase</th><th>What it does</th></tr>
       </thead>
       <tbody>
-        <tr><td><code>/flow-start</code></td><td>1</td><td>Lock, CI baseline on the integration branch, upgrade dependencies, CI post-deps, commit to the integration branch, create worktree + PR</td></tr>
-        <tr><td><code>/flow-plan</code></td><td>2</td><td>DAG decompose for dependency analysis, explore codebase, produce ordered tasks</td></tr>
-        <tr><td><code>/flow-code</code></td><td>3</td><td>TDD task by task, diff review, <code>bin/ci</code> gate before each commit</td></tr>
-        <tr><td><code>/flow-code-review</code></td><td>4</td><td>Six tenants via four agents (reviewer, pre-mortem, adversarial, documentation) &mdash; gather, launch, triage, fix</td></tr>
-        <tr><td><code>/flow-learn</code></td><td>5</td><td>Extract learnings, route to CLAUDE.md and project rules</td></tr>
-        <tr><td><code>/flow-complete</code></td><td>6</td><td>Merge PR, remove worktree, delete state file</td></tr>
+        <tr><td><code>/flow-start</code></td><td>1</td><td>Lock, CI baseline on the integration branch, upgrade dependencies, CI post-deps, commit to the integration branch, create worktree + PR; extract plan from issue body sentinels</td></tr>
+        <tr><td><code>/flow-code</code></td><td>2</td><td>TDD task by task, diff review, <code>bin/ci</code> gate before each commit</td></tr>
+        <tr><td><code>/flow-code-review</code></td><td>3</td><td>Six tenants via four agents (reviewer, pre-mortem, adversarial, documentation) &mdash; gather, launch, triage, fix</td></tr>
+        <tr><td><code>/flow-learn</code></td><td>4</td><td>Extract learnings, route to CLAUDE.md and project rules</td></tr>
+        <tr><td><code>/flow-complete</code></td><td>5</td><td>Merge PR, remove worktree, delete state file</td></tr>
       </tbody>
     </table>
 

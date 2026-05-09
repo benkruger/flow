@@ -422,7 +422,6 @@ fn test_duplicate_issue_returns_error() {
         "prompt": "work on issue #42",
         "phases": {
             "flow-start": {"status": "complete"},
-            "flow-plan": {"status": "complete"},
             "flow-code": {"status": "in_progress"},
             "flow-complete": {"status": "pending"}
         }

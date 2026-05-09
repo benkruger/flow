@@ -16,12 +16,13 @@ verbatim and STOPS — the PM acts manually.
 ## Usage
 
 ```text
-/flow:flow-triage-issue <issue-number>
+/flow:flow-triage-issue #1234
 ```
 
-The argument is a positive integer issue number in the current
-repository (whichever repo `gh` resolves to). v1 is open issues
-only — closed issues are refused with an out-of-scope envelope.
+The argument is `#N` — a literal `#` followed by a positive integer
+issue number in the current repository (whichever repo `gh`
+resolves to). v1 is open issues only — closed issues are refused
+with an out-of-scope envelope.
 
 ## Concurrency
 
@@ -48,35 +49,37 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ### Step 1 — Parse argument
 
-Read the argument string. Strip surrounding whitespace and a single
-leading `#` if present.
+Read the argument string. Strip surrounding whitespace.
 
-The argument MUST match the regex `^[1-9][0-9]*$` exactly — a
-positive decimal integer with no leading zero, no sign, no decimal
-point, no scientific notation, no whitespace, no quotes, no flags.
-The strict shape rejects argument-injection vectors like
-`42 --repo other/repo`, regex-metacharacter values like `1[23]`,
-floats like `1.5`, and zero/negative values that the GitHub API
+The argument MUST match the regex `^#[1-9][0-9]*$` exactly — a
+literal `#` followed by a positive decimal integer with no leading
+zero, no sign, no decimal point, no scientific notation, no
+whitespace, no quotes, no flags. The strict `#` prefix matches the
+sibling `/flow:flow-start` and `/flow:flow-create-issue` argument
+formats so issue references are unambiguous across the FLOW skill
+family. The strict shape rejects argument-injection vectors like
+`#42 --repo other/repo`, regex-metacharacter values like `#1[23]`,
+floats like `#1.5`, and zero/negative values that the GitHub API
 treats as flags.
 
 - If empty (no argument): use AskUserQuestion to ask
   "Which issue number should I triage?" with no preset options. Use
-  the user's reply as the issue number, then re-validate against
-  the regex above.
+  the user's reply as the issue number (prepending `#` if the user
+  omitted it), then re-validate against the regex above.
 - If the argument does NOT match the regex: output the following
   error in your response (not via Bash) inside a fenced code block,
   then stop:
 
 ````markdown
 ```text
-Error: /flow:flow-triage-issue requires a positive integer issue number.
+Error: /flow:flow-triage-issue requires `#N` where N is a positive integer.
 Got: <argument>
-Usage: /flow:flow-triage-issue <issue-number>
+Usage: /flow:flow-triage-issue #<issue-number>
 ```
 ````
 
-- If the argument matches: keep the value as `<ISSUE_NUMBER>` for
-  Step 2.
+- If the argument matches: strip the leading `#` and keep the
+  numeric value as `<ISSUE_NUMBER>` for Step 2.
 
 ### Step 2 — Dispatch the issue-triage sub-agent
 

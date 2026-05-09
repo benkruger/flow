@@ -32,8 +32,6 @@ mod common;
 /// are documentation examples) and not wrapped in backticks (those are
 /// prose references to the comment, not active bypasses).
 const EXPECTED: &[&str] = &[
-    "CLAUDE.md::duplicate-test-coverage::not-a-new-test",
-    "CLAUDE.md::duplicate-test-coverage::not-a-new-test",
     ".claude/rules/branch-path-safety.md::scope-enumeration::imperative",
     ".claude/rules/branch-path-safety.md::scope-enumeration::imperative",
     ".claude/rules/rust-patterns.md::scope-enumeration::imperative",

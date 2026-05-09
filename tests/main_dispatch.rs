@@ -93,8 +93,7 @@ fn all_subcommands_have_working_help() {
         "write-rule",
         "phase-enter",
         "phase-finalize",
-        "plan-check",
-        "plan-extract",
+        "plan-from-issue",
         "render-pr-body",
         "update-pr-body",
         "orchestrate-report",
@@ -795,7 +794,7 @@ fn main_append_note_readonly_state_exits_1_with_failed_to_append_note() {
     let branch_dir = root.join(".flow-states").join("readonly");
     std::fs::create_dir_all(&branch_dir).expect("create branch dir");
     let state_path = branch_dir.join("state.json");
-    std::fs::write(&state_path, r#"{"current_phase":"flow-plan","notes":[]}"#)
+    std::fs::write(&state_path, r#"{"current_phase":"flow-code","notes":[]}"#)
         .expect("write state");
     let mut perms = std::fs::metadata(&state_path)
         .expect("metadata")
@@ -1200,8 +1199,11 @@ fn main_arm_invocations_cover_dispatch() {
             &["--phase", "flow-code", "--branch", "test-fixture"],
             None,
         ),
-        ("plan-check", &[], None),
-        ("plan-extract", &[], None),
+        (
+            "plan-from-issue",
+            &["--issue", "1", "--branch", "test-fixture"],
+            None,
+        ),
         (
             "render-pr-body",
             &["--pr", "1", "--branch", "test-fixture"],

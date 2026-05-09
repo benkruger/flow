@@ -627,7 +627,7 @@ fn check_duplicate_multi_issue_overlap() {
         serde_json::json!({
             "prompt": "work on issue #456",
             "branch": "existing-branch",
-            "current_phase": "flow-plan",
+            "current_phase": "flow-code",
             "pr_url": "",
         })
         .to_string(),

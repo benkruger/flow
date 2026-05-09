@@ -15,10 +15,10 @@ use flow_rs::state::{Phase, PhaseStatus, SkillConfig};
 // --- Constants ---
 
 #[test]
-fn phase_order_has_six_phases() {
-    assert_eq!(PHASE_ORDER.len(), 6);
+fn phase_order_has_five_phases() {
+    assert_eq!(PHASE_ORDER.len(), 5);
     assert_eq!(PHASE_ORDER[0], "flow-start");
-    assert_eq!(PHASE_ORDER[5], "flow-complete");
+    assert_eq!(PHASE_ORDER[4], "flow-complete");
 }
 
 #[test]
@@ -26,24 +26,23 @@ fn phase_names_match_order() {
     let names = phase_names();
     assert_eq!(names.get("flow-start").unwrap(), "Start");
     assert_eq!(names.get("flow-code-review").unwrap(), "Code Review");
-    assert_eq!(names.len(), 6);
+    assert_eq!(names.len(), 5);
 }
 
 #[test]
 fn phase_numbers_are_one_indexed() {
     let nums = phase_numbers();
     assert_eq!(*nums.get("flow-start").unwrap(), 1);
-    assert_eq!(*nums.get("flow-complete").unwrap(), 6);
+    assert_eq!(*nums.get("flow-complete").unwrap(), 5);
 }
 
 #[test]
 fn phase_number_returns_one_indexed() {
     assert_eq!(phase_number("flow-start"), 1);
-    assert_eq!(phase_number("flow-plan"), 2);
-    assert_eq!(phase_number("flow-code"), 3);
-    assert_eq!(phase_number("flow-code-review"), 4);
-    assert_eq!(phase_number("flow-learn"), 5);
-    assert_eq!(phase_number("flow-complete"), 6);
+    assert_eq!(phase_number("flow-code"), 2);
+    assert_eq!(phase_number("flow-code-review"), 3);
+    assert_eq!(phase_number("flow-learn"), 4);
+    assert_eq!(phase_number("flow-complete"), 5);
 }
 
 #[test]
@@ -57,13 +56,13 @@ fn commands_map_all_phases() {
     let cmds = commands();
     assert_eq!(cmds.get("flow-start").unwrap(), "/flow:flow-start");
     assert_eq!(cmds.get("flow-complete").unwrap(), "/flow:flow-complete");
-    assert_eq!(cmds.len(), 6);
+    assert_eq!(cmds.len(), 5);
 }
 
 #[test]
-fn auto_skills_has_seven_entries() {
+fn auto_skills_has_six_entries() {
     let skills = auto_skills();
-    assert_eq!(skills.len(), 7);
+    assert_eq!(skills.len(), 6);
     assert_eq!(
         skills.get("flow-abort").unwrap(),
         &SkillConfig::Simple("auto".to_string())
@@ -78,11 +77,11 @@ fn load_phase_config_from_real_file() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let path = PathBuf::from(manifest_dir).join("flow-phases.json");
     let config = load_phase_config(&path).unwrap();
-    assert_eq!(config.order.len(), 6);
+    assert_eq!(config.order.len(), 5);
     assert_eq!(config.order[0], "flow-start");
-    assert_eq!(config.names.get("flow-plan").unwrap(), "Plan");
+    assert_eq!(config.names.get("flow-code").unwrap(), "Code");
     assert_eq!(config.commands.get("flow-code").unwrap(), "/flow:flow-code");
-    assert_eq!(*config.numbers.get("flow-complete").unwrap(), 6);
+    assert_eq!(*config.numbers.get("flow-complete").unwrap(), 5);
 }
 
 #[test]
@@ -204,19 +203,19 @@ fn build_initial_phases_first_is_in_progress() {
 #[test]
 fn build_initial_phases_rest_are_pending() {
     let phases = build_initial_phases("2026-01-01T00:00:00-08:00");
-    let plan = phases.get(&Phase::FlowPlan).unwrap();
-    assert_eq!(plan.status, PhaseStatus::Pending);
-    assert!(plan.started_at.is_none());
-    assert_eq!(plan.visit_count, 0);
+    let code = phases.get(&Phase::FlowCode).unwrap();
+    assert_eq!(code.status, PhaseStatus::Pending);
+    assert!(code.started_at.is_none());
+    assert_eq!(code.visit_count, 0);
 
     let complete = phases.get(&Phase::FlowComplete).unwrap();
     assert_eq!(complete.status, PhaseStatus::Pending);
 }
 
 #[test]
-fn build_initial_phases_has_six_entries() {
+fn build_initial_phases_has_five_entries() {
     let phases = build_initial_phases("2026-01-01T00:00:00-08:00");
-    assert_eq!(phases.len(), 6);
+    assert_eq!(phases.len(), 5);
 }
 
 #[test]
@@ -227,7 +226,6 @@ fn build_initial_phases_preserves_insertion_order() {
         keys,
         vec![
             &Phase::FlowStart,
-            &Phase::FlowPlan,
             &Phase::FlowCode,
             &Phase::FlowCodeReview,
             &Phase::FlowLearn,
@@ -244,7 +242,6 @@ fn auto_skills_preserves_insertion_order() {
         keys,
         vec![
             "flow-start",
-            "flow-plan",
             "flow-code",
             "flow-code-review",
             "flow-learn",

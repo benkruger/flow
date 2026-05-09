@@ -337,7 +337,7 @@ pub fn create_git_repo_with_remote(parent: &Path) -> PathBuf {
 /// Build a Complete-phase state JSON value for subprocess test fixtures.
 ///
 /// Returns a `serde_json::Value` describing a state file whose
-/// `flow-start`, `flow-plan`, `flow-code`, and `flow-code-review`
+/// `flow-start`, `flow-code`, and `flow-code-review`
 /// phases are `"complete"`, whose `flow-learn` phase has the status
 /// passed in `learn_status` (use `"complete"` for a state that should
 /// pass the Complete-phase Learn gate, or `"pending"` to exercise
@@ -372,7 +372,6 @@ pub fn make_complete_state(
         "prompt": "test feature",
         "phases": {
             "flow-start": {"status": "complete"},
-            "flow-plan": {"status": "complete"},
             "flow-code": {"status": "complete"},
             "flow-code-review": {"status": "complete"},
             "flow-learn": {"status": learn_status},

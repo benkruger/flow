@@ -62,15 +62,6 @@ fn make_state() -> Value {
                 "cumulative_seconds": 300,
                 "visit_count": 1
             },
-            "flow-plan": {
-                "name": "Plan",
-                "status": "complete",
-                "started_at": "2026-01-15T10:05:00-08:00",
-                "completed_at": "2026-01-15T10:10:00-08:00",
-                "session_started_at": null,
-                "cumulative_seconds": 300,
-                "visit_count": 1
-            },
             "flow-code": {
                 "name": "Code",
                 "status": "in_progress",

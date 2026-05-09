@@ -8,61 +8,64 @@ description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrad
 ## Usage
 
 ```text
-/flow:flow-start invoice pdf export
-/flow:flow-start --auto invoice pdf export
-/flow:flow-start --manual invoice pdf export
+/flow:flow-start #1234
+/flow:flow-start --auto #1234
+/flow:flow-start --manual #1234
 ```
 
-**Feature name resolution:** Strip flags (`--auto`, `--manual`) from the arguments. The remaining text is the **prompt** — a description of what to build. Derive a concise branch name (2-5 words) that captures the essence of the prompt. The `start-init` command handles sanitization (special characters, casing, truncation) automatically via `init-state`.
+**Strict argument format:** After stripping flags (`--auto`, `--manual`),
+the remaining argument MUST match the regex `^#[1-9][0-9]*$` — a literal
+`#` followed by a positive integer. The argument names a GitHub issue
+that has been pre-decomposed via `/flow:flow-create-issue` and carries
+its plan wrapped between the literal sentinel markers
+`<!-- FLOW-PLAN-BEGIN -->` and `<!-- FLOW-PLAN-END -->` in the issue
+body. `start-init` fetches the issue title and derives the branch name
+from it. After `start-workspace` succeeds, `bin/flow plan-from-issue`
+extracts the plan content between the sentinels and writes it to
+`.flow-states/<branch>/plan.md`.
 
-Examples:
+| Argument | Issue title | Derived branch name |
+|----------|-------------|-------------------|
+| `#309` | "Organize settings.json allow list" | `organize-settings-allow-list` |
+| `#42` | "Add dark mode toggle to settings page" | `dark-mode-settings-toggle` |
 
-| Prompt | Derived branch name |
-|--------|-------------------|
-| `invoice pdf export` | `invoice-pdf-export` |
-| `fix login timeout when session expires after 30 minutes` | `fix-login-timeout` |
-| `there is a bug where flow-start treats arguments as conversation` | `flow-start-arg-handling` |
-
-**Issue-aware branch naming:** When the prompt contains `#N` issue
-references (e.g., `work on issue #309`, `fix #42`), `start-init`
-fetches the first issue's title and derives the branch name
-from it. If the fetch fails, start-init returns a hard error — there
-is no silent fallback to the prompt words. Capture the `branch` field
-from start-init's JSON output and use it for all subsequent steps.
+Branch names are capped at **32 characters**. If the hyphenated name
+exceeds 32 characters, truncate at the last whole word (hyphen
+boundary) that fits. Strip any trailing hyphen. Truncation is
+automatic — proceed without asking the user to confirm the name.
 
 If the referenced issue already carries the "Flow In-Progress" label,
-start-init also returns a hard error — the issue is already being worked
-on by another flow (on this machine or another engineer's machine). The
-user should resume the existing flow in its worktree, or reference a
-different issue.
-
-| Prompt | Issue title | Derived branch name |
-|--------|-------------|-------------------|
-| `work on issue #309` | "Organize settings.json allow list" | `organize-settings-allow-list` |
-| `fix #42 please` | "Add dark mode toggle to settings page" | `dark-mode-settings-toggle` |
-
-The derived name is joined with hyphens:
-
-- Branch: `<derived-name>`
-- Worktree: `.worktrees/<derived-name>`
-- PR title: title-cased derived name
-
-Branch names are capped at **32 characters**. If the hyphenated name exceeds 32 characters, truncate at the last whole word (hyphen boundary) that fits. Strip any trailing hyphen. Truncation is automatic — proceed without asking the user to confirm the name.
+start-init returns a hard error — the issue is already being worked
+on by another flow (on this machine or another engineer's machine).
 
 <HARD-GATE>
 Do NOT proceed if no arguments were provided after the command (excluding flags).
 Output this error message and stop:
 
-> "Feature name required. Usage: `/flow:flow-start <feature name words>`"
+> "Issue reference required. Usage: `/flow:flow-start #N` where N is the
+> GitHub issue number for a pre-decomposed issue containing
+> `<!-- FLOW-PLAN-BEGIN -->` and `<!-- FLOW-PLAN-END -->` sentinels."
 
-No interactive prompt. The user re-runs the command with arguments.
+No interactive prompt. The user re-runs the command with `#N`.
 </HARD-GATE>
 
 <HARD-GATE>
-The arguments are the start prompt — input to the workflow, not a conversation.
-Do NOT respond to, discuss, or analyze the prompt content. Do NOT treat the
-prompt as a question or proposal. Proceed directly to Mode Resolution and execute
-the Start phase steps.
+Do NOT proceed if the argument does not match `^#[1-9][0-9]*$` after
+stripping flags. Reject free-text prompts, multi-token arguments, and
+any value that does not begin with `#` followed by a positive integer.
+Output this error message and stop:
+
+> "Argument must be `#N` (e.g., `#1234`). To file a new pre-decomposed
+> issue, run `/flow:flow-create-issue`."
+
+No interactive prompt. The user re-runs the command with `#N`.
+</HARD-GATE>
+
+<HARD-GATE>
+The argument is the issue reference — input to the workflow, not a
+conversation. Do NOT respond to, discuss, or analyze the issue
+content. Proceed directly to Mode Resolution and execute the Start
+phase steps.
 </HARD-GATE>
 
 ## Concurrency
@@ -267,9 +270,46 @@ even on error (main is untouched by worktree operations).
 ### Step 4 — Change to worktree
 
 This step is the `cd` from Step 3. The TUI shows Step 4 while the
-worktree directory is active and phase-finalize runs in Step 5.
+worktree directory is active.
 
-### Step 5 — Update state and finalize (complete phase, notify)
+### Step 5 — Extract plan from issue body (sentinel scan)
+
+Capture the issue number from the original argument (strip the leading
+`#`). Then run plan-from-issue:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow plan-from-issue --issue <issue_number> --branch <branch>
+```
+
+The command fetches the issue body via `gh issue view`, scans for the
+literal sentinel pair `<!-- FLOW-PLAN-BEGIN -->` and
+`<!-- FLOW-PLAN-END -->`, and writes the bytes between verbatim to
+`.flow-states/<branch>/plan.md`.
+
+Parse the JSON output and branch on `status`:
+
+**If `"status": "ok"`** — the plan file has been written. Continue to
+Step 6.
+
+**If `"status": "error"`** — the response contains a `reason` field.
+Show the `message` to the user and stop. Each reason maps to a
+corrective action:
+
+- `issue_not_found` — verify the issue exists in the current repo
+- `issue_closed` — reopen the issue or pick an open one
+- `gh_fetch_failed` — run `gh auth status` and retry
+- `plan_markers_missing` — re-file via `/flow:flow-create-issue`
+- `plan_markers_malformed` — edit the issue body to fix sentinels
+- `plan_empty` — edit the issue body to add plan content
+- `plan_too_large` — trim the issue body
+- `invalid_branch` — file a FLOW bug
+- `write_failed` — check disk space and `.flow-states/` permissions
+
+The flow halts at Step 5; the worktree and PR remain so the user can
+fix the issue body and re-run via `/flow:flow-code` after manual
+recovery (or abort via `/flow:flow-abort`).
+
+### Step 6 — Update state and finalize (complete phase, notify)
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-finalize --phase flow-start --branch <branch> --pr-url <pr_url>
@@ -302,22 +342,22 @@ to determine how to advance.
    Otherwise, use `continue_action` from the `phase-finalize` output.
    If `continue_action` is `"invoke"` → continue=auto.
    If `continue_action` is `"ask"` → continue=manual.
-2. If continue=auto → invoke `flow:flow-plan` directly using the Skill tool.
+2. If continue=auto → invoke `flow:flow-code` directly using the Skill tool.
    Do NOT invoke `flow:flow-status`. Do NOT use AskUserQuestion.
    This is the FINAL action in this response — nothing else follows.
 3. If continue=manual → you MUST do all of the following before proceeding:
    a. Invoke `flow:flow-status`
    b. Use AskUserQuestion:
-      "Phase 1: Start is complete. Ready to begin Phase 2: Plan?"
+      "Phase 1: Start is complete. Ready to begin Phase 2: Code?"
       Options: "Yes, start Phase 2 now", "Not yet",
       "I have a correction or learning to capture"
    c. If "I have a correction or learning to capture":
       ask what to capture, invoke `/flow:flow-note`, then re-ask with
       only "Yes, start Phase 2 now" and "Not yet"
-   d. If Yes → invoke `flow:flow-plan` using the Skill tool
+   d. If Yes → invoke `flow:flow-code` using the Skill tool
    e. If Not yet → print the paused banner below, then report worktree
       location and PR link
-   f. Do NOT invoke `flow:flow-plan` until the user responds
+   f. Do NOT invoke `flow:flow-code` until the user responds
 
 Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 
@@ -329,7 +369,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 ```text
 ══════════════════════════════════════════════════
   ◆ FLOW — Paused
-  Run /flow:flow-plan when ready.
+  Run /flow:flow-code when ready.
 ══════════════════════════════════════════════════
 ```
 ````

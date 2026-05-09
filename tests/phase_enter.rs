@@ -99,20 +99,9 @@ fn create_state(
                 "cumulative_seconds": 60,
                 "visit_count": 1
             },
-            "flow-plan": {
-                "name": "Plan",
-                "status": if prev_phase == "flow-plan" { prev_status } else { "complete" },
-                "started_at": "2026-01-01T00:01:00-08:00",
-                "completed_at": if prev_phase != "flow-plan" || prev_status == "complete" {
-                    Some("2026-01-01T00:02:00-08:00")
-                } else { None },
-                "session_started_at": null,
-                "cumulative_seconds": 60,
-                "visit_count": 1
-            },
             "flow-code": {
                 "name": "Code",
-                "status": if prev_phase == "flow-code" { prev_status } else if prev_phase == "flow-plan" { "pending" } else { "complete" },
+                "status": if prev_phase == "flow-code" { prev_status } else { "complete" },
                 "started_at": null,
                 "completed_at": null,
                 "session_started_at": null,
@@ -184,7 +173,7 @@ fn test_code_phase_happy_path() {
     let dir = tempfile::tempdir().unwrap();
     let branch = "code-happy";
     let repo = create_git_repo(dir.path(), branch);
-    create_state(&repo, branch, "flow-plan", "complete", None);
+    create_state(&repo, branch, "flow-start", "complete", None);
 
     let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
     assert_eq!(
@@ -284,15 +273,15 @@ fn test_gate_failure_previous_phase_not_complete() {
     let dir = tempfile::tempdir().unwrap();
     let branch = "gate-fail";
     let repo = create_git_repo(dir.path(), branch);
-    create_state(&repo, branch, "flow-plan", "in_progress", None);
+    create_state(&repo, branch, "flow-code", "in_progress", None);
 
-    let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
+    let output = run_phase_enter(&repo, &["--phase", "flow-code-review", "--branch", branch]);
     assert_eq!(output.status.code(), Some(0)); // Application error, not process error
     let data = parse_output(&output);
     assert_eq!(data["status"], "error");
     let msg = data["message"].as_str().unwrap();
     assert!(
-        msg.contains("flow-plan"),
+        msg.contains("flow-code"),
         "Error should name the blocking phase: {}",
         msg
     );
@@ -328,7 +317,7 @@ fn test_mode_resolution_from_state() {
             "continue": "auto"
         }
     });
-    create_state(&repo, branch, "flow-plan", "complete", Some(skills));
+    create_state(&repo, branch, "flow-start", "complete", Some(skills));
 
     let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
     let data = parse_output(&output);
@@ -464,7 +453,7 @@ fn test_no_steps_total_flag() {
     let dir = tempfile::tempdir().unwrap();
     let branch = "no-steps";
     let repo = create_git_repo(dir.path(), branch);
-    create_state(&repo, branch, "flow-plan", "complete", None);
+    create_state(&repo, branch, "flow-start", "complete", None);
 
     // Code phase: no --steps-total
     let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
@@ -514,7 +503,7 @@ fn test_mode_string_config_via_subprocess() {
     let branch = "mode-string";
     let repo = create_git_repo(dir.path(), branch);
     let skills = json!({"flow-code": "auto"});
-    create_state(&repo, branch, "flow-plan", "complete", Some(skills));
+    create_state(&repo, branch, "flow-start", "complete", Some(skills));
 
     let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
     assert_eq!(output.status.code(), Some(0));
@@ -533,7 +522,7 @@ fn test_mutate_state_failure_returns_error() {
     let dir = tempfile::tempdir().unwrap();
     let branch = "mutate-fail";
     let repo = create_git_repo(dir.path(), branch);
-    create_state(&repo, branch, "flow-plan", "complete", None);
+    create_state(&repo, branch, "flow-start", "complete", None);
 
     let state_file = flow_states_dir(&repo).join(branch).join("state.json");
     fs::set_permissions(&state_file, fs::Permissions::from_mode(0o444)).unwrap();
@@ -752,9 +741,9 @@ fn phase_enter_with_relative_cwd_mismatch_returns_cwd_drift_error() {
         serde_json::to_string(&json!({
             "branch": branch,
             "relative_cwd": "api",
-            "current_phase": "flow-plan",
+            "current_phase": "flow-start",
             "phases": {
-                "flow-plan": {"status": "complete"}
+                "flow-start": {"status": "complete"}
             }
         }))
         .unwrap(),
@@ -835,12 +824,11 @@ fn phase_enter_legacy_plan_file_fallback_covered() {
         "pr_url": "https://github.com/test/repo/pull/42",
         "feature": "Legacy Feature",
         "slack_thread_ts": "1.2",
-        "current_phase": "flow-plan",
+        "current_phase": "flow-start",
         "plan_file": ".flow-states/legacy-plan.md",
         "files": {"plan": null, "log": format!(".flow-states/{}.log", branch)},
         "phases": {
             "flow-start": {"status": "complete"},
-            "flow-plan": {"status": "complete"},
         },
         "phase_transitions": [],
     });
@@ -874,7 +862,7 @@ fn phase_enter_with_home_set_exercises_snapshot_capture() {
     let dir = tempfile::tempdir().unwrap();
     let branch = "home-set";
     let repo = create_git_repo(dir.path(), branch);
-    create_state(&repo, branch, "flow-plan", "complete", None);
+    create_state(&repo, branch, "flow-start", "complete", None);
 
     // Create a fake $HOME with a rate-limits.json so capture_for_active_state
     // takes the populated path.
@@ -953,10 +941,9 @@ fn phase_enter_response_omits_absent_optional_fields() {
     // five optional response fields are absent.
     let state = json!({
         "branch": branch,
-        "current_phase": "flow-plan",
+        "current_phase": "flow-start",
         "phases": {
             "flow-start": {"status": "complete"},
-            "flow-plan": {"status": "complete"},
         },
         "phase_transitions": [],
     });

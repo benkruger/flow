@@ -40,7 +40,6 @@ fn make_test_state() -> Value {
         "prompt": "test feature description",
         "phases": {
             "flow-start": {"name": "Start", "status": "in_progress", "started_at": "2026-01-01T00:00:00Z", "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 1},
-            "flow-plan": {"name": "Plan", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
             "flow-code": {"name": "Code", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
             "flow-code-review": {"name": "Code Review", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
             "flow-learn": {"name": "Learn", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
@@ -59,7 +58,6 @@ fn minimal_complete_state(feature: &str) -> Value {
         "pr_url": "https://github.com/o/r/pull/42",
         "phases": {
             "flow-start":        {"status": "complete", "cumulative_seconds": 10, "visit_count": 1},
-            "flow-plan":         {"status": "complete", "cumulative_seconds": 20, "visit_count": 1},
             "flow-code":         {"status": "complete", "cumulative_seconds": 30, "visit_count": 1},
             "flow-code-review":  {"status": "complete", "cumulative_seconds": 40, "visit_count": 1},
             "flow-learn":        {"status": "complete", "cumulative_seconds": 50, "visit_count": 1},
@@ -101,13 +99,12 @@ fn run_render(repo: &Path, args: &[&str], stub_dir: &Path) -> Output {
 fn timings_table_started_only_filters() {
     let mut state = make_test_state();
     state["phases"]["flow-start"]["cumulative_seconds"] = json!(30);
-    state["phases"]["flow-plan"]["started_at"] = json!("2026-01-01T00:01:00Z");
-    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(300);
+    state["phases"]["flow-code"]["started_at"] = json!("2026-01-01T00:01:00Z");
+    state["phases"]["flow-code"]["cumulative_seconds"] = json!(300);
 
     let table = format_timings_table(&state, true);
     assert!(table.contains("| Start |"));
-    assert!(table.contains("| Plan |"));
-    assert!(!table.contains("| Code |"));
+    assert!(table.contains("| Code |"));
     assert!(!table.contains("| Code Review |"));
     assert!(!table.contains("| Learn |"));
     assert!(!table.contains("| Complete |"));
@@ -132,8 +129,8 @@ fn timings_table_all_phases() {
 fn timings_table_total_row() {
     let mut state = make_test_state();
     state["phases"]["flow-start"]["cumulative_seconds"] = json!(120);
-    state["phases"]["flow-plan"]["started_at"] = json!("2026-01-01T00:01:00Z");
-    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(180);
+    state["phases"]["flow-code"]["started_at"] = json!("2026-01-01T00:01:00Z");
+    state["phases"]["flow-code"]["cumulative_seconds"] = json!(180);
 
     let table = format_timings_table(&state, true);
     assert!(table.contains("| **Total** | **5m** |"));
@@ -465,19 +462,19 @@ fn idempotent() {
 fn phase_timings_shows_started_only() {
     let mut state = make_test_state();
     state["phases"]["flow-start"]["cumulative_seconds"] = json!(30);
-    state["phases"]["flow-plan"]["status"] = json!("complete");
-    state["phases"]["flow-plan"]["started_at"] = json!("2026-01-01T00:01:00Z");
-    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(300);
-    state["phases"]["flow-code"]["status"] = json!("in_progress");
-    state["phases"]["flow-code"]["started_at"] = json!("2026-01-01T00:06:00Z");
+    state["phases"]["flow-code"]["status"] = json!("complete");
+    state["phases"]["flow-code"]["started_at"] = json!("2026-01-01T00:01:00Z");
+    state["phases"]["flow-code"]["cumulative_seconds"] = json!(300);
+    state["phases"]["flow-code-review"]["status"] = json!("in_progress");
+    state["phases"]["flow-code-review"]["started_at"] = json!("2026-01-01T00:06:00Z");
 
     let dir = tempfile::tempdir().unwrap();
     let body = render_body(&state, dir.path()).unwrap();
 
     assert!(body.contains("| Start |"));
-    assert!(body.contains("| Plan |"));
     assert!(body.contains("| Code |"));
-    assert!(!body.contains("| Code Review |"));
+    assert!(body.contains("| Code Review |"));
+    assert!(!body.contains("| Learn |"));
     assert!(!body.contains("| Learn |"));
     let timings_start = body.find("## Phase Timings").unwrap();
     let timings_end = body.find("<!-- end:Phase Timings -->").unwrap();

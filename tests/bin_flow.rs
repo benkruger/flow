@@ -77,7 +77,7 @@ fn passes_arguments_through() {
 fn exit_code_passes_through() {
     let dir = tempfile::tempdir().unwrap();
     let output = run_flow(
-        &["check-phase", "--required", "flow-plan"],
+        &["check-phase", "--required", "flow-code"],
         Some(dir.path()),
     );
     assert_ne!(output.status.code(), Some(0));

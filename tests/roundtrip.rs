@@ -37,15 +37,6 @@ const STATE_JSON: &str = r#"{
       "cumulative_seconds": 300,
       "visit_count": 1
     },
-    "flow-plan": {
-      "name": "Plan",
-      "status": "complete",
-      "started_at": "2026-02-20T10:05:00-08:00",
-      "completed_at": "2026-02-20T10:30:00-08:00",
-      "session_started_at": null,
-      "cumulative_seconds": 1500,
-      "visit_count": 1
-    },
     "flow-code": {
       "name": "Code",
       "status": "in_progress",
@@ -84,12 +75,10 @@ const STATE_JSON: &str = r#"{
     }
   },
   "phase_transitions": [
-    {"from": "flow-start", "to": "flow-plan", "timestamp": "2026-02-20T10:05:00-08:00"},
-    {"from": "flow-plan", "to": "flow-code", "timestamp": "2026-02-20T10:30:00-08:00"}
+    {"from": "flow-start", "to": "flow-code", "timestamp": "2026-02-20T10:30:00-08:00"}
   ],
   "skills": {
     "flow-start": {"continue": "manual"},
-    "flow-plan": {"continue": "auto", "dag": "auto"},
     "flow-code": {"commit": "manual", "continue": "manual"},
     "flow-code-review": {"commit": "auto", "continue": "auto"},
     "flow-learn": {"commit": "auto", "continue": "auto"},
@@ -133,8 +122,8 @@ fn deserialize_real_state_file() {
     assert_eq!(state.notes[0].note_type, "correction");
 
     // Phase transitions
-    assert_eq!(state.phase_transitions.len(), 2);
-    assert_eq!(state.phase_transitions[0].to, "flow-plan");
+    assert_eq!(state.phase_transitions.len(), 1);
+    assert_eq!(state.phase_transitions[0].to, "flow-code");
 
     // Skills — mixed types
     let skills = state.skills.unwrap();
