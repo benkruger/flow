@@ -1517,14 +1517,14 @@ fn learning_edits_rules_directly() {
 }
 
 #[test]
-fn learning_files_flow_issues_not_learning() {
+fn learning_files_plugin_issues_against_plugin_repo() {
     let c = common::read_skill("flow-learn");
-    // Step 6 should use label 'Flow', not 'learning'
+    // Plugin process gaps and enforcement escalations must route to
+    // the plugin repo. Issue #1405 removed the redundant `Flow`
+    // label, leaving `--repo benkruger/flow` as the routing signal.
     assert!(
-        c.contains("\"Flow\"")
-            || c.contains("'Flow'")
-            || c.contains("--label") && c.contains("Flow"),
-        "Learn Step 6 must use label 'Flow'"
+        c.contains("--repo benkruger/flow"),
+        "Learn must file plugin issues with --repo benkruger/flow"
     );
 }
 

@@ -115,9 +115,9 @@ fn add_issue_creates_issues_filed_array_if_missing() {
         &repo,
         &[
             "--label",
-            "Flow",
+            "Tech Debt",
             "--title",
-            "Flow process gap",
+            "Plugin process gap",
             "--url",
             "https://github.com/benkruger/flow/issues/10",
             "--phase",
@@ -341,7 +341,7 @@ fn add_issue_to_empty_array_lib() {
 fn add_issue_preserves_existing_lib() {
     let dir = tempfile::tempdir().unwrap();
     let mut state = make_state_lib("test-feature");
-    state["issues_filed"] = json!([{"label": "Flow", "title": "existing"}]);
+    state["issues_filed"] = json!([{"label": "Tech Debt", "title": "existing"}]);
     let path = write_state_lib(dir.path(), "test-feature", &state);
 
     mutate_state(&path, &mut |s| {
