@@ -44,6 +44,13 @@ fn run_init_state(dir: &std::path::Path, args: &[&str]) -> std::process::Output 
         .arg("init-state")
         .args(args)
         .current_dir(dir)
+        // Isolate HOME so init_state's SessionStart capture-file read
+        // (issue #1410) cannot pick up a real
+        // `~/.claude/flow-current-session.json` written by the
+        // developer's active Claude Code session. Without this, tests
+        // that assert `state.session_id.is_null()` would intermittently
+        // fail when run inside Claude Code.
+        .env("HOME", dir)
         .output()
         .unwrap()
 }

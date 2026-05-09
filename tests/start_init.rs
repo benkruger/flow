@@ -948,3 +948,313 @@ fn test_prime_check_infrastructure_err_returns_error() {
         "Lock must be released on prime-check infrastructure error"
     );
 }
+
+// --- Session ID capture at start-init (issue #1410) ---
+//
+// SessionStart hook writes ~/.claude/flow-current-session.json with
+// session_id + transcript_path; start-init reads that file when
+// creating the initial state so window_at_start can pick up the
+// per-session cost file. Without these tests the asymmetric
+// pair_delta bug (start has no session_id → cost lookup silently
+// fails → token-cost section silently skips) ships uncaught.
+
+/// Compute the canonical capture file path under `<home>`.
+fn capture_file_path(home: &Path) -> PathBuf {
+    home.join(".claude").join("flow-current-session.json")
+}
+
+/// Write a capture file with the given session_id and optional
+/// transcript_path. Mirrors the payload shape produced by
+/// `src/hooks/capture_session.rs`.
+fn write_capture_file(home: &Path, session_id: &str, transcript_path: Option<&str>) {
+    let path = capture_file_path(home);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let payload = serde_json::json!({
+        "session_id": session_id,
+        "transcript_path": transcript_path,
+    });
+    fs::write(&path, payload.to_string()).unwrap();
+}
+
+/// Read the state file produced by start-init for the named branch.
+fn read_state_for_branch(repo: &Path, branch: &str) -> serde_json::Value {
+    let path = flow_states_dir(repo).join(branch).join("state.json");
+    let content = fs::read_to_string(&path).expect("state file must exist");
+    serde_json::from_str(&content).expect("state file must be valid JSON")
+}
+
+/// Run start-init with HOME pinned to a tempdir so capture-file reads
+/// hit fixture paths instead of the developer's real `~/.claude/`.
+/// Sibling helpers `run_start_init` (no HOME injection) live above.
+fn run_start_init_with_home(
+    repo: &Path,
+    feature_name: &str,
+    home: &Path,
+    stub_dir: &Path,
+) -> Output {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let path_env = format!(
+        "{}:{}",
+        stub_dir.to_string_lossy(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["start-init", feature_name])
+        .current_dir(repo)
+        .env("PATH", &path_env)
+        .env("CLAUDE_PLUGIN_ROOT", &manifest_dir)
+        .env("HOME", home)
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn start_init_populates_session_id_from_session_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    let home = dir.path().join("home").canonicalize().unwrap_or_else(|_| {
+        let h = dir.path().join("home");
+        fs::create_dir_all(&h).unwrap();
+        h.canonicalize().unwrap()
+    });
+    fs::create_dir_all(&home).unwrap();
+
+    let projects = home.join(".claude").join("projects").join("proj");
+    fs::create_dir_all(&projects).unwrap();
+    let transcript = projects.join("session.jsonl");
+    fs::write(&transcript, "").unwrap();
+    let transcript_str = transcript.display().to_string();
+    write_capture_file(&home, "abc-123", Some(&transcript_str));
+
+    let output = run_start_init_with_home(&repo, "session-id-test", &home, &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    let branch = data["branch"].as_str().expect("branch field present");
+    let state = read_state_for_branch(&repo, branch);
+    assert_eq!(
+        state["session_id"], "abc-123",
+        "session_id must be seeded from capture file"
+    );
+    assert_eq!(
+        state["transcript_path"], transcript_str,
+        "transcript_path must be seeded from capture file"
+    );
+}
+
+#[test]
+fn start_init_session_id_remains_null_when_neither_source_present() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    let home = dir.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let home = home.canonicalize().unwrap();
+    // No capture file present.
+
+    let output = run_start_init_with_home(&repo, "no-capture", &home, &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    let branch = data["branch"].as_str().unwrap();
+    let state = read_state_for_branch(&repo, branch);
+    assert!(
+        state["session_id"].is_null(),
+        "session_id must remain null when no capture file exists; got: {}",
+        state["session_id"]
+    );
+    assert!(
+        state["transcript_path"].is_null(),
+        "transcript_path must remain null when no capture file exists; got: {}",
+        state["transcript_path"]
+    );
+}
+
+#[test]
+fn start_init_rejects_invalid_session_id_per_is_safe_session_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    let home = dir.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let home = home.canonicalize().unwrap();
+    // Slash-bearing session_id → fails is_safe_session_id.
+    write_capture_file(&home, "../etc/passwd", None);
+
+    let output = run_start_init_with_home(&repo, "invalid-sid", &home, &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    let branch = data["branch"].as_str().unwrap();
+    let state = read_state_for_branch(&repo, branch);
+    assert!(
+        state["session_id"].is_null(),
+        "invalid session_id must be rejected; got: {}",
+        state["session_id"]
+    );
+}
+
+#[test]
+fn window_at_start_carries_session_id_when_populated() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    let home = dir.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let home = home.canonicalize().unwrap();
+    write_capture_file(&home, "sid-window", None);
+
+    let output = run_start_init_with_home(&repo, "window-sid", &home, &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    let branch = data["branch"].as_str().unwrap();
+    let state = read_state_for_branch(&repo, branch);
+    assert_eq!(
+        state["window_at_start"]["session_id"], "sid-window",
+        "window_at_start.session_id must mirror state.session_id; got window: {}",
+        state["window_at_start"]
+    );
+}
+
+#[test]
+fn window_at_start_reads_cost_when_session_id_and_cost_file_present() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    let home = dir.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let home = home.canonicalize().unwrap();
+    let session_id = "cost-test-sid";
+    write_capture_file(&home, session_id, None);
+
+    // Pre-create the cost file at <repo>/.claude/cost/<YYYY-MM>/<session_id>.txt.
+    // The year-month component matches `chrono::Local::now().format("%Y-%m")`
+    // which is what `cost_file_path` in src/window_snapshot.rs computes.
+    let year_month = chrono::Local::now().format("%Y-%m").to_string();
+    let cost_dir = repo.join(".claude").join("cost").join(&year_month);
+    fs::create_dir_all(&cost_dir).unwrap();
+    fs::write(cost_dir.join(format!("{}.txt", session_id)), "1.42\n").unwrap();
+
+    let output = run_start_init_with_home(&repo, "cost-test", &home, &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    let branch = data["branch"].as_str().unwrap();
+    let state = read_state_for_branch(&repo, branch);
+    let cost = state["window_at_start"]["session_cost_usd"].as_f64();
+    assert!(
+        cost.is_some(),
+        "window_at_start.session_cost_usd must be populated when cost file exists; window_at_start: {}",
+        state["window_at_start"]
+    );
+    assert!(
+        (cost.unwrap() - 1.42).abs() < 1e-9,
+        "cost mismatch: expected 1.42, got {}",
+        cost.unwrap()
+    );
+}
+
+#[test]
+fn start_init_session_id_remains_null_when_home_unset() {
+    // Covers `read_captured_session`'s empty-/non-absolute-home early
+    // return — reachable from the production seed path when HOME is
+    // unset (test runner shells, CI environments, sandboxed containers).
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let path_env = format!(
+        "{}:{}",
+        stub_dir.to_string_lossy(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["start-init", "home-unset"])
+        .current_dir(&repo)
+        .env("PATH", &path_env)
+        .env("CLAUDE_PLUGIN_ROOT", &manifest_dir)
+        .env_remove("HOME")
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    let branch = data["branch"].as_str().unwrap();
+    let state = read_state_for_branch(&repo, branch);
+    assert!(
+        state["session_id"].is_null(),
+        "HOME unset must trigger read_captured_session's empty-home guard; got: {}",
+        state["session_id"]
+    );
+}
+
+#[test]
+fn start_init_session_id_remains_null_when_capture_file_unparseable() {
+    // Covers `read_captured_session`'s parse-failure branch — capture
+    // file exists but contains non-JSON bytes (interrupted hook write,
+    // disk corruption, hand edit). Fail-open: state stays Null.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    let home = dir.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let home = home.canonicalize().unwrap();
+    // Malformed JSON at the capture path triggers serde_json::from_str → Err.
+    let capture_path = capture_file_path(&home);
+    fs::create_dir_all(capture_path.parent().unwrap()).unwrap();
+    fs::write(&capture_path, "{ not valid json").unwrap();
+
+    let output = run_start_init_with_home(&repo, "malformed-capture", &home, &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    let branch = data["branch"].as_str().unwrap();
+    let state = read_state_for_branch(&repo, branch);
+    assert!(
+        state["session_id"].is_null(),
+        "malformed capture file must leave session_id null; got: {}",
+        state["session_id"]
+    );
+}

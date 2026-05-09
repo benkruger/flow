@@ -132,7 +132,14 @@ pub fn capture_for_active_state(home: &Path, state: &Value, project_root: &Path)
 /// Code populates: alphanumeric plus `-` and `_`, no path separators
 /// or traversal segments. Rejects `..`, `.`, `/`, `\`, NUL, and any
 /// other character that could escape the per-session cost-file path.
-fn is_safe_session_id(s: &str) -> bool {
+///
+/// Cross-module consumers: `src/hooks/capture_session.rs` validates
+/// stdin-supplied session_id at SessionStart and validates the
+/// capture-file payload that `src/commands/init_state.rs::run` reads
+/// at flow-start. Per `.claude/rules/external-input-path-construction.md`,
+/// the same validator runs at every state-derived path-construction
+/// site.
+pub(crate) fn is_safe_session_id(s: &str) -> bool {
     if s.is_empty() || s == "." || s == ".." {
         return false;
     }
