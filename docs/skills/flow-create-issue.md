@@ -13,7 +13,6 @@ parent: Skills
 ```text
 /flow:flow-create-issue
 /flow:flow-create-issue --force-decompose
-/flow:flow-create-issue --step 2 --id <id>
 ```
 
 Captures a brainstormed solution from the current conversation and files it as a pre-planned GitHub issue with an Implementation Plan section. The Plan phase extracts this plan directly — no re-derivation needed. Requires prior brainstorming context (typically via `/decompose:decompose`).
@@ -28,15 +27,9 @@ Before entering the pipeline, the skill verifies that brainstorming context exis
 
 ## What It Does
 
-Step 1 is enforced via self-invocation — the skill re-invokes itself with `--step 2 --id <id>` after the decompose gate, forcing the model to re-read the full skill instructions at the step boundary. The `<id>` is a short UUID generated in Step 1 that scopes all file paths to prevent concurrent session collisions. A Resume Check reads the step counter from `.flow-states/create-issue-<id>.json` to dispatch correctly on re-entry.
+The skill runs end-to-end as a single pipeline: capture problem sections from the conversation, decompose the implementation (or reuse prior implementation-focused decompose output), transform the synthesis into an Implementation Plan, present the full draft inline, and file the issue against the current repo with the `decomposed` label after explicit user approval.
 
-| Step | Name | Gate |
-|------|------|------|
-| 1 | Capture + Decompose Implementation | Prior Decompose Detection (skip to Step 2 if prior output exists, or invoke decompose then AskUserQuestion: proceed, iterate, or cancel) |
-| 2 | Transform + Draft + File | AskUserQuestion: file (3 options in FLOW repo, 4 otherwise), revise, or re-decompose |
-
-1. **Step 1 — Capture + Decompose Implementation:** Captures problem sections (Problem, Acceptance Criteria, Files to Investigate, Out of Scope, Context) from the conversation context. Then checks for prior implementation-focused decompose output — if found, skips the decompose invocation and proceeds directly to Step 2. Otherwise, invokes `decompose:decompose` with an implementation-focused prompt — structuring the agreed solution into tasks with dependencies, not re-analyzing the problem. Presents the synthesis and asks the user to approve, iterate, or cancel. Use `--force-decompose` to bypass the detection and force a fresh decompose.
-2. **Step 2 — Transform + Draft + File:** Transforms the decompose output into an Implementation Plan section (Context, Exploration, Risks, Approach, Dependency Graph, Tasks) matching the plan file format that `flow-plan` reads. Combines with the captured problem sections into a single issue body. Presents the full draft inline and asks the user where to file. When the current repo is `benkruger/flow`, the skill detects this via `git remote get-url origin` and presents a simplified 3-option prompt. Files the issue via `bin/flow issue` with the `decomposed` label.
+If prior implementation-focused decompose output already exists in the conversation, the skill skips the decompose invocation. Use `--force-decompose` to bypass the detection and force a fresh decompose.
 
 ---
 
@@ -55,10 +48,8 @@ The filed issue contains enough detail for `/flow-start` to execute fully autono
 
 ## Gates
 
-- Step banners shown at entry to each step (`── Step N of 2: Name ──`)
 - Conversation Gate rejects cold-start invocations without brainstorming context
-- AskUserQuestion gates at Steps 1 and 2 — user controls the flow
+- AskUserQuestion gate after draft presentation — user controls whether to file, revise, or cancel
 - All AskUserQuestion calls use structured parameters (question, header, options with label+description)
-- Issues labeled `decomposed` for tracking (or `Flow` when filed against the plugin repo)
-- Repo routing integrated into Step 2 HARD-GATE — when in the FLOW repo (`benkruger/flow`), repo selection is skipped; otherwise user chooses target project or FLOW plugin
-- Self-invocation from Step 1 to Step 2 enforces skill re-read at the step boundary
+- Issues labeled `decomposed` for tracking
+- Filing always targets the current repo (no `--repo` flag) — cross-repo filing for FLOW process bugs routes through `flow-learn` Tenant 1 or a manual `bin/flow issue --repo` invocation
