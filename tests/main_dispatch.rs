@@ -794,7 +794,7 @@ fn main_append_note_readonly_state_exits_1_with_failed_to_append_note() {
     let branch_dir = root.join(".flow-states").join("readonly");
     std::fs::create_dir_all(&branch_dir).expect("create branch dir");
     let state_path = branch_dir.join("state.json");
-    std::fs::write(&state_path, r#"{"current_phase":"flow-plan","notes":[]}"#)
+    std::fs::write(&state_path, r#"{"current_phase":"flow-code","notes":[]}"#)
         .expect("write state");
     let mut perms = std::fs::metadata(&state_path)
         .expect("metadata")

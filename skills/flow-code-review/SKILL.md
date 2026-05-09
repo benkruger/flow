@@ -1,9 +1,9 @@
 ---
 name: flow-code-review
-description: "Phase 4: Code Review — six tenants assessed by four cognitively isolated agents (reviewer, pre-mortem, adversarial, documentation) launched in parallel. Parent session gathers context, triages findings, and fixes."
+description: "Phase 3: Code Review — six tenants assessed by four cognitively isolated agents (reviewer, pre-mortem, adversarial, documentation) launched in parallel. Parent session gathers context, triages findings, and fixes."
 ---
 
-# FLOW Code Review — Phase 4: Code Review
+# FLOW Code Review — Phase 3: Code Review
 
 ## Usage
 
@@ -106,7 +106,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v1.1.0 — Phase 4: Code Review — STARTING
+  FLOW v1.1.0 — Phase 3: Code Review — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -120,7 +120,7 @@ Run the command first, then log the result. Pipeline the log call with the
 next command where possible (run both in parallel in one response).
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 4] Step X — desc (exit EC)"
+${CLAUDE_PLUGIN_ROOT}/bin/flow log <branch> "[Phase 3] Step X — desc (exit EC)"
 ```
 
 Get `<branch>` from the state file.
@@ -227,7 +227,7 @@ project's test tree so the language test runner can discover and
 execute it. The exact path is owned by the project — declared via
 the project's `bin/test --adversarial-path` invocation — the same
 way each project owns the four `bin/{format,lint,build,test}`
-toolchain decisions. Worktree removal at Phase 6 Complete disposes
+toolchain decisions. Worktree removal at Phase 5 Complete disposes
 of the probe as a side effect of removing the worktree directory,
 so no separate cleanup hook is needed.
 
@@ -459,7 +459,7 @@ rather than splitting infinitely. The user decides whether to
 accept partial coverage or rerun Code Review on a smaller
 subset of the diff.
 
-The probe file lives inside the worktree's test tree, so worktree removal at Phase 6 Complete (or `/flow:flow-abort`) disposes of it automatically as a side effect of `git worktree remove`. The basename glob is also pre-listed in `.git/info/exclude` (`test_adversarial_flow.*`, `*_adversarial_flow_test.rb`) so the throwaway probe never appears in a user's `git status` output alongside intentional changes.
+The probe file lives inside the worktree's test tree, so worktree removal at Phase 5 Complete (or `/flow:flow-abort`) disposes of it automatically as a side effect of `git worktree remove`. The basename glob is also pre-listed in `.git/info/exclude` (`test_adversarial_flow.*`, `*_adversarial_flow_test.rb`) so the throwaway probe never appears in a user's `git status` output alongside intentional changes.
 
 Record step completion:
 
@@ -645,7 +645,7 @@ If commit=manual, use AskUserQuestion:
 > - **Go back to Code** — implementation issue
 > - **Go back to Plan** — plan was missing something
 
-**Go back to Code:** update Phase 4 to `pending`, Phase 3 to
+**Go back to Code:** update Phase 3 to `pending`, Phase 2 to
 `in_progress`, then invoke `flow:flow-code`.
 
 **Go back to Plan:** update Phases 4 and 3 to `pending`, Phase 2 to
@@ -702,7 +702,7 @@ Output in your response (not via Bash) inside a fenced code block:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v1.1.0 — Phase 4: Code Review — COMPLETE (<formatted_time>)
+  ✓ FLOW v1.1.0 — Phase 3: Code Review — COMPLETE (<formatted_time>)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
@@ -722,12 +722,12 @@ to determine how to advance.
 3. If continue=manual → you MUST do all of the following before proceeding:
    a. Invoke `flow:flow-status`
    b. Use AskUserQuestion:
-      "Phase 4: Code Review is complete. Ready to begin Phase 5: Learn?"
-      Options: "Yes, start Phase 5 now", "Not yet",
+      "Phase 3: Code Review is complete. Ready to begin Phase 4: Learn?"
+      Options: "Yes, start Phase 4 now", "Not yet",
       "I have a correction or learning to capture"
    c. If "I have a correction or learning to capture":
       ask what to capture, invoke `/flow:flow-note`, then re-ask with
-      only "Yes, start Phase 5 now" and "Not yet"
+      only "Yes, start Phase 4 now" and "Not yet"
    d. If Yes → invoke `flow:flow-learn` using the Skill tool
    e. If Not yet → print the paused banner below
    f. Do NOT invoke `flow:flow-learn` until the user responds

@@ -1,9 +1,9 @@
 ---
 name: flow-complete
-description: "Phase 6: Complete — merge the PR, remove the worktree, and delete the state file. Final phase."
+description: "Phase 5: Complete — merge the PR, remove the worktree, and delete the state file. Final phase."
 ---
 
-# FLOW Complete — Phase 6: Complete
+# FLOW Complete — Phase 5: Complete
 
 ## Usage
 
@@ -66,7 +66,7 @@ blocks — it records warnings for the confirmation step.
 2. Use the Read tool to read `<project_root>/.flow-states/<branch>/state.json`.
    - If the file exists: extract `feature`, `branch`, `worktree`, `pr_number`,
      `pr_url`, and `cumulative_seconds`. Check `phases.flow-learn.status` — if
-     not `"complete"`, record warning "Phase 5 not complete (status: <actual status>)."
+     not `"complete"`, record warning "Phase 4 not complete (status: <actual status>)."
    - If the file does not exist: record warning "No state file found for
      branch '<branch>'."
 
@@ -86,7 +86,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v1.1.0 — Phase 6: Complete — STARTING
+  FLOW v1.1.0 — Phase 5: Complete — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -615,7 +615,7 @@ closed\_issues\_file, issues\_file, adversarial\_test — plus
 git\_pull when the Complete path runs with `--pull`).
 Each step reports "closed"/"removed"/"deleted"/"pulled", "skipped", or
 "failed: reason". The `adversarial_test` step matches
-`.flow-states/<branch>/adversarial_test.*` so the Phase 4 adversarial
+`.flow-states/<branch>/adversarial_test.*` so the Phase 3 adversarial
 agent's temp file is removed regardless of the runtime-chosen extension.
 
 Report the results to the user: what was cleaned, what was already gone,
@@ -629,7 +629,7 @@ status in your response (not via Bash) inside a single fenced code block:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v1.1.0 — Phase 6: Complete — COMPLETE (<formatted_time>)
+  ✓ FLOW v1.1.0 — Phase 5: Complete — COMPLETE (<formatted_time>)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 <summary text from format-complete-summary>

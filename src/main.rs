@@ -95,7 +95,7 @@ enum Commands {
     /// Phase entry and completion state transitions.
     #[command(name = "phase-transition")]
     PhaseTransition {
-        /// Phase name (e.g. flow-start, flow-plan, flow-code)
+        /// Phase name (e.g. flow-start, flow-code)
         #[arg(long)]
         phase: String,
         /// Action: enter or complete

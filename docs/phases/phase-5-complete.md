@@ -1,9 +1,9 @@
 ---
-title: "Phase 6: Complete"
-nav_order: 7
+title: "Phase 5: Complete"
+nav_order: 6
 ---
 
-# Phase 6: Complete
+# Phase 5: Complete
 
 **Command:** `/flow-complete` or `/flow-complete --manual`
 

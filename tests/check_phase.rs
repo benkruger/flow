@@ -17,7 +17,6 @@ use serde_json::{json, Value};
 fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
     let order = [
         "flow-start",
-        "flow-plan",
         "flow-code",
         "flow-code-review",
         "flow-learn",
@@ -25,7 +24,6 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
     ];
     let names = [
         ("flow-start", "Start"),
-        ("flow-plan", "Plan"),
         ("flow-code", "Code"),
         ("flow-code-review", "Code Review"),
         ("flow-learn", "Learn"),
@@ -139,7 +137,7 @@ fn no_state_file_exits_1() {
 
     let output = flow_rs()
         .env_remove("FLOW_SIMULATE_BRANCH")
-        .args(["check-phase", "--required", "flow-plan"])
+        .args(["check-phase", "--required", "flow-code"])
         .current_dir(dir.path())
         .output()
         .unwrap();
@@ -153,12 +151,12 @@ fn previous_phase_pending_blocks_cli() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
 
-    let state = make_state("flow-plan", &[("flow-start", "pending")]);
+    let state = make_state("flow-code", &[("flow-start", "pending")]);
     setup_state(dir.path(), "test-feature", &state);
 
     let output = flow_rs()
         .env_remove("FLOW_SIMULATE_BRANCH")
-        .args(["check-phase", "--required", "flow-plan"])
+        .args(["check-phase", "--required", "flow-code"])
         .current_dir(dir.path())
         .output()
         .unwrap();
@@ -173,12 +171,12 @@ fn previous_phase_complete_allows_cli() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
 
-    let state = make_state("flow-plan", &[("flow-start", "complete")]);
+    let state = make_state("flow-code", &[("flow-start", "complete")]);
     setup_state(dir.path(), "test-feature", &state);
 
     let output = flow_rs()
         .env_remove("FLOW_SIMULATE_BRANCH")
-        .args(["check-phase", "--required", "flow-plan"])
+        .args(["check-phase", "--required", "flow-code"])
         .current_dir(dir.path())
         .output()
         .unwrap();
@@ -190,7 +188,7 @@ fn branch_flag_uses_specified_state_file() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "main");
 
-    let state = make_state("flow-plan", &[("flow-start", "complete")]);
+    let state = make_state("flow-code", &[("flow-start", "complete")]);
     setup_state(dir.path(), "other-feature", &state);
 
     let output = flow_rs()
@@ -198,7 +196,7 @@ fn branch_flag_uses_specified_state_file() {
         .args([
             "check-phase",
             "--required",
-            "flow-plan",
+            "flow-code",
             "--branch",
             "other-feature",
         ])
@@ -214,13 +212,13 @@ fn no_state_file_for_current_branch() {
     setup_git_repo(dir.path(), "main");
 
     for name in ["feat-a", "feat-b"] {
-        let state = make_state("flow-plan", &[("flow-start", "complete")]);
+        let state = make_state("flow-code", &[("flow-start", "complete")]);
         setup_state(dir.path(), name, &state);
     }
 
     let output = flow_rs()
         .env_remove("FLOW_SIMULATE_BRANCH")
-        .args(["check-phase", "--required", "flow-plan"])
+        .args(["check-phase", "--required", "flow-code"])
         .current_dir(dir.path())
         .output()
         .unwrap();
@@ -238,7 +236,7 @@ fn frozen_phases_file_is_loaded() {
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path(), "test-feature");
 
-    let state = make_state("flow-plan", &[("flow-start", "complete")]);
+    let state = make_state("flow-code", &[("flow-start", "complete")]);
     setup_state(dir.path(), "test-feature", &state);
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
@@ -250,7 +248,7 @@ fn frozen_phases_file_is_loaded() {
 
     let output = flow_rs()
         .env_remove("FLOW_SIMULATE_BRANCH")
-        .args(["check-phase", "--required", "flow-plan"])
+        .args(["check-phase", "--required", "flow-code"])
         .current_dir(dir.path())
         .output()
         .unwrap();
@@ -269,7 +267,7 @@ fn cli_no_branch_in_non_git_cwd_blocks() {
     let output = flow_rs()
         .env_remove("FLOW_SIMULATE_BRANCH")
         .env("FLOW_SIMULATE_BRANCH", "")
-        .args(["check-phase", "--required", "flow-plan"])
+        .args(["check-phase", "--required", "flow-code"])
         .current_dir(&dir)
         .env("GIT_CEILING_DIRECTORIES", &dir)
         .output()
@@ -296,7 +294,7 @@ fn run_impl_main_first_phase_returns_empty_and_exit_0() {
 #[test]
 fn run_impl_main_no_state_file_returns_blocked() {
     let dir = tempfile::tempdir().unwrap();
-    let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
+    let (out, code) = run_impl_main("flow-code", Some("test"), dir.path());
     assert_eq!(code, 1);
     assert!(out.contains("BLOCKED"));
     assert!(out.contains("No FLOW feature in progress"));
@@ -311,8 +309,8 @@ fn run_impl_main_loads_frozen_phase_config_when_present() {
     let branch_dir = root.join(".flow-states").join(branch);
     fs::create_dir_all(&branch_dir).unwrap();
     let state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     fs::write(
         branch_dir.join("state.json"),
@@ -321,10 +319,9 @@ fn run_impl_main_loads_frozen_phase_config_when_present() {
     .unwrap();
 
     let frozen = json!({
-        "order": ["flow-start", "flow-plan", "flow-code", "flow-code-review", "flow-learn", "flow-complete"],
+        "order": ["flow-start", "flow-code", "flow-code-review", "flow-learn", "flow-complete"],
         "phases": {
             "flow-start": {"name": "Start", "command": "/flow:flow-start"},
-            "flow-plan": {"name": "Plan", "command": "/flow:flow-plan"},
             "flow-code": {"name": "Code", "command": "/flow:flow-code"},
             "flow-code-review": {"name": "Code Review", "command": "/flow:flow-code-review"},
             "flow-learn": {"name": "Learn", "command": "/flow:flow-learn"},
@@ -337,7 +334,7 @@ fn run_impl_main_loads_frozen_phase_config_when_present() {
     )
     .unwrap();
 
-    let (output, code) = run_impl_main("flow-plan", Some(branch), &root);
+    let (output, code) = run_impl_main("flow-code", Some(branch), &root);
     assert_eq!(code, 0);
     assert!(output.is_empty());
 }
@@ -351,7 +348,7 @@ fn run_impl_main_state_file_is_directory_returns_blocked() {
     // Make state.json a directory so reading it fails.
     fs::create_dir(branch_dir.join("state.json")).unwrap();
 
-    let (output, code) = run_impl_main("flow-plan", Some("test-feature"), &root);
+    let (output, code) = run_impl_main("flow-code", Some("test-feature"), &root);
     assert_eq!(code, 1);
     assert!(output.contains("BLOCKED: Could not read state file"));
 }
@@ -362,7 +359,7 @@ fn run_impl_main_unparseable_state_file_returns_blocked() {
     let branch_dir = dir.path().join(".flow-states").join("test");
     fs::create_dir_all(&branch_dir).unwrap();
     fs::write(branch_dir.join("state.json"), "not-valid-json").unwrap();
-    let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
+    let (out, code) = run_impl_main("flow-code", Some("test"), dir.path());
     assert_eq!(code, 1);
     assert!(out.contains("BLOCKED"));
     assert!(out.contains("Could not read state file"));
@@ -371,9 +368,9 @@ fn run_impl_main_unparseable_state_file_returns_blocked() {
 #[test]
 fn run_impl_main_allowed_returns_zero() {
     let dir = tempfile::tempdir().unwrap();
-    let state = make_state("flow-plan", &[("flow-start", "complete")]);
+    let state = make_state("flow-code", &[("flow-start", "complete")]);
     write_state(dir.path(), "test", state);
-    let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
+    let (out, code) = run_impl_main("flow-code", Some("test"), dir.path());
     assert_eq!(code, 0);
     assert!(out.is_empty());
 }
@@ -381,9 +378,9 @@ fn run_impl_main_allowed_returns_zero() {
 #[test]
 fn run_impl_main_blocked_returns_one_with_blocked_message() {
     let dir = tempfile::tempdir().unwrap();
-    let state = make_state("flow-plan", &[("flow-start", "pending")]);
+    let state = make_state("flow-code", &[("flow-start", "pending")]);
     write_state(dir.path(), "test", state);
-    let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
+    let (out, code) = run_impl_main("flow-code", Some("test"), dir.path());
     assert_eq!(code, 1);
     assert!(out.contains("BLOCKED"));
 }
@@ -391,24 +388,20 @@ fn run_impl_main_blocked_returns_one_with_blocked_message() {
 #[test]
 fn run_impl_main_previous_phase_in_progress_blocks() {
     let dir = tempfile::tempdir().unwrap();
-    let state = make_state("flow-plan", &[("flow-start", "in_progress")]);
+    let state = make_state("flow-code", &[("flow-start", "in_progress")]);
     write_state(dir.path(), "test", state);
-    let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
+    let (out, code) = run_impl_main("flow-code", Some("test"), dir.path());
     assert_eq!(code, 1);
     assert!(out.contains("BLOCKED"));
     assert!(out.contains("in_progress"));
 }
 
 #[test]
-fn run_impl_main_sequential_chain_phase_4_allowed() {
+fn run_impl_main_sequential_chain_phase_3_allowed() {
     let dir = tempfile::tempdir().unwrap();
     let state = make_state(
         "flow-code-review",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "complete"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "complete")],
     );
     write_state(dir.path(), "test", state);
     let (_, code) = run_impl_main("flow-code-review", Some("test"), dir.path());
@@ -419,12 +412,12 @@ fn run_impl_main_sequential_chain_phase_4_allowed() {
 fn run_impl_main_reentry_returns_note_and_zero() {
     let dir = tempfile::tempdir().unwrap();
     let mut state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "complete")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "complete")],
     );
-    state["phases"]["flow-plan"]["visit_count"] = json!(2);
+    state["phases"]["flow-code"]["visit_count"] = json!(2);
     write_state(dir.path(), "test", state);
-    let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
+    let (out, code) = run_impl_main("flow-code", Some("test"), dir.path());
     assert_eq!(code, 0);
     assert!(out.contains("previously completed"));
     assert!(out.contains("2 visit(s)"));
@@ -434,15 +427,15 @@ fn run_impl_main_reentry_returns_note_and_zero() {
 fn run_impl_main_reentry_missing_visit_count_reports_zero() {
     let dir = tempfile::tempdir().unwrap();
     let mut state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "complete")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "complete")],
     );
-    state["phases"]["flow-plan"]
+    state["phases"]["flow-code"]
         .as_object_mut()
         .unwrap()
         .remove("visit_count");
     write_state(dir.path(), "test", state);
-    let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
+    let (out, code) = run_impl_main("flow-code", Some("test"), dir.path());
     assert_eq!(code, 0);
     assert!(out.contains("previously completed"));
     assert!(out.contains("0 visit(s)"));
@@ -451,20 +444,19 @@ fn run_impl_main_reentry_missing_visit_count_reports_zero() {
 #[test]
 fn run_impl_main_first_visit_no_previously_completed_message() {
     let dir = tempfile::tempdir().unwrap();
-    let state = make_state("flow-plan", &[("flow-start", "complete")]);
+    let state = make_state("flow-code", &[("flow-start", "complete")]);
     write_state(dir.path(), "test", state);
-    let (out, _) = run_impl_main("flow-plan", Some("test"), dir.path());
+    let (out, _) = run_impl_main("flow-code", Some("test"), dir.path());
     assert!(!out.contains("previously completed"));
 }
 
 #[test]
-fn run_impl_main_phase_5_requires_phase_4_complete() {
+fn run_impl_main_phase_4_requires_phase_3_complete() {
     let dir = tempfile::tempdir().unwrap();
     let state = make_state(
         "flow-learn",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
             ("flow-code", "complete"),
             ("flow-code-review", "pending"),
         ],
@@ -472,17 +464,16 @@ fn run_impl_main_phase_5_requires_phase_4_complete() {
     write_state(dir.path(), "test", state);
     let (out, code) = run_impl_main("flow-learn", Some("test"), dir.path());
     assert_eq!(code, 1);
-    assert!(out.contains("Phase 4"));
+    assert!(out.contains("Phase 3"));
 }
 
 #[test]
-fn run_impl_main_phase_6_requires_phase_5_complete() {
+fn run_impl_main_phase_5_requires_phase_4_complete() {
     let dir = tempfile::tempdir().unwrap();
     let state = make_state(
         "flow-complete",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
             ("flow-code", "complete"),
             ("flow-code-review", "complete"),
             ("flow-learn", "pending"),
@@ -491,7 +482,7 @@ fn run_impl_main_phase_6_requires_phase_5_complete() {
     write_state(dir.path(), "test", state);
     let (out, code) = run_impl_main("flow-complete", Some("test"), dir.path());
     assert_eq!(code, 1);
-    assert!(out.contains("Phase 5"));
+    assert!(out.contains("Phase 4"));
 }
 
 #[test]
@@ -500,10 +491,10 @@ fn run_impl_main_missing_phases_key_blocks() {
     fs::create_dir_all(dir.path().join(".flow-states")).unwrap();
     fs::write(
         dir.path().join(".flow-states").join("test.json"),
-        json!({"branch": "test", "current_phase": "flow-plan"}).to_string(),
+        json!({"branch": "test", "current_phase": "flow-code"}).to_string(),
     )
     .unwrap();
-    let (out, code) = run_impl_main("flow-plan", Some("test"), dir.path());
+    let (out, code) = run_impl_main("flow-code", Some("test"), dir.path());
     assert_eq!(code, 1);
     assert!(out.contains("BLOCKED"));
 }
@@ -513,11 +504,7 @@ fn run_impl_main_blocked_message_includes_correct_command() {
     let dir = tempfile::tempdir().unwrap();
     let state = make_state(
         "flow-code-review",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "pending"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "pending")],
     );
     write_state(dir.path(), "test", state);
     let (out, code) = run_impl_main("flow-code-review", Some("test"), dir.path());
@@ -528,7 +515,7 @@ fn run_impl_main_blocked_message_includes_correct_command() {
 #[test]
 fn run_impl_main_slash_branch_returns_blocked_no_panic() {
     let dir = tempfile::tempdir().unwrap();
-    let (out, code) = run_impl_main("flow-plan", Some("feature/foo"), dir.path());
+    let (out, code) = run_impl_main("flow-code", Some("feature/foo"), dir.path());
     assert_eq!(code, 1);
     assert!(out.contains("BLOCKED"));
     assert!(out.contains("feature/foo"));
@@ -537,7 +524,7 @@ fn run_impl_main_slash_branch_returns_blocked_no_panic() {
 #[test]
 fn run_impl_main_empty_branch_returns_blocked_no_panic() {
     let dir = tempfile::tempdir().unwrap();
-    let (out, code) = run_impl_main("flow-plan", Some(""), dir.path());
+    let (out, code) = run_impl_main("flow-code", Some(""), dir.path());
     assert_eq!(code, 1);
     assert!(out.contains("BLOCKED"));
 }
@@ -566,7 +553,7 @@ fn run_impl_main_frozen_config_missing_names_and_commands_falls_back() {
     let branch = "fx";
     let branch_dir = root.join(".flow-states").join(branch);
     fs::create_dir_all(&branch_dir).unwrap();
-    let state = make_state("flow-plan", &[("flow-start", "pending")]);
+    let state = make_state("flow-code", &[("flow-start", "pending")]);
     fs::write(
         branch_dir.join("state.json"),
         serde_json::to_string(&state).unwrap(),
@@ -608,7 +595,7 @@ fn run_impl_main_frozen_first_phase_different_from_default() {
     let branch_dir = root.join(".flow-states").join(branch);
     fs::create_dir_all(&branch_dir).unwrap();
 
-    let state = make_state("flow-plan", &[]);
+    let state = make_state("flow-code", &[]);
     fs::write(
         branch_dir.join("state.json"),
         serde_json::to_string(&state).unwrap(),

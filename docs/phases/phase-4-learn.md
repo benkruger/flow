@@ -1,9 +1,9 @@
 ---
-title: "Phase 5: Learn"
-nav_order: 6
+title: "Phase 4: Learn"
+nav_order: 5
 ---
 
-# Phase 5: Learn
+# Phase 4: Learn
 
 **Command:** `/flow-learn`
 

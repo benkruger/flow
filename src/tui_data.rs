@@ -32,13 +32,6 @@ pub fn step_names() -> HashMap<&'static str, HashMap<i64, &'static str>> {
     start.insert(5, "finalizing");
     map.insert("flow-start", start);
 
-    let mut plan = HashMap::new();
-    plan.insert(1, "reading context");
-    plan.insert(2, "decomposing");
-    plan.insert(3, "writing plan");
-    plan.insert(4, "storing plan");
-    map.insert("flow-plan", plan);
-
     let mut code_review = HashMap::new();
     code_review.insert(1, "simplifying");
     code_review.insert(2, "reviewing");
@@ -135,11 +128,6 @@ pub fn phase_timeline(state: &Value, now: Option<DateTime<FixedOffset>>) -> Vec<
         .get("start_steps_total")
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
-    let plan_step = state.get("plan_step").and_then(|v| v.as_i64()).unwrap_or(0);
-    let plan_steps_total = state
-        .get("plan_steps_total")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
     let code_task = state.get("code_task").and_then(|v| v.as_i64()).unwrap_or(0);
     let code_tasks_total = state
         .get("code_tasks_total")
@@ -224,13 +212,6 @@ pub fn phase_timeline(state: &Value, now: Option<DateTime<FixedOffset>>) -> Vec<
                 .copied()
                 .unwrap_or("");
             step_annotation(start_step, start_steps_total, sn)
-        } else if key == "flow-plan" {
-            let sn = all_step_names
-                .get("flow-plan")
-                .and_then(|m| m.get(&plan_step))
-                .copied()
-                .unwrap_or("");
-            step_annotation(plan_step, plan_steps_total, sn)
         } else if key == "flow-code" {
             let mut current_task = code_task + 1;
             if code_tasks_total > 0 {

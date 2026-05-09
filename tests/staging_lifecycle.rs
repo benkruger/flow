@@ -106,7 +106,6 @@ fn write_staging_state(repo: &Path) {
         "current_phase": "flow-code",
         "phases": {
             "flow-start": {"status": "complete"},
-            "flow-plan": {"status": "complete"},
             "flow-code": {"status": "in_progress"},
         },
     });

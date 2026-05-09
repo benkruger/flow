@@ -66,7 +66,6 @@ fn write_state_file(
         "prompt": "test feature",
         "phases": {
             "flow-start": {"status": "complete"},
-            "flow-plan": {"status": "complete"},
             "flow-code": {"status": "complete"},
             "flow-code-review": {"status": "complete"},
             "flow-learn": {"status": learn_status},
@@ -940,7 +939,6 @@ fn no_pr_number_skips_gh_check_and_proceeds() {
         "pr_url": "https://github.com/test/test/pull/42",
         "phases": {
             "flow-start": {"status": "complete"},
-            "flow-plan": {"status": "complete"},
             "flow-code": {"status": "complete"},
             "flow-code-review": {"status": "complete"},
             "flow-learn": {"status": "complete"},

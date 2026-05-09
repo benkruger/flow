@@ -43,8 +43,6 @@ fn empty_state() -> FlowState {
         slack_notifications: vec![],
         start_step: None,
         start_steps_total: None,
-        plan_step: None,
-        plan_steps_total: None,
         code_task: None,
         code_tasks_total: None,
         code_task_name: None,

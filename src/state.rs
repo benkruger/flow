@@ -1,13 +1,11 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-/// The six FLOW phases, serialized as hyphenated keys (e.g. "flow-start").
+/// The five FLOW phases, serialized as hyphenated keys (e.g. "flow-start").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Phase {
     #[serde(rename = "flow-start")]
     FlowStart,
-    #[serde(rename = "flow-plan")]
-    FlowPlan,
     #[serde(rename = "flow-code")]
     FlowCode,
     #[serde(rename = "flow-code-review")]
@@ -122,8 +120,8 @@ pub struct WindowSnapshot {
 /// A `WindowSnapshot` captured at a step-counter boundary.
 ///
 /// Appended to `PhaseState.step_snapshots[]` by `set_timestamp` when
-/// the mutated field is one of the five named step counters
-/// (`plan_step`, `code_task`, `code_review_step`, `learn_step`,
+/// the mutated field is one of the four named step counters
+/// (`code_task`, `code_review_step`, `learn_step`,
 /// `complete_step`). `step` records the counter value and `field`
 /// records which counter; the snapshot fields are flattened into the
 /// outer JSON so each entry is one flat object.
@@ -267,12 +265,6 @@ pub struct FlowState {
     pub start_step: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start_steps_total: Option<i64>,
-
-    // Plan phase TUI progress
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plan_step: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plan_steps_total: Option<i64>,
 
     // Code phase TUI progress
     #[serde(default, skip_serializing_if = "Option::is_none")]

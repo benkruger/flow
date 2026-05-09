@@ -14,19 +14,18 @@ use serde_json::{json, Value};
 
 mod common;
 
-const PHASE_NAMES_LIST: [&str; 6] = ["Start", "Plan", "Code", "Code Review", "Learn", "Complete"];
+const PHASE_NAMES_LIST: [&str; 5] = ["Start", "Code", "Code Review", "Learn", "Complete"];
 
 fn all_complete_state() -> Value {
     let mut phases = serde_json::Map::new();
     let all_phases = [
         "flow-start",
-        "flow-plan",
         "flow-code",
         "flow-code-review",
         "flow-learn",
         "flow-complete",
     ];
-    let timings = [20, 300, 2700, 720, 120, 45];
+    let timings = [20, 2700, 720, 120, 45];
     for (i, &p) in all_phases.iter().enumerate() {
         phases.insert(
             p.to_string(),
@@ -70,7 +69,7 @@ use common::{add_phase_snapshots, snapshot_value};
 fn token_cost_section_with_full_data_renders_per_phase_and_total() {
     let mut state = all_complete_state();
     add_phase_snapshots(&mut state, "flow-start", 0, 5);
-    add_phase_snapshots(&mut state, "flow-plan", 5, 10);
+    add_phase_snapshots(&mut state, "flow-code", 5, 10);
     add_phase_snapshots(&mut state, "flow-code", 10, 50);
 
     let result = format_complete_summary(&state, None);
@@ -231,10 +230,10 @@ fn token_cost_section_with_unparseable_phase_skips_silently() {
     state["phases"]["flow-code"] = json!("not an object");
     // Plus add a real snapshot pair on a different phase so the
     // section renders for that phase but skips flow-code.
-    add_phase_snapshots(&mut state, "flow-plan", 5, 10);
+    add_phase_snapshots(&mut state, "flow-learn", 5, 10);
     let result = format_complete_summary(&state, None);
     assert!(result.summary.contains("Token Cost"));
-    assert!(result.summary.contains("Plan:"));
+    assert!(result.summary.contains("Learn:"));
 }
 
 /// `format_tokens` boundary cases: < 1000 (raw integer), >= 1M
@@ -279,7 +278,7 @@ fn basic_summary() {
         );
     }
     assert!(result.summary.contains("Total:"));
-    assert_eq!(result.total_seconds, 20 + 300 + 2700 + 720 + 120 + 45);
+    assert_eq!(result.total_seconds, 20 + 2700 + 720 + 120 + 45);
 }
 
 #[test]

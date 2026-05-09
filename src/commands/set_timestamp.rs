@@ -12,20 +12,19 @@ pub struct Update {
     pub value: Value,
 }
 
-/// Closed enumeration of the five step-counter fields that
-/// trigger an account-window step snapshot capture per
-/// `.claude/rules/scope-enumeration.md`. The single source of
-/// truth — Task 11 reads this when deciding whether to append to
-/// `phases.<n>.step_snapshots[]` after a `set-timestamp` call.
+/// Closed enumeration of the four step-counter fields that
+/// trigger an account-window step snapshot capture. The single
+/// source of truth — code reads this when deciding whether to
+/// append to `phases.<n>.step_snapshots[]` after a
+/// `set-timestamp` call.
 const STEP_COUNTER_FIELDS: &[&str] = &[
-    "plan_step",
     "code_task",
     "code_review_step",
     "learn_step",
     "complete_step",
 ];
 
-/// Returns `true` when `field` names one of the five step
+/// Returns `true` when `field` names one of the four step
 /// counters. Whitespace and case are not normalized — callers pass
 /// the field name straight from CLI argument parsing where
 /// `--set <field>=<value>` already produced an exact slice of the

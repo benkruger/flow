@@ -42,7 +42,6 @@ fn happy_state(branch: &str) -> Value {
         "repo": "test/test",
         "phases": {
             "flow-start": {"status": "complete"},
-            "flow-plan": {"status": "complete"},
             "flow-code": {"status": "complete"},
             "flow-code-review": {"status": "complete"},
             "flow-learn": {"status": "complete"},

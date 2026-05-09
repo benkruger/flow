@@ -1455,9 +1455,9 @@ fn check_autonomous_in_progress_block_message_mentions_flow_abort() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("state.json");
     let state = json!({
-        "current_phase": "flow-plan",
-        "phases": {"flow-plan": {"status": "in_progress"}},
-        "skills": {"flow-plan": "auto"}
+        "current_phase": "flow-code",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": "auto"}
     });
     fs::write(&path, serde_json::to_string(&state).unwrap()).unwrap();
     let result = check_autonomous_in_progress(&path);
@@ -1877,7 +1877,7 @@ fn prose_pause_allows_when_phase_is_not_flow_code() {
     fs::write(
         &state_path,
         serde_json::to_string(&prose_pause_state(
-            "flow-plan",
+            "flow-learn",
             "in_progress",
             json!("auto"),
             0,

@@ -67,7 +67,7 @@ fn append_note_no_branch_no_git_returns_branch_resolution_error() {
 fn append_note_records_correction() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    let state = json!({"branch": "b", "current_phase": "flow-plan", "notes": []});
+    let state = json!({"branch": "b", "current_phase": "flow-code", "notes": []});
     let state_path = write_state(&repo, "b", &state);
 
     let output = run_append_note(
@@ -95,8 +95,8 @@ fn append_note_records_correction() {
     let on_disk: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     let notes = on_disk["notes"].as_array().unwrap();
     assert_eq!(notes[0]["type"], "correction");
-    assert_eq!(notes[0]["phase"], "flow-plan");
-    assert_eq!(notes[0]["phase_name"], "Plan");
+    assert_eq!(notes[0]["phase"], "flow-code");
+    assert_eq!(notes[0]["phase_name"], "Code");
     assert_eq!(notes[0]["note"], "Forgot to check the rule file");
 }
 
@@ -239,7 +239,7 @@ fn make_state_lib(branch: &str) -> Value {
     json!({
         "schema_version": 1,
         "branch": branch,
-        "current_phase": "flow-plan",
+        "current_phase": "flow-code",
         "notes": []
     })
 }
@@ -281,8 +281,8 @@ fn append_note_happy_path_lib() {
     let on_disk: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     let notes = on_disk["notes"].as_array().unwrap();
     assert_eq!(notes.len(), 1);
-    assert_eq!(notes[0]["phase"], "flow-plan");
-    assert_eq!(notes[0]["phase_name"], "Plan");
+    assert_eq!(notes[0]["phase"], "flow-code");
+    assert_eq!(notes[0]["phase_name"], "Code");
     assert_eq!(notes[0]["type"], "correction");
     assert_eq!(notes[0]["note"], "test note");
     assert!(notes[0]["timestamp"].as_str().unwrap().contains("T"));
@@ -432,7 +432,7 @@ fn append_note_run_impl_main_success_returns_note_count_tuple_lib() {
     fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
         branch_dir.join("state.json"),
-        r#"{"current_phase":"flow-plan","notes":[]}"#,
+        r#"{"current_phase":"flow-code","notes":[]}"#,
     )
     .unwrap();
     let args = make_args(Some("present-branch"));
@@ -467,7 +467,7 @@ fn append_note_run_impl_main_mutate_state_failure_returns_error_tuple_lib() {
     let branch_dir = root.join(".flow-states").join("present-branch");
     fs::create_dir_all(&branch_dir).unwrap();
     let state_path = branch_dir.join("state.json");
-    fs::write(&state_path, r#"{"current_phase":"flow-plan","notes":[]}"#).unwrap();
+    fs::write(&state_path, r#"{"current_phase":"flow-code","notes":[]}"#).unwrap();
     let mut perms = fs::metadata(&state_path).unwrap().permissions();
     perms.set_mode(0o444);
     fs::set_permissions(&state_path, perms).unwrap();
@@ -515,7 +515,7 @@ fn append_note_run_impl_main_wrong_type_resets_to_array_lib() {
     fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
         branch_dir.join("state.json"),
-        r#"{"current_phase":"flow-plan","notes":"not-an-array"}"#,
+        r#"{"current_phase":"flow-code","notes":"not-an-array"}"#,
     )
     .unwrap();
     let args = make_args(Some("wrong-type"));

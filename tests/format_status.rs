@@ -18,7 +18,6 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
     let phase_names = flow_rs::phase_config::phase_names();
     let all_phases = [
         "flow-start",
-        "flow-plan",
         "flow-code",
         "flow-code-review",
         "flow-learn",
@@ -107,8 +106,8 @@ fn panel_includes_pr_url() {
 #[test]
 fn panel_shows_completed_phase_with_timing() {
     let mut state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["phases"]["flow-start"]["cumulative_seconds"] = json!(300);
     let panel = format_panel(&state, VERSION, None, false, None);
@@ -119,8 +118,8 @@ fn panel_shows_completed_phase_with_timing() {
 #[test]
 fn panel_shows_in_progress_marker() {
     let state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     let panel = format_panel(&state, VERSION, None, false, None);
     assert!(panel.contains("[>] Phase 2:"), "Panel:\n{}", panel);
@@ -130,8 +129,8 @@ fn panel_shows_in_progress_marker() {
 #[test]
 fn panel_shows_pending_phases() {
     let state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     let panel = format_panel(&state, VERSION, None, false, None);
     assert!(panel.contains("[ ] Phase 3:"), "Panel:\n{}", panel);
@@ -142,12 +141,12 @@ fn panel_shows_pending_phases() {
 #[test]
 fn panel_shows_current_phase_timing() {
     let mut state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
-    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(120);
-    state["phases"]["flow-plan"]["session_started_at"] = json!(null);
-    state["phases"]["flow-plan"]["visit_count"] = json!(2);
+    state["phases"]["flow-code"]["cumulative_seconds"] = json!(120);
+    state["phases"]["flow-code"]["session_started_at"] = json!(null);
+    state["phases"]["flow-code"]["visit_count"] = json!(2);
     let panel = format_panel(&state, VERSION, None, false, None);
     assert!(
         panel.contains("Time in current phase : 2m"),
@@ -164,11 +163,11 @@ fn panel_shows_current_phase_timing() {
 #[test]
 fn in_progress_phase_shows_live_elapsed() {
     let mut state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
-    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(0);
-    state["phases"]["flow-plan"]["session_started_at"] = json!("2026-01-01T00:00:00Z");
+    state["phases"]["flow-code"]["cumulative_seconds"] = json!(0);
+    state["phases"]["flow-code"]["session_started_at"] = json!("2026-01-01T00:00:00Z");
     let now = FixedOffset::east_opt(0)
         .unwrap()
         .with_ymd_and_hms(2026, 1, 1, 0, 10, 0)
@@ -184,11 +183,11 @@ fn in_progress_phase_shows_live_elapsed() {
 #[test]
 fn in_progress_phase_adds_live_to_cumulative() {
     let mut state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
-    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(600);
-    state["phases"]["flow-plan"]["session_started_at"] = json!("2026-01-01T00:00:00Z");
+    state["phases"]["flow-code"]["cumulative_seconds"] = json!(600);
+    state["phases"]["flow-code"]["session_started_at"] = json!("2026-01-01T00:00:00Z");
     let now = FixedOffset::east_opt(0)
         .unwrap()
         .with_ymd_and_hms(2026, 1, 1, 0, 5, 0)
@@ -204,8 +203,8 @@ fn in_progress_phase_adds_live_to_cumulative() {
 #[test]
 fn panel_shows_elapsed_time() {
     let mut state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["started_at"] = json!("2026-01-01T00:00:00Z");
     let now = FixedOffset::east_opt(0)
@@ -221,8 +220,8 @@ fn panel_shows_elapsed_time() {
 #[test]
 fn panel_shows_notes_count() {
     let mut state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["notes"] = json!([{"text": "note 1"}, {"text": "note 2"}, {"text": "note 3"}]);
     let panel = format_panel(&state, VERSION, None, false, None);
@@ -232,8 +231,8 @@ fn panel_shows_notes_count() {
 #[test]
 fn panel_hides_notes_when_zero() {
     let state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     let panel = format_panel(&state, VERSION, None, false, None);
     assert!(!panel.contains("Notes"), "Panel:\n{}", panel);
@@ -244,12 +243,12 @@ fn panel_hides_notes_when_zero() {
 #[test]
 fn panel_continue_label_when_in_progress() {
     let state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     let panel = format_panel(&state, VERSION, None, false, None);
     assert!(
-        panel.contains("Continue: /flow:flow-plan"),
+        panel.contains("Continue: /flow:flow-code"),
         "Panel:\n{}",
         panel
     );
@@ -260,7 +259,7 @@ fn panel_continue_label_when_in_progress() {
 fn panel_next_label_when_phase_complete() {
     let state = make_state(
         "flow-code",
-        &[("flow-start", "complete"), ("flow-plan", "complete")],
+        &[("flow-start", "complete"), ("flow-code", "complete")],
     );
     let panel = format_panel(&state, VERSION, None, false, None);
     assert!(panel.contains("Next: /flow:flow-code"), "Panel:\n{}", panel);
@@ -269,9 +268,9 @@ fn panel_next_label_when_phase_complete() {
 
 #[test]
 fn panel_next_label_when_phase_pending() {
-    let state = make_state("flow-plan", &[("flow-start", "complete")]);
+    let state = make_state("flow-code", &[("flow-start", "complete")]);
     let panel = format_panel(&state, VERSION, None, false, None);
-    assert!(panel.contains("Next: /flow:flow-plan"), "Panel:\n{}", panel);
+    assert!(panel.contains("Next: /flow:flow-code"), "Panel:\n{}", panel);
     assert!(!panel.contains("Continue:"), "Panel:\n{}", panel);
 }
 
@@ -281,7 +280,6 @@ fn panel_next_label_when_phase_pending() {
 fn panel_all_complete_shows_timing() {
     let all_phases = [
         "flow-start",
-        "flow-plan",
         "flow-code",
         "flow-code-review",
         "flow-learn",
@@ -290,7 +288,6 @@ fn panel_all_complete_shows_timing() {
     let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
     let mut state = make_state("flow-complete", &statuses);
     state["phases"]["flow-start"]["cumulative_seconds"] = json!(30);
-    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(900);
     state["phases"]["flow-code"]["cumulative_seconds"] = json!(3600);
     state["phases"]["flow-code-review"]["cumulative_seconds"] = json!(870);
     state["phases"]["flow-learn"]["cumulative_seconds"] = json!(300);
@@ -311,8 +308,8 @@ fn panel_all_complete_shows_timing() {
         "Panel:\n{}",
         panel
     );
-    assert!(panel.contains("Elapsed : 1h 35m"), "Panel:\n{}", panel);
-    for i in 1..=6 {
+    assert!(panel.contains("Elapsed : 1h 20m"), "Panel:\n{}", panel);
+    for i in 1..=5 {
         assert!(
             panel.contains(&format!("[x] Phase {}:", i)),
             "Missing phase {} in panel:\n{}",
@@ -327,30 +324,30 @@ fn panel_all_complete_shows_timing() {
 #[test]
 fn panel_timing_formats() {
     let mut state = make_state(
-        "flow-code-review",
+        "flow-learn",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "in_progress"),
+            ("flow-code-review", "complete"),
+            ("flow-learn", "in_progress"),
         ],
     );
     state["phases"]["flow-start"]["cumulative_seconds"] = json!(30);
-    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(3660);
-    state["phases"]["flow-code"]["cumulative_seconds"] = json!(120);
+    state["phases"]["flow-code"]["cumulative_seconds"] = json!(3660);
+    state["phases"]["flow-code-review"]["cumulative_seconds"] = json!(120);
     let panel = format_panel(&state, VERSION, None, false, None);
     assert!(panel.contains("(<1m)"), "Panel:\n{}", panel);
     assert!(panel.contains("(1h 1m)"), "Panel:\n{}", panel);
     assert!(panel.contains("(2m)"), "Panel:\n{}", panel);
 }
 
-// --- All 6 phases ---
+// --- All 5 phases ---
 
 #[test]
-fn panel_has_all_6_phases() {
+fn panel_has_all_5_phases() {
     let state = make_state("flow-start", &[("flow-start", "in_progress")]);
     let panel = format_panel(&state, VERSION, None, false, None);
-    for i in 1..=6 {
+    for i in 1..=5 {
         assert!(
             panel.contains(&format!("Phase {}:", i)),
             "Missing phase {} in panel:\n{}",
@@ -381,30 +378,30 @@ fn panel_hides_dev_mode_when_false() {
 #[test]
 fn panel_uses_frozen_phase_config() {
     let config = PhaseConfig {
-        order: vec!["flow-start".into(), "flow-plan".into()],
+        order: vec!["flow-start".into(), "flow-code".into()],
         names: {
             let mut m = IndexMap::new();
             m.insert("flow-start".into(), "Begin".into());
-            m.insert("flow-plan".into(), "Design".into());
+            m.insert("flow-code".into(), "Design".into());
             m
         },
         numbers: {
             let mut m = IndexMap::new();
             m.insert("flow-start".into(), 1);
-            m.insert("flow-plan".into(), 2);
+            m.insert("flow-code".into(), 2);
             m
         },
         commands: {
             let mut m = IndexMap::new();
             m.insert("flow-start".into(), "/t:begin".into());
-            m.insert("flow-plan".into(), "/t:design".into());
+            m.insert("flow-code".into(), "/t:design".into());
             m
         },
     };
 
     let state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     let panel = format_panel(&state, VERSION, None, false, Some(&config));
     assert!(panel.contains("Begin"), "Panel:\n{}", panel);
@@ -419,30 +416,30 @@ fn panel_uses_frozen_phase_config() {
 #[test]
 fn all_complete_uses_frozen_phase_config() {
     let config = PhaseConfig {
-        order: vec!["flow-start".into(), "flow-plan".into()],
+        order: vec!["flow-start".into(), "flow-code".into()],
         names: {
             let mut m = IndexMap::new();
             m.insert("flow-start".into(), "Begin".into());
-            m.insert("flow-plan".into(), "Design".into());
+            m.insert("flow-code".into(), "Design".into());
             m
         },
         numbers: {
             let mut m = IndexMap::new();
             m.insert("flow-start".into(), 1);
-            m.insert("flow-plan".into(), 2);
+            m.insert("flow-code".into(), 2);
             m
         },
         commands: {
             let mut m = IndexMap::new();
             m.insert("flow-start".into(), "/t:begin".into());
-            m.insert("flow-plan".into(), "/t:design".into());
+            m.insert("flow-code".into(), "/t:design".into());
             m
         },
     };
 
     let state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "complete")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "complete")],
     );
     let panel = format_panel(&state, VERSION, None, false, Some(&config));
     assert!(panel.contains("All Phases Complete"), "Panel:\n{}", panel);
@@ -455,14 +452,14 @@ fn all_complete_uses_frozen_phase_config() {
 #[test]
 fn multi_panel_lists_features() {
     let state_a = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     let mut state_b = make_state(
         "flow-code",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
+            ("flow-code", "complete"),
             ("flow-code", "in_progress"),
         ],
     );
@@ -527,8 +524,8 @@ fn run_impl_main_multi_state_returns_multi_panel_exit_0() {
     let dir = tempfile::tempdir().unwrap();
     let s1 = make_state("flow-start", &[("flow-start", "in_progress")]);
     let s2 = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     write_state_file(dir.path(), "first-feature", &s1);
     write_state_file(dir.path(), "second-feature", &s2);
@@ -546,8 +543,8 @@ fn run_impl_main_branch_match_returns_single_panel_exit_0() {
     let dir = tempfile::tempdir().unwrap();
     let s1 = make_state("flow-start", &[("flow-start", "in_progress")]);
     let s2 = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     write_state_file(dir.path(), "first-feature", &s1);
     write_state_file(dir.path(), "second-feature", &s2);
@@ -569,8 +566,8 @@ fn format_status_multi_panel_renders_two_flows() {
         &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     let state_b = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     let results = vec![
         (
@@ -612,8 +609,8 @@ fn format_status_run_impl_main_unknown_branch_falls_back_to_other_state_files() 
     let sibling_dir = root.join(".flow-states").join("sibling-feature");
     std::fs::create_dir_all(&sibling_dir).unwrap();
     let mut sibling = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     sibling["branch"] = json!("sibling-feature");
     std::fs::write(
@@ -634,8 +631,8 @@ fn format_status_run_impl_main_unknown_branch_falls_back_to_other_state_files() 
 #[test]
 fn format_panel_renders_subdir_line_when_relative_cwd_set() {
     let mut state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["relative_cwd"] = json!("api");
     let panel = format_panel(&state, "9.9.9", None, false, None);
@@ -650,7 +647,7 @@ fn format_panel_renders_subdir_line_when_relative_cwd_set() {
 fn format_panel_no_phases_key_returns_empty_string() {
     let state = json!({
         "branch": "test-feature",
-        "current_phase": "flow-plan",
+        "current_phase": "flow-code",
     });
     assert_eq!(format_panel(&state, "9.9.9", None, false, None), "");
 }
@@ -672,8 +669,8 @@ fn format_status_run_impl_main_loads_frozen_phase_config() {
     let branch_dir = root.join(".flow-states").join(branch);
     std::fs::create_dir_all(&branch_dir).unwrap();
     let state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     std::fs::write(
         branch_dir.join("state.json"),
@@ -684,7 +681,6 @@ fn format_status_run_impl_main_loads_frozen_phase_config() {
     let frozen = json!({
         "order": [
             "flow-start",
-            "flow-plan",
             "flow-code",
             "flow-code-review",
             "flow-learn",
@@ -692,8 +688,7 @@ fn format_status_run_impl_main_loads_frozen_phase_config() {
         ],
         "phases": {
             "flow-start": {"name": "Start", "command": "/flow:flow-start"},
-            "flow-plan": {"name": "Custom Plan Name", "command": "/flow:flow-plan-custom"},
-            "flow-code": {"name": "Code", "command": "/flow:flow-code"},
+            "flow-code": {"name": "Custom Code Name", "command": "/flow:flow-code-custom"},
             "flow-code-review": {"name": "Code Review", "command": "/flow:flow-code-review"},
             "flow-learn": {"name": "Learn", "command": "/flow:flow-learn"},
             "flow-complete": {"name": "Complete", "command": "/flow:flow-complete"}
@@ -708,7 +703,7 @@ fn format_status_run_impl_main_loads_frozen_phase_config() {
     let (text, code) = run_impl_main(Some(branch), &root).expect("ok path");
     assert_eq!(code, 0);
     assert!(
-        text.contains("Custom Plan Name"),
+        text.contains("Custom Code Name"),
         "Panel should reflect frozen phase name:\n{}",
         text
     );
@@ -720,7 +715,7 @@ fn format_status_all_complete_renders_all_phases_complete_panel() {
         "flow-complete",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
+            ("flow-code", "complete"),
             ("flow-code", "complete"),
             ("flow-code-review", "complete"),
             ("flow-learn", "complete"),
@@ -728,7 +723,7 @@ fn format_status_all_complete_renders_all_phases_complete_panel() {
         ],
     );
     state["phases"]["flow-start"]["cumulative_seconds"] = json!(36);
-    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(300);
+    state["phases"]["flow-code"]["cumulative_seconds"] = json!(300);
     state["phases"]["flow-code"]["cumulative_seconds"] = json!(600);
     let panel = format_panel(&state, VERSION, None, false, None);
     assert!(panel.contains("All Phases Complete"), "Panel:\n{}", panel);
@@ -738,7 +733,7 @@ fn format_status_all_complete_renders_all_phases_complete_panel() {
         panel
     );
     assert!(panel.contains("[x] Phase 1:"), "Panel:\n{}", panel);
-    assert!(panel.contains("[x] Phase 6:"), "Panel:\n{}", panel);
+    assert!(panel.contains("[x] Phase 5:"), "Panel:\n{}", panel);
 }
 
 #[test]
@@ -747,7 +742,7 @@ fn format_status_all_complete_with_relative_cwd_renders_subdir_line() {
         "flow-complete",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
+            ("flow-code", "complete"),
             ("flow-code", "complete"),
             ("flow-code-review", "complete"),
             ("flow-learn", "complete"),
@@ -766,11 +761,11 @@ fn panel_session_started_at_empty_string_not_added_to_elapsed() {
     // is present as an empty string, so the live-elapsed addition is
     // skipped.
     let mut state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
-    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(60);
-    state["phases"]["flow-plan"]["session_started_at"] = json!("");
+    state["phases"]["flow-code"]["cumulative_seconds"] = json!(60);
+    state["phases"]["flow-code"]["session_started_at"] = json!("");
     let panel = format_panel(&state, VERSION, None, false, None);
     assert!(
         panel.contains("Time in current phase : 1m"),
@@ -783,7 +778,6 @@ fn panel_session_started_at_empty_string_not_added_to_elapsed() {
 fn format_all_complete_dev_mode_shows_label() {
     let all_phases = [
         "flow-start",
-        "flow-plan",
         "flow-code",
         "flow-code-review",
         "flow-learn",
@@ -799,14 +793,14 @@ fn format_all_complete_dev_mode_shows_label() {
 #[test]
 fn format_multi_panel_dev_mode_shows_label() {
     let state_a = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     let state_b = make_state(
         "flow-code",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
+            ("flow-code", "complete"),
             ("flow-code", "in_progress"),
         ],
     );
@@ -909,8 +903,8 @@ fn run_impl_main_invalid_branch_json_falls_back_to_directory_scan() {
     // field so the rendered panel has a greppable signal the
     // fallback fired.
     let mut sibling = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     sibling["branch"] = json!("fallback-sentinel");
     std::fs::write(
@@ -940,12 +934,12 @@ fn tokens_block_with_full_data_renders_in_in_progress_panel() {
         "flow-code",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
+            ("flow-code", "complete"),
             ("flow-code", "in_progress"),
         ],
     );
     add_phase_snapshots(&mut state, "flow-start", 0, 5);
-    add_phase_snapshots(&mut state, "flow-plan", 5, 10);
+    add_phase_snapshots(&mut state, "flow-code", 5, 10);
     add_phase_snapshots(&mut state, "flow-code", 10, 20);
     let panel = format_panel(&state, VERSION, None, false, None);
     assert!(panel.contains("Tokens  :"), "Panel:\n{}", panel);
@@ -975,7 +969,7 @@ fn tokens_block_with_partial_data_still_renders() {
         "flow-code",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
+            ("flow-code", "complete"),
             ("flow-code", "in_progress"),
         ],
     );
@@ -1028,7 +1022,6 @@ fn tokens_block_with_reset_marker_when_window_resets() {
 fn tokens_block_renders_in_all_complete_panel() {
     let all_phases = [
         "flow-start",
-        "flow-plan",
         "flow-code",
         "flow-code-review",
         "flow-learn",
@@ -1046,7 +1039,6 @@ fn tokens_block_renders_in_all_complete_panel() {
 fn tokens_block_in_all_complete_panel_omitted_when_no_snapshots() {
     let all_phases = [
         "flow-start",
-        "flow-plan",
         "flow-code",
         "flow-code-review",
         "flow-learn",

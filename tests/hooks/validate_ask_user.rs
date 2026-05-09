@@ -122,7 +122,7 @@ fn test_validate_auto_continue_returns_hook_response() {
     let state = json!({
         "current_phase": "flow-start",
         "branch": "test",
-        "_auto_continue": "/flow:flow-plan",
+        "_auto_continue": "/flow:flow-code",
     });
     let path = write_state(dir.path(), "test", &state);
     let (allowed, _msg, resp) = validate(Some(&path));
@@ -133,7 +133,7 @@ fn test_validate_auto_continue_returns_hook_response() {
     assert!(resp["updatedInput"]
         .as_str()
         .unwrap()
-        .contains("/flow:flow-plan"));
+        .contains("/flow:flow-code"));
 }
 
 #[test]

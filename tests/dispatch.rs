@@ -102,7 +102,7 @@ fn dispatch_text_empty_branch_via_check_phase_first_phase() {
     );
 }
 
-/// `check-phase --required flow-plan` in a non-git tempdir emits a
+/// `check-phase --required flow-code` in a non-git tempdir emits a
 /// BLOCKED text message and exits 1 — hits `dispatch_text`'s
 /// non-empty branch (println, exit 1).
 #[test]
@@ -110,7 +110,7 @@ fn dispatch_text_nonempty_branch_via_check_phase_no_branch() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().canonicalize().unwrap();
     let output = flow_rs()
-        .args(["check-phase", "--required", "flow-plan"])
+        .args(["check-phase", "--required", "flow-code"])
         .current_dir(&root)
         .env("GIT_CEILING_DIRECTORIES", &root)
         .env("HOME", &root)

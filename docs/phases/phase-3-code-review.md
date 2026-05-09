@@ -1,9 +1,9 @@
 ---
-title: "Phase 4: Code Review"
-nav_order: 5
+title: "Phase 3: Code Review"
+nav_order: 4
 ---
 
-# Phase 4: Code Review
+# Phase 3: Code Review
 
 **Command:** `/flow-code-review`
 

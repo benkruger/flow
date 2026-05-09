@@ -110,16 +110,6 @@ fn test_step_names_start_has_entries() {
 }
 
 #[test]
-fn test_step_names_plan_has_entries() {
-    let names = step_names();
-    let plan = names.get("flow-plan").unwrap();
-    for key in 1..=4 {
-        assert!(plan.contains_key(&key), "missing key {} in flow-plan", key);
-    }
-    assert_eq!(plan.len(), 4);
-}
-
-#[test]
 fn test_step_names_code_review_has_entries() {
     let names = step_names();
     let cr = names.get("flow-code-review").unwrap();
@@ -207,14 +197,9 @@ fn test_phase_timeline_mixed() {
     let now = pacific("2026-01-01T00:02:00-08:00");
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["phases"]["flow-start"]["cumulative_seconds"] = json!(120);
-    state["phases"]["flow-plan"]["cumulative_seconds"] = json!(480);
     state["phases"]["flow-code"]["session_started_at"] = json!("2026-01-01T00:00:00-08:00");
 
     let timeline = phase_timeline(&state, Some(now));
@@ -222,12 +207,10 @@ fn test_phase_timeline_mixed() {
     assert_eq!(timeline[0].status, "complete");
     assert_eq!(timeline[0].time, "2m");
     assert_eq!(timeline[0].number, 1);
-    assert_eq!(timeline[1].status, "complete");
-    assert_eq!(timeline[1].time, "8m");
-    assert_eq!(timeline[2].status, "in_progress");
-    assert_eq!(timeline[2].name, "Code");
-    assert_eq!(timeline[2].time, "2m");
-    assert_eq!(timeline[3].status, "pending");
+    assert_eq!(timeline[1].status, "in_progress");
+    assert_eq!(timeline[1].name, "Code");
+    assert_eq!(timeline[1].time, "2m");
+    assert_eq!(timeline[2].status, "pending");
 }
 
 // --- phase_timeline: Start ---
@@ -262,58 +245,19 @@ fn test_phase_timeline_start_no_total() {
 
 // --- phase_timeline: Plan ---
 
-#[test]
-fn test_phase_timeline_plan_annotation() {
-    let mut state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
-    );
-    state["plan_step"] = json!(2);
-    state["plan_steps_total"] = json!(4);
-
-    let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[1].annotation, "decomposing - step 2 of 4");
-}
-
-#[test]
-fn test_phase_timeline_plan_step_zero() {
-    let state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
-    );
-    let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[1].annotation, "");
-}
-
-#[test]
-fn test_phase_timeline_plan_no_total() {
-    let mut state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
-    );
-    state["plan_step"] = json!(2);
-
-    let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[1].annotation, "decomposing - step 2");
-}
-
 // --- phase_timeline: Code ---
 
 #[test]
 fn test_phase_timeline_code_with_task_annotation() {
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["code_task"] = json!(3);
     state["diff_stats"] = json!({"files_changed": 5, "insertions": 127, "deletions": 48});
 
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    let code_entry = &timeline[2];
+    let code_entry = &timeline[1];
     assert!(code_entry.annotation.contains("task 4"));
     assert!(code_entry.annotation.contains("+127"));
     assert!(code_entry.annotation.contains("-48"));
@@ -323,86 +267,66 @@ fn test_phase_timeline_code_with_task_annotation() {
 fn test_phase_timeline_code_first_task_annotation() {
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["code_tasks_total"] = json!(3);
 
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[2].annotation, "task 1 of 3");
+    assert_eq!(timeline[1].annotation, "task 1 of 3");
 }
 
 #[test]
 fn test_phase_timeline_code_with_total() {
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["code_task"] = json!(3);
     state["code_tasks_total"] = json!(8);
 
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert!(timeline[2].annotation.contains("task 4 of 8"));
+    assert!(timeline[1].annotation.contains("task 4 of 8"));
 }
 
 #[test]
 fn test_phase_timeline_code_total_absent_fallback() {
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["code_task"] = json!(3);
 
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[2].annotation, "task 4");
-    assert!(!timeline[2].annotation.contains("of"));
+    assert_eq!(timeline[1].annotation, "task 4");
+    assert!(!timeline[1].annotation.contains("of"));
 }
 
 #[test]
 fn test_phase_timeline_code_total_with_diff_stats() {
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["code_task"] = json!(3);
     state["code_tasks_total"] = json!(8);
     state["diff_stats"] = json!({"insertions": 127, "deletions": 48});
 
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[2].annotation, "task 4 of 8, +127 -48");
+    assert_eq!(timeline[1].annotation, "task 4 of 8, +127 -48");
 }
 
 #[test]
 fn test_phase_timeline_code_total_zero_ignored() {
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["code_task"] = json!(3);
     state["code_tasks_total"] = json!(0);
 
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[2].annotation, "task 4");
-    assert!(!timeline[2].annotation.contains("of"));
+    assert_eq!(timeline[1].annotation, "task 4");
+    assert!(!timeline[1].annotation.contains("of"));
 }
 
 // --- phase_timeline: Code overflow cap ---
@@ -411,34 +335,26 @@ fn test_phase_timeline_code_total_zero_ignored() {
 fn test_phase_timeline_code_task_overflow_capped() {
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["code_task"] = json!(3);
     state["code_tasks_total"] = json!(3);
 
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[2].annotation, "task 3 of 3");
+    assert_eq!(timeline[1].annotation, "task 3 of 3");
 }
 
 #[test]
 fn test_phase_timeline_code_task_overflow_exceeds_total() {
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["code_task"] = json!(5);
     state["code_tasks_total"] = json!(3);
 
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[2].annotation, "task 3 of 3");
+    assert_eq!(timeline[1].annotation, "task 3 of 3");
 }
 
 // --- phase_timeline: Code task name ---
@@ -447,11 +363,7 @@ fn test_phase_timeline_code_task_overflow_exceeds_total() {
 fn test_phase_timeline_code_with_task_name() {
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["code_task"] = json!(1);
     state["code_tasks_total"] = json!(3);
@@ -459,7 +371,7 @@ fn test_phase_timeline_code_with_task_name() {
 
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
     assert_eq!(
-        timeline[2].annotation,
+        timeline[1].annotation,
         "Update contract tests - task 2 of 3"
     );
 }
@@ -468,28 +380,20 @@ fn test_phase_timeline_code_with_task_name() {
 fn test_phase_timeline_code_task_name_absent() {
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["code_task"] = json!(1);
     state["code_tasks_total"] = json!(3);
 
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[2].annotation, "task 2 of 3");
+    assert_eq!(timeline[1].annotation, "task 2 of 3");
 }
 
 #[test]
 fn test_phase_timeline_code_task_name_with_diff_stats() {
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["code_task"] = json!(1);
     state["code_tasks_total"] = json!(3);
@@ -498,7 +402,7 @@ fn test_phase_timeline_code_task_name_with_diff_stats() {
 
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
     assert_eq!(
-        timeline[2].annotation,
+        timeline[1].annotation,
         "Update contract tests - task 2 of 3, +127 -48"
     );
 }
@@ -507,18 +411,14 @@ fn test_phase_timeline_code_task_name_with_diff_stats() {
 fn test_phase_timeline_code_task_name_truncated() {
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["code_task"] = json!(0);
     state["code_tasks_total"] = json!(3);
     state["code_task_name"] = json!("Implement the very long task description that exceeds limit");
 
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    let name_part = timeline[2].annotation.split(" - task ").next().unwrap();
+    let name_part = timeline[1].annotation.split(" - task ").next().unwrap();
     assert_eq!(name_part.chars().count(), 30);
     assert!(name_part.ends_with("..."));
 }
@@ -527,18 +427,14 @@ fn test_phase_timeline_code_task_name_truncated() {
 fn test_phase_timeline_code_task_name_empty_string() {
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["code_task"] = json!(1);
     state["code_tasks_total"] = json!(3);
     state["code_task_name"] = json!("");
 
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[2].annotation, "task 2 of 3");
+    assert_eq!(timeline[1].annotation, "task 2 of 3");
 }
 
 // --- phase_timeline: Code Review ---
@@ -549,13 +445,12 @@ fn test_phase_timeline_code_review_step_zero() {
         "flow-code-review",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
             ("flow-code", "complete"),
             ("flow-code-review", "in_progress"),
         ],
     );
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[3].annotation, "simplifying - step 1 of 4");
+    assert_eq!(timeline[2].annotation, "simplifying - step 1 of 4");
 }
 
 #[test]
@@ -564,14 +459,13 @@ fn test_phase_timeline_code_review_annotation() {
         "flow-code-review",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
             ("flow-code", "complete"),
             ("flow-code-review", "in_progress"),
         ],
     );
     state["code_review_step"] = json!(2);
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[3].annotation, "security review - step 3 of 4");
+    assert_eq!(timeline[2].annotation, "security review - step 3 of 4");
 }
 
 #[test]
@@ -580,14 +474,13 @@ fn test_phase_timeline_code_review_complete() {
         "flow-code-review",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
             ("flow-code", "complete"),
             ("flow-code-review", "in_progress"),
         ],
     );
     state["code_review_step"] = json!(4);
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[3].annotation, "");
+    assert_eq!(timeline[2].annotation, "");
 }
 
 #[test]
@@ -596,14 +489,13 @@ fn test_phase_timeline_code_review_step_four() {
         "flow-code-review",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
             ("flow-code", "complete"),
             ("flow-code-review", "in_progress"),
         ],
     );
     state["code_review_step"] = json!(3);
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[3].annotation, "agent reviews - step 4 of 4");
+    assert_eq!(timeline[2].annotation, "agent reviews - step 4 of 4");
 }
 
 // --- phase_timeline: step name fallback ---
@@ -626,7 +518,6 @@ fn test_phase_timeline_learn_annotation() {
         "flow-learn",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
             ("flow-code", "complete"),
             ("flow-code-review", "complete"),
             ("flow-learn", "in_progress"),
@@ -635,7 +526,7 @@ fn test_phase_timeline_learn_annotation() {
     state["learn_step"] = json!(4);
     state["learn_steps_total"] = json!(7);
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[4].annotation, "committing - step 5 of 7");
+    assert_eq!(timeline[3].annotation, "committing - step 5 of 7");
 }
 
 #[test]
@@ -644,7 +535,6 @@ fn test_phase_timeline_learn_step_zero() {
         "flow-learn",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
             ("flow-code", "complete"),
             ("flow-code-review", "complete"),
             ("flow-learn", "in_progress"),
@@ -652,7 +542,7 @@ fn test_phase_timeline_learn_step_zero() {
     );
     state["learn_steps_total"] = json!(7);
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[4].annotation, "gathering sources - step 1 of 7");
+    assert_eq!(timeline[3].annotation, "gathering sources - step 1 of 7");
 }
 
 // --- phase_timeline: Complete ---
@@ -663,7 +553,6 @@ fn test_phase_timeline_complete_annotation() {
         "flow-complete",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
             ("flow-code", "complete"),
             ("flow-code-review", "complete"),
             ("flow-learn", "complete"),
@@ -673,7 +562,7 @@ fn test_phase_timeline_complete_annotation() {
     state["complete_step"] = json!(5);
     state["complete_steps_total"] = json!(6);
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[5].annotation, "merging PR - step 5 of 6");
+    assert_eq!(timeline[4].annotation, "merging PR - step 5 of 6");
 }
 
 #[test]
@@ -682,7 +571,6 @@ fn test_phase_timeline_complete_step_zero() {
         "flow-complete",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
             ("flow-code", "complete"),
             ("flow-code-review", "complete"),
             ("flow-learn", "complete"),
@@ -691,7 +579,7 @@ fn test_phase_timeline_complete_step_zero() {
     );
     state["complete_steps_total"] = json!(6);
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[5].annotation, "");
+    assert_eq!(timeline[4].annotation, "");
 }
 
 #[test]
@@ -700,7 +588,6 @@ fn test_phase_timeline_complete_step_one() {
         "flow-complete",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
             ("flow-code", "complete"),
             ("flow-code-review", "complete"),
             ("flow-learn", "complete"),
@@ -710,7 +597,7 @@ fn test_phase_timeline_complete_step_one() {
     state["complete_step"] = json!(1);
     state["complete_steps_total"] = json!(6);
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[5].annotation, "running checks - step 1 of 6");
+    assert_eq!(timeline[4].annotation, "running checks - step 1 of 6");
 }
 
 // --- phase_timeline: live elapsed for in-progress ---
@@ -720,11 +607,7 @@ fn test_phase_timeline_in_progress_live_time() {
     let now = pacific("2026-01-01T00:05:00-08:00");
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["phases"]["flow-code"]["session_started_at"] = json!("2026-01-01T00:00:00-08:00");
 
@@ -738,11 +621,7 @@ fn test_phase_timeline_in_progress_cumulative_plus_live() {
     let now = pacific("2026-01-01T00:03:00-08:00");
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["phases"]["flow-code"]["session_started_at"] = json!("2026-01-01T00:00:00-08:00");
     state["phases"]["flow-code"]["cumulative_seconds"] = json!(120);
@@ -757,11 +636,7 @@ fn test_phase_timeline_in_progress_no_session_started() {
     let now = pacific("2026-01-01T00:05:00-08:00");
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["phases"]["flow-code"]["session_started_at"] = json!(null);
     state["phases"]["flow-code"]["cumulative_seconds"] = json!(60);
@@ -835,11 +710,7 @@ fn test_flow_summary_basic() {
     let now = pacific("2026-01-01T01:00:00-08:00");
     let state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     let summary = flow_summary(&state, Some(now));
     assert_eq!(summary.feature, "Test Feature");
@@ -850,7 +721,7 @@ fn test_flow_summary_basic() {
         summary.pr_url.as_deref(),
         Some("https://github.com/test/test/pull/1")
     );
-    assert_eq!(summary.phase_number, 3);
+    assert_eq!(summary.phase_number, 2);
     assert_eq!(summary.phase_name, "Code");
 }
 
@@ -867,11 +738,7 @@ fn test_flow_summary_elapsed_time() {
 fn test_flow_summary_code_task_present() {
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["code_task"] = json!(3);
     let summary = flow_summary(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
@@ -1045,11 +912,7 @@ fn test_flow_summary_phase_elapsed() {
     let now = pacific("2026-01-01T00:05:00-08:00");
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["phases"]["flow-code"]["session_started_at"] = json!("2026-01-01T00:00:00-08:00");
     let summary = flow_summary(&state, Some(now));
@@ -1060,8 +923,8 @@ fn test_flow_summary_phase_elapsed() {
 fn test_flow_summary_phase_elapsed_no_in_progress() {
     let now = pacific("2026-01-01T01:00:00-08:00");
     let state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "pending")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "pending")],
     );
     let summary = flow_summary(&state, Some(now));
     assert_eq!(summary.phase_elapsed, "");
@@ -1071,11 +934,7 @@ fn test_flow_summary_phase_elapsed_no_in_progress() {
 fn test_flow_summary_annotation_code_phase() {
     let mut state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     state["code_task"] = json!(2);
     state["code_tasks_total"] = json!(5);
@@ -1116,11 +975,7 @@ fn test_load_all_flows_single() {
     std::fs::create_dir_all(state_dir.join("test-feature")).unwrap();
     let state = make_state(
         "flow-code",
-        &[
-            ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
-        ],
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     std::fs::write(
         state_dir.join("test-feature").join("state.json"),
@@ -1589,13 +1444,13 @@ fn test_load_all_flows_sorted_by_phase_then_feature() {
         std::fs::create_dir_all(state_dir.join(name)).unwrap();
     }
 
-    // Flow in Code phase (phase 3) — branch "alpha" sorts first alphabetically
+    // Flow in Code Review phase (phase 3) — branch "alpha" sorts first alphabetically
     let mut code_state = make_state(
-        "flow-code",
+        "flow-code-review",
         &[
             ("flow-start", "complete"),
-            ("flow-plan", "complete"),
-            ("flow-code", "in_progress"),
+            ("flow-code", "complete"),
+            ("flow-code-review", "in_progress"),
         ],
     );
     code_state["branch"] = json!("alpha-feature");
@@ -1614,10 +1469,10 @@ fn test_load_all_flows_sorted_by_phase_then_feature() {
     )
     .unwrap();
 
-    // Flow in Plan phase (phase 2)
+    // Flow in Code phase (phase 2)
     let mut plan_state = make_state(
-        "flow-plan",
-        &[("flow-start", "complete"), ("flow-plan", "in_progress")],
+        "flow-code",
+        &[("flow-start", "complete"), ("flow-code", "in_progress")],
     );
     plan_state["branch"] = json!("gamma-feature");
     std::fs::write(
@@ -2285,9 +2140,9 @@ fn phase_token_table_captures_phase_status() {
         .find(|r| r.phase_key == "flow-code")
         .expect("flow-code row");
     assert_eq!(code_row.status, "in_progress");
-    let plan_row = rows
+    let learn_row = rows
         .iter()
-        .find(|r| r.phase_key == "flow-plan")
-        .expect("flow-plan row");
-    assert_eq!(plan_row.status, "pending");
+        .find(|r| r.phase_key == "flow-learn")
+        .expect("flow-learn row");
+    assert_eq!(learn_row.status, "pending");
 }

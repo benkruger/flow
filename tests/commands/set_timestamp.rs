@@ -28,13 +28,11 @@ fn flow_rs() -> Command {
 
 // --- is_step_counter_field ---
 
-/// Each of the five named step counters returns `true` from the
-/// helper. Locks the closed enumeration that Task 11 reads when
-/// deciding whether to capture a `StepSnapshot` after a
-/// `set-timestamp` mutation.
+/// Each of the four named step counters returns `true` from the
+/// helper. Locks the closed enumeration that decides whether to
+/// capture a `StepSnapshot` after a `set-timestamp` mutation.
 #[test]
 fn is_step_counter_field_returns_true_for_each_named_field() {
-    assert!(is_step_counter_field("plan_step"));
     assert!(is_step_counter_field("code_task"));
     assert!(is_step_counter_field("code_review_step"));
     assert!(is_step_counter_field("learn_step"));
@@ -50,7 +48,7 @@ fn is_step_counter_field_returns_false_for_non_step_fields() {
     assert!(!is_step_counter_field("files.plan"));
     assert!(!is_step_counter_field("_continue_pending"));
     assert!(!is_step_counter_field("Plan_Step"));
-    assert!(!is_step_counter_field("plan_steps_total"));
+    assert!(!is_step_counter_field("plan_step"));
 }
 
 // --- set_nested unit tests ---
@@ -574,7 +572,6 @@ fn make_cli_state() -> Value {
         },
         "phases": {
             "flow-start": {"name": "Start", "status": "complete", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
-            "flow-plan": {"name": "Plan", "status": "complete", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
             "flow-code": {"name": "Code", "status": "in_progress", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0}
         }
     })
@@ -912,7 +909,7 @@ fn run_impl_main_with_empty_branch_returns_structured_error_no_panic() {
         .arg("--branch")
         .arg("")
         .arg("--set")
-        .arg("plan_step=1")
+        .arg("code_task=1")
         .env_remove("FLOW_SIMULATE_BRANCH")
         .env_remove("FLOW_CI_RUNNING")
         .env("GH_TOKEN", "invalid")
@@ -941,7 +938,7 @@ fn run_impl_main_with_slash_branch_returns_structured_error_no_panic() {
         .arg("--branch")
         .arg("feature/foo")
         .arg("--set")
-        .arg("plan_step=1")
+        .arg("code_task=1")
         .env_remove("FLOW_SIMULATE_BRANCH")
         .env_remove("FLOW_CI_RUNNING")
         .env("GH_TOKEN", "invalid")

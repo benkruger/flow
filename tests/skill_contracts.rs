@@ -18,7 +18,6 @@ use serde_json::Value;
 
 const CONFIGURABLE_SKILLS: &[&str] = &[
     "flow-start",
-    "flow-plan",
     "flow-code",
     "flow-code-review",
     "flow-learn",
@@ -1752,7 +1751,7 @@ fn start_logging_uses_safe_pattern() {
 fn logged_phases_use_bin_flow_log() {
     let ps = phase_skills_map();
     let re_log = Regex::new(r"(?s)## Logging\n(.*?)(?:\n## |\n---|\z)").unwrap();
-    for (_, skill) in &ps[1..4] {
+    for (_, skill) in &ps[1..3] {
         let content = common::read_skill(skill);
         if let Some(cap) = re_log.captures(&content) {
             let section = &cap[1];
@@ -1763,15 +1762,6 @@ fn logged_phases_use_bin_flow_log() {
             );
         }
     }
-}
-
-#[test]
-fn plan_dag_capture_is_explicit() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        c.contains("DAG") || c.contains("dag"),
-        "Plan Step 2 must have explicit DAG capture instructions"
-    );
 }
 
 #[test]
@@ -1924,24 +1914,6 @@ fn code_skill_sets_continue_pending_before_commit() {
     assert!(
         c.contains("_continue_pending"),
         "Code phase must set _continue_pending before flow-commit"
-    );
-}
-
-#[test]
-fn plan_uses_plan_extract_for_issue_fetch() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        c.contains("plan-extract"),
-        "Plan must use plan-extract command"
-    );
-}
-
-#[test]
-fn plan_no_direct_gh_issue_view() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        !c.contains("gh issue view"),
-        "Tombstone: plan-extract handles issue fetch"
     );
 }
 
@@ -2135,16 +2107,7 @@ fn learn_skill_sets_steps_total() {
     );
 }
 
-// --- Plan phase ---
-
-#[test]
-fn plan_skill_does_not_reference_transcript_path() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        !c.contains("transcript_path"),
-        "Plan must not contain transcript_path"
-    );
-}
+// --- Complete phase ---
 
 #[test]
 fn complete_skill_uses_render_pr_body() {
@@ -2155,25 +2118,7 @@ fn complete_skill_uses_render_pr_body() {
     );
 }
 
-#[test]
-fn plan_skill_uses_render_pr_body() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        c.contains("render-pr-body"),
-        "Plan Step 4 must use render-pr-body"
-    );
-}
-
-#[test]
-fn plan_skill_renders_plan_inline() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        c.contains("Render") || c.contains("render") || c.contains("inline"),
-        "Plan Done section must render plan inline"
-    );
-}
-
-// --- Complete phase ---
+// --- Complete phase (cont.) ---
 
 #[test]
 fn complete_done_banner_includes_pr_url() {
@@ -2379,124 +2324,6 @@ fn skills_no_substep_markers() {
     }
 }
 
-// --- DAG decomposition ---
-
-#[test]
-fn plan_skill_has_dag_step() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        c.contains("decompose:decompose"),
-        "flow-plan must reference decompose:decompose plugin"
-    );
-}
-
-#[test]
-fn plan_skill_has_dag_resume_check() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        c.contains("dag") || c.contains("DAG"),
-        "flow-plan must check dag for resume"
-    );
-}
-
-#[test]
-fn plan_skill_has_approval_gate() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        c.contains("AskUserQuestion"),
-        "flow-plan must use AskUserQuestion for approval gate"
-    );
-}
-
-#[test]
-fn plan_skill_does_not_use_plan_mode() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        !c.contains("EnterPlanMode"),
-        "flow-plan must not reference EnterPlanMode"
-    );
-}
-
-#[test]
-fn plan_has_self_invocation_check() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        c.contains("Self-Invocation") || c.contains("--continue-step"),
-        "Plan must have Self-Invocation Check"
-    );
-}
-
-#[test]
-fn plan_has_continue_pending_for_decompose() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        c.contains("_continue_pending"),
-        "Plan must set _continue_pending before decompose"
-    );
-}
-
-#[test]
-fn plan_detects_decomposed_label() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        c.contains("decomposed") || c.contains("Decomposed"),
-        "Plan must detect 'decomposed' label on issues"
-    );
-}
-
-#[test]
-fn plan_step3_extracts_implementation_plan_for_decomposed() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        c.contains("Implementation Plan"),
-        "Plan Step 3 must extract Implementation Plan for decomposed issues"
-    );
-}
-
-// --- plan-check ordering ---
-
-/// Step 4 of flow-plan must invoke `bin/flow plan-check` and the
-/// invocation must appear BEFORE `phase-transition --action complete`
-/// in the skill content. A reordered edit that moves plan-check
-/// after the phase transition would defeat the scope-enumeration
-/// gate — the phase would complete before violations are caught.
-#[test]
-fn plan_skill_step4_invokes_plan_check_before_phase_transition() {
-    let c = common::read_skill("flow-plan");
-
-    let plan_check_idx = c.find("bin/flow plan-check").unwrap_or_else(|| {
-        panic!("flow-plan SKILL.md must invoke `bin/flow plan-check` in Step 4")
-    });
-    let phase_complete_idx = c.find("phase-transition --phase flow-plan --action complete").unwrap_or_else(
-        || panic!("flow-plan SKILL.md must invoke `phase-transition --phase flow-plan --action complete`"),
-    );
-
-    assert!(
-        plan_check_idx < phase_complete_idx,
-        "flow-plan Step 4 must run `bin/flow plan-check` BEFORE \
-         `phase-transition --phase flow-plan --action complete`. \
-         Found plan-check at byte {} and phase-transition at byte {}.",
-        plan_check_idx,
-        phase_complete_idx
-    );
-}
-
-/// The scope-enumeration rule file must exist — it is the
-/// authoritative statement of the universal-coverage rule that the
-/// scanner, the plan-check subcommand, and the `plan_extract.rs`
-/// integration all reference.
-#[test]
-fn scope_enumeration_rule_file_exists() {
-    let path = common::repo_root()
-        .join(".claude")
-        .join("rules")
-        .join("scope-enumeration.md");
-    assert!(
-        path.exists(),
-        ".claude/rules/scope-enumeration.md must exist"
-    );
-}
-
 // --- Done section hard gates ---
 
 #[test]
@@ -2555,72 +2382,6 @@ fn done_hard_gates_auto_path_has_final_action_language() {
             }
         }
     }
-}
-
-// --- Plan configuration ---
-
-#[test]
-fn plan_skill_has_dag_mode_resolution() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        c.contains("dag") && c.contains("Mode Resolution"),
-        "Plan Mode Resolution must reference dag config"
-    );
-}
-
-#[test]
-fn plan_validates_target_file_paths() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        c.contains("Target Path") || c.contains("target path"),
-        "Plan must have Target Path Validation subsection"
-    );
-}
-
-#[test]
-fn plan_verifies_script_behavior_assertions() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        c.contains("Script Behavior") || c.contains("script behavior"),
-        "Plan must have Script Behavior Verification"
-    );
-}
-
-#[test]
-fn plan_enforces_must_verify_risk_tasks() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        c.contains("Risk Verification Enforcement") || c.contains("risk verification enforcement"),
-        "Plan must have Risk Verification Enforcement subsection"
-    );
-}
-
-#[test]
-fn plan_has_dag_freshness_check() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        c.contains("DAG Freshness") || c.contains("dag freshness"),
-        "Plan must have DAG Freshness Check subsection"
-    );
-}
-
-#[test]
-fn prime_presets_include_dag_config() {
-    let c = common::read_skill("flow-prime");
-    let re = Regex::new(r"```json\n(\{[\s\S]*?\})\n```").unwrap();
-    let blocks: Vec<String> = re.captures_iter(&c).map(|cap| cap[1].to_string()).collect();
-    for (i, block) in blocks[..3.min(blocks.len())].iter().enumerate() {
-        assert!(block.contains("dag"), "Preset {} must include 'dag' key", i);
-    }
-}
-
-#[test]
-fn prime_installs_decompose_plugin() {
-    let c = common::read_skill("flow-prime");
-    assert!(
-        c.contains("decompose"),
-        "flow-prime must install decompose plugin"
-    );
 }
 
 // --- Flow issues skill ---
@@ -3149,15 +2910,6 @@ fn agent_diff_input_sections_reference_base_branch_not_main() {
 // --- Git command consolidation tombstones ---
 
 #[test]
-fn plan_no_branch_show_current() {
-    let c = common::read_skill("flow-plan");
-    assert!(
-        !c.contains("git branch --show-current"),
-        "Tombstone: consolidated into porcelain output"
-    );
-}
-
-#[test]
 fn complete_no_branch_show_current() {
     let c = common::read_skill("flow-complete");
     assert!(
@@ -3314,93 +3066,6 @@ fn code_review_has_supersession_check() {
         lower.contains("supersession"),
         "flow-code-review/SKILL.md Step 3 Triage must include a supersession check \
          per .claude/rules/supersession.md (Code Review Phase section)"
-    );
-}
-
-#[test]
-fn plan_has_supersession_enumeration() {
-    let c = common::read_skill("flow-plan");
-    let lower = c.to_lowercase();
-    assert!(
-        lower.contains("supersession"),
-        "flow-plan/SKILL.md Step 3 must include supersession enumeration instructions \
-         per .claude/rules/supersession.md (Plan Phase section)"
-    );
-}
-
-#[test]
-fn flow_plan_skill_has_extract_helper_branch_enumeration() {
-    // The Extract-Helper Branch Enumeration subsection is the Plan-phase
-    // discipline from .claude/rules/extract-helper-refactor.md: when a
-    // plan task extracts a block into a new helper, the plan must
-    // enumerate the helper's branches with testability classifications
-    // before Code phase begins. The subsection lives inside Step 3 of
-    // flow-plan/SKILL.md alongside Supersession Enumeration.
-    let c = common::read_skill("flow-plan");
-
-    assert!(
-        c.contains("### Extract-Helper Branch Enumeration"),
-        "flow-plan/SKILL.md Step 3 must include an '### Extract-Helper Branch Enumeration' \
-         subsection per .claude/rules/extract-helper-refactor.md"
-    );
-
-    // Step headings are h2 (`## Step N`); subsections inside a step are
-    // h3 (`### Name`). The new subsection must sit between the Step 3
-    // h2 and the Step 4 h2.
-    let step3 = c.find("## Step 3").expect("Step 3 heading must exist");
-    let step4 = c.find("## Step 4").expect("Step 4 heading must exist");
-    let subsection = c
-        .find("### Extract-Helper Branch Enumeration")
-        .expect("Extract-Helper Branch Enumeration subsection must exist");
-    assert!(
-        subsection > step3 && subsection < step4,
-        "### Extract-Helper Branch Enumeration must sit inside Step 3 \
-         (between '## Step 3' and '## Step 4')"
-    );
-
-    // Isolate the subsection body: from the heading to the next '### ' heading.
-    let rest = &c[subsection..];
-    let sub_end_rel = rest[1..]
-        .find("\n### ")
-        .map(|i| i + 1)
-        .unwrap_or(rest.len());
-    let sub_body = &rest[..sub_end_rel];
-
-    assert!(
-        sub_body.contains(".claude/rules/extract-helper-refactor.md"),
-        "Extract-Helper Branch Enumeration subsection must cross-reference \
-         '.claude/rules/extract-helper-refactor.md'"
-    );
-
-    for cls in [
-        "Testable via seam",
-        "Testable directly",
-        "Testable via subprocess",
-    ] {
-        assert!(
-            sub_body.contains(cls),
-            "Extract-Helper Branch Enumeration subsection must name classification: {cls}"
-        );
-    }
-
-    // The subsection must present a Branch Enumeration Table (four
-    // columns: Branch / Condition / Classification / Test). The
-    // header row and separator together guarantee authors see the
-    // table shape inline instead of anchoring on an abbreviated
-    // prose summary.
-    assert!(
-        sub_body.contains("| Branch | Condition | Classification | Test |"),
-        "Extract-Helper Branch Enumeration subsection must include the \
-         four-column Branch Enumeration Table header"
-    );
-
-    // The subsection must document the opt-out comment token inline
-    // so Plan authors learn the escape hatch without having to
-    // follow the cross-reference to the rule file.
-    assert!(
-        sub_body.contains("extract-helper-refactor: not-an-extraction"),
-        "Extract-Helper Branch Enumeration subsection must document \
-         the opt-out comment token 'extract-helper-refactor: not-an-extraction'"
     );
 }
 

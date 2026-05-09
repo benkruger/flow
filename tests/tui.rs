@@ -68,16 +68,16 @@ fn make_flow(feature: &str, phase: &str, phase_num: usize) -> FlowSummary {
                 annotation: String::new(),
             },
             TimelineEntry {
-                key: "flow-plan".to_string(),
-                name: "Plan".to_string(),
+                key: "flow-code".to_string(),
+                name: "Code".to_string(),
                 number: 2,
                 status: "in_progress".to_string(),
                 time: "2m".to_string(),
                 annotation: "step 3 of 4".to_string(),
             },
             TimelineEntry {
-                key: "flow-code".to_string(),
-                name: "Code".to_string(),
+                key: "flow-code-review".to_string(),
+                name: "Code Review".to_string(),
                 number: 3,
                 status: "pending".to_string(),
                 time: String::new(),
@@ -264,11 +264,6 @@ fn make_flow_with_token_snapshots() -> FlowSummary {
                 "completed_at": null, "session_started_at": null,
                 "cumulative_seconds": 0, "visit_count": 0
             },
-            "flow-plan": {
-                "name": "Plan", "status": "complete", "started_at": null,
-                "completed_at": null, "session_started_at": null,
-                "cumulative_seconds": 0, "visit_count": 0
-            },
             "flow-code": {
                 "name": "Code", "status": "in_progress", "started_at": null,
                 "completed_at": null, "session_started_at": null,
@@ -343,13 +338,12 @@ fn test_render_detail_panel_omits_token_table_when_no_data() {
 fn test_render_detail_panel_token_table_breaks_when_viewport_overflows() {
     let mut app = make_app();
     let mut flow = make_flow_with_token_snapshots();
-    // Populate snapshots on every phase so active_rows has 6 entries.
-    // With a small viewport, the loop must break before all 6 land.
+    // Populate snapshots on every phase so active_rows has 5 entries.
+    // With a small viewport, the loop must break before all 5 land.
     let snap_enter = flow.state["phases"]["flow-code"]["window_at_enter"].clone();
     let snap_complete = flow.state["phases"]["flow-code"]["window_at_complete"].clone();
     for key in [
         "flow-start",
-        "flow-plan",
         "flow-code-review",
         "flow-learn",
         "flow-complete",

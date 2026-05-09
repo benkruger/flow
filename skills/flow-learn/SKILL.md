@@ -1,6 +1,6 @@
 ---
 name: flow-learn
-description: "Phase 5: Learn — audit rule compliance and identify process gaps. Routes findings to CLAUDE.md, .claude/rules/, and plugin issues."
+description: "Phase 4: Learn — audit rule compliance and identify process gaps. Routes findings to CLAUDE.md, .claude/rules/, and plugin issues."
 ---
 
 # Learn
@@ -100,7 +100,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v1.1.0 — Phase 5: Learn — STARTING
+  FLOW v1.1.0 — Phase 4: Learn — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -663,7 +663,7 @@ Output in your response (not via Bash) inside a fenced code block:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v1.1.0 — Phase 5: Learn — COMPLETE (<formatted_time>)
+  ✓ FLOW v1.1.0 — Phase 4: Learn — COMPLETE (<formatted_time>)
   Run /flow:flow-complete to merge the PR and clean up.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -684,13 +684,13 @@ to determine how to advance.
 3. If continue=manual → you MUST do all of the following before proceeding:
    a. Invoke `flow:flow-status`
    b. Use AskUserQuestion:
-      "Phase 5: Learn is complete. The PR now includes rule improvements.
-      Ready to begin Phase 6: Complete?"
-      Options: "Yes, start Phase 6 now", "Not yet",
+      "Phase 4: Learn is complete. The PR now includes rule improvements.
+      Ready to begin Phase 5: Complete?"
+      Options: "Yes, start Phase 5 now", "Not yet",
       "I have a correction or learning to capture"
    c. If "I have a correction or learning to capture":
       ask what to capture, invoke `/flow:flow-note`, then re-ask with
-      only "Yes, start Phase 6 now" and "Not yet"
+      only "Yes, start Phase 5 now" and "Not yet"
    d. If Yes → invoke `flow:flow-complete` using the Skill tool
    e. If Not yet → print the paused banner below
    f. Do NOT invoke `flow:flow-complete` until the user responds

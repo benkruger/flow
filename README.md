@@ -37,18 +37,17 @@ Optional thread-per-feature notifications give your team passive awareness of fe
 ## The Workflow
 
 ```text
-Start → Plan → Code → Code Review → Learn → Complete
-  1       2      3         4            5          6
+Start → Code → Code Review → Learn → Complete
+  1       2         3            4          5
 ```
 
 | Phase | Command | What happens |
 |-------|---------|-------------|
-| **1: Start** | `/flow-start <prompt>` | Lock, pull the integration branch, `bin/ci` baseline, upgrade dependencies, `bin/ci` post-deps, commit to the integration branch, unlock, new worktree + PR — ci-fixer sub-agent handles failures |
-| **2: Plan** | `/flow-plan` | Reads the start prompt, invokes DAG decompose plugin for dependency analysis, explores codebase, produces ordered tasks with dependency graph |
-| **3: Code** | `/flow-code` | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
-| **4: Code Review** | `/flow-code-review` | Four steps — gather artifacts, launch four cognitively isolated agents in parallel (reviewer, pre-mortem, adversarial, documentation), triage findings, fix in-scope issues |
-| **5: Learn** | `/flow-learn` | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
-| **6: Complete** | `/flow-complete` | Close issues referenced in prompt, PR merged, worktree removed, state file deleted, feature done |
+| **1: Start** | `/flow-start <#issue>` | Lock, pull the integration branch, `bin/ci` baseline, upgrade dependencies, `bin/ci` post-deps, commit to the integration branch, unlock, new worktree + PR — ci-fixer sub-agent handles failures. Plan is extracted from the issue body's `<!-- FLOW-PLAN-BEGIN -->`/`<!-- FLOW-PLAN-END -->` sentinels. |
+| **2: Code** | `/flow-code` | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
+| **3: Code Review** | `/flow-code-review` | Four steps — gather artifacts, launch four cognitively isolated agents in parallel (reviewer, pre-mortem, adversarial, documentation), triage findings, fix in-scope issues |
+| **4: Learn** | `/flow-learn` | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
+| **5: Complete** | `/flow-complete` | Close issues referenced in prompt, PR merged, worktree removed, state file deleted, feature done |
 
 ---
 
@@ -78,7 +77,7 @@ Start fully manual. As your comfort grows, dial up autonomy per skill. Go fully 
 |-------|--------------|
 | **Fully autonomous** | All skills auto for both axes — zero prompts |
 | **Fully manual** | Every diff reviewed, every phase transition confirmed |
-| **Recommended** | Auto where safe (Code Review), manual where judgment matters (Code, Plan) |
+| **Recommended** | Auto where safe (Code Review), manual where judgment matters (Code) |
 | **Customize** | Choose per skill and per axis |
 
 ### Runtime overrides
@@ -295,8 +294,7 @@ Phases that allow it offer back-navigation when something was missed:
 
 | Phase | Can return to |
 |-------|--------------|
-| Code | Plan |
-| Code Review | Code, Plan |
+| Code Review | Code |
 
 When returning, state is reset appropriately. Later phases are invalidated. Prior findings are preserved and extended — never discarded.
 

@@ -16,13 +16,13 @@ use serde_json::Value;
 // --- Phase structure tests ---
 
 #[test]
-fn test_phases_has_1_through_6() {
+fn test_phases_has_1_through_5() {
     let data = common::load_phases();
     let order = data["order"].as_array().expect("missing 'order' array");
     assert_eq!(
         order.len(),
-        6,
-        "Expected 6 phases in order, got {}",
+        5,
+        "Expected 5 phases in order, got {}",
         order.len()
     );
     let phases = data["phases"].as_object().expect("missing 'phases' object");
@@ -34,7 +34,7 @@ fn test_phases_has_1_through_6() {
             key
         );
     }
-    assert_eq!(phases.len(), 6);
+    assert_eq!(phases.len(), 5);
 }
 
 #[test]
