@@ -1780,49 +1780,72 @@ fn slice_between_phase_enter_and_resume_check(content: &str) -> &str {
         .unwrap_or(after_enter)
 }
 
+/// Returns true when `bounded` contains `target` inside a fenced
+/// ```bash``` block. The model only executes `bash` fences; if the
+/// instruction lives in prose or a different fence type the cwd
+/// never re-anchors at runtime. The search walks every `bash` fence
+/// in the slice and checks the body up to the next closing fence
+/// for `target`.
+fn bash_fence_contains(bounded: &str, target: &str) -> bool {
+    let mut rest = bounded;
+    while let Some((_, after_open)) = rest.split_once("```bash") {
+        let body_end = after_open.find("\n```").unwrap_or(after_open.len());
+        let body = &after_open[..body_end];
+        if body.contains(target) {
+            return true;
+        }
+        rest = &after_open[body_end..];
+    }
+    false
+}
+
 /// Regression: flow-code/SKILL.md must instruct `cd "<worktree_cwd>"`
-/// between the phase-enter HARD-GATE and the Resume Check. Without
-/// this, a session resuming Code phase after context loss has no
-/// way to re-anchor cwd, and every subsequent bin/flow call fails
-/// with cwd_scope::enforce blocking. Consumer: every Code-phase
+/// inside a bash fence between the phase-enter HARD-GATE and the
+/// Resume Check. Without this, a session resuming Code phase after
+/// context loss has no way to re-anchor cwd, and every subsequent
+/// bin/flow call fails with cwd_scope::enforce blocking. The bash
+/// fence is load-bearing: the model only executes ` ```bash ` blocks,
+/// so a future regression that moves the instruction into prose
+/// would silently disable runtime cd. Consumer: every Code-phase
 /// session running on a mono-repo flow.
 #[test]
 fn flow_code_re_anchors_cwd_after_phase_enter() {
     let c = common::read_skill("flow-code");
     let bounded = slice_between_phase_enter_and_resume_check(&c);
     assert!(
-        bounded.contains(r#"cd "<worktree_cwd>""#),
-        "flow-code/SKILL.md must instruct `cd \"<worktree_cwd>\"` between phase-enter and Resume Check"
+        bash_fence_contains(bounded, r#"cd "<worktree_cwd>""#),
+        "flow-code/SKILL.md must instruct `cd \"<worktree_cwd>\"` inside a bash fence between phase-enter and Resume Check"
     );
 }
 
 /// Regression: flow-code-review/SKILL.md must instruct
-/// `cd "<worktree_cwd>"` between the phase-enter HARD-GATE and the
-/// Resume Check. Without this, a session resuming Code Review after
-/// context loss cannot re-anchor cwd. Consumer: every Code-Review-
-/// phase session running on a mono-repo flow.
+/// `cd "<worktree_cwd>"` inside a bash fence between the phase-enter
+/// HARD-GATE and the Resume Check. Without this, a session resuming
+/// Code Review after context loss cannot re-anchor cwd at runtime
+/// (the model only executes bash fences). Consumer: every Code-
+/// Review-phase session running on a mono-repo flow.
 #[test]
 fn flow_code_review_re_anchors_cwd_after_phase_enter() {
     let c = common::read_skill("flow-code-review");
     let bounded = slice_between_phase_enter_and_resume_check(&c);
     assert!(
-        bounded.contains(r#"cd "<worktree_cwd>""#),
-        "flow-code-review/SKILL.md must instruct `cd \"<worktree_cwd>\"` between phase-enter and Resume Check"
+        bash_fence_contains(bounded, r#"cd "<worktree_cwd>""#),
+        "flow-code-review/SKILL.md must instruct `cd \"<worktree_cwd>\"` inside a bash fence between phase-enter and Resume Check"
     );
 }
 
 /// Regression: flow-learn/SKILL.md must instruct `cd "<worktree_cwd>"`
-/// between the phase-enter HARD-GATE and the Resume Check. Without
-/// this, a session resuming Learn after context loss cannot re-anchor
-/// cwd. Consumer: every Learn-phase session running on a mono-repo
-/// flow.
+/// inside a bash fence between the phase-enter HARD-GATE and the
+/// Resume Check. Without this, a session resuming Learn after context
+/// loss cannot re-anchor cwd at runtime. Consumer: every Learn-phase
+/// session running on a mono-repo flow.
 #[test]
 fn flow_learn_re_anchors_cwd_after_phase_enter() {
     let c = common::read_skill("flow-learn");
     let bounded = slice_between_phase_enter_and_resume_check(&c);
     assert!(
-        bounded.contains(r#"cd "<worktree_cwd>""#),
-        "flow-learn/SKILL.md must instruct `cd \"<worktree_cwd>\"` between phase-enter and Resume Check"
+        bash_fence_contains(bounded, r#"cd "<worktree_cwd>""#),
+        "flow-learn/SKILL.md must instruct `cd \"<worktree_cwd>\"` inside a bash fence between phase-enter and Resume Check"
     );
 }
 

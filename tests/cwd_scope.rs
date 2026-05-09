@@ -191,7 +191,7 @@ fn cwd_scope_does_not_panic_on_slash_branch() {
 /// Consumer: every Bash-tool error surface that reports cwd_scope
 /// failures.
 #[test]
-fn cwd_drift_error_includes_cd_command_for_root_flow() {
+fn cwd_drift_error_includes_copy_pasteable_cd_command() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     init_git_repo(&root, "feature-x");
@@ -230,6 +230,67 @@ fn cwd_drift_error_includes_monorepo_hint_for_subdir_flow() {
     assert!(
         msg.contains("api"),
         "error must name the subdir from relative_cwd; got: {}",
+        msg
+    );
+}
+
+/// Regression: state file with `relative_cwd=".."` would silently
+/// disable the cwd guard if validation were missing — `expected`
+/// becomes the parent of the worktree and `cwd.starts_with(expected)`
+/// holds for every cwd inside `.worktrees/`. Per
+/// `.claude/rules/external-input-path-construction.md`, an unsafe
+/// state-file value must fail closed with a structured error. Consumer:
+/// every state-mutating bin/flow subcommand that calls cwd_scope.
+#[test]
+fn enforce_rejects_traversal_relative_cwd() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git_repo(&root, "feature-x");
+    write_state(&root, "feature-x", "..");
+    let result = enforce(&root, &root);
+    assert!(result.is_err(), "traversal `..` must fail closed");
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("Invalid relative_cwd"),
+        "error must name the validation failure; got: {}",
+        msg
+    );
+}
+
+/// Regression: state file with absolute `relative_cwd="/etc"` would
+/// otherwise let `Path::join` replace the worktree root entirely. Same
+/// fail-closed posture and consumer as the traversal case.
+#[test]
+fn enforce_rejects_absolute_relative_cwd() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git_repo(&root, "feature-x");
+    write_state(&root, "feature-x", "/etc");
+    let result = enforce(&root, &root);
+    assert!(result.is_err(), "absolute path must fail closed");
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("Invalid relative_cwd"),
+        "error must name the validation failure; got: {}",
+        msg
+    );
+}
+
+/// Regression: state file with `relative_cwd` containing `"` would
+/// otherwise corrupt the `cd "<expected>"` recovery line in the err
+/// message. Same fail-closed posture and consumer.
+#[test]
+fn enforce_rejects_double_quote_relative_cwd() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git_repo(&root, "feature-x");
+    write_state(&root, "feature-x", "api\"injected");
+    let result = enforce(&root, &root);
+    assert!(result.is_err(), "double-quote must fail closed");
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("Invalid relative_cwd"),
+        "error must name the validation failure; got: {}",
         msg
     );
 }

@@ -294,11 +294,28 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     // recovery path for sessions that lost cwd through context loss
     // or skill chaining. Consumers: every phase skill that runs
     // `cd "<worktree_cwd>"` after invoking phase-enter.
+    //
+    // Per `.claude/rules/external-input-path-construction.md`: validate
+    // the state-file value before joining. An unsafe `relative_cwd`
+    // (containing `..`, an absolute prefix, NUL, or `"`) would let
+    // `Path::join` escape the worktree (`..` parents) or replace the
+    // base entirely (absolute), and break the `cd "<worktree_cwd>"`
+    // shell-bearing instruction. Fail closed: emit a structured
+    // error so the user fixes the state file before any cd action.
     let relative_cwd = state
         .get("relative_cwd")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+    if !FlowPaths::is_safe_relative_cwd(&relative_cwd) {
+        return Ok(json!({
+            "status": "error",
+            "message": format!(
+                "Invalid relative_cwd in state file: {:?}. Must be empty or a relative path with no `..` segments, no leading `/`, no NUL bytes, and no `\"` characters.",
+                relative_cwd
+            ),
+        }));
+    }
     let worktree_cwd = if relative_cwd.is_empty() {
         worktree_path.clone()
     } else {

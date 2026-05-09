@@ -101,6 +101,21 @@ pub fn enforce(cwd: &Path, project_root: &Path) -> Result<(), String> {
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
+    // Per `.claude/rules/external-input-path-construction.md`: state-
+    // derived strings flowing into `Path::join` and shell-bearing
+    // interpolation must pass a positive validator. An attacker (or
+    // a corrupt state file) supplying `..`, `/etc`, or a `"`-bearing
+    // value would otherwise relax the prefix check or break the
+    // `cd "<expected>"` recovery line. Fail closed: a state file
+    // with an unsafe `relative_cwd` is corrupt; the user must fix
+    // it before any state-mutating subcommand runs.
+    if !FlowPaths::is_safe_relative_cwd(relative_cwd) {
+        return Err(format!(
+            "Invalid relative_cwd in state file: {:?}. Must be empty or a relative path with no `..` segments, no leading `/`, no NUL bytes, and no `\"` characters. State file may be corrupt; fix `relative_cwd` in `.flow-states/<branch>/state.json` or restart the flow.",
+            relative_cwd
+        ));
+    }
+
     // current_branch_in(cwd) succeeded above, so cwd is a live
     // git-managed directory: `git rev-parse --show-toplevel` must
     // succeed too. Any failure here is a race (cwd removed mid-call)

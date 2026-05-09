@@ -922,6 +922,47 @@ fn phase_enter_args_clap_derives_covered() {
     assert!(args.steps_total.is_none());
 }
 
+/// Regression: state file with an unsafe `relative_cwd` (traversal,
+/// absolute path, NUL, or double-quote) must fail closed in
+/// phase-enter rather than letting the unsafe value flow into
+/// `Path::join` for `worktree_cwd` or into the skill's
+/// `cd "<worktree_cwd>"` instruction. Per
+/// `.claude/rules/external-input-path-construction.md`. Consumer:
+/// every phase skill that re-anchors cwd via the response.
+#[test]
+fn phase_enter_rejects_unsafe_relative_cwd() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "unsafe-rel-cwd";
+    let repo = create_git_repo(dir.path(), branch);
+    let state_dir = flow_states_dir(&repo);
+    let branch_dir = state_dir.join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(
+        branch_dir.join("state.json"),
+        serde_json::to_string(&json!({
+            "branch": branch,
+            "relative_cwd": "/etc",
+            "current_phase": "flow-start",
+            "phases": {
+                "flow-start": {"status": "complete"}
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
+    assert_eq!(output.status.code(), Some(0));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    let msg = data["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("Invalid relative_cwd"),
+        "unsafe relative_cwd must produce a structured error; got: {}",
+        msg
+    );
+}
+
 /// Verify phase-enter response includes `relative_cwd: ""` and
 /// `worktree_cwd` equal to `worktree_path` for a root-level flow.
 /// Regression: a session resuming after context loss reads
