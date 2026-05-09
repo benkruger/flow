@@ -1,14 +1,14 @@
 ---
-title: /flow-code-review
+title: /flow-review
 nav_order: 8
 parent: Skills
 ---
 
-# /flow-code-review
+# /flow-review
 
 **Phase:** 4 — Code Review
 
-**Usage:** `/flow-code-review`, `/flow-code-review --auto`, or `/flow-code-review --manual`
+**Usage:** `/flow-review`, `/flow-review --auto`, or `/flow-review --manual`
 
 Six tenants assessed by four cognitively isolated agents (reviewer,
 pre-mortem, adversarial, documentation) launched in parallel. The parent
@@ -78,7 +78,7 @@ location.
 There is no filing path. All real findings are fixed in Step 4 —
 see `.claude/rules/code-review-scope.md`. `bin/flow add-finding`
 rejects `--outcome filed` during Code Review, and `bin/flow issue`
-refuses to create issues while `current_phase == "flow-code-review"`
+refuses to create issues while `current_phase == "flow-review"`
 unless `--override-code-review-ban` is passed.
 
 ### Step 4 — Fix

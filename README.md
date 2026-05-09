@@ -45,7 +45,7 @@ Start → Code → Code Review → Learn → Complete
 |-------|---------|-------------|
 | **1: Start** | `/flow-start <#issue>` | Lock, pull the integration branch, `bin/ci` baseline, upgrade dependencies, `bin/ci` post-deps, commit to the integration branch, unlock, new worktree + PR — ci-fixer sub-agent handles failures. Plan is extracted from the issue body's `<!-- FLOW-PLAN-BEGIN -->`/`<!-- FLOW-PLAN-END -->` sentinels. |
 | **2: Code** | `/flow-code` | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
-| **3: Code Review** | `/flow-code-review` | Four steps — gather artifacts, launch four cognitively isolated agents in parallel (reviewer, pre-mortem, adversarial, documentation), triage findings, fix in-scope issues |
+| **3: Code Review** | `/flow-review` | Four steps — gather artifacts, launch four cognitively isolated agents in parallel (reviewer, pre-mortem, adversarial, documentation), triage findings, fix in-scope issues |
 | **4: Learn** | `/flow-learn` | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
 | **5: Complete** | `/flow-complete` | Close issues referenced in prompt, PR merged, worktree removed, state file deleted, feature done |
 
@@ -86,7 +86,7 @@ Any skill invocation accepts `--auto` or `--manual` to override the configured s
 
 ```text
 /flow-code --auto        # skip per-task approval for this session
-/flow-code-review --manual  # prompt before advancing, just this once
+/flow-review --manual  # prompt before advancing, just this once
 ```
 
 ### Configuration lives in `.flow.json`
@@ -96,7 +96,7 @@ Any skill invocation accepts `--auto` or `--manual` to override the configured s
   "skills": {
     "flow-start": {"continue": "manual"},
     "flow-code": {"commit": "manual", "continue": "manual"},
-    "flow-code-review": {"commit": "auto", "continue": "auto"},
+    "flow-review": {"commit": "auto", "continue": "auto"},
     "flow-learn": {"commit": "auto", "continue": "auto"},
     "flow-abort": "auto",
     "flow-complete": "auto"

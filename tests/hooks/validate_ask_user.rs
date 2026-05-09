@@ -142,7 +142,7 @@ fn test_validate_auto_continue_includes_command() {
     let state = json!({
         "current_phase": "flow-code",
         "branch": "test",
-        "_auto_continue": "/flow:flow-code-review",
+        "_auto_continue": "/flow:flow-review",
     });
     let path = write_state(dir.path(), "test", &state);
     let (allowed, _msg, resp) = validate(Some(&path));
@@ -153,7 +153,7 @@ fn test_validate_auto_continue_includes_command() {
     assert!(resp["updatedInput"]
         .as_str()
         .unwrap()
-        .contains("/flow:flow-code-review"));
+        .contains("/flow:flow-review"));
 }
 
 // --- validate BLOCK path tests ---
@@ -244,7 +244,7 @@ fn test_validate_block_precedes_auto_continue() {
         "branch": "test",
         "skills": {"flow-code": {"continue": "auto"}},
         "phases": {"flow-code": {"status": "in_progress"}},
-        "_auto_continue": "/flow:flow-code-review",
+        "_auto_continue": "/flow:flow-review",
     });
     let path = write_state(dir.path(), "test", &state);
     let (allowed, msg, resp) = validate(Some(&path));
@@ -261,7 +261,7 @@ fn test_validate_auto_continue_without_skills_auto() {
         "branch": "test",
         "skills": {"flow-code": {"continue": "manual"}},
         "phases": {"flow-code": {"status": "in_progress"}},
-        "_auto_continue": "/flow:flow-code-review",
+        "_auto_continue": "/flow:flow-review",
     });
     let path = write_state(dir.path(), "test", &state);
     let (allowed, _msg, resp) = validate(Some(&path));
@@ -318,12 +318,12 @@ fn test_validate_corrupt_skills_value() {
 fn test_validate_allows_at_transition_boundary_pending_phase() {
     let dir = tempfile::tempdir().unwrap();
     let state = json!({
-        "current_phase": "flow-code-review",
+        "current_phase": "flow-review",
         "branch": "test",
-        "skills": {"flow-code-review": {"continue": "auto"}},
+        "skills": {"flow-review": {"continue": "auto"}},
         "phases": {
             "flow-code": {"status": "complete"},
-            "flow-code-review": {"status": "pending"},
+            "flow-review": {"status": "pending"},
         },
     });
     let path = write_state(dir.path(), "test", &state);
@@ -554,18 +554,14 @@ fn run_subprocess_auto_answers_when_auto_continue_set() {
     let state = json!({
         "current_phase": "flow-code",
         "branch": "test",
-        "_auto_continue": "/flow:flow-code-review",
+        "_auto_continue": "/flow:flow-review",
     });
     write_state(&root, "test", &state);
 
     let (code, stdout, _stderr) = run_hook(&root, "{}");
     assert_eq!(code, 0);
     assert!(stdout.contains("permissionDecision"), "stdout: {}", stdout);
-    assert!(
-        stdout.contains("/flow:flow-code-review"),
-        "stdout: {}",
-        stdout
-    );
+    assert!(stdout.contains("/flow:flow-review"), "stdout: {}", stdout);
 }
 
 #[test]

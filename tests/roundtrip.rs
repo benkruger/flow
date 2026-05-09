@@ -46,7 +46,7 @@ const STATE_JSON: &str = r#"{
       "cumulative_seconds": 0,
       "visit_count": 1
     },
-    "flow-code-review": {
+    "flow-review": {
       "name": "Code Review",
       "status": "pending",
       "started_at": null,
@@ -80,7 +80,7 @@ const STATE_JSON: &str = r#"{
   "skills": {
     "flow-start": {"continue": "manual"},
     "flow-code": {"commit": "manual", "continue": "manual"},
-    "flow-code-review": {"commit": "auto", "continue": "auto"},
+    "flow-review": {"commit": "auto", "continue": "auto"},
     "flow-learn": {"commit": "auto", "continue": "auto"},
     "flow-abort": "auto",
     "flow-complete": "auto"

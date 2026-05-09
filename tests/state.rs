@@ -4,14 +4,16 @@
 
 use indexmap::IndexMap;
 
-use flow_rs::state::{ModelTokens, Phase, PhaseStatus, SkillConfig, StepSnapshot, WindowSnapshot};
+use flow_rs::state::{
+    FlowState, ModelTokens, Phase, PhaseStatus, SkillConfig, StepSnapshot, WindowSnapshot,
+};
 
 #[test]
 fn phase_serialize_all_variants() {
     let cases = [
         (Phase::FlowStart, "\"flow-start\""),
         (Phase::FlowCode, "\"flow-code\""),
-        (Phase::FlowCodeReview, "\"flow-code-review\""),
+        (Phase::FlowCodeReview, "\"flow-review\""),
         (Phase::FlowLearn, "\"flow-learn\""),
         (Phase::FlowComplete, "\"flow-complete\""),
     ];
@@ -21,6 +23,58 @@ fn phase_serialize_all_variants() {
         let back: Phase = serde_json::from_str(&json).unwrap();
         assert_eq!(back, variant, "roundtrip {:?}", variant);
     }
+}
+
+/// Lock the serde alias on `Phase::FlowCodeReview`. State files
+/// written by plugin versions before the rename use the
+/// `flow-code-review` key in the `phases` map and as the
+/// `current_phase` value; the alias keeps those files readable
+/// during the compat window so in-flight flows do not lose
+/// progress on plugin upgrade.
+#[test]
+fn state_file_with_legacy_phase_key_is_readable() {
+    let json = "\"flow-code-review\"";
+    let phase: Phase = serde_json::from_str(json).expect("alias must deserialize");
+    assert_eq!(phase, Phase::FlowCodeReview);
+}
+
+/// Lock the serde alias on `FlowState::review_step`. State files
+/// written by older plugin versions store the counter under
+/// `code_review_step`; the alias keeps that key readable so
+/// in-flight Code Review progress survives the upgrade. The
+/// canonical write key is `review_step` — re-serializing the state
+/// produces the new key and never the legacy alias.
+#[test]
+fn state_file_with_legacy_counter_field_is_readable() {
+    let json = r#"{
+        "schema_version": 1,
+        "branch": "demo",
+        "started_at": "2026-05-09T10:00:00-07:00",
+        "current_phase": "flow-review",
+        "files": {
+            "plan": null,
+            "dag": null,
+            "log": ".flow-states/demo/log",
+            "state": ".flow-states/demo/state.json"
+        },
+        "phases": {},
+        "code_review_step": 3
+    }"#;
+    let state: FlowState =
+        serde_json::from_str(json).expect("legacy code_review_step alias must deserialize");
+    assert_eq!(state.review_step, Some(3));
+
+    let reserialized = serde_json::to_string(&state).expect("serialize FlowState");
+    assert!(
+        reserialized.contains("\"review_step\":3"),
+        "writer must emit canonical review_step key, got: {}",
+        reserialized
+    );
+    assert!(
+        !reserialized.contains("\"code_review_step\""),
+        "writer must NOT re-emit the legacy alias key, got: {}",
+        reserialized
+    );
 }
 
 #[test]

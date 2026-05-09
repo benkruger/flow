@@ -19,13 +19,13 @@ use serde_json::Value;
 const CONFIGURABLE_SKILLS: &[&str] = &[
     "flow-start",
     "flow-code",
-    "flow-code-review",
+    "flow-review",
     "flow-learn",
     "flow-complete",
     "flow-abort",
 ];
 
-const PHASE_ENTER_PHASES: &[&str] = &["flow-code", "flow-code-review", "flow-learn"];
+const PHASE_ENTER_PHASES: &[&str] = &["flow-code", "flow-review", "flow-learn"];
 
 fn phase_number() -> std::collections::HashMap<String, usize> {
     common::phase_order()
@@ -273,7 +273,7 @@ fn complete_uses_ci_fixer_subagent() {
 
 #[test]
 fn code_review_has_six_tenants() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     for tenant in &[
         "Architecture",
         "Simplicity",
@@ -284,7 +284,7 @@ fn code_review_has_six_tenants() {
     ] {
         assert!(
             c.contains(tenant),
-            "flow-code-review missing tenant '{}'",
+            "flow-review missing tenant '{}'",
             tenant
         );
     }
@@ -377,7 +377,7 @@ fn learn_analyst_agent_has_design_note() {
 // Three context-rich/high-investigation agents — reviewer,
 // learn-analyst, documentation — declare a literal `END-OF-FINDINGS`
 // completion marker in their Output Format section so the
-// flow-code-review skill can detect maxTurns truncation by marker
+// flow-review skill can detect maxTurns truncation by marker
 // absence rather than guessing from prose shape. Per-file siblings
 // (rather than a single coordinated test) because each agent's
 // regression is independent: a refactor or accidental edit to one
@@ -397,7 +397,7 @@ fn assert_agent_output_format_declares_end_of_findings(agent_basename: &str) {
         .unwrap_or(tail_at_heading);
     assert!(
         subsection.contains("END-OF-FINDINGS"),
-        "{agent_basename} Output Format must declare the literal `END-OF-FINDINGS` completion marker so the flow-code-review skill can detect maxTurns truncation by marker absence (see .claude/rules/cognitive-isolation.md \"Context Budget + Truncation Recovery\")"
+        "{agent_basename} Output Format must declare the literal `END-OF-FINDINGS` completion marker so the flow-review skill can detect maxTurns truncation by marker absence (see .claude/rules/cognitive-isolation.md \"Context Budget + Truncation Recovery\")"
     );
 }
 
@@ -589,7 +589,7 @@ fn investigation_agents_no_inline_context() {
 
 #[test]
 fn reviewer_inline_context_format_convention() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         c.contains("CLAUDE.md") || c.contains("claude.md"),
         "Code Review Step 2 (Launch) must reference CLAUDE.md for reviewer context"
@@ -600,7 +600,7 @@ fn reviewer_inline_context_format_convention() {
 
 #[test]
 fn code_review_no_inline_correctness_review() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         !c.contains("### Correctness Review") && !c.contains("## Correctness Review"),
         "Tombstone: inline correctness review removed"
@@ -609,7 +609,7 @@ fn code_review_no_inline_correctness_review() {
 
 #[test]
 fn code_review_no_inline_security_step() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         !c.contains("### Security Review") && !c.contains("## Security Review"),
         "Tombstone: inline security review step removed"
@@ -618,7 +618,7 @@ fn code_review_no_inline_security_step() {
 
 #[test]
 fn code_review_uses_documentation_subagent() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         c.contains("documentation"),
         "Code Review must reference documentation sub-agent"
@@ -626,8 +626,8 @@ fn code_review_uses_documentation_subagent() {
 }
 
 #[test]
-fn code_review_step_4_handles_no_findings() {
-    let c = common::read_skill("flow-code-review");
+fn review_step_4_handles_no_findings() {
+    let c = common::read_skill("flow-review");
     assert!(
         c.contains("no findings") || c.contains("No findings") || c.contains("no real findings"),
         "Step 4 (Fix) must handle no-findings path"
@@ -636,7 +636,7 @@ fn code_review_step_4_handles_no_findings() {
 
 #[test]
 fn code_review_no_step_5() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         !c.contains("### Step 5"),
         "Tombstone: Step 5 merged into Step 4"
@@ -645,7 +645,7 @@ fn code_review_no_step_5() {
 
 #[test]
 fn code_review_no_step_6() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         !c.contains("### Step 6"),
         "Tombstone: Step 6 merged into Step 4"
@@ -653,8 +653,8 @@ fn code_review_no_step_6() {
 }
 
 #[test]
-fn code_review_steps_have_continuation_directives() {
-    let c = common::read_skill("flow-code-review");
+fn review_steps_have_continuation_directives() {
+    let c = common::read_skill("flow-review");
     // Steps must have continuation directives (may use ## Step or ### Step format)
     assert!(
         c.contains("Step 1") && c.contains("Step 2") && c.contains("Step 3"),
@@ -664,7 +664,7 @@ fn code_review_steps_have_continuation_directives() {
 
 #[test]
 fn code_review_hard_rules_require_step_continuation() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         c.contains("## Hard Rules"),
         "Code Review must have Hard Rules section"
@@ -1501,7 +1501,7 @@ fn code_files_flaky_test_issues() {
 
 #[test]
 fn code_review_no_inline_simplify_step() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         !c.contains("simplify:simplify"),
         "Tombstone: simplify plugin removed"
@@ -1513,7 +1513,7 @@ fn code_review_triage_two_outcomes_only() {
     // Code Review has two triage outcomes: Real (fix in Step 4) and
     // False positive (dismiss). The filing path was removed — see
     // .claude/rules/code-review-scope.md.
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         !c.contains("bin/flow issue"),
         "Code Review skill must not invoke issue creation"
@@ -2269,7 +2269,7 @@ fn complete_uses_complete_finalize() {
 fn continue_context_includes_mode_flag() {
     let skills_with_min = [
         ("flow-code", 2),
-        ("flow-code-review", 2),
+        ("flow-review", 2),
         ("flow-complete", 9),
         ("flow-learn", 2),
     ];
@@ -2644,7 +2644,7 @@ fn no_continue_context_rust_command() {
 
 #[test]
 fn code_review_no_two_dot_diff() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         !c.contains("origin/main..HEAD") || c.contains("origin/main...HEAD"),
         "Tombstone: two-dot diff replaced with three-dot"
@@ -2775,20 +2775,20 @@ fn flow_start_prose_no_universal_main() {
 
 // --- base_branch flows through to Phase 4/5 diff commands ---
 
-/// flow-code-review constructs the diff range from
+/// flow-review constructs the diff range from
 /// `bin/flow base-branch` rather than the hardcoded `origin/main`.
 /// Locks in the cross-skill contract: skills resolve the integration
 /// branch via the CLI subcommand, never via a literal.
 #[test]
 fn flow_code_review_diff_uses_base_branch_subcommand() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         c.contains("bin/flow base-branch") || c.contains("bin/flow\" base-branch"),
-        "flow-code-review SKILL.md must invoke `bin/flow base-branch` to resolve the diff range"
+        "flow-review SKILL.md must invoke `bin/flow base-branch` to resolve the diff range"
     );
     assert!(
         !c.contains("git diff origin/main...HEAD"),
-        "flow-code-review SKILL.md must not embed `git diff origin/main...HEAD` — \
+        "flow-review SKILL.md must not embed `git diff origin/main...HEAD` — \
          resolve base_branch via `bin/flow base-branch` instead"
     );
 }
@@ -2810,7 +2810,7 @@ fn flow_learn_diff_uses_base_branch_subcommand() {
     );
 }
 
-/// flow-code-review Step 1 derives the adversarial probe path by
+/// flow-review Step 1 derives the adversarial probe path by
 /// shelling out to `bin/test --adversarial-path` and halts on
 /// exit 2. The skill must NOT hardcode the canonical
 /// `.flow-states/<branch>/adversarial_test` location — that location
@@ -2820,8 +2820,8 @@ fn flow_learn_diff_uses_base_branch_subcommand() {
 /// halt is the fail-closed gate that stops the agent from running
 /// against an unconfigured path.
 #[test]
-fn flow_code_review_step1_derives_adversarial_path_via_bin_test() {
-    let c = common::read_skill("flow-code-review");
+fn flow_review_step1_derives_adversarial_path_via_bin_test() {
+    let c = common::read_skill("flow-review");
     // Bound the assertion to Step 1 so a future Step that
     // legitimately mentions the canonical path (e.g. a migration
     // note) does not silently satisfy the negative assertion.
@@ -2916,7 +2916,7 @@ fn abort_no_branch_show_current() {
 
 #[test]
 fn code_review_has_resume_check() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         c.contains("Resume Check") || c.contains("## Resume"),
         "Code Review must have Resume Check section"
@@ -2924,8 +2924,8 @@ fn code_review_has_resume_check() {
 }
 
 #[test]
-fn code_review_steps_record_completion() {
-    let c = common::read_skill("flow-code-review");
+fn review_steps_record_completion() {
+    let c = common::read_skill("flow-review");
     assert!(
         c.contains("set-timestamp"),
         "Code Review steps must record completion via set-timestamp"
@@ -2933,17 +2933,17 @@ fn code_review_steps_record_completion() {
 }
 
 #[test]
-fn code_review_steps_self_invoke() {
-    let c = common::read_skill("flow-code-review");
+fn review_steps_self_invoke() {
+    let c = common::read_skill("flow-review");
     assert!(
-        c.contains("flow:flow-code-review --continue-step"),
+        c.contains("flow:flow-review --continue-step"),
         "Code Review steps must self-invoke with --continue-step"
     );
 }
 
 #[test]
-fn code_review_steps_await_background_agents() {
-    let c = common::read_skill("flow-code-review");
+fn review_steps_await_background_agents() {
+    let c = common::read_skill("flow-review");
     for agent in &["reviewer", "pre-mortem", "adversarial", "documentation"] {
         assert!(
             c.contains(agent),
@@ -2955,7 +2955,7 @@ fn code_review_steps_await_background_agents() {
 
 #[test]
 fn code_review_has_self_invocation_check() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         c.contains("Self-Invocation"),
         "Code Review must have Self-Invocation Check section"
@@ -2964,7 +2964,7 @@ fn code_review_has_self_invocation_check() {
 
 #[test]
 fn code_review_has_bash_binflow_check() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         c.contains("bin/flow"),
         "Step 1 (Gather) must check bin/flow"
@@ -3026,8 +3026,8 @@ fn start_ci_fixes_committed_via_flow_commit() {
 // --- Code review step 3 ---
 
 #[test]
-fn code_review_step_3_has_triage() {
-    let c = common::read_skill("flow-code-review");
+fn review_step_3_has_triage() {
+    let c = common::read_skill("flow-review");
     assert!(
         c.contains("Triage") || c.contains("triage"),
         "Step 3 (Triage) must classify findings"
@@ -3036,11 +3036,11 @@ fn code_review_step_3_has_triage() {
 
 #[test]
 fn code_review_has_supersession_check() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     let lower = c.to_lowercase();
     assert!(
         lower.contains("supersession"),
-        "flow-code-review/SKILL.md Step 3 Triage must include a supersession check \
+        "flow-review/SKILL.md Step 3 Triage must include a supersession check \
          per .claude/rules/supersession.md (Code Review Phase section)"
     );
 }
@@ -3108,8 +3108,8 @@ fn extract_helper_refactor_rule_has_expected_structure() {
 }
 
 #[test]
-fn code_review_step_2_launches_four_agents() {
-    let c = common::read_skill("flow-code-review");
+fn review_step_2_launches_four_agents() {
+    let c = common::read_skill("flow-review");
     assert!(
         c.contains("four")
             || c.contains("4 ")
@@ -3123,7 +3123,7 @@ fn code_review_step_2_launches_four_agents() {
 
 #[test]
 fn code_review_no_plugin_step() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         !c.contains("code-review:code-review"),
         "Tombstone: code-review:code-review plugin removed"
@@ -3132,7 +3132,7 @@ fn code_review_no_plugin_step() {
 
 #[test]
 fn code_review_no_plugin_config_axis() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         !c.contains("code_review_plugin"),
         "Tombstone: code_review_plugin config removed"
@@ -3154,7 +3154,7 @@ fn code_review_adversarial_uses_temp_test_file_placeholder() {
     // agent can write a single test file under .flow-states/ without
     // hardcoding language. The framework concept is gone; the agent
     // picks the file extension itself by inspecting the diff.
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         c.contains("<temp_test_file>"),
         "SKILL.md must parameterize the adversarial temp file path"
@@ -3201,7 +3201,7 @@ fn tombstone_audit_fixture_no_literal_tombstone_patterns() {
 
 #[test]
 fn code_review_mentions_tombstone_audit() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         c.contains("tombstone-audit"),
         "Code Review Step 1 must run tombstone-audit for stale tombstone detection"
@@ -3210,7 +3210,7 @@ fn code_review_mentions_tombstone_audit() {
 
 #[test]
 fn code_review_collects_substantive_diff() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     assert!(
         c.contains("git diff origin/<base_branch>...HEAD -w"),
         "Code Review Step 1 must collect a substantive diff \
@@ -3220,7 +3220,7 @@ fn code_review_collects_substantive_diff() {
 
 #[test]
 fn code_review_routes_substantive_diff_to_context_sparse_agents() {
-    let c = common::read_skill("flow-code-review");
+    let c = common::read_skill("flow-review");
     for agent in &["Pre-mortem", "Adversarial", "Documentation"] {
         assert!(
             c.contains("substantive diff output"),

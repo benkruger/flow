@@ -855,14 +855,14 @@ fn validate_ask_user_auto_continue_writes_stdout_json_exits_zero() {
         "current_phase": "flow-code",
         "skills": {"flow-code": {"continue": "manual"}},
         "phases": {"flow-code": {"status": "in_progress"}},
-        "_auto_continue": "/flow:flow-code-review",
+        "_auto_continue": "/flow:flow-review",
     });
     setup_git_and_state(dir.path(), "feat", &state);
     let output = run_hook("validate-ask-user", dir.path(), "feat", b"{}");
     assert_eq!(output.status.code().unwrap(), 0);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("permissionDecision") && stdout.contains("/flow:flow-code-review"),
+        stdout.contains("permissionDecision") && stdout.contains("/flow:flow-review"),
         "auto-answer stdout must carry permissionDecision + successor: {}",
         stdout
     );

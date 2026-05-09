@@ -5,7 +5,7 @@ nav_order: 4
 
 # Phase 3: Code Review
 
-**Command:** `/flow-code-review`
+**Command:** `/flow-review`
 
 Six tenants assessed by four cognitively isolated agents launched in
 parallel. The parent session gathers context, triages findings, and
@@ -67,8 +67,8 @@ For each finding from all agents, classify as:
 There is no filing path. All real findings are fixed during Code
 Review — see `.claude/rules/code-review-scope.md`. Mechanical
 enforcement blocks filing: `bin/flow add-finding` rejects
-`--outcome filed` for `--phase flow-code-review`, and `bin/flow issue`
-refuses to create issues while `current_phase == "flow-code-review"`
+`--outcome filed` for `--phase flow-review`, and `bin/flow issue`
+refuses to create issues while `current_phase == "flow-review"`
 unless `--override-code-review-ban` is passed.
 
 The supersession test from `.claude/rules/supersession.md` runs

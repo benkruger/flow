@@ -22,7 +22,7 @@ use crate::phase_transition::phase_enter;
     about = "Generic phase entry: gate + enter + state data"
 )]
 pub struct Args {
-    /// Phase name (e.g. flow-code, flow-code-review, flow-learn)
+    /// Phase name (e.g. flow-code, flow-review, flow-learn)
     #[arg(long)]
     pub phase: String,
 
@@ -40,7 +40,7 @@ pub struct Args {
 /// assert on the prefix-derivation rules directly.
 ///
 /// Strips the `flow-` prefix and replaces `-` with `_`.
-/// Example: `flow-code-review` → `code_review`
+/// Example: `flow-review` → `review`
 fn phase_field_prefix(phase: &str) -> String {
     phase
         .strip_prefix("flow-")

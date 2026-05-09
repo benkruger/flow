@@ -108,9 +108,9 @@ fn create_state(
                 "cumulative_seconds": 0,
                 "visit_count": 0
             },
-            "flow-code-review": {
+            "flow-review": {
                 "name": "Code Review",
-                "status": if prev_phase == "flow-code-review" { prev_status } else { "pending" },
+                "status": if prev_phase == "flow-review" { prev_status } else { "pending" },
                 "started_at": null,
                 "completed_at": null,
                 "session_started_at": null,
@@ -217,7 +217,7 @@ fn test_code_review_phase_happy_path() {
         &repo,
         &[
             "--phase",
-            "flow-code-review",
+            "flow-review",
             "--branch",
             branch,
             "--steps-total",
@@ -227,14 +227,14 @@ fn test_code_review_phase_happy_path() {
     assert_eq!(output.status.code(), Some(0));
     let data = parse_output(&output);
     assert_eq!(data["status"], "ok");
-    assert_eq!(data["phase"], "flow-code-review");
+    assert_eq!(data["phase"], "flow-review");
 
     // State should have step counters set
     let state_path = flow_states_dir(&repo).join(branch).join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
-    assert_eq!(state["phases"]["flow-code-review"]["status"], "in_progress");
-    assert_eq!(state["code_review_steps_total"], 4);
-    assert_eq!(state["code_review_step"], 0);
+    assert_eq!(state["phases"]["flow-review"]["status"], "in_progress");
+    assert_eq!(state["review_steps_total"], 4);
+    assert_eq!(state["review_step"], 0);
 }
 
 #[test]
@@ -242,7 +242,7 @@ fn test_learn_phase_happy_path() {
     let dir = tempfile::tempdir().unwrap();
     let branch = "learn-happy";
     let repo = create_git_repo(dir.path(), branch);
-    create_state(&repo, branch, "flow-code-review", "complete", None);
+    create_state(&repo, branch, "flow-review", "complete", None);
 
     let output = run_phase_enter(
         &repo,
@@ -275,7 +275,7 @@ fn test_gate_failure_previous_phase_not_complete() {
     let repo = create_git_repo(dir.path(), branch);
     create_state(&repo, branch, "flow-code", "in_progress", None);
 
-    let output = run_phase_enter(&repo, &["--phase", "flow-code-review", "--branch", branch]);
+    let output = run_phase_enter(&repo, &["--phase", "flow-review", "--branch", branch]);
     assert_eq!(output.status.code(), Some(0)); // Application error, not process error
     let data = parse_output(&output);
     assert_eq!(data["status"], "error");
@@ -338,7 +338,7 @@ fn test_mode_defaults_code_review() {
         &repo,
         &[
             "--phase",
-            "flow-code-review",
+            "flow-review",
             "--branch",
             branch,
             "--steps-total",
@@ -363,13 +363,7 @@ fn test_mode_defaults_learn() {
     let branch = "mode-learn";
     let repo = create_git_repo(dir.path(), branch);
     // No skills config → defaults
-    create_state(
-        &repo,
-        branch,
-        "flow-code-review",
-        "complete",
-        Some(json!({})),
-    );
+    create_state(&repo, branch, "flow-review", "complete", Some(json!({})));
 
     let output = run_phase_enter(
         &repo,
@@ -399,7 +393,7 @@ fn test_step_counter_field_names() {
     // Verify the field name derivation for all 3 applicable phases
     let dir = tempfile::tempdir().unwrap();
 
-    // Code Review: flow-code-review → code_review_steps_total, code_review_step
+    // Code Review: flow-review → review_steps_total, review_step
     let branch = "counter-cr";
     let repo = create_git_repo(dir.path(), branch);
     create_state(&repo, branch, "flow-code", "complete", None);
@@ -407,7 +401,7 @@ fn test_step_counter_field_names() {
         &repo,
         &[
             "--phase",
-            "flow-code-review",
+            "flow-review",
             "--branch",
             branch,
             "--steps-total",
@@ -419,15 +413,15 @@ fn test_step_counter_field_names() {
         &fs::read_to_string(flow_states_dir(&repo).join(branch).join("state.json")).unwrap(),
     )
     .unwrap();
-    assert_eq!(state["code_review_steps_total"], 4);
-    assert_eq!(state["code_review_step"], 0);
+    assert_eq!(state["review_steps_total"], 4);
+    assert_eq!(state["review_step"], 0);
     // Verify the wrong field names are NOT present
-    assert!(state.get("flow_code_review_steps_total").is_none());
+    assert!(state.get("flow_review_steps_total").is_none());
 
     // Learn: flow-learn → learn_steps_total, learn_step
     let branch2 = "counter-learn";
     let repo2 = create_git_repo(&dir.path().join("sub"), branch2);
-    create_state(&repo2, branch2, "flow-code-review", "complete", None);
+    create_state(&repo2, branch2, "flow-review", "complete", None);
     let output2 = run_phase_enter(
         &repo2,
         &[
