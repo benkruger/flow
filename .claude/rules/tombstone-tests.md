@@ -288,3 +288,60 @@ the deleted code cannot be resurrected via merge conflict.
 
 Code Review Step 1 runs the audit automatically; Step 4 removes
 stale tombstones.
+
+## Enforcement
+
+The Naming Convention and the Literal-tombstone stability
+checklist are mechanically enforced by two corpus contract tests
+in `tests/tombstones.rs`. Both walk `#[test] fn` declarations
+with a regex that tolerates zero or more intervening attributes
+(`#[ignore]`, `#[should_panic]`, etc.) so a stacked second
+attribute cannot bypass enforcement.
+
+- `test_tombstones_no_naming_violations` — walks every
+  `#[test] fn` declaration in `tests/tombstones.rs` and asserts
+  the name matches the regex
+  `^test_[a-z][a-z0-9_]*_no_[a-z][a-z0-9_]*$` (the literal form
+  of `test_<scope>_no_<removed_thing>`). The two contract test
+  names themselves are excluded because their names are part of
+  the rule's own implementation rather than tombstones.
+- `test_tombstones_no_stability_docs_violations` — for every
+  `#[test] fn` whose function body (extracted by tracking brace
+  depth) contains a `.contains(` call AND whose preceding `///`
+  doc block carries one or more `Tombstone:.*?PR #N` markers
+  with the highest N at or above `STABILITY_DOCS_SENTINEL_PR`,
+  asserts the doc block contains at least one of the macro
+  forms `concat!` or `format!`, or the substring `constant`
+  (case-insensitive). The fourth checklist question — whether
+  the literal can be split into multiple `.arg()` calls — is
+  not mechanically enforced; it is left to author judgment and
+  Code Review reviewer-agent inspection. The doc-block walker
+  tolerates one or more blank lines between the `///` block and
+  the `#[test]` attribute (rustdoc still attaches the doc block
+  across one blank line). When multiple `Tombstone:.*?PR #N`
+  markers appear in the same doc block, the highest PR number
+  determines scope so a stale below-sentinel marker stacked
+  first cannot hide a co-located above-sentinel marker. PR-
+  number parse failure (overflow beyond `u32::MAX`) fails closed
+  per `.claude/rules/security-gates.md` "Fail Closed When State
+  Is Unreliable" — the marker is treated as in-scope.
+
+The sentinel scopes enforcement to tombstones at or above
+`STABILITY_DOCS_SENTINEL_PR`. Pre-existing tombstones below the
+sentinel remain out of scope so the contract test does not
+retroactively flag every byte-substring tombstone in the file.
+
+The macro-form keywords (`concat!`, `format!`) require the `!`
+character so prose containing the bare word `format` (e.g.,
+`format-status`) does not satisfy the keyword check by accident.
+The third keyword (`constant`) is a substring match and may
+match prose like `constant-time` or `constants` — authors who
+discuss `concat!` and `format!` in their stability argument
+trigger the more-specific macro-form keywords and avoid the
+fuzzy substring surface entirely.
+
+When raising the sentinel PR — typically after a campaign that
+retrofits `///` blocks onto older byte-substring tombstones —
+update the `STABILITY_DOCS_SENTINEL_PR` value in
+`tests/tombstones.rs` and verify every newly-in-scope tombstone
+passes the contract test before committing.

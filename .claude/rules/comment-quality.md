@@ -81,7 +81,7 @@ The correct rewrite discipline:
 
 ## Enforcement
 
-`tests/tombstones.rs::test_no_backward_facing_comments_in_rust_source`
+`tests/tombstones.rs::test_rust_source_no_backward_facing_comments`
 mechanically enforces this rule at CI time. The scanner walks every
 `*.rs` file under `src/` and `tests/`, filters out lines matching the
 tombstone exception (`Tombstone:.*?PR #`), and asserts no line contains
