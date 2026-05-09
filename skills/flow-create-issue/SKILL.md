@@ -257,14 +257,45 @@ Combine the captured sections with the Implementation Plan into a single
 issue body. The section order must be:
 
 **Problem** (from capture) → **Acceptance Criteria** (from capture) →
-**Implementation Plan** (from transform, containing Context, Exploration,
-Risks, Approach, Dependency Graph, Tasks subsections) →
-**Files to Investigate** (from capture) → **Out of Scope** (from capture) →
-**Context** (from capture — business reason).
+**Implementation Plan** (from transform, wrapped between sentinels —
+containing Context, Exploration, Risks, Approach, Dependency Graph,
+Tasks subsections) → **Files to Investigate** (from capture) →
+**Out of Scope** (from capture) → **Context** (from capture —
+business reason).
 
 Each top-level section uses `##` headings. The Implementation Plan's
 subsections use `###` headings. Task entries within the Tasks subsection
 use `####` headings.
+
+**Wrap the Implementation Plan in FLOW-PLAN sentinels.** Place the
+literal HTML comment `<!-- FLOW-PLAN-BEGIN -->` on its own line
+immediately before the `## Implementation Plan` heading, and the
+literal HTML comment `<!-- FLOW-PLAN-END -->` on its own line
+immediately after the last Task entry (before the next `## ` heading).
+The sentinels delimit the bytes that `bin/flow plan-from-issue` will
+extract verbatim and write to `.flow-states/<branch>/plan.md` when the
+issue is later picked up via `/flow:flow-start #N`. Without the
+sentinel pair, plan-from-issue rejects the issue with
+`plan_markers_missing` and the flow halts.
+
+The wrapped block looks like this in the issue body:
+
+```markdown
+<!-- FLOW-PLAN-BEGIN -->
+## Implementation Plan
+
+### Context
+...
+
+### Exploration
+...
+
+### Tasks
+
+#### Task 1: ...
+...
+<!-- FLOW-PLAN-END -->
+```
 
 ### Draft Presentation
 
