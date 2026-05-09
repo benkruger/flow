@@ -1086,7 +1086,7 @@ fn test_tombstones_no_stability_docs_violations() {
 /// definitions on other types in the same file (`FlowStatesDir::new`)
 /// do not produce false positives.
 #[test]
-fn flow_paths_new_constructor_must_not_return() {
+fn test_flow_paths_no_new_constructor() {
     let root = common::repo_root();
     let path = root.join("src").join("flow_paths.rs");
     let content = fs::read_to_string(&path).expect("src/flow_paths.rs must exist");
