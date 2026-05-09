@@ -115,6 +115,8 @@ Worktree creation mirrors every `.venv` discovered under the project root into t
 
 `cwd_scope::enforce` runs as the first action in every subcommand that runs tools or mutates state: `ci`, `build`, `lint`, `format`, `test`, `phase-enter`, `phase-finalize`, `phase-transition`, `set-timestamp`, `add-finding`. Read-only subcommands (`format-status`, `status`, `tombstone-audit`, `base-branch`) do not enforce.
 
+When a mono-repo session resumes (context compaction, orchestration, multi-skill chain), the agent's Bash tool cwd may reset to the main repo root and every subsequent `bin/flow` call hard-errors under `cwd_scope::enforce`. Two recovery paths exist: every `phase-enter` response carries a `worktree_cwd` field that joins `worktree_path` with `relative_cwd`, and the phase-enter skills (`flow-code`, `flow-code-review`, `flow-learn`) run `cd "<worktree_cwd>"` immediately after the HARD-GATE so the re-anchor is automatic at every phase entry. When `cwd_scope::enforce` still fires (e.g. mid-phase tool calls in a session that lost cwd between Bash invocations), the error message names the expected directory and ends with a copy-pasteable `cd "<expected>"` line the user can run verbatim.
+
 ### State File
 
 The state file (`.flow-states/<branch>/state.json`) is the backbone. Schema reference: `docs/reference/flow-state-schema.md`. Test fixtures: `tests/common/mod.rs` helpers.
