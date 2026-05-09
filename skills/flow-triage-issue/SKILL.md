@@ -1,6 +1,6 @@
 ---
 name: flow-triage-issue
-description: "Triage a single open GitHub issue from a PM lens. Reads code, checks for already-shipped work, returns a verdict in {close, decompose, keep-open, fix-now} with confidence and a flip-condition. Renders and stops — no side effects."
+description: "Triage a single open GitHub issue from a PM lens. Reads code, checks for already-shipped work, returns a verdict in {close, decompose} with confidence and a flip-condition. Renders and stops — no side effects."
 ---
 
 # FLOW Triage Issue
@@ -136,10 +136,9 @@ manually and triage it yourself.
 Print the agent's complete output inline in your response — every
 heading, every bullet, every citation. Do not summarize, paraphrase,
 re-rank, or trim. The verdict format (5 fields: disposition, summary,
-evidence, confidence, flip-condition) and the 4-disposition closed
-set (`close`, `decompose`, `keep-open`, `fix-now`) are locked by
-contract tests. The PM consuming the verdict must see exactly what
-the agent produced.
+evidence, confidence, flip-condition) and the 2-disposition closed
+set (`close`, `decompose`) are locked by contract tests. The PM
+consuming the verdict must see exactly what the agent produced.
 
 ### Step 5 — STOP
 
@@ -169,10 +168,6 @@ tempted to invoke. The PM types the next command themselves.
 - **decompose** — describe the manual step as: "The issue needs an
   Implementation Plan; draft a pre-decomposed replacement
   yourself, then close the original."
-- **keep-open** — describe the manual step as: "Leave the issue
-  open and revisit later — no action needed now."
-- **fix-now** — describe the manual step as: "Start a new flow
-  against the issue yourself when you are ready to work on it."
 - **Out of scope** (closed issue or fetch failure) — describe the
   manual step as: "Open the issue in a browser and triage
   manually."
@@ -205,9 +200,9 @@ Output the following banner in your response (not via Bash) inside a fenced code
 - Verdict format is exactly the 5-field card produced by
   `agents/issue-triage.md`. Do not paraphrase, re-rank, summarize, or
   trim the agent's output.
-- Disposition values are exactly `{close, decompose, keep-open,
-  fix-now}`. The closed set is locked by contract test; never
-  introduce additional values — the agent never produces them.
+- Disposition values are exactly `{close, decompose}`. The closed
+  set is locked by contract test; never introduce additional
+  values — the agent never produces them.
 - Use the `issue-triage` sub-agent only. Other agents are out of
   scope for this skill (the contract test enforces this).
 - Render and stop. No auto-actions of any kind.

@@ -19,9 +19,9 @@ lens. Dispatches the `issue-triage` sub-agent in the foreground. The agent
 fetches the issue, reads referenced code (or grep-locates behavior when
 the issue body names no files), checks `gh pr list --search "<num>"` and
 `git log --all --grep "#<num>"` for already-shipped work, answers ten
-triage questions, and produces a verdict in `{close, decompose, keep-open,
-fix-now}` with confidence and a flip-condition. The skill renders the
-verdict verbatim and stops — no auto-actions.
+triage questions, and produces a verdict in `{close, decompose}` with
+confidence and a flip-condition. The skill renders the verdict
+verbatim and stops — no auto-actions.
 
 ---
 
@@ -39,7 +39,7 @@ verdict verbatim and stops — no auto-actions.
    `file:line` citation, exactly as the agent produced it.
 5. Prints a one-line hint pointing at the next manual step based on the
    disposition (e.g. `gh issue close <num>` for `close`,
-   `/flow:flow-start` for `fix-now`).
+   `/flow:flow-create-issue` for `decompose`).
 
 ---
 
@@ -61,14 +61,12 @@ every code claim:
 
 ---
 
-## The 4-Disposition Verdict
+## The 2-Disposition Verdict
 
 | Disposition | Meaning | Next manual step |
 |---|---|---|
 | `close` | No longer a real problem (already shipped, framing wrong, behavior changed) | `gh issue close <num>` after reading evidence |
-| `decompose` | Real and substantial; needs an Implementation Plan before code lands | `/flow:flow-create-issue` to draft a pre-decomposed replacement |
-| `keep-open` | Real but not yet ready for work (blocked, awaiting design, low priority) | Leave open; revisit later |
-| `fix-now` | Real, scoped, and ready for implementation | `/flow:flow-start <feature words>` |
+| `decompose` | Real and ready for implementation planning; needs an Implementation Plan before `/flow:flow-start` | `/flow:flow-create-issue` to draft a pre-decomposed replacement |
 
 The set is closed in v1. Adding new dispositions requires a separate
 design conversation.

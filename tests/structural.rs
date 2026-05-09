@@ -838,7 +838,7 @@ fn test_issue_triage_agent_verdict_card_fields() {
             "agents/issue-triage.md verdict card must include field: {field}"
         );
     }
-    for disposition in ["close", "decompose", "keep-open", "fix-now"] {
+    for disposition in ["close", "decompose"] {
         assert!(
             content.contains(disposition),
             "agents/issue-triage.md must enumerate disposition: {disposition}"

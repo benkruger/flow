@@ -89,7 +89,7 @@ plugin source.
 | Skill | Purpose |
 |-------|---------|
 | `/flow:flow-issues` | Fetch open issues, rank by impact, and display a dashboard with recommended work order |
-| `/flow:flow-triage-issue` | PM-lens triage of a single open issue — verdict in {close, decompose, keep-open, fix-now} |
+| `/flow:flow-triage-issue` | PM-lens triage of a single open issue — verdict in {close, decompose} |
 | `/flow:flow-create-issue` | Capture a brainstormed solution as a pre-planned issue with an Implementation Plan section |
 | `/flow:flow-decompose-project` | Decompose a large project into linked GitHub issues with sub-issue and blocked-by relationships |
 | `/flow:flow-orchestrate` | Process decomposed issues sequentially overnight via flow-start --auto |
