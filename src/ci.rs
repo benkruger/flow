@@ -195,7 +195,15 @@ pub fn any_tool_is_stub(tools: &[CiTool]) -> bool {
 ///
 /// Also used by [`crate::finalize_commit::run_impl`] to refresh the sentinel after a clean commit.
 pub fn sentinel_path(root: &Path, branch: &str) -> PathBuf {
-    FlowPaths::new(root, branch).ci_sentinel()
+    // Callers (`run_once`, `run_with_retry`, `finalize_commit`) reach
+    // this helper only with a branch that has already passed
+    // `cwd_scope::enforce` or arrived from the start-init pipeline —
+    // both `branch_name()`-sanitized boundaries.
+    FlowPaths::try_new(root, branch)
+        .expect(
+            "ci sentinel_path caller validates branch via cwd_scope::enforce or upstream pipeline",
+        )
+        .ci_sentinel()
 }
 
 /// Maximum character count for the banner payload before truncation,

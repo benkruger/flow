@@ -358,7 +358,7 @@ fn is_flow_active_valid_branch_no_state_file_returns_false() {
 #[test]
 fn is_flow_active_valid_branch_with_state_file_returns_true() {
     let dir = tempfile::tempdir().unwrap();
-    let paths = FlowPaths::new(dir.path(), "feat-branch");
+    let paths = FlowPaths::try_new(dir.path(), "feat-branch").expect("valid branch");
     fs::create_dir_all(paths.state_file().parent().unwrap()).unwrap();
     fs::write(paths.state_file(), "{}").unwrap();
     assert!(is_flow_active("feat-branch", dir.path()));

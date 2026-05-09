@@ -61,8 +61,22 @@ pub struct Args {
 pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
     let branch = &args.branch;
 
-    // Update TUI step counter
-    let state_path = FlowPaths::new(root, branch).state_file();
+    // Update TUI step counter. `args.branch` is clap-supplied —
+    // external input. Pattern-match and surface a structured error
+    // per `.claude/rules/external-input-validation.md` "CLI
+    // subcommand entry callsite discipline".
+    let state_path = match FlowPaths::try_new(root, branch) {
+        Some(p) => p.state_file(),
+        None => {
+            return (
+                json!({
+                    "status": "error",
+                    "message": format!("Invalid branch name: {:?}", branch),
+                }),
+                1,
+            );
+        }
+    };
     update_step(&state_path, 2);
 
     // Read the integration branch the user is working off of (captured

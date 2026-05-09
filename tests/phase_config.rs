@@ -524,7 +524,7 @@ fn find_state_files_skips_files_at_root_and_subdirs_without_state_json() {
 #[test]
 fn find_state_files_exact_match_unparseable_returns_empty() {
     let dir = tempfile::tempdir().unwrap();
-    let paths = FlowPaths::new(dir.path(), "my-feature");
+    let paths = FlowPaths::try_new(dir.path(), "my-feature").expect("valid branch");
     fs::create_dir_all(paths.state_file().parent().unwrap()).unwrap();
     fs::write(paths.state_file(), "not valid json").unwrap();
     let results = find_state_files(dir.path(), "my-feature");
@@ -534,7 +534,7 @@ fn find_state_files_exact_match_unparseable_returns_empty() {
 #[test]
 fn find_state_files_exact_match_is_directory_returns_empty() {
     let dir = tempfile::tempdir().unwrap();
-    let paths = FlowPaths::new(dir.path(), "my-feature");
+    let paths = FlowPaths::try_new(dir.path(), "my-feature").expect("valid branch");
     fs::create_dir_all(paths.state_file()).unwrap();
     let results = find_state_files(dir.path(), "my-feature");
     assert!(results.is_empty());

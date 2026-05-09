@@ -131,6 +131,28 @@ fn test_hook_no_current_branch_exits_zero() {
 }
 
 #[test]
+fn test_hook_slash_branch_exits_zero() {
+    // When git reports a legitimate slash-containing branch
+    // (`feature/foo`, `dependabot/...`), `FlowPaths::try_new` returns
+    // None and `run()` short-circuits via the slash-branch arm. Must
+    // exit 0 without panicking.
+    let dir = tempfile::tempdir().unwrap();
+    let _ = Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output();
+
+    let output = run_clear_blocked(dir.path(), "feature/foo", b"{}");
+    assert_eq!(output.status.code().unwrap(), 0);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked at"),
+        "clear-blocked panicked on slash branch; stderr: {}",
+        stderr
+    );
+}
+
+#[test]
 fn test_hook_preserves_other_fields() {
     let dir = tempfile::tempdir().unwrap();
     let state = json!({

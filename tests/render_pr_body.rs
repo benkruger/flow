@@ -878,6 +878,54 @@ fn render_pr_body_auto_detects_state_file_when_no_flag() {
     assert_eq!(data["status"], "ok");
 }
 
+/// A git branch with a `/` (e.g. `feature/foo`, `dependabot/...`)
+/// is a legitimate git branch name but fails
+/// `FlowPaths::is_valid_branch`. The else branch of `if let Some(ref
+/// sf) = args.state_file` constructs the state path from
+/// `current_branch()` output, which can carry slashes. Treat that
+/// case as "state file not found" rather than panicking — the
+/// caller sees a structured error envelope instead of a Rust
+/// backtrace.
+#[test]
+fn render_pr_body_does_not_panic_on_slash_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let stub_dir = create_gh_stub(&repo, "#!/bin/bash\nexit 0\n");
+
+    let path_env = format!(
+        "{}:{}",
+        stub_dir.to_string_lossy(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .arg("render-pr-body")
+        .args(["--pr", "42", "--dry-run"])
+        .current_dir(&repo)
+        .env("PATH", &path_env)
+        .env("FLOW_SIMULATE_BRANCH", "feature/foo")
+        .env("CLAUDE_PLUGIN_ROOT", env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked at"),
+        "render-pr-body panicked on slash branch; stderr: {}",
+        stderr
+    );
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr);
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("State file not found"),
+        "expected State-file-not-found error, got: {:?}",
+        data
+    );
+}
+
 /// Covers `resolve_path` empty-string short-circuit (returns None
 /// instead of treating the empty string as a path). Driven via
 /// `render_body` with an empty `plan_file` value.

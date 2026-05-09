@@ -1054,3 +1054,57 @@ fn test_tombstones_no_stability_docs_violations() {
         violations.join("\n")
     );
 }
+
+/// Tombstone: removed in PR #1395. Must not return.
+///
+/// `FlowPaths::new` was a panicking constructor (`assert!(is_valid_branch)`)
+/// that produced production incidents whenever a caller drifted from
+/// `try_new`. The constructor was deleted entirely; `try_new` is the
+/// only constructor on `FlowPaths`. Resurrection — through merge
+/// conflict, refactor, or a new author copying the deleted shape —
+/// must fail CI.
+///
+/// Source-content scan with literal `pub fn new(` against the
+/// `FlowPaths` impl block in `src/flow_paths.rs`. Stability per
+/// `.claude/rules/tombstone-tests.md` "Literal tombstones —
+/// stability checklist":
+///
+/// 1. `concat!`: would have to assemble `pub fn new(` from fragments
+///    inside the same impl block — possible in theory but the only
+///    runtime effect of the function is path construction, which
+///    `try_new` already provides; there is no incentive for a future
+///    author to assemble the string indirectly.
+/// 2. `format!`: cannot produce a `fn` definition — `format!` is a
+///    runtime call.
+/// 3. Split constants: same as `concat!` — only meaningful inside an
+///    impl block, where the bounded scan below catches the literal.
+/// 4. Method chains: not applicable to `fn` definitions.
+///
+/// The bounded-slice pattern from `.claude/rules/testing-gotchas.md`
+/// "Subsection-Local Assertions in Contract Tests" scopes the scan
+/// to the `impl FlowPaths {` block so unrelated `pub fn new(`
+/// definitions on other types in the same file (`FlowStatesDir::new`)
+/// do not produce false positives.
+#[test]
+fn test_flow_paths_no_new_constructor() {
+    let root = common::repo_root();
+    let path = root.join("src").join("flow_paths.rs");
+    let content = fs::read_to_string(&path).expect("src/flow_paths.rs must exist");
+
+    let tail_at_impl = content
+        .split_once("impl FlowPaths {")
+        .map(|(_, tail)| tail)
+        .expect("FlowPaths impl block must exist in src/flow_paths.rs");
+    let impl_block = tail_at_impl
+        .split_once("\n}\n")
+        .map(|(block, _)| block)
+        .unwrap_or(tail_at_impl);
+
+    assert!(
+        !impl_block.contains("pub fn new("),
+        "src/flow_paths.rs::FlowPaths impl must not contain `pub fn new(` — \
+         the panicking constructor was deleted in PR #1395 and replaced by \
+         `try_new`. Reintroduction defeats the compile-time invariant that \
+         every callsite must handle invalid branches."
+    );
+}

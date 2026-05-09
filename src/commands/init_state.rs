@@ -106,7 +106,16 @@ pub fn create_state(
         state.insert("start_steps_total".into(), json!(total));
     }
 
-    let paths = FlowPaths::new(project_root, branch);
+    // `branch` may be the user's `--branch` override (clap-supplied
+    // — external input) or start-init's `branch_name()` output. The
+    // override path skips the sanitizer, so pattern-match per
+    // `.claude/rules/external-input-validation.md` "CLI subcommand
+    // entry callsite discipline" and surface a structured error
+    // when invalid.
+    let paths = match FlowPaths::try_new(project_root, branch) {
+        Some(p) => p,
+        None => return Err(format!("Invalid branch name: {:?}", branch)),
+    };
     if let Err(e) = paths.ensure_branch_dir() {
         return Err(format!("Cannot create branch state directory: {}", e));
     }

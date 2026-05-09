@@ -299,10 +299,9 @@ pub fn run_impl_main(
         }
     };
     // `resolve_branch` may return a raw git ref (slash-containing,
-    // empty) when no state file matches the override. `FlowPaths::new`
-    // panics on those; use `try_new` per `.claude/rules/external-input-validation.md`
-    // and surface the invalid branch as a structured error rather than
-    // a crashing panic.
+    // empty) when no state file matches the override. `try_new`
+    // filters those per `.claude/rules/external-input-validation.md`
+    // so the CLI surfaces a structured error rather than a panic.
     let paths = match FlowPaths::try_new(root, &branch) {
         Some(p) => p,
         None => {

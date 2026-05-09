@@ -157,10 +157,10 @@ pub fn run_impl_main(phase: &str, branch_override: Option<&str>, root: &Path) ->
     };
 
     // `resolve_branch` may return a raw git ref (slash-containing,
-    // empty) when no state file matches. `FlowPaths::new` panics on
-    // those; use `try_new` per `.claude/rules/external-input-validation.md`
-    // and treat invalid branches as "no active flow" just like the
-    // missing-state-file case below.
+    // empty) when no state file matches. `try_new` filters those
+    // per `.claude/rules/external-input-validation.md` so they map
+    // to "no active flow" — same shape as the missing-state-file
+    // case below.
     let paths = match FlowPaths::try_new(root, &branch) {
         Some(p) => p,
         None => {

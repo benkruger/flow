@@ -170,6 +170,36 @@ fn test_write_ci_sentinel_writes_under_supplied_branch_path() {
 }
 
 #[test]
+fn test_start_gate_slash_branch_returns_structured_error() {
+    // `args.branch` arrives from clap; a slash-bearing branch
+    // (`feature/foo`, `dependabot/...`) must surface a structured
+    // error instead of panicking, per
+    // `.claude/rules/external-input-validation.md` "CLI subcommand
+    // entry callsite discipline".
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+
+    let output = run_start_gate(&repo, "feature/foo");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked at"),
+        "start-gate panicked on slash branch; stderr: {}",
+        stderr
+    );
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(
+        data["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Invalid branch name"),
+        "expected Invalid branch error, got: {:?}",
+        data
+    );
+}
+
+#[test]
 fn test_clean_path() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());

@@ -514,9 +514,10 @@ fn error_slash_branch_returns_structured_error_no_panic() {
         &["--branch", "feature/with-slash"],
     );
     // Slash branches are rejected by `FlowPaths::try_new` in
-    // `run_impl_main` with an "Invalid branch name" error. Exit 1, no
-    // panic. Guards the regression where the branch validation is
-    // replaced with `FlowPaths::new` (panicking constructor).
+    // `run_impl_main` with an "Invalid branch name" error.
+    // Structured error envelope, exit 1, no panic — matches
+    // `.claude/rules/external-input-validation.md` "CLI subcommand
+    // entry callsite discipline".
     assert_eq!(code, 1);
     assert_eq!(json["status"], "error");
     let msg = json["message"].as_str().unwrap_or("");

@@ -221,6 +221,24 @@ fn run_impl_main_failure_returns_stderr_one_code() {
 }
 
 #[test]
+fn append_log_slash_branch_returns_ok_without_writing() {
+    // `branch` may carry `/` for legitimate git branches. `append_log`
+    // treats invalid branches as a best-effort no-op so hook callers
+    // can pass git output without panic risk.
+    let dir = tempfile::tempdir().unwrap();
+    let result = append_log(dir.path(), "feature/foo", "message");
+    assert!(result.is_ok(), "expected Ok(()), got: {:?}", result);
+    // No log file should have been created for the slash-containing
+    // branch — the early return short-circuits before
+    // `ensure_branch_dir`.
+    let states_dir = dir.path().join(".flow-states");
+    assert!(
+        !states_dir.exists(),
+        ".flow-states/ must not be created when branch is invalid"
+    );
+}
+
+#[test]
 fn timestamp_is_included() {
     let dir = tempfile::tempdir().unwrap();
 

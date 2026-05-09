@@ -243,9 +243,21 @@ pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
     let state_path = if let Some(ref sf) = args.state_file {
         PathBuf::from(sf)
     } else {
+        // Branch comes from `current_branch()` (git output) and may
+        // legitimately contain `/` (`feature/foo`, `dependabot/...`).
+        // Surface "no state file" rather than panic on the path-safety
+        // check so the caller sees the standard error envelope.
         let root = project_root();
         let branch = current_branch().unwrap_or_default();
-        FlowPaths::new(&root, &branch).state_file()
+        match FlowPaths::try_new(&root, &branch) {
+            Some(paths) => paths.state_file(),
+            None => {
+                return json_error_tuple(&format!(
+                    "State file not found: no active flow for branch {:?}",
+                    branch
+                ));
+            }
+        }
     };
 
     if !state_path.exists() {

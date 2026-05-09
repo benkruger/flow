@@ -180,9 +180,24 @@ pub fn run_impl(
         return Err("Usage: bin/flow finalize-commit <message-file> <branch>".to_string());
     }
 
+    // `args.branch` is clap-supplied — external input. Validate up
+    // front per `.claude/rules/external-input-validation.md` "CLI
+    // subcommand entry callsite discipline" so the two downstream
+    // path constructions in this function can rely on a known-valid
+    // branch.
+    let paths = match FlowPaths::try_new(root, &args.branch) {
+        Some(p) => p,
+        None => {
+            return Ok(json!({
+                "status": "error",
+                "message": format!("Invalid branch name: {:?}", &args.branch),
+            }));
+        }
+    };
+
     // Derive phase number from state file's current_phase for log prefixes.
     let pn = {
-        let state_path = FlowPaths::new(root, &args.branch).state_file();
+        let state_path = paths.state_file();
         std::fs::read_to_string(&state_path)
             .ok()
             .and_then(|c| serde_json::from_str::<Value>(&c).ok())
@@ -330,7 +345,10 @@ pub fn run_impl(
     // does not force-advance the parent phase after a failed commit.
     // Conflict is NOT cleared — the commit skill retries after resolving.
     if result["status"] == "error" {
-        let state_path = FlowPaths::new(root, &args.branch).state_file();
+        // The upstream pattern-match at the top of `run_impl`
+        // already validated `args.branch` and produced `paths`;
+        // reuse the same handle so the constructor runs once.
+        let state_path = paths.state_file();
         if state_path.exists() {
             let _ = mutate_state(&state_path, &mut |state| {
                 if !(state.is_object() || state.is_null()) {

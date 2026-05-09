@@ -7,11 +7,15 @@
 //!   (discovery scans, hook prefix checks, pre-lock queue paths) that
 //!   need the `.flow-states/` directory without a specific branch.
 //! - `FlowPaths` — branch-scoped. Use when addressing a per-branch
-//!   file (`state_file`, `log_file`, `plan_file`, etc.). The
-//!   constructor panics on empty or slash-containing branches because
-//!   those shapes produce malformed paths; `try_new` is the fallible
-//!   variant for callers that receive branches from git and cannot
-//!   guarantee validity.
+//!   file (`state_file`, `log_file`, `plan_file`, etc.). The only
+//!   constructor is `try_new`, an `Option`-returning variant that
+//!   filters branches via `is_valid_branch` so empty,
+//!   slash-containing, NUL-bearing, and `.`/`..` traversal segments
+//!   never reach path construction. Callers that hold a branch known
+//!   to be valid upstream call `try_new(...).expect("<boundary>")`
+//!   with a doc-comment naming the upstream sanitizer; callers that
+//!   receive a branch from git or a CLI override pattern-match on
+//!   the `Option` and treat `None` as "no active flow".
 //! - `compute_worktree_paths` / `compute_worktree_root` — derive the
 //!   project root and worktree root from any cwd inside the worktree.
 //!   `compute_worktree_paths` returns `Option<(project_root, worktree_root)>`
@@ -92,32 +96,16 @@ impl FlowPaths {
             && !branch.contains('\0')
     }
 
-    /// Construct a new `FlowPaths` rooted at `<project_root>/.flow-states`
-    /// for the given branch.
-    ///
-    /// Panics if `branch` fails `is_valid_branch`. Use this when you
-    /// know the branch is valid (e.g., it came from state file keyspace
-    /// or was already checked). Use `try_new` for branches sourced from
-    /// git (`current_branch()`, `resolve_branch()`) — those can carry
-    /// slashes (`feature/foo`, `dependabot/*`) that must not panic.
-    /// Use `FlowStatesDir` when an operation is genuinely branch-free.
-    pub fn new(project_root: impl AsRef<Path>, branch: impl Into<String>) -> Self {
-        let branch = branch.into();
-        assert!(
-            Self::is_valid_branch(&branch),
-            "FlowPaths::new: invalid branch: {branch:?} (must be non-empty, \
-             not '.' or '..', no '/' or NUL)"
-        );
-        Self {
-            flow_states_dir: project_root.as_ref().join(".flow-states"),
-            branch,
-        }
-    }
-
-    /// Fallible constructor — returns `None` when `branch` fails
-    /// `is_valid_branch`. Callers that receive branches from external
-    /// sources (git, user input) should use this instead of `new` to
-    /// treat invalid branches as "no active flow" rather than panicking.
+    /// Sole constructor — returns `Some(FlowPaths)` when `branch`
+    /// passes `is_valid_branch`, `None` otherwise. Callers that hold
+    /// a branch already validated upstream (state-file keyspace,
+    /// `branch_name()` output) chain `.expect("<boundary>")` with a
+    /// doc-comment naming the sanitizer. Callers that receive a
+    /// branch from git (`current_branch()`, `resolve_branch()`) or
+    /// from a CLI override pattern-match the `Option` and treat
+    /// `None` as "no active flow on this branch" — the same posture
+    /// as the detached-HEAD branch in those callers. Use
+    /// `FlowStatesDir` when an operation is genuinely branch-free.
     pub fn try_new(project_root: impl AsRef<Path>, branch: impl Into<String>) -> Option<Self> {
         let branch = branch.into();
         if !Self::is_valid_branch(&branch) {

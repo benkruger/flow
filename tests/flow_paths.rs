@@ -13,7 +13,7 @@ use flow_rs::flow_paths::{
 // --- FlowPaths ---
 
 fn paths() -> FlowPaths {
-    FlowPaths::new("/tmp/project", "my-feature")
+    FlowPaths::try_new("/tmp/project", "my-feature").expect("test fixture branch is valid")
 }
 
 #[test]
@@ -135,16 +135,16 @@ fn start_prompt_lives_under_branch_dir() {
 
 #[test]
 fn accepts_pathbuf_and_path_for_project_root() {
-    let p1 = FlowPaths::new(PathBuf::from("/p"), "b");
-    let p2 = FlowPaths::new(Path::new("/p"), "b");
+    let p1 = FlowPaths::try_new(PathBuf::from("/p"), "b").expect("valid branch");
+    let p2 = FlowPaths::try_new(Path::new("/p"), "b").expect("valid branch");
     assert_eq!(p1.state_file(), p2.state_file());
 }
 
 #[test]
 fn accepts_owned_and_borrowed_branch() {
     let b = String::from("branch-x");
-    let p1 = FlowPaths::new("/p", b.clone());
-    let p2 = FlowPaths::new("/p", b.as_str());
+    let p1 = FlowPaths::try_new("/p", b.clone()).expect("valid branch");
+    let p2 = FlowPaths::try_new("/p", b.as_str()).expect("valid branch");
     assert_eq!(p1.state_file(), p2.state_file());
 }
 
@@ -164,47 +164,11 @@ fn debug_format_contains_branch() {
     assert!(dbg.contains("my-feature"));
 }
 
-#[test]
-#[should_panic(expected = "invalid branch")]
-fn new_panics_on_empty_branch() {
-    let _ = FlowPaths::new("/p", "");
-}
-
-#[test]
-#[should_panic(expected = "invalid branch")]
-fn new_panics_on_branch_with_single_slash() {
-    let _ = FlowPaths::new("/p", "user/fix");
-}
-
-#[test]
-#[should_panic]
-fn new_panics_on_branch_with_multiple_slashes() {
-    let _ = FlowPaths::new("/p", "a/b/c");
-}
-
-#[test]
-#[should_panic]
-fn new_panics_on_branch_that_is_just_a_slash() {
-    let _ = FlowPaths::new("/p", "/");
-}
-
-#[test]
-#[should_panic]
-fn new_panics_on_trailing_slash() {
-    let _ = FlowPaths::new("/p", "a/");
-}
-
-#[test]
-#[should_panic]
-fn new_panics_on_leading_slash() {
-    let _ = FlowPaths::new("/p", "/a");
-}
-
 // --- branch_dir + ensure_branch_dir ---
 
 #[test]
 fn branch_dir_returns_branch_subdirectory_under_flow_states_dir() {
-    let p = FlowPaths::new("/tmp/project", "feature-foo");
+    let p = FlowPaths::try_new("/tmp/project", "feature-foo").expect("valid branch");
     assert_eq!(
         p.branch_dir(),
         PathBuf::from("/tmp/project/.flow-states/feature-foo")
@@ -214,7 +178,7 @@ fn branch_dir_returns_branch_subdirectory_under_flow_states_dir() {
 #[test]
 fn ensure_branch_dir_creates_directory_when_missing() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let p = FlowPaths::new(tmp.path(), "feature-foo");
+    let p = FlowPaths::try_new(tmp.path(), "feature-foo").expect("valid branch");
     assert!(!p.branch_dir().exists());
     p.ensure_branch_dir().expect("ensure_branch_dir succeeds");
     assert!(p.branch_dir().is_dir());
@@ -223,7 +187,7 @@ fn ensure_branch_dir_creates_directory_when_missing() {
 #[test]
 fn ensure_branch_dir_idempotent_on_existing_directory() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let p = FlowPaths::new(tmp.path(), "feature-foo");
+    let p = FlowPaths::try_new(tmp.path(), "feature-foo").expect("valid branch");
     p.ensure_branch_dir().expect("first call succeeds");
     p.ensure_branch_dir().expect("second call is idempotent");
     assert!(p.branch_dir().is_dir());
@@ -236,7 +200,7 @@ fn ensure_branch_dir_propagates_io_error() {
     std::fs::create_dir_all(&flow_states).expect("create .flow-states");
     let collision = flow_states.join("feature-foo");
     std::fs::write(&collision, b"blocking file").expect("write blocking file");
-    let p = FlowPaths::new(tmp.path(), "feature-foo");
+    let p = FlowPaths::try_new(tmp.path(), "feature-foo").expect("valid branch");
     let err = p
         .ensure_branch_dir()
         .expect_err("ensure_branch_dir must fail when path is a regular file");
@@ -304,8 +268,7 @@ fn try_new_returns_none_for_multi_slash_branch() {
 // `cleanup`'s `remove_dir_all(branch_dir())` into arbitrary
 // directory deletion. NUL bytes survive into filesystem syscalls
 // in implementation-defined ways. All four rejections must hit
-// `is_valid_branch` so `try_new` returns None and the panicking
-// `new` constructor's assertion fires.
+// `is_valid_branch` so `try_new` returns None.
 
 #[test]
 fn is_valid_branch_rejects_dot() {
@@ -335,24 +298,6 @@ fn try_new_returns_none_for_dot_dot_branch() {
 #[test]
 fn try_new_returns_none_for_nul_branch() {
     assert!(FlowPaths::try_new("/p", "branch\0name").is_none());
-}
-
-#[test]
-#[should_panic(expected = "invalid branch")]
-fn new_panics_on_dot_branch() {
-    let _ = FlowPaths::new("/p", ".");
-}
-
-#[test]
-#[should_panic(expected = "invalid branch")]
-fn new_panics_on_dot_dot_branch() {
-    let _ = FlowPaths::new("/p", "..");
-}
-
-#[test]
-#[should_panic(expected = "invalid branch")]
-fn new_panics_on_nul_branch() {
-    let _ = FlowPaths::new("/p", "with\0nul");
 }
 
 // --- FlowStatesDir ---
