@@ -21,6 +21,18 @@ use crate::flow_paths::FlowPaths;
 /// larger than the cap reject before any marker scan runs.
 pub const PLAN_BODY_BYTE_CAP: usize = 1_048_576;
 
+/// Maximum raw `gh` stdout length accepted by `fetch_issue_body`.
+///
+/// Sized at `PLAN_BODY_BYTE_CAP + 64 KiB` to admit the JSON envelope
+/// wrapping a body at the body cap. Bodies that exceed this bound
+/// reject before `serde_json::from_str` parses them, bounding the
+/// peak heap consumed by the parse to `2 * GH_STDOUT_BYTE_CAP`
+/// (raw bytes + parsed `Value`). GitHub's nominal issue-body limit
+/// is 65,536 characters, so this cap is ~16x the real-world ceiling
+/// and exists to bound enterprise-instance and adversarial-fetch
+/// scenarios.
+pub const GH_STDOUT_BYTE_CAP: usize = PLAN_BODY_BYTE_CAP + 65_536;
+
 const BEGIN_MARKER: &str = "<!-- FLOW-PLAN-BEGIN -->";
 const END_MARKER: &str = "<!-- FLOW-PLAN-END -->";
 
@@ -86,6 +98,12 @@ impl Error for FetchError {}
 /// gh failure. The function spawns `gh issue view <N> --json body,state`
 /// and parses the JSON response. Authentication and repo detection are
 /// the responsibility of the user's `gh` configuration.
+///
+/// On success, raw stdout is checked against `GH_STDOUT_BYTE_CAP`
+/// before the JSON parse so a runaway or adversarial `gh` response
+/// cannot grow the parsed `Value` allocation without bound. Per
+/// `.claude/rules/external-input-path-construction.md` "Enforce a
+/// documented size cap on every external read".
 pub fn fetch_issue_body(issue_number: u64) -> Result<String, FetchError> {
     let output = Command::new("gh")
         .args([
@@ -110,6 +128,14 @@ pub fn fetch_issue_body(issue_number: u64) -> Result<String, FetchError> {
             });
         }
         return Err(FetchError::GhFailed(stderr.trim().to_string()));
+    }
+
+    if output.stdout.len() > GH_STDOUT_BYTE_CAP {
+        return Err(FetchError::GhFailed(format!(
+            "gh stdout exceeds {}-byte cap (got {} bytes)",
+            GH_STDOUT_BYTE_CAP,
+            output.stdout.len()
+        )));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);

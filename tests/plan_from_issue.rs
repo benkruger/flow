@@ -544,3 +544,35 @@ fn plan_from_issue_returns_plan_too_large_when_body_exceeds_cap() {
     assert_eq!(data["status"], "error");
     assert_eq!(data["reason"], "plan_too_large");
 }
+
+#[test]
+fn plan_from_issue_rejects_oversized_gh_stdout_before_parse() {
+    // Tenant 4 (Correctness): Code Review pre-mortem flagged that an
+    // adversarial gh response could grow the parsed `Value` allocation
+    // unbounded. fetch_issue_body now checks raw stdout length against
+    // GH_STDOUT_BYTE_CAP before invoking serde_json::from_str. Stub gh
+    // emits a stdout payload exceeding the cap; the runner must reject
+    // with reason="gh_fetch_failed" and a message naming the cap.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    // Emit a syntactically-valid but oversized JSON envelope. The body
+    // field carries enough padding that the raw stdout length exceeds
+    // GH_STDOUT_BYTE_CAP (= PLAN_BODY_BYTE_CAP + 64 KiB). The cap fires
+    // before the JSON parse, so the response need not be valid JSON.
+    let padding = PLAN_BODY_BYTE_CAP + 70_000;
+    let stub_script = format!(
+        "#!/bin/bash\nprintf '{{\\\"body\\\":\\\"%*s\\\",\\\"state\\\":\\\"OPEN\\\"}}\\n' {} ' '\nexit 0\n",
+        padding
+    );
+    let stub_dir = create_gh_stub(&repo, &stub_script);
+
+    let output = run_plan_from_issue(&repo, &["--issue", "10", "--branch", "ovr"], &stub_dir);
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert_eq!(data["reason"], "gh_fetch_failed");
+    assert!(data["message"]
+        .as_str()
+        .unwrap()
+        .contains("gh stdout exceeds"));
+}
