@@ -21,15 +21,17 @@ context; a future session starts from zero.
 Mechanical enforcement ensures the path is absent:
 
 - `bin/flow add-finding` applies a positive allowlist: the outcome
-  must be in `{fixed, dismissed}` when `--phase flow-code-review`.
-  Both inputs are normalized (whitespace trimmed, NULs stripped,
-  ASCII-lowercased) before comparison.
+  must be in `{fixed, dismissed}` when `--phase flow-review` (the
+  legacy `flow-code-review` identifier is also accepted on the gate
+  for state files written by older plugin versions). Both inputs
+  are normalized (whitespace trimmed, NULs stripped, ASCII-
+  lowercased) before comparison.
 - `bin/flow issue` blocks issue creation when the state file shows
-  `current_phase == "flow-code-review"`. The gate fails CLOSED
-  when a non-empty state file exists but its `current_phase`
-  cannot be determined. The `--override-code-review-ban` flag
-  bypasses the gate and is the deliberate-friction escape hatch
-  for exceptional cases.
+  `current_phase == "flow-review"` (or the legacy alias
+  `"flow-code-review"`). The gate fails CLOSED when a non-empty
+  state file exists but its `current_phase` cannot be determined.
+  The `--override-code-review-ban` flag bypasses the gate and is
+  the deliberate-friction escape hatch for exceptional cases.
 
 ## Supersession Exception
 

@@ -1220,6 +1220,38 @@ fn test_skills_dir_no_flow_code_review_subdir() {
 
 /// Tombstone: removed in PR #1402. Must not return.
 ///
+/// File-existence guard for the renamed Code Review scope rule
+/// file. The rule was moved from `.claude/rules/code-review-scope.md`
+/// to `.claude/rules/review-scope.md` in the same PR via `git mv`.
+/// Per `.claude/rules/tombstone-tests.md` "Two kinds of tombstone —
+/// file-resurrection threats", a deleted rule path needs a
+/// file-existence tombstone so a merge-conflict resurrection of the
+/// old path produces a duplicate rule file — both copies would be
+/// loaded into the rule corpus and cross-references in sibling
+/// rules would become ambiguous. The check uses `Path::exists()`
+/// directly because the target is a worktree-tracked file path, not
+/// a string literal — the concat!/format! reassembly bypass classes
+/// do not apply to filesystem paths checked at runtime.
+#[test]
+fn test_claude_rules_dir_no_code_review_scope_file() {
+    let root = common::repo_root();
+    let path = root
+        .join(".claude")
+        .join("rules")
+        .join("code-review-scope.md");
+    assert!(
+        !path.exists(),
+        ".claude/rules/code-review-scope.md must not exist — the \
+         rule was renamed to .claude/rules/review-scope.md in PR \
+         #1402. A `git mv` reversal or merge-conflict resurrection \
+         of the old path would re-introduce the legacy rule \
+         alongside the new one and create ambiguous \
+         cross-references."
+    );
+}
+
+/// Tombstone: removed in PR #1402. Must not return.
+///
 /// Asserts the canonical phase machine in `flow-phases.json` does
 /// NOT contain the old phase identifier `"flow-code-review"` in
 /// either the `order` array or the `phases` map. Bare byte-substring

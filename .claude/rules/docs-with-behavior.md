@@ -308,6 +308,6 @@ do not defer to Code Review or Learn.
 
 During Code Review triage, every documentation finding caused by
 the PR's own changes is fixed in the same PR. The Code Review rule
-(`.claude/rules/code-review-scope.md`) removes the filing path
+(`.claude/rules/review-scope.md`) removes the filing path
 entirely — documentation drift introduced by the PR's changes is
 a Real finding that gets fixed in Step 4.
