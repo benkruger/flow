@@ -1,6 +1,6 @@
 ---
 name: flow-triage-issue
-description: "Triage a single open GitHub issue from a PM lens. Reads code, checks for already-shipped work, returns a verdict in {close, decompose, keep-open, fix-now} with confidence and a flip-condition. Renders and stops — no side effects."
+description: "Triage a single open GitHub issue from a PM lens. Applies a 'Triage In-Progress' label during triage; reads code, checks for already-shipped work, returns a verdict in {close, decompose} with confidence and a flip-condition. Renders and stops — no other side effects."
 ---
 
 # FLOW Triage Issue
@@ -26,12 +26,26 @@ with an out-of-scope envelope.
 
 ## Concurrency
 
-This skill is read-only with respect to GitHub state. It never
-closes, labels, comments on, or otherwise mutates issues.
-Concurrent invocations from different sessions cannot collide on
-shared state. The sub-agent's `gh issue view` and `gh pr list`
-calls are read-only; multiple parallel triages on different issues
-are safe.
+This skill mutates two surfaces of GitHub state. **Per triage**, it
+applies a "Triage In-Progress" label assignment to the issue at the
+start of triage and removes it before the COMPLETE banner.
+**One-time per repository**, Step 2 also creates the
+"Triage In-Progress" label in the repository's label registry on
+the first triage in a fresh repo — the registry write is idempotent
+in intent (the steady-state path checks for existence first and
+skips the create). The skill never closes, comments on, or applies
+any other label.
+
+The per-issue label assignment is a passive observability signal —
+a second PM running `/flow:flow-triage-issue` on an issue already
+labeled sees the in-progress signal in the GitHub UI before
+invoking; it is NOT a mutex, so concurrent triages of the same
+issue are tolerated and whichever invocation removes the label
+last wins. If the skill crashes between the add and remove, the
+label persists; manual removal from the GitHub UI is the recovery
+path. The sub-agent's `gh issue view` and `gh pr list` calls
+remain read-only; the agent itself never mutates state. Multiple
+parallel triages on different issues are safe.
 
 ## Announce
 
@@ -79,19 +93,65 @@ Usage: /flow:flow-triage-issue #<issue-number>
 ````
 
 - If the argument matches: strip the leading `#` and keep the
-  numeric value as `<ISSUE_NUMBER>` for Step 2.
+  numeric value as `<issue_number>` for the remaining steps.
 
-### Step 2 — Dispatch the issue-triage sub-agent
+### Step 2 — Apply the Triage In-Progress label
+
+Apply a "Triage In-Progress" label to the issue so concurrent
+sessions can see at a glance that the issue is being triaged. The
+label is passive — it does not block other invocations — but it
+makes parallel work visible in the GitHub UI.
+
+First, check whether the label already exists in the repository.
+`gh issue edit --add-label` rejects unknown labels, so a fresh
+repo needs the label created before the per-issue assignment can
+land:
+
+```bash
+gh label list --search "Triage In-Progress" --json name
+```
+
+Parse the JSON output. The result is a JSON array — empty `[]`
+means the label is absent and must be created; any non-empty array
+containing an entry whose `name` field equals "Triage In-Progress"
+means the label already exists and the create call must be
+skipped.
+
+If the list-search is empty (no existing label), create it:
+
+```bash
+gh label create "Triage In-Progress" --description "PM is currently triaging this issue" --color FFA500
+```
+
+If `gh label create` fails for any reason in this branch (network,
+auth, permission), halt the skill and surface the error to the
+user — do NOT proceed to add-label, because the assignment will
+also fail.
+
+If the list-search returned a non-empty array containing
+"Triage In-Progress", skip the create call entirely and proceed
+to the assignment.
+
+Add the label to the issue:
+
+```bash
+gh issue edit <issue_number> --add-label "Triage In-Progress"
+```
+
+`<issue_number>` is the validated numeric value from Step 1.
+
+### Step 3 — Dispatch the issue-triage sub-agent
 
 Invoke the `issue-triage` sub-agent in the foreground via the Agent
-tool. Pass `<ISSUE_NUMBER>` as the labeled `ISSUE_NUMBER` input.
+tool. Pass `<issue_number>` as the labeled `ISSUE_NUMBER` input.
 
 Wait for the sub-agent to return its full output. The sub-agent does
 all the investigation — gh fetches, code reads, shipped-work checks,
 question answers, verdict construction. The skill performs no `gh`
-or `git` calls itself.
+or `git` calls itself beyond the label add/remove around this
+dispatch.
 
-### Step 3 — Check for the structural marker
+### Step 4 — Check for the structural marker
 
 Before rendering, scan the agent's returned output for the literal
 `## END-OF-FINDINGS` completion marker (per
@@ -116,10 +176,18 @@ Decision tree:
 
 - If `## END-OF-FINDINGS` is present AND a complete verdict card
   OR a complete out-of-scope envelope is present → proceed to
-  Step 4.
-- Otherwise → output the following message in your response (not
-  via Bash) inside a fenced code block, then stop without
-  rendering the partial output:
+  Step 5.
+- Otherwise → remove the "Triage In-Progress" label first (the
+  label-remove must run on every exit path so the issue does not
+  carry a residual label after a truncated investigation):
+
+```bash
+gh issue edit <issue_number> --remove-label "Triage In-Progress"
+```
+
+  Then output the following message in your response (not via
+  Bash) inside a fenced code block, then stop without rendering
+  the partial output:
 
 ````markdown
 ```text
@@ -131,29 +199,45 @@ manually and triage it yourself.
 ```
 ````
 
-### Step 4 — Render the verdict verbatim
+### Step 5 — Render the verdict verbatim
 
 Print the agent's complete output inline in your response — every
 heading, every bullet, every citation. Do not summarize, paraphrase,
 re-rank, or trim. The verdict format (5 fields: disposition, summary,
-evidence, confidence, flip-condition) and the 4-disposition closed
-set (`close`, `decompose`, `keep-open`, `fix-now`) are locked by
-contract tests. The PM consuming the verdict must see exactly what
-the agent produced.
+evidence, confidence, flip-condition) and the 2-disposition closed
+set (`close`, `decompose`) are locked by contract tests. The PM
+consuming the verdict must see exactly what the agent produced.
 
-### Step 5 — STOP
+### Step 6 — Remove the Triage In-Progress label
+
+The verdict has been rendered (or the out-of-scope envelope was
+displayed). Remove the "Triage In-Progress" label so the issue no
+longer signals active triage. The Step 7 HARD-GATE that follows
+forbids any further `gh issue edit` calls — the label cleanup must
+land in this step before the gate fires.
+
+```bash
+gh issue edit <issue_number> --remove-label "Triage In-Progress"
+```
+
+### Step 7 — STOP
 
 <HARD-GATE>
-After rendering the verdict, stop. Do NOT take any auto-action based
-on the disposition — no auto-close, no auto-label, no auto-comment,
-no auto-invocation of follow-on skills.
+After Step 6's label-removal completes, stop. Do NOT take any
+auto-action based on the disposition — no auto-close, no
+auto-label, no auto-comment, no auto-invocation of follow-on
+skills. The Step 6 label-remove is the LAST mutation this skill
+performs; everything below this gate is post-cleanup.
 
-This HARD-GATE is mechanical. You must NOT:
+This HARD-GATE is mechanical. After Step 6 completes you must NOT:
 
 - Invoke any skill via the Skill tool after rendering the verdict
   (regardless of what the disposition value is)
-- Run `gh issue close`, `gh issue edit`, `gh issue comment`, or any
-  other GitHub-state-mutating subcommand
+- Run any further `gh issue close`, `gh issue edit`,
+  `gh issue comment`, or any other GitHub-state-mutating
+  subcommand (Step 6's `gh issue edit ... --remove-label` was the
+  final permitted invocation; no further `gh issue edit` calls are
+  permitted from this point)
 - Run any `git` command that writes (commit, push, tag, etc.)
 - Take any action whatsoever based on the disposition value
 
@@ -169,10 +253,6 @@ tempted to invoke. The PM types the next command themselves.
 - **decompose** — describe the manual step as: "The issue needs an
   Implementation Plan; draft a pre-decomposed replacement
   yourself, then close the original."
-- **keep-open** — describe the manual step as: "Leave the issue
-  open and revisit later — no action needed now."
-- **fix-now** — describe the manual step as: "Start a new flow
-  against the issue yourself when you are ready to work on it."
 - **Out of scope** (closed issue or fetch failure) — describe the
   manual step as: "Open the issue in a browser and triage
   manually."
@@ -195,9 +275,13 @@ Output the following banner in your response (not via Bash) inside a fenced code
 
 ## Hard Rules
 
-- Never close issues. The skill is read-only with respect to GitHub
-  state — no `gh issue close`, no `gh issue edit`, no
-  `gh issue comment`, no labels.
+- Never close issues. The skill never runs `gh issue close`.
+- Never comment on issues. The skill never runs `gh issue comment`.
+- Never apply or remove labels other than the "Triage In-Progress"
+  marker the skill manages itself: applied in Step 2, removed in
+  Step 6 on the happy path, and also removed in Step 4's
+  truncation early-stop branch so every exit path leaves the
+  issue free of the label.
 - Never auto-invoke `/flow:flow-create-issue`, `/flow:flow-start`, or
   any other skill based on the verdict. The PM acts manually.
 - v1: open issues only. The agent refuses closed issues with the
@@ -205,9 +289,10 @@ Output the following banner in your response (not via Bash) inside a fenced code
 - Verdict format is exactly the 5-field card produced by
   `agents/issue-triage.md`. Do not paraphrase, re-rank, summarize, or
   trim the agent's output.
-- Disposition values are exactly `{close, decompose, keep-open,
-  fix-now}`. The closed set is locked by contract test; never
-  introduce additional values — the agent never produces them.
+- Disposition values are exactly `{close, decompose}`. The closed
+  set is locked by contract test; never introduce additional
+  values — the agent never produces them.
 - Use the `issue-triage` sub-agent only. Other agents are out of
   scope for this skill (the contract test enforces this).
-- Render and stop. No auto-actions of any kind.
+- Render and stop. No auto-actions beyond the Triage In-Progress
+  label add/remove.

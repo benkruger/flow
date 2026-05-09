@@ -838,10 +838,21 @@ fn test_issue_triage_agent_verdict_card_fields() {
             "agents/issue-triage.md verdict card must include field: {field}"
         );
     }
-    for disposition in ["close", "decompose", "keep-open", "fix-now"] {
+    // Strict assertion: pin the canonical disposition markers — the
+    // verdict-template bracketed form `{close | decompose}` AND the
+    // Disposition Semantics bullet shape `- **close**` /
+    // `- **decompose**`. A bare `content.contains("close")` was
+    // satisfied by non-disposition prose ("Refuse closed", "the closed
+    // set", "gh issue close"), so dropping the canonical markers while
+    // leaving prose intact would have passed silently.
+    assert!(
+        content.contains("{close | decompose}"),
+        "agents/issue-triage.md verdict template must contain the canonical disposition form `{{close | decompose}}`"
+    );
+    for bullet in ["- **close**", "- **decompose**"] {
         assert!(
-            content.contains(disposition),
-            "agents/issue-triage.md must enumerate disposition: {disposition}"
+            content.contains(bullet),
+            "agents/issue-triage.md Disposition Semantics must contain bullet: {bullet}"
         );
     }
 }

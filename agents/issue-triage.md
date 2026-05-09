@@ -1,6 +1,6 @@
 ---
 name: issue-triage
-description: "PM-lens issue triage. Receives an issue number, fetches via gh, reads referenced code (or searches for behavior when unreferenced), checks for already-shipped work, and produces a verdict in {close, decompose, keep-open, fix-now} with confidence and a flip-condition."
+description: "PM-lens issue triage. Receives an issue number, fetches via gh, reads referenced code (or searches for behavior when unreferenced), checks for already-shipped work, and produces a verdict in {close, decompose} with confidence and a flip-condition."
 model: sonnet
 tools: Read, Glob, Grep, Bash
 disallowedTools: Edit, Write
@@ -80,10 +80,9 @@ Follow these steps in order. Each step builds on the previous one.
    Format below — answer in order, one heading per question.
 
 5. **Produce the verdict card.** Pick a disposition from the closed
-   set `{close, decompose, keep-open, fix-now}`, write a one-paragraph
-   summary, list evidence as `file:line` bullets, declare a confidence
-   level, and name the flip-condition (what would change the
-   disposition).
+   set `{close, decompose}`, write a one-paragraph summary, list
+   evidence as `file:line` bullets, declare a confidence level, and
+   name the flip-condition (what would change the disposition).
 
 ## Reasoning Discipline
 
@@ -121,7 +120,7 @@ are locked in by contract tests.
 ### 10. Risk of the fix
 
 ### Verdict
-- **Disposition:** {close | decompose | keep-open | fix-now}
+- **Disposition:** {close | decompose}
 - **Summary:** [one paragraph]
 - **Evidence:** [bulleted file:line refs]
 - **Confidence:** {low | medium | high} — [one-line rationale]
@@ -146,22 +145,16 @@ investigation did not produce a triage decision.
 
 ## Disposition Semantics
 
-The closed set is `{close, decompose, keep-open, fix-now}`. Pick
-exactly one:
+The closed set is `{close, decompose}`. Pick exactly one:
 
 - **close** — the issue is no longer a real problem (already shipped,
   framing was wrong, behavior changed). The PM should run
   `gh issue close <num>` after reading your evidence.
-- **decompose** — the issue is real and substantial enough to need an
-  Implementation Plan section before any code lands. The PM should
+- **decompose** — the issue is real and ready for implementation
+  planning. A decomposed issue carries an Implementation Plan
+  section and is the input to `/flow:flow-start`. The PM should
   invoke `/flow:flow-create-issue` to draft a pre-decomposed
   replacement, then close the original.
-- **keep-open** — the issue is real but not yet ready for work
-  (blocked by upstream, awaiting design, low priority right now). The
-  PM should leave it open and revisit later.
-- **fix-now** — the issue is real, scoped, and ready for
-  implementation. The PM should invoke `/flow:flow-start <issue
-  number>` to begin a flow.
 
 ## Hard Rules
 
@@ -169,7 +162,7 @@ exactly one:
   around (per `.claude/rules/assess-issues.md`).
 - Cite `file:line` for every code claim. A claim without a citation
   is speculation.
-- Pick a disposition from the closed set above. The four canonical
+- Pick a disposition from the closed set above. The two canonical
   values are the entire allowed set; never invent additional values.
 - Refuse closed issues — return the out-of-scope envelope and stop.
 - Never mutate GitHub state — read-only investigation only.

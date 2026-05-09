@@ -3779,8 +3779,8 @@ fn test_flow_triage_issue_skill_has_no_side_effects_hard_gate() {
 fn test_flow_triage_issue_skill_disposition_set_is_canonical() {
     let content = common::read_skill("flow-triage-issue");
     let lower = content.to_lowercase();
-    // Canonical four must be present.
-    for disposition in ["close", "decompose", "keep-open", "fix-now"] {
+    // Canonical two must be present.
+    for disposition in ["close", "decompose"] {
         assert!(
             content.contains(disposition),
             "skills/flow-triage-issue/SKILL.md must enumerate disposition: {disposition}"
@@ -3790,11 +3790,10 @@ fn test_flow_triage_issue_skill_disposition_set_is_canonical() {
     // backticks that follows a `**` disposition-marker pattern in
     // the Step 5 hint section. The Step 5 hint enumerates one
     // bullet per allowed disposition (`**close**`, `**decompose**`,
-    // `**keep-open**`, `**fix-now**`, `**Out of scope**`). Any
-    // additional `**<token>**` bullet inside the HARD-GATE
-    // disposition list is an unsanctioned extension. Locks the
-    // closed set to four canonical dispositions plus the
-    // out-of-scope envelope label.
+    // `**Out of scope**`). Any additional `**<token>**` bullet
+    // inside the HARD-GATE disposition list is an unsanctioned
+    // extension. Locks the closed set to two canonical dispositions
+    // plus the out-of-scope envelope label.
     let gate = extract_hard_gate_block(&content);
     let bullet_re = regex::Regex::new(r"(?m)^- \*\*([a-zA-Z][a-zA-Z0-9 -]*)\*\*")
         .expect("disposition bullet regex");
@@ -3805,13 +3804,11 @@ fn test_flow_triage_issue_skill_disposition_set_is_canonical() {
     bullet_tokens.sort();
     bullet_tokens.dedup();
     let allowed: std::collections::HashSet<&str> =
-        ["close", "decompose", "keep-open", "fix-now", "out of scope"]
-            .into_iter()
-            .collect();
+        ["close", "decompose", "out of scope"].into_iter().collect();
     for token in &bullet_tokens {
         assert!(
             allowed.contains(token.as_str()),
-            "skills/flow-triage-issue/SKILL.md HARD-GATE enumerates unsanctioned disposition bullet: {token:?}. The closed set is exactly {{close, decompose, keep-open, fix-now}} plus the Out-of-scope envelope."
+            "skills/flow-triage-issue/SKILL.md HARD-GATE enumerates unsanctioned disposition bullet: {token:?}. The closed set is exactly {{close, decompose}} plus the Out-of-scope envelope."
         );
     }
     // Defense in depth: forbid common alternative tokens
@@ -3872,6 +3869,28 @@ fn issue_triage_agent_declares_end_of_findings_marker() {
     assert!(
         content.contains("## END-OF-FINDINGS"),
         "agents/issue-triage.md must declare the literal `## END-OF-FINDINGS` completion marker"
+    );
+}
+
+#[test]
+fn test_flow_triage_issue_skill_applies_triage_in_progress_label() {
+    let content = common::read_skill("flow-triage-issue");
+    assert!(
+        content.contains(r#"--add-label "Triage In-Progress""#),
+        "skills/flow-triage-issue/SKILL.md must apply the Triage In-Progress \
+         label at the start of triage via `gh issue edit ... --add-label \
+         \"Triage In-Progress\"`"
+    );
+}
+
+#[test]
+fn test_flow_triage_issue_skill_removes_triage_in_progress_label() {
+    let content = common::read_skill("flow-triage-issue");
+    assert!(
+        content.contains(r#"--remove-label "Triage In-Progress""#),
+        "skills/flow-triage-issue/SKILL.md must remove the Triage In-Progress \
+         label before the COMPLETE banner via `gh issue edit ... --remove-label \
+         \"Triage In-Progress\"`"
     );
 }
 

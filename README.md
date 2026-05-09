@@ -152,7 +152,7 @@ Available at any point in the workflow:
 | `/flow-create-issue` | Explore a design question or decompose a concrete problem, iterate until work-ready, then file it |
 | `/flow-decompose-project` | Decompose a large project into linked GitHub issues with sub-issue relationships, blocked-by dependencies, and milestones |
 | `/flow-orchestrate` | Process decomposed issues overnight — batch orchestration via flow-start --auto |
-| `/flow-triage-issue` | Triage a single open GitHub issue from a PM lens — reads code, checks for already-shipped work, returns a verdict in {close, decompose, keep-open, fix-now} |
+| `/flow-triage-issue` | Triage a single open GitHub issue from a PM lens — reads code, checks for already-shipped work, returns a verdict in {close, decompose} |
 
 ### Standalone Tools
 

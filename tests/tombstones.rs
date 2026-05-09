@@ -1055,6 +1055,75 @@ fn test_tombstones_no_stability_docs_violations() {
     );
 }
 
+// --- flow-triage-issue disposition reduction (PR #1401) ---
+
+/// Tombstone: removed in PR #1401. Must not return.
+///
+/// Source-content scan over skills/flow-triage-issue/SKILL.md and
+/// agents/issue-triage.md for the literal `keep-open`. The literal is
+/// stable per the four-question checklist in
+/// `.claude/rules/tombstone-tests.md`:
+///
+/// 1. concat!: not applicable — markdown files contain no Rust macros.
+/// 2. format!: same — no runtime reassembly in markdown.
+/// 3. split constants: same.
+/// 4. .arg() chains: same.
+///
+/// The hyphenated form `keep-open` distinguishes it from prose like
+/// "keep open" or "keep this open"; only the disposition token uses
+/// the hyphen.
+#[test]
+fn test_flow_triage_no_keep_open_disposition() {
+    let root = common::repo_root();
+    let skill_path = root
+        .join("skills")
+        .join("flow-triage-issue")
+        .join("SKILL.md");
+    let agent_path = root.join("agents").join("issue-triage.md");
+    let skill =
+        fs::read_to_string(&skill_path).expect("skills/flow-triage-issue/SKILL.md must exist");
+    let agent = fs::read_to_string(&agent_path).expect("agents/issue-triage.md must exist");
+    assert!(
+        !skill.contains("keep-open"),
+        "skills/flow-triage-issue/SKILL.md must not contain `keep-open` — disposition removed in PR #1401"
+    );
+    assert!(
+        !agent.contains("keep-open"),
+        "agents/issue-triage.md must not contain `keep-open` — disposition removed in PR #1401"
+    );
+}
+
+/// Tombstone: removed in PR #1401. Must not return.
+///
+/// Source-content scan over skills/flow-triage-issue/SKILL.md and
+/// agents/issue-triage.md for the literal `fix-now`. Same stability
+/// argument as the `keep-open` tombstone above: markdown files have
+/// no concat/format/constant/.arg reassembly paths, and the
+/// hyphenated form distinguishes the disposition token from prose
+/// like "fix now."
+#[test]
+fn test_flow_triage_no_fix_now_disposition() {
+    let root = common::repo_root();
+    let skill_path = root
+        .join("skills")
+        .join("flow-triage-issue")
+        .join("SKILL.md");
+    let agent_path = root.join("agents").join("issue-triage.md");
+    let skill =
+        fs::read_to_string(&skill_path).expect("skills/flow-triage-issue/SKILL.md must exist");
+    let agent = fs::read_to_string(&agent_path).expect("agents/issue-triage.md must exist");
+    assert!(
+        !skill.contains("fix-now"),
+        "skills/flow-triage-issue/SKILL.md must not contain `fix-now` — disposition removed in PR #1401"
+    );
+    assert!(
+        !agent.contains("fix-now"),
+        "agents/issue-triage.md must not contain `fix-now` — disposition removed in PR #1401"
+    );
+}
+
+// --- FlowPaths::new constructor deletion (PR #1395) ---
+
 /// Tombstone: removed in PR #1395. Must not return.
 ///
 /// `FlowPaths::new` was a panicking constructor (`assert!(is_valid_branch)`)
