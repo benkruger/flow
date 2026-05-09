@@ -517,3 +517,81 @@ fn test_base_branch_from_state_used_for_git_pull() {
         msg
     );
 }
+
+// --- per-arm CI reasons ---
+
+#[test]
+fn start_gate_no_sentinel_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    create_bin_tools(&repo, 0);
+    create_state_file(&repo, "no-sentinel-branch");
+    // No write_ci_sentinel — baseline CI sees the Absent outcome and
+    // start_gate must supply the base-branch-specific reason.
+
+    let output = run_start_gate(&repo, "no-sentinel-branch");
+    let data = parse_output(&output);
+    assert_eq!(
+        data["status"],
+        "clean",
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("CI: no recent base-branch CI sentinel — establishing baseline\n"),
+        "expected start_gate's no-sentinel banner; stderr=\n{}",
+        stderr
+    );
+}
+
+#[test]
+fn start_gate_head_advanced_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_ci_sentinel(&repo, "main");
+    // bin/* added AFTER the sentinel write — the sentinel snapshot
+    // does not include them, so the runner sees a Stale outcome.
+    create_bin_tools(&repo, 0);
+    create_state_file(&repo, "stale-branch");
+
+    let output = run_start_gate(&repo, "stale-branch");
+    let data = parse_output(&output);
+    assert_eq!(
+        data["status"],
+        "clean",
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("CI: base branch advanced since last CI — re-verifying\n"),
+        "expected start_gate's head-advanced banner; stderr=\n{}",
+        stderr
+    );
+}
+
+#[test]
+fn start_gate_dependencies_upgraded_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_ci_sentinel(&repo, "main");
+    create_bin_tools(&repo, 0);
+    create_bin_deps(&repo, "echo 'updated' > deps-output.txt");
+    create_state_file(&repo, "deps-upgraded-branch");
+
+    let output = run_start_gate(&repo, "deps-upgraded-branch");
+    let data = parse_output(&output);
+    assert_eq!(
+        data["status"],
+        "clean",
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("CI: dependencies upgraded — verifying base branch\n"),
+        "expected post-deps CI banner; stderr=\n{}",
+        stderr
+    );
+}
