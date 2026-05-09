@@ -361,3 +361,146 @@ fn test_no_weak_coverage_language_in_prose_corpus() {
 //   Phase 2 docs page. Plans now travel inside issue bodies via
 //   the FLOW-PLAN-BEGIN / FLOW-PLAN-END sentinels extracted by
 //   bin/flow plan-from-issue at flow-start.
+
+// --- flow-status skill removal (PR #1389) ---
+
+/// Tombstone: removed in PR #1389. Must not return.
+///
+/// File-existence guard for the skill's SKILL.md. Pairs with the
+/// byte-substring tombstone below per `.claude/rules/tombstone-tests.md`
+/// "Two kinds of tombstone" — file-resurrection threats are caught here
+/// regardless of how a future commit imports the file (e.g., via a
+/// `#[path = "..."]` rename), and the substring scan catches any
+/// reintroduction of the skill's slash-command surface.
+#[test]
+fn flow_status_skill_directory_must_not_exist() {
+    let root = common::repo_root();
+    let path = root.join("skills").join("flow-status").join("SKILL.md");
+    assert!(
+        fs::symlink_metadata(&path).is_err(),
+        "skills/flow-status/SKILL.md must not exist — the skill was \
+         replaced by the `bin/flow status` Rust subcommand. Consumer \
+         skills (phase transition gates) now invoke that binary \
+         directly."
+    );
+}
+
+/// Tombstone: removed in PR #1389. Must not return.
+///
+/// File-existence guard for the published documentation page. Pairs
+/// with the substring scan in
+/// `flow_status_skill_invocation_must_not_appear_in_rules_or_docs`.
+#[test]
+fn flow_status_docs_page_must_not_exist() {
+    let root = common::repo_root();
+    let path = root.join("docs").join("skills").join("flow-status.md");
+    assert!(
+        fs::symlink_metadata(&path).is_err(),
+        "docs/skills/flow-status.md must not exist — the skill was \
+         replaced by the `bin/flow status` Rust subcommand."
+    );
+}
+
+/// Tombstone: removed in PR #1389. Must not return.
+///
+/// Substring scan over every SKILL.md in `skills/` for the literal
+/// `flow:flow-status`. The literal is stable per the four-question
+/// checklist in `.claude/rules/tombstone-tests.md`:
+///
+/// 1. concat!: cannot be assembled — Claude Code's Skill resolver reads
+///    the literal string from the user's invocation; a `concat!`-built
+///    surrogate exists only in source and never reaches the resolver.
+/// 2. format!: same reason — runtime format reassembly cannot resolve
+///    through the Skill tool.
+/// 3. split constants: same.
+/// 4. method-chain `.arg()`: same — the Skill resolver names the skill
+///    via a fixed identifier.
+///
+/// A reintroduction of the skill would have to spell `flow:flow-status`
+/// literally in a SKILL.md (or any markdown file under `skills/`) for
+/// the model to invoke it. The byte-substring check catches every such
+/// shape.
+#[test]
+fn flow_status_skill_invocation_must_not_appear_in_skills() {
+    let root = common::repo_root();
+    let skills_dir = root.join("skills");
+    let mut violations: Vec<String> = Vec::new();
+    for (rel, content) in common::collect_md_files(&skills_dir) {
+        if content.contains("flow:flow-status") {
+            violations.push(format!("skills/{}", rel));
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "`flow:flow-status` must not appear in any skills/**/SKILL.md \
+         — the skill was replaced by `bin/flow status`. Consumer \
+         skills invoke the binary directly. Violations:\n{}",
+        violations.join("\n")
+    );
+}
+
+/// Tombstone: removed in PR #1389. Must not return.
+///
+/// Substring scan over `.claude/rules/*.md`, `docs/skills/index.md`,
+/// `docs/skills/flow-skills.md`, `docs/index.html`, `docs/reference/`,
+/// and `README.md` for the precise tokens `flow:flow-status`,
+/// `/flow-status`, and `flow-status.md`. Bare `flow-status` is NOT
+/// scanned because it is a substring of `format-status` — a search
+/// for bare `flow-status` would false-positive on every legitimate
+/// `format-status` reference.
+#[test]
+fn flow_status_skill_invocation_must_not_appear_in_rules_or_docs() {
+    let root = common::repo_root();
+    const TOKENS: &[&str] = &["flow:flow-status", "/flow-status", "flow-status.md"];
+    let mut targets: Vec<PathBuf> = Vec::new();
+
+    let rules_dir = root.join(".claude").join("rules");
+    if rules_dir.is_dir() {
+        for entry in fs::read_dir(&rules_dir).expect("rules dir") {
+            let entry = entry.expect("read entry");
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("md") {
+                targets.push(path);
+            }
+        }
+    }
+
+    targets.push(root.join("docs").join("skills").join("index.md"));
+    targets.push(root.join("docs").join("skills").join("flow-skills.md"));
+    targets.push(root.join("docs").join("index.html"));
+    targets.push(root.join("README.md"));
+
+    let docs_ref = root.join("docs").join("reference");
+    if docs_ref.is_dir() {
+        for entry in fs::read_dir(&docs_ref).expect("docs/reference dir") {
+            let entry = entry.expect("read entry");
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("md") {
+                targets.push(path);
+            }
+        }
+    }
+
+    let mut violations: Vec<String> = Vec::new();
+    for target in &targets {
+        if let Ok(content) = fs::read_to_string(target) {
+            for token in TOKENS {
+                if content.contains(token) {
+                    violations.push(format!(
+                        "{}: contains `{}`",
+                        target.strip_prefix(&root).unwrap_or(target).display(),
+                        token
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "flow-status references must not appear in rules or docs — \
+         the skill was replaced by `bin/flow status`. Bare \
+         `flow-status` is intentionally not scanned (substring of \
+         `format-status`). Violations:\n{}",
+        violations.join("\n")
+    );
+}

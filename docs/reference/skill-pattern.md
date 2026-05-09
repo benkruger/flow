@@ -29,7 +29,7 @@ CI will fail if a skill directory does not start with `flow-`.
 4. cd into worktree from state file
 5. [Phase-specific work]
 6. Update state file — set phase to complete, calculate cumulative_seconds
-7. Invoke flow:flow-status  ← always, right before the transition question
+7. Run bin/flow status  ← always, right before the transition question
 8. AskUserQuestion — "Phase X: Name is complete. Ready to begin Phase X+1?"
    - Yes, start Phase X+1 now → invoke next phase skill via Skill tool
    - Not yet → print paused banner
@@ -180,8 +180,8 @@ prompt catches things the user thought of but didn't say.
 
 - Never skip the HARD-GATE
 - Always cd into the worktree before running any commands
-- **If continue=auto** → invoke next skill directly via Skill tool as the final action — no `flow:flow-status`, no AskUserQuestion
-- **If continue=manual** → invoke `flow:flow-status`, then use AskUserQuestion for the transition
+- **If continue=auto** → invoke next skill directly via Skill tool as the final action — no `bin/flow status`, no AskUserQuestion
+- **If continue=manual** → run `bin/flow status`, then use AskUserQuestion for the transition
 - Yes → invoke next skill via Skill tool
 - Not yet → paused banner only
 - **Always run `bin/flow ci` before any state transition that touches code**

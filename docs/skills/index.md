@@ -33,7 +33,6 @@ These skills are available at any point in the workflow, regardless of phase.
 |-------|-------------|
 | [`/flow-prime`](flow-prime.md) | One-time setup — configure and commit permissions, install bin/* delegation stubs, and git excludes |
 | [`/flow-commit`](flow-commit.md) | Review the full diff, then git add + commit + push |
-| [`/flow-status`](flow-status.md) | Show current phase, PR link, phase checklist, and what comes next |
 | [`/flow-note`](flow-note.md) | Capture a correction or learning — invoked automatically on corrections |
 | [`/flow-abort`](flow-abort.md) | Abandon the current feature — close PR, delete branch, remove worktree |
 | [`/flow-reset`](flow-reset.md) | Remove all FLOW artifacts — close PRs, delete worktrees/branches/state files/lock entries |

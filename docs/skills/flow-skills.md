@@ -33,4 +33,3 @@ Two additional sections render only when the current repo is the FLOW plugin sou
 ## See Also
 
 - [/flow-config](flow-config.md) — display the per-skill autonomy configuration.
-- [/flow-status](flow-status.md) — show current phase and next step for an in-progress feature.

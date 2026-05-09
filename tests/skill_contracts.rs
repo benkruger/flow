@@ -1552,7 +1552,6 @@ fn generic_skills_have_no_language_conditionals() {
     let generic = vec![
         "flow-commit",
         "flow-config",
-        "flow-status",
         "flow-note",
         "flow-reset",
         "flow-abort",

@@ -141,7 +141,6 @@ and skip to the COMPLETE banner.
 | `/flow:flow-learn` | Phase skill auto-chained from flow-code-review | Phase 4 — capture learnings, route to permanent homes |
 | `/flow:flow-complete` | Phase skill auto-chained from flow-learn | Phase 5 — merge the PR, remove the worktree, delete the state file |
 | `/flow:flow-commit` | Phase skill at every commit checkpoint | Review the full diff, then stage, commit, and push through finalize-commit |
-| `/flow:flow-status` | Phase skill at manual-mode handoffs | Print the status panel — phase timeline, PR link, what comes next |
 | `/flow:flow-note` | Claude on user correction | Capture a correction or learning to the FLOW state file |
 
 The Private skills are invoked by other FLOW skills or hooks, not

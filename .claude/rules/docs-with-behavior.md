@@ -21,10 +21,9 @@ to write the same updates you could write now.
   `## Input` section in `agents/<name>.md`
 - New field, line, or widget in a formatter's output → the
   user-facing SKILL.md that describes the formatter's panel. The
-  mapping is explicit: `src/format_status.rs` is described by
-  `skills/flow-status/SKILL.md`, `src/format_complete_summary.rs`
-  is described by `skills/flow-complete/SKILL.md`, and so on.
-  Every conditional line or field shown by the formatter must be
+  mapping is explicit: `src/format_complete_summary.rs` is
+  described by `skills/flow-complete/SKILL.md`, and so on. Every
+  conditional line or field shown by the formatter must be
   listed in that SKILL.md's Panel Fields / Output section so a
   future session reading the skill knows what the panel can
   contain.
