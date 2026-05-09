@@ -580,6 +580,52 @@ fn main_add_issue_array_root_state_exits_0_with_zero_count() {
     );
 }
 
+/// `flow-rs issue` resolves the current branch via `resolve_branch`
+/// and reads the state file inside a closure passed to
+/// `issue::run_impl_main`. The closure constructs a `FlowPaths` from
+/// `resolve_branch` output, which can carry `/` for legitimate git
+/// branches (`feature/foo`, `dependabot/...`). The closure must
+/// treat slash-containing branches as "no state file" so the issue
+/// subcommand surfaces a structured error instead of a Rust
+/// backtrace.
+#[test]
+fn issue_subcommand_does_not_panic_on_slash_branch() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+    let missing = root.join("nonexistent-body-file");
+    let output = flow_rs_no_recursion()
+        .args([
+            "issue",
+            "--repo",
+            "owner/name",
+            "--title",
+            "Test issue",
+            "--body-file",
+            missing.to_str().expect("body path utf-8"),
+        ])
+        .current_dir(&root)
+        .env("GIT_CEILING_DIRECTORIES", &root)
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .env("FLOW_SIMULATE_BRANCH", "feature/foo")
+        .output()
+        .expect("spawn flow-rs issue");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked at"),
+        "issue subcommand panicked on slash branch; stderr: {}",
+        stderr
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        stderr
+    );
+}
+
 /// `flow-rs add-notification --branch feature/foo` exercises the
 /// `FlowPaths::try_new` None branch in the main binary's
 /// instantiation of `add_notification::run_impl_main`. Paired with
