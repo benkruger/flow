@@ -576,13 +576,13 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-issue-body
 Then file:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo benkruger/flow --label "Flow" --title "<issue_title>" --body-file .flow-issue-body
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo benkruger/flow --title "<issue_title>" --body-file .flow-issue-body
 ```
 
 After each successful issue, record it:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flow" --title "<issue_title>" --url "<issue_url>" --phase "flow-learn"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --title "<issue_title>" --url "<issue_url>" --phase "flow-learn"
 ```
 
 After each filed issue, also record the finding:
@@ -746,7 +746,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 - The report in Step 7 is the user's review point — make it comprehensive
 - CLAUDE.md and `.claude/rules/` files are written via `bin/flow write-rule` subprocess and committed via `/flow:flow-commit` — never via Edit or Write tools on `.claude/` paths
 - All edits target the project repo — never user-level `~/.claude/` paths
-- Plugin process gaps and enforcement escalations are filed as GitHub issues on the plugin repo with label "Flow"
+- Plugin process gaps and enforcement escalations are filed as GitHub issues on the plugin repo (`benkruger/flow`) — see `.claude/rules/filing-issues.md` "Repo Routing"
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep
 - Never use `cd <path> && git` — use `git -C <path>` for git commands in other directories

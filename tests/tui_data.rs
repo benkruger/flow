@@ -835,7 +835,7 @@ fn test_flow_summary_issues_empty() {
 fn test_flow_summary_issues_url_fallback() {
     let mut state = make_state("flow-start", &[]);
     state["issues_filed"] = json!([{
-        "label": "Flow",
+        "label": "Tech Debt",
         "title": "Process gap",
         "url": "https://example.com/custom/path",
         "phase": "flow-learn",

@@ -327,7 +327,7 @@ fn summary_with_single_issue() {
     let mut state = all_complete_state();
     state["issues_filed"] = json!([
         {
-            "label": "Flow",
+            "label": "Tech Debt",
             "title": "Fix routing logic",
             "url": "https://github.com/test/test/issues/42",
             "phase": "flow-learn",
@@ -342,7 +342,9 @@ fn summary_with_single_issue() {
     assert!(!result
         .summary
         .contains("https://github.com/test/test/issues/42"));
-    assert!(result.issues_links.contains("[Flow] #42 Fix routing logic"));
+    assert!(result
+        .issues_links
+        .contains("[Tech Debt] #42 Fix routing logic"));
     assert!(result
         .issues_links
         .contains("https://github.com/test/test/issues/42"));
