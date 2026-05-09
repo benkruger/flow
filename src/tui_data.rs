@@ -74,6 +74,92 @@ pub fn status_icon(status: &str) -> &'static str {
 /// Staleness threshold for rate limit data (10 minutes).
 pub const STALE_THRESHOLD_SECONDS: u64 = 600;
 
+/// Aggregated per-phase step counter for X-of-Y displays.
+///
+/// `current` and `total` are returned as stored in the state file (no
+/// +1 display offset) so consumers can choose their own formatting.
+/// `name` is the step name from `step_names()` for ordered-step phases,
+/// or `code_task_name` for the Code phase. Returns `None` when
+/// `current_phase` is missing/unknown OR when the per-phase counter
+/// field is absent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhaseStepCounter {
+    pub phase_label: &'static str,
+    pub phase_number: u8,
+    pub current: i64,
+    pub total: i64,
+    pub name: Option<String>,
+}
+
+/// Compute the X-of-Y counter for the active phase.
+///
+/// See [`PhaseStepCounter`] for the return semantics.
+pub fn phase_step_counter(state: &Value) -> Option<PhaseStepCounter> {
+    fn read(state: &Value, key: &str) -> Option<i64> {
+        state.get(key).and_then(tolerant_i64_opt)
+    }
+
+    let phase_key = state.get("current_phase").and_then(|v| v.as_str())?;
+    let names_map = step_names();
+    let lookup_name = |cur: i64| -> Option<String> {
+        names_map
+            .get(phase_key)
+            .and_then(|m| m.get(&cur))
+            .map(|s| s.to_string())
+    };
+
+    let (phase_label, phase_number, current, total, name): (
+        &'static str,
+        u8,
+        i64,
+        i64,
+        Option<String>,
+    ) = match phase_key {
+        "flow-start" => {
+            let cur = read(state, "start_step")?;
+            let tot = read(state, "start_steps_total").unwrap_or(0);
+            ("Start", 1, cur, tot, lookup_name(cur))
+        }
+        "flow-code" => {
+            let cur = read(state, "code_task")?;
+            let tot = read(state, "code_tasks_total").unwrap_or(0);
+            let nm = state
+                .get("code_task_name")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            ("Code", 2, cur, tot, nm)
+        }
+        "flow-code-review" => {
+            let cur = read(state, "code_review_step")?;
+            let tot = names_map
+                .get(phase_key)
+                .map(|m| m.len() as i64)
+                .unwrap_or(0);
+            ("Code Review", 3, cur, tot, lookup_name(cur))
+        }
+        "flow-learn" => {
+            let cur = read(state, "learn_step")?;
+            let tot = read(state, "learn_steps_total").unwrap_or(0);
+            ("Learn", 4, cur, tot, lookup_name(cur))
+        }
+        "flow-complete" => {
+            let cur = read(state, "complete_step")?;
+            let tot = read(state, "complete_steps_total").unwrap_or(0);
+            ("Complete", 5, cur, tot, lookup_name(cur))
+        }
+        _ => return None,
+    };
+
+    Some(PhaseStepCounter {
+        phase_label,
+        phase_number,
+        current,
+        total,
+        name,
+    })
+}
+
 /// Return 'name - step N of M' or 'step N of M' or '' depending on what's populated.
 pub fn step_annotation(step: i64, total: i64, name: &str) -> String {
     if step <= 0 {
