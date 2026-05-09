@@ -199,7 +199,7 @@ pub fn last_user_message_invokes_skill(path: &Path, skill: &str, home: &Path) ->
 /// first user turn or the first assistant turn that carries any
 /// Skill tool_use. Older turns beyond either boundary are
 /// invisible. Multi-tool assistant turns are scanned in full — a
-/// turn fires `[Bash, Skill(flow:flow-status), Skill(flow:flow-abort)]`
+/// turn fires `[Bash, Skill(flow:flow-commit), Skill(flow:flow-abort)]`
 /// satisfies the check because the user-only Skill is present in
 /// the same turn.
 ///

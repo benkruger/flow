@@ -900,6 +900,49 @@ fn main_format_status_branch_resolution_err_exits_nonzero() {
     );
 }
 
+/// `flow-rs status` in a tempdir with no git repo exits 2 because
+/// `resolve_branch(None, &root)` returns `None` (no branch override,
+/// no git repo to detect from). Covers the `Err` arm of the `Status`
+/// arm body — the `eprintln!` + `process::exit` path that fires when
+/// `status::run_impl_main` returns `Err(("Could not determine current
+/// branch", 2))`.
+#[test]
+fn main_status_does_not_panic_on_slash_branch() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize tempdir");
+    std::process::Command::new("git")
+        .args(["init", "-b", "feature/foo"])
+        .current_dir(&root)
+        .output()
+        .expect("git init");
+    std::process::Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(&root)
+        .output()
+        .expect("git commit");
+
+    let output = flow_rs_no_recursion()
+        .arg("status")
+        .current_dir(&root)
+        .output()
+        .expect("spawn flow-rs status");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_ne!(
+        output.status.code(),
+        Some(101),
+        "status must not panic on slash-branch.\nstderr: {}\nstdout: {}",
+        stderr,
+        stdout
+    );
+    assert!(
+        !stderr.contains("must not contain"),
+        "status must not emit the slash-branch assert message.\nstderr: {}",
+        stderr
+    );
+}
+
 /// `flow-rs tui` invoked via subprocess (no controlling TTY on the
 /// child) exits 1. Covers the `Tui` arm body in `main.rs` and the
 /// production `tui_terminal::run_tui_arm` wrapper, which detects the
@@ -1179,6 +1222,8 @@ fn main_arm_invocations_cover_dispatch() {
             None,
         ),
         ("format-status", &["--branch", "test-fixture"], None),
+        ("status", &[], None),
+        ("status", &["--branch", "test-fixture"], None),
         (
             "notify-slack",
             &["--phase", "flow-code", "--message", "m"],

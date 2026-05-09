@@ -141,7 +141,6 @@ Available at any point in the workflow:
 |---------|-------------|
 | `/flow-prime` | One-time project setup — configure permissions and git excludes |
 | `/flow-commit` | Full diff review, approved commit message, pull before push |
-| `/flow-status` | Current phase, PR link, cumulative time per phase, next step |
 | `/flow-note` | Captures corrections to state file — auto-invoked when Claude is wrong |
 | `/flow-abort` | Abandon feature — close PR, delete remote branch, remove worktree, delete state |
 | `/flow-reset` | Remove all FLOW artifacts — close PRs, delete worktrees/branches/state files |

@@ -422,6 +422,7 @@ command cannot drift the flow because the command produces no
 side effects. The current exempt set is:
 
 - `bin/flow format-status` (`src/format_status.rs`)
+- `bin/flow status` (`src/status.rs`)
 - `bin/flow tombstone-audit` (`src/tombstone_audit.rs`)
 - `bin/flow plan-check` (`src/plan_check.rs`)
 

@@ -6,9 +6,9 @@ passed explicitly, parse `continue_action` from the
 how to advance.
 
 - If `continue_action` is `"invoke"` → invoke the next phase
-  directly. Do not invoke `flow:flow-status`. Do not use
+  directly. Do not run `bin/flow status`. Do not use
   `AskUserQuestion`.
-- If `continue_action` is `"ask"` → invoke `flow:flow-status`,
+- If `continue_action` is `"ask"` → run `bin/flow status`,
   then prompt the user via `AskUserQuestion`.
 
 The phase-transition command computes the continue mode from the

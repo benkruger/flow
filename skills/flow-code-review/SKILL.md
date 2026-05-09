@@ -717,10 +717,16 @@ to determine how to advance.
    If `continue_action` is `"invoke"` → continue=auto.
    If `continue_action` is `"ask"` → continue=manual.
 2. If continue=auto → invoke `flow:flow-learn` directly using the Skill tool.
-   Do NOT invoke `flow:flow-status`. Do NOT use AskUserQuestion.
+   Do NOT run `bin/flow status`. Do NOT use AskUserQuestion.
    This is the FINAL action in this response — nothing else follows.
 3. If continue=manual → you MUST do all of the following before proceeding:
-   a. Invoke `flow:flow-status`
+   a. Run `bin/flow status` via Bash and print its stdout in your
+      response inside a fenced code block:
+
+      ```bash
+      ${CLAUDE_PLUGIN_ROOT}/bin/flow status
+      ```
+
    b. Use AskUserQuestion:
       "Phase 3: Code Review is complete. Ready to begin Phase 4: Learn?"
       Options: "Yes, start Phase 4 now", "Not yet",

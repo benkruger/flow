@@ -112,7 +112,7 @@ State files capture `relative_cwd` at flow-start time — the path inside the pr
 
 Worktree creation mirrors every `.venv` discovered under the project root into the new worktree as a relative symlink (`src/start_workspace.rs::link_venvs`). The walker skips dotted directories other than `.venv`, a small named-skip list (`node_modules`, `target`, `vendor`, `build`, `dist`), and directory symlinks.
 
-`cwd_scope::enforce` runs as the first action in every subcommand that runs tools or mutates state: `ci`, `build`, `lint`, `format`, `test`, `phase-enter`, `phase-finalize`, `phase-transition`, `set-timestamp`, `add-finding`. Read-only subcommands (`format-status`, `tombstone-audit`, `base-branch`) do not enforce.
+`cwd_scope::enforce` runs as the first action in every subcommand that runs tools or mutates state: `ci`, `build`, `lint`, `format`, `test`, `phase-enter`, `phase-finalize`, `phase-transition`, `set-timestamp`, `add-finding`. Read-only subcommands (`format-status`, `status`, `tombstone-audit`, `base-branch`) do not enforce.
 
 ### State File
 
