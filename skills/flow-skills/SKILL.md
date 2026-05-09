@@ -37,6 +37,15 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ### Step 1 — Detect repo identity
 
+This step decides whether the session is running inside the FLOW
+plugin source repository itself. The decision gates two extra
+sections (Maintainer and Private) that surface release tooling and
+phase-internal helpers — content that only applies to FLOW plugin
+development. Default-deny: the FLOW-only sections render only when
+the repo identity match succeeds; every other case (including a
+remote URL that is missing, malformed, or names a fork) is treated
+as not the FLOW plugin source.
+
 Run a single Bash call to read the configured remote URL:
 
 ```bash
@@ -47,13 +56,28 @@ If the command exits non-zero, treat the repo as **not the FLOW
 plugin source** and proceed to Step 2 with the FLOW-only sections
 suppressed.
 
-If the command exits zero, inspect stdout. The repo is the FLOW
-plugin source when the URL contains the literal substring
-`benkruger/flow` (with or without a trailing `.git`). Any other
-URL — including forks under different owners and unrelated
-projects — is treated as not the FLOW plugin source.
+If the command exits zero, normalize stdout: strip trailing
+whitespace and an optional trailing `.git` suffix. The repo is the
+FLOW plugin source ONLY when the normalized URL ends with the
+exact owner/repo path component `benkruger/flow` — equivalently,
+when the URL matches one of these literal forms (plus optional
+`.git`):
+
+- `git@github.com:benkruger/flow`
+- `https://github.com/benkruger/flow`
+- `ssh://git@github.com/benkruger/flow`
+
+A URL like `git@github.com:benkruger/flow-fork`, `git@github.com:benkruger/flow-experiments`, or `https://github.com/anyone/benkruger-flow-clone` MUST be treated as not the FLOW plugin source — the leading owner/repo segment must equal `benkruger/flow`, not merely contain it. A bare substring match would over-include forks and similarly-named repos.
 
 ### Step 2 — Render tables
+
+This step prints the skill catalog directly in the response so
+users can read it without leaving the conversation. The catalog is
+grouped by user role — Planning, Work, Health, Admin — so the most
+relevant skills surface first for the reader's context. The two
+FLOW-repo-only sections appear at the bottom because they are
+maintainer-internal: surfacing them in target projects would name
+private skills the user cannot invoke.
 
 Output the skill catalog as text in your response (not via Bash).
 Always render Planning, Work, Health, and Admin. Render Maintainer
@@ -93,8 +117,9 @@ plugin source.
 | `/flow:flow-abort` | Abort the current feature — close the PR, delete the remote branch, remove the worktree, delete the state file |
 | `/flow:flow-reset` | Reset all FLOW artifacts on this machine — close PRs, remove worktrees, delete branches, clear state files |
 
-These four are user-only: the model never invokes them on your
-behalf. Type the slash command directly.
+The Admin skills above are user-only: the model never invokes them
+on your behalf. Type the slash command directly. Inside the FLOW
+plugin source, the Maintainer skills below are also user-only.
 
 The remaining sections render only when this repo is the FLOW
 plugin source. If Step 1 identified the repo otherwise, stop here
@@ -105,6 +130,7 @@ and skip to the COMPLETE banner.
 | Skill | Purpose |
 |-------|---------|
 | `/flow-release` | Bump version in plugin.json and marketplace.json, commit, tag, push, and create a GitHub Release |
+| `/flow-changelog-audit` | Audit the Claude Code CHANGELOG.md for plugin-relevant changes; categorize as Adopt/Remove/Adapt and file issues |
 
 #### Private
 

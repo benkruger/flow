@@ -3904,15 +3904,29 @@ fn issue_triage_agent_declares_end_of_findings_marker() {
 #[test]
 fn flow_skills_lists_every_skill_exactly_once() {
     // Named regression: a new skill is added under `skills/<name>/`
-    // but `flow-skills` SKILL.md is not updated, so
-    // `/flow:flow-skills` shows a stale list. Named consumer: the
-    // user typing `/flow:flow-skills`. Each skill must appear
-    // exactly once across the bucket tables, formatted as either
-    // `` `/flow:<name>` `` for plugin skills or `` `/<name>` ``
-    // for the maintainer-private `flow-release`.
+    // OR `.claude/skills/<name>/` but `flow-skills` SKILL.md is
+    // not updated, so `/flow:flow-skills` shows a stale list.
+    // Named consumer: the user typing `/flow:flow-skills`. Each
+    // skill must appear exactly once across the bucket tables,
+    // formatted as either `` `/flow:<name>` `` for plugin skills
+    // or `` `/<name>` `` for maintainer-private skills under
+    // `.claude/skills/`.
     let content = common::read_skill("flow-skills");
-    let mut expected: Vec<String> = common::all_skill_names();
-    expected.push("flow-release".to_string());
+    let mut expected: HashSet<String> = common::all_skill_names().into_iter().collect();
+    let claude_skills_dir = common::repo_root().join(".claude").join("skills");
+    if let Ok(entries) = fs::read_dir(&claude_skills_dir) {
+        for entry in entries.flatten() {
+            let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+            if !is_dir {
+                continue;
+            }
+            expected.insert(entry.file_name().to_string_lossy().into_owned());
+        }
+    }
+    assert!(
+        !expected.is_empty(),
+        "expected skill universe must not be empty; check skills/ and .claude/skills/"
+    );
     for name in &expected {
         let primary = format!("`/flow:{}`", name);
         let alt = format!("`/{}`", name);
@@ -3934,10 +3948,11 @@ fn flow_skills_admin_and_maintainer_match_user_only() {
     // consumer: the user typing `/flow:flow-skills` to learn which
     // skills are user-only.
     //
-    // Section assertions are bounded via `split_once` per
+    // Section assertions are bounded via line-anchored heading
+    // search and a same-or-higher-level end marker per
     // `.claude/rules/testing-gotchas.md` "Subsection-Local
-    // Assertions in Contract Tests" so unrelated sections cannot
-    // satisfy the assertion.
+    // Assertions in Contract Tests" so the slice covers ONLY the
+    // headed subsection — not the entire remainder of the file.
     let walker = common::repo_root()
         .join("src")
         .join("hooks")
@@ -3966,19 +3981,33 @@ fn flow_skills_admin_and_maintainer_match_user_only() {
 
     let content = common::read_skill("flow-skills");
 
-    // Bound assertions to the Admin and Maintainer subsections.
+    // Bound the slice to the `heading` subsection only. `heading`
+    // is the FULL heading line (e.g. `#### Admin`); the start is
+    // line-anchored so `### Admin` cannot substring-match into
+    // `#### Admin`. The end is the earliest occurrence of any
+    // heading marker (`## `, `### `, or `#### `) at the start of
+    // a subsequent line, so a level-4 subsection ends at the next
+    // level-4 heading even when no level-2 or level-3 heading
+    // appears before EOF.
     fn subsection<'a>(content: &'a str, heading: &str) -> &'a str {
+        let needle = format!("\n{}\n", heading);
         let tail = content
-            .split_once(heading)
+            .split_once(&needle)
             .map(|(_, t)| t)
             .unwrap_or_else(|| panic!("flow-skills SKILL.md missing heading `{}`", heading));
-        tail.split_once("\n## ")
-            .map(|(s, _)| s)
-            .unwrap_or_else(|| tail.split_once("\n### ").map(|(s, _)| s).unwrap_or(tail))
+        let mut end = tail.len();
+        for marker in &["\n## ", "\n### ", "\n#### "] {
+            if let Some((before, _)) = tail.split_once(marker) {
+                if before.len() < end {
+                    end = before.len();
+                }
+            }
+        }
+        &tail[..end]
     }
 
-    let admin_section = subsection(&content, "### Admin");
-    let maintainer_section = subsection(&content, "### Maintainer");
+    let admin_section = subsection(&content, "#### Admin");
+    let maintainer_section = subsection(&content, "#### Maintainer");
 
     for entry in &user_only_entries {
         let bare = entry.strip_prefix("flow:").unwrap_or(entry.as_str());
