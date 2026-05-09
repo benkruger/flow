@@ -29,15 +29,22 @@ verbatim and stops — no auto-actions.
 
 1. Parses the argument as a positive integer issue number; rejects
    non-numeric input and prompts when the argument is missing.
-2. Dispatches the `issue-triage` sub-agent (model: `sonnet`,
+2. Applies a "Triage In-Progress" label to the issue so concurrent
+   sessions can see the in-progress signal in the GitHub UI. Creates
+   the label idempotently if it does not yet exist in the repo.
+3. Dispatches the `issue-triage` sub-agent (model: `sonnet`,
    read-only tools, no `Edit`/`Write`).
-3. Checks the agent's output for a `### Verdict` or `### Out of scope`
+4. Checks the agent's output for a `### Verdict` or `### Out of scope`
    structural marker. If neither is present, the agent ran out of turns
    mid-investigation; the skill reports "investigation incomplete" and
    stops without rendering the partial output.
-4. Renders the agent's full output inline — every heading, bullet, and
+5. Renders the agent's full output inline — every heading, bullet, and
    `file:line` citation, exactly as the agent produced it.
-5. Prints a one-line hint pointing at the next manual step based on the
+6. Removes the "Triage In-Progress" label so the issue no longer
+   signals active triage. The remove fires on every exit path —
+   verdict rendered, out-of-scope envelope rendered, or truncation
+   message rendered.
+7. Prints a one-line hint pointing at the next manual step based on the
    disposition (e.g. `gh issue close <num>` for `close`,
    `/flow:flow-create-issue` for `decompose`).
 
@@ -77,7 +84,9 @@ design conversation.
 
 - **Never closes issues.** No `gh issue close`. The PM closes manually
   after reading the evidence.
-- **Never adds labels.** No `gh issue edit --add-label`.
+- **Never applies any label other than "Triage In-Progress".** That
+  one label is the skill's only label mutation, applied in step 2 and
+  removed in step 6.
 - **Never comments.** No `gh issue comment`.
 - **Never auto-invokes follow-on skills.** Render the verdict, stop,
   print the next-step hint. The PM types the next command.
@@ -90,7 +99,9 @@ design conversation.
 
 ## Gates
 
-- Read-only on GitHub state — no mutations
+- Mutates a single label ("Triage In-Progress") on the triaged issue;
+  no other GitHub state is mutated. Sub-agent investigation is
+  read-only.
 - Display-only after the agent returns — no auto-actions
 - The `### Verdict` / `### Out of scope` structural marker is required;
   partial output (sub-agent truncation) is not rendered as if complete

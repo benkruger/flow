@@ -3981,6 +3981,28 @@ fn issue_triage_agent_declares_end_of_findings_marker() {
     );
 }
 
+#[test]
+fn test_flow_triage_issue_skill_applies_triage_in_progress_label() {
+    let content = common::read_skill("flow-triage-issue");
+    assert!(
+        content.contains(r#"--add-label "Triage In-Progress""#),
+        "skills/flow-triage-issue/SKILL.md must apply the Triage In-Progress \
+         label at the start of triage via `gh issue edit ... --add-label \
+         \"Triage In-Progress\"`"
+    );
+}
+
+#[test]
+fn test_flow_triage_issue_skill_removes_triage_in_progress_label() {
+    let content = common::read_skill("flow-triage-issue");
+    assert!(
+        content.contains(r#"--remove-label "Triage In-Progress""#),
+        "skills/flow-triage-issue/SKILL.md must remove the Triage In-Progress \
+         label before the COMPLETE banner via `gh issue edit ... --remove-label \
+         \"Triage In-Progress\"`"
+    );
+}
+
 // --- flow-skills coverage and admin/maintainer membership ---
 
 #[test]
