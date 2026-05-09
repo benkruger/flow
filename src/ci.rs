@@ -198,16 +198,31 @@ pub fn sentinel_path(root: &Path, branch: &str) -> PathBuf {
     FlowPaths::new(root, branch).ci_sentinel()
 }
 
+/// Maximum character count for the banner payload before truncation,
+/// including any ellipsis suffix. Caps the blast radius of an
+/// untrusted `--reason` CLI flag whose sink is a one-line stderr
+/// banner; per `.claude/rules/external-input-validation.md` the
+/// validator for a format-only sink is a length cap.
+const REASON_MAX_CHARS: usize = 200;
+
 /// Emit a one-line stderr banner narrating why CI is running.
 ///
-/// Writes `CI: <reason>\n` to stderr when `reason` is `Some`, and is
-/// silent otherwise. The inferred-reason fallback (no sentinel /
-/// sentinel stale) and the skip-path banner are layered on by
-/// subsequent commits; this foundation covers the explicit branch
-/// only.
+/// Writes `CI: <payload>\n` to stderr when `reason` is `Some`, and is
+/// silent otherwise. The payload is the reason itself when it fits
+/// within `REASON_MAX_CHARS` characters; longer reasons are truncated
+/// to `REASON_MAX_CHARS - 1` characters plus a trailing `…` so the
+/// banner stays one line even on hostile input. The inferred-reason
+/// fallback (no sentinel / sentinel stale) and the skip-path banner
+/// are layered on by subsequent commits.
 fn emit_ci_banner(reason: Option<&str>) {
     if let Some(r) = reason {
-        eprintln!("CI: {}", r);
+        let payload = if r.chars().count() > REASON_MAX_CHARS {
+            let prefix: String = r.chars().take(REASON_MAX_CHARS - 1).collect();
+            format!("{}…", prefix)
+        } else {
+            r.to_string()
+        };
+        eprintln!("CI: {}", payload);
     }
 }
 

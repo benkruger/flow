@@ -735,6 +735,63 @@ fn run_impl_with_explicit_reason_runs_and_emits_banner_branch() {
 }
 
 #[test]
+fn ci_explicit_reason_emits_stderr_banner() {
+    let f = make_ci_fixture();
+    write_script(
+        &f.path.join("bin").join("format"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["ci", "--force", "--reason", "verify X"])
+        .current_dir(&f.path)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", &f.path)
+        .output()
+        .expect("spawn flow-rs ci");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("CI: verify X\n"),
+        "stderr did not contain explicit-reason banner:\nstderr=\n{}",
+        stderr
+    );
+}
+
+#[test]
+fn ci_explicit_reason_truncates_long_input() {
+    let f = make_ci_fixture();
+    write_script(
+        &f.path.join("bin").join("format"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    // 250-char input — runner must truncate to 200 chars + ellipsis.
+    let long_reason: String = "a".repeat(250);
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["ci", "--force", "--reason", &long_reason])
+        .current_dir(&f.path)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", &f.path)
+        .output()
+        .expect("spawn flow-rs ci");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let banner_line = stderr
+        .lines()
+        .find(|l| l.starts_with("CI: "))
+        .expect("expected a CI: banner line on stderr");
+    let payload = banner_line.strip_prefix("CI: ").unwrap();
+    assert!(
+        payload.chars().count() <= 200,
+        "payload exceeded 200 chars: {} chars in {:?}",
+        payload.chars().count(),
+        payload
+    );
+    assert!(
+        payload.ends_with('…'),
+        "expected ellipsis suffix on truncated payload: {:?}",
+        payload
+    );
+}
+
+#[test]
 fn cli_recursion_guard() {
     let f = make_ci_fixture();
     let args = Args {
