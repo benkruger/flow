@@ -1059,3 +1059,33 @@ fn gh_ci_checks_unknown_status_proceeds() {
     // unknown in col 2 → not fail/pending → falls to "pass" arm → merged.
     assert_eq!(json["path"], "merged");
 }
+
+// --- CI reason banner ---
+
+#[test]
+fn complete_fast_passes_ci_reason() {
+    // No sentinel + bin/* stubs return 0 → ci::run_impl runs CI with the
+    // explicit reason supplied by complete_fast::ci_decider.
+    let fx = setup("complete", "auto");
+    let bin_dir = fx.repo.join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    for tool in &["format", "lint", "build", "test"] {
+        let p = bin_dir.join(tool);
+        fs::write(&p, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let output = run_complete_fast(
+        &fx.repo,
+        Some(BRANCH),
+        Some("--auto"),
+        &fx.flow_bin,
+        &fx.stubs,
+        &[],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("CI: verifying tree is clean before Complete merge\n"),
+        "expected complete_fast's explicit reason banner; stderr=\n{}",
+        stderr
+    );
+}
