@@ -15,7 +15,7 @@ use std::process::{Command, Output};
 
 use common::{create_gh_stub, create_git_repo_with_remote, parse_output};
 use flow_rs::plan_from_issue::{
-    extract_plan, write_plan, ExtractError, FetchError, WriteError, PLAN_BODY_BYTE_CAP,
+    count_tasks, extract_plan, write_plan, ExtractError, FetchError, WriteError, PLAN_BODY_BYTE_CAP,
 };
 
 const BEGIN: &str = "<!-- FLOW-PLAN-BEGIN -->";
@@ -283,6 +283,72 @@ fn fetch_error_display_gh_failed() {
     assert!(msg.contains("auth needed"));
 }
 
+// --- count_tasks ---
+
+#[test]
+fn count_tasks_returns_zero_for_empty_input() {
+    assert_eq!(count_tasks(""), 0);
+}
+
+#[test]
+fn count_tasks_returns_zero_when_no_task_headings_present() {
+    let body = "## Plan\n\nProse only, no #### Task headings.\n";
+    assert_eq!(count_tasks(body), 0);
+}
+
+#[test]
+fn count_tasks_counts_three_consecutive_task_headings() {
+    let body = "\
+## Plan
+
+#### Task 1: First
+Body one.
+
+#### Task 2: Second
+Body two.
+
+#### Task 3: Third
+Body three.
+";
+    assert_eq!(count_tasks(body), 3);
+}
+
+#[test]
+fn count_tasks_skips_task_headings_inside_fenced_code_blocks() {
+    let body = "\
+## Plan
+
+#### Task 1: Real task
+
+Example output:
+
+```markdown
+#### Task 99: Documentation example, not a real task
+```
+
+#### Task 2: Another real task
+";
+    assert_eq!(count_tasks(body), 2);
+}
+
+#[test]
+fn count_tasks_requires_digit_after_task_prefix() {
+    let body = "#### Task : missing number\n#### Task abc: alphabetic\n#### Task 1: real\n";
+    assert_eq!(count_tasks(body), 1);
+}
+
+#[test]
+fn count_tasks_handles_multi_digit_task_numbers() {
+    let body = "#### Task 1: a\n#### Task 12: b\n#### Task 100: c\n";
+    assert_eq!(count_tasks(body), 3);
+}
+
+#[test]
+fn count_tasks_does_not_match_higher_or_lower_heading_levels() {
+    let body = "### Task 1: too shallow\n##### Task 2: too deep\n#### Task 3: just right\n";
+    assert_eq!(count_tasks(body), 1);
+}
+
 // --- bin/flow plan-from-issue (subprocess tests) ---
 
 fn flow_rs_no_recursion() -> Command {
@@ -543,6 +609,68 @@ fn plan_from_issue_returns_plan_too_large_when_body_exceeds_cap() {
     let data = parse_output(&output);
     assert_eq!(data["status"], "error");
     assert_eq!(data["reason"], "plan_too_large");
+}
+
+// --- tasks_total in success envelope ---
+
+#[test]
+fn plan_from_issue_returns_tasks_total_when_body_has_three_task_headings() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let body = "<!-- FLOW-PLAN-BEGIN -->\\n## Plan\\n\\n#### Task 1: First\\nBody one.\\n\\n#### Task 2: Second\\nBody two.\\n\\n#### Task 3: Third\\nBody three.\\n<!-- FLOW-PLAN-END -->";
+    let stub_dir = create_gh_stub(
+        &repo,
+        &format!(
+            "#!/bin/bash\necho '{{\"body\":\"{}\",\"state\":\"OPEN\"}}'\nexit 0\n",
+            body
+        ),
+    );
+
+    let output = run_plan_from_issue(
+        &repo,
+        &["--issue", "11", "--branch", "feat-tasks-three"],
+        &stub_dir,
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["tasks_total"], 3);
+}
+
+#[test]
+fn plan_from_issue_returns_tasks_total_zero_when_body_has_no_task_headings() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let body = "<!-- FLOW-PLAN-BEGIN -->\\n## Plan\\n\\nNo tasks here, just prose.\\n<!-- FLOW-PLAN-END -->";
+    let stub_dir = create_gh_stub(
+        &repo,
+        &format!(
+            "#!/bin/bash\necho '{{\"body\":\"{}\",\"state\":\"OPEN\"}}'\nexit 0\n",
+            body
+        ),
+    );
+
+    let output = run_plan_from_issue(
+        &repo,
+        &["--issue", "12", "--branch", "feat-tasks-none"],
+        &stub_dir,
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert_eq!(data["tasks_total"], 0);
 }
 
 #[test]

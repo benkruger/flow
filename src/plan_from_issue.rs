@@ -273,6 +273,8 @@ pub fn run_impl_main(args: &Args, root: &Path) -> (serde_json::Value, i32) {
         }
     };
 
+    let tasks_total = count_tasks(&plan_content);
+
     let plan_path = match write_plan(root, &args.branch, &plan_content) {
         Ok(p) => p,
         Err(WriteError::InvalidBranch(b)) => {
@@ -305,6 +307,7 @@ pub fn run_impl_main(args: &Args, root: &Path) -> (serde_json::Value, i32) {
             "plan_path": plan_path.to_string_lossy(),
             "branch": args.branch,
             "issue": args.issue,
+            "tasks_total": tasks_total,
         }),
         0,
     )
@@ -362,4 +365,37 @@ pub fn extract_plan(body: &str) -> Result<&str, ExtractError> {
         return Err(ExtractError::Empty);
     }
     Ok(content)
+}
+
+/// Count `#### Task N:` headings in a plan body.
+///
+/// Scans line-by-line. Lines beginning with a triple-backtick fence
+/// toggle a fenced-block flag; lines inside a fenced block are
+/// skipped so heading-shaped strings inside example code blocks do
+/// not count. Outside fenced blocks, a line counts when it begins
+/// with the literal prefix `#### Task ` followed by at least one
+/// ASCII digit. Trailing characters (`:`, ` —`, end-of-line) are
+/// not constrained.
+///
+/// Consumed by `run_impl_main` to populate the `tasks_total` field
+/// of the success envelope, which `flow-start` Step 5 reads to
+/// write `code_tasks_total` into the per-branch state file.
+pub fn count_tasks(plan_body: &str) -> usize {
+    let mut in_fence = false;
+    let mut count = 0;
+    for line in plan_body.lines() {
+        if line.trim_start().starts_with("```") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("#### Task ") {
+            if rest.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                count += 1;
+            }
+        }
+    }
+    count
 }
