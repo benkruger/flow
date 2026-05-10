@@ -99,8 +99,8 @@ Display the queue as a rich markdown table matching the `flow-issues` format.
 Use the `body` and `labels` fields from Step 1 to categorize, assess impact,
 and prioritize each issue using the same logic as `flow-issues`:
 
-- **Categorize** by label (Rule, Flow, Flaky Test, Tech Debt, Documentation
-  Drift) with content-based fallback (Bug, Enhancement, Other)
+- **Categorize** by label (Rule, Flow, Tech Debt, Documentation Drift) with
+  content-based fallback (Bug, Enhancement, Other)
 - **Impact** from cross-area scope, force-multiplier keywords, acceptance
   criteria density, and dependency count (High/Medium/Low)
 - **Priority** from category defaults with impact and blocking modifiers

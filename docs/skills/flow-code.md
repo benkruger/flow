@@ -73,15 +73,6 @@ Architecture checks are defined by the project's CLAUDE.md. Each project documen
 
 ---
 
-## Flaky Test Detection
-
-If a test fails during the CI gate but passes on retry without code changes,
-it is flagged as flaky. A "Flaky Test" issue is filed via `bin/flow issue`
-with reproduction data and recorded in the state file via `bin/flow add-issue`.
-The task continues after filing — flaky tests do not block progress.
-
----
-
 ## Test Runs
 
 - **During TDD**: targeted test command via `bin/test --file <path>` — fast feedback

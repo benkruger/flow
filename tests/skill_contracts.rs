@@ -1540,15 +1540,6 @@ fn learn_step3_excludes_flow_process_gaps() {
 // --- Issue filing ---
 
 #[test]
-fn code_files_flaky_test_issues() {
-    let c = common::read_skill("flow-code");
-    assert!(
-        c.contains("Flaky Test"),
-        "Code skill CI Gate must file Flaky Test issues"
-    );
-}
-
-#[test]
 fn review_no_inline_simplify_step() {
     let c = common::read_skill("flow-review");
     assert!(

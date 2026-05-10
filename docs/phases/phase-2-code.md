@@ -48,15 +48,6 @@ Architecture checks and testing conventions are defined by the project's CLAUDE.
 
 ---
 
-## Flaky Test Detection
-
-If a test fails during the CI gate but passes on retry without code changes,
-it is flagged as flaky. A "Flaky Test" issue is filed via `bin/flow issue`
-with reproduction data (test name, failure output, retry result) and recorded
-in the state file via `bin/flow add-issue`. The task continues after filing.
-
----
-
 ## Fast Test Feedback
 
 During the TDD cycle, run the specific file for fast feedback:

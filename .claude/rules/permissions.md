@@ -292,9 +292,9 @@ The canonical list:
 - `.claude/settings.json` — covered by "Never Edit Permissions
   Mid-Flow" above
 
-When a PR's scope is narrow (e.g., "fix one flaky test"), editing
-any of these files expands the diff into territory the user never
-agreed to review.
+When a PR's scope is narrow (e.g., "fix one typo in a doc
+comment"), editing any of these files expands the diff into
+territory the user never agreed to review.
 
 ## The Correct Path
 

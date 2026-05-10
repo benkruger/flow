@@ -18,7 +18,7 @@ use crate::utils::now;
 #[derive(Parser, Debug)]
 #[command(name = "add-issue", about = "Record a filed issue in FLOW state")]
 pub struct Args {
-    /// Issue label (e.g. Rule, Flaky Test, Tech Debt)
+    /// Issue label (e.g. Rule, Tech Debt, Documentation Drift)
     #[arg(long)]
     pub label: String,
 
