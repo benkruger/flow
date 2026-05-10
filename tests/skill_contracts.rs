@@ -2905,6 +2905,41 @@ fn flow_create_issue_hard_gate_names_consequence() {
     );
 }
 
+#[test]
+fn flow_create_issue_has_title_authoring_section() {
+    // Issue titles flow into branch names, PR titles, commit subjects,
+    // and TUI feature lines. Without explicit guidance, the model
+    // paraphrases code symbols and shorthand from the brainstorming
+    // conversation, and every downstream surface inherits unreadable
+    // output. The Title Authoring section is the model-facing rule;
+    // this contract test guards it against regression.
+    let c = common::read_skill("flow-create-issue");
+    assert!(
+        c.contains("## Title Authoring"),
+        "flow-create-issue must have a `## Title Authoring` section"
+    );
+    let tail = c
+        .split_once("\n## Title Authoring\n")
+        .map(|(_, t)| t)
+        .expect("flow-create-issue must have a `## Title Authoring` section");
+    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
+    let lower = section.to_ascii_lowercase();
+    assert!(
+        lower.contains("plain english"),
+        "`## Title Authoring` must require plain English titles"
+    );
+    assert!(
+        lower.contains("forbid") || lower.contains("must not"),
+        "`## Title Authoring` must forbid code symbols / shorthand explicitly"
+    );
+    let bad_idx = lower.find("bad").or_else(|| lower.find("wrong"));
+    let good_idx = lower.find("good").or_else(|| lower.find("better"));
+    assert!(
+        bad_idx.is_some() && good_idx.is_some(),
+        "`## Title Authoring` must include at least one bad/good example pair"
+    );
+}
+
 // --- More tombstones ---
 
 #[test]

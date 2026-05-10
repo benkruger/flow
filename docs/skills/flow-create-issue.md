@@ -33,6 +33,14 @@ If prior implementation-focused decompose output already exists in the conversat
 
 ---
 
+## Title Authoring
+
+The skill enforces plain-English issue titles. Titles flow downstream into the branch name (via `branch_name`), the PR title (via `derive_feature`), the commit subject, and the TUI feature line — every user-visible surface inherits whatever the title says. A non-contributor reading the title in a release-notes feed should understand what the change is for without consulting the codebase.
+
+The Title Authoring section in the skill forbids: code symbols (function names, identifiers like `code_tasks_total`, command names), field names and file paths, line numbers, internal acronyms without expansion, one-letter shorthand (`X-of-Y`), and abbreviations a non-contributor would not recognize. The skill includes a Bad → Good examples table that contrasts each failure mode against a user-readable rewrite.
+
+---
+
 ## Issue Format
 
 The filed issue contains enough detail for `/flow-start` to execute fully autonomously, including a pre-built plan that the Plan phase extracts directly:

@@ -139,6 +139,58 @@ re-analyze or re-explore, just distill what was already discussed:
 
 ---
 
+## Title Authoring
+
+The issue title flows downstream into the branch name (via
+`branch_name`), the PR title (via `derive_feature`), the commit
+subject, and the TUI feature line — every user-visible surface
+inherits whatever you write here. Titles must read as plain English
+to a stakeholder who is not a contributor; titles that smuggle in
+code symbols, internal acronyms, or one-letter shorthand corrupt
+every downstream surface they reach.
+
+### Required
+
+Titles must describe the user-visible problem or outcome in plain
+English. Subject + verb + object as a reader would say it out loud.
+A non-contributor reading the title in a release-notes feed should
+understand what the change is for without consulting the codebase.
+
+### Forbidden
+
+The following must not appear in the title — they belong in the
+issue body, the plan, or the code, never in the headline string:
+
+- **Code symbols** — function names, type names, identifiers like
+  `code_tasks_total`, command names like `bin/flow`.
+- **Field names and file paths** — `state["foo"]`, `src/utils.rs`,
+  any `module::function` reference.
+- **Line numbers** — `:42`, `lines 100-120`.
+- **Internal acronyms without expansion** — TUI, DAG, RAII,
+  sentinel, hash, gate, agent shorthand. Expand on first use, or
+  paraphrase entirely.
+- **One-letter shorthand** — `X-of-Y`, `M of N`, single-letter
+  variable names.
+- **Abbreviations a non-contributor would not recognize** — repo-
+  specific jargon, internal product code-names, in-flight
+  refactor labels.
+
+### Bad → Good Examples
+
+| Bad (what flow-create-issue produces today) | Good (what the rule requires) |
+|---|---|
+| Wire code_tasks_total writer and put X-of-Y first in Code-phase TUI annotation | Show task progress as "step 3 of 7" in the Code phase status display |
+| Fix three-hook deadlock on shared-config edits in autonomous flows | Stop the abort skill from deadlocking when a flow edits shared config |
+| Add structural code_read field to pre-mortem agent finding schema | Have the pre-mortem agent record which files it read for each finding |
+
+The title is the seed for every downstream identifier the user
+will see. A title that fails this rule produces an unreadable
+branch, an unreadable PR title, an unreadable commit subject, and
+an unreadable TUI line — fixing the title at the source is much
+cheaper than patching every downstream surface.
+
+---
+
 ## Decompose
 
 Check the conversation for **substantive exploration** of the problem
