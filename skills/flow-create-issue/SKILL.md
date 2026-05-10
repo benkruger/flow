@@ -101,25 +101,32 @@ re-analyze or re-explore, just distill what was already discussed:
 
 ## Decompose
 
-Check the conversation for prior `/decompose:decompose` output that is
-implementation-focused. Implementation-focused output contains all of:
-task nodes with file targets, implementation ordering (dependency graph
-or sequential tasks), and concrete code changes or insertion points.
-Problem-analysis output — containing only analysis, questions, or
-high-level framing without actionable task structure — does not qualify.
+Check the conversation for **substantive exploration** of the problem
+and solution. Substantive exploration contains all three signals:
 
-**If the conversation contains implementation-focused decompose output
-AND `--force-decompose` was NOT passed:** the existing decompose
-synthesis is sufficient. Skip the decompose invocation below and
-proceed directly to Transform + Draft.
+- **Named files** — the conversation references specific file paths
+  in the codebase that the change will touch
+- **Identified root cause** — specific code references, line numbers,
+  or a concrete bug mechanism (not just symptoms or speculation)
+- **Agreed approach** — the user has confirmed direction on how to
+  proceed (a chosen design, a concrete plan of attack)
 
-**If the conversation contains only problem-analysis decompose output
-(no tasks, no file targets), or no prior decompose output exists, or
-`--force-decompose` was passed:** invoke `decompose:decompose` via the
-Skill tool with an implementation-focused prompt. The prompt must make
-clear that the problem and solution are already agreed — decompose
-should structure the implementation into tasks, not re-analyze the
-problem.
+A prior `/decompose:decompose` invocation in the conversation is a
+strong signal of substantive exploration but is not required —
+extended back-and-forth that produces the three signals above
+qualifies on its own.
+
+**If the conversation contains substantive exploration AND
+`--force-decompose` was NOT passed:** the existing context is
+sufficient. Skip the decompose invocation below and proceed
+directly to Transform + Draft.
+
+**If the conversation lacks one or more of the substantive-exploration
+signals, or `--force-decompose` was passed:** invoke
+`decompose:decompose` via the Skill tool with an implementation-focused
+prompt. The prompt must make clear that the problem and solution are
+already agreed — decompose should structure the implementation into
+tasks, not re-analyze the problem.
 
 Example prompt structure:
 
