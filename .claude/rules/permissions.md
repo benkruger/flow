@@ -341,3 +341,22 @@ is inside the worktree.
 The block message directs the model to confirm with the user via
 `AskUserQuestion` before proceeding, and points to this section
 for context.
+
+### Autonomous-phase carve-out for the confirmation prompt
+
+The block message instructs the model to call
+`AskUserQuestion` to confirm the shared-config edit. During an
+in-progress autonomous phase, the autonomous-phase block in
+`validate-ask-user` would refuse that prompt — two hooks
+contradicting each other and deadlocking the flow. To resolve
+the contradiction, `validate-ask-user::run_impl_main` carves out
+the AskUserQuestion when the persisted transcript carries a
+recent shared-config block: the carve-out lets the prompt fire
+so the system-initiated confirmation flow completes.
+
+The carve-out is system-initiated, not model-initiated, so it
+does not violate the autonomous-mode discipline against
+self-imposed pauses. See
+`.claude/rules/autonomous-phase-discipline.md` "Shared-Config
+Carve-Out" subsection for the helper, the detection signal, and
+the ordering relative to the user-only-skill carve-out.

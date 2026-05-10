@@ -268,3 +268,41 @@ only skill is the user-direction signal — `validate-skill` Layer
 1 ensures the model can only reach that Skill call after the user
 typed the slash command. See `.claude/rules/user-only-skills.md`
 Layer 2 for the full design.
+
+## Shared-Config Carve-Out
+
+The autonomous-phase block above protects against
+model-initiated prompts. The shared-config block from
+`validate_worktree_paths` (see `.claude/rules/permissions.md`
+"Shared Config Files — Express User Permission Required") is the
+opposite shape: another hook explicitly instructs the model to
+call `AskUserQuestion` to confirm a shared-config edit. Without a
+carve-out, the autonomous-phase block refuses the very prompt the
+prior hook demanded — the flow deadlocks while two hooks
+contradict each other.
+
+The trigger is system-initiated, not model-initiated: the
+shared-config BLOCKED message itself directs the next action.
+Letting the prompt fire completes the confirmation flow the
+system asked for.
+
+`validate-ask-user`'s `run_impl_main` calls
+`crate::hooks::transcript_walker::recent_edit_blocked_on_shared_config`
+between the user-only-skill carve-out and the block return. The
+helper walks the persisted transcript backward from the file
+tail, capped at `SHARED_CONFIG_BLOCK_BYTE_CAP` (4 MB), and
+returns `true` when it finds a `tool_result` block with
+`is_error: true` whose `content` contains the literal substring
+`"is a shared configuration file"` since the most recent real
+user turn. The substring is uniquely emitted by
+`crate::hooks::validate_worktree_paths::validate_shared_config`
+and locked in place by a presence-contract test in
+`tests/hooks/validate_worktree_paths.rs`.
+
+The user-only carve-out is checked first; both produce the same
+allow outcome, so the order is semantically irrelevant but the
+ordering is locked by an explicit regression test
+(`both_carve_outs_can_apply_user_only_wins_first`). Older user
+turns and tool_results predating the most recent real user turn
+are invisible to the helper — only the active confirmation
+window matters.
