@@ -1534,79 +1534,83 @@ fn test_phase_config_rs_no_old_phase_identifier() {
 
 // --- Out of Scope template-section instruction tombstones ---
 //
-// The "Out of Scope" templated section was removed from both
-// issue-filing skills in PR #1427 because the section's mere
-// presence in the skill's enumeration biased authors toward
-// preemptive scope shrinkage. The new
-// `.claude/rules/include-bias-in-issues.md` rule names the
-// principle and the bad-reasoning patterns it replaces. The
-// tombstones below lock the absence of the templated instruction
-// in each skill so a merge-conflict resurrection or hand re-edit
-// fails CI.
+// The two tests below assert that the issue-filing skills
+// (flow-create-issue, flow-decompose-project) do NOT contain a
+// templated "Out of Scope" section instruction in any markdown
+// shape — bold heading, plain heading, italic, list-item label,
+// or body-draft enumeration entry. The structural protection
+// target is the title-cased phrase "Out of Scope" itself,
+// because every templated form (`**Out of Scope**`, `## Out of
+// Scope`, `Out of Scope:`, `Files to Investigate, Out of Scope,
+// Context`) contains that exact substring. `.claude/rules/include-bias-in-issues.md`
+// is the rule the tombstones enforce.
 
 /// Tombstone: removed in PR #1427. Must not return.
 ///
 /// Asserts `skills/flow-create-issue/SKILL.md` does NOT contain
-/// the literal `**Out of Scope**` markdown-bold heading style
-/// the Capture and Combine sections used to instruct authors to
-/// populate. The byte-substring check holds because:
-///   1. `concat!` reassembly: theoretically possible
-///      (`concat!("**Out of ", "Scope**")`) but the file is
-///      pure Markdown — no Rust macro evaluates here, every
-///      heading reaches the file as an inline literal.
+/// the title-cased phrase `Out of Scope` in any form. This is a
+/// structural tombstone — the protected concept is "an
+/// enumeration prompt for things excluded," and every templated
+/// shape that re-introduces the prompt (bold `**Out of Scope**`,
+/// heading `## Out of Scope`, italic `*Out of Scope*`, label
+/// `Out of Scope:`, list-item entry `Out of Scope` between
+/// other section names) contains this exact substring. The
+/// assertion catches every shape with one byte check.
+///
+/// The byte-substring shape holds because:
+///   1. `concat!` reassembly: not applicable — SKILL.md is pure
+///      Markdown, no Rust macro evaluates inside it.
 ///   2. `format!` reassembly: not applicable to Markdown.
 ///   3. Named constant reference: not applicable to Markdown.
 ///   4. Method chains / split args: not applicable to Markdown.
 ///
-/// The exact-bold-heading literal (`**Out of Scope**`) is the
-/// shape used by the Capture-section bullet and the
-/// Combine-into-Issue-Body section ordering — the only forms
-/// that instructed authors to fill this section. Incidental
-/// prose like "out of scope for X" elsewhere in the file is
-/// not matched and is intentionally permitted.
+/// The assertion is case-sensitive on the title-cased phrase
+/// `Out of Scope`. Incidental lowercase prose like "out of scope
+/// for X" elsewhere in the file is not matched and is
+/// intentionally permitted; only the title-cased templated
+/// instruction is forbidden.
 #[test]
 fn test_flow_create_issue_skill_no_out_of_scope_instruction() {
     let content = common::read_skill("flow-create-issue");
     assert!(
-        !content.contains("**Out of Scope**"),
+        !content.contains("Out of Scope"),
         "skills/flow-create-issue/SKILL.md must not contain the \
-         templated section instruction `**Out of Scope**` — the \
-         section was removed in PR #1427 because its presence in \
-         the Capture and Combine enumerations biased authors \
-         toward preemptive scope shrinkage. See \
-         .claude/rules/include-bias-in-issues.md for the rule."
+         title-cased phrase `Out of Scope` in any markdown shape \
+         (bold heading, plain heading, italic, label, or list \
+         entry). See .claude/rules/include-bias-in-issues.md for \
+         the rule the tombstone enforces."
     );
 }
 
 /// Tombstone: removed in PR #1427. Must not return.
 ///
 /// Asserts `skills/flow-decompose-project/SKILL.md` does NOT
-/// contain the body-draft instruction phrase that named "Out of
-/// Scope" between "Files to Investigate" and "Context sections".
-/// The byte-substring check is on the joining phrase
-/// `"Scope, Context sections"` (the exact suffix of the original
-/// instruction) because:
-///   1. `concat!` reassembly: not applicable to Markdown — no
-///      Rust macro evaluates inside SKILL.md.
+/// contain the title-cased phrase `Out of Scope` in any form.
+/// Same structural shape as the sibling tombstone for
+/// flow-create-issue: every templated re-introduction (bold,
+/// heading, label, list entry, reordered list, singular form
+/// like "Out of Scope, Context section") contains the title-
+/// cased substring. The assertion catches every shape with one
+/// byte check.
+///
+/// The byte-substring shape holds because:
+///   1. `concat!` reassembly: not applicable to Markdown.
 ///   2. `format!` reassembly: not applicable to Markdown.
 ///   3. Named constant reference: not applicable to Markdown.
 ///   4. Method chains / split args: not applicable to Markdown.
 ///
-/// The two-word adjacency `Scope, Context sections` is unique to
-/// the original Step 2 body-draft instruction; incidental prose
-/// elsewhere referencing "scope" or "context" is not matched and
-/// is intentionally permitted.
+/// The assertion is case-sensitive on the title-cased phrase.
+/// Incidental lowercase prose is not matched and is
+/// intentionally permitted.
 #[test]
 fn test_flow_decompose_project_skill_no_out_of_scope_instruction() {
     let content = common::read_skill("flow-decompose-project");
     assert!(
-        !content.contains("Scope, Context sections"),
+        !content.contains("Out of Scope"),
         "skills/flow-decompose-project/SKILL.md must not contain \
-         the body-draft instruction `Scope, Context sections` — \
-         the 'Out of Scope' templated section was removed from \
-         the child-issue body draft in PR #1427 because its \
-         presence biased authors toward preemptive scope \
-         shrinkage. See .claude/rules/include-bias-in-issues.md \
-         for the rule."
+         the title-cased phrase `Out of Scope` in any markdown \
+         shape (bold heading, plain heading, italic, label, or \
+         list entry). See .claude/rules/include-bias-in-issues.md \
+         for the rule the tombstone enforces."
     );
 }

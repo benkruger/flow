@@ -5,12 +5,6 @@ question is not "should this be included?" but "is there a
 *concrete* reason this must NOT be included?" Absent a concrete
 reason, the work belongs in scope.
 
-This rule replaces the templated "Out of Scope" section that
-issue-filing skills used to require. Listing exclusions by
-default trained authors to invent boundaries — every empty slot
-in the template was a question that demanded an answer, and the
-easiest answer was always "leave it out for now."
-
 ## Lifecycle Cost
 
 Every concern split out of an issue spawns a full Plan → Code →
@@ -44,12 +38,22 @@ identify a concrete blocker.
 | "the prior PR did not touch this" | Prior PRs scoped to their own moment. The current PR is a new judgment call against current state. Prior boundaries are not load-bearing. |
 | "user owns this" | Code ownership is not exclusion criteria. Every line of code has an owner; that owner is not present in the conversation, and the deferral becomes "wait for the owner" — a new lifecycle cost. |
 | "separate code surface" | Concerns that touch a different file or module are still concerns the current PR can address if the exploration already covered them. "Separate surface" describes the code, not the work. |
-| "would expand scope" | The question begs itself — every addition expands scope. The valid question is whether the addition fits the current exploration budget, not whether it counts as expansion. |
+| "would expand scope" (reflexive) | The reflex to exclude work because including grows the diff is not exclusion criteria. The valid question is whether the addition fits the current exploration budget. `.claude/rules/scope-expansion.md` is the systematic decision tree for sweeping fixes — three conditions (inert fixes, single guard, splitting would re-do work) gate when scope expansion is the right call. The bad pattern is reflexive "no, that's expansion"; the good pattern is "let me apply the three-condition gate." |
 | "Out of Scope as defensive enumeration" | A list of exclusions written before the work begins is speculation, not analysis. Real exclusions emerge from concrete blockers discovered during exploration, not from prudence. |
 
 When you reach for one of these patterns, the move is to convert
 the deferral into an inclusion task — or to name the concrete
 blocker that makes inclusion impossible.
+
+The "would expand scope" row deserves an extra note: this rule
+does NOT dismiss `.claude/rules/scope-expansion.md`. The two
+rules cover complementary surfaces. `scope-expansion.md` is the
+Plan-phase decision tree for sweeping fixes — it tells the
+author when expanding scope IS the right call (inert fixes +
+single guard + splitting would re-do work) and when bounding to
+the cited issue is right (any condition fails). This rule
+forbids using "would expand scope" as a reflexive shortcut to
+skip the three-condition analysis. Apply the gate, then decide.
 
 ## Narrow Valid Exclusions
 
@@ -88,7 +92,14 @@ candidate concern that surfaces during exploration:
    section unless one of the narrow valid exclusions applies.
 2. **Apply the lifecycle-cost test.** If excluding would force
    a future flow to re-explore the same files, include now.
-3. **Name the blocker if excluding.** Write the rationale in
+3. **Apply the scope-expansion gate when sweeping.** If the
+   exploration uncovered a class of concerns wider than the
+   issue cited, run the three-condition gate from
+   `.claude/rules/scope-expansion.md` (inert fixes + single
+   guard + splitting would re-do work) before deciding to
+   bound. Bounding is correct when any condition fails;
+   "would expand scope" alone is not.
+4. **Name the blocker if excluding.** Write the rationale in
    the Context section as one sentence naming the concrete
    blocker. No templated list.
 
@@ -123,6 +134,9 @@ effort optimization dressed up as scope discipline.
   tree for sweeping fixes. Names the three conditions under
   which expanding scope to cover the full sweep is correct
   (inert fixes, single guard, splitting would re-do work).
+  Complementary, not conflicting: this rule forbids reflexive
+  "would expand scope" exclusion; the scope-expansion rule
+  provides the gate that decides whether expansion is correct.
 - `.claude/rules/filing-issues.md` — the broader filing
   discipline. Include-bias is the upstream principle; filing
   rules are the downstream mechanics (cold-start writing,
