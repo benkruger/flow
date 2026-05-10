@@ -384,35 +384,96 @@ pub fn elapsed_since(started_at: Option<&str>, now_override: Option<DateTime<Fix
 
 // --- Branch and feature name functions ---
 
-/// Convert feature words to a hyphenated branch name, max 32 chars.
+/// Maximum branch-name length in characters. Long enough for issue
+/// titles and feature descriptions to survive into the branch and PR
+/// title as readable English, while staying well under filesystem and
+/// git branch-name limits.
+const BRANCH_MAX_LEN: usize = 60;
+
+/// Trailing connectives that produce dangling branch endings like `-and`
+/// or `-of`. Stripped only from the final segment of a branch name —
+/// never from interior segments — so titles that legitimately contain
+/// these words mid-text are preserved.
+const TRAILING_STOP_WORDS: &[&str] = &[
+    "and", "or", "but", "in", "of", "the", "a", "an", "to", "for", "at", "by", "with", "from", "on",
+];
+
+/// Convert feature words to a hyphenated branch name.
+///
+/// Pipeline:
+/// 1. Pre-converts `_`, `/`, and `:` into spaces so identifiers like
+///    `code_tasks_total` and paths like `foo/bar:baz` produce readable
+///    hyphen-separated output instead of mashing into one word.
+/// 2. Strips other non-alphanumeric punctuation (whitespace and `-`
+///    survive the regex).
+/// 3. Lowercases and joins remaining whitespace-separated tokens with
+///    `-`.
+/// 4. Caps the result at `BRANCH_MAX_LEN` characters; truncation favours
+///    the last whole-word boundary in the prefix.
+/// 5. Strips trailing entries from `TRAILING_STOP_WORDS` from the final
+///    segment so branches do not end with dangling connectives.
+///
+/// Returns `"unnamed"` when the result is empty (pure punctuation input,
+/// or input that reduces to stop-words only) so downstream worktree
+/// creation and git operations always receive a non-empty name.
 pub fn branch_name(feature_words: &str) -> String {
+    let pre = feature_words.replace(['_', '/', ':'], " ");
     let re = Regex::new(r"[^a-zA-Z0-9\s\-]").unwrap();
-    let sanitized = re.replace_all(feature_words, "");
+    let sanitized = re.replace_all(&pre, "");
     let name: String = sanitized
         .split_whitespace()
         .map(|w| w.to_lowercase())
         .collect::<Vec<_>>()
         .join("-");
 
-    // Fallback for feature descriptions with no alphanumeric characters
-    // (empty input, pure punctuation, or all-unicode). Returns a safe
-    // placeholder rather than an empty string that would break downstream
-    // worktree creation and git operations.
     if name.is_empty() {
         return "unnamed".to_string();
     }
 
-    if name.chars().count() <= 32 {
-        return name;
-    }
+    let truncated = if name.chars().count() <= BRANCH_MAX_LEN {
+        name.clone()
+    } else {
+        let prefix: String = name.chars().take(BRANCH_MAX_LEN + 1).collect();
+        match prefix.rfind('-') {
+            Some(pos) if pos > 0 => prefix[..pos].to_string(),
+            _ => name.chars().take(BRANCH_MAX_LEN).collect(),
+        }
+    };
 
-    let truncated: String = name.chars().take(33).collect();
-    if let Some(pos) = truncated.rfind('-') {
-        if pos > 0 {
-            return truncated[..pos].to_string();
+    let stripped = strip_trailing_stop_words(&truncated);
+    if stripped.is_empty() {
+        "unnamed".to_string()
+    } else {
+        stripped
+    }
+}
+
+/// Trim every trailing segment that matches `TRAILING_STOP_WORDS`
+/// (case-insensitive). Operates only on the final hyphen-separated
+/// segment per iteration, so interior stop-words remain intact.
+fn strip_trailing_stop_words(s: &str) -> String {
+    let mut current = s.to_string();
+    loop {
+        let pos = current.rfind('-');
+        let last_segment = match pos {
+            Some(p) => &current[p + 1..],
+            None => current.as_str(),
+        };
+        let is_stop = TRAILING_STOP_WORDS
+            .iter()
+            .any(|w| w.eq_ignore_ascii_case(last_segment));
+        if !is_stop {
+            break;
+        }
+        match pos {
+            Some(p) => current.truncate(p),
+            None => {
+                current.clear();
+                break;
+            }
         }
     }
-    name.chars().take(32).collect()
+    current
 }
 
 /// Derive the human-readable feature name from a branch name.

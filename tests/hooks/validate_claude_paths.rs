@@ -202,6 +202,25 @@ fn validate_claude_paths_allows_claude_projects_substring_in_filename() {
     assert!(allowed);
 }
 
+#[test]
+fn validate_claude_paths_block_message_includes_write_rule_redirect() {
+    // The transcript-root block message must lead with the redirect
+    // to bin/flow write-rule so the model has a concrete path to
+    // route a behavioral constraint into a project rule instead of
+    // silently dropping the persistence target.
+    let (_, msg) = validate("/Users/testuser/.claude/projects/abc/session.jsonl", true);
+    assert!(msg.contains("write-rule"), "msg: {}", msg);
+}
+
+#[test]
+fn validate_claude_paths_block_message_points_at_persistence_routing_rule() {
+    // The transcript-root block message must reference
+    // persistence-routing.md so the model can consult the routing
+    // decision tree when the block fires.
+    let (_, msg) = validate("/Users/testuser/.claude/projects/abc/session.jsonl", true);
+    assert!(msg.contains("persistence-routing.md"), "msg: {}", msg);
+}
+
 // --- run_impl_main tests (drive find_project_root_in branches) ---
 
 fn seed_active_flow_fixture(root: &Path, branch: &str) -> std::path::PathBuf {

@@ -2,14 +2,25 @@
 //!
 //! 1. `.claude/rules/`, `.claude/skills/`, and `CLAUDE.md` — only during
 //!    active FLOW phases. Redirects to `bin/flow write-rule`.
-//! 2. `~/.claude/projects/` (the Claude Code persisted transcript root)
-//!    — in ALL contexts, not just active flows. Transcript tampering
-//!    could subvert `validate-skill`'s user-only block by injecting a
-//!    fake user `<command-name>` line, so the block fires regardless of
-//!    flow state. Reads remain allowed because the transcript walkers in
-//!    `validate-skill` and `validate-ask-user` need to scan the file
-//!    themselves; the hook is registered for Edit/Write tools only in
-//!    `hooks/hooks.json`.
+//! 2. `~/.claude/projects/` (the Claude Code persisted transcript root,
+//!    which also houses the auto-memory directory) — in ALL contexts,
+//!    not just active flows. The matcher walks the path components and
+//!    fires whenever any segment matches `.claude` followed by
+//!    `projects` (case-insensitive), covering the entire subtree —
+//!    transcript JSONLs, memory files, and any future descendant.
+//!    Transcript tampering could subvert `validate-skill`'s user-only
+//!    block by injecting a fake user `<command-name>` line, so the
+//!    block fires regardless of flow state. Reads remain allowed
+//!    because the transcript walkers in `validate-skill` and
+//!    `validate-ask-user` need to scan the file themselves; the hook
+//!    is registered for Edit/Write tools only in `hooks/hooks.json`.
+//!
+//!    The block message leads with a redirect to
+//!    `bin/flow write-rule --path .claude/rules/<topic>.md` so a
+//!    behavioral constraint the model wanted to persist as memory has
+//!    a concrete path to land as a project rule instead. The message
+//!    points at `.claude/rules/persistence-routing.md` as the routing
+//!    decision tree.
 //!
 //! Fires on Edit and Write tool calls.
 //!
@@ -66,11 +77,24 @@ pub fn validate(file_path: &str, flow_active: bool) -> (bool, String) {
     if is_transcript_path(file_path) {
         return (
             false,
-            "BLOCKED: `~/.claude/projects/` is the persisted Claude Code \
-             transcript root. Edit/Write is forbidden because tampering \
-             with the transcript can subvert validate-skill's user-only \
-             skill block. Read access is preserved for the transcript \
-             walkers."
+            "BLOCKED: `~/.claude/projects/` is the Claude Code persisted \
+             transcript root and the auto-memory directory. Edit/Write \
+             is forbidden here.\n\n\
+             To capture a behavioral constraint that every engineer \
+             should follow, write a project rule: \
+             `${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule \
+             --path .claude/rules/<topic>.md --content-file <temp>`.\n\n\
+             To capture a user-specific preference, ask the user to add \
+             it to `~/.claude/CLAUDE.md` manually — there is no in-FLOW \
+             path for memory writes by design.\n\n\
+             Routing question? See \
+             `.claude/rules/persistence-routing.md` (Rules are the \
+             default; Memory is the exception).\n\n\
+             Read access is preserved for the transcript walkers in \
+             validate-skill and validate-ask-user. Edit/Write is \
+             blocked across all contexts (not just active flows) \
+             because tampering with the transcript can subvert \
+             validate-skill's user-only skill block."
                 .to_string(),
         );
     }

@@ -47,9 +47,11 @@ Each layer addresses a specific bypass surface:
   1 already verified it.
 - **Layer 3 (`validate-claude-paths` transcript root)** — defends
   against *transcript tampering* that would defeat Layer 1's user-
-  invocation check. Blocks Edit/Write on `~/.claude/projects/`
-  regardless of flow state. Reads remain allowed because Layer 1
-  and Layer 2 walkers themselves need them.
+  invocation check. Blocks Edit/Write across the entire
+  `~/.claude/projects/` subtree (transcript JSONLs, memory files,
+  and any future descendant) regardless of flow state. Reads
+  remain allowed because Layer 1 and Layer 2 walkers themselves
+  need them.
 
 If Layer 1's substring or membership check has a bypass, Layers 2
 and 3 cannot independently catch the bypass — they are defense in
@@ -119,12 +121,22 @@ first.
 
 ### Layer 3: `validate-claude-paths` transcript root lockdown
 
-`src/hooks/validate_claude_paths.rs::is_transcript_path` blocks
-Edit/Write on `~/.claude/projects/<project>/<session>.jsonl` —
-the persisted transcript root. The block fires regardless of
-flow state because transcript tampering can subvert Layer 1: a
-hand-injected fake user `<command-name>` line in an old
-transcript would bypass the user-invocation check.
+`src/hooks/validate_claude_paths.rs::is_transcript_path` walks the
+target path's components and matches whenever any segment is
+`.claude` followed by `projects` (case-insensitive). The match
+covers the entire `~/.claude/projects/` subtree — the persisted
+transcript JSONLs, the auto-memory directory, and any future
+descendant Claude Code adds under that root. The block fires
+regardless of flow state because transcript tampering can subvert
+Layer 1: a hand-injected fake user `<command-name>` line in an
+old transcript would bypass the user-invocation check.
+
+The block message leads with a redirect to
+`bin/flow write-rule --path .claude/rules/<topic>.md` so a
+behavioral constraint the model wanted to persist as memory has a
+concrete path to land as a project rule instead. The message
+points at `.claude/rules/persistence-routing.md` as the routing
+decision tree.
 
 Read access is preserved because Layer 1 and Layer 2 walkers
 themselves need to scan the file. The hook is registered for the

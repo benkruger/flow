@@ -197,10 +197,18 @@ fn branch_name_special_chars() {
 }
 
 #[test]
-fn branch_name_max_32_chars() {
-    let long = "fix login timeout when session expires after thirty minutes";
+fn branch_name_respects_60_char_cap() {
+    // Guards: BRANCH_MAX_LEN regression. A long input must produce a
+    // branch <= 60 chars; the cap is encoded in production as
+    // BRANCH_MAX_LEN.
+    let long = "fix login timeout when session expires after thirty minutes please now";
     let result = branch_name(long);
-    assert!(result.len() <= 32, "Got: {} ({})", result, result.len());
+    assert!(
+        result.chars().count() <= 60,
+        "Got: {} ({})",
+        result,
+        result.chars().count()
+    );
     assert!(!result.ends_with('-'));
 }
 
@@ -216,9 +224,14 @@ fn branch_name_strips_non_alphanumeric() {
 
 #[test]
 fn branch_name_multibyte_no_panic() {
-    let input = "fix 日本語 login timeout when session expires after thirty minutes";
+    let input = "fix 日本語 login timeout when session expires after thirty minutes please now";
     let result = branch_name(input);
-    assert!(result.len() <= 32, "Got: {} ({})", result, result.len());
+    assert!(
+        result.chars().count() <= 60,
+        "Got: {} ({})",
+        result,
+        result.chars().count()
+    );
     assert!(result.is_ascii());
     assert!(!result.ends_with('-'));
 }
@@ -250,26 +263,113 @@ fn branch_name_collapses_internal_whitespace() {
 }
 
 #[test]
-fn branch_name_truncation_no_hyphen_in_first_33_chars() {
-    // A 40-char word with no spaces produces a 40-char lowercase token.
-    // rfind('-') on the first 33 chars returns None, so the fallback
-    // take(32) path is exercised.
-    let long_word = "a".repeat(40);
+fn branch_name_truncation_no_hyphen_in_first_61_chars() {
+    // A long single-word token with no spaces produces a long lowercase
+    // token. rfind('-') on the first 61 chars returns None, so the
+    // fallback take(BRANCH_MAX_LEN) path is exercised.
+    let long_word = "a".repeat(70);
     let result = branch_name(&long_word);
-    assert_eq!(result.chars().count(), 32);
-    assert_eq!(result, "a".repeat(32));
+    assert_eq!(result.chars().count(), 60);
+    assert_eq!(result, "a".repeat(60));
 }
 
 #[test]
 fn branch_name_truncation_hyphen_at_position_zero() {
     // A single long token whose only hyphen is at position 0 of the
-    // joined name. After truncation to 33 chars, rfind returns 0, the
-    // `pos > 0` guard fails, and the fallback `take(32)` path runs.
-    let input = format!("-{}", "a".repeat(40));
+    // joined name. After truncation to BRANCH_MAX_LEN + 1 chars, rfind
+    // returns 0, the `pos > 0` guard fails, and the fallback take path
+    // runs.
+    let input = format!("-{}", "a".repeat(70));
     let result = branch_name(&input);
-    assert_eq!(result.chars().count(), 32);
-    // First character is '-'; the next 31 chars are 'a'.
+    assert_eq!(result.chars().count(), 60);
     assert!(result.starts_with('-'));
+}
+
+#[test]
+fn branch_name_converts_underscore_to_hyphen() {
+    // Guards: underscore-stripping regression where field names like
+    // `code_tasks_total` mash into one word instead of becoming
+    // hyphen-separated readable text.
+    assert_eq!(branch_name("foo_bar_baz"), "foo-bar-baz");
+}
+
+#[test]
+fn branch_name_converts_slash_and_colon_to_hyphen() {
+    // Guards: path-separator-stripping regression. Slashes and colons
+    // in titles (paths, namespaces) must become word boundaries, not
+    // get silently elided.
+    assert_eq!(branch_name("foo/bar:baz"), "foo-bar-baz");
+}
+
+#[test]
+fn branch_name_preserves_words_when_truncating() {
+    // Guards: 32-char rfind('-') cut-word regression where the
+    // truncated branch ended on a partial word like `-pha` instead of
+    // a complete word.
+    let input = "Wire code tasks total writer and put X of Y first in code phase status";
+    let result = branch_name(input);
+    let last_segment = result.rsplit('-').next().unwrap();
+    let known_words = [
+        "wire", "code", "tasks", "total", "writer", "put", "x", "y", "first", "phase", "status",
+    ];
+    assert!(
+        known_words.contains(&last_segment),
+        "final segment must be a complete word; got result={result:?} last_segment={last_segment:?}"
+    );
+}
+
+#[test]
+fn branch_name_strips_trailing_and() {
+    // Guards: dangling-connective regression. Trailing connectives
+    // like "and" must be stripped so branches do not end with -and.
+    let result = branch_name("foo and bar and");
+    assert!(
+        !result.ends_with("-and"),
+        "branch must not end with -and; got {result:?}"
+    );
+}
+
+#[test]
+fn branch_name_strips_trailing_stop_words() {
+    // Guards: dangling-connective regression for every stop word in
+    // the curated list. For each stop word, a title ending with that
+    // word as the final segment must produce a branch that does not
+    // end with that segment.
+    let stop_words = [
+        "and", "or", "but", "in", "of", "the", "a", "an", "to", "for", "at", "by", "with", "from",
+        "on",
+    ];
+    for word in stop_words {
+        let input = format!("foo bar {word}");
+        let result = branch_name(&input);
+        let suffix = format!("-{word}");
+        assert!(
+            !result.ends_with(&suffix),
+            "branch_name({input:?}) must not end with {suffix:?}; got {result:?}"
+        );
+    }
+}
+
+#[test]
+fn branch_name_handles_only_stop_words() {
+    // Guards: empty-after-strip regression. When every segment is a
+    // stop word, the result must fall back to "unnamed" rather than
+    // returning an empty string that would break downstream worktree
+    // creation.
+    assert_eq!(branch_name("and or but the"), "unnamed");
+}
+
+#[test]
+fn branch_name_underscore_input_round_trips_through_pipeline() {
+    // Guards: end-to-end pipeline regression. An identifier with
+    // underscores must survive branch_name -> derive_feature as
+    // readable Title Case text — the cumulative output is what the
+    // user sees in PR titles and TUI displays.
+    let feature = derive_feature(&branch_name("Wire code_tasks_total writer"));
+    assert!(
+        feature.contains("Code Tasks Total"),
+        "feature must contain readable Title Case; got {feature:?}"
+    );
 }
 
 // --- derive_feature() / derive_worktree() ---
