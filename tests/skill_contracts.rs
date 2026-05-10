@@ -4323,3 +4323,48 @@ fn flow_skills_admin_and_maintainer_match_user_only() {
         }
     }
 }
+
+// --- include-bias-in-issues rule content contract ---
+//
+// `.claude/rules/include-bias-in-issues.md` was introduced in PR
+// #1427 to replace the templated "Out of Scope" section that
+// invited preemptive scope shrinkage. The contract test below
+// pins three load-bearing invariants in the rule body so a
+// future paraphrase or refactor cannot silently drop them: the
+// principle, the bad-reasoning patterns, and the cost framing.
+
+fn read_include_bias_rule() -> String {
+    let path = common::repo_root()
+        .join(".claude")
+        .join("rules")
+        .join("include-bias-in-issues.md");
+    std::fs::read_to_string(&path).expect(".claude/rules/include-bias-in-issues.md must exist")
+}
+
+#[test]
+fn include_bias_rule_states_default_to_inclusion() {
+    let content = read_include_bias_rule();
+    assert!(
+        content.contains("Default to inclusion"),
+        ".claude/rules/include-bias-in-issues.md must state the load-bearing principle 'Default to inclusion'"
+    );
+
+    let bad_patterns: &[&str] = &[
+        "prior PR did",
+        "user owns this",
+        "separate code surface",
+        "would expand scope",
+    ];
+    let hits = bad_patterns.iter().filter(|p| content.contains(*p)).count();
+    assert!(
+        hits >= 3,
+        ".claude/rules/include-bias-in-issues.md must enumerate at least three of four bad-reasoning patterns ({:?}); found {}",
+        bad_patterns,
+        hits
+    );
+
+    assert!(
+        content.contains("lifecycle cost"),
+        ".claude/rules/include-bias-in-issues.md must include the 'lifecycle cost' framing"
+    );
+}
