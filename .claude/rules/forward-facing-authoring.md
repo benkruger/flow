@@ -91,3 +91,12 @@ forward-facing before commit. A rule addition or doc comment
 that names the current PR, branch, or file the session just
 modified is a Real finding that must be rewritten before Step 4
 concludes.
+
+## Cross-References
+
+- `.claude/rules/no-backwards-reasoning.md` — sibling rule
+  covering the READING side. Forward-facing authoring forbids
+  WRITING history-citing prose; no-backwards-reasoning forbids
+  consuming historical artifacts as authority on
+  should-questions. Together they close the loop on both sides
+  of historical reasoning.

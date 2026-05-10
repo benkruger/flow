@@ -102,3 +102,14 @@ current behavior over expanding the pattern list. When CI fails on a
 legitimate forward-facing comment that nonetheless contains a
 prohibited substring, narrow the comment's wording or add a more
 specific rule exception in the same commit.
+
+## Cross-References
+
+- `.claude/rules/no-backwards-reasoning.md` — sibling rule
+  covering reasoning rather than commenting. Backward-facing
+  comments are the textual symptom; backward-facing reasoning
+  is the upstream cause. Both share the principle that current
+  code stands on current merits.
+- `.claude/rules/forward-facing-authoring.md` — sibling rule
+  covering the broader prose corpus (rule files, CLAUDE.md,
+  doc comments, plan prose).

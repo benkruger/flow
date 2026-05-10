@@ -79,6 +79,31 @@ window, no legacy reader, no need to accept obsolete keys.
 Writers produce the current shape; readers consume the current
 shape.
 
+### Key-fallback vs. type-tolerance
+
+The forbidden patterns above target **key-fallback** — code
+that tries one field name and, on absence, falls back to a
+different field name from a prior schema. That is reasoning
+grounded in plugin history.
+
+**Type-tolerance for the same field is not forbidden** and is
+required by `.claude/rules/state-files.md`. A reader that
+accepts integer, float, and string representations of the same
+counter field (via `tolerant_i64` / `tolerant_i64_opt` per
+`.claude/rules/rust-patterns.md` "Counter and State Field Type
+Tolerance") is normalizing input shapes for one field, not
+falling back across renamed fields. Writers always produce
+integers; readers tolerate the alternative representations the
+JSON serializer or hand-edits can introduce. This is current-
+merits reasoning — the current code reads a counter and the
+current field can hold any of those representations.
+
+The distinguishing test: does the alternative source the reader
+falls back to come from a different field name? If yes →
+key-fallback → forbidden. If the alternative is just a
+different in-memory representation of the same field → type-
+tolerance → required.
+
 ## Valid Uses of History
 
 History is not banned — it is forbidden as authority. These
@@ -123,6 +148,21 @@ durable output:
   catch the symptom but not the reasoning. The rule fires in
   the Plan and earlier phases, not after the diff exists.
 
+### Canonical Scan Phrasings
+
+The mechanical backstop scans for these four canonical
+phrasings. Future changes to the scanned set must update both
+this enumeration and the corresponding subsections in
+`skills/flow-create-issue/SKILL.md` and
+`skills/flow-decompose-project/SKILL.md` so the rule remains
+the authoritative source for what the scans target:
+
+- `"PR #<N> decided"` — historical decision cited as authority
+- `"kept for backward compatibility"` — preservation justified
+  by inherited reasoning rather than a current consumer
+- `"older plugin versions"` — plugin-version-compat reasoning
+- `"as PR #<N> chose to"` — deferring to past decisions
+
 ## Cross-References
 
 - `.claude/rules/forward-facing-authoring.md` — sibling rule
@@ -137,3 +177,8 @@ durable output:
   investigation discipline. When a bug surfaces, investigate
   the system as it stands; do not rationalize the current
   behavior from a historical decision.
+- `.claude/rules/state-files.md` — sibling rule covering type-
+  tolerance for state-file fields. The "Key-fallback vs.
+  type-tolerance" subsection above distinguishes the forbidden
+  shape (key-fallback across renamed fields) from the required
+  shape (type-tolerance for one field).
