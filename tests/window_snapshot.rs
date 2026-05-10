@@ -614,8 +614,9 @@ fn home_dir_or_empty_returns_path_when_home_set() {
 /// `capture_for_active_state` reads session_id and transcript_path
 /// from the in-memory state JSON and threads them into capture()
 /// alongside a derived cost-file path under
-/// `<project_root>/.claude/cost/<YYYY-MM>/<sid>.txt`. With all
-/// inputs present, every snapshot field populates.
+/// `<project_root>/.claude/cost/<YYYY-MM>/<sid>` (no extension —
+/// matches the producer in `~/.claude/statusline-command.sh`).
+/// With all inputs present, every snapshot field populates.
 #[test]
 fn capture_for_active_state_threads_session_context_into_capture() {
     let tmp = TempDir::new().expect("tempdir");
@@ -633,12 +634,12 @@ fn capture_for_active_state_threads_session_context_into_capture() {
         &[&assistant_line("claude-opus-4-7", 100, 50, 0, 0)],
     );
 
-    // Create the cost file at the expected path.
+    // Create the cost file at the expected path (no extension).
     let now = chrono::Local::now();
     let year_month = now.format("%Y-%m").to_string();
     let cost_dir = root.join(".claude").join("cost").join(&year_month);
     fs::create_dir_all(&cost_dir).expect("mkdir cost");
-    fs::write(cost_dir.join("sid-abc.txt"), "0.42").expect("write cost");
+    fs::write(cost_dir.join("sid-abc"), "0.42").expect("write cost");
 
     let state = json!({
         "session_id": "sid-abc",
@@ -935,4 +936,86 @@ fn capture_with_oversized_transcript_returns_bounded_snapshot() {
     });
     assert!(snap.session_input_tokens.unwrap() > 0);
     assert!(snap.turn_count.unwrap() > 0);
+}
+
+// --- cost_file_path producer-naming contract ---
+
+/// Regression: the per-session cost file produced by
+/// `~/.claude/statusline-command.sh` is written as
+/// `<main_root>/.claude/cost/<YYYY-MM>/<session_id>` with NO
+/// extension. `capture_for_active_state` must read that exact
+/// path; an extension mismatch silently leaves `session_cost_usd`
+/// as `None` and the Token Cost panel renders zeros.
+#[test]
+fn capture_for_active_state_reads_cost_file_without_txt_extension() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let session_id = "sid-no-ext";
+    let year_month = chrono::Local::now().format("%Y-%m").to_string();
+    let cost_dir = root.join(".claude").join("cost").join(&year_month);
+    fs::create_dir_all(&cost_dir).expect("mkdir cost");
+    // Producer naming: no `.txt` suffix.
+    fs::write(cost_dir.join(session_id), "2.50").expect("write cost");
+
+    let state = json!({"session_id": session_id});
+    let snap = capture_for_active_state(&root, &state, &root);
+    assert_eq!(
+        snap.session_cost_usd,
+        Some(2.50),
+        "cost_file_path must match the producer's no-extension naming"
+    );
+}
+
+// --- self-healing transcript path ---
+
+/// Encode a project-root path the way Claude Code names the
+/// per-project transcript directory under `~/.claude/projects/`:
+/// every `/` and every `.` becomes `-`. So
+/// `/Users/ben/code/flow` → `-Users-ben-code-flow`.
+fn encode_project_root_for_projects_dir(project_root: &std::path::Path) -> String {
+    let s = project_root.to_string_lossy();
+    s.chars()
+        .map(|c| if c == '/' || c == '.' { '-' } else { c })
+        .collect()
+}
+
+/// Regression: when `transcript_path` in state is null but the
+/// transcript file already exists at its canonical location
+/// (`<home>/.claude/projects/<encoded-project-root>/<session_id>.jsonl`),
+/// `capture_for_active_state` self-heals by deriving the path
+/// from `session_id` + `project_root` and reading the transcript.
+/// Without this fallback every snapshot after a failed
+/// SessionStart capture stays empty (model/tokens/turn_count
+/// all None) and the Token Cost panel can never populate.
+#[test]
+fn capture_for_active_state_derives_transcript_path_when_state_has_null() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let session_id = "sid-null-transcript";
+
+    // Plant the transcript at the canonical location.
+    let encoded = encode_project_root_for_projects_dir(&root);
+    let projects_dir = root.join(".claude").join("projects").join(&encoded);
+    fs::create_dir_all(&projects_dir).expect("mkdir projects subdir");
+    let transcript_name = format!("{}.jsonl", session_id);
+    let lines = [
+        assistant_line("claude-opus-4-7", 100, 50, 0, 0),
+        assistant_line("claude-opus-4-7", 200, 75, 0, 0),
+    ];
+    let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+    write_transcript(&projects_dir, &transcript_name, &line_refs);
+
+    let state = json!({
+        "session_id": session_id,
+        "transcript_path": Value::Null,
+    });
+    let snap = capture_for_active_state(&root, &state, &root);
+    assert_eq!(
+        snap.session_input_tokens,
+        Some(300),
+        "self-heal must read transcript when state's transcript_path is null"
+    );
+    assert_eq!(snap.session_output_tokens, Some(125));
+    assert_eq!(snap.turn_count, Some(2));
+    assert_eq!(snap.model.as_deref(), Some("claude-opus-4-7"));
 }

@@ -448,3 +448,41 @@ fn capture_session_replaces_existing_symlink_at_capture_path() {
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(parsed["session_id"], "abc-123");
 }
+
+/// Regression: at SessionStart the transcript JSONL typically does
+/// not yet exist on disk — `is_safe_transcript_path` runs
+/// `canonicalize()` to defeat symlink traversal, and that syscall
+/// fails on missing files. The hook must store `transcript_path`
+/// as null in that case (not weaken the validator). Self-healing
+/// happens later in `capture_for_active_state` once the file
+/// exists. This test guards the strict-validator contract so a
+/// future "loosen the validator" attempt does not silently weaken
+/// symlink-escape defense.
+#[test]
+fn capture_session_stores_null_when_transcript_file_does_not_exist_yet() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap();
+    // Build a transcript_path that is shape-valid (absolute, under
+    // ~/.claude/projects/, no `..` components) but the file does not
+    // exist on disk. canonicalize() fails → validator returns false
+    // → hook stores null.
+    let projects_dir = home.join(".claude").join("projects").join("-tmp-abc");
+    fs::create_dir_all(&projects_dir).unwrap();
+    let transcript = projects_dir.join("nonexistent-session.jsonl");
+    assert!(!transcript.exists());
+    let stdin = format!(
+        r#"{{"session_id":"valid-sid","transcript_path":"{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let code = run_capture_session(Some(&home), stdin.as_bytes());
+    assert_eq!(code, Some(0));
+    let path = capture_file(&home);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(parsed["session_id"], "valid-sid");
+    assert!(
+        parsed["transcript_path"].is_null(),
+        "missing-file transcript_path must serialize as null; got: {}",
+        parsed["transcript_path"]
+    );
+}

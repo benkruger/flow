@@ -1152,13 +1152,15 @@ fn window_at_start_reads_cost_when_session_id_and_cost_file_present() {
     let session_id = "cost-test-sid";
     write_capture_file(&home, session_id, None);
 
-    // Pre-create the cost file at <repo>/.claude/cost/<YYYY-MM>/<session_id>.txt.
-    // The year-month component matches `chrono::Local::now().format("%Y-%m")`
-    // which is what `cost_file_path` in src/window_snapshot.rs computes.
+    // Pre-create the cost file at <repo>/.claude/cost/<YYYY-MM>/<session_id>
+    // (no extension — matches the producer in
+    // `~/.claude/statusline-command.sh`). The year-month component matches
+    // `chrono::Local::now().format("%Y-%m")` which is what `cost_file_path`
+    // in src/window_snapshot.rs computes.
     let year_month = chrono::Local::now().format("%Y-%m").to_string();
     let cost_dir = repo.join(".claude").join("cost").join(&year_month);
     fs::create_dir_all(&cost_dir).unwrap();
-    fs::write(cost_dir.join(format!("{}.txt", session_id)), "1.42\n").unwrap();
+    fs::write(cost_dir.join(session_id), "1.42\n").unwrap();
 
     let output = run_start_init_with_home(&repo, "cost-test", &home, &stub_dir);
     assert_eq!(
@@ -1319,15 +1321,40 @@ fn cost_per_flow_token_cost_section_renders_phase_delta_end_to_end() {
     let session_id = "cost-flow-sid";
     write_capture_file(&home, session_id, None);
 
-    // Pre-create the cost file at <repo>/.claude/cost/<YYYY-MM>/<session_id>.txt
-    // with an initial value. capture_for_active_state reads this file
-    // when start-init writes window_at_start, so this seeds the start
-    // anchor with cost=1.00.
+    // Pre-create the cost file at <repo>/.claude/cost/<YYYY-MM>/<session_id>
+    // (no extension — matches the producer in
+    // `~/.claude/statusline-command.sh`) with an initial value.
+    // capture_for_active_state reads this file when start-init writes
+    // window_at_start, so this seeds the start anchor with cost=1.00.
     let year_month = Local::now().format("%Y-%m").to_string();
     let cost_dir = repo.join(".claude").join("cost").join(&year_month);
     fs::create_dir_all(&cost_dir).unwrap();
-    let cost_file = cost_dir.join(format!("{}.txt", session_id));
+    let cost_file = cost_dir.join(session_id);
     fs::write(&cost_file, "1.00\n").unwrap();
+
+    // Plant a transcript file at the canonical Claude Code location
+    // `<home>/.claude/projects/<encoded-project-root>/<session_id>.jsonl`.
+    // Encoding rule: every `/` and every `.` in the project root path
+    // becomes `-`. The subprocess running start-init canonicalizes
+    // project_root (`/var/...` → `/private/var/...` on macOS), so the
+    // encoded directory must be derived from the canonical form too.
+    // The capture file written by `write_capture_file` above does
+    // NOT carry transcript_path (the file did not yet exist at
+    // SessionStart), so this exercises the self-healing fallback in
+    // `capture_for_active_state`: with `transcript_path` null in
+    // state, the snapshot derives the path from session_id +
+    // project_root and reads token usage from the transcript.
+    let canonical_repo = repo.canonicalize().unwrap();
+    let encoded_root: String = canonical_repo
+        .to_string_lossy()
+        .chars()
+        .map(|c| if c == '/' || c == '.' { '-' } else { c })
+        .collect();
+    let projects_dir = home.join(".claude").join("projects").join(&encoded_root);
+    fs::create_dir_all(&projects_dir).unwrap();
+    let transcript_path = projects_dir.join(format!("{}.jsonl", session_id));
+    let transcript_line = r#"{"type":"assistant","message":{"model":"claude-opus-4-7","role":"assistant","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":300,"output_tokens":100,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}"#;
+    fs::write(&transcript_path, format!("{}\n", transcript_line)).unwrap();
 
     let output = run_start_init_with_home(&repo, "cost-flow-test", &home, &stub_dir);
     assert_eq!(
@@ -1349,6 +1376,17 @@ fn cost_per_flow_token_cost_section_renders_phase_delta_end_to_end() {
             .expect("start cost populated"),
         1.00,
         "window_at_start cost must reflect the pre-flow cost file value"
+    );
+    // Confirm the start anchor also carries token usage — the
+    // self-healing transcript fallback in `capture_for_active_state`
+    // discovered the planted transcript at the canonical path,
+    // bypassed the null `transcript_path` in state, and read the
+    // assistant turn. Without the fix, this field stays None and
+    // the Token Cost panel renders zeros.
+    assert_eq!(
+        state["window_at_start"]["session_input_tokens"].as_i64(),
+        Some(300),
+        "window_at_start tokens must reflect the planted transcript via self-heal"
     );
 
     // Simulate cost accruing during the Code phase: bump the
@@ -1419,6 +1457,16 @@ fn cost_per_flow_token_cost_section_renders_phase_delta_end_to_end() {
     assert!(
         !code_row.contains("—"),
         "Code row must NOT show the em-dash placeholder when cost is fully populated; got: {:?}",
+        code_row
+    );
+    // The mocked window_at_enter (input=100) and window_at_complete
+    // (input=500) produce a 400-token delta. Locking that in proves
+    // the Code row renders non-zero tokens — the visual signal that
+    // tells a user the panel is healthy. Pre-fix, the panel showed
+    // zeros across every phase (issue #1431).
+    assert!(
+        code_row.contains("400"),
+        "Code row must show the non-zero token delta (input 100 → 500 = 400); got: {:?}",
         code_row
     );
 }

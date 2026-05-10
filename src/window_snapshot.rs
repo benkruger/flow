@@ -88,8 +88,10 @@ pub fn capture(
 /// Production binder around `capture` for the six producer call
 /// sites. Reads `session_id` and `transcript_path` from the
 /// in-memory state JSON, derives the per-session cost-file path
-/// under `<project_root>/.claude/cost/<YYYY-MM>/<session_id>.txt`,
-/// and invokes `capture` with `home` plus those paths.
+/// under `<project_root>/.claude/cost/<YYYY-MM>/<session_id>`
+/// (no extension — matches the producer in
+/// `~/.claude/statusline-command.sh`), and invokes `capture` with
+/// `home` plus those paths.
 ///
 /// Producers call this from inside `mutate_state` closures (the
 /// state JSON is already in memory) and write the returned
@@ -111,11 +113,27 @@ pub fn capture_for_active_state(home: &Path, state: &Value, project_root: &Path)
         .and_then(|v| v.as_str())
         .filter(|s| is_safe_session_id(s))
         .map(|s| s.to_string());
+    // Self-heal: when state's `transcript_path` is null (the
+    // SessionStart hook's strict validator rejected the path
+    // because the file did not yet exist), derive the canonical
+    // transcript location from `<home>/.claude/projects/<encoded>/
+    // <session_id>.jsonl` using Claude Code's directory-encoding
+    // convention (every `/` and every `.` in the project root path
+    // becomes `-`; e.g. `/Users/ben/code/flow` →
+    // `-Users-ben-code-flow`). The derived path runs through the
+    // same `is_safe_transcript_path` validator so a hostile entry
+    // under `~/.claude/projects/` cannot redirect the read.
     let transcript_path = state
         .get("transcript_path")
         .and_then(|v| v.as_str())
         .map(PathBuf::from)
-        .filter(|p| is_safe_transcript_path(p, home));
+        .filter(|p| is_safe_transcript_path(p, home))
+        .or_else(|| {
+            session_id
+                .as_ref()
+                .map(|sid| derive_transcript_path(home, project_root, sid))
+                .filter(|p| is_safe_transcript_path(p, home))
+        });
     let cost_path = session_id
         .as_ref()
         .map(|sid| cost_file_path(project_root, sid));
@@ -126,6 +144,30 @@ pub fn capture_for_active_state(home: &Path, state: &Value, project_root: &Path)
         session_id.as_deref(),
         now,
     )
+}
+
+/// Derive the canonical transcript path Claude Code writes to:
+/// `<home>/.claude/projects/<encoded-project-root>/<session_id>.jsonl`.
+/// The encoding rule (confirmed by inspecting an existing
+/// `~/.claude/projects/` entry against its source project root):
+/// every `/` and every `.` in the project root path becomes `-`.
+/// `/Users/ben/code/flow` → `-Users-ben-code-flow`;
+/// `/Users/ben/.claude` → `-Users-ben--claude` (the `.` becomes a
+/// second `-`).
+///
+/// The result is run through `is_safe_transcript_path` by the
+/// caller, so this helper does no validation itself — it only
+/// builds the candidate `PathBuf`.
+fn derive_transcript_path(home: &Path, project_root: &Path, session_id: &str) -> PathBuf {
+    let encoded: String = project_root
+        .to_string_lossy()
+        .chars()
+        .map(|c| if c == '/' || c == '.' { '-' } else { c })
+        .collect();
+    home.join(".claude")
+        .join("projects")
+        .join(encoded)
+        .join(format!("{}.jsonl", session_id))
 }
 
 /// Maximum accepted length for a `session_id`. Real Claude Code
@@ -295,7 +337,9 @@ pub fn home_dir_or_empty() -> PathBuf {
 }
 
 /// Resolve the per-session cost-file path
-/// `<project_root>/.claude/cost/<YYYY-MM>/<session_id>.txt`. The
+/// `<project_root>/.claude/cost/<YYYY-MM>/<session_id>`. No
+/// extension — the producer in `~/.claude/statusline-command.sh`
+/// writes the file as `$cost_dir/$session_id` (line 32). The
 /// month folder mirrors `tui_data::load_account_metrics` so the
 /// snapshot reads the same file that account-monthly aggregation
 /// already reads.
@@ -306,7 +350,7 @@ fn cost_file_path(project_root: &Path, session_id: &str) -> PathBuf {
         .join(".claude")
         .join("cost")
         .join(year_month)
-        .join(format!("{}.txt", session_id))
+        .join(session_id)
 }
 
 /// Read `~/.claude/rate-limits.json` and extract the two pct fields.
