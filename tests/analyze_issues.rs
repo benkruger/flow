@@ -597,12 +597,6 @@ fn empty_labels_lib() {
 }
 
 #[test]
-fn categorize_by_label_lib() {
-    let labels: HashSet<String> = ["Flaky Test".to_string()].into();
-    assert_eq!(categorize(&labels, "Some title", "body"), "Flaky Test");
-}
-
-#[test]
 fn categorize_rule_label_lib() {
     let labels: HashSet<String> = ["Rule".to_string()].into();
     assert_eq!(categorize(&labels, "title", "body"), "Rule");

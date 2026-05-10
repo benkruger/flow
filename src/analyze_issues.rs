@@ -103,7 +103,7 @@ pub fn detect_labels(labels: &[Value]) -> LabelFlags {
 }
 
 /// Label categories checked in order.
-const LABEL_CATEGORIES: &[&str] = &["Rule", "Flaky Test", "Tech Debt", "Documentation Drift"];
+const LABEL_CATEGORIES: &[&str] = &["Rule", "Tech Debt", "Documentation Drift"];
 
 /// Assign a category based on label names first, then content fallback.
 pub fn categorize(label_names: &HashSet<String>, title: &str, body: &str) -> String {

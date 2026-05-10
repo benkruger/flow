@@ -167,8 +167,8 @@ using your judgment — not a formula. Consider:
   others have high impact.
 - **What has the broadest effect?** Issues touching many files or areas of
   the codebase have wider impact than narrowly scoped changes.
-- **What is urgent?** Bugs, flaky tests, and issues blocking active work
-  take priority over enhancements.
+- **What is urgent?** Bugs and issues blocking active work take priority
+  over enhancements.
 - **Is it ready for autonomous execution?** Decomposed issues are work-ready
   and can be started immediately without a planning phase.
 

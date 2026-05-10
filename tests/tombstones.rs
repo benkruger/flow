@@ -1585,3 +1585,109 @@ fn test_flow_decompose_project_skill_no_out_of_scope_instruction() {
          for the rule the tombstone enforces."
     );
 }
+
+/// Tombstone: removed in PR #1435. Must not return.
+///
+/// Asserts `skills/flow-code/SKILL.md` does NOT contain the
+/// title-cased phrase `Flaky Test`. The flaky-test filing path was
+/// removed because filed issues produced no actionable signal; the
+/// retry loop and green-before-commit HARD-GATE handle intermittent
+/// failures inline.
+///
+/// The byte-substring shape holds because:
+///   1. `concat!` reassembly: not applicable to Markdown.
+///   2. `format!` reassembly: not applicable to Markdown.
+///   3. Named constant reference: not applicable to Markdown.
+///   4. Method chains / split args: not applicable to Markdown.
+#[test]
+fn test_flow_code_skill_no_flaky_test_label() {
+    let content = common::read_skill("flow-code");
+    assert!(
+        !content.contains("Flaky Test"),
+        "skills/flow-code/SKILL.md must not contain the title-cased \
+         phrase `Flaky Test` — the flaky-test filing path was removed \
+         because filed issues produced no actionable signal."
+    );
+}
+
+/// Tombstone: removed in PR #1435. Must not return.
+///
+/// Asserts `src/analyze_issues.rs` does NOT contain the title-cased
+/// phrase `Flaky Test`. The string was removed from `LABEL_CATEGORIES`
+/// when the flaky-test filing path was deleted; the analyzer now
+/// recognizes only `Rule`, `Tech Debt`, and `Documentation Drift`.
+///
+/// The byte-substring shape holds because:
+///   1. `concat!` reassembly: the string is a `&'static str` slice
+///      element, not assembled at runtime.
+///   2. `format!` reassembly: the constant is a compile-time slice
+///      literal.
+///   3. Named constant reference: a `const FLAKY: &str = "Flaky \
+///      Test";` followed by use of `FLAKY` would still place the
+///      literal `"Flaky Test"` in the source — the constant
+///      definition itself trips the byte check.
+///   4. Method chains / split args: not applicable — the value
+///      lives inside a slice literal, not constructed via `.arg()`.
+#[test]
+fn test_analyze_issues_no_flaky_test_label() {
+    let path = common::repo_root().join("src/analyze_issues.rs");
+    let content = fs::read_to_string(&path).expect("src/analyze_issues.rs must exist");
+    assert!(
+        !content.contains("Flaky Test"),
+        "src/analyze_issues.rs must not contain the title-cased \
+         phrase `Flaky Test` — the label was removed from \
+         LABEL_CATEGORIES alongside the flaky-test filing path."
+    );
+}
+
+/// Tombstone: removed in PR #1435. Must not return.
+///
+/// Asserts `skills/flow-orchestrate/SKILL.md` does NOT contain the
+/// title-cased phrase `Flaky Test`. The category was removed from
+/// the orchestrate dashboard's categorize-by-label list because the
+/// filing path no longer produces issues under that label.
+///
+/// The byte-substring shape holds because:
+///   1. `concat!` reassembly: not applicable to Markdown.
+///   2. `format!` reassembly: not applicable to Markdown.
+///   3. Named constant reference: not applicable to Markdown.
+///   4. Method chains / split args: not applicable to Markdown.
+#[test]
+fn test_flow_orchestrate_skill_no_flaky_test_label() {
+    let content = common::read_skill("flow-orchestrate");
+    assert!(
+        !content.contains("Flaky Test"),
+        "skills/flow-orchestrate/SKILL.md must not contain the \
+         title-cased phrase `Flaky Test` — the category was removed \
+         from the categorize-by-label list when the filing path \
+         was deleted."
+    );
+}
+
+/// Tombstone: removed in PR #1435. Must not return.
+///
+/// Asserts `skills/flow-issues/SKILL.md` does NOT contain the
+/// phrase `flaky tests` (case-insensitive). The urgent-criteria
+/// sentence was rewritten to drop the reference because there is
+/// no longer a flaky-test category to surface.
+///
+/// The case-insensitive check is performed via `to_lowercase()`
+/// before `.contains()` so capitalization variants ("Flaky Tests",
+/// "FLAKY TESTS", "Flaky tests") all trip the guard.
+///
+/// The byte-substring shape holds because:
+///   1. `concat!` reassembly: not applicable to Markdown.
+///   2. `format!` reassembly: not applicable to Markdown.
+///   3. Named constant reference: not applicable to Markdown.
+///   4. Method chains / split args: not applicable to Markdown.
+#[test]
+fn test_flow_issues_skill_no_flaky_tests_phrase() {
+    let content = common::read_skill("flow-issues");
+    assert!(
+        !content.to_lowercase().contains("flaky tests"),
+        "skills/flow-issues/SKILL.md must not contain the phrase \
+         `flaky tests` (case-insensitive) — the reference was \
+         removed from the urgent-criteria sentence when the \
+         filing path was deleted."
+    );
+}

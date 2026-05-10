@@ -209,8 +209,8 @@ list.
 ## Repo Routing
 
 Most issue-filing paths target the current project (omit `--repo`):
-Tech Debt, Flaky Test, Documentation Drift, and decomposed work items
-all describe problems in the user's code.
+Tech Debt, Documentation Drift, and decomposed work items all
+describe problems in the user's code.
 
 FLOW process bugs — problems with the plugin itself — must target
 `benkruger/flow`. Pass `--repo benkruger/flow` when filing against

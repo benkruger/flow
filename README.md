@@ -235,7 +235,7 @@ Every feature has a state file at `.flow-states/<branch>/state.json`. Key fields
 - **Compaction** — `compact_summary`, `compact_cwd`, `compact_count` for post-compaction context recovery
 - **Autonomy** — `skills` object with per-skill `commit`/`continue` settings
 - **Slack** — `slack_thread_ts`, `slack_notifications` for thread-per-feature tracking
-- **Issues** — `issues_filed` array (Tech Debt, Flaky Test, Documentation Drift, Flow issues)
+- **Issues** — `issues_filed` array (Tech Debt, Documentation Drift, Flow issues)
 - **Diff stats** — `files_changed`, `insertions`, `deletions` captured at Code phase completion
 
 Full schema reference: `docs/reference/flow-state-schema.md`.

@@ -288,7 +288,7 @@ via `bin/flow issue`. Surfaced in the Complete phase PR body and Done banner.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `label` | string | Issue category: Rule, Flaky Test, Tech Debt, or Documentation Drift |
+| `label` | string | Issue category: Rule, Tech Debt, or Documentation Drift |
 | `title` | string | Issue title as filed on GitHub |
 | `url` | string | Full GitHub issue URL |
 | `phase` | string | Phase key where the issue was filed (e.g. `"flow-learn"`) |

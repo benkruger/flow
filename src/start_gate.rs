@@ -15,9 +15,7 @@
 //! output before halting. Single-attempt fail-fast semantics surface
 //! the same diagnostic in 1/3 the time. Genuine test flakiness is
 //! discovered at iteration time on a feature branch, not during the
-//! integration-branch gate, per
-//! `.claude/rules/testing-gotchas.md` "Distinguish Environmental
-//! Load From Flaky Tests".
+//! integration-branch gate.
 //!
 //! Logic is driven entirely through the compiled binary; integration tests
 //! use real git and controllable `bin/*` stubs in a `TempDir` fixture.

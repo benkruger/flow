@@ -431,34 +431,6 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 
 - Max 3 attempts — if still failing after 3, stop and report exactly what is failing
 
-**Flaky test detection:** If a test fails on one attempt but passes on a
-subsequent attempt without any code changes, it is flaky. File a
-"Flaky Test" issue with reproduction data and continue.
-
-The issue body must include: the test name, the failure message, how many
-attempts it took to pass, and the task being worked on.
-
-Write the issue body to `.flow-states/<branch>/issue-body-content.md` using
-the Write tool, then route it to `.flow-issue-body` in the project root
-via `bin/flow write-rule` (avoids Claude Code's Write-tool preflight on a
-pre-existing body file — see `.claude/rules/file-tool-preflights.md`):
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-issue-body --content-file .flow-states/<branch>/issue-body-content.md
-```
-
-Then file:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --label "Flaky Test" --title "<issue_title>" --body-file .flow-issue-body
-```
-
-After filing, record it:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label "Flaky Test" --title "<issue_title>" --url "<issue_url>" --phase "flow-code"
-```
-
 <HARD-GATE>
 Do NOT commit and do NOT move to the next task until `bin/flow ci` is green.
 </HARD-GATE>
