@@ -10,6 +10,7 @@ use chrono::{DateTime, FixedOffset};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::commands::start_lock;
 use crate::flow_paths::FlowStatesDir;
 use crate::phase_config::{self, PHASE_ORDER};
 use crate::utils::{
@@ -73,6 +74,123 @@ pub fn status_icon(status: &str) -> &'static str {
 
 /// Staleness threshold for rate limit data (10 minutes).
 pub const STALE_THRESHOLD_SECONDS: u64 = 600;
+
+/// Read the start-lock holder name from the queue directory, if any.
+///
+/// Returns the basename of the first (lowest-mtime, then alphabetical)
+/// queue entry — the flow that currently holds the start lock — or
+/// `None` when the queue is empty or unreadable. Drives the
+/// `🔒 start lock: <holder>` banner in the TUI metrics row so engineers
+/// can see start-gate contention without tailing log files.
+pub fn read_start_lock_holder(root: &Path) -> Option<String> {
+    let queue_dir = start_lock::queue_path(root);
+    let (entries, _stale) = start_lock::list_queue(&queue_dir, false);
+    entries.into_iter().next().map(|(_mtime, name)| name)
+}
+
+/// Aggregated per-phase step counter for X-of-Y displays.
+///
+/// `current` and `total` are returned as stored in the state file (no
+/// +1 display offset) so consumers can choose their own formatting.
+/// `name` is the step name from `step_names()` for ordered-step phases,
+/// or `code_task_name` for the Code phase. Returns `None` when
+/// `current_phase` is missing/unknown OR when the per-phase counter
+/// field is absent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhaseStepCounter {
+    pub phase_label: &'static str,
+    pub phase_number: u8,
+    pub current: i64,
+    pub total: i64,
+    pub name: Option<String>,
+}
+
+/// Compute the X-of-Y counter for the active phase.
+///
+/// See [`PhaseStepCounter`] for the return semantics.
+pub fn phase_step_counter(state: &Value) -> Option<PhaseStepCounter> {
+    fn read(state: &Value, key: &str) -> Option<i64> {
+        state.get(key).and_then(tolerant_i64_opt)
+    }
+
+    let raw_phase_key = state.get("current_phase").and_then(|v| v.as_str())?;
+    // Normalize the legacy `flow-code-review` value to the canonical
+    // `flow-review` key (renamed in PR #1402) so step-name lookups
+    // and total counts resolve against the single canonical entry in
+    // `step_names()`. Mirrors the serde alias on `FlowState::phase`
+    // in `src/state.rs`.
+    let phase_key = if raw_phase_key == "flow-code-review" {
+        "flow-review"
+    } else {
+        raw_phase_key
+    };
+    let names_map = step_names();
+    let lookup_name = |cur: i64| -> Option<String> {
+        names_map
+            .get(phase_key)
+            .and_then(|m| m.get(&cur))
+            .map(|s| s.to_string())
+    };
+
+    let (phase_label, phase_number, current, total, name): (
+        &'static str,
+        u8,
+        i64,
+        i64,
+        Option<String>,
+    ) = match phase_key {
+        "flow-start" => {
+            let cur = read(state, "start_step")?;
+            let tot = read(state, "start_steps_total").unwrap_or(0);
+            ("Start", 1, cur, tot, lookup_name(cur))
+        }
+        "flow-code" => {
+            let cur = read(state, "code_task")?;
+            let tot = read(state, "code_tasks_total").unwrap_or(0);
+            let nm = state
+                .get("code_task_name")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            ("Code", 2, cur, tot, nm)
+        }
+        "flow-review" => {
+            // Read the canonical `review_step` key first; fall back
+            // to the legacy `code_review_step` so state files
+            // written by older plugin versions still surface step
+            // progress. Mirrors the serde alias on
+            // `FlowState::review_step` in `src/state.rs`.
+            let cur = state
+                .get("review_step")
+                .or_else(|| state.get("code_review_step"))
+                .and_then(tolerant_i64_opt)?;
+            let tot = names_map
+                .get(phase_key)
+                .map(|m| m.len() as i64)
+                .unwrap_or(0);
+            ("Code Review", 3, cur, tot, lookup_name(cur))
+        }
+        "flow-learn" => {
+            let cur = read(state, "learn_step")?;
+            let tot = read(state, "learn_steps_total").unwrap_or(0);
+            ("Learn", 4, cur, tot, lookup_name(cur))
+        }
+        "flow-complete" => {
+            let cur = read(state, "complete_step")?;
+            let tot = read(state, "complete_steps_total").unwrap_or(0);
+            ("Complete", 5, cur, tot, lookup_name(cur))
+        }
+        _ => return None,
+    };
+
+    Some(PhaseStepCounter {
+        phase_label,
+        phase_number,
+        current,
+        total,
+        name,
+    })
+}
 
 /// Return 'name - step N of M' or 'step N of M' or '' depending on what's populated.
 pub fn step_annotation(step: i64, total: i64, name: &str) -> String {

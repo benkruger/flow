@@ -12,10 +12,14 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, Ke
 use ratatui::backend::TestBackend;
 use ratatui::{Frame, Terminal};
 
-use flow_rs::tui::{DrawFn, EventSourceFn, TuiApp, TuiAppPlatform, View};
+use flow_rs::tui::{
+    apply_filter_key, build_iterm_open_worktree_script, detail_pane_phase_header,
+    flow_matches_filter, format_age, list_row_phase_label, DrawFn, EventSourceFn, TuiApp,
+    TuiAppPlatform, View,
+};
 use flow_rs::tui_data::{
     AccountMetrics, FlowSummary, IssueSummary, OrchestrationItem, OrchestrationSummary,
-    TimelineEntry,
+    PhaseStepCounter, TimelineEntry,
 };
 
 // --- Helpers ---
@@ -208,6 +212,40 @@ fn test_render_detail_panel_phases() {
     assert!(output.contains("[x]"));
     assert!(output.contains("[>]"));
     assert!(output.contains("[ ]"));
+}
+
+#[test]
+fn test_render_detail_panel_renders_phase_step_header_when_counter_present() {
+    let mut app = make_app();
+    let mut flow = make_flow("Counter Feature", "Code", 2);
+    flow.state = serde_json::json!({
+        "branch": "counter-feature",
+        "repo": "test/repo",
+        "current_phase": "flow-code",
+        "code_task": 3,
+        "code_tasks_total": 7,
+        "code_task_name": "implement_helper",
+    });
+    app.flows = vec![flow];
+    let output = render_to_string(&app, 120, 40);
+    assert!(
+        output.contains("Phase 2 (Code) \u{2014} step 3 of 7: implement_helper"),
+        "expected detail-pane header in output, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn test_render_detail_panel_omits_phase_step_header_when_counter_missing() {
+    let mut app = make_app();
+    let flow = make_flow("No Counter", "Code", 2);
+    app.flows = vec![flow];
+    let output = render_to_string(&app, 120, 40);
+    assert!(
+        !output.contains("Phase 2 (Code) \u{2014} step"),
+        "header should not render without a counter; got:\n{}",
+        output
+    );
 }
 
 /// Build a valid-FlowState Value with one phase carrying non-zero
@@ -462,13 +500,20 @@ fn test_render_detail_panel_with_issues() {
 }
 
 #[test]
-fn test_render_footer_keybindings() {
+fn test_render_footer_collapsed_to_help_pointer() {
     let mut app = make_app();
     app.flows = vec![make_flow("Test", "Code", 3)];
-    // Footer is very wide — use 160 cols to fit all keybindings
     let output = render_to_string(&app, 160, 40);
-    assert!(output.contains("[q] Quit"));
-    assert!(output.contains("[p] PR"));
+    assert!(
+        output.contains("?=help"),
+        "footer should point at the help overlay; got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Ctrl-C/q=quit"),
+        "footer should still mention how to quit; got:\n{}",
+        output
+    );
 }
 
 #[test]
@@ -568,7 +613,7 @@ fn test_render_log_view_empty() {
     app.view = View::Log;
     let output = render_to_string(&app, 80, 40);
     assert!(output.contains("No log entries."));
-    assert!(output.contains("[Esc] Back"));
+    assert!(output.contains("?=help"));
 }
 
 #[test]
@@ -608,6 +653,783 @@ fn test_render_tasks_view_no_plan() {
     assert!(output.contains("No plan file."));
 }
 
+// --- filter + selection alignment ---
+
+#[test]
+fn test_filter_selection_detail_pane_aligns_with_visible_row() {
+    // Three flows with filter matching only Banana, selected=0.
+    // The detail pane must render banana-feature, not apple.
+    let mut app = make_app();
+    app.flows = vec![
+        make_flow("Apple Feature", "Code", 3),
+        make_flow("Banana Feature", "Code", 3),
+        make_flow("Cherry Feature", "Code", 3),
+    ];
+    app.flows[0].branch = "apple-feature".to_string();
+    app.flows[1].branch = "banana-feature".to_string();
+    app.flows[2].branch = "cherry-feature".to_string();
+    app.flows[0].worktree = ".worktrees/apple-feature".to_string();
+    app.flows[1].worktree = ".worktrees/banana-feature".to_string();
+    app.flows[2].worktree = ".worktrees/cherry-feature".to_string();
+    app.filter_query = Some("banana".to_string());
+    app.filter_input_active = false;
+    app.selected = 0;
+    let output = render_to_string(&app, 140, 60);
+    assert!(
+        output.contains("Branch: banana-feature"),
+        "detail pane must reflect the highlighted (filtered) row:\n{}",
+        output
+    );
+    assert!(
+        !output.contains("Branch: apple-feature"),
+        "detail pane must not reflect a hidden flow:\n{}",
+        output
+    );
+}
+
+#[test]
+fn test_visible_flows_filters_and_selected_visible_flow_lookup() {
+    let mut app = make_app();
+    app.flows = vec![
+        make_flow("Apple", "Code", 3),
+        make_flow("Banana", "Code", 3),
+    ];
+    app.flows[0].branch = "apple".to_string();
+    app.flows[1].branch = "banana".to_string();
+    app.filter_query = Some("banana".to_string());
+    app.filter_input_active = false;
+    app.selected = 0;
+    let visible = app.visible_flows();
+    assert_eq!(visible.len(), 1);
+    assert_eq!(visible[0].branch, "banana");
+    assert_eq!(
+        app.selected_visible_flow().map(|f| f.branch.as_str()),
+        Some("banana")
+    );
+}
+
+#[test]
+fn test_selected_visible_flow_returns_none_when_filter_excludes_everything() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("Apple", "Code", 3)];
+    app.flows[0].branch = "apple".to_string();
+    app.filter_query = Some("zeta".to_string());
+    app.filter_input_active = false;
+    assert!(app.selected_visible_flow().is_none());
+}
+
+#[test]
+fn test_input_down_clamps_against_visible_flows_under_filter() {
+    let mut app = make_app();
+    app.flows = vec![
+        make_flow("Apple", "Code", 3),
+        make_flow("Banana", "Code", 3),
+        make_flow("Cherry", "Code", 3),
+    ];
+    app.flows[0].branch = "apple".to_string();
+    app.flows[1].branch = "banana".to_string();
+    app.flows[2].branch = "cherry".to_string();
+    app.filter_query = Some("banana".to_string());
+    app.filter_input_active = false;
+    app.selected = 0;
+    // Only Banana is visible; Down must clamp to 0, not advance.
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(app.selected, 0);
+}
+
+#[test]
+fn test_open_actions_no_op_when_filter_excludes_everything() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("Apple", "Code", 3)];
+    app.flows[0].branch = "apple".to_string();
+    app.filter_query = Some("zeta".to_string());
+    app.filter_input_active = false;
+    // Enter, p, I, a all dispatch through selected_visible_flow which
+    // returns None — every action arm must early-return without panic.
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Char('p')));
+    app.handle_key(key(KeyCode::Char('I')));
+    app.handle_key(key(KeyCode::Char('o')));
+    // Render with the all-excluded filter still active — render_detail_panel
+    // must early-return rather than panic.
+    let _ = render_to_string(&app, 80, 40);
+}
+
+// --- help overlay (?) ---
+
+#[test]
+fn test_input_q_in_help_quits() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.handle_key(key(KeyCode::Char('?')));
+    assert_eq!(app.view, View::Help);
+    app.handle_key(key(KeyCode::Char('q')));
+    assert!(!app.running, "q in Help view must quit, not restore");
+}
+
+#[test]
+fn test_input_question_mark_enters_help_from_list() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    assert_eq!(app.view, View::List);
+    app.handle_key(key(KeyCode::Char('?')));
+    assert_eq!(app.view, View::Help);
+    assert_eq!(app.previous_view, Some(View::List));
+}
+
+#[test]
+fn test_input_question_mark_enters_help_from_log() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.view = View::Log;
+    app.handle_key(key(KeyCode::Char('?')));
+    assert_eq!(app.view, View::Help);
+    assert_eq!(app.previous_view, Some(View::Log));
+}
+
+#[test]
+fn test_input_any_key_in_help_restores_previous_view() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.view = View::Issues;
+    app.handle_key(key(KeyCode::Char('?')));
+    assert_eq!(app.view, View::Help);
+    app.handle_key(key(KeyCode::Char('x')));
+    assert_eq!(app.view, View::Issues);
+    assert_eq!(app.previous_view, None);
+}
+
+#[test]
+fn test_input_help_with_no_previous_view_falls_back_to_list() {
+    // Defensive: if `view == Help` but `previous_view` is None
+    // (manual fixture state), restoring should default to List.
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.view = View::Help;
+    app.previous_view = None;
+    app.handle_key(key(KeyCode::Char('x')));
+    assert_eq!(app.view, View::List);
+}
+
+#[test]
+fn test_render_help_view_breaks_when_viewport_overflows() {
+    // Small height — help has ~25 rows of content; with height 8 the
+    // break path inside the row loop must fire after the first few
+    // lines so the loop doesn't draw past the footer row.
+    let mut app = make_app();
+    app.view = View::Help;
+    let _ = render_to_string(&app, 80, 8);
+}
+
+#[test]
+fn test_render_help_view_lists_every_documented_binding() {
+    let mut app = make_app();
+    app.view = View::Help;
+    let output = render_to_string(&app, 100, 40);
+    // Sample of bindings the help view must mention.
+    for binding in &[
+        "Enter", "PR", "issues", "tasks", "log", "abort", "refresh", "filter", "?", "Ctrl-C/q",
+    ] {
+        assert!(
+            output.contains(binding),
+            "help view missing `{}` binding:\n{}",
+            binding,
+            output
+        );
+    }
+}
+
+// --- start_lock_holder banner ---
+
+#[test]
+fn test_render_header_renders_lock_banner_when_holder_set() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.start_lock_holder = Some("alpha-feature".to_string());
+    let output = render_to_string(&app, 80, 40);
+    assert!(
+        output.contains("start lock: alpha-feature"),
+        "expected lock banner in output:\n{}",
+        output
+    );
+}
+
+#[test]
+fn test_render_header_omits_lock_banner_when_no_holder() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.start_lock_holder = None;
+    let output = render_to_string(&app, 80, 40);
+    assert!(
+        !output.contains("start lock:"),
+        "lock banner should not render with no holder; got:\n{}",
+        output
+    );
+}
+
+// --- format_age ---
+
+#[test]
+fn test_format_age_zero() {
+    assert_eq!(
+        format_age(std::time::Duration::from_secs(0)),
+        "updated 0s ago"
+    );
+}
+
+#[test]
+fn test_format_age_seconds_below_minute() {
+    assert_eq!(
+        format_age(std::time::Duration::from_secs(45)),
+        "updated 45s ago"
+    );
+}
+
+#[test]
+fn test_format_age_one_minute_boundary() {
+    assert_eq!(
+        format_age(std::time::Duration::from_secs(60)),
+        "updated 1m ago"
+    );
+}
+
+#[test]
+fn test_format_age_minutes_below_hour() {
+    assert_eq!(
+        format_age(std::time::Duration::from_secs(45 * 60)),
+        "updated 45m ago"
+    );
+}
+
+#[test]
+fn test_format_age_one_hour_boundary() {
+    assert_eq!(
+        format_age(std::time::Duration::from_secs(3700)),
+        "updated 1h ago"
+    );
+}
+
+#[test]
+fn test_format_age_many_hours() {
+    assert_eq!(
+        format_age(std::time::Duration::from_secs(5 * 3600)),
+        "updated 5h ago"
+    );
+}
+
+// --- apply_filter_key + flow_matches_filter ---
+
+#[test]
+fn test_filter_slash_inactive_enters_input() {
+    let mut q: Option<String> = None;
+    let mut active = false;
+    apply_filter_key(&mut q, &mut active, KeyCode::Char('/'));
+    assert!(active);
+    assert_eq!(q, Some(String::new()));
+}
+
+#[test]
+fn test_filter_other_key_inactive_no_op() {
+    let mut q: Option<String> = None;
+    let mut active = false;
+    apply_filter_key(&mut q, &mut active, KeyCode::Char('a'));
+    assert!(!active);
+    assert_eq!(q, None);
+}
+
+#[test]
+fn test_filter_char_active_appends() {
+    let mut q: Option<String> = Some(String::new());
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Char('a'));
+    apply_filter_key(&mut q, &mut active, KeyCode::Char('b'));
+    assert_eq!(q, Some("ab".to_string()));
+    assert!(active);
+}
+
+#[test]
+fn test_filter_backspace_active_pops() {
+    let mut q: Option<String> = Some("ab".to_string());
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Backspace);
+    assert_eq!(q, Some("a".to_string()));
+}
+
+#[test]
+fn test_filter_backspace_empty_query_no_underflow() {
+    let mut q: Option<String> = Some(String::new());
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Backspace);
+    assert_eq!(q, Some(String::new()));
+}
+
+#[test]
+fn test_filter_enter_with_query_persists() {
+    let mut q: Option<String> = Some("foo".to_string());
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Enter);
+    assert!(!active);
+    assert_eq!(q, Some("foo".to_string()));
+}
+
+#[test]
+fn test_filter_enter_with_empty_query_clears() {
+    let mut q: Option<String> = Some(String::new());
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Enter);
+    assert!(!active);
+    assert_eq!(q, None);
+}
+
+#[test]
+fn test_filter_char_with_none_query_is_no_op() {
+    // Defensive arm: input_active=true with query=None — Char input
+    // is a no-op rather than auto-creating Some("").
+    let mut q: Option<String> = None;
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Char('a'));
+    assert_eq!(q, None);
+    assert!(active);
+}
+
+#[test]
+fn test_filter_backspace_with_none_query_is_no_op() {
+    // Defensive arm: input_active=true with query=None — Backspace
+    // is a no-op rather than panicking.
+    let mut q: Option<String> = None;
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Backspace);
+    assert_eq!(q, None);
+    assert!(active);
+}
+
+#[test]
+fn test_filter_enter_with_none_query_is_no_op() {
+    // Defensive arm: input_active=true with query=None shouldn't
+    // arise from the state machine's own transitions, but if a caller
+    // hand-constructs this state, Enter must still finalize cleanly.
+    let mut q: Option<String> = None;
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Enter);
+    assert!(!active);
+    assert_eq!(q, None);
+}
+
+#[test]
+fn test_filter_esc_clears_query() {
+    let mut q: Option<String> = Some("foo".to_string());
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Esc);
+    assert!(!active);
+    assert_eq!(q, None);
+}
+
+#[test]
+fn test_filter_slash_with_committed_query_re_enters_input() {
+    let mut q: Option<String> = Some("foo".to_string());
+    let mut active = false;
+    apply_filter_key(&mut q, &mut active, KeyCode::Char('/'));
+    assert!(active);
+    assert_eq!(q, Some("foo".to_string()));
+}
+
+#[test]
+fn test_filter_other_key_active_no_op() {
+    let mut q: Option<String> = Some("a".to_string());
+    let mut active = true;
+    apply_filter_key(&mut q, &mut active, KeyCode::Up);
+    assert_eq!(q, Some("a".to_string()));
+    assert!(active);
+}
+
+#[test]
+fn test_filter_backspace_inactive_no_query_returns_false() {
+    let mut q: Option<String> = None;
+    let mut active = false;
+    apply_filter_key(&mut q, &mut active, KeyCode::Backspace);
+    assert_eq!(q, None);
+    assert!(!active);
+}
+
+#[test]
+fn test_visibility_input_active_shows_all() {
+    assert!(flow_matches_filter("anything", Some("xyz"), true));
+    assert!(flow_matches_filter("anything", None, true));
+}
+
+#[test]
+fn test_visibility_query_none_shows_all() {
+    assert!(flow_matches_filter("anything", None, false));
+}
+
+#[test]
+fn test_visibility_query_empty_shows_all() {
+    assert!(flow_matches_filter("anything", Some(""), false));
+}
+
+#[test]
+fn test_visibility_query_substring_match_case_insensitive() {
+    assert!(flow_matches_filter("MyFeature", Some("feat"), false));
+    assert!(flow_matches_filter("myfeature", Some("FEAT"), false));
+}
+
+#[test]
+fn test_visibility_query_no_match() {
+    assert!(!flow_matches_filter("alpha-branch", Some("zeta"), false));
+}
+
+#[test]
+fn test_input_slash_enters_filter_mode() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.handle_key(key(KeyCode::Char('/')));
+    assert!(app.filter_input_active);
+    assert_eq!(app.filter_query, Some(String::new()));
+}
+
+#[test]
+fn test_input_filter_typing_appends_to_query() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key(KeyCode::Char('a')));
+    app.handle_key(key(KeyCode::Char('b')));
+    assert_eq!(app.filter_query, Some("ab".to_string()));
+}
+
+#[test]
+fn test_input_filter_q_does_not_quit_in_input_mode() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key(KeyCode::Char('q')));
+    assert!(app.running, "q should not quit during filter input");
+    assert_eq!(app.filter_query, Some("q".to_string()));
+}
+
+// --- build_iterm_open_worktree_script ---
+
+#[test]
+fn test_build_iterm_open_worktree_script_vanilla_path() {
+    let script = build_iterm_open_worktree_script("/Users/me/code/foo");
+    assert!(
+        script.contains("cd '/Users/me/code/foo'"),
+        "expected single-quoted shell cd in script:\n{}",
+        script
+    );
+    assert!(script.contains("create tab with default profile"));
+    assert!(script.contains("create window with default profile"));
+}
+
+#[test]
+fn test_build_iterm_open_worktree_script_path_with_quotes() {
+    let script = build_iterm_open_worktree_script("/Users/foo \"bar\"/code");
+    // Double quotes in the path are inside shell single-quotes so the
+    // shell sees them literally. The AppleScript layer still escapes
+    // each `"` as `\"` because the shell-quoted form is interpolated
+    // into an AppleScript double-quoted literal.
+    assert!(
+        script.contains(r#"cd '/Users/foo \"bar\"/code'"#),
+        "expected AppleScript-escaped quotes inside shell single-quotes:\n{}",
+        script
+    );
+}
+
+#[test]
+fn test_build_iterm_open_worktree_script_path_with_backslash() {
+    let script = build_iterm_open_worktree_script("/foo\\bar/code");
+    assert!(
+        script.contains(r#"cd '/foo\\bar/code'"#),
+        "expected AppleScript-escaped backslash inside shell single-quotes:\n{}",
+        script
+    );
+}
+
+#[test]
+fn test_build_iterm_open_worktree_script_path_with_spaces() {
+    // Spaces don't need escaping but must pass through unchanged.
+    let script = build_iterm_open_worktree_script("/Users/me/code with space");
+    assert!(
+        script.contains("cd '/Users/me/code with space'"),
+        "expected spaces preserved inside shell single-quotes:\n{}",
+        script
+    );
+}
+
+#[test]
+fn test_build_iterm_open_worktree_script_neutralizes_dollar_paren() {
+    // Shell-single-quoted: $(...) inside `'...'` is literal in shell.
+    let script = build_iterm_open_worktree_script("/feat/$(echo INJECTED)");
+    assert!(
+        script.contains("cd '/feat/$(echo INJECTED)'"),
+        "expected $(...) wrapped in shell single quotes:\n{}",
+        script
+    );
+}
+
+#[test]
+fn test_build_iterm_open_worktree_script_neutralizes_backticks() {
+    let script = build_iterm_open_worktree_script("/feat/`echo INJECTED`");
+    assert!(
+        script.contains("cd '/feat/`echo INJECTED`'"),
+        "expected backticks wrapped in shell single quotes:\n{}",
+        script
+    );
+}
+
+#[test]
+fn test_build_iterm_open_worktree_script_path_with_single_quote() {
+    // Single quote in the path requires the close-escape-reopen idiom
+    // `'\''` at shell level so the shell sees the literal char. The
+    // backslash in `'\''` is then doubled by escape_applescript_string
+    // to `\\` because `\` is structural inside an AppleScript double-
+    // quoted literal — so the rendered AppleScript source contains
+    // `'\\''`. AppleScript parses `\\` back to `\`, so iTerm types
+    // `'\''` into the shell, which the shell parses as the single
+    // quote literal.
+    let script = build_iterm_open_worktree_script("/feat/o'malley");
+    assert!(
+        script.contains(r#"cd '/feat/o'\\''malley'"#),
+        "expected single-quote escaped via close-escape-reopen, with\
+         the inner backslash AppleScript-escaped to \\\\:\n{}",
+        script
+    );
+}
+
+#[test]
+fn test_open_worktree_shell_empty_flows_returns_false() {
+    let app = make_app();
+    assert!(!app.open_worktree_shell());
+}
+
+#[test]
+fn test_open_worktree_shell_relative_path_joins_with_root() {
+    // No flows would short-circuit; populate one with a relative
+    // worktree path so the absolute-path branch is taken.
+    let dir = tempfile::tempdir().unwrap();
+    let script = write_fixture_script(dir.path(), "osascript", "#!/bin/sh\necho opened\n");
+    let mut app = make_app_with_osascript(&script.to_string_lossy());
+    let mut flow = make_flow("Rel", "Code", 3);
+    flow.worktree = ".worktrees/rel".to_string();
+    app.flows = vec![flow];
+    assert!(app.open_worktree_shell());
+}
+
+#[test]
+fn test_open_worktree_shell_absolute_path_used_directly() {
+    let dir = tempfile::tempdir().unwrap();
+    let script = write_fixture_script(dir.path(), "osascript", "#!/bin/sh\necho opened\n");
+    let mut app = make_app_with_osascript(&script.to_string_lossy());
+    let mut flow = make_flow("Abs", "Code", 3);
+    flow.worktree = "/abs/path/to/wt".to_string();
+    app.flows = vec![flow];
+    assert!(app.open_worktree_shell());
+}
+
+#[test]
+fn test_open_worktree_shell_osascript_failure_returns_false() {
+    let mut app = make_app_with_osascript("/bin/false");
+    let mut flow = make_flow("F", "Code", 3);
+    flow.worktree = "/abs/wt".to_string();
+    app.flows = vec![flow];
+    assert!(!app.open_worktree_shell());
+}
+
+#[test]
+fn test_open_worktree_shell_spawn_error_returns_false() {
+    let mut app = make_app_with_osascript("/nonexistent/osascript");
+    let mut flow = make_flow("S", "Code", 3);
+    flow.worktree = "/abs/wt".to_string();
+    app.flows = vec![flow];
+    assert!(!app.open_worktree_shell());
+}
+
+#[test]
+fn test_open_worktree_shell_not_opened_returns_false() {
+    let dir = tempfile::tempdir().unwrap();
+    let script = write_fixture_script(dir.path(), "osascript", "#!/bin/sh\necho something_else\n");
+    let mut app = make_app_with_osascript(&script.to_string_lossy());
+    let mut flow = make_flow("N", "Code", 3);
+    flow.worktree = "/abs/wt".to_string();
+    app.flows = vec![flow];
+    assert!(!app.open_worktree_shell());
+}
+
+#[test]
+fn test_input_o_invokes_open_worktree_shell() {
+    let dir = tempfile::tempdir().unwrap();
+    let script = write_fixture_script(dir.path(), "osascript", "#!/bin/sh\necho opened\n");
+    let mut app = make_app_with_osascript(&script.to_string_lossy());
+    let mut flow = make_flow("O", "Code", 3);
+    flow.worktree = "/abs/wt".to_string();
+    app.flows = vec![flow];
+    // 'o' keybinding wired in handle_list_input — drives through
+    // open_worktree_shell, returning unit (no assertion on bool here;
+    // covered above), exercises the match arm.
+    app.handle_key(key(KeyCode::Char('o')));
+}
+
+// --- detail_pane_phase_header ---
+
+#[test]
+fn test_detail_header_code_with_name() {
+    let c = PhaseStepCounter {
+        phase_label: "Code",
+        phase_number: 2,
+        current: 3,
+        total: 7,
+        name: Some("implement_helper".to_string()),
+    };
+    assert_eq!(
+        detail_pane_phase_header(Some(&c)),
+        Some("Phase 2 (Code) \u{2014} step 3 of 7: implement_helper".to_string())
+    );
+}
+
+#[test]
+fn test_detail_header_code_no_name() {
+    let c = PhaseStepCounter {
+        phase_label: "Code",
+        phase_number: 2,
+        current: 1,
+        total: 4,
+        name: None,
+    };
+    assert_eq!(
+        detail_pane_phase_header(Some(&c)),
+        Some("Phase 2 (Code) \u{2014} step 1 of 4".to_string())
+    );
+}
+
+#[test]
+fn test_detail_header_none_counter() {
+    assert_eq!(detail_pane_phase_header(None), None);
+}
+
+#[test]
+fn test_detail_header_zero_total() {
+    let c = PhaseStepCounter {
+        phase_label: "Code",
+        phase_number: 2,
+        current: 1,
+        total: 0,
+        name: None,
+    };
+    assert_eq!(detail_pane_phase_header(Some(&c)), None);
+}
+
+#[test]
+fn test_detail_header_start_with_name() {
+    let c = PhaseStepCounter {
+        phase_label: "Start",
+        phase_number: 1,
+        current: 2,
+        total: 5,
+        name: Some("CI gate".to_string()),
+    };
+    assert_eq!(
+        detail_pane_phase_header(Some(&c)),
+        Some("Phase 1 (Start) \u{2014} step 2 of 5: CI gate".to_string())
+    );
+}
+
+// --- list_row_phase_label ---
+
+fn pc(label: &'static str, num: u8, current: i64, total: i64) -> PhaseStepCounter {
+    PhaseStepCounter {
+        phase_label: label,
+        phase_number: num,
+        current,
+        total,
+        name: None,
+    }
+}
+
+#[test]
+fn test_list_row_label_start_present() {
+    let c = pc("Start", 1, 2, 5);
+    assert_eq!(
+        list_row_phase_label(1, "Start", Some(&c), ""),
+        "1: Start 2/5"
+    );
+}
+
+#[test]
+fn test_list_row_label_start_missing() {
+    assert_eq!(list_row_phase_label(1, "Start", None, ""), "1: Start");
+}
+
+#[test]
+fn test_list_row_label_code_present() {
+    let c = pc("Code", 2, 3, 7);
+    assert_eq!(list_row_phase_label(2, "Code", Some(&c), ""), "2: Code 3/7");
+}
+
+#[test]
+fn test_list_row_label_code_missing() {
+    assert_eq!(list_row_phase_label(2, "Code", None, ""), "2: Code");
+}
+
+#[test]
+fn test_list_row_label_code_review_present() {
+    let c = pc("Code Review", 3, 2, 4);
+    assert_eq!(
+        list_row_phase_label(3, "Code Review", Some(&c), ""),
+        "3: Code Review 2/4"
+    );
+}
+
+#[test]
+fn test_list_row_label_code_review_missing() {
+    assert_eq!(
+        list_row_phase_label(3, "Code Review", None, ""),
+        "3: Code Review"
+    );
+}
+
+#[test]
+fn test_list_row_label_learn_present() {
+    let c = pc("Learn", 4, 5, 7);
+    assert_eq!(
+        list_row_phase_label(4, "Learn", Some(&c), ""),
+        "4: Learn 5/7"
+    );
+}
+
+#[test]
+fn test_list_row_label_learn_missing() {
+    assert_eq!(list_row_phase_label(4, "Learn", None, ""), "4: Learn");
+}
+
+#[test]
+fn test_list_row_label_complete_present() {
+    let c = pc("Complete", 5, 4, 6);
+    assert_eq!(
+        list_row_phase_label(5, "Complete", Some(&c), ""),
+        "5: Complete 4/6"
+    );
+}
+
+#[test]
+fn test_list_row_label_complete_missing() {
+    assert_eq!(list_row_phase_label(5, "Complete", None, ""), "5: Complete");
+}
+
+#[test]
+fn test_list_row_label_appends_annotation() {
+    let c = pc("Code", 2, 3, 7);
+    assert_eq!(
+        list_row_phase_label(2, "Code", Some(&c), "task 3 of 7"),
+        "2: Code 3/7 (task 3 of 7)"
+    );
+}
+
+#[test]
+fn test_list_row_label_zero_total_skips_counter() {
+    let c = pc("Code", 2, 1, 0);
+    assert_eq!(list_row_phase_label(2, "Code", Some(&c), ""), "2: Code");
+}
+
 // --- Input handling ---
 
 #[test]
@@ -615,6 +1437,27 @@ fn test_input_quit() {
     let mut app = make_app();
     app.handle_key(key(KeyCode::Char('q')));
     assert!(!app.running);
+}
+
+#[test]
+fn test_input_ctrl_c_quits() {
+    let mut app = make_app();
+    let ctrl_c = KeyEvent {
+        code: KeyCode::Char('c'),
+        modifiers: KeyModifiers::CONTROL,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    };
+    app.handle_key(ctrl_c);
+    assert!(!app.running);
+}
+
+#[test]
+fn test_input_plain_c_does_not_quit() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.handle_key(key(KeyCode::Char('c')));
+    assert!(app.running);
 }
 
 #[test]

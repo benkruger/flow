@@ -7,9 +7,9 @@
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use crossterm::event::{Event, KeyCode, KeyEvent};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -23,11 +23,149 @@ use ratatui::Frame;
 use serde_json::Value;
 
 use crate::flow_paths::FlowPaths;
-use crate::tui_data::{self, AccountMetrics, FlowSummary, OrchestrationSummary};
+use crate::tui_data::{
+    self, phase_step_counter, read_start_lock_holder, AccountMetrics, FlowSummary,
+    OrchestrationSummary, PhaseStepCounter,
+};
 use crate::utils::format_tokens;
 
 /// Auto-refresh interval.
 const REFRESH_MS: u64 = 2000;
+
+/// Format an elapsed `Duration` as a short "updated Ns/Nm/Nh ago"
+/// string. Pure helper — accepts a `Duration` so tests can construct
+/// arbitrary values without mocking `Instant::now()`.
+///
+/// Buckets:
+///
+/// - `< 60s`   → `"updated Ns ago"`
+/// - `< 60m`   → `"updated Nm ago"`
+/// - otherwise → `"updated Nh ago"`
+pub fn format_age(elapsed: Duration) -> String {
+    let secs = elapsed.as_secs();
+    if secs < 60 {
+        format!("updated {}s ago", secs)
+    } else if secs < 3600 {
+        format!("updated {}m ago", secs / 60)
+    } else {
+        format!("updated {}h ago", secs / 3600)
+    }
+}
+
+/// Apply a key event to the filter state machine (`filter_query` +
+/// `filter_input_active`). Pure helper — operates entirely on the
+/// passed mutable refs so tests can drive transitions without a full
+/// `TuiApp`.
+///
+/// State transitions:
+///
+/// - Inactive → `/`  → active, query becomes `Some("")` if it was
+///   `None`; an existing committed query persists (so `/` re-enters
+///   the same query for editing).
+/// - Active → `<char>` → query gets the char appended.
+/// - Active → Backspace → query pops one char (no-op when empty).
+/// - Active → Enter → inactive, query persists when non-empty,
+///   becomes `None` when empty.
+/// - Active → Esc → inactive AND query cleared to `None`.
+/// - Other keys are ignored in both modes.
+pub fn apply_filter_key(query: &mut Option<String>, input_active: &mut bool, key: KeyCode) {
+    if !*input_active {
+        if matches!(key, KeyCode::Char('/')) {
+            *input_active = true;
+            if query.is_none() {
+                *query = Some(String::new());
+            }
+        }
+        return;
+    }
+
+    match key {
+        KeyCode::Char(c) => {
+            if let Some(q) = query.as_mut() {
+                q.push(c);
+            }
+        }
+        KeyCode::Backspace => {
+            if let Some(q) = query.as_mut() {
+                q.pop();
+            }
+        }
+        KeyCode::Enter => {
+            *input_active = false;
+            if let Some(q) = query.as_ref() {
+                if q.is_empty() {
+                    *query = None;
+                }
+            }
+        }
+        KeyCode::Esc => {
+            *input_active = false;
+            *query = None;
+        }
+        _ => {}
+    }
+}
+
+/// Decide whether a flow row should be visible under the current
+/// filter state. `input_active` mode shows everything (so the row
+/// list doesn't churn while the user types); a committed non-empty
+/// query gates rows by case-insensitive branch substring match.
+pub fn flow_matches_filter(branch: &str, query: Option<&str>, input_active: bool) -> bool {
+    if input_active {
+        return true;
+    }
+    match query {
+        Some(q) if !q.is_empty() => branch.to_lowercase().contains(&q.to_lowercase()),
+        _ => true,
+    }
+}
+
+/// Build the prominent detail-pane phase header above the timeline.
+///
+/// Result shape: `"Phase {phase_number} ({phase_label}) — step {current} of {total}: {name}"`.
+/// The `: {name}` suffix is dropped when `counter.name` is `None`.
+/// Returns `None` when `counter` is `None` (no header to show) or when
+/// `total <= 0` (no meaningful X-of-Y).
+pub fn detail_pane_phase_header(counter: Option<&PhaseStepCounter>) -> Option<String> {
+    let c = counter?;
+    if c.total <= 0 {
+        return None;
+    }
+    let name_suffix = c
+        .name
+        .as_ref()
+        .map(|n| format!(": {}", n))
+        .unwrap_or_default();
+    Some(format!(
+        "Phase {} ({}) \u{2014} step {} of {}{}",
+        c.phase_number, c.phase_label, c.current, c.total, name_suffix
+    ))
+}
+
+/// Build the phase-column label for a list-pane row.
+///
+/// Result shape: `"{phase_number}: {phase_name}"` always, with a
+/// `" {current}/{total}"` suffix when `counter` is `Some` and `total > 0`,
+/// followed by ` ({annotation})` when annotation is non-empty. The
+/// counter suffix gives users a quick X-of-Y read without expanding
+/// the row.
+pub fn list_row_phase_label(
+    phase_number: usize,
+    phase_name: &str,
+    counter: Option<&PhaseStepCounter>,
+    annotation: &str,
+) -> String {
+    let mut out = format!("{}: {}", phase_number, phase_name);
+    if let Some(c) = counter {
+        if c.total > 0 {
+            out.push_str(&format!(" {}/{}", c.current, c.total));
+        }
+    }
+    if !annotation.is_empty() {
+        out.push_str(&format!(" ({})", annotation));
+    }
+    out
+}
 
 /// Boxed draw closure passed into [`TuiApp::run_event_loop`]. The
 /// inner `&mut dyn FnMut(&mut Frame)` is the render callback the
@@ -49,6 +187,7 @@ pub enum View {
     Log,
     Issues,
     Tasks,
+    Help,
 }
 
 /// Platform-bound external dependencies injected into `TuiApp`.
@@ -136,6 +275,24 @@ pub struct TuiApp {
     pub issue_selected: usize,
     pub metrics: AccountMetrics,
     pub platform: TuiAppPlatform,
+    /// Filter query for the list pane. `None` = no filter, `Some(s)`
+    /// where s is non-empty = branch substring filter, `Some("")` =
+    /// editing an empty query (treated as no filter for visibility).
+    pub filter_query: Option<String>,
+    /// True while the user is typing into the filter — chars append,
+    /// Backspace pops, Enter commits, Esc cancels.
+    pub filter_input_active: bool,
+    /// Wall clock of the most recent successful data fetch. Drives
+    /// the "updated Ns ago" indicator in the metrics row.
+    pub last_refresh: Instant,
+    /// Branch name of the flow currently holding the start lock, or
+    /// `None` when no flow is queued. Drives the
+    /// `🔒 start lock: <holder>` banner so concurrent engineers can
+    /// see start-gate contention at a glance.
+    pub start_lock_holder: Option<String>,
+    /// View the user was on before opening the help overlay (`?`),
+    /// so any subsequent key can restore them to where they were.
+    pub previous_view: Option<View>,
 }
 
 impl TuiApp {
@@ -174,7 +331,38 @@ impl TuiApp {
                 stale: true,
             },
             platform,
+            filter_query: None,
+            filter_input_active: false,
+            last_refresh: Instant::now(),
+            start_lock_holder: None,
+            previous_view: None,
         }
+    }
+
+    /// View of `self.flows` after the active filter is applied. The
+    /// list pane renders this slice, and `self.selected` is treated
+    /// as an index into THIS list — not the raw `self.flows`. Every
+    /// action and detail-pane render must look up the active flow
+    /// through `selected_visible_flow` so the highlighted row and
+    /// the actioned row stay in sync.
+    pub fn visible_flows(&self) -> Vec<&FlowSummary> {
+        self.flows
+            .iter()
+            .filter(|flow| {
+                flow_matches_filter(
+                    &flow.branch,
+                    self.filter_query.as_deref(),
+                    self.filter_input_active,
+                )
+            })
+            .collect()
+    }
+
+    /// The flow the user has currently highlighted, respecting the
+    /// active filter. Returns `None` when the filter excludes every
+    /// row or `self.selected` outruns the visible list.
+    pub fn selected_visible_flow(&self) -> Option<&FlowSummary> {
+        self.visible_flows().get(self.selected).copied()
     }
 
     /// Open a URL in the default browser using the platform-supplied
@@ -203,6 +391,8 @@ impl TuiApp {
         }
         self.metrics =
             tui_data::load_account_metrics(&self.root, Some(self.platform.home.as_path()));
+        self.start_lock_holder = read_start_lock_holder(&self.root);
+        self.last_refresh = Instant::now();
     }
 
     /// Run the TUI event loop against a caller-supplied draw closure
@@ -253,14 +443,54 @@ impl TuiApp {
                 View::Log => self.render_log_view(frame, area),
                 View::Issues => self.render_issues_view(frame, area),
                 View::Tasks => self.render_tasks_view(frame, area),
+                View::Help => self.render_help_view(frame, area),
             }
         }
     }
 
     /// Handle a key event and update state.
     pub fn handle_key(&mut self, key: KeyEvent) {
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.running = false;
+            return;
+        }
+
         if self.confirming_abort {
             self.handle_abort_confirm(key);
+            return;
+        }
+
+        // Help overlay: `?` toggles in from any view, any subsequent
+        // key restores the prior view. `q` and `Ctrl-C` still quit
+        // — `Ctrl-C` is handled above this branch, and `q` short-
+        // circuits here so the user is not silently bounced back to
+        // the prior view when they meant to exit.
+        if self.view == View::Help {
+            if matches!(key.code, KeyCode::Char('q')) {
+                self.running = false;
+                return;
+            }
+            if let Some(prev) = self.previous_view.take() {
+                self.view = prev;
+            } else {
+                self.view = View::List;
+            }
+            return;
+        }
+        if matches!(key.code, KeyCode::Char('?')) {
+            self.previous_view = Some(self.view);
+            self.view = View::Help;
+            return;
+        }
+
+        // Filter input mode preempts the normal dispatch so chars
+        // append to the query instead of triggering shortcuts.
+        if self.filter_input_active {
+            apply_filter_key(
+                &mut self.filter_query,
+                &mut self.filter_input_active,
+                key.code,
+            );
             return;
         }
 
@@ -291,10 +521,24 @@ impl TuiApp {
                 self.issue_selected = 0;
             }
             KeyCode::Down => {
-                self.selected = (self.selected + 1).min(self.flows.len().saturating_sub(1));
+                let visible_len = self.visible_flows().len();
+                self.selected = (self.selected + 1).min(visible_len.saturating_sub(1));
                 self.issue_selected = 0;
             }
             KeyCode::Enter => self.open_worktree(),
+            KeyCode::Char('/') => {
+                apply_filter_key(
+                    &mut self.filter_query,
+                    &mut self.filter_input_active,
+                    KeyCode::Char('/'),
+                );
+            }
+            KeyCode::Char('o') => {
+                // The success bool is intentionally discarded — the
+                // TUI has no banner surface to report failure on, and
+                // the user will notice if the shell didn't open.
+                let _ = self.open_worktree_shell();
+            }
             KeyCode::Char('p') => self.open_pr(),
             KeyCode::Char('l') => self.view = View::Log,
             KeyCode::Char('i') => self.view = View::Issues,
@@ -307,10 +551,9 @@ impl TuiApp {
     }
 
     fn handle_issues_input(&mut self, key: KeyEvent) {
-        if self.flows.is_empty() {
+        let Some(flow) = self.selected_visible_flow() else {
             return;
-        }
-        let flow = &self.flows[self.selected];
+        };
         let issue_count = flow.issues.len();
         if issue_count == 0 {
             return;
@@ -361,14 +604,18 @@ impl TuiApp {
     // --- Actions ---
 
     fn open_worktree(&self) {
-        let flow = &self.flows[self.selected];
+        let Some(flow) = self.selected_visible_flow() else {
+            return;
+        };
         if let Some(tty) = worktree_session_tty(flow) {
             self.activate_iterm_tab(tty);
         }
     }
 
     fn open_pr(&self) {
-        let flow = &self.flows[self.selected];
+        let Some(flow) = self.selected_visible_flow() else {
+            return;
+        };
         if let Some(ref url) = flow.pr_url {
             let files_url = pr_files_url(url);
             self.open_url(&files_url);
@@ -376,7 +623,9 @@ impl TuiApp {
     }
 
     fn open_flow_issue(&self) {
-        let flow = &self.flows[self.selected];
+        let Some(flow) = self.selected_visible_flow() else {
+            return;
+        };
         if let Some(url) = flow_issue_url(&flow.state, self.repo.as_deref(), &flow.issue_numbers) {
             self.open_url(&url);
         }
@@ -393,10 +642,9 @@ impl TuiApp {
     }
 
     fn abort_flow(&mut self) {
-        if self.flows.is_empty() {
+        let Some(flow) = self.selected_visible_flow() else {
             return;
-        }
-        let flow = &self.flows[self.selected];
+        };
         let args =
             build_cleanup_command_args(&self.root, &flow.branch, &flow.worktree, flow.pr_number);
         let bin_flow = self.platform.bin_flow_path.clone();
@@ -414,6 +662,35 @@ impl TuiApp {
         let _ = execute!(io::stdout(), EnterAlternateScreen);
 
         self.refresh_data();
+    }
+
+    /// Open a fresh iTerm2 tab (or window when none is open) and run
+    /// `cd <worktree>` so the user lands in the active flow's worktree
+    /// without leaving the TUI. Returns true when osascript reports
+    /// `"opened"`.
+    pub fn open_worktree_shell(&self) -> bool {
+        let Some(flow) = self.selected_visible_flow() else {
+            return false;
+        };
+        let path = if std::path::Path::new(&flow.worktree).is_absolute() {
+            flow.worktree.clone()
+        } else {
+            self.root.join(&flow.worktree).to_string_lossy().to_string()
+        };
+        let script = build_iterm_open_worktree_script(&path);
+        match Command::new(&self.platform.osascript_binary)
+            .arg("-e")
+            .arg(&script)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()
+        {
+            Ok(output) => {
+                output.status.success()
+                    && String::from_utf8_lossy(&output.stdout).trim() == "opened"
+            }
+            Err(_) => false,
+        }
     }
 
     /// Activate an iTerm2 tab by matching its session tty. Reads the
@@ -493,6 +770,17 @@ impl TuiApp {
             frame.render_widget(metrics_p, metrics_area);
         }
 
+        // Row 1: start-lock holder banner — surfaces start-gate
+        // contention so engineers running concurrent flows can see who
+        // holds the lock without tailing log files.
+        if let Some(ref holder) = self.start_lock_holder {
+            let banner = Paragraph::new(Line::from(Span::styled(
+                format!("  \u{1F512} start lock: {}", holder),
+                Style::default().fg(Color::Yellow),
+            )));
+            frame.render_widget(banner, Rect::new(area.x, area.y + 1, area.width, 1));
+        }
+
         // Row 2: tab bar
         self.render_tab_bar(frame, Rect::new(area.x, area.y + 2, area.width, 1));
 
@@ -510,9 +798,10 @@ impl TuiApp {
             return vec![];
         }
         let cost_text = format!("${}/mo", self.metrics.cost_monthly);
+        let age_text = format_age(self.last_refresh.elapsed());
         if self.metrics.stale {
             let rl_text = "5h:--  7d:--".to_string();
-            let total_width = cost_text.len() + 2 + rl_text.len() + 2;
+            let total_width = cost_text.len() + 2 + rl_text.len() + 2 + age_text.len() + 2;
             if total_width > max_x.saturating_sub(30) {
                 return vec![];
             }
@@ -520,11 +809,20 @@ impl TuiApp {
                 Span::styled(cost_text, Style::default().add_modifier(Modifier::DIM)),
                 Span::raw("  "),
                 Span::styled(rl_text, Style::default().add_modifier(Modifier::DIM)),
+                Span::raw("  "),
+                Span::raw(age_text),
             ]
         } else {
             let rl_5h_text = format!("5h:{}%", self.metrics.rl_5h.unwrap_or(0));
             let rl_7d_text = format!("7d:{}%", self.metrics.rl_7d.unwrap_or(0));
-            let total_width = cost_text.len() + 2 + rl_5h_text.len() + 2 + rl_7d_text.len() + 2;
+            let total_width = cost_text.len()
+                + 2
+                + rl_5h_text.len()
+                + 2
+                + rl_7d_text.len()
+                + 2
+                + age_text.len()
+                + 2;
             if total_width > max_x.saturating_sub(30) {
                 return vec![];
             }
@@ -534,6 +832,8 @@ impl TuiApp {
                 Span::styled(rl_5h_text, rl_color(self.metrics.rl_5h.unwrap_or(0))),
                 Span::raw("  "),
                 Span::styled(rl_7d_text, rl_color(self.metrics.rl_7d.unwrap_or(0))),
+                Span::raw("  "),
+                Span::raw(age_text),
             ]
         }
     }
@@ -598,16 +898,32 @@ impl TuiApp {
         // Cross-tab indicator
         let orch_issue = self.get_orch_issue_in_progress();
 
-        let list_end = self.flows.len().min(max_y.saturating_sub(18));
+        // Apply the filter before truncating so list_end counts only
+        // visible rows, keeping the viewport calculations correct.
+        let filtered_flows: Vec<&FlowSummary> = self
+            .flows
+            .iter()
+            .filter(|flow| {
+                flow_matches_filter(
+                    &flow.branch,
+                    self.filter_query.as_deref(),
+                    self.filter_input_active,
+                )
+            })
+            .collect();
+        let list_end = filtered_flows.len().min(max_y.saturating_sub(18));
 
         // Pre-compute column data
-        let col_data: Vec<(String, String, String, String, String)> = self.flows[..list_end]
+        let col_data: Vec<(String, String, String, String, String)> = filtered_flows[..list_end]
             .iter()
             .map(|flow| {
-                let mut phase_info = format!("{}: {}", flow.phase_number, flow.phase_name);
-                if !flow.annotation.is_empty() {
-                    phase_info.push_str(&format!(" ({})", flow.annotation));
-                }
+                let counter = phase_step_counter(&flow.state);
+                let phase_info = list_row_phase_label(
+                    flow.phase_number,
+                    &flow.phase_name,
+                    counter.as_ref(),
+                    &flow.annotation,
+                );
                 let pr_info = flow
                     .pr_number
                     .map(|n| format!("PR #{}", n))
@@ -682,11 +998,11 @@ impl TuiApp {
         )));
         frame.render_widget(hdr_line, Rect::new(area.x, area.y + 3, area.width, 1));
 
-        // Flow rows. `list_end = self.flows.len().min(max_y - 18)`
+        // Flow rows. `list_end = filtered_flows.len().min(max_y - 18)`
         // already bounds `i` so `row = 4 + i <= max_y - 15`, which is
         // always less than the panel's footer row at `max_y - 1`. No
         // additional clamp is needed inside the loop.
-        for (i, flow) in self.flows.iter().enumerate().take(list_end) {
+        for (i, flow) in filtered_flows.iter().enumerate().take(list_end) {
             let row = 4 + i;
 
             let marker = if i == self.selected {
@@ -767,7 +1083,13 @@ impl TuiApp {
     }
 
     fn render_detail_panel(&self, frame: &mut Frame, area: Rect, start_row: usize) {
-        let flow = &self.flows[self.selected];
+        // Walk through the visible-flows view so the detail pane
+        // and the highlighted list row always describe the same flow
+        // when a filter is active. The render_list_view caller is
+        // already gated on visible_flows being non-empty.
+        let Some(flow) = self.selected_visible_flow() else {
+            return;
+        };
         let max_y = area.height as usize;
         let mut row = start_row;
 
@@ -796,6 +1118,21 @@ impl TuiApp {
             Rect::new(area.x, area.y + row as u16, area.width, 1),
         );
         row += 2;
+
+        // Prominent X-of-Y header above the timeline (skipped when the
+        // active phase carries no counter — e.g., a flow that has just
+        // entered Start and has not yet stamped start_step).
+        if let Some(header) = detail_pane_phase_header(phase_step_counter(&flow.state).as_ref()) {
+            let header_line = Paragraph::new(Line::from(Span::styled(
+                format!("  {}", header),
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+            frame.render_widget(
+                header_line,
+                Rect::new(area.x, area.y + row as u16, area.width, 1),
+            );
+            row += 2;
+        }
 
         // Phase timeline
         for entry in &flow.timeline {
@@ -923,7 +1260,7 @@ impl TuiApp {
     }
 
     fn render_list_footer(&self, frame: &mut Frame, area: Rect) {
-        let footer_text = " [\u{2190}\u{2192}] Tab  [\u{2191}\u{2193}] Navigate  [Enter] Worktree  [p] PR  [i] Issues  [I] Issue  [t] Tasks  [l] Log  [a] Abort  [r] Refresh  [q] Quit";
+        let footer_text = " ?=help  Ctrl-C/q=quit";
         let footer = Paragraph::new(Line::from(Span::styled(
             footer_text,
             Style::default().add_modifier(Modifier::DIM),
@@ -941,7 +1278,7 @@ impl TuiApp {
         if self.orch_data.is_none() {
             let msg = Paragraph::new(Line::from("  No orchestration running."));
             frame.render_widget(msg, Rect::new(area.x, area.y + 5, area.width, 1));
-            let footer_text = " [\u{2190}\u{2192}] Tab  [r] Refresh  [q] Quit";
+            let footer_text = " ?=help  Ctrl-C/q=quit";
             let footer = Paragraph::new(Line::from(Span::styled(
                 footer_text,
                 Style::default().add_modifier(Modifier::DIM),
@@ -1049,8 +1386,7 @@ impl TuiApp {
         }
 
         // Footer
-        let footer_text =
-            " [\u{2190}\u{2192}] Tab  [\u{2191}\u{2193}] Navigate  [i] Issue  [r] Refresh  [q] Quit";
+        let footer_text = " ?=help  Ctrl-C/q=quit";
         let footer = Paragraph::new(Line::from(Span::styled(
             footer_text,
             Style::default().add_modifier(Modifier::DIM),
@@ -1063,10 +1399,9 @@ impl TuiApp {
         let max_y = area.height as usize;
         let max_x = area.width as usize;
 
-        if self.flows.is_empty() {
+        let Some(flow) = self.selected_visible_flow() else {
             return;
-        }
-        let flow = &self.flows[self.selected];
+        };
 
         // Header
         let header_text = format!(" {} \u{2014} Log ", flow.feature);
@@ -1117,7 +1452,7 @@ impl TuiApp {
         }
 
         // Footer
-        let footer_text = " [Esc] Back  [q] Quit";
+        let footer_text = " ?=help  Ctrl-C/q=quit";
         let footer = Paragraph::new(Line::from(Span::styled(
             footer_text,
             Style::default().add_modifier(Modifier::DIM),
@@ -1130,10 +1465,9 @@ impl TuiApp {
         let max_y = area.height as usize;
         let max_x = area.width as usize;
 
-        if self.flows.is_empty() {
+        let Some(flow) = self.selected_visible_flow() else {
             return;
-        }
-        let flow = &self.flows[self.selected];
+        };
         let issues = &flow.issues;
 
         // Header
@@ -1194,7 +1528,92 @@ impl TuiApp {
         }
 
         // Footer
-        let footer_text = " [Esc] Back  [Enter] Open  [\u{2191}\u{2193}] Navigate  [q] Quit";
+        let footer_text = " ?=help  Ctrl-C/q=quit";
+        let footer = Paragraph::new(Line::from(Span::styled(
+            footer_text,
+            Style::default().add_modifier(Modifier::DIM),
+        )));
+        let y = area.y + area.height.saturating_sub(1);
+        frame.render_widget(footer, Rect::new(area.x, y, area.width, 1));
+    }
+
+    /// Render the help overlay activated by `?`. Lists every binding
+    /// the TUI accepts, grouped by view (List, Filter input, Tabs,
+    /// Other views, Global) so a user pressing `?` from any view can
+    /// find the bindings that apply. Returns to the previous view on
+    /// any subsequent keystroke (or quits on `q`/`Ctrl-C`).
+    fn render_help_view(&self, frame: &mut Frame, area: Rect) {
+        let max_x = area.width as usize;
+        let border: String = "\u{2500}".repeat(max_x);
+        let border_line = Paragraph::new(Line::from(Span::styled(
+            &border,
+            Style::default().add_modifier(Modifier::DIM),
+        )));
+        frame.render_widget(border_line, Rect::new(area.x, area.y, area.width, 1));
+        let header = Paragraph::new(Line::from(Span::styled(
+            " FLOW \u{2014} Help ",
+            Style::default().add_modifier(Modifier::BOLD),
+        )));
+        frame.render_widget(
+            header,
+            Rect::new(area.x + 2, area.y, area.width.saturating_sub(2), 1),
+        );
+
+        // Help body — every keybinding the TUI accepts. Grouped by
+        // view so a user pressing `?` from a view can find what
+        // applies. The list-pane / orchestration / detail view
+        // bindings live in `handle_list_input`, `handle_orch_input`,
+        // and the top-level `handle_key` match arms.
+        let lines: &[(&str, &str)] = &[
+            ("List view", ""),
+            ("  \u{2191}/\u{2193}", "navigate flows"),
+            ("  Enter", "open existing iTerm session"),
+            ("  o", "open new iTerm tab in worktree"),
+            ("  p", "open PR in browser"),
+            ("  i", "issues view"),
+            ("  I", "open flow issue in browser"),
+            ("  t", "tasks view"),
+            ("  l", "log view"),
+            ("  a", "abort flow"),
+            ("  r", "refresh data"),
+            ("  /", "filter by branch substring"),
+            ("", ""),
+            ("Filter input", ""),
+            ("  <chars>", "append to query"),
+            ("  Backspace", "pop char"),
+            ("  Enter", "commit query"),
+            ("  Esc", "cancel and clear"),
+            ("", ""),
+            ("Tab navigation", ""),
+            ("  \u{2190}/\u{2192}", "switch tab"),
+            ("", ""),
+            ("Other views (Log/Issues/Tasks)", ""),
+            ("  Esc", "back to list"),
+            ("  Enter", "open issue (Issues view)"),
+            ("", ""),
+            ("Global", ""),
+            ("  ?", "toggle this help (any key restores)"),
+            ("  Ctrl-C/q", "quit"),
+        ];
+
+        let max_y = area.height as usize;
+        for (i, (key, desc)) in lines.iter().enumerate() {
+            let row = 2 + i;
+            if row >= max_y.saturating_sub(1) {
+                break;
+            }
+            let line = if desc.is_empty() {
+                Paragraph::new(Line::from(Span::styled(
+                    format!("  {}", key),
+                    Style::default().add_modifier(Modifier::BOLD),
+                )))
+            } else {
+                Paragraph::new(Line::from(format!("  {:<16}  {}", key, desc)))
+            };
+            frame.render_widget(line, Rect::new(area.x, area.y + row as u16, area.width, 1));
+        }
+
+        let footer_text = " ?=help  Ctrl-C/q=quit";
         let footer = Paragraph::new(Line::from(Span::styled(
             footer_text,
             Style::default().add_modifier(Modifier::DIM),
@@ -1207,10 +1626,9 @@ impl TuiApp {
         let max_y = area.height as usize;
         let max_x = area.width as usize;
 
-        if self.flows.is_empty() {
+        let Some(flow) = self.selected_visible_flow() else {
             return;
-        }
-        let flow = &self.flows[self.selected];
+        };
 
         // Header
         let header_text = format!(" {} \u{2014} Tasks ", flow.feature);
@@ -1251,7 +1669,7 @@ impl TuiApp {
         }
 
         // Footer
-        let footer_text = " [Esc] Back  [q] Quit";
+        let footer_text = " ?=help  Ctrl-C/q=quit";
         let footer = Paragraph::new(Line::from(Span::styled(
             footer_text,
             Style::default().add_modifier(Modifier::DIM),
@@ -1462,6 +1880,68 @@ fn build_iterm_activation_script(session_tty: &str) -> String {
     return "not found"
 end tell"#,
         tty = escaped
+    )
+}
+
+/// Wrap `s` in single quotes and escape any embedded single quotes
+/// using the standard POSIX shell idiom `'\''` (close, literal `'`,
+/// reopen). Inside single quotes, every other byte is literal — no
+/// `$(...)`, backtick, or variable expansion. Pure helper.
+fn escape_shell_single_quoted(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for ch in s.chars() {
+        if ch == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(ch);
+        }
+    }
+    out.push('\'');
+    out
+}
+
+/// Build the AppleScript text that asks iTerm2 to open a fresh shell
+/// in a new tab (or new window if no window exists) and `cd` into the
+/// supplied worktree path.
+///
+/// The path passes through TWO escape layers because iTerm's
+/// `write text` types its argument as keystrokes into the shell:
+///
+/// 1. [`escape_shell_single_quoted`] wraps the path in `'...'` and
+///    escapes embedded `'` so the shell treats `$(...)`, backticks,
+///    `;`, `|`, `&`, and history expansion as literal bytes.
+/// 2. [`escape_applescript_string`] escapes any remaining `\` or `"`
+///    so the AppleScript double-quoted literal stays intact.
+///
+/// Without the shell-single-quote layer, a path containing `$(...)`
+/// or backticks would be expanded by the shell when the typed
+/// keystrokes arrive — a remote-code-execution vector through any
+/// state-derived worktree path. AppleScript escape alone is
+/// insufficient because `escape_applescript_string` only escapes
+/// AppleScript structural chars and lets shell metacharacters
+/// through.
+///
+/// Pure helper — `pub` so unit tests can verify the rendered script
+/// content directly. The osascript invocation lives in
+/// `TuiApp::open_worktree_shell`.
+pub fn build_iterm_open_worktree_script(path: &str) -> String {
+    let shell_quoted = escape_shell_single_quoted(path);
+    let escaped = escape_applescript_string(&shell_quoted);
+    format!(
+        r#"tell application "iTerm2"
+    if (count of windows) = 0 then
+        create window with default profile
+    else
+        tell current window to create tab with default profile
+    end if
+    tell current session of current window
+        write text "cd {p} && clear"
+    end tell
+    activate
+    return "opened"
+end tell"#,
+        p = escaped
     )
 }
 

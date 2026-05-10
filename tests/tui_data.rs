@@ -4,8 +4,9 @@ use chrono::{DateTime, FixedOffset};
 use flow_rs::phase_config::{self, PHASE_ORDER};
 use flow_rs::tui_data::{
     flow_summary, load_account_metrics, load_all_flows, load_orchestration, orchestration_summary,
-    parse_log_entries, phase_timeline, phase_token_table, run_impl_main, status_icon,
-    step_annotation, step_names,
+    parse_log_entries, phase_step_counter, phase_timeline, phase_token_table,
+    read_start_lock_holder, run_impl_main, status_icon, step_annotation, step_names,
+    PhaseStepCounter,
 };
 use serde_json::{json, Value};
 
@@ -53,6 +54,211 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
         "phases": phases,
         "prompt": "",
     })
+}
+
+// --- step_annotation ---
+
+// --- read_start_lock_holder ---
+
+#[test]
+fn test_read_start_lock_holder_empty_queue() {
+    let dir = tempfile::TempDir::new().unwrap();
+    assert_eq!(read_start_lock_holder(dir.path()), None);
+}
+
+#[test]
+fn test_read_start_lock_holder_single_entry_returns_holder() {
+    use std::fs;
+    let dir = tempfile::TempDir::new().unwrap();
+    let queue = dir
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join(".flow-states")
+        .join("start-queue");
+    fs::create_dir_all(&queue).unwrap();
+    fs::write(queue.join("alpha-feature"), "").unwrap();
+    assert_eq!(
+        read_start_lock_holder(dir.path()),
+        Some("alpha-feature".to_string())
+    );
+}
+
+#[test]
+fn test_read_start_lock_holder_multiple_entries_returns_oldest_by_mtime() {
+    use filetime::{set_file_mtime, FileTime};
+    use std::fs;
+    let dir = tempfile::TempDir::new().unwrap();
+    let queue = dir
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join(".flow-states")
+        .join("start-queue");
+    fs::create_dir_all(&queue).unwrap();
+    let earlier = queue.join("alpha-feature");
+    let later = queue.join("beta-feature");
+    fs::write(&earlier, "").unwrap();
+    fs::write(&later, "").unwrap();
+    // Use recent timestamps so neither entry exceeds start_lock's
+    // STALE_TIMEOUT_SECONDS — both within the last minute, with
+    // `earlier` 60s back and `later` 30s back.
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    set_file_mtime(&earlier, FileTime::from_unix_time(now - 60, 0)).unwrap();
+    set_file_mtime(&later, FileTime::from_unix_time(now - 30, 0)).unwrap();
+    assert_eq!(
+        read_start_lock_holder(dir.path()),
+        Some("alpha-feature".to_string())
+    );
+}
+
+// --- phase_step_counter ---
+
+#[test]
+fn test_phase_step_counter_missing_current_phase() {
+    let state = json!({});
+    assert_eq!(phase_step_counter(&state), None);
+}
+
+#[test]
+fn test_phase_step_counter_unknown_phase() {
+    let state = json!({"current_phase": "flow-mystery"});
+    assert_eq!(phase_step_counter(&state), None);
+}
+
+#[test]
+fn test_phase_step_counter_start_present() {
+    let mut state = make_state("flow-start", &[("flow-start", "in_progress")]);
+    state["start_step"] = json!(2);
+    state["start_steps_total"] = json!(5);
+    let got = phase_step_counter(&state).expect("counter present");
+    assert_eq!(
+        got,
+        PhaseStepCounter {
+            phase_label: "Start",
+            phase_number: 1,
+            current: 2,
+            total: 5,
+            name: Some("CI gate".to_string()),
+        }
+    );
+}
+
+#[test]
+fn test_phase_step_counter_start_missing() {
+    let state = make_state("flow-start", &[("flow-start", "in_progress")]);
+    assert_eq!(phase_step_counter(&state), None);
+}
+
+#[test]
+fn test_phase_step_counter_code_present() {
+    let mut state = make_state("flow-code", &[("flow-code", "in_progress")]);
+    state["code_task"] = json!(3);
+    state["code_tasks_total"] = json!(7);
+    state["code_task_name"] = json!("implement_helper");
+    let got = phase_step_counter(&state).expect("counter present");
+    assert_eq!(
+        got,
+        PhaseStepCounter {
+            phase_label: "Code",
+            phase_number: 2,
+            current: 3,
+            total: 7,
+            name: Some("implement_helper".to_string()),
+        }
+    );
+}
+
+#[test]
+fn test_phase_step_counter_code_missing() {
+    let state = make_state("flow-code", &[("flow-code", "in_progress")]);
+    assert_eq!(phase_step_counter(&state), None);
+}
+
+#[test]
+fn test_phase_step_counter_code_review_present() {
+    let mut state = make_state("flow-code-review", &[("flow-code-review", "in_progress")]);
+    state["code_review_step"] = json!(2);
+    let got = phase_step_counter(&state).expect("counter present");
+    assert_eq!(
+        got,
+        PhaseStepCounter {
+            phase_label: "Code Review",
+            phase_number: 3,
+            current: 2,
+            total: 4,
+            name: Some("reviewing".to_string()),
+        }
+    );
+}
+
+#[test]
+fn test_phase_step_counter_code_review_missing() {
+    let state = make_state("flow-code-review", &[("flow-code-review", "in_progress")]);
+    assert_eq!(phase_step_counter(&state), None);
+}
+
+#[test]
+fn test_phase_step_counter_learn_present() {
+    let mut state = make_state("flow-learn", &[("flow-learn", "in_progress")]);
+    state["learn_step"] = json!(3);
+    state["learn_steps_total"] = json!(7);
+    let got = phase_step_counter(&state).expect("counter present");
+    assert_eq!(
+        got,
+        PhaseStepCounter {
+            phase_label: "Learn",
+            phase_number: 4,
+            current: 3,
+            total: 7,
+            name: Some("applying learnings".to_string()),
+        }
+    );
+}
+
+#[test]
+fn test_phase_step_counter_learn_missing() {
+    let state = make_state("flow-learn", &[("flow-learn", "in_progress")]);
+    assert_eq!(phase_step_counter(&state), None);
+}
+
+#[test]
+fn test_phase_step_counter_complete_present() {
+    let mut state = make_state("flow-complete", &[("flow-complete", "in_progress")]);
+    state["complete_step"] = json!(4);
+    state["complete_steps_total"] = json!(6);
+    let got = phase_step_counter(&state).expect("counter present");
+    assert_eq!(
+        got,
+        PhaseStepCounter {
+            phase_label: "Complete",
+            phase_number: 5,
+            current: 4,
+            total: 6,
+            name: Some("confirming".to_string()),
+        }
+    );
+}
+
+#[test]
+fn test_phase_step_counter_complete_missing() {
+    let state = make_state("flow-complete", &[("flow-complete", "in_progress")]);
+    assert_eq!(phase_step_counter(&state), None);
+}
+
+#[test]
+fn test_phase_step_counter_code_present_no_name() {
+    let mut state = make_state("flow-code", &[("flow-code", "in_progress")]);
+    state["code_task"] = json!(2);
+    state["code_tasks_total"] = json!(5);
+    let got = phase_step_counter(&state).expect("counter present");
+    assert_eq!(got.name, None);
+    assert_eq!(got.current, 2);
+    assert_eq!(got.total, 5);
 }
 
 // --- step_annotation ---
