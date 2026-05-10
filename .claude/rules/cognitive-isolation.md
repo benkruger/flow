@@ -172,7 +172,7 @@ Its prompt explicitly states it has no knowledge of the conversation
 that produced the changes.
 
 The documentation agent (`agents/documentation.md`) demonstrates the
-context-sparse pattern in Code Review (Phase 4): it assesses
+context-sparse pattern in Code Review (Phase 3): it assesses
 maintainability (comprehension barriers) and documentation accuracy
 (drift between docs and code behavior).
 

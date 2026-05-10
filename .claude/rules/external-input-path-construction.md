@@ -123,24 +123,6 @@ When in doubt, treat as state-derived and validate.
   constant carries a doc comment naming the long-autonomous-flow
   scenario it bounds.
 
-`src/verify_references_scanner.rs::index_dir` is the canonical
-walk example:
-
-- Walks `<root>/tests/` and `<root>/src/` recursively, reading
-  each `.rs` file into the definition index.
-- `INDEX_RS_BYTE_CAP = 4 MB` constant with doc comment naming
-  the generated/golden source file scenario it bounds.
-- `File::open(path)? .take(INDEX_RS_BYTE_CAP).read_to_string(&mut content)`
-  caps every per-file read in the loop. Generated parser
-  output, vendored fixture files, and hostile content all
-  truncate at the cap rather than allocating unbounded memory.
-- All filesystem errors (read_dir, File::open, read_to_string)
-  swallow to `continue` rather than `.expect()`. The walk is
-  best-effort: a missed definition produces a benign
-  false-positive violation that the author can resolve via
-  opt-out, but a panic crashes the entire `bin/flow plan-check`
-  subprocess and blocks Plan-phase completion.
-
 ## Plan-Phase Trigger
 
 When a plan task proposes a new function that reads files from
@@ -220,24 +202,16 @@ is genuinely unreachable from any production path. A `.expect()`
 on `fs::read_dir(<repo_subtree>)` is reachable when the subtree
 is unreadable (chmod 0, transient I/O failure, race with
 concurrent removal); the test is what proves reachability or
-the absence of it. The pattern in
-`src/verify_references_scanner.rs::index_dir` is the canonical
-example: every filesystem error swallows to `continue`, with
-the sole `.expect("symlink_metadata succeeds on freshly-iterated
-read_dir entry")` reserved for the genuinely TOCTOU-only branch.
+the absence of it. Filesystem walks must swallow every error to
+`continue` rather than panic, with `.expect` reserved only for
+genuinely TOCTOU-only branches whose unreachability is provable
+(e.g., `symlink_metadata` succeeding on a freshly-iterated
+`read_dir` entry).
 
 ## Cross-References
 
 - `.claude/rules/external-input-validation.md` — the parent
   rule covering panicking constructors.
-- `.claude/rules/external-input-audit-gate.md` — the
-  Plan-phase mechanical gate. Its trigger vocabulary today
-  catches `panic!` / `assert!` tightenings; the patterns here
-  (untrusted-string-into-`format!`-into-`Path`) are not yet in
-  that vocabulary, so the gate cannot mechanically catch this
-  class. Future work: extend the gate's trigger vocabulary to
-  cover `PathBuf::from(<state-value>)` and
-  `fs::File::open(<state-value>)` patterns.
 - `.claude/rules/security-gates.md` "Normalize Before
   Comparing" — the sibling rule for string comparisons in
   gates.

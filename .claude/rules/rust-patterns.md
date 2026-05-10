@@ -247,7 +247,6 @@ when state files carry corrupt or legacy values. Raw `+ 1` or
 `+ elapsed` arithmetic on those values panics in debug builds and wraps
 silently to `i64::MIN` in release builds, corrupting the counter.
 
-<!-- scope-enumeration: imperative -->
 Use `saturating_add` at every counter-increment callsite:
 
 ```rust
@@ -424,7 +423,6 @@ side effects. The current exempt set is:
 - `bin/flow format-status` (`src/format_status.rs`)
 - `bin/flow status` (`src/status.rs`)
 - `bin/flow tombstone-audit` (`src/tombstone_audit.rs`)
-- `bin/flow plan-check` (`src/plan_check.rs`)
 
 When adding a new read-only subcommand, add it to this list AND
 to the corresponding list in CLAUDE.md's Subdirectory Context
@@ -441,11 +439,6 @@ suite itself is running inside a `bin/flow ci` invocation,
 on the child will fire. Tests in this situation must call
 `.env_remove("FLOW_CI_RUNNING")` on the `Command` to simulate a
 fresh invocation.
-
-The two family lists above are also the canonical enumeration used
-by `.claude/rules/scope-enumeration.md` — the prose-side rule that
-requires every universal-quantifier claim about a code family to
-carry a named sibling list.
 
 ## Cwd-Inside-Destructive-Path Guard
 
@@ -539,7 +532,7 @@ Before adding a new marker, grep the test file for existing
 When adding `append_log` calls to a Rust module, use
 `[Phase N] module-name — step (status)` format. Derive the phase
 number via `phase_number()` from `phase_config.rs` — never hardcode
-it unless the module is phase-specific (e.g., Phase 6 modules that
+it unless the module is phase-specific (e.g., Phase 5 modules that
 only run during Complete). For modules called from multiple phases
 (e.g., `finalize_commit`), read `current_phase` from the state file
 at runtime. Guard `append_log` calls in modules where

@@ -5,10 +5,6 @@ function, the plan must enumerate the helper's internal branches at
 Plan time — before the Code phase runs into them — and commit to a
 concrete testing strategy for each branch.
 
-This rule is the mechanical complement to the
-**Extract-Helper Branch Enumeration** subsection in
-`skills/flow-plan/SKILL.md` Step 3.
-
 ## Vocabulary
 
 - **seam** — a parameterized injection point in a function's
@@ -19,9 +15,6 @@ This rule is the mechanical complement to the
   seam so tests can control the decision.
 - **sentinel** — a small cached marker file that records the tree
   state from the most recent successful `bin/flow ci` run.
-- **CiDecider** — the concrete type alias in `src/complete_fast.rs`
-  for the Complete-phase CI dirty-check seam:
-  `dyn Fn(&Path, &Path, &str, bool) -> (bool, Option<String>)`.
 
 ## Why
 
@@ -57,9 +50,9 @@ lines of the trigger. The table has four columns:
 
 | Branch | Condition | Classification | Test |
 |---|---|---|---|
-| A | `tree_changed == true` | Testable directly | `production_ci_decider_tree_changed_returns_not_skipped` |
-| B | `tree_changed == false` ∧ sentinel matches | Testable directly | `production_ci_decider_sentinel_hit_returns_skipped` |
-| C | CI dirty-check dispatches to `ci::run_impl` | Testable via seam | (lift `ci::run_impl` into an injectable parameter and test via a mock) |
+| A | guard expression A holds | Testable directly | `<test_function_name_for_branch_a>` |
+| B | guard expression B holds | Testable directly | `<test_function_name_for_branch_b>` |
+| C | branch dispatches to an externally-coupled dependency | Testable via seam | (lift the dependency into an injectable parameter and test via a mock) |
 
 Column definitions:
 
@@ -74,9 +67,7 @@ Column definitions:
 
 - **Testable via seam** — the caller injects a closure, trait
   object, or `Command` via a parameter, and the branch is exercised
-  by passing a mock implementation. Reference:
-  `run_impl_inner(args, root, runner, ci_decider)` in
-  `src/complete_fast.rs`.
+  by passing a mock implementation.
 - **Testable directly** — a unit test with a self-contained fixture
   exercises the branch without any mocking or indirection. Typical
   fixtures: a `tempfile::TempDir`, a prepared state-file JSON, or an
@@ -115,11 +106,9 @@ The audit answers two questions per panicking constructor:
    (`FlowPaths::try_new`, `Option`-returning, `Result`-returning)
    and translate the invalid case into a structured error.
 
-The audit produces a row in the plan's
-`.claude/rules/external-input-audit-gate.md` callsite table even
-when the extraction is not adding a new panic — perpetuating an
-existing one across an extraction boundary still counts as a
-new public callsite.
+Perpetuating an existing panic across an extraction boundary still
+counts as a new public callsite — the audit applies even when the
+extraction is not adding a new panic.
 
 ## Enforcement
 
@@ -128,12 +117,10 @@ blocks a Plan phase from completing without a Branch Enumeration
 Table. The enforcement layers are:
 
 1. **The rule file itself** — the primary instrument.
-2. **The SKILL.md subsection** — reminds the Plan phase of the
-   discipline at authoring time.
-3. **The Code Review reviewer agent** — cross-references the plan's
+2. **The Code Review reviewer agent** — cross-references the plan's
    Branch Enumeration Table against the landed tests and raises a
    Real finding when a plan-named test is missing.
-4. **The adversarial agent in Code Review** — writes failing tests
+3. **The adversarial agent in Code Review** — writes failing tests
    against uncovered branches.
 
 ## Opt-Out Grammar

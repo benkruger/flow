@@ -11,9 +11,7 @@ This rule applies to every gate that reads string input from the
 CLI or from a state file and decides whether to permit or reject
 an action. Examples in this codebase: `code_review_filing_gate`
 in `src/add_finding.rs`, `should_reject_for_code_review` in
-`src/issue.rs`, the scope-enumeration scanner in
-`src/scope_enumeration.rs`. Future gates should follow the same
-discipline.
+`src/issue.rs`. Future gates should follow the same discipline.
 
 ## Normalize Before Comparing
 

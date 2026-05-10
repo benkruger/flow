@@ -2,7 +2,7 @@
 
 Code Review's adversarial agent writes test functions that prove a
 finding by failing against the current implementation. The probe
-lives in the worktree's test tree and is removed at Phase 6 Complete
+lives in the worktree's test tree and is removed at Phase 5 Complete
 as a side effect of `git worktree remove`. When Code Review Step 4
 fixes a finding the probe surfaced, the probe's assertions become
 outdated and must be reconciled in the same Code Review pass — a
@@ -49,7 +49,7 @@ git restore --source=origin/<base_branch> <probe_path>
 
 If the probe path is in `.git/info/exclude` (per
 `src/prime_check.rs::EXCLUDE_ENTRIES`), the worktree's copy never
-becomes a tracked artifact. Worktree removal at Phase 6 Complete
+becomes a tracked artifact. Worktree removal at Phase 5 Complete
 disposes of it. Step 4 still must not leave assertions that fail —
 delete the file's contents (or remove the file entirely) when the
 findings are recorded elsewhere.

@@ -31,17 +31,7 @@ mod common;
 /// "Active" means the comment is not inside a fenced code block (those
 /// are documentation examples) and not wrapped in backticks (those are
 /// prose references to the comment, not active bypasses).
-const EXPECTED: &[&str] = &[
-    ".claude/rules/branch-path-safety.md::scope-enumeration::imperative",
-    ".claude/rules/branch-path-safety.md::scope-enumeration::imperative",
-    ".claude/rules/rust-patterns.md::scope-enumeration::imperative",
-    ".claude/rules/verify-runtime-path.md::scope-enumeration::imperative",
-    ".claude/rules/verify-runtime-path.md::scope-enumeration::imperative",
-    ".claude/rules/verify-runtime-path.md::scope-enumeration::imperative",
-    ".claude/rules/verify-runtime-path.md::scope-enumeration::imperative",
-    ".claude/rules/verify-runtime-path.md::scope-enumeration::imperative",
-    ".claude/rules/verify-runtime-path.md::scope-enumeration::imperative",
-];
+const EXPECTED: &[&str] = &[];
 
 #[test]
 fn opt_out_inventory_is_frozen() {

@@ -20,11 +20,10 @@ broken. Speculative tests have three costs:
    the risk today.
 
 The project already has strong mechanical enforcement for the
-drift surfaces that matter: tombstones in `tests/tombstones.rs`,
-corpus scanners like `tests/scope_enumeration.rs` and
-`tests/external_input_audit.rs`, and plan-check gates. Adding
-broader "safety net" scans on top of that accumulates test code
-without covering new regressions.
+drift surfaces that matter: tombstones in `tests/tombstones.rs`
+and targeted corpus scanners. Adding broader "safety net" scans
+on top of that accumulates test code without covering new
+regressions.
 
 ## The Rule
 
@@ -55,10 +54,8 @@ name.
   workflow.
 - **Targeted corpus scans** — the scanner must have a named
   trigger vocabulary tied to a documented constraint and a named
-  consumer (the rule file that authorizes the scan). See
-  `tests/scope_enumeration.rs` and
-  `tests/external_input_audit.rs`. Broader scans without a named
-  vocabulary are speculative.
+  consumer (the rule file that authorizes the scan). Broader scans
+  without a named vocabulary are speculative.
 
 ### Multi-file contract tests
 
@@ -110,11 +107,8 @@ without this discipline as Real findings.
 
 When a PR proposes a new corpus contract test (scanning the
 committed prose corpus for a rule's forbidden pattern), run a
-viability check **before** writing the test. The check is already
-documented in `.claude/rules/scope-enumeration.md` "False-positive
-sweep before expanding the vocabulary" for one specific case
-(vocabulary expansion), but it applies universally to any
-corpus-class contract test:
+viability check **before** writing the test. The check applies
+universally to any corpus-class contract test:
 
 1. **Run the scanner over the current corpus.** Apply the candidate
    trigger vocabulary to `CLAUDE.md`, `.claude/rules/*.md`,
@@ -127,11 +121,9 @@ corpus-class contract test:
    intrinsic to the project's existing prose.
 3. **On high false-positive count, defer the corpus test.** The
    candidate is not viable as a mechanical enforcer in this
-   codebase. Ship only the Plan-phase gate (which scans plan
-   content, not the committed prose corpus) and document the
-   deferral in the rule file's Enforcement section with the
-   false-positive count and the legitimate-citation examples that
-   triggered it.
+   codebase. Document the deferral in the rule file's Enforcement
+   section with the false-positive count and the legitimate-
+   citation examples that triggered it.
 4. **Replace the contract test with a documented marker.** Leave
    `tests/<scanner-name>.rs` as an intentionally empty integration
    test file whose module doc comment records the decision. A
@@ -145,8 +137,7 @@ corpus-class contract test:
 - **"For future drift"** tests where the drift mechanism is
   unspecified.
 - **Duplicate guards** for a property already covered by an
-  existing tombstone, plan-check scanner, or structural contract
-  test.
+  existing tombstone or structural contract test.
 - **Corpus-wide scans for a forbidden substring** when the
   substring's only known occurrences are in files that must
   legitimately discuss the forbidden term (requiring an ever-

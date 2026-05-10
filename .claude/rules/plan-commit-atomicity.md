@@ -83,7 +83,7 @@ because:
 moment of batching:
 
 ```bash
-bin/flow log <branch> "[Phase 3] Batch decision: combining Tasks N-M (<description>) into one commit for <reason>. Each task is independently shippable; no test assertion spans the boundary; the split would <cost>."
+bin/flow log <branch> "[Phase 2] Batch decision: combining Tasks N-M (<description>) into one commit for <reason>. Each task is independently shippable; no test assertion spans the boundary; the split would <cost>."
 ```
 
 ### When NOT to batch
@@ -133,7 +133,7 @@ The lowest-cost path is for the Code phase to record the deviation
 at the moment of discovery:
 
 ```bash
-bin/flow log <branch> "[Phase 3] Plan signature deviation: run_impl_with_notifier -> run_impl_with_deps (added root/cwd injection to satisfy finalize_with_notifier_cwd_scope_rejects test requirement)"
+bin/flow log <branch> "[Phase 2] Plan signature deviation: run_impl_with_notifier -> run_impl_with_deps (added root/cwd injection to satisfy finalize_with_notifier_cwd_scope_rejects test requirement)"
 ```
 
 The log entry serves three readers: (1) the immediate Code phase as
@@ -188,7 +188,7 @@ requires extending the plan's prototype:
    should have anticipated this) or a Code-phase discovery (new
    information from the exploration step)?
 2. If the extension is necessary, log the decision immediately:
-   `bin/flow log <branch> "[Phase 3] Plan deviation: <what changed>
+   `bin/flow log <branch> "[Phase 2] Plan deviation: <what changed>
    (<why>)"`.
 3. Include the deviation in the commit message body so reviewers see
    it without consulting the log file.
@@ -217,7 +217,7 @@ before `finalize_commit_inner` calls `git commit`. Every commit
 path routes through `run_impl` and therefore through the gate.
 
 **How to acknowledge.** When a deviation is intentional, the user
-logs the deviation via `bin/flow log <branch> "[Phase 3] Plan
+logs the deviation via `bin/flow log <branch> "[Phase 2] Plan
 signature deviation: <text naming the test and the plan value>"`.
 The gate re-reads the log file on every invocation and clears any
 deviation whose `(test_name, plan_value)` pair both appear as

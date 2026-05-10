@@ -86,7 +86,7 @@ the situation is genuinely substantive.
 similar error, read the message. If it names the canonical
 destination, the correct tool, or a structurally identical retry,
 classify as mechanical and rerun. Log the rerouting via `bin/flow
-log <branch> "[Phase 3] Mechanical recovery: <what failed> →
+log <branch> "[Phase 2] Mechanical recovery: <what failed> →
 <retry shape>"` so the Learn-phase audit can confirm the
 discipline.
 

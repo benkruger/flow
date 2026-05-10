@@ -60,22 +60,17 @@ the constructor is more reliable than per-callsite checks.
 
 ## How to Apply
 
-**Plan phase.** When planning a feature that introduces a new
-path constructed from a branch name, add a row to the
-external-input-audit table per
-`.claude/rules/external-input-audit-gate.md`. <!-- scope-enumeration: imperative -->
-The audit table enumerates hook callsites AND CLI subcommand
-callsites that accept the same branch input — both families
-flow user input into path construction.
-
-**Code phase.** Use `FlowPaths::try_new` by default for any
+**Code phase, before writing the implementation.** Enumerate
+every hook callsite and CLI subcommand callsite that accepts
+the same branch input — both families flow user input into
+path construction. Use `FlowPaths::try_new` by default for any
 external-source branch and pattern-match on the `Option`.
 Callers that hold a branch already validated upstream chain
 `.expect("<boundary>")` with a doc-comment naming the
 sanitizer. Never write `format!(".flow-states/{}", branch)` or
 `format!(".worktrees/{}", branch)` without the guard.
 
-**Code Review phase.** <!-- scope-enumeration: imperative -->
+**Code Review phase.**
 The reviewer agent and adversarial agent check every new
 path-construction site for the guard. The adversarial agent
 writes failing tests against each of the four rejected inputs
@@ -86,8 +81,6 @@ accepts a branch.
 
 - `.claude/rules/external-input-validation.md` — the broader
   prose discipline for fallible constructors.
-- `.claude/rules/external-input-audit-gate.md` — the Plan-phase
-  gate that requires a callsite audit table.
 - `src/flow_paths.rs` — `FlowPaths::is_valid_branch` and
   `FlowPaths::try_new` are the canonical guards.
 - `tests/flow_paths.rs` — coverage for every rejection class

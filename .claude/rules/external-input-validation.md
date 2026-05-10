@@ -20,15 +20,6 @@ A `--branch` CLI override is also an external input — `clap` accepts
 any string the shell passes, including slash-containing and empty
 values. The override is no more trusted than a git subprocess result.
 
-## Mechanical Enforcement
-
-The Plan-phase prose audit gate (`bin/flow plan-check`) catches
-plans that propose adding a panic/assert validation without a
-paired callsite source-classification table. See
-`.claude/rules/external-input-audit-gate.md` for the gate's
-trigger vocabulary, the required audit table format, the opt-out
-grammar, and the three-callsite enforcement topology.
-
 ## How to Apply
 
 ### Plan-phase audit

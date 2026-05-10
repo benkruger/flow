@@ -11,7 +11,7 @@ disposal is explicit, audit-trailed, and permission-safe.
 An ephemeral artifact has exactly one creating phase and exactly
 one disposing phase. For the adversarial probe:
 
-- **Code Review (Phase 4) creates.** The adversarial agent writes
+- **Code Review (Phase 3) creates.** The adversarial agent writes
   the probe at the path resolved by `bin/test --adversarial-path`
   (a project-owned bash script that prints the canonical probe path
   for the project's language).
@@ -19,11 +19,11 @@ one disposing phase. For the adversarial probe:
   invalidates the probe's assertions, the probe is reconciled per
   `.claude/rules/adversarial-probe-lifecycle.md` — either deleted
   (default) or updated to assert the post-fix invariant.
-- **Phase 6 Complete disposes.** The cleanup orchestrator
+- **Phase 5 Complete disposes.** The cleanup orchestrator
   (`src/cleanup.rs`) explicitly removes the probe before the
   worktree directory itself is removed.
 
-Worktree removal at Phase 6 (`git worktree remove --force`) ALSO
+Worktree removal at Phase 5 (`git worktree remove --force`) ALSO
 disposes of the probe as a side effect of removing the worktree
 tree. The explicit cleanup step in front of worktree removal is
 defense-in-depth: it lands the disposal in the JSON `steps` output

@@ -1,7 +1,7 @@
 # Code Task Counter Convention
 
 The `code_task` field in `.flow-states/<branch>/state.json` tracks the
-plan task counter during Phase 3 (Code). It is incremented via
+plan task counter during Phase 2 (Code). It is incremented via
 `bin/flow set-timestamp --set code_task=<n>` after each task
 completes and before the commit.
 
@@ -82,7 +82,7 @@ The counter rule still requires +1 per task. Apply this shape:
    that has fully landed", not "the highest task whose code is
    present somewhere in the diff."
 2. **Log the early-landed task explicitly.** Use
-   `bin/flow log <branch> "[Phase 3] Plan deviation: Task 9
+   `bin/flow log <branch> "[Phase 2] Plan deviation: Task 9
    tests landed early in commit 1 (alongside Tasks 1-4) because
    Task 2's coverage requires Task 9's tests to satisfy
    100/100/100. Counter advances to 4 in this commit; Task 9's

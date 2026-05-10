@@ -177,10 +177,9 @@ A friction report becomes filable only when ALL three hold:
 
 If any of (1)–(3) is missing, do not file. Single-flow
 friction is not a signal — it is one data point, and the
-project's curated-closed scanner philosophy
-(see `.claude/rules/scope-enumeration.md`
-"Vocabulary Extensibility") explicitly prefers some friction
-over false-positive sweeps from premature scanner expansion.
+project's curated-closed scanner philosophy explicitly prefers
+some friction over false-positive sweeps from premature
+scanner expansion.
 
 A real Tenant 2 enforcement escalation looks like:
 
@@ -202,10 +201,10 @@ all describe problems in the user's code.
 
 FLOW process bugs — problems with the plugin itself — must target
 `benkruger/flow`. Pass `--repo benkruger/flow` when filing against
-the plugin repo. The Phase 5 `flow-learn` skill is the only skill
+the plugin repo. The Phase 4 `flow-learn` skill is the only skill
 that routes process gaps cross-repo automatically:
 
-- `flow-learn` (Phase 5) — files process gap issues with `--repo`
+- `flow-learn` (Phase 4) — files process gap issues with `--repo`
 
 `flow-create-issue` is the related capture skill but it always files
 to the **current** repo (no `--repo` flag) — it does not prompt for
