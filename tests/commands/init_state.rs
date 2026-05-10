@@ -396,7 +396,7 @@ fn branch_name_derived_from_feature() {
 }
 
 #[test]
-fn branch_name_truncated_at_60() {
+fn branch_name_truncated_at_32() {
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
     let output = run_init_state(
@@ -412,7 +412,7 @@ fn branch_name_truncated_at_60() {
     let data = parse_stdout(&output);
     let branch = data["branch"].as_str().unwrap();
     assert!(
-        branch.chars().count() <= 60,
+        branch.chars().count() <= 32,
         "Branch too long: {} ({} chars)",
         branch,
         branch.chars().count()

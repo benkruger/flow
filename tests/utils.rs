@@ -197,14 +197,14 @@ fn branch_name_special_chars() {
 }
 
 #[test]
-fn branch_name_respects_60_char_cap() {
+fn branch_name_respects_32_char_cap() {
     // Guards: BRANCH_MAX_LEN regression. A long input must produce a
-    // branch <= 60 chars; the cap is encoded in production as
+    // branch <= 32 chars; the cap is encoded in production as
     // BRANCH_MAX_LEN.
     let long = "fix login timeout when session expires after thirty minutes please now";
     let result = branch_name(long);
     assert!(
-        result.chars().count() <= 60,
+        result.chars().count() <= 32,
         "Got: {} ({})",
         result,
         result.chars().count()
@@ -227,7 +227,7 @@ fn branch_name_multibyte_no_panic() {
     let input = "fix 日本語 login timeout when session expires after thirty minutes please now";
     let result = branch_name(input);
     assert!(
-        result.chars().count() <= 60,
+        result.chars().count() <= 32,
         "Got: {} ({})",
         result,
         result.chars().count()
@@ -263,14 +263,14 @@ fn branch_name_collapses_internal_whitespace() {
 }
 
 #[test]
-fn branch_name_truncation_no_hyphen_in_first_61_chars() {
+fn branch_name_truncation_no_hyphen_in_first_33_chars() {
     // A long single-word token with no spaces produces a long lowercase
-    // token. rfind('-') on the first 61 chars returns None, so the
+    // token. rfind('-') on the first 33 chars returns None, so the
     // fallback take(BRANCH_MAX_LEN) path is exercised.
     let long_word = "a".repeat(70);
     let result = branch_name(&long_word);
-    assert_eq!(result.chars().count(), 60);
-    assert_eq!(result, "a".repeat(60));
+    assert_eq!(result.chars().count(), 32);
+    assert_eq!(result, "a".repeat(32));
 }
 
 #[test]
@@ -281,7 +281,7 @@ fn branch_name_truncation_hyphen_at_position_zero() {
     // runs.
     let input = format!("-{}", "a".repeat(70));
     let result = branch_name(&input);
-    assert_eq!(result.chars().count(), 60);
+    assert_eq!(result.chars().count(), 32);
     assert!(result.starts_with('-'));
 }
 
@@ -309,9 +309,7 @@ fn branch_name_preserves_words_when_truncating() {
     let input = "Wire code tasks total writer and put X of Y first in code phase status";
     let result = branch_name(input);
     let last_segment = result.rsplit('-').next().unwrap();
-    let known_words = [
-        "wire", "code", "tasks", "total", "writer", "put", "x", "y", "first", "phase", "status",
-    ];
+    let known_words = ["wire", "code", "tasks", "total", "writer"];
     assert!(
         known_words.contains(&last_segment),
         "final segment must be a complete word; got result={result:?} last_segment={last_segment:?}"

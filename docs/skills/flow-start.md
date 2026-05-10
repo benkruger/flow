@@ -38,10 +38,10 @@ Claude derives a concise branch name (2-5 words) from the prompt:
 | Prompt | Branch |
 |--------|--------|
 | `app payment webhooks` | `app-payment-webhooks` |
-| `fix login timeout when session expires` | `fix-login-timeout-when-session-expires` |
-| `Wire code_tasks_total writer and put X first` | `wire-code-tasks-total-writer-and-put-x-first` |
+| `fix login timeout when session expires` | `fix-login-timeout-when-session` |
+| `Wire code_tasks_total writer and put X first` | `wire-code-tasks-total-writer` |
 
-The derived name is hyphenated and used for the branch, worktree (`.worktrees/<name>`), and PR title (title-cased). Branch names are capped at 60 characters, truncated at word boundaries; trailing connectives like `and`, `or`, `of`, `the` are stripped from the final segment so the branch never ends with a dangling stop-word.
+The derived name is hyphenated and used for the branch, worktree (`.worktrees/<name>`), and PR title (title-cased). Branch names are capped at 32 characters, truncated at word boundaries; trailing connectives like `and`, `or`, `of`, `the` are stripped from the final segment so the branch never ends with a dangling stop-word.
 
 When the prompt contains `#N` issue references (e.g., `work on issue #309`), `start-init` automatically fetches the first issue's title and derives the branch name and PR title from it. This produces descriptive names like `organize-settings-allow-list` rather than generic names like `work-on-issue-309`. If the issue fetch fails, start-init returns a hard error.
 

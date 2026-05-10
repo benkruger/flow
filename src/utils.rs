@@ -384,11 +384,11 @@ pub fn elapsed_since(started_at: Option<&str>, now_override: Option<DateTime<Fix
 
 // --- Branch and feature name functions ---
 
-/// Maximum branch-name length in characters. Long enough for issue
-/// titles and feature descriptions to survive into the branch and PR
-/// title as readable English, while staying well under filesystem and
-/// git branch-name limits.
-const BRANCH_MAX_LEN: usize = 60;
+/// Maximum branch-name length in characters. Bounded tightly so the
+/// derived branch stays readable in PR titles, terminal tabs, and
+/// status displays while remaining well under filesystem and git
+/// branch-name limits.
+const BRANCH_MAX_LEN: usize = 32;
 
 /// Trailing connectives that produce dangling branch endings like `-and`
 /// or `-of`. Stripped only from the final segment of a branch name —
