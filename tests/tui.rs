@@ -585,6 +585,34 @@ fn test_render_tasks_view_no_plan() {
     assert!(output.contains("No plan file."));
 }
 
+// --- start_lock_holder banner ---
+
+#[test]
+fn test_render_header_renders_lock_banner_when_holder_set() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.start_lock_holder = Some("alpha-feature".to_string());
+    let output = render_to_string(&app, 80, 40);
+    assert!(
+        output.contains("start lock: alpha-feature"),
+        "expected lock banner in output:\n{}",
+        output
+    );
+}
+
+#[test]
+fn test_render_header_omits_lock_banner_when_no_holder() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.start_lock_holder = None;
+    let output = render_to_string(&app, 80, 40);
+    assert!(
+        !output.contains("start lock:"),
+        "lock banner should not render with no holder; got:\n{}",
+        output
+    );
+}
+
 // --- format_age ---
 
 #[test]

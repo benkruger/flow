@@ -4,8 +4,9 @@ use chrono::{DateTime, FixedOffset};
 use flow_rs::phase_config::{self, PHASE_ORDER};
 use flow_rs::tui_data::{
     flow_summary, load_account_metrics, load_all_flows, load_orchestration, orchestration_summary,
-    parse_log_entries, phase_step_counter, phase_timeline, phase_token_table, run_impl_main,
-    status_icon, step_annotation, step_names, PhaseStepCounter,
+    parse_log_entries, phase_step_counter, phase_timeline, phase_token_table,
+    read_start_lock_holder, run_impl_main, status_icon, step_annotation, step_names,
+    PhaseStepCounter,
 };
 use serde_json::{json, Value};
 
@@ -56,6 +57,64 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
 }
 
 // --- step_annotation ---
+
+// --- read_start_lock_holder ---
+
+#[test]
+fn test_read_start_lock_holder_empty_queue() {
+    let dir = tempfile::TempDir::new().unwrap();
+    assert_eq!(read_start_lock_holder(dir.path()), None);
+}
+
+#[test]
+fn test_read_start_lock_holder_single_entry_returns_holder() {
+    use std::fs;
+    let dir = tempfile::TempDir::new().unwrap();
+    let queue = dir
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join(".flow-states")
+        .join("start-queue");
+    fs::create_dir_all(&queue).unwrap();
+    fs::write(queue.join("alpha-feature"), "").unwrap();
+    assert_eq!(
+        read_start_lock_holder(dir.path()),
+        Some("alpha-feature".to_string())
+    );
+}
+
+#[test]
+fn test_read_start_lock_holder_multiple_entries_returns_oldest_by_mtime() {
+    use filetime::{set_file_mtime, FileTime};
+    use std::fs;
+    let dir = tempfile::TempDir::new().unwrap();
+    let queue = dir
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join(".flow-states")
+        .join("start-queue");
+    fs::create_dir_all(&queue).unwrap();
+    let earlier = queue.join("alpha-feature");
+    let later = queue.join("beta-feature");
+    fs::write(&earlier, "").unwrap();
+    fs::write(&later, "").unwrap();
+    // Use recent timestamps so neither entry exceeds start_lock's
+    // STALE_TIMEOUT_SECONDS — both within the last minute, with
+    // `earlier` 60s back and `later` 30s back.
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    set_file_mtime(&earlier, FileTime::from_unix_time(now - 60, 0)).unwrap();
+    set_file_mtime(&later, FileTime::from_unix_time(now - 30, 0)).unwrap();
+    assert_eq!(
+        read_start_lock_holder(dir.path()),
+        Some("alpha-feature".to_string())
+    );
+}
 
 // --- phase_step_counter ---
 

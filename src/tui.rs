@@ -24,7 +24,8 @@ use serde_json::Value;
 
 use crate::flow_paths::FlowPaths;
 use crate::tui_data::{
-    self, phase_step_counter, AccountMetrics, FlowSummary, OrchestrationSummary, PhaseStepCounter,
+    self, phase_step_counter, read_start_lock_holder, AccountMetrics, FlowSummary,
+    OrchestrationSummary, PhaseStepCounter,
 };
 use crate::utils::format_tokens;
 
@@ -283,6 +284,11 @@ pub struct TuiApp {
     /// Wall clock of the most recent successful data fetch. Drives
     /// the "updated Ns ago" indicator in the metrics row.
     pub last_refresh: Instant,
+    /// Branch name of the flow currently holding the start lock, or
+    /// `None` when no flow is queued. Drives the
+    /// `🔒 start lock: <holder>` banner so concurrent engineers can
+    /// see start-gate contention at a glance.
+    pub start_lock_holder: Option<String>,
 }
 
 impl TuiApp {
@@ -324,6 +330,7 @@ impl TuiApp {
             filter_query: None,
             filter_input_active: false,
             last_refresh: Instant::now(),
+            start_lock_holder: None,
         }
     }
 
@@ -353,6 +360,7 @@ impl TuiApp {
         }
         self.metrics =
             tui_data::load_account_metrics(&self.root, Some(self.platform.home.as_path()));
+        self.start_lock_holder = read_start_lock_holder(&self.root);
         self.last_refresh = Instant::now();
     }
 
@@ -698,6 +706,17 @@ impl TuiApp {
             let metrics_p = Paragraph::new(metrics_line);
             let metrics_area = Rect::new(area.x + col, area.y, metrics_width as u16 + 2, 1);
             frame.render_widget(metrics_p, metrics_area);
+        }
+
+        // Row 1: start-lock holder banner — surfaces start-gate
+        // contention so engineers running concurrent flows can see who
+        // holds the lock without tailing log files.
+        if let Some(ref holder) = self.start_lock_holder {
+            let banner = Paragraph::new(Line::from(Span::styled(
+                format!("  \u{1F512} start lock: {}", holder),
+                Style::default().fg(Color::Yellow),
+            )));
+            frame.render_widget(banner, Rect::new(area.x, area.y + 1, area.width, 1));
         }
 
         // Row 2: tab bar

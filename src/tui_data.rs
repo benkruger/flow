@@ -10,6 +10,7 @@ use chrono::{DateTime, FixedOffset};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::commands::start_lock;
 use crate::flow_paths::FlowStatesDir;
 use crate::phase_config::{self, PHASE_ORDER};
 use crate::utils::{
@@ -73,6 +74,19 @@ pub fn status_icon(status: &str) -> &'static str {
 
 /// Staleness threshold for rate limit data (10 minutes).
 pub const STALE_THRESHOLD_SECONDS: u64 = 600;
+
+/// Read the start-lock holder name from the queue directory, if any.
+///
+/// Returns the basename of the first (lowest-mtime, then alphabetical)
+/// queue entry — the flow that currently holds the start lock — or
+/// `None` when the queue is empty or unreadable. Drives the
+/// `🔒 start lock: <holder>` banner in the TUI metrics row so engineers
+/// can see start-gate contention without tailing log files.
+pub fn read_start_lock_holder(root: &Path) -> Option<String> {
+    let queue_dir = start_lock::queue_path(root);
+    let (entries, _stale) = start_lock::list_queue(&queue_dir, false);
+    entries.into_iter().next().map(|(_mtime, name)| name)
+}
 
 /// Aggregated per-phase step counter for X-of-Y displays.
 ///
