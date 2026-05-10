@@ -5,19 +5,11 @@ they perform.
 
 ## User-Only Skills (model must never invoke)
 
-Four skills must be invoked directly by the user — the model never
+Some skills must be invoked directly by the user — the model never
 proposes them and never invokes them, even after hypothetical
-approval. See `.claude/rules/user-only-skills.md` for the full set
-and the three-layer mechanical enforcement chain
-(`validate-skill`, `validate-ask-user` carve-out, transcript root
-lockdown).
-
-The user-only set:
-
-- `/flow:flow-abort`
-- `/flow:flow-reset`
-- `/flow:flow-release`
-- `/flow:flow-prime`
+approval. See `.claude/rules/user-only-skills.md` for the full set,
+the per-skill threat-shape rationale, and the three-layer
+mechanical enforcement chain.
 
 ## Ask-First Skills (model may invoke after user agreement)
 

@@ -124,12 +124,11 @@ insufficient:
   `.claude/rules/autonomous-phase-discipline.md` "Prose-Based
   Pauses Bypass AskUserQuestion".
 - **Model invocation of user-only skills** —
-  `validate-skill` rejects Skill tool calls naming
-  `flow:flow-abort`, `flow:flow-reset`, `flow:flow-release`, or
-  `flow:flow-prime` when the most recent user-role turn in the
-  persisted transcript does NOT contain a matching
-  `<command-name>/<skill></command-name>` substring. See
-  `.claude/rules/user-only-skills.md` Layer 1.
+  `validate-skill` rejects Skill tool calls naming user-only
+  skills when the most recent user-role turn in the persisted
+  transcript does NOT contain a matching slash-command marker.
+  See `.claude/rules/user-only-skills.md` for the full set and
+  Layer 1 details.
 - **Edit/Write on `.claude/` paths during a flow** —
   `validate-claude-paths` redirects to
   `bin/flow write-rule` for `CLAUDE.md`,
