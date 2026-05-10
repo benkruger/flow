@@ -114,6 +114,18 @@ pub const USER_ONLY_SKILLS: &[&str] = &[
 /// reachable regardless of total file size.
 pub const TRANSCRIPT_BYTE_CAP: u64 = 50 * 1024 * 1024;
 
+/// Smaller tail-bounded cap (4 MB) for shared-config block detection.
+/// `recent_edit_blocked_on_shared_config` only needs the last 1-2
+/// turns since the most recent real user turn — the most recent
+/// assistant tool call and its paired tool_result. 4 MB comfortably
+/// holds those turns even when they include large file contents in
+/// `tool_use.input` or `tool_result.content`. Using a smaller cap
+/// here than `TRANSCRIPT_BYTE_CAP` keeps the AskUserQuestion-blocked
+/// hot path fast — the helper runs synchronously inside the
+/// `validate-ask-user` hook and adds latency to every blocked
+/// AskUserQuestion call during in-progress autonomous phases.
+pub const SHARED_CONFIG_BLOCK_BYTE_CAP: u64 = 4 * 1024 * 1024;
+
 /// Normalize a gate-relevant string for comparison: strip NUL
 /// bytes, trim leading/trailing whitespace, and ASCII-lowercase.
 /// Per `.claude/rules/security-gates.md` "Normalize Before
@@ -150,7 +162,7 @@ pub fn last_user_message_invokes_skill(path: &Path, skill: &str, home: &Path) ->
     if skill_norm.is_empty() {
         return false;
     }
-    let lines = match read_capped(path) {
+    let lines = match read_capped(path, TRANSCRIPT_BYTE_CAP) {
         Some(s) => s,
         None => return false,
     };
@@ -209,7 +221,7 @@ pub fn most_recent_skill_in_user_only_set(path: &Path, home: &Path) -> bool {
     if !is_safe_transcript_path(path, home) {
         return false;
     }
-    let lines = match read_capped(path) {
+    let lines = match read_capped(path, TRANSCRIPT_BYTE_CAP) {
         Some(s) => s,
         None => return false,
     };
@@ -245,17 +257,26 @@ pub fn most_recent_skill_in_user_only_set(path: &Path, home: &Path) -> bool {
     false
 }
 
-/// Read the LAST `TRANSCRIPT_BYTE_CAP` bytes of `path` as a UTF-8
-/// String. Returns `None` on `File::open` error or non-UTF-8
-/// content.
+/// Read the LAST `cap` bytes of `path` as a UTF-8 String. Returns
+/// `None` on `File::open` error or non-UTF-8 content.
 ///
-/// The function seeks to `max(0, file_len - TRANSCRIPT_BYTE_CAP)`
-/// and reads forward to EOF. The buffer is the file's tail, which
-/// is what the backward walker needs — reading from the head
-/// silently omits recent turns on transcripts larger than the cap.
-/// A partial JSONL line at the buffer's start (mid-line truncation
-/// at the seek point) fails to parse and is silently skipped by
-/// the walker's `Err(_) => continue` branch.
+/// The function seeks to `max(0, file_len - cap)` and reads forward
+/// to EOF. The buffer is the file's tail, which is what the backward
+/// walker needs — reading from the head silently omits recent turns
+/// on transcripts larger than the cap. A partial JSONL line at the
+/// buffer's start (mid-line truncation at the seek point) fails to
+/// parse and is silently skipped by the walker's `Err(_) => continue`
+/// branch.
+///
+/// The `cap` parameter lets callers tune the backward-visibility
+/// window to the recency the walker needs.
+/// `last_user_message_invokes_skill` and
+/// `most_recent_skill_in_user_only_set` pass `TRANSCRIPT_BYTE_CAP`
+/// (50 MB) because user-only-skill detection may need to look past
+/// many recent assistant turns. `recent_edit_blocked_on_shared_config`
+/// passes the smaller `SHARED_CONFIG_BLOCK_BYTE_CAP` (4 MB) because
+/// it only needs the most recent assistant tool call and its paired
+/// tool_result.
 ///
 /// `metadata()` and `seek()` on a freshly-opened regular file are
 /// genuinely TOCTOU-only failure modes per the
@@ -265,19 +286,138 @@ pub fn most_recent_skill_in_user_only_set(path: &Path, home: &Path) -> bool {
 /// reachable failure surface for the open-file-then-stat-then-seek
 /// sequence. A test cannot reproduce metadata or seek failure on a
 /// freshly-opened regular file without root-level interference.
-fn read_capped(path: &Path) -> Option<String> {
+fn read_capped(path: &Path, cap: u64) -> Option<String> {
     let mut file = File::open(path).ok()?;
     let file_len = file
         .metadata()
         .expect("metadata succeeds on freshly-opened regular file (TOCTOU-only)")
         .len();
-    let start = file_len.saturating_sub(TRANSCRIPT_BYTE_CAP);
+    let start = file_len.saturating_sub(cap);
     file.seek(SeekFrom::Start(start))
         .expect("seek to non-negative absolute offset succeeds on regular file (TOCTOU-only)");
     let mut reader = BufReader::new(file);
     let mut buf = String::new();
     reader.read_to_string(&mut buf).ok()?;
     Some(buf)
+}
+
+/// Returns `true` when the persisted transcript shows, since the
+/// most recent real user turn, a tool_result block whose paired
+/// tool call was blocked by `validate_worktree_paths`' shared-config
+/// gate. Returns `false` on any I/O, parse, or validation failure
+/// (fail-open).
+///
+/// Detection signal: a `tool_result` block whose `is_error` is
+/// `true` AND whose `content` contains the literal substring
+/// `"is a shared configuration file"` — uniquely emitted by
+/// `crate::hooks::validate_worktree_paths::validate_shared_config`.
+/// The substring's presence is locked by a presence-contract test
+/// in `tests/hooks/validate_worktree_paths.rs`.
+///
+/// Companion to `validate_ask_user::validate`: when validate would
+/// have blocked the AskUserQuestion under autonomous-phase
+/// discipline, this helper's `true` return suppresses the block so
+/// the model can run the AskUserQuestion that
+/// `validate_worktree_paths`' BLOCKED message itself instructs the
+/// model to call. Without the carve-out, the model would deadlock
+/// — `validate-worktree-paths` says "use AskUserQuestion to
+/// confirm with the user" and `validate-ask-user` simultaneously
+/// blocks AskUserQuestion.
+///
+/// Walks lines backward from the file tail (read via `read_capped`
+/// with `SHARED_CONFIG_BLOCK_BYTE_CAP`). For each user-role turn:
+/// string content is the boundary (return `false`); array content
+/// is scanned for matching tool_result blocks. Older user turns
+/// are invisible — only the window since the most recent real user
+/// turn matters.
+///
+/// `transcript_path` is validated through
+/// `crate::window_snapshot::is_safe_transcript_path` per
+/// `.claude/rules/external-input-path-construction.md` (rejects
+/// empty, NUL-byte, relative, ParentDir-component, and
+/// prefix-escaping paths). `home` is passed in for the same
+/// testability reason as the sibling helpers.
+pub fn recent_edit_blocked_on_shared_config(transcript_path: &Path, home: &Path) -> bool {
+    if !is_safe_transcript_path(transcript_path, home) {
+        return false;
+    }
+    let lines = match read_capped(transcript_path, SHARED_CONFIG_BLOCK_BYTE_CAP) {
+        Some(s) => s,
+        None => return false,
+    };
+    for line in lines.lines().rev() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let turn: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let turn_type =
+            normalize_gate_input(turn.get("type").and_then(|v| v.as_str()).unwrap_or(""));
+        if turn_type != "user" {
+            continue;
+        }
+        // User turn reached. Real user turns (string content) are
+        // the boundary — older content is invisible. Tool-result-
+        // wrapped user turns (array content) are where the
+        // shared-config block lands.
+        let content = match turn.get("message").and_then(|m| m.get("content")) {
+            Some(c) => c,
+            None => return false,
+        };
+        if content.as_str().is_some() {
+            return false;
+        }
+        let blocks = match content.as_array() {
+            Some(arr) => arr,
+            None => return false,
+        };
+        for block in blocks {
+            if block.get("type").and_then(|v| v.as_str()) != Some("tool_result") {
+                continue;
+            }
+            if !block
+                .get("is_error")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            let block_content = match block.get("content") {
+                Some(c) => c,
+                None => continue,
+            };
+            // tool_result.content is either a plain string or an
+            // array of content blocks (each typically a `text`
+            // block). Concatenate text fields for the array shape
+            // so a substring match catches both wire formats.
+            let text = if let Some(s) = block_content.as_str() {
+                s.to_string()
+            } else if let Some(items) = block_content.as_array() {
+                let mut joined = String::new();
+                for item in items {
+                    if let Some(t) = item.get("text").and_then(|v| v.as_str()) {
+                        if !joined.is_empty() {
+                            joined.push(' ');
+                        }
+                        joined.push_str(t);
+                    }
+                }
+                joined
+            } else {
+                continue;
+            };
+            if text.contains("is a shared configuration file") {
+                return true;
+            }
+        }
+        // The user turn was tool-result-wrapped but no block in it
+        // matched. Keep walking backward — earlier turns within the
+        // tail-bounded window may carry the matching block.
+    }
+    false
 }
 
 /// Walk an assistant turn's `message.content` array and return
