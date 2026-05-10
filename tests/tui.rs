@@ -439,13 +439,20 @@ fn test_render_detail_panel_with_issues() {
 }
 
 #[test]
-fn test_render_footer_keybindings() {
+fn test_render_footer_collapsed_to_help_pointer() {
     let mut app = make_app();
     app.flows = vec![make_flow("Test", "Code", 3)];
-    // Footer is very wide — use 160 cols to fit all keybindings
     let output = render_to_string(&app, 160, 40);
-    assert!(output.contains("[q] Quit"));
-    assert!(output.contains("[p] PR"));
+    assert!(
+        output.contains("?=help"),
+        "footer should point at the help overlay; got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Ctrl-C/q=quit"),
+        "footer should still mention how to quit; got:\n{}",
+        output
+    );
 }
 
 #[test]
@@ -545,7 +552,7 @@ fn test_render_log_view_empty() {
     app.view = View::Log;
     let output = render_to_string(&app, 80, 40);
     assert!(output.contains("No log entries."));
-    assert!(output.contains("[Esc] Back"));
+    assert!(output.contains("?=help"));
 }
 
 #[test]
@@ -583,6 +590,80 @@ fn test_render_tasks_view_no_plan() {
     app.view = View::Tasks;
     let output = render_to_string(&app, 80, 40);
     assert!(output.contains("No plan file."));
+}
+
+// --- help overlay (?) ---
+
+#[test]
+fn test_input_question_mark_enters_help_from_list() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    assert_eq!(app.view, View::List);
+    app.handle_key(key(KeyCode::Char('?')));
+    assert_eq!(app.view, View::Help);
+    assert_eq!(app.previous_view, Some(View::List));
+}
+
+#[test]
+fn test_input_question_mark_enters_help_from_log() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.view = View::Log;
+    app.handle_key(key(KeyCode::Char('?')));
+    assert_eq!(app.view, View::Help);
+    assert_eq!(app.previous_view, Some(View::Log));
+}
+
+#[test]
+fn test_input_any_key_in_help_restores_previous_view() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.view = View::Issues;
+    app.handle_key(key(KeyCode::Char('?')));
+    assert_eq!(app.view, View::Help);
+    app.handle_key(key(KeyCode::Char('x')));
+    assert_eq!(app.view, View::Issues);
+    assert_eq!(app.previous_view, None);
+}
+
+#[test]
+fn test_input_help_with_no_previous_view_falls_back_to_list() {
+    // Defensive: if `view == Help` but `previous_view` is None
+    // (manual fixture state), restoring should default to List.
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.view = View::Help;
+    app.previous_view = None;
+    app.handle_key(key(KeyCode::Char('x')));
+    assert_eq!(app.view, View::List);
+}
+
+#[test]
+fn test_render_help_view_breaks_when_viewport_overflows() {
+    // Small height — help has ~25 rows of content; with height 8 the
+    // break path inside the row loop must fire after the first few
+    // lines so the loop doesn't draw past the footer row.
+    let mut app = make_app();
+    app.view = View::Help;
+    let _ = render_to_string(&app, 80, 8);
+}
+
+#[test]
+fn test_render_help_view_lists_every_documented_binding() {
+    let mut app = make_app();
+    app.view = View::Help;
+    let output = render_to_string(&app, 100, 40);
+    // Sample of bindings the help view must mention.
+    for binding in &[
+        "Enter", "PR", "issues", "tasks", "log", "abort", "refresh", "filter", "?", "Ctrl-C/q",
+    ] {
+        assert!(
+            output.contains(binding),
+            "help view missing `{}` binding:\n{}",
+            binding,
+            output
+        );
+    }
 }
 
 // --- start_lock_holder banner ---

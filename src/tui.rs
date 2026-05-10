@@ -187,6 +187,7 @@ pub enum View {
     Log,
     Issues,
     Tasks,
+    Help,
 }
 
 /// Platform-bound external dependencies injected into `TuiApp`.
@@ -289,6 +290,9 @@ pub struct TuiApp {
     /// `🔒 start lock: <holder>` banner so concurrent engineers can
     /// see start-gate contention at a glance.
     pub start_lock_holder: Option<String>,
+    /// View the user was on before opening the help overlay (`?`),
+    /// so any subsequent key can restore them to where they were.
+    pub previous_view: Option<View>,
 }
 
 impl TuiApp {
@@ -331,6 +335,7 @@ impl TuiApp {
             filter_input_active: false,
             last_refresh: Instant::now(),
             start_lock_holder: None,
+            previous_view: None,
         }
     }
 
@@ -412,6 +417,7 @@ impl TuiApp {
                 View::Log => self.render_log_view(frame, area),
                 View::Issues => self.render_issues_view(frame, area),
                 View::Tasks => self.render_tasks_view(frame, area),
+                View::Help => self.render_help_view(frame, area),
             }
         }
     }
@@ -425,6 +431,23 @@ impl TuiApp {
 
         if self.confirming_abort {
             self.handle_abort_confirm(key);
+            return;
+        }
+
+        // Help overlay: `?` toggles in from any view, any subsequent
+        // key restores the prior view. Q and Ctrl-C still quit
+        // because they are handled above this branch.
+        if self.view == View::Help {
+            if let Some(prev) = self.previous_view.take() {
+                self.view = prev;
+            } else {
+                self.view = View::List;
+            }
+            return;
+        }
+        if matches!(key.code, KeyCode::Char('?')) {
+            self.previous_view = Some(self.view);
+            self.view = View::Help;
             return;
         }
 
@@ -1186,7 +1209,7 @@ impl TuiApp {
     }
 
     fn render_list_footer(&self, frame: &mut Frame, area: Rect) {
-        let footer_text = " [\u{2190}\u{2192}] Tab  [\u{2191}\u{2193}] Navigate  [Enter] Worktree  [p] PR  [i] Issues  [I] Issue  [t] Tasks  [l] Log  [a] Abort  [r] Refresh  [q] Quit  Ctrl-C/q quit";
+        let footer_text = " ?=help  Ctrl-C/q=quit";
         let footer = Paragraph::new(Line::from(Span::styled(
             footer_text,
             Style::default().add_modifier(Modifier::DIM),
@@ -1204,7 +1227,7 @@ impl TuiApp {
         if self.orch_data.is_none() {
             let msg = Paragraph::new(Line::from("  No orchestration running."));
             frame.render_widget(msg, Rect::new(area.x, area.y + 5, area.width, 1));
-            let footer_text = " [\u{2190}\u{2192}] Tab  [r] Refresh  [q] Quit  Ctrl-C/q quit";
+            let footer_text = " ?=help  Ctrl-C/q=quit";
             let footer = Paragraph::new(Line::from(Span::styled(
                 footer_text,
                 Style::default().add_modifier(Modifier::DIM),
@@ -1312,8 +1335,7 @@ impl TuiApp {
         }
 
         // Footer
-        let footer_text =
-            " [\u{2190}\u{2192}] Tab  [\u{2191}\u{2193}] Navigate  [i] Issue  [r] Refresh  [q] Quit  Ctrl-C/q quit";
+        let footer_text = " ?=help  Ctrl-C/q=quit";
         let footer = Paragraph::new(Line::from(Span::styled(
             footer_text,
             Style::default().add_modifier(Modifier::DIM),
@@ -1380,7 +1402,7 @@ impl TuiApp {
         }
 
         // Footer
-        let footer_text = " [Esc] Back  [q] Quit  Ctrl-C/q quit";
+        let footer_text = " ?=help  Ctrl-C/q=quit";
         let footer = Paragraph::new(Line::from(Span::styled(
             footer_text,
             Style::default().add_modifier(Modifier::DIM),
@@ -1457,8 +1479,87 @@ impl TuiApp {
         }
 
         // Footer
-        let footer_text =
-            " [Esc] Back  [Enter] Open  [\u{2191}\u{2193}] Navigate  [q] Quit  Ctrl-C/q quit";
+        let footer_text = " ?=help  Ctrl-C/q=quit";
+        let footer = Paragraph::new(Line::from(Span::styled(
+            footer_text,
+            Style::default().add_modifier(Modifier::DIM),
+        )));
+        let y = area.y + area.height.saturating_sub(1);
+        frame.render_widget(footer, Rect::new(area.x, y, area.width, 1));
+    }
+
+    fn render_help_view(&self, frame: &mut Frame, area: Rect) {
+        let max_x = area.width as usize;
+        let border: String = "\u{2500}".repeat(max_x);
+        let border_line = Paragraph::new(Line::from(Span::styled(
+            &border,
+            Style::default().add_modifier(Modifier::DIM),
+        )));
+        frame.render_widget(border_line, Rect::new(area.x, area.y, area.width, 1));
+        let header = Paragraph::new(Line::from(Span::styled(
+            " FLOW \u{2014} Help ",
+            Style::default().add_modifier(Modifier::BOLD),
+        )));
+        frame.render_widget(
+            header,
+            Rect::new(area.x + 2, area.y, area.width.saturating_sub(2), 1),
+        );
+
+        // Help body — every keybinding the TUI accepts. Grouped by
+        // view so a user pressing `?` from a view can find what
+        // applies. The list-pane / orchestration / detail view
+        // bindings live in `handle_list_input`, `handle_orch_input`,
+        // and the top-level `handle_key` match arms.
+        let lines: &[(&str, &str)] = &[
+            ("List view", ""),
+            ("  \u{2191}/\u{2193}", "navigate flows"),
+            ("  Enter", "open existing iTerm session"),
+            ("  o", "open new iTerm tab in worktree"),
+            ("  p", "open PR in browser"),
+            ("  i", "issues view"),
+            ("  I", "open flow issue in browser"),
+            ("  t", "tasks view"),
+            ("  l", "log view"),
+            ("  a", "abort flow"),
+            ("  r", "refresh data"),
+            ("  /", "filter by branch substring"),
+            ("", ""),
+            ("Filter input", ""),
+            ("  <chars>", "append to query"),
+            ("  Backspace", "pop char"),
+            ("  Enter", "commit query"),
+            ("  Esc", "cancel and clear"),
+            ("", ""),
+            ("Tab navigation", ""),
+            ("  \u{2190}/\u{2192}", "switch tab"),
+            ("", ""),
+            ("Other views (Log/Issues/Tasks)", ""),
+            ("  Esc", "back to list"),
+            ("  Enter", "open issue (Issues view)"),
+            ("", ""),
+            ("Global", ""),
+            ("  ?", "toggle this help (any key restores)"),
+            ("  Ctrl-C/q", "quit"),
+        ];
+
+        let max_y = area.height as usize;
+        for (i, (key, desc)) in lines.iter().enumerate() {
+            let row = 2 + i;
+            if row >= max_y.saturating_sub(1) {
+                break;
+            }
+            let line = if desc.is_empty() {
+                Paragraph::new(Line::from(Span::styled(
+                    format!("  {}", key),
+                    Style::default().add_modifier(Modifier::BOLD),
+                )))
+            } else {
+                Paragraph::new(Line::from(format!("  {:<16}  {}", key, desc)))
+            };
+            frame.render_widget(line, Rect::new(area.x, area.y + row as u16, area.width, 1));
+        }
+
+        let footer_text = " ?=help  Ctrl-C/q=quit";
         let footer = Paragraph::new(Line::from(Span::styled(
             footer_text,
             Style::default().add_modifier(Modifier::DIM),
@@ -1515,7 +1616,7 @@ impl TuiApp {
         }
 
         // Footer
-        let footer_text = " [Esc] Back  [q] Quit  Ctrl-C/q quit";
+        let footer_text = " ?=help  Ctrl-C/q=quit";
         let footer = Paragraph::new(Line::from(Span::styled(
             footer_text,
             Style::default().add_modifier(Modifier::DIM),
