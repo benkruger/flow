@@ -74,13 +74,26 @@ insufficient:
 - **`AskUserQuestion` during an autonomous in-progress phase**
   — `validate-ask-user` rejects with exit 2 when
   `phases.<current_phase>.status == "in_progress"` AND
-  `skills.<current_phase>.continue == "auto"`. Carve-out: when
-  the most recent assistant Skill tool_use call (since the most
-  recent user turn) targets a skill in
-  `crate::hooks::transcript_walker::USER_ONLY_SKILLS`, the
-  block is suppressed so user-only skills' confirmation prompts
-  fire mid-autonomous. See `.claude/rules/user-only-skills.md`
-  Layer 2.
+  `skills.<current_phase>.continue == "auto"`. Two carve-outs
+  suppress the block:
+    - **User-only-skill carve-out**: when the most recent
+      assistant Skill tool_use call (since the most recent
+      user turn) targets a skill in
+      `crate::hooks::transcript_walker::USER_ONLY_SKILLS`, the
+      block is suppressed so user-only skills' confirmation
+      prompts fire mid-autonomous. See
+      `.claude/rules/user-only-skills.md` Layer 2.
+    - **Shared-config carve-out**: when the most recent
+      user-role turn carries a `validate_worktree_paths`
+      shared-config edit-block tool_result (a `tool_result`
+      with `is_error: true` whose content contains the
+      literal substring `"is a shared configuration file"`),
+      the block is suppressed so the system-initiated
+      AskUserQuestion the BLOCKED message demanded fires
+      instead of deadlocking. The user-only carve-out is
+      checked first. See
+      `.claude/rules/autonomous-phase-discipline.md`
+      "Shared-Config Carve-Out".
 - **Voluntary turn-end during autonomous in-progress phases** —
   `stop_continue::check_autonomous_in_progress` refuses the Stop
   event with `{"decision":"block"}` and an autonomous-mode reason

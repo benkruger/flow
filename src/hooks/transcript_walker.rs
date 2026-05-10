@@ -1,5 +1,5 @@
 //! Shared backward walker over the persisted Claude Code transcript
-//! JSONL. Two consumers share this module:
+//! JSONL. Three consumers share this module:
 //!
 //! 1. `src/hooks/validate_skill.rs` — Layer 1 of the user-only skill
 //!    enforcement chain. Calls
@@ -7,11 +7,20 @@
 //!    to decide whether the most recent user turn typed the matching
 //!    `<command-name>/<skill></command-name>` slash command. Without
 //!    a match, the model invocation of a user-only skill is blocked.
-//! 2. `src/hooks/validate_ask_user.rs` — Layer 2 carve-out. Calls
+//! 2. `src/hooks/validate_ask_user.rs` — Layer 2 user-only-skill
+//!    carve-out. Calls
 //!    `most_recent_skill_in_user_only_set(transcript_path, home)` to
 //!    allow `AskUserQuestion` confirmation prompts during in-progress
 //!    autonomous phases when the most recent assistant turn fires a
 //!    Skill tool_use targeting a user-only skill.
+//! 3. `src/hooks/validate_ask_user.rs` — shared-config carve-out.
+//!    Calls `recent_edit_blocked_on_shared_config(transcript_path, home)`
+//!    to allow `AskUserQuestion` confirmation prompts during
+//!    in-progress autonomous phases when the most recent user-role
+//!    turn carries a `validate_worktree_paths` shared-config edit
+//!    block. The shared-config block's BLOCKED message itself
+//!    instructs the model to call `AskUserQuestion` to confirm — the
+//!    carve-out lets the prompt fire instead of deadlocking.
 //!
 //! Both helpers are read-only over a JSONL transcript file. They
 //! never mutate state, never spawn subprocesses, and fail-open
@@ -31,13 +40,16 @@
 //!
 //! ## Tail-bounded read
 //!
-//! `read_capped` seeks to the LAST `TRANSCRIPT_BYTE_CAP` bytes of
-//! the file and reads forward to EOF. The walker iterates the
-//! resulting buffer in reverse line order, so the file's tail (the
-//! most recent turns) is always visible regardless of total file
-//! size. Reading from the head would silently omit the most recent
-//! turns on transcripts larger than the cap, defeating the entire
-//! enforcement chain on long autonomous flows.
+//! `read_capped` seeks to the LAST `cap` bytes of the file and reads
+//! forward to EOF, with the consumed read hard-bounded at `cap` via
+//! `file.take(cap)`. The walker iterates the resulting buffer in
+//! reverse line order, so the file's tail (the most recent turns) is
+//! always visible regardless of total file size. The two callers
+//! choose different caps tuned to their recency needs:
+//! `TRANSCRIPT_BYTE_CAP` (50 MB) for user-only-skill detection
+//! across long autonomous flows, and `SHARED_CONFIG_BLOCK_BYTE_CAP`
+//! (4 MB) for shared-config carve-out detection where only the most
+//! recent user-role turn matters.
 //!
 //! ## Gate normalization
 //!
@@ -295,24 +307,35 @@ fn read_capped(path: &Path, cap: u64) -> Option<String> {
     let start = file_len.saturating_sub(cap);
     file.seek(SeekFrom::Start(start))
         .expect("seek to non-negative absolute offset succeeds on regular file (TOCTOU-only)");
-    let mut reader = BufReader::new(file);
+    // Wrap the reader in `take(cap)` so the total bytes consumed
+    // by `read_to_string` are hard-bounded at `cap` even when the
+    // file grows after the `metadata()` call (concurrent writers).
+    // This matches the canonical byte-cap pattern documented in
+    // `.claude/rules/external-input-path-construction.md`.
+    let mut reader = BufReader::new(file.take(cap));
     let mut buf = String::new();
     reader.read_to_string(&mut buf).ok()?;
     Some(buf)
 }
 
-/// Returns `true` when the persisted transcript shows, since the
-/// most recent real user turn, a tool_result block whose paired
-/// tool call was blocked by `validate_worktree_paths`' shared-config
-/// gate. Returns `false` on any I/O, parse, or validation failure
-/// (fail-open).
+/// Returns `true` when the most recent user-role turn in the
+/// persisted transcript carries a `validate_worktree_paths` shared-
+/// config edit-block tool_result. Returns `false` on any I/O, parse,
+/// or validation failure (fail-open).
 ///
 /// Detection signal: a `tool_result` block whose `is_error` is
-/// `true` AND whose `content` contains the literal substring
-/// `"is a shared configuration file"` — uniquely emitted by
+/// truthy AND whose `content` contains the literal substring
+/// `"is a shared configuration file that affects every engineer"`
+/// — uniquely emitted by
 /// `crate::hooks::validate_worktree_paths::validate_shared_config`.
-/// The substring's presence is locked by a presence-contract test
-/// in `tests/hooks/validate_worktree_paths.rs`.
+/// The phrase is intentionally long: the shorter "is a shared
+/// configuration file" prefix could appear in unrelated error
+/// messages (a permission-denied error, a generic "this file is
+/// shared" warning), but the full phrase including "that affects
+/// every engineer" matches only the BLOCKED message produced by
+/// validate_worktree_paths. The substring's presence is locked by a
+/// presence-contract test in
+/// `tests/hooks/validate_worktree_paths.rs`.
 ///
 /// Companion to `validate_ask_user::validate`: when validate would
 /// have blocked the AskUserQuestion under autonomous-phase
@@ -325,17 +348,21 @@ fn read_capped(path: &Path, cap: u64) -> Option<String> {
 /// blocks AskUserQuestion.
 ///
 /// Walks lines backward from the file tail (read via `read_capped`
-/// with `SHARED_CONFIG_BLOCK_BYTE_CAP`). For each user-role turn:
-/// string content is the boundary (return `false`); array content
-/// is scanned for matching tool_result blocks. Older user turns
-/// are invisible — only the window since the most recent real user
-/// turn matters.
+/// with `SHARED_CONFIG_BLOCK_BYTE_CAP`) and stops at the most recent
+/// user-role turn — examining ONLY that turn's content. The carve-
+/// out fires iff the latest interaction the model received from the
+/// user-role channel was the shared-config block. If any other
+/// tool_result intervenes before the AskUserQuestion (a different
+/// tool's success or failure), the most recent user turn is no
+/// longer the shared-config block and the carve-out does not fire.
+/// This scoping keeps stale shared-config blocks from earlier in
+/// the session from authorizing unrelated AskUserQuestions later.
 ///
 /// `transcript_path` is validated through
 /// `crate::window_snapshot::is_safe_transcript_path` per
 /// `.claude/rules/external-input-path-construction.md` (rejects
-/// empty, NUL-byte, relative, ParentDir-component, and
-/// prefix-escaping paths). `home` is passed in for the same
+/// empty, NUL-byte, relative, ParentDir-component, prefix-escaping,
+/// and symlink-escape paths). `home` is passed in for the same
 /// testability reason as the sibling helpers.
 pub fn recent_edit_blocked_on_shared_config(transcript_path: &Path, home: &Path) -> bool {
     if !is_safe_transcript_path(transcript_path, home) {
@@ -359,65 +386,92 @@ pub fn recent_edit_blocked_on_shared_config(transcript_path: &Path, home: &Path)
         if turn_type != "user" {
             continue;
         }
-        // User turn reached. Real user turns (string content) are
-        // the boundary — older content is invisible. Tool-result-
-        // wrapped user turns (array content) are where the
-        // shared-config block lands.
-        let content = match turn.get("message").and_then(|m| m.get("content")) {
-            Some(c) => c,
-            None => return false,
-        };
-        if content.as_str().is_some() {
-            return false;
-        }
-        let blocks = match content.as_array() {
-            Some(arr) => arr,
-            None => return false,
-        };
-        for block in blocks {
-            if block.get("type").and_then(|v| v.as_str()) != Some("tool_result") {
-                continue;
-            }
-            if !block
-                .get("is_error")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-            {
-                continue;
-            }
-            let block_content = match block.get("content") {
-                Some(c) => c,
-                None => continue,
-            };
-            // tool_result.content is either a plain string or an
-            // array of content blocks (each typically a `text`
-            // block). Concatenate text fields for the array shape
-            // so a substring match catches both wire formats.
-            let text = if let Some(s) = block_content.as_str() {
-                s.to_string()
-            } else if let Some(items) = block_content.as_array() {
-                let mut joined = String::new();
-                for item in items {
-                    if let Some(t) = item.get("text").and_then(|v| v.as_str()) {
-                        if !joined.is_empty() {
-                            joined.push(' ');
-                        }
-                        joined.push_str(t);
-                    }
-                }
-                joined
-            } else {
-                continue;
-            };
-            if text.contains("is a shared configuration file") {
-                return true;
-            }
-        }
-        // The user turn was tool-result-wrapped but no block in it
-        // matched. Keep walking backward — earlier turns within the
-        // tail-bounded window may carry the matching block.
+        // Most recent user-role turn reached. Examine its content
+        // and RETURN — do not continue walking backward to older
+        // turns. Scoping the carve-out to the immediately preceding
+        // user-role event keeps stale shared-config blocks from
+        // authorizing unrelated AskUserQuestions later in the
+        // session.
+        return user_turn_carries_shared_config_block(&turn);
     }
     false
+}
+
+/// Returns `true` when the user-role turn carries a tool_result
+/// block whose `is_error` is truthy AND whose `content` contains
+/// the shared-config substring. Returns `false` for string-content
+/// user turns (the user typed a message), missing or non-array
+/// content, and array content where no block matches.
+fn user_turn_carries_shared_config_block(turn: &Value) -> bool {
+    let content = match turn.get("message").and_then(|m| m.get("content")) {
+        Some(c) => c,
+        None => return false,
+    };
+    // String content is a real user-typed message — not a
+    // tool_result wrapper. The carve-out only fires when the
+    // most recent user-role event is a tool_result-wrapped turn
+    // carrying the shared-config block.
+    if content.as_str().is_some() {
+        return false;
+    }
+    let blocks = match content.as_array() {
+        Some(arr) => arr,
+        None => return false,
+    };
+    for block in blocks {
+        if block.get("type").and_then(|v| v.as_str()) != Some("tool_result") {
+            continue;
+        }
+        if !is_truthy(block.get("is_error")) {
+            continue;
+        }
+        let block_content = match block.get("content") {
+            Some(c) => c,
+            None => continue,
+        };
+        // tool_result.content is either a plain string or an
+        // array of content blocks (each typically a `text`
+        // block). Concatenate text fields for the array shape
+        // so a substring match catches both wire formats.
+        let text = if let Some(s) = block_content.as_str() {
+            s.to_string()
+        } else if let Some(items) = block_content.as_array() {
+            let mut joined = String::new();
+            for item in items {
+                if let Some(t) = item.get("text").and_then(|v| v.as_str()) {
+                    if !joined.is_empty() {
+                        joined.push(' ');
+                    }
+                    joined.push_str(t);
+                }
+            }
+            joined
+        } else {
+            continue;
+        };
+        if text.contains("is a shared configuration file that affects every engineer") {
+            return true;
+        }
+    }
+    false
+}
+
+/// Defensive truthiness check for security-enforcement hook reads
+/// of boolean fields. Per `.claude/rules/rust-patterns.md` "Hook
+/// Input Boolean Field Tolerance": accept `true`, the strings
+/// `"true"` / `"1"` (case-insensitive), and any non-zero number.
+/// Everything else (including `null`, `false`, empty string,
+/// non-truthy strings, and `0`) is `false`.
+fn is_truthy(v: Option<&Value>) -> bool {
+    match v {
+        Some(Value::Bool(b)) => *b,
+        Some(Value::String(s)) => {
+            let norm = s.trim().to_ascii_lowercase();
+            norm == "true" || norm == "1"
+        }
+        Some(Value::Number(n)) => n.as_f64().is_some_and(|f| f != 0.0),
+        _ => false,
+    }
 }
 
 /// Walk an assistant turn's `message.content` array and return

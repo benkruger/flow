@@ -997,7 +997,7 @@ fn both_carve_outs_can_apply_user_only_wins_first() {
     // there's also a tool_result-wrapped user turn carrying the
     // shared-config substring, so it returns true too.
     let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}}\n\
-{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t1\",\"content\":\"BLOCKED: Cargo.toml is a shared configuration file.\",\"is_error\":true}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t1\",\"content\":\"BLOCKED: Cargo.toml is a shared configuration file that affects every engineer in the repository.\",\"is_error\":true}]}}\n\
 {\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-abort\"}}]}}\n";
     let transcript = carve_out_transcript_fixture(&root, jsonl);
     let payload = json!({"transcript_path": transcript.to_string_lossy()});

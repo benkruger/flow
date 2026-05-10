@@ -20,10 +20,11 @@
 //!    user-only skills' destructive-operation gates do not deadlock
 //!    when invoked from inside an in-progress autonomous phase.
 //! 3. **Shared-config carve-out** — when `validate` would have
-//!    blocked the prompt but the persisted transcript shows a recent
-//!    `validate_worktree_paths` shared-config edit block (a
-//!    tool_result with `is_error: true` containing the literal
-//!    "is a shared configuration file" substring). The
+//!    blocked the prompt but the most recent user-role turn in the
+//!    persisted transcript carries a `validate_worktree_paths`
+//!    shared-config edit block (a tool_result with `is_error: true`
+//!    containing the literal substring "is a shared configuration
+//!    file that affects every engineer"). The
 //!    `validate_worktree_paths` BLOCKED message itself instructs the
 //!    model to call AskUserQuestion to confirm — this carve-out lets
 //!    that prompt fire instead of deadlocking. Backed by
@@ -253,6 +254,17 @@ fn run_impl_main(
         // fire — instead of deadlocking against the autonomous
         // block — completes the system-initiated confirmation flow
         // that the prior hook explicitly demanded.
+        //
+        // Ordering: the user-only-skill carve-out is checked first.
+        // If both conditions apply (the user typed a user-only
+        // slash command AND a shared-config block is in the
+        // transcript), the user-only branch fires first. The
+        // ordering is locked by the regression test
+        // `both_carve_outs_can_apply_user_only_wins_first` — both
+        // branches produce the same `AllowWithMark` outcome so the
+        // order is observationally equivalent today, but a future
+        // refactor that diverges the branches must preserve the
+        // ordering.
         let allow_shared_config = transcript_path
             .as_deref()
             .map(|p| recent_edit_blocked_on_shared_config(p, home))

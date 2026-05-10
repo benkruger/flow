@@ -390,6 +390,7 @@ fn walker_returns_false_when_file_contains_non_utf8_bytes() {
         home
     ));
     assert!(!most_recent_skill_in_user_only_set(&path, home));
+    assert!(!recent_edit_blocked_on_shared_config(&path, home));
 }
 
 #[test]
@@ -569,15 +570,14 @@ fn normalize_gate_input_strips_nul_trims_and_lowercases() {
 
 // --- recent_edit_blocked_on_shared_config ---
 //
-// Companion to validate-ask-user's shared-config carve-out. Walks
-// backward from the file tail to find the most recent shared-config
-// BLOCKED tool_result before crossing a real user turn boundary.
-// Detection signal: the literal substring
-// "is a shared configuration file" inside a `tool_result` block
-// whose `is_error: true` field is set. The substring is uniquely
-// emitted by `validate_worktree_paths::validate_shared_config` (see
-// the presence-contract test in
-// tests/hooks/validate_worktree_paths.rs).
+// Companion to validate-ask-user's shared-config carve-out.
+// Examines the most recent user-role turn in the transcript for a
+// shared-config BLOCKED tool_result. Detection signal: the literal
+// substring "is a shared configuration file that affects every
+// engineer" inside a `tool_result` block whose `is_error: true`
+// field is set. The substring is uniquely emitted by
+// `validate_worktree_paths::validate_shared_config` (see the
+// presence-contract test in tests/hooks/validate_worktree_paths.rs).
 
 #[test]
 fn helper_returns_true_when_recent_edit_was_blocked() {
@@ -673,7 +673,7 @@ fn helper_returns_false_when_transcript_path_unsafe() {
     // ParentDir traversal that escapes home.
     std::fs::create_dir_all(home.join(".claude").join("projects").join("p")).unwrap();
     let evil = home.join("evil.jsonl");
-    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"BLOCKED: foo is a shared configuration file\",\"is_error\":true}]}}\n";
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"BLOCKED: foo is a shared configuration file that affects every engineer in the repository.\",\"is_error\":true}]}}\n";
     std::fs::write(&evil, jsonl).unwrap();
     let traversal = home
         .join(".claude")
@@ -722,7 +722,7 @@ fn helper_handles_byte_cap_truncation() {
     // block to verify recency-window semantics for tail-bounded
     // reads.
     let path_in_window = proj.join("in_window.jsonl");
-    let block = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"BLOCKED: foo is a shared configuration file\",\"is_error\":true}]}}\n";
+    let block = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"BLOCKED: foo is a shared configuration file that affects every engineer in the repository.\",\"is_error\":true}]}}\n";
     let mut content_in: Vec<u8> = Vec::new();
     let padding_size = 1024 * 8; // 8 KB of padding — well within cap
     content_in.extend(std::iter::repeat_n(b'\n', padding_size));
@@ -777,7 +777,7 @@ fn helper_skips_unparseable_jsonl_lines() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n\
-{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"BLOCKED: foo is a shared configuration file.\",\"is_error\":true}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"BLOCKED: foo is a shared configuration file that affects every engineer in the repository.\",\"is_error\":true}]}}\n\
 not valid json at all\n";
     let path = crate::common::transcript_fixture(home, "p", jsonl);
     assert!(recent_edit_blocked_on_shared_config(&path, home));
@@ -815,7 +815,7 @@ fn helper_continues_past_non_tool_result_block_in_user_array() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n\
-{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"prefix\"},{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"BLOCKED: foo is a shared configuration file.\",\"is_error\":true}]}}\n";
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"prefix\"},{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"BLOCKED: foo is a shared configuration file that affects every engineer in the repository.\",\"is_error\":true}]}}\n";
     let path = crate::common::transcript_fixture(home, "p", jsonl);
     assert!(recent_edit_blocked_on_shared_config(&path, home));
 }
@@ -841,7 +841,7 @@ fn helper_finds_block_when_tool_result_content_is_text_array() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n\
-{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":[{\"type\":\"text\",\"text\":\"BLOCKED: foo is a shared configuration file.\"},{\"type\":\"text\",\"text\":\"trailing context\"}],\"is_error\":true}]}}\n";
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":[{\"type\":\"text\",\"text\":\"BLOCKED: foo is a shared configuration file that affects every engineer in the repository.\"},{\"type\":\"text\",\"text\":\"trailing context\"}],\"is_error\":true}]}}\n";
     let path = crate::common::transcript_fixture(home, "p", jsonl);
     assert!(recent_edit_blocked_on_shared_config(&path, home));
 }
@@ -861,6 +861,107 @@ fn helper_skips_array_text_blocks_without_text_field() {
 {\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":[{\"type\":\"image\"},{\"type\":\"text\",\"text\":\"no relevant content here\"},{\"type\":\"text\",\"text\":\"still nothing\"}],\"is_error\":true}]}}\n";
     let path = crate::common::transcript_fixture(home, "p", jsonl);
     assert!(!recent_edit_blocked_on_shared_config(&path, home));
+}
+
+#[test]
+fn helper_accepts_is_error_string_true() {
+    // is_truthy accepts the string "true" (case-insensitive) per
+    // .claude/rules/rust-patterns.md "Hook Input Boolean Field
+    // Tolerance". Some Claude Code wire-format variants may
+    // serialize is_error as a string.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"BLOCKED: foo is a shared configuration file that affects every engineer in the repository.\",\"is_error\":\"TRUE\"}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(recent_edit_blocked_on_shared_config(&path, home));
+}
+
+#[test]
+fn helper_accepts_is_error_number_one() {
+    // is_truthy accepts non-zero numbers per the same rule —
+    // is_error: 1 (integer) is treated as truthy.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"BLOCKED: foo is a shared configuration file that affects every engineer in the repository.\",\"is_error\":1}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(recent_edit_blocked_on_shared_config(&path, home));
+}
+
+#[test]
+fn helper_rejects_is_error_number_zero() {
+    // is_truthy rejects zero numbers — matches the falsy semantics.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"BLOCKED: foo is a shared configuration file that affects every engineer in the repository.\",\"is_error\":0}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(!recent_edit_blocked_on_shared_config(&path, home));
+}
+
+#[test]
+fn helper_rejects_is_error_string_false() {
+    // is_truthy rejects strings other than "true" / "1".
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"BLOCKED: foo is a shared configuration file that affects every engineer in the repository.\",\"is_error\":\"false\"}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(!recent_edit_blocked_on_shared_config(&path, home));
+}
+
+#[test]
+fn helper_rejects_is_error_null() {
+    // is_truthy rejects null and other non-bool/string/number
+    // types — falls through to the wildcard arm.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"BLOCKED: foo is a shared configuration file that affects every engineer in the repository.\",\"is_error\":null}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(!recent_edit_blocked_on_shared_config(&path, home));
+}
+
+#[test]
+fn helper_returns_false_when_transcript_file_unreadable() {
+    // `is_safe_transcript_path` canonicalize succeeds on a chmod-000
+    // file (canonicalize stats components, not opens), but `File::open`
+    // inside `read_capped` returns Err(PermissionDenied). The helper
+    // falls open and returns false. Covers the File::open `.ok()?`
+    // branch.
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let proj = home.join(".claude").join("projects").join("p");
+    fs::create_dir_all(&proj).unwrap();
+    let path = proj.join("session.jsonl");
+    fs::write(&path, b"{\"type\":\"user\"}\n").unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+    struct PermGuard(std::path::PathBuf);
+    impl Drop for PermGuard {
+        fn drop(&mut self) {
+            let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o644));
+        }
+    }
+    let _g = PermGuard(path.clone());
+    assert!(!recent_edit_blocked_on_shared_config(&path, home));
+}
+
+#[test]
+fn helper_iterates_past_trailing_assistant_to_user_array_turn() {
+    // Walker reverse iteration: when the LAST line is an assistant
+    // turn (after the most recent user-array tool_result), the
+    // walker continues past it (turn_type != "user") and reaches
+    // the user-array turn carrying the shared-config block. Covers
+    // the assistant-skip branch in the walker loop.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"BLOCKED: foo is a shared configuration file that affects every engineer in the repository.\",\"is_error\":true}]}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Understood.\"}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(recent_edit_blocked_on_shared_config(&path, home));
 }
 
 #[test]
