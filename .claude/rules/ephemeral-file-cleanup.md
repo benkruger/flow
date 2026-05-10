@@ -20,15 +20,26 @@ one disposing phase. For the adversarial probe:
   `.claude/rules/adversarial-probe-lifecycle.md` — either deleted
   (default) or updated to assert the post-fix invariant.
 - **Phase 5 Complete disposes.** The cleanup orchestrator
-  (`src/cleanup.rs`) explicitly removes the probe before the
-  worktree directory itself is removed.
+  (`src/cleanup.rs::delete_adversarial_probe`) explicitly removes
+  the probe file from the worktree via `fs::remove_file` before
+  the worktree directory itself is removed.
 
-Worktree removal at Phase 5 (`git worktree remove --force`) ALSO
-disposes of the probe as a side effect of removing the worktree
-tree. The explicit cleanup step in front of worktree removal is
-defense-in-depth: it lands the disposal in the JSON `steps` output
-as an audit-trail entry rather than letting the disposal be a
-silent side-effect.
+The explicit cleanup step is the disposal — not defense-in-depth
+on top of `git worktree remove`. Worktree removal deletes the
+worktree's filesystem tree, but it does not affect git's tracked
+state on the integration branch. The only mechanism that ensures
+the probe leaves no on-disk trace before the worktree is unlinked
+is the explicit `fs::remove_file` call. The cleanup step's JSON
+`steps` output records "deleted" / "missing" / "skipped" /
+"failed" so the disposal is audit-trailed.
+
+The disposal mechanism is sound only when the path is **untracked**
+on the integration branch — a tracked stub or committed probe
+would survive worktree-side cleanup because git history on the
+integration branch is unaffected by working-tree deletions. See
+`.claude/rules/adversarial-probe-lifecycle.md` "Untracked-Path
+Invariant" for the structural test that enforces the untracked
+state.
 
 ## Cleanup Ordering
 
@@ -94,9 +105,11 @@ upstream (`bin/test` exited non-zero, worktree absent).
 When Code Review Step 4 fixes a finding the adversarial probe
 surfaced, the probe's assertions become stale. Per
 `.claude/rules/adversarial-probe-lifecycle.md` "How to Apply", the
-default reconciliation is **delete** — restore the probe to its
-integration-branch state (typically a doc-comment-only stub per
-`assets/bin-stubs/test.sh`) or remove the file entirely.
+default reconciliation is **delete** — remove the file from the
+worktree entirely (or empty its contents). The probe path must
+not be left in a tracked state on the integration branch (see
+`.claude/rules/adversarial-probe-lifecycle.md` "Untracked-Path
+Invariant").
 
 The exception is **update**: when the new behavior itself needs a
 regression guard AND the guard belongs in the probe rather than in

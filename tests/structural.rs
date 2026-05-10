@@ -946,3 +946,45 @@ fn test_checksum_version_invariant() {
         "CLAUDE.md must document the checksum -> version invariant"
     );
 }
+
+// --- Adversarial probe must not be tracked by git ---
+
+/// The Code Review adversarial probe at `tests/test_adversarial_flow.rs`
+/// is an ephemeral file: the adversarial agent writes it during Code
+/// Review, and `src/cleanup.rs::delete_adversarial_probe` removes it
+/// from the worktree at Phase 5 Complete. The path is excluded from
+/// staging via the `test_adversarial_flow.*` pattern in
+/// `src/prime_check.rs::EXCLUDE_ENTRIES`.
+///
+/// The exclude pattern only stops new untracked files from being
+/// staged — once the path becomes tracked, `git add -A` stages
+/// modifications to it and the worktree-side cleanup cannot remove
+/// the tracked state on the integration branch. This test asserts
+/// the path is absent from `git ls-files`, catching any commit that
+/// would resurrect a tracked stub or commit a probe.
+#[test]
+fn adversarial_probe_must_not_be_tracked() {
+    let root = common::repo_root();
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&root)
+        .args(["ls-files", "tests/test_adversarial_flow.rs"])
+        .output()
+        .expect("git ls-files must succeed");
+    assert!(
+        output.status.success(),
+        "git ls-files exited non-zero: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.trim().is_empty(),
+        "tests/test_adversarial_flow.rs must not be tracked by git. \
+         The file is the Code Review adversarial probe — it is \
+         written ephemerally during Code Review and disposed of by \
+         `src/cleanup.rs::delete_adversarial_probe` at Phase 5. \
+         A tracked stub or committed probe defeats the cleanup. \
+         Found in git ls-files: {}",
+        stdout.trim()
+    );
+}

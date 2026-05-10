@@ -2,11 +2,23 @@
 
 Code Review's adversarial agent writes test functions that prove a
 finding by failing against the current implementation. The probe
-lives in the worktree's test tree and is removed at Phase 5 Complete
-as a side effect of `git worktree remove`. When Code Review Step 4
-fixes a finding the probe surfaced, the probe's assertions become
-outdated and must be reconciled in the same Code Review pass — a
-probe asserting an outdated bug fails CI and blocks the commit.
+lives at the path declared by `bin/test --adversarial-path`. The
+path is **never tracked by git on the integration branch** — it is
+listed in `src/prime_check.rs::EXCLUDE_ENTRIES` so `git add -A`
+never stages it, and
+`tests/structural.rs::adversarial_probe_must_not_be_tracked`
+asserts the invariant against `git ls-files`. The probe is
+disposed of at Phase 5 Complete by
+`src/cleanup.rs::delete_adversarial_probe` via `fs::remove_file`,
+before `git worktree remove` runs.
+
+When Code Review Step 4 fixes a finding the probe surfaced, the
+probe's assertions become outdated and must be reconciled in the
+same Code Review pass — a probe asserting an outdated bug fails
+CI and blocks the commit. The same reconciliation applies when
+Step 3 triage dismisses the finding (out-of-scope, pre-existing,
+etc.); a dismissed finding still leaves a failing assertion behind
+and the same CI gate fires.
 
 ## The Rule
 
@@ -14,13 +26,16 @@ When Code Review Step 4 applies a fix that resolves a finding the
 adversarial probe surfaced, the probe's assertions are no longer
 valid (they assert the bug exists). Reconcile in Step 4 by one of:
 
-1. **Delete the probe entirely.** Restore the probe file to its
-   integration-branch state (typically a doc-comment-only stub per
-   `assets/bin-stubs/test.sh`). The findings the probe surfaced
-   are already recorded as state findings via `bin/flow
-   add-finding`, and the named regression guards live in
-   `tests/<path>/<name>.rs` per `.claude/rules/test-placement.md`,
-   not in the throwaway probe.
+1. **Delete the probe file entirely.** Remove the file from the
+   worktree (`fs::remove_file` from inside Rust during the
+   cleanup phase, or a worktree-internal removal during Code
+   Review Step 4 by overwriting the file with empty contents or
+   removing it). The findings the probe surfaced are already
+   recorded as state findings via `bin/flow add-finding`, and
+   the named regression guards live in `tests/<path>/<name>.rs`
+   per `.claude/rules/test-placement.md`, not in the throwaway
+   probe. The path must not be left in a tracked state — see
+   "Untracked-Path Invariant" below.
 2. **Update the probe's assertions.** Only when the new behavior
    itself needs a regression guard AND the guard belongs in the
    probe rather than in a properly named test file. This is rare;
@@ -30,29 +45,29 @@ The probe must not commit assertions that fail against the current
 implementation. The `bin/flow ci` gate at the end of Step 4 fails
 otherwise, blocking the commit.
 
-## When the Probe Is Tracked on the Integration Branch
+## Untracked-Path Invariant
 
-The adversarial probe path is owned by the project (declared via
-`bin/test --adversarial-path`). It typically lives at a stable path
-(`tests/test_adversarial_flow.rs` for cargo, `test/adversarial_flow_test.rb`
-for Rails, etc.) tracked on the integration branch as a
-doc-comment-only stub. The Code Review session writes assertions
-into the file in the worktree's copy. Restoring the file to the
-integration-branch content keeps `git status` clean when no probe
-assertions belong on the integration branch:
+The probe path is never tracked by git on the integration branch.
+The mechanism has two layers:
 
-```bash
-git restore --source=origin/<base_branch> <probe_path>
-```
+- `src/prime_check.rs::EXCLUDE_ENTRIES` lists
+  `test_adversarial_flow.*` (and language-equivalent patterns) in
+  `.git/info/exclude`, so `git add -A` does not stage the file
+  while the path is untracked.
+- `tests/structural.rs::adversarial_probe_must_not_be_tracked`
+  asserts `git ls-files tests/test_adversarial_flow.rs` is empty,
+  catching any commit that re-introduces a tracked stub or
+  commits a probe.
 
-## When the Probe Is Untracked
-
-If the probe path is in `.git/info/exclude` (per
-`src/prime_check.rs::EXCLUDE_ENTRIES`), the worktree's copy never
-becomes a tracked artifact. Worktree removal at Phase 5 Complete
-disposes of it. Step 4 still must not leave assertions that fail —
-delete the file's contents (or remove the file entirely) when the
-findings are recorded elsewhere.
+A tracked stub is forbidden. The exclude pattern only protects
+files that are already untracked; once the path is committed, the
+exclude pattern stops applying and every subsequent `git add -A`
+stages modifications. The cleanup step in
+`src/cleanup.rs::delete_adversarial_probe` removes the probe file
+from the worktree but does not touch git's tracked state — a
+tracked stub would survive cleanup and persist on the integration
+branch indefinitely. The structural test is the gate that catches
+that class of regression.
 
 ## How to Apply
 
