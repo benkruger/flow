@@ -1,6 +1,6 @@
 //! PreToolUse hook for AskUserQuestion — enforces autonomous-phase discipline.
 //!
-//! Four outcomes, evaluated in order:
+//! Five outcomes, evaluated in order:
 //!
 //! 1. **Block** (exit 2, stderr message) — when the current phase is
 //!    mid-execution (`phases.<current_phase>.status == "in_progress"`)
@@ -19,11 +19,23 @@
 //!    `flow:flow-prime`). Allows the confirmation prompt to fire so
 //!    user-only skills' destructive-operation gates do not deadlock
 //!    when invoked from inside an in-progress autonomous phase.
-//! 3. **Auto-answer** (exit 0, JSON on stdout) — when `_auto_continue`
+//! 3. **Shared-config carve-out** — when `validate` would have
+//!    blocked the prompt but the most recent user-role turn in the
+//!    persisted transcript carries a `validate_worktree_paths`
+//!    shared-config edit block (a tool_result with `is_error: true`
+//!    containing the literal substring "is a shared configuration
+//!    file that affects every engineer"). The
+//!    `validate_worktree_paths` BLOCKED message itself instructs the
+//!    model to call AskUserQuestion to confirm — this carve-out lets
+//!    that prompt fire instead of deadlocking. Backed by
+//!    `crate::hooks::transcript_walker::recent_edit_blocked_on_shared_config`.
+//!    See `.claude/rules/autonomous-phase-discipline.md`
+//!    "Shared-Config Carve-Out" subsection.
+//! 4. **Auto-answer** (exit 0, JSON on stdout) — when `_auto_continue`
 //!    is set and the block did not fire. Answers the AskUserQuestion
 //!    with the successor skill command so phase transitions advance
 //!    even if the skill's HARD-GATE was ignored.
-//! 4. **Allow** (exit 0, no stdout) — otherwise. The tool call passes
+//! 5. **Allow** (exit 0, no stdout) — otherwise. The tool call passes
 //!    through to Claude Code's normal permission system.
 
 use std::path::{Path, PathBuf};
@@ -33,7 +45,9 @@ use serde_json::{json, Value};
 use super::read_hook_input;
 use crate::flow_paths::FlowPaths;
 use crate::git::{current_branch, project_root};
-use crate::hooks::transcript_walker::most_recent_skill_in_user_only_set;
+use crate::hooks::transcript_walker::{
+    most_recent_skill_in_user_only_set, recent_edit_blocked_on_shared_config,
+};
 use crate::lock::mutate_state;
 use crate::utils::now;
 use crate::window_snapshot::home_dir_or_empty;
@@ -232,6 +246,30 @@ fn run_impl_main(
         // the user just typed the slash command and the resulting
         // confirmation prompt is part of that user-initiated flow.
         if user_only_skill_carve_out_applies(transcript_path.as_deref(), home) {
+            return HookAction::AllowWithMark(state_path);
+        }
+        // Carve-out: shared-config edits that
+        // `validate_worktree_paths` blocked instruct the model to
+        // call AskUserQuestion to confirm. Letting the prompt
+        // fire — instead of deadlocking against the autonomous
+        // block — completes the system-initiated confirmation flow
+        // that the prior hook explicitly demanded.
+        //
+        // Ordering: the user-only-skill carve-out is checked first.
+        // If both conditions apply (the user typed a user-only
+        // slash command AND a shared-config block is in the
+        // transcript), the user-only branch fires first. The
+        // ordering is locked by the regression test
+        // `both_carve_outs_can_apply_user_only_wins_first` — both
+        // branches produce the same `AllowWithMark` outcome so the
+        // order is observationally equivalent today, but a future
+        // refactor that diverges the branches must preserve the
+        // ordering.
+        let allow_shared_config = transcript_path
+            .as_deref()
+            .map(|p| recent_edit_blocked_on_shared_config(p, home))
+            .unwrap_or(false);
+        if allow_shared_config {
             return HookAction::AllowWithMark(state_path);
         }
         // `set_blocked` is intentionally not called — the hook

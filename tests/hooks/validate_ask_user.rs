@@ -790,3 +790,281 @@ fn validate_ask_user_block_persists_when_no_carve_out_during_in_progress_auto() 
     assert_eq!(output.status.code().unwrap_or(-1), 2);
     assert!(String::from_utf8_lossy(&output.stderr).contains("BLOCKED"));
 }
+
+// --- Shared-config carve-out wiring ---
+//
+// Verifies the second carve-out in `run_impl_main`: when the
+// transcript shows a recent shared-config edit block emitted by
+// `validate_worktree_paths::validate_shared_config`, the
+// AskUserQuestion that the BLOCKED message itself instructs the
+// model to call must fire even during in-progress autonomous
+// phases. Without the carve-out, the model deadlocks — one hook
+// says "ask the user" while another hook blocks AskUserQuestion.
+//
+// Tests that drive `validate(state_path)` directly (Tests 3 and 4)
+// verify pre-existing allow paths are preserved by the new wiring.
+// Tests that drive the integrated subprocess (Tests 1, 2, 5, 6, 7,
+// 8) verify the carve-out's wiring inside `run_impl_main`, since
+// the function is private and can only be exercised through the
+// real CLI.
+
+/// Build a minimal git repo + state file pair for subprocess tests.
+/// Returns the canonicalized root. The state file lands at
+/// `<root>/.flow-states/test/state.json` matching `--initial-branch=test`.
+fn shared_config_subprocess_fixture(state: &Value) -> (tempfile::TempDir, std::path::PathBuf) {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    Command::new("git")
+        .args(["init", "--initial-branch=test", "."])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.email", "x@y.z"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "X"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    write_state(&root, "test", state);
+    (tmp, root)
+}
+
+/// Spawn `bin/flow hook validate-ask-user` with the given stdin
+/// payload from the given `root` cwd, returning (exit_code, stdout,
+/// stderr). HOME is set to `root` so the transcript-path validator's
+/// `<home>/.claude/projects/` prefix check resolves to the same root
+/// the transcript fixture is written under.
+fn run_validate_ask_user(root: &Path, payload: &Value) -> (i32, String, String) {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["hook", "validate-ask-user"])
+        .current_dir(root)
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(payload.to_string().as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    (
+        output.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        String::from_utf8_lossy(&output.stderr).to_string(),
+    )
+}
+
+#[test]
+fn autonomous_block_still_fires_without_recent_shared_config_block() {
+    // Negative regression guard: when the transcript carries no
+    // shared-config block AND no user-only Skill call, the
+    // autonomous-phase block must still fire.
+    let state = json!({
+        "current_phase": "flow-code",
+        "branch": "test",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": {"continue": "auto"}},
+    });
+    let (_tmp, root) = shared_config_subprocess_fixture(&state);
+    // Transcript: an assistant turn that ran some other tool with
+    // a non-shared-config success. No carve-out conditions met.
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"do something\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"id\":\"t1\",\"input\":{\"command\":\"ls\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t1\",\"content\":\"file1\\nfile2\\n\",\"is_error\":false}]}}\n";
+    let transcript = carve_out_transcript_fixture(&root, jsonl);
+    let payload = json!({"transcript_path": transcript.to_string_lossy()});
+    let (code, _stdout, stderr) = run_validate_ask_user(&root, &payload);
+    assert_eq!(code, 2, "stderr: {}", stderr);
+    assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
+}
+
+#[test]
+fn shared_config_carve_out_allows_ask_during_autonomous() {
+    // Positive case: in_progress + auto + recent shared-config
+    // BLOCKED tool_result. The carve-out fires and the
+    // AskUserQuestion is allowed to proceed (exit 0).
+    let state = json!({
+        "current_phase": "flow-code",
+        "branch": "test",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": {"continue": "auto"}},
+    });
+    let (_tmp, root) = shared_config_subprocess_fixture(&state);
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"add a line\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Edit\",\"id\":\"t1\",\"input\":{\"file_path\":\"/p/requirements.txt\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t1\",\"content\":\"BLOCKED: requirements.txt is a shared configuration file that affects every engineer in the repository.\",\"is_error\":true}]}}\n";
+    let transcript = carve_out_transcript_fixture(&root, jsonl);
+    let payload = json!({"transcript_path": transcript.to_string_lossy()});
+    let (code, _stdout, stderr) = run_validate_ask_user(&root, &payload);
+    assert_eq!(code, 0, "stderr: {}", stderr);
+}
+
+#[test]
+fn carve_out_does_not_fire_outside_in_progress_phase() {
+    // Pre-existing behavior preserved: when the current phase is
+    // not in_progress (status = "complete" here, simulating the
+    // transition window between phase_complete and phase_enter),
+    // validate's block doesn't fire and AskUserQuestion is
+    // allowed regardless of any carve-out.
+    let dir = tempfile::tempdir().unwrap();
+    let state = json!({
+        "current_phase": "flow-code",
+        "branch": "test",
+        "phases": {"flow-code": {"status": "complete"}},
+        "skills": {"flow-code": {"continue": "auto"}},
+    });
+    let path = write_state(dir.path(), "test", &state);
+    let (allowed, _msg, _resp) = validate(Some(&path));
+    assert!(allowed);
+}
+
+#[test]
+fn carve_out_does_not_fire_in_manual_phase() {
+    // Pre-existing behavior preserved: when in_progress but
+    // continue is manual, the autonomous-phase block doesn't
+    // fire — manual phases don't restrict AskUserQuestion. The
+    // carve-out is irrelevant here.
+    let dir = tempfile::tempdir().unwrap();
+    let state = json!({
+        "current_phase": "flow-code",
+        "branch": "test",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": {"continue": "manual"}},
+    });
+    let path = write_state(dir.path(), "test", &state);
+    let (allowed, _msg, _resp) = validate(Some(&path));
+    assert!(allowed);
+}
+
+#[test]
+fn user_only_skill_carve_out_still_works_alongside() {
+    // The existing user-only Skill carve-out must continue to fire
+    // when the transcript shows a user-only Skill invocation but
+    // no shared-config block. Verifies the new wiring did not
+    // break the prior behavior.
+    let state = json!({
+        "current_phase": "flow-code",
+        "branch": "test",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": {"continue": "auto"}},
+    });
+    let (_tmp, root) = shared_config_subprocess_fixture(&state);
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-abort\"}}]}}\n";
+    let transcript = carve_out_transcript_fixture(&root, jsonl);
+    let payload = json!({"transcript_path": transcript.to_string_lossy()});
+    let (code, _stdout, stderr) = run_validate_ask_user(&root, &payload);
+    assert_eq!(code, 0, "stderr: {}", stderr);
+}
+
+#[test]
+fn both_carve_outs_can_apply_user_only_wins_first() {
+    // Regression guard for the carve-out ordering inside
+    // run_impl_main. When the transcript carries BOTH a recent
+    // user-only Skill invocation AND a shared-config tool_result
+    // block, both carve-outs return true. The integration must
+    // still allow (exit 0) — semantically the order doesn't matter
+    // since both produce the same outcome, but the test locks the
+    // path so a future refactor that swaps the order or breaks one
+    // of the branches still passes.
+    let state = json!({
+        "current_phase": "flow-code",
+        "branch": "test",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": {"continue": "auto"}},
+    });
+    let (_tmp, root) = shared_config_subprocess_fixture(&state);
+    // Transcript walking backward: most recent assistant turn fires
+    // a user-only Skill call; an earlier turn carries a
+    // shared-config BLOCKED tool_result. The user-only walker stops
+    // at the most recent assistant turn (finds the user-only
+    // Skill, returns true). The shared-config walker stops at the
+    // most recent real user turn before any matching block — but
+    // there's also a tool_result-wrapped user turn carrying the
+    // shared-config substring, so it returns true too.
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t1\",\"content\":\"BLOCKED: Cargo.toml is a shared configuration file that affects every engineer in the repository.\",\"is_error\":true}]}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-abort\"}}]}}\n";
+    let transcript = carve_out_transcript_fixture(&root, jsonl);
+    let payload = json!({"transcript_path": transcript.to_string_lossy()});
+    let (code, _stdout, stderr) = run_validate_ask_user(&root, &payload);
+    assert_eq!(code, 0, "stderr: {}", stderr);
+}
+
+#[test]
+fn carve_out_respects_unsafe_transcript_path() {
+    // When transcript_path fails is_safe_transcript_path validation
+    // (relative path here), neither carve-out fires. The
+    // autonomous-phase block stays in effect and the hook exits 2.
+    let state = json!({
+        "current_phase": "flow-code",
+        "branch": "test",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": {"continue": "auto"}},
+    });
+    let (_tmp, root) = shared_config_subprocess_fixture(&state);
+    // Relative path — validator rejects (must be absolute under
+    // <home>/.claude/projects/).
+    let payload = json!({"transcript_path": "relative/path.jsonl"});
+    let (code, _stdout, stderr) = run_validate_ask_user(&root, &payload);
+    assert_eq!(code, 2, "stderr: {}", stderr);
+    assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
+}
+
+#[test]
+fn subprocess_integration_shared_config_carve_out_allows() {
+    // Subprocess integration test for the shared-config carve-out's
+    // happy path. Sibling to `..._block_persists_no_marker` below.
+    let state = json!({
+        "current_phase": "flow-code",
+        "branch": "test",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": {"continue": "auto"}},
+    });
+    let (_tmp, root) = shared_config_subprocess_fixture(&state);
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Edit\",\"id\":\"t1\",\"input\":{\"file_path\":\"/p/.gitignore\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t1\",\"content\":\"BLOCKED: .gitignore is a shared configuration file that affects every engineer in the repository.\",\"is_error\":true}]}}\n";
+    let transcript = carve_out_transcript_fixture(&root, jsonl);
+    let payload = json!({"transcript_path": transcript.to_string_lossy()});
+    let (code, _stdout, stderr) = run_validate_ask_user(&root, &payload);
+    assert_eq!(code, 0, "stderr: {}", stderr);
+}
+
+#[test]
+fn subprocess_integration_shared_config_block_persists_no_marker() {
+    // Sibling subprocess test for the negative case: the same
+    // setup as the happy path above EXCEPT the transcript's
+    // tool_result lacks the shared-config substring. The carve-out
+    // does NOT fire and the autonomous-phase block exits 2.
+    let state = json!({
+        "current_phase": "flow-code",
+        "branch": "test",
+        "phases": {"flow-code": {"status": "in_progress"}},
+        "skills": {"flow-code": {"continue": "auto"}},
+    });
+    let (_tmp, root) = shared_config_subprocess_fixture(&state);
+    // Successful Edit — no BLOCKED message, no carve-out.
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Edit\",\"id\":\"t1\",\"input\":{\"file_path\":\"/p/src/foo.rs\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t1\",\"content\":\"The file has been updated.\",\"is_error\":false}]}}\n";
+    let transcript = carve_out_transcript_fixture(&root, jsonl);
+    let payload = json!({"transcript_path": transcript.to_string_lossy()});
+    let (code, _stdout, stderr) = run_validate_ask_user(&root, &payload);
+    assert_eq!(code, 2, "stderr: {}", stderr);
+    assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
+}

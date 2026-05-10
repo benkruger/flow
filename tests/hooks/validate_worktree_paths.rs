@@ -930,3 +930,36 @@ fn validate_subprocess_accepts_main_repo_flow_states_grep() {
     );
     assert_eq!(code, 0, "stderr: {}", stderr);
 }
+
+// --- Presence contract: shared-config BLOCKED phrase ---
+
+/// Presence-contract assertion that the literal substring
+/// `"is a shared configuration file that affects every engineer"`
+/// appears in the source of `src/hooks/validate_worktree_paths.rs`.
+/// Named consumer:
+/// `crate::hooks::transcript_walker::recent_edit_blocked_on_shared_config`,
+/// which detects shared-config blocks by scanning tool_result content
+/// for this exact substring. The phrase is intentionally long so the
+/// detection signal cannot accidentally match unrelated error
+/// messages (a permission-denied error, a generic "this file is
+/// shared" warning) — the suffix "that affects every engineer"
+/// scopes the match to the BLOCKED message format from
+/// `validate_shared_config`. A refactor of that BLOCKED message that
+/// drops the substring would silently break the validate-ask-user
+/// shared-config carve-out — the helper would return false on every
+/// transcript and the autonomous-phase block would deadlock the flow
+/// when the model tries to confirm a shared-config edit. This test
+/// is a presence contract (not a tombstone) because the assertion is
+/// positive presence, not absence.
+#[test]
+fn validate_worktree_paths_emits_shared_config_phrase() {
+    let content = std::fs::read_to_string("src/hooks/validate_worktree_paths.rs")
+        .expect("validate_worktree_paths.rs source must be readable");
+    assert!(
+        content.contains("is a shared configuration file that affects every engineer"),
+        "src/hooks/validate_worktree_paths.rs must emit the literal \
+         substring \"is a shared configuration file that affects every engineer\" — \
+         transcript_walker::recent_edit_blocked_on_shared_config \
+         depends on this exact phrase as its detection signal"
+    );
+}

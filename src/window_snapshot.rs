@@ -158,16 +158,19 @@ pub(crate) fn is_safe_session_id(s: &str) -> bool {
 /// Validate a state-derived `transcript_path` against the canonical
 /// location where Claude Code writes session transcripts:
 /// `<home>/.claude/projects/`. Rejects relative paths, paths
-/// outside that prefix, and paths containing a NUL byte. Production
-/// transcripts always live under that directory; values pointing
+/// outside that prefix, paths containing a NUL byte, paths with a
+/// `..` component, and paths whose canonical resolution escapes the
+/// prefix (catches symlink-based escapes where any component is a
+/// symlink pointing outside the prefix). Production transcripts
+/// always live under that directory as regular files; values pointing
 /// elsewhere are corrupted state and read attempts could leak
 /// arbitrary file contents into snapshot fields.
 ///
 /// Cross-module consumer: `src/hooks/transcript_walker.rs` validates
 /// the same `transcript_path` string before reading the JSONL
 /// session log to gate user-only skill invocations and the
-/// validate-ask-user carve-out. Per
-/// `.claude/rules/external-input-path-construction.md`, the same
+/// validate-ask-user carve-outs (user-only-skill and shared-config).
+/// Per `.claude/rules/external-input-path-construction.md`, the same
 /// validator runs at every state-derived path-construction site so
 /// the prefix-containment contract is enforced once.
 pub fn is_safe_transcript_path(path: &Path, home: &Path) -> bool {
@@ -180,20 +183,36 @@ pub fn is_safe_transcript_path(path: &Path, home: &Path) -> bool {
     if !path.is_absolute() {
         return false;
     }
-    // Reject any ParentDir (`..`) component. `Path::starts_with` is a
-    // lexical component-wise prefix check that does NOT canonicalize
-    // `..` segments — `<home>/.claude/projects/../../etc/passwd`
-    // passes `starts_with(<home>/.claude/projects)` even though
-    // `File::open` resolves it to `<home>/etc/passwd`. Refusing
-    // ParentDir components closes the traversal-bypass surface
-    // without paying the canonicalize() syscall cost on every call.
+    // Reject any ParentDir (`..`) component as a fast-path lexical
+    // check before the canonicalize syscall. `Path::starts_with` is
+    // a lexical component-wise prefix check that does NOT resolve
+    // `..` segments, so `<home>/.claude/projects/../../etc/passwd`
+    // would pass a raw prefix check.
     for component in path.components() {
         if matches!(component, std::path::Component::ParentDir) {
             return false;
         }
     }
+    // Canonicalize and compare against the canonicalized prefix.
+    // `Path::starts_with` on raw paths cannot detect symlinks: a
+    // symlink at `<home>/.claude/projects/p/session.jsonl` pointing
+    // to `/tmp/evil.jsonl` passes the raw check, then `File::open`
+    // follows the link and reads attacker-controlled content.
+    // `canonicalize` resolves every component's symlinks AND `..`
+    // segments before the prefix check, closing both traversal
+    // vectors. Failure to canonicalize (missing file, permission
+    // error, broken symlink) returns false — fail-closed per
+    // `.claude/rules/security-gates.md`.
+    let canonical_path = match path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
     let expected_prefix = home.join(".claude").join("projects");
-    path.starts_with(&expected_prefix)
+    let canonical_prefix = match expected_prefix.canonicalize() {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    canonical_path.starts_with(&canonical_prefix)
 }
 
 /// Write a `WindowSnapshot` into the named top-level field of a

@@ -2167,6 +2167,50 @@ fn prose_pause_allows_when_state_unparseable() {
 }
 
 #[test]
+fn prose_pause_allows_when_transcript_file_unreadable() {
+    // `is_safe_transcript_path` canonicalize succeeds on a chmod-000
+    // file (canonicalize stats components, not opens), but
+    // `last_assistant_text_and_tool_use`'s `File::open` returns
+    // Err(PermissionDenied). The function returns None and the
+    // pause check allows. Covers the File::open `.ok()?` branch in
+    // last_assistant_text_and_tool_use which became unreachable
+    // through normal validator-passes-but-file-missing paths after
+    // is_safe_transcript_path was tightened to canonicalize.
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "transcript.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&prose_pause_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            0,
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    fs::write(&transcript, b"{\"type\":\"user\"}\n").unwrap();
+    fs::set_permissions(&transcript, fs::Permissions::from_mode(0o000)).unwrap();
+    struct PermGuard(std::path::PathBuf);
+    impl Drop for PermGuard {
+        fn drop(&mut self) {
+            let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o644));
+        }
+    }
+    let _g = PermGuard(transcript.clone());
+
+    let result = check_prose_pause_at_task_entry(
+        &state_path,
+        Some(transcript.to_str().unwrap()),
+        dir.path(),
+    );
+    assert!(!result.should_block);
+}
+
+#[test]
 fn prose_pause_allows_when_transcript_has_no_assistant_turn() {
     let dir = tempfile::tempdir().unwrap();
     let state_path = dir.path().join("state.json");

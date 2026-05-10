@@ -109,6 +109,14 @@ are invisible. Multi-tool assistant turns are scanned in full
 only Skill appearing second or later in the turn's content
 array still satisfies the carve-out.
 
+The user-only-skill carve-out is the first sanctioned exception
+to the autonomous-phase AskUserQuestion block. The shared-config
+carve-out (see `.claude/rules/autonomous-phase-discipline.md`
+"Shared-Config Carve-Out") is the second; both fire in
+`validate-ask-user::run_impl_main` between the autonomous-phase
+block and the block return, with the user-only check ordered
+first.
+
 ### Layer 3: `validate-claude-paths` transcript root lockdown
 
 `src/hooks/validate_claude_paths.rs::is_transcript_path` blocks
