@@ -592,7 +592,119 @@ fn test_render_tasks_view_no_plan() {
     assert!(output.contains("No plan file."));
 }
 
+// --- filter + selection alignment ---
+
+#[test]
+fn test_filter_selection_detail_pane_aligns_with_visible_row() {
+    // Three flows with filter matching only Banana, selected=0.
+    // The detail pane must render banana-feature, not apple.
+    let mut app = make_app();
+    app.flows = vec![
+        make_flow("Apple Feature", "Code", 3),
+        make_flow("Banana Feature", "Code", 3),
+        make_flow("Cherry Feature", "Code", 3),
+    ];
+    app.flows[0].branch = "apple-feature".to_string();
+    app.flows[1].branch = "banana-feature".to_string();
+    app.flows[2].branch = "cherry-feature".to_string();
+    app.flows[0].worktree = ".worktrees/apple-feature".to_string();
+    app.flows[1].worktree = ".worktrees/banana-feature".to_string();
+    app.flows[2].worktree = ".worktrees/cherry-feature".to_string();
+    app.filter_query = Some("banana".to_string());
+    app.filter_input_active = false;
+    app.selected = 0;
+    let output = render_to_string(&app, 140, 60);
+    assert!(
+        output.contains("Branch: banana-feature"),
+        "detail pane must reflect the highlighted (filtered) row:\n{}",
+        output
+    );
+    assert!(
+        !output.contains("Branch: apple-feature"),
+        "detail pane must not reflect a hidden flow:\n{}",
+        output
+    );
+}
+
+#[test]
+fn test_visible_flows_filters_and_selected_visible_flow_lookup() {
+    let mut app = make_app();
+    app.flows = vec![
+        make_flow("Apple", "Code", 3),
+        make_flow("Banana", "Code", 3),
+    ];
+    app.flows[0].branch = "apple".to_string();
+    app.flows[1].branch = "banana".to_string();
+    app.filter_query = Some("banana".to_string());
+    app.filter_input_active = false;
+    app.selected = 0;
+    let visible = app.visible_flows();
+    assert_eq!(visible.len(), 1);
+    assert_eq!(visible[0].branch, "banana");
+    assert_eq!(
+        app.selected_visible_flow().map(|f| f.branch.as_str()),
+        Some("banana")
+    );
+}
+
+#[test]
+fn test_selected_visible_flow_returns_none_when_filter_excludes_everything() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("Apple", "Code", 3)];
+    app.flows[0].branch = "apple".to_string();
+    app.filter_query = Some("zeta".to_string());
+    app.filter_input_active = false;
+    assert!(app.selected_visible_flow().is_none());
+}
+
+#[test]
+fn test_input_down_clamps_against_visible_flows_under_filter() {
+    let mut app = make_app();
+    app.flows = vec![
+        make_flow("Apple", "Code", 3),
+        make_flow("Banana", "Code", 3),
+        make_flow("Cherry", "Code", 3),
+    ];
+    app.flows[0].branch = "apple".to_string();
+    app.flows[1].branch = "banana".to_string();
+    app.flows[2].branch = "cherry".to_string();
+    app.filter_query = Some("banana".to_string());
+    app.filter_input_active = false;
+    app.selected = 0;
+    // Only Banana is visible; Down must clamp to 0, not advance.
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(app.selected, 0);
+}
+
+#[test]
+fn test_open_actions_no_op_when_filter_excludes_everything() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("Apple", "Code", 3)];
+    app.flows[0].branch = "apple".to_string();
+    app.filter_query = Some("zeta".to_string());
+    app.filter_input_active = false;
+    // Enter, p, I, a all dispatch through selected_visible_flow which
+    // returns None — every action arm must early-return without panic.
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Char('p')));
+    app.handle_key(key(KeyCode::Char('I')));
+    app.handle_key(key(KeyCode::Char('o')));
+    // Render with the all-excluded filter still active — render_detail_panel
+    // must early-return rather than panic.
+    let _ = render_to_string(&app, 80, 40);
+}
+
 // --- help overlay (?) ---
+
+#[test]
+fn test_input_q_in_help_quits() {
+    let mut app = make_app();
+    app.flows = vec![make_flow("A", "Code", 3)];
+    app.handle_key(key(KeyCode::Char('?')));
+    assert_eq!(app.view, View::Help);
+    app.handle_key(key(KeyCode::Char('q')));
+    assert!(!app.running, "q in Help view must quit, not restore");
+}
 
 #[test]
 fn test_input_question_mark_enters_help_from_list() {
@@ -940,8 +1052,8 @@ fn test_input_filter_q_does_not_quit_in_input_mode() {
 fn test_build_iterm_open_worktree_script_vanilla_path() {
     let script = build_iterm_open_worktree_script("/Users/me/code/foo");
     assert!(
-        script.contains(r#"cd \"/Users/me/code/foo\""#),
-        "expected escaped cd in script:\n{}",
+        script.contains("cd '/Users/me/code/foo'"),
+        "expected single-quoted shell cd in script:\n{}",
         script
     );
     assert!(script.contains("create tab with default profile"));
@@ -951,12 +1063,13 @@ fn test_build_iterm_open_worktree_script_vanilla_path() {
 #[test]
 fn test_build_iterm_open_worktree_script_path_with_quotes() {
     let script = build_iterm_open_worktree_script("/Users/foo \"bar\"/code");
-    // Each `"` in the input becomes `\"` in the rendered AppleScript
-    // source per `escape_applescript_string`. The whole `cd "..."`
-    // wrapping itself contributes the outer `\"` pair.
+    // Double quotes in the path are inside shell single-quotes so the
+    // shell sees them literally. The AppleScript layer still escapes
+    // each `"` as `\"` because the shell-quoted form is interpolated
+    // into an AppleScript double-quoted literal.
     assert!(
-        script.contains(r#"cd \"/Users/foo \"bar\"/code\""#),
-        "expected escaped quotes:\n{}",
+        script.contains(r#"cd '/Users/foo \"bar\"/code'"#),
+        "expected AppleScript-escaped quotes inside shell single-quotes:\n{}",
         script
     );
 }
@@ -965,8 +1078,8 @@ fn test_build_iterm_open_worktree_script_path_with_quotes() {
 fn test_build_iterm_open_worktree_script_path_with_backslash() {
     let script = build_iterm_open_worktree_script("/foo\\bar/code");
     assert!(
-        script.contains(r#"cd \"/foo\\bar/code\""#),
-        "expected escaped backslash:\n{}",
+        script.contains(r#"cd '/foo\\bar/code'"#),
+        "expected AppleScript-escaped backslash inside shell single-quotes:\n{}",
         script
     );
 }
@@ -976,8 +1089,48 @@ fn test_build_iterm_open_worktree_script_path_with_spaces() {
     // Spaces don't need escaping but must pass through unchanged.
     let script = build_iterm_open_worktree_script("/Users/me/code with space");
     assert!(
-        script.contains(r#"cd \"/Users/me/code with space\""#),
-        "expected spaces preserved:\n{}",
+        script.contains("cd '/Users/me/code with space'"),
+        "expected spaces preserved inside shell single-quotes:\n{}",
+        script
+    );
+}
+
+#[test]
+fn test_build_iterm_open_worktree_script_neutralizes_dollar_paren() {
+    // Shell-single-quoted: $(...) inside `'...'` is literal in shell.
+    let script = build_iterm_open_worktree_script("/feat/$(echo INJECTED)");
+    assert!(
+        script.contains("cd '/feat/$(echo INJECTED)'"),
+        "expected $(...) wrapped in shell single quotes:\n{}",
+        script
+    );
+}
+
+#[test]
+fn test_build_iterm_open_worktree_script_neutralizes_backticks() {
+    let script = build_iterm_open_worktree_script("/feat/`echo INJECTED`");
+    assert!(
+        script.contains("cd '/feat/`echo INJECTED`'"),
+        "expected backticks wrapped in shell single quotes:\n{}",
+        script
+    );
+}
+
+#[test]
+fn test_build_iterm_open_worktree_script_path_with_single_quote() {
+    // Single quote in the path requires the close-escape-reopen idiom
+    // `'\''` at shell level so the shell sees the literal char. The
+    // backslash in `'\''` is then doubled by escape_applescript_string
+    // to `\\` because `\` is structural inside an AppleScript double-
+    // quoted literal — so the rendered AppleScript source contains
+    // `'\\''`. AppleScript parses `\\` back to `\`, so iTerm types
+    // `'\''` into the shell, which the shell parses as the single
+    // quote literal.
+    let script = build_iterm_open_worktree_script("/feat/o'malley");
+    assert!(
+        script.contains(r#"cd '/feat/o'\\''malley'"#),
+        "expected single-quote escaped via close-escape-reopen, with\
+         the inner backslash AppleScript-escaped to \\\\:\n{}",
         script
     );
 }

@@ -339,6 +339,32 @@ impl TuiApp {
         }
     }
 
+    /// View of `self.flows` after the active filter is applied. The
+    /// list pane renders this slice, and `self.selected` is treated
+    /// as an index into THIS list — not the raw `self.flows`. Every
+    /// action and detail-pane render must look up the active flow
+    /// through `selected_visible_flow` so the highlighted row and
+    /// the actioned row stay in sync.
+    pub fn visible_flows(&self) -> Vec<&FlowSummary> {
+        self.flows
+            .iter()
+            .filter(|flow| {
+                flow_matches_filter(
+                    &flow.branch,
+                    self.filter_query.as_deref(),
+                    self.filter_input_active,
+                )
+            })
+            .collect()
+    }
+
+    /// The flow the user has currently highlighted, respecting the
+    /// active filter. Returns `None` when the filter excludes every
+    /// row or `self.selected` outruns the visible list.
+    pub fn selected_visible_flow(&self) -> Option<&FlowSummary> {
+        self.visible_flows().get(self.selected).copied()
+    }
+
     /// Open a URL in the default browser using the platform-supplied
     /// binary. Production: `open <url>` on macOS. Tests: `/bin/true
     /// <url>` — ignores the URL, exits 0, no side effect.
@@ -435,9 +461,15 @@ impl TuiApp {
         }
 
         // Help overlay: `?` toggles in from any view, any subsequent
-        // key restores the prior view. Q and Ctrl-C still quit
-        // because they are handled above this branch.
+        // key restores the prior view. `q` and `Ctrl-C` still quit
+        // — `Ctrl-C` is handled above this branch, and `q` short-
+        // circuits here so the user is not silently bounced back to
+        // the prior view when they meant to exit.
         if self.view == View::Help {
+            if matches!(key.code, KeyCode::Char('q')) {
+                self.running = false;
+                return;
+            }
             if let Some(prev) = self.previous_view.take() {
                 self.view = prev;
             } else {
@@ -489,7 +521,8 @@ impl TuiApp {
                 self.issue_selected = 0;
             }
             KeyCode::Down => {
-                self.selected = (self.selected + 1).min(self.flows.len().saturating_sub(1));
+                let visible_len = self.visible_flows().len();
+                self.selected = (self.selected + 1).min(visible_len.saturating_sub(1));
                 self.issue_selected = 0;
             }
             KeyCode::Enter => self.open_worktree(),
@@ -501,7 +534,10 @@ impl TuiApp {
                 );
             }
             KeyCode::Char('o') => {
-                self.open_worktree_shell();
+                // The success bool is intentionally discarded — the
+                // TUI has no banner surface to report failure on, and
+                // the user will notice if the shell didn't open.
+                let _ = self.open_worktree_shell();
             }
             KeyCode::Char('p') => self.open_pr(),
             KeyCode::Char('l') => self.view = View::Log,
@@ -515,10 +551,9 @@ impl TuiApp {
     }
 
     fn handle_issues_input(&mut self, key: KeyEvent) {
-        if self.flows.is_empty() {
+        let Some(flow) = self.selected_visible_flow() else {
             return;
-        }
-        let flow = &self.flows[self.selected];
+        };
         let issue_count = flow.issues.len();
         if issue_count == 0 {
             return;
@@ -569,14 +604,18 @@ impl TuiApp {
     // --- Actions ---
 
     fn open_worktree(&self) {
-        let flow = &self.flows[self.selected];
+        let Some(flow) = self.selected_visible_flow() else {
+            return;
+        };
         if let Some(tty) = worktree_session_tty(flow) {
             self.activate_iterm_tab(tty);
         }
     }
 
     fn open_pr(&self) {
-        let flow = &self.flows[self.selected];
+        let Some(flow) = self.selected_visible_flow() else {
+            return;
+        };
         if let Some(ref url) = flow.pr_url {
             let files_url = pr_files_url(url);
             self.open_url(&files_url);
@@ -584,7 +623,9 @@ impl TuiApp {
     }
 
     fn open_flow_issue(&self) {
-        let flow = &self.flows[self.selected];
+        let Some(flow) = self.selected_visible_flow() else {
+            return;
+        };
         if let Some(url) = flow_issue_url(&flow.state, self.repo.as_deref(), &flow.issue_numbers) {
             self.open_url(&url);
         }
@@ -601,10 +642,9 @@ impl TuiApp {
     }
 
     fn abort_flow(&mut self) {
-        if self.flows.is_empty() {
+        let Some(flow) = self.selected_visible_flow() else {
             return;
-        }
-        let flow = &self.flows[self.selected];
+        };
         let args =
             build_cleanup_command_args(&self.root, &flow.branch, &flow.worktree, flow.pr_number);
         let bin_flow = self.platform.bin_flow_path.clone();
@@ -629,10 +669,9 @@ impl TuiApp {
     /// without leaving the TUI. Returns true when osascript reports
     /// `"opened"`.
     pub fn open_worktree_shell(&self) -> bool {
-        if self.flows.is_empty() {
+        let Some(flow) = self.selected_visible_flow() else {
             return false;
-        }
-        let flow = &self.flows[self.selected];
+        };
         let path = if std::path::Path::new(&flow.worktree).is_absolute() {
             flow.worktree.clone()
         } else {
@@ -1044,7 +1083,13 @@ impl TuiApp {
     }
 
     fn render_detail_panel(&self, frame: &mut Frame, area: Rect, start_row: usize) {
-        let flow = &self.flows[self.selected];
+        // Walk through the visible-flows view so the detail pane
+        // and the highlighted list row always describe the same flow
+        // when a filter is active. The render_list_view caller is
+        // already gated on visible_flows being non-empty.
+        let Some(flow) = self.selected_visible_flow() else {
+            return;
+        };
         let max_y = area.height as usize;
         let mut row = start_row;
 
@@ -1348,10 +1393,9 @@ impl TuiApp {
         let max_y = area.height as usize;
         let max_x = area.width as usize;
 
-        if self.flows.is_empty() {
+        let Some(flow) = self.selected_visible_flow() else {
             return;
-        }
-        let flow = &self.flows[self.selected];
+        };
 
         // Header
         let header_text = format!(" {} \u{2014} Log ", flow.feature);
@@ -1415,10 +1459,9 @@ impl TuiApp {
         let max_y = area.height as usize;
         let max_x = area.width as usize;
 
-        if self.flows.is_empty() {
+        let Some(flow) = self.selected_visible_flow() else {
             return;
-        }
-        let flow = &self.flows[self.selected];
+        };
         let issues = &flow.issues;
 
         // Header
@@ -1488,6 +1531,11 @@ impl TuiApp {
         frame.render_widget(footer, Rect::new(area.x, y, area.width, 1));
     }
 
+    /// Render the help overlay activated by `?`. Lists every binding
+    /// the TUI accepts, grouped by view (List, Filter input, Tabs,
+    /// Other views, Global) so a user pressing `?` from any view can
+    /// find the bindings that apply. Returns to the previous view on
+    /// any subsequent keystroke (or quits on `q`/`Ctrl-C`).
     fn render_help_view(&self, frame: &mut Frame, area: Rect) {
         let max_x = area.width as usize;
         let border: String = "\u{2500}".repeat(max_x);
@@ -1572,10 +1620,9 @@ impl TuiApp {
         let max_y = area.height as usize;
         let max_x = area.width as usize;
 
-        if self.flows.is_empty() {
+        let Some(flow) = self.selected_visible_flow() else {
             return;
-        }
-        let flow = &self.flows[self.selected];
+        };
 
         // Header
         let header_text = format!(" {} \u{2014} Tasks ", flow.feature);
@@ -1830,19 +1877,51 @@ end tell"#,
     )
 }
 
+/// Wrap `s` in single quotes and escape any embedded single quotes
+/// using the standard POSIX shell idiom `'\''` (close, literal `'`,
+/// reopen). Inside single quotes, every other byte is literal — no
+/// `$(...)`, backtick, or variable expansion. Pure helper.
+fn escape_shell_single_quoted(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for ch in s.chars() {
+        if ch == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(ch);
+        }
+    }
+    out.push('\'');
+    out
+}
+
 /// Build the AppleScript text that asks iTerm2 to open a fresh shell
 /// in a new tab (or new window if no window exists) and `cd` into the
 /// supplied worktree path.
 ///
-/// `path` is escaped via [`escape_applescript_string`] before being
-/// interpolated into the AppleScript double-quoted literal — the same
-/// injection-safety contract as [`build_iterm_activation_script`].
+/// The path passes through TWO escape layers because iTerm's
+/// `write text` types its argument as keystrokes into the shell:
+///
+/// 1. [`escape_shell_single_quoted`] wraps the path in `'...'` and
+///    escapes embedded `'` so the shell treats `$(...)`, backticks,
+///    `;`, `|`, `&`, and history expansion as literal bytes.
+/// 2. [`escape_applescript_string`] escapes any remaining `\` or `"`
+///    so the AppleScript double-quoted literal stays intact.
+///
+/// Without the shell-single-quote layer, a path containing `$(...)`
+/// or backticks would be expanded by the shell when the typed
+/// keystrokes arrive — a remote-code-execution vector through any
+/// state-derived worktree path. AppleScript escape alone is
+/// insufficient because `escape_applescript_string` only escapes
+/// AppleScript structural chars and lets shell metacharacters
+/// through.
 ///
 /// Pure helper — `pub` so unit tests can verify the rendered script
 /// content directly. The osascript invocation lives in
 /// `TuiApp::open_worktree_shell`.
 pub fn build_iterm_open_worktree_script(path: &str) -> String {
-    let escaped = escape_applescript_string(path);
+    let shell_quoted = escape_shell_single_quoted(path);
+    let escaped = escape_applescript_string(&shell_quoted);
     format!(
         r#"tell application "iTerm2"
     if (count of windows) = 0 then
@@ -1851,7 +1930,7 @@ pub fn build_iterm_open_worktree_script(path: &str) -> String {
         tell current window to create tab with default profile
     end if
     tell current session of current window
-        write text "cd \"{p}\" && clear"
+        write text "cd {p} && clear"
     end tell
     activate
     return "opened"
