@@ -208,7 +208,7 @@ fn validate_claude_paths_block_message_includes_write_rule_redirect() {
     // to bin/flow write-rule so the model has a concrete path to
     // route a behavioral constraint into a project rule instead of
     // silently dropping the persistence target.
-    let (_, msg) = validate("/Users/ben/.claude/projects/abc/session.jsonl", true);
+    let (_, msg) = validate("/Users/testuser/.claude/projects/abc/session.jsonl", true);
     assert!(msg.contains("write-rule"), "msg: {}", msg);
 }
 
@@ -217,7 +217,7 @@ fn validate_claude_paths_block_message_points_at_persistence_routing_rule() {
     // The transcript-root block message must reference
     // persistence-routing.md so the model can consult the routing
     // decision tree when the block fires.
-    let (_, msg) = validate("/Users/ben/.claude/projects/abc/session.jsonl", true);
+    let (_, msg) = validate("/Users/testuser/.claude/projects/abc/session.jsonl", true);
     assert!(msg.contains("persistence-routing.md"), "msg: {}", msg);
 }
 

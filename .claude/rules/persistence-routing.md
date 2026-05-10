@@ -47,10 +47,13 @@ Apply each test in order. The first one that resolves wins.
 
 The most common error is treating "the user said never to do X"
 as automatically a memory entry. The user's phrasing is not the
-classification signal — the audience is. "Never use raw `git
-commit`; always invoke `/flow:flow-commit`" sounds personal in a
-correction, but every engineer working on FLOW needs that
-constraint. It is a rule.
+classification signal — the audience is. A user's correction in
+one session is a shared discovery that usually applies to every
+engineer working on the project; it is not user-private just
+because the user happened to be the one who surfaced it. "Never
+use raw `git commit`; always invoke `/flow:flow-commit`" sounds
+personal in a correction, but every engineer working on FLOW
+needs that constraint. It is a rule.
 
 The forward-applicability test catches this: if a future engineer
 working on this project would also need the guidance, it is a
@@ -60,9 +63,13 @@ on every branch sees it. Memory is invisible to other engineers
 and to the model in target projects.
 
 When in doubt, write the rule. A rule that turns out to be
-user-specific can be migrated to memory later; a memory that
-should have been a rule is invisible until the next session
-re-derives it from scratch.
+user-specific can be reclassified later — delete the rule from
+the repo and ask the user to add the equivalent text to
+`~/.claude/CLAUDE.md` themselves. There is no automated migration
+path; the conversion is manual but always available. A memory
+entry that should have been a rule is invisible until the next
+session re-derives it from scratch, so the asymmetry favors
+defaulting to rules.
 
 ## Never Store in Memory
 
