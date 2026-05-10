@@ -1,5 +1,5 @@
 ---
-name: flow-code-review
+name: flow-review
 description: "Phase 3: Code Review — six tenants assessed by four cognitively isolated agents (reviewer, pre-mortem, adversarial, documentation) launched in parallel. Parent session gathers context, triages findings, and fixes."
 ---
 
@@ -8,25 +8,25 @@ description: "Phase 3: Code Review — six tenants assessed by four cognitively 
 ## Usage
 
 ```text
-/flow:flow-code-review
-/flow:flow-code-review --auto
-/flow:flow-code-review --manual
-/flow:flow-code-review --continue-step
-/flow:flow-code-review --continue-step --auto
-/flow:flow-code-review --continue-step --manual
+/flow:flow-review
+/flow:flow-review --auto
+/flow:flow-review --manual
+/flow:flow-review --continue-step
+/flow:flow-review --continue-step --auto
+/flow:flow-review --continue-step --manual
 ```
 
-- `/flow:flow-code-review` — uses configured mode from the state file (default: manual)
-- `/flow:flow-code-review --auto` — auto-fix and auto-commit all findings, auto-advance to Learn
-- `/flow:flow-code-review --manual` — requires explicit approval of changes and routing decisions
-- `/flow:flow-code-review --continue-step` — self-invocation: skip Announce and Update State, dispatch to the next step via Resume Check
+- `/flow:flow-review` — uses configured mode from the state file (default: manual)
+- `/flow:flow-review --auto` — auto-fix and auto-commit all findings, auto-advance to Learn
+- `/flow:flow-review --manual` — requires explicit approval of changes and routing decisions
+- `/flow:flow-review --continue-step` — self-invocation: skip Announce and Update State, dispatch to the next step via Resume Check
 
 <HARD-GATE>
 Run `phase-enter` as your very first action. If it returns an error, stop
 immediately and show the error to the user.
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow phase-enter --phase flow-code-review --steps-total 4
+${CLAUDE_PLUGIN_ROOT}/bin/flow phase-enter --phase flow-review --steps-total 4
 ```
 
 Parse the JSON output. If `"status": "error"`, STOP and show the error.
@@ -143,7 +143,7 @@ Get `<branch>` from the state file.
 
 ## Resume Check
 
-Read `code_review_step` from the state file (default `0` if absent).
+Read `review_step` from the state file (default `0` if absent).
 
 - If `1` — Step 1 is done. Skip to Step 2.
 - If `2` — Steps 1-2 are done. Skip to Step 3.
@@ -326,10 +326,10 @@ stale tombstones — the audit is best-effort and skipped on API failure.
 Record step completion:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=1
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set review_step=1
 ```
 
-To continue to Step 2, invoke `flow:flow-code-review --continue-step`
+To continue to Step 2, invoke `flow:flow-review --continue-step`
 using the Skill tool as your final action. If commit=auto was resolved,
 pass `--auto` as well. Do not output anything else after this invocation.
 
@@ -480,10 +480,10 @@ The probe file lives inside the worktree's test tree, so worktree removal at Pha
 Record step completion:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=2
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set review_step=2
 ```
 
-To continue to Step 3, invoke `flow:flow-code-review --continue-step`
+To continue to Step 3, invoke `flow:flow-review --continue-step`
 using the Skill tool as your final action. If commit=auto was resolved,
 pass `--auto` as well. Do not output anything else after this invocation.
 
@@ -496,7 +496,7 @@ adversarial, documentation. For each finding, classify it as **Real**
 (fix in Step 4) or **False positive** (dismiss with rationale).
 
 There is no filing path. All real findings are fixed during Code
-Review — see `.claude/rules/code-review-scope.md`.
+Review — see `.claude/rules/review-scope.md`.
 
 ### Supersession check
 
@@ -529,7 +529,7 @@ regardless of which file they live in.
 covered by tests. Discard with rationale. After classifying each false positive, record it:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<reason>" --outcome "dismissed" --phase "flow-code-review"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<reason>" --outcome "dismissed" --phase "flow-review"
 ```
 
 ### Truncation check
@@ -594,10 +594,10 @@ findings, then skip the commit and proceed directly to Done.
 Record step completion:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=3
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set review_step=3
 ```
 
-To continue to Step 4, invoke `flow:flow-code-review --continue-step`
+To continue to Step 4, invoke `flow:flow-review --continue-step`
 using the Skill tool as your final action. If commit=auto was resolved,
 pass `--auto` as well. Do not output anything else after this invocation.
 
@@ -614,7 +614,7 @@ If no real findings exist, skip this step and proceed to Done.
 For each real finding, fix the issue in code. After fixing each finding, record it:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<reason>" --outcome "fixed" --phase "flow-code-review"
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<reason>" --outcome "fixed" --phase "flow-review"
 ```
 
 After fixing all findings, run CI once. Use a 10-minute Bash tool
@@ -674,11 +674,11 @@ Set the continuation context and flag before committing.
 If commit=auto, use the first form. If commit=manual, use the second:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set code_review_step=4, then self-invoke flow:flow-code-review --continue-step --auto."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set review_step=4, then self-invoke flow:flow-review --continue-step --auto."
 ```
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set code_review_step=4, then self-invoke flow:flow-code-review --continue-step --manual."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set review_step=4, then self-invoke flow:flow-review --continue-step --manual."
 ```
 
 ```bash
@@ -690,10 +690,10 @@ Invoke `/flow:flow-commit`.
 Record step completion:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_review_step=4
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set review_step=4
 ```
 
-To continue to Done, invoke `flow:flow-code-review --continue-step` using
+To continue to Done, invoke `flow:flow-review --continue-step` using
 the Skill tool as your final action. If commit=auto was resolved, pass
 `--auto` as well. Do not output anything else after this invocation.
 
@@ -704,7 +704,7 @@ the Skill tool as your final action. If commit=auto was resolved, pass
 Finalize the phase (complete + Slack notification in one call):
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow phase-finalize --phase flow-code-review --branch <branch> --thread-ts <slack_thread_ts>
+${CLAUDE_PLUGIN_ROOT}/bin/flow phase-finalize --phase flow-review --branch <branch> --thread-ts <slack_thread_ts>
 ```
 
 Omit `--thread-ts` if `slack_thread_ts` was not returned by `phase-enter`.

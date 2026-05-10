@@ -647,10 +647,29 @@ Complete:, Total:), Code Review Findings and Learn Findings sections
 section (per-phase token totals + cost in USD, plus a Total row; an
 optional By Model breakdown when 2+ models contributed; an optional
 "↻" marker and footer note when a rate-limit window reset was
-observed mid-flow — the section is omitted entirely when no phase
-carries window snapshot data), and artifact counts (issues filed
-count, notes captured count). Do not add a separate PR line — it
-is part of the summary.
+observed mid-flow — the section renders one row per non-pending
+phase and is omitted entirely only when every phase is still
+"pending"), and artifact counts (issues filed count, notes
+captured count). Do not add a separate PR line — it is part of
+the summary.
+
+The Token Cost section uses these conditional output markers when
+snapshot data is incomplete:
+
+- **`—` (em-dash)** in the cost column means the per-phase or
+  Total cost is unknown for the row. A phase shows `—` when its
+  start or end snapshot lacks `session_cost_usd`; the Total row
+  shows `—` when no phase contributed a complete cost pair.
+- **`*` (asterisk suffix)** on a cost value (e.g. `$0.450*`) marks
+  the row as partial: the phase ran but the snapshot data was not
+  fully recoverable, so the displayed value is the best-effort
+  computation from available endpoints. The Total cost is
+  suffixed with `*` when any phase contributed `None` cost into
+  the aggregate.
+- **`* cost partial — some phases had no cost data`** appears as
+  a footnote line below the Total when the Total carries the `*`
+  marker, naming the cause so the reader does not have to
+  reconstruct it from per-phase rows.
 
 If the `complete-finalize` JSON output has a non-empty
 `issues_links` field, render it as regular text (not inside a code

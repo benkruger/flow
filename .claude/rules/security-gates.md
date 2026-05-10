@@ -31,8 +31,8 @@ normalized before comparison:
    intended to be case-insensitive for robustness.
 
 Normalization runs on BOTH sides of the comparison: if you are
-checking `input == "flow-code-review"`, either normalize
-`"flow-code-review"` too or spell out that the right-hand side is
+checking `input == "flow-review"`, either normalize
+`"flow-review"` too or spell out that the right-hand side is
 already normalized. Asymmetric normalization is the bug that
 adversarial tests find.
 
@@ -207,7 +207,7 @@ The reviewer agent and the adversarial agent both audit
 post-gate actions for "uses the transformed value, not the raw
 input." A finding tagged "gate-action divergence" or "gate
 validates X but action consumes Y" is a Real finding fixed in
-Step 4 per `.claude/rules/code-review-scope.md`.
+Step 4 per `.claude/rules/review-scope.md`.
 
 ## Enumerate Bypass Variants Before Coding, Not After
 

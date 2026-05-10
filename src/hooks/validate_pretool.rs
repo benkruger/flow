@@ -588,7 +588,7 @@ fn match_branch_at(path: &Path) -> Option<String> {
 /// ## Skill-commit carve-out
 ///
 /// The legitimate skill-driven commit path is `/flow:flow-commit` →
-/// `bin/flow finalize-commit`. The flow-code, flow-code-review, and
+/// `bin/flow finalize-commit`. The flow-code, flow-review, and
 /// flow-learn skills set `_continue_pending=commit` on the state file
 /// via `bin/flow set-timestamp` immediately before invoking
 /// /flow:flow-commit. `phase_enter()` clears the field on phase

@@ -21,7 +21,7 @@ After Complete, the only permanent artifacts are the merged PR and any CLAUDE.md
 |-------|------|---------|---------|
 | 1 | Start | `/flow:flow-start` | Create worktree, PR, state file, configure workspace; extract plan from issue body sentinels via `bin/flow plan-from-issue` |
 | 2 | Code | `/flow:flow-code` | Execute plan tasks one at a time with TDD |
-| 3 | Code Review | `/flow:flow-code-review` | Six tenants assessed by four cognitively isolated agents (reviewer, pre-mortem, adversarial, documentation). Parent triages and fixes. |
+| 3 | Code Review | `/flow:flow-review` | Six tenants assessed by four cognitively isolated agents (reviewer, pre-mortem, adversarial, documentation). Parent triages and fixes. |
 | 4 | Learn | `/flow:flow-learn` | Capture learnings, route to permanent homes |
 | 5 | Complete | `/flow:flow-complete` | Merge PR, remove worktree, delete state file |
 

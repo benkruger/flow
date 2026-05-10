@@ -91,14 +91,14 @@ fn create_state(repo: &Path, branch: &str, current_phase: &str, skills_continue:
                 "cumulative_seconds": 0,
                 "visit_count": if current_phase == "flow-code" { 1 } else { 0 }
             },
-            "flow-code-review": {
+            "flow-review": {
                 "name": "Code Review",
-                "status": if current_phase == "flow-code-review" { "in_progress" } else { "pending" },
-                "started_at": if current_phase == "flow-code-review" { Some("2026-01-01T00:03:00-08:00") } else { None },
+                "status": if current_phase == "flow-review" { "in_progress" } else { "pending" },
+                "started_at": if current_phase == "flow-review" { Some("2026-01-01T00:03:00-08:00") } else { None },
                 "completed_at": null,
-                "session_started_at": if current_phase == "flow-code-review" { Some("2026-01-01T00:03:00-08:00") } else { None },
+                "session_started_at": if current_phase == "flow-review" { Some("2026-01-01T00:03:00-08:00") } else { None },
                 "cumulative_seconds": 0,
-                "visit_count": if current_phase == "flow-code-review" { 1 } else { 0 }
+                "visit_count": if current_phase == "flow-review" { 1 } else { 0 }
             },
             "flow-learn": {
                 "name": "Learn",
@@ -128,7 +128,7 @@ fn create_state(repo: &Path, branch: &str, current_phase: &str, skills_continue:
                 "commit": skills_continue,
                 "continue": skills_continue
             },
-            "flow-code-review": {
+            "flow-review": {
                 "commit": skills_continue,
                 "continue": skills_continue
             },
@@ -310,7 +310,7 @@ fn test_code_phase() {
     let state_path = flow_states_dir(&repo).join(branch).join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-code"]["status"], "complete");
-    assert_eq!(state["current_phase"], "flow-code-review");
+    assert_eq!(state["current_phase"], "flow-review");
 }
 
 #[test]
@@ -318,15 +318,15 @@ fn test_code_review_phase() {
     let dir = tempfile::tempdir().unwrap();
     let branch = "cr-fin";
     let repo = create_git_repo(dir.path());
-    create_state(&repo, branch, "flow-code-review", "auto");
+    create_state(&repo, branch, "flow-review", "auto");
 
-    let output = run_phase_finalize(&repo, &["--phase", "flow-code-review", "--branch", branch]);
+    let output = run_phase_finalize(&repo, &["--phase", "flow-review", "--branch", branch]);
     let data = parse_output(&output);
     assert_eq!(data["status"], "ok");
 
     let state_path = flow_states_dir(&repo).join(branch).join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
-    assert_eq!(state["phases"]["flow-code-review"]["status"], "complete");
+    assert_eq!(state["phases"]["flow-review"]["status"], "complete");
     assert_eq!(state["current_phase"], "flow-learn");
 }
 
@@ -430,21 +430,21 @@ fn test_frozen_phase_config_used() {
         "order": [
             "flow-start",
             "flow-code",
-            "flow-code-review",
+            "flow-review",
             "flow-learn",
             "flow-complete"
         ],
         "commands": {
             "flow-start": "/flow:flow-start",
             "flow-code": "/flow:flow-code",
-            "flow-code-review": "/flow:flow-code-review",
+            "flow-review": "/flow:flow-review",
             "flow-learn": "/flow:flow-learn",
             "flow-complete": "/flow:flow-complete"
         },
         "phase_names": {
             "flow-start": "Start",
             "flow-code": "Code",
-            "flow-code-review": "Code Review",
+            "flow-review": "Code Review",
             "flow-learn": "Learn",
             "flow-complete": "Complete"
         }
@@ -571,7 +571,7 @@ fn phase_finalize_write_state(root: &std::path::Path, branch: &str, current_phas
     let phase_order = [
         "flow-start",
         "flow-code",
-        "flow-code-review",
+        "flow-review",
         "flow-learn",
         "flow-complete",
     ];
@@ -990,11 +990,11 @@ fn finalize_loads_frozen_config_when_present() {
     phase_finalize_write_state(root, "branch-frozen", "flow-code");
 
     let frozen = json!({
-        "order": ["flow-start", "flow-code", "flow-code-review", "flow-learn", "flow-complete"],
+        "order": ["flow-start", "flow-code", "flow-review", "flow-learn", "flow-complete"],
         "phases": {
             "flow-start": {"name": "Start", "command": "/flow:flow-start"},
             "flow-code": {"name": "Code", "command": "/flow:flow-code"},
-            "flow-code-review": {"name": "Code Review", "command": "/flow:flow-code-review"},
+            "flow-review": {"name": "Code Review", "command": "/flow:flow-review"},
             "flow-learn": {"name": "Learn", "command": "/flow:flow-learn"},
             "flow-complete": {"name": "Complete", "command": "/flow:flow-complete"},
         }

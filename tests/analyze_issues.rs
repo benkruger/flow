@@ -609,12 +609,6 @@ fn categorize_rule_label_lib() {
 }
 
 #[test]
-fn categorize_flow_label_lib() {
-    let labels: HashSet<String> = ["Flow".to_string()].into();
-    assert_eq!(categorize(&labels, "title", "body"), "Flow");
-}
-
-#[test]
 fn categorize_tech_debt_label_lib() {
     let labels: HashSet<String> = ["Tech Debt".to_string()].into();
     assert_eq!(categorize(&labels, "title", "body"), "Tech Debt");

@@ -22,7 +22,7 @@ use crate::phase_transition::phase_enter;
     about = "Generic phase entry: gate + enter + state data"
 )]
 pub struct Args {
-    /// Phase name (e.g. flow-code, flow-code-review, flow-learn)
+    /// Phase name (e.g. flow-code, flow-review, flow-learn)
     #[arg(long)]
     pub phase: String,
 
@@ -40,7 +40,7 @@ pub struct Args {
 /// assert on the prefix-derivation rules directly.
 ///
 /// Strips the `flow-` prefix and replaces `-` with `_`.
-/// Example: `flow-code-review` → `code_review`
+/// Example: `flow-review` → `review`
 fn phase_field_prefix(phase: &str) -> String {
     phase
         .strip_prefix("flow-")
@@ -231,6 +231,21 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     // defensive non-object guard is needed here.
     let home = crate::window_snapshot::home_dir_or_empty();
     let mutate_result = mutate_state(&state_path, &mut |state| {
+        // Migrate `skills` map keys for renamed phase identifiers.
+        // State files written by older plugin versions store skill
+        // configs under the old phase identifier (e.g.
+        // `skills.flow-code-review`); when phase_enter advances to
+        // the new identifier (`flow-review`), downstream hooks
+        // (validate_ask_user, stop_continue) lookup
+        // `skills.<current_phase>` via raw JSON key. Without
+        // migration, the hook lookup returns None and the
+        // autonomous-discipline gates silently disable for the
+        // remainder of the in-flight flow. The migration runs
+        // before phase_enter() so the new key is in place by the
+        // time any subsequent hook reads run against this state
+        // file.
+        migrate_skills_keys(state);
+
         let result = phase_enter(state, &phase_name, None);
         *enter_result_holder.borrow_mut() = result;
 
@@ -355,4 +370,34 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     }
 
     Ok(response)
+}
+
+/// Phase-identifier renames the migration walks at every
+/// `phase-enter` so the `skills` map's free-form string keys
+/// follow the canonical phase identifier even when the state
+/// file was written by an older plugin version.
+///
+/// Each tuple is `(legacy_key, canonical_key)`. When the state
+/// file's `skills` object contains the legacy key but not the
+/// canonical key, the migration moves the value to the canonical
+/// key in place. Pairs whose canonical key already exists are
+/// no-ops; the migration is idempotent.
+const SKILLS_KEY_MIGRATIONS: &[(&str, &str)] = &[("flow-code-review", "flow-review")];
+
+/// Walk `SKILLS_KEY_MIGRATIONS` and rename any legacy `skills` map
+/// keys present in `state` to their canonical form. Per
+/// `.claude/rules/state-files.md` "State Mutation Object Guards",
+/// the function is a no-op when `state.skills` is missing or has
+/// the wrong root type.
+pub fn migrate_skills_keys(state: &mut Value) {
+    let Some(skills) = state.get_mut("skills").and_then(|s| s.as_object_mut()) else {
+        return;
+    };
+    for (legacy, canonical) in SKILLS_KEY_MIGRATIONS {
+        if !skills.contains_key(*canonical) {
+            if let Some(legacy_value) = skills.remove(*legacy) {
+                skills.insert((*canonical).to_string(), legacy_value);
+            }
+        }
+    }
 }

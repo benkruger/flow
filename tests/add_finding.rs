@@ -44,7 +44,7 @@ fn add_finding_records_dismissed_during_code_review() {
     let state = json!({
         "schema_version": 1,
         "branch": "test-feature",
-        "current_phase": "flow-code-review",
+        "current_phase": "flow-review",
         "findings": []
     });
     let state_path = write_state(&repo, "test-feature", &state);
@@ -59,7 +59,7 @@ fn add_finding_records_dismissed_during_code_review() {
             "--outcome",
             "dismissed",
             "--phase",
-            "flow-code-review",
+            "flow-review",
             "--branch",
             "test-feature",
         ],
@@ -80,7 +80,7 @@ fn add_finding_records_dismissed_during_code_review() {
     let findings = on_disk["findings"].as_array().unwrap();
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0]["outcome"], "dismissed");
-    assert_eq!(findings[0]["phase"], "flow-code-review");
+    assert_eq!(findings[0]["phase"], "flow-review");
     assert_eq!(findings[0]["finding"], "Dead import in parser.rs");
 }
 
@@ -91,7 +91,7 @@ fn add_finding_invalid_outcome_rejected() {
     let state = json!({
         "schema_version": 1,
         "branch": "test-feature",
-        "current_phase": "flow-code-review",
+        "current_phase": "flow-review",
         "findings": []
     });
     write_state(&repo, "test-feature", &state);
@@ -106,7 +106,7 @@ fn add_finding_invalid_outcome_rejected() {
             "--outcome",
             "bogus",
             "--phase",
-            "flow-code-review",
+            "flow-review",
             "--branch",
             "test-feature",
         ],
@@ -127,7 +127,7 @@ fn add_finding_code_review_rejects_filed() {
     let repo = create_git_repo_with_remote(dir.path());
     let state = json!({
         "branch": "x",
-        "current_phase": "flow-code-review",
+        "current_phase": "flow-review",
         "findings": []
     });
     write_state(&repo, "x", &state);
@@ -142,7 +142,7 @@ fn add_finding_code_review_rejects_filed() {
             "--outcome",
             "filed",
             "--phase",
-            "flow-code-review",
+            "flow-review",
             "--branch",
             "x",
             "--issue-url",
@@ -154,6 +154,51 @@ fn add_finding_code_review_rejects_filed() {
     let data = parse_output(&output);
     assert_eq!(data["status"], "error");
     // Gate should name the rule it enforces.
+    let msg = data["message"].as_str().unwrap_or("");
+    assert!(msg.to_lowercase().contains("code review") || msg.contains("code-review"));
+}
+
+/// Lock the legacy phase identifier acceptance in
+/// `CODE_REVIEW_GATE_PHASES`. State files written by older plugin
+/// versions store `current_phase: "flow-code-review"`; the rename
+/// adds `"flow-review"` as the canonical identifier and accepts
+/// the legacy form so in-flight flows mid-upgrade still trigger
+/// the filing ban. Without this test, narrowing
+/// `CODE_REVIEW_GATE_PHASES` back to `["flow-review"]` would
+/// silently allow `--outcome filed --phase flow-code-review` from
+/// older sessions to bypass the gate.
+#[test]
+fn add_finding_code_review_rejects_filed_via_legacy_phase_identifier() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let state = json!({
+        "branch": "legacy",
+        "current_phase": "flow-code-review",
+        "findings": []
+    });
+    write_state(&repo, "legacy", &state);
+
+    let output = run_add_finding(
+        &repo,
+        &[
+            "--finding",
+            "needs follow up",
+            "--reason",
+            "not in scope",
+            "--outcome",
+            "filed",
+            "--phase",
+            "flow-code-review",
+            "--branch",
+            "legacy",
+            "--issue-url",
+            "https://github.com/o/r/issues/9",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
     let msg = data["message"].as_str().unwrap_or("");
     assert!(msg.to_lowercase().contains("code review") || msg.contains("code-review"));
 }
@@ -405,7 +450,7 @@ fn make_state_lib(branch: &str) -> Value {
     json!({
         "schema_version": 1,
         "branch": branch,
-        "current_phase": "flow-code-review",
+        "current_phase": "flow-review",
         "findings": []
     })
 }
@@ -441,7 +486,7 @@ fn add_finding_happy_path_lib() {
         finding: "Unused import in parser.rs".to_string(),
         reason: "False positive — import used in macro expansion".to_string(),
         outcome: "dismissed".to_string(),
-        phase: "flow-code-review".to_string(),
+        phase: "flow-review".to_string(),
         issue_url: None,
         path: None,
         branch: Some("test-feature".to_string()),
@@ -459,7 +504,7 @@ fn add_finding_happy_path_lib() {
         "False positive — import used in macro expansion"
     );
     assert_eq!(findings[0]["outcome"], "dismissed");
-    assert_eq!(findings[0]["phase"], "flow-code-review");
+    assert_eq!(findings[0]["phase"], "flow-review");
     assert_eq!(findings[0]["phase_name"], "Code Review");
     assert!(findings[0]["timestamp"].as_str().unwrap().contains("T"));
 }
@@ -473,13 +518,13 @@ fn add_finding_creates_array_if_missing_lib() {
     let path = branch_dir.join("state.json");
     // State file with no `findings` key — exercises the closure's
     // auto-create branch.
-    fs::write(&path, r#"{"current_phase": "flow-code-review"}"#).unwrap();
+    fs::write(&path, r#"{"current_phase": "flow-review"}"#).unwrap();
 
     let args = Args {
         finding: "test".to_string(),
         reason: "test reason".to_string(),
         outcome: "fixed".to_string(),
-        phase: "flow-code-review".to_string(),
+        phase: "flow-review".to_string(),
         issue_url: None,
         path: None,
         branch: Some("test-feature".to_string()),
@@ -498,7 +543,7 @@ fn add_finding_valid_outcome_accepted_lib() {
     let dir = tempfile::tempdir().unwrap();
     let state = make_state_lib("test-feature");
     write_state_lib(dir.path(), "test-feature", &state);
-    let args = make_args("fixed", "flow-code-review", Some("test-feature"));
+    let args = make_args("fixed", "flow-review", Some("test-feature"));
     assert_eq!(args.outcome, "fixed");
 }
 
@@ -519,9 +564,9 @@ fn filed_outcome_rejected_for_code_review_lib() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     write_state_lib(&root, "test-feature", &make_state_lib("test-feature"));
-    let args = make_args("filed", "flow-code-review", Some("test-feature"));
+    let args = make_args("filed", "flow-review", Some("test-feature"));
     let err = run_impl_with_root(&args, &root, &root).unwrap_err();
-    assert!(err.contains("flow-code-review"));
+    assert!(err.contains("flow-review"));
     assert!(err.contains("filed"));
 }
 
@@ -552,7 +597,7 @@ fn dismissed_outcome_accepted_for_code_review_lib() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     write_state_lib(&root, "cr-branch", &make_state_lib("cr-branch"));
-    let args = make_args("dismissed", "flow-code-review", Some("cr-branch"));
+    let args = make_args("dismissed", "flow-review", Some("cr-branch"));
     assert!(run_impl_with_root(&args, &root, &root).is_ok());
 }
 
@@ -561,7 +606,7 @@ fn fixed_outcome_accepted_for_code_review_lib() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     write_state_lib(&root, "cr-branch", &make_state_lib("cr-branch"));
-    let args = make_args("fixed", "flow-code-review", Some("cr-branch"));
+    let args = make_args("fixed", "flow-review", Some("cr-branch"));
     assert!(run_impl_with_root(&args, &root, &root).is_ok());
 }
 
@@ -580,7 +625,7 @@ fn leading_whitespace_phase_rejected_for_code_review_lib() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     write_state_lib(&root, "cr-branch", &make_state_lib("cr-branch"));
-    let args = make_args("filed", " flow-code-review", Some("cr-branch"));
+    let args = make_args("filed", " flow-review", Some("cr-branch"));
     assert!(run_impl_with_root(&args, &root, &root).is_err());
 }
 
@@ -589,7 +634,7 @@ fn trailing_whitespace_phase_rejected_for_code_review_lib() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     write_state_lib(&root, "cr-branch", &make_state_lib("cr-branch"));
-    let args = make_args("filed", "flow-code-review ", Some("cr-branch"));
+    let args = make_args("filed", "flow-review ", Some("cr-branch"));
     assert!(run_impl_with_root(&args, &root, &root).is_err());
 }
 
@@ -619,7 +664,7 @@ fn uppercase_filed_outcome_rejected_for_code_review_lib() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     write_state_lib(&root, "cr-branch", &make_state_lib("cr-branch"));
-    let args = make_args("Filed", "flow-code-review", Some("cr-branch"));
+    let args = make_args("Filed", "flow-review", Some("cr-branch"));
     assert!(run_impl_with_root(&args, &root, &root).is_err());
 }
 
@@ -628,7 +673,7 @@ fn embedded_nul_phase_rejected_for_code_review_lib() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     write_state_lib(&root, "cr-branch", &make_state_lib("cr-branch"));
-    let args = make_args("filed", "flow-code-review\0", Some("cr-branch"));
+    let args = make_args("filed", "flow-review\0", Some("cr-branch"));
     assert!(run_impl_with_root(&args, &root, &root).is_err());
 }
 
@@ -645,7 +690,7 @@ fn add_finding_array_root_state_noop_lib() {
         finding: "should not appear".to_string(),
         reason: "guard should reject".to_string(),
         outcome: "fixed".to_string(),
-        phase: "flow-code-review".to_string(),
+        phase: "flow-review".to_string(),
         issue_url: None,
         path: None,
         branch: Some("test-feature".to_string()),
@@ -680,7 +725,7 @@ fn add_finding_run_impl_main_invalid_outcome_returns_error_tuple() {
 fn add_finding_run_impl_main_code_review_filing_blocked_returns_error_tuple() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let args = make_args("filed", "flow-code-review", Some("test-branch"));
+    let args = make_args("filed", "flow-review", Some("test-branch"));
     let (value, code) = run_impl_main(args, &root, &root);
     assert_eq!(value["status"], "error");
     assert_eq!(code, 1);
@@ -948,8 +993,8 @@ fn add_finding_future_outcome_rejected_for_code_review() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     write_state_lib(&root, "cr-branch", &make_state_lib("cr-branch"));
-    let args = make_args("rule_written", "flow-code-review", Some("cr-branch"));
+    let args = make_args("rule_written", "flow-review", Some("cr-branch"));
     // "rule_written" is in VALID_OUTCOMES but not in CODE_REVIEW_ALLOWED_OUTCOMES.
     let err = run_impl_with_root(&args, &root, &root).unwrap_err();
-    assert!(err.contains("rule_written") || err.contains("flow-code-review"));
+    assert!(err.contains("rule_written") || err.contains("flow-review"));
 }

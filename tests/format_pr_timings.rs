@@ -11,7 +11,7 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
     let all_phases = [
         "flow-start",
         "flow-code",
-        "flow-code-review",
+        "flow-review",
         "flow-learn",
         "flow-complete",
     ];
@@ -49,7 +49,7 @@ fn test_all_complete() {
     let all_phases = [
         "flow-start",
         "flow-code",
-        "flow-code-review",
+        "flow-review",
         "flow-learn",
         "flow-complete",
     ];
@@ -57,7 +57,7 @@ fn test_all_complete() {
     let mut state = make_state("flow-complete", &statuses);
     state["phases"]["flow-start"]["cumulative_seconds"] = json!(36);
     state["phases"]["flow-code"]["cumulative_seconds"] = json!(328);
-    state["phases"]["flow-code-review"]["cumulative_seconds"] = json!(500);
+    state["phases"]["flow-review"]["cumulative_seconds"] = json!(500);
     state["phases"]["flow-learn"]["cumulative_seconds"] = json!(352);
     state["phases"]["flow-complete"]["cumulative_seconds"] = json!(20);
 
@@ -123,7 +123,7 @@ fn test_uses_format_time() {
     let all_phases = [
         "flow-start",
         "flow-code",
-        "flow-code-review",
+        "flow-review",
         "flow-learn",
         "flow-complete",
     ];
@@ -145,7 +145,7 @@ fn test_cumulative_seconds_as_string() {
     let all_phases = [
         "flow-start",
         "flow-code",
-        "flow-code-review",
+        "flow-review",
         "flow-learn",
         "flow-complete",
     ];
@@ -164,7 +164,7 @@ fn test_cli_writes_output_file() {
     let all_phases = [
         "flow-start",
         "flow-code",
-        "flow-code-review",
+        "flow-review",
         "flow-learn",
         "flow-complete",
     ];
@@ -235,7 +235,7 @@ fn test_cli_happy_path() {
     let all_phases = [
         "flow-start",
         "flow-code",
-        "flow-code-review",
+        "flow-review",
         "flow-learn",
         "flow-complete",
     ];
@@ -274,7 +274,7 @@ fn run_impl_write_error_returns_err() {
     let all_phases = [
         "flow-start",
         "flow-code",
-        "flow-code-review",
+        "flow-review",
         "flow-learn",
         "flow-complete",
     ];
@@ -359,7 +359,7 @@ fn run_impl_main_happy_path_ok_with_json_value() {
     let all_phases = [
         "flow-start",
         "flow-code",
-        "flow-code-review",
+        "flow-review",
         "flow-learn",
         "flow-complete",
     ];

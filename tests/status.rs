@@ -13,7 +13,7 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
     let all_phases = [
         "flow-start",
         "flow-code",
-        "flow-code-review",
+        "flow-review",
         "flow-learn",
         "flow-complete",
     ];

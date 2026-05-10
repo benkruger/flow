@@ -80,7 +80,7 @@ fn issue_binary_rejects_during_code_review() {
         &json!({
             "schema_version": 1,
             "branch": "test-feature",
-            "current_phase": "flow-code-review"
+            "current_phase": "flow-review"
         }),
     );
 
@@ -106,7 +106,7 @@ fn issue_binary_allows_override_during_code_review() {
         &json!({
             "schema_version": 1,
             "branch": "test-feature",
-            "current_phase": "flow-code-review"
+            "current_phase": "flow-review"
         }),
     );
 
@@ -200,7 +200,7 @@ fn issue_binary_blocks_whitespace_padded_phase() {
         &json!({
             "schema_version": 1,
             "branch": "test-feature",
-            "current_phase": " flow-code-review "
+            "current_phase": " flow-review "
         }),
     );
 

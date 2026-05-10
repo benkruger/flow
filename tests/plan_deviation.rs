@@ -730,7 +730,7 @@ fn make_deviation(test_name: &str, plan_value: &str) -> Deviation {
 #[test]
 fn acknowledged_log_line_contains_both_returns_true() {
     let dev = make_deviation("test_foo", "/flow:flow-plan");
-    let log = "2026-04-15T10:00:00-08:00 [Phase 3] Plan signature deviation: test_foo drifted from /flow:flow-plan to /flow:flow-code-review. Reason: X.\n";
+    let log = "2026-04-15T10:00:00-08:00 [Phase 3] Plan signature deviation: test_foo drifted from /flow:flow-plan to /flow:flow-review. Reason: X.\n";
     assert!(acknowledged(&dev, log));
 }
 

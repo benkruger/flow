@@ -452,6 +452,10 @@ enum HookCommands {
     /// PostCompact hook: capture compaction summary into state file.
     #[command(name = "post-compact")]
     PostCompact,
+    /// SessionStart hook: persist session_id + transcript_path so
+    /// flow-start can seed them into the new flow's state file.
+    #[command(name = "capture-session")]
+    CaptureSession,
 }
 
 fn main() {
@@ -856,6 +860,7 @@ fn main() {
             HookCommands::StopContinue => hooks::stop_continue::run(),
             HookCommands::StopFailure => hooks::stop_failure::run(),
             HookCommands::PostCompact => hooks::post_compact::run(),
+            HookCommands::CaptureSession => hooks::capture_session::run(),
         },
         Some(Commands::External(_)) => {
             process::exit(127);

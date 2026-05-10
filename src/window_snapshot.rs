@@ -128,12 +128,27 @@ pub fn capture_for_active_state(home: &Path, state: &Value, project_root: &Path)
     )
 }
 
+/// Maximum accepted length for a `session_id`. Real Claude Code
+/// session ids are UUIDs (36 chars); the cap is generously sized
+/// at 256 bytes to leave room for future identifier formats while
+/// bounding the payload an attacker can land in the capture file
+/// or state file via a hostile SessionStart producer.
+pub(crate) const SESSION_ID_MAX_LEN: usize = 256;
+
 /// Validate a state-derived `session_id` against the shape Claude
 /// Code populates: alphanumeric plus `-` and `_`, no path separators
-/// or traversal segments. Rejects `..`, `.`, `/`, `\`, NUL, and any
-/// other character that could escape the per-session cost-file path.
-fn is_safe_session_id(s: &str) -> bool {
-    if s.is_empty() || s == "." || s == ".." {
+/// or traversal segments, length ≤ [`SESSION_ID_MAX_LEN`]. Rejects
+/// `..`, `.`, `/`, `\`, NUL, oversized strings, and any other
+/// character that could escape the per-session cost-file path.
+///
+/// Cross-module consumers: `src/hooks/capture_session.rs` validates
+/// stdin-supplied session_id at SessionStart and validates the
+/// capture-file payload that `src/commands/init_state.rs::run` reads
+/// at flow-start. Per `.claude/rules/external-input-path-construction.md`,
+/// the same validator runs at every state-derived path-construction
+/// site.
+pub(crate) fn is_safe_session_id(s: &str) -> bool {
+    if s.is_empty() || s == "." || s == ".." || s.len() > SESSION_ID_MAX_LEN {
         return false;
     }
     s.chars()

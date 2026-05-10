@@ -169,6 +169,7 @@ pub fn read_hook_input() -> Option<Value> {
     serde_json::from_str(&input).ok()
 }
 
+pub mod capture_session;
 pub mod post_compact;
 pub mod stop_continue;
 pub mod stop_failure;

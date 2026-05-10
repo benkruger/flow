@@ -46,7 +46,7 @@ fn empty_state() -> FlowState {
         code_task: None,
         code_tasks_total: None,
         code_task_name: None,
-        code_review_step: None,
+        review_step: None,
         learn_step: None,
         learn_steps_total: None,
         complete_step: None,
@@ -182,6 +182,23 @@ fn phase_delta_cross_session_groups_then_sums() {
     let report = phase_delta(&phase).expect("populated");
     assert_eq!(report.input_tokens_delta, 11);
     assert_eq!(report.turn_count_delta, 11);
+    // snap() seeds session_cost_usd as `Some(n * 0.01)` so both
+    // session segments have populated cost endpoints. The plan
+    // (issue #1410) calls out this assertion as the test gap that
+    // allowed the asymmetric pre-fix `pair_delta` to ship: without
+    // a cost check, the buggy (Some, None)/(None, Some) arms would
+    // have silently fabricated deltas across the session boundary.
+    // S1: 0.08 - 0.05 = 0.03; S2: 0.10 - 0.02 = 0.08; Total: 0.11.
+    let cost = report.cost_delta_usd.expect("cost is populated");
+    assert!(
+        (cost - 0.11).abs() < 1e-9,
+        "cross-session cost must sum each session independently; got {}",
+        cost
+    );
+    assert!(
+        !report.total_partial,
+        "all four cost endpoints are Some, so total_partial must be false"
+    );
 }
 
 /// Step snapshots between enter and complete contribute through
@@ -344,7 +361,11 @@ fn flow_total_empty_state_returns_zero_report() {
     let state = empty_state();
     let report = flow_total(&state);
     assert_eq!(report.input_tokens_delta, 0);
-    assert_eq!(report.cost_delta_usd, 0.0);
+    // Empty state has no cost contributions, so the zero report's
+    // `cost_delta_usd` is `None` — the new "no info" sentinel that
+    // distinguishes "we computed zero cost" from "we have no cost
+    // data at all" (issue #1410).
+    assert_eq!(report.cost_delta_usd, None);
     assert_eq!(report.five_hour_pct_delta, Some(0));
     assert!(!report.window_reset_observed);
     assert!(report.by_model_delta.is_empty());
@@ -369,29 +390,77 @@ fn flow_total_sticky_reset_flag_propagates() {
     assert!(report.window_reset_observed);
 }
 
-/// Cost delta with `start` as `None` and `end` populated treats
-/// the start as zero and reports the end's value as the delta.
+// --- pair_delta cost (Option<f64>) — issue #1410 ---
+//
+// pair_delta is private; tests drive it through phase_delta with
+// fixtures that produce a single (enter, complete) pair, isolating
+// the cost-arm logic. The four named tests below replace the
+// pre-fix tests `phase_delta_cost_with_none_start_uses_end_value`
+// and `phase_delta_cost_with_both_none_contributes_zero`, which
+// asserted the buggy fabricate-on-missing behavior. Per
+// `.claude/rules/supersession.md` the pre-fix tests are deleted
+// because their assertion contracts are obsolete.
+
+/// Both endpoints populated: cost delta is `Some(end - start)`.
 #[test]
-fn phase_delta_cost_with_none_start_uses_end_value() {
+fn pair_delta_cost_both_present_returns_some_difference() {
+    let mut enter = snap("S1", 0);
+    let mut complete = snap("S1", 0);
+    enter.session_cost_usd = Some(0.5);
+    complete.session_cost_usd = Some(2.0);
+    let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
+    let report = phase_delta(&phase).expect("populated");
+    assert_eq!(
+        report.cost_delta_usd,
+        Some(1.5),
+        "(Some, Some) must produce Some(end - start)"
+    );
+}
+
+/// End cost missing: pair_delta cannot infer a delta from a single
+/// endpoint, so the result is `None`. The pre-fix code returned
+/// `0.0`, silently dropping the start.
+#[test]
+fn pair_delta_cost_end_missing_returns_none() {
+    let mut enter = snap("S1", 0);
+    let mut complete = snap("S1", 0);
+    enter.session_cost_usd = Some(0.5);
+    complete.session_cost_usd = None;
+    let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
+    let report = phase_delta(&phase).expect("populated");
+    assert_eq!(
+        report.cost_delta_usd, None,
+        "(Some, None) must produce None — no fabricated delta"
+    );
+}
+
+/// Start cost missing: pair_delta cannot infer a delta. The pre-fix
+/// code returned the end's cumulative value, fabricating a delta
+/// from a session-total.
+#[test]
+fn pair_delta_cost_start_missing_returns_none() {
     let mut enter = snap("S1", 0);
     let mut complete = snap("S1", 0);
     enter.session_cost_usd = None;
-    complete.session_cost_usd = Some(0.42);
+    complete.session_cost_usd = Some(2.0);
     let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
     let report = phase_delta(&phase).expect("populated");
-    assert!((report.cost_delta_usd - 0.42).abs() < 1e-9);
+    assert_eq!(
+        report.cost_delta_usd, None,
+        "(None, Some) must produce None — no fabricated delta from cumulative end"
+    );
 }
 
-/// Cost delta where both endpoints are `None` contributes zero.
+/// Both endpoints missing: result is `None`.
 #[test]
-fn phase_delta_cost_with_both_none_contributes_zero() {
+fn pair_delta_cost_both_missing_returns_none() {
     let mut enter = snap("S1", 0);
     let mut complete = snap("S1", 0);
     enter.session_cost_usd = None;
     complete.session_cost_usd = None;
     let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
     let report = phase_delta(&phase).expect("populated");
-    assert_eq!(report.cost_delta_usd, 0.0);
+    assert_eq!(report.cost_delta_usd, None);
 }
 
 /// pct_delta_with_reset: when `start` is None and `end` is Some,
@@ -469,17 +538,102 @@ fn phase_delta_with_single_snapshot_session_in_middle_skips_lone_snapshot() {
     assert_eq!(report.input_tokens_delta, 9);
 }
 
-/// Cross-session deltas when `session_id` is missing on a snapshot:
-/// missing session id is treated as the empty-string sentinel,
-/// grouping consecutive None snapshots together — they share a
-/// "no session" context.
+// Pre-fix test `phase_delta_with_missing_session_ids_groups_as_one_session`
+// was removed per `.claude/rules/supersession.md` — it asserted the
+// buggy behavior where consecutive None session_id snapshots were
+// collapsed into one synthetic empty-string session, producing a
+// spurious cross-snapshot delta. The plan-named
+// `deltas_from_snapshots_*` tests below cover the new contract:
+// each None session_id is a distinct session, so consecutive
+// None snapshots produce no pair delta.
+
+/// Two consecutive snapshots with `session_id: None` are treated as
+/// distinct sessions (each gets a unique synthetic key per snapshot
+/// index), so no pair_delta is computed across them. Pre-fix the
+/// `unwrap_or("")` collapsed both into one empty-string session and
+/// produced a spurious delta of 1.5 across them.
 #[test]
-fn phase_delta_with_missing_session_ids_groups_as_one_session() {
+fn deltas_from_snapshots_two_none_session_ids_treated_as_distinct_sessions() {
     let mut s_a = snap("ignored", 5);
     let mut s_b = snap("ignored", 12);
     s_a.session_id = None;
     s_b.session_id = None;
+    s_a.session_cost_usd = Some(0.5);
+    s_b.session_cost_usd = Some(2.0);
     let phase = phase_with_snapshots(Some(s_a), vec![], Some(s_b));
     let report = phase_delta(&phase).expect("populated");
+    assert_eq!(
+        report.input_tokens_delta, 0,
+        "two distinct None sessions must not produce a token delta"
+    );
+    assert_eq!(
+        report.cost_delta_usd, None,
+        "two distinct None sessions must not fabricate a cost delta from cumulative values"
+    );
+}
+
+/// `[None, Some("A"), Some("A")]`: the leading None snapshot is its
+/// own session (no pair); the two `Some("A")` snapshots form a pair.
+/// Only that pair's delta contributes.
+#[test]
+fn deltas_from_snapshots_none_then_some_session_id_split_at_boundary() {
+    let mut s_none = snap("ignored", 0);
+    s_none.session_id = None;
+    let s_a_enter = snap("A", 5);
+    let s_a_complete = snap("A", 12);
+    let phase = phase_with_snapshots(
+        Some(s_none),
+        vec![(1, "code_task", s_a_enter)],
+        Some(s_a_complete),
+    );
+    let report = phase_delta(&phase).expect("populated");
+    // Only the (Some("A"), Some("A")) pair contributes: 12 - 5 = 7.
     assert_eq!(report.input_tokens_delta, 7);
+}
+
+/// `[Some("A"), None, Some("B")]`: three distinct sessions, none of
+/// which has more than one snapshot, so no pair contributes a
+/// delta.
+#[test]
+fn deltas_from_snapshots_some_then_none_then_some_treated_as_three_sessions() {
+    let s_a = snap("A", 5);
+    let mut s_none = snap("ignored", 7);
+    s_none.session_id = None;
+    let s_b = snap("B", 10);
+    let phase = phase_with_snapshots(Some(s_a), vec![(1, "code_task", s_none)], Some(s_b));
+    let report = phase_delta(&phase).expect("populated");
+    assert_eq!(
+        report.input_tokens_delta, 0,
+        "three distinct single-snapshot sessions must not produce a delta"
+    );
+    assert_eq!(report.cost_delta_usd, None);
+}
+
+/// Regression: the synthetic per-index key for a None session_id is
+/// prefixed with NUL (`\0__none_<i>`). The NUL prefix makes the
+/// synthetic-key namespace disjoint from any real `session_id` —
+/// `is_safe_session_id` rejects NUL — so a captured session_id of
+/// shape `__none_0` (which DOES pass the alphanumeric+underscore
+/// validator) can never collide with the synthetic key for snapshot
+/// 0 of a different flow.
+#[test]
+fn deltas_from_snapshots_synthetic_key_disjoint_from_real_underscore_id() {
+    let mut s0 = snap("ignored", 5);
+    s0.session_id = None; // → synthetic key "\0__none_0"
+    s0.session_cost_usd = Some(0.50);
+
+    // Real session_id literally equal to "__none_0" — passes
+    // is_safe_session_id (alphanumeric + underscore) but is
+    // distinct from the synthetic "\0__none_0".
+    let mut s1 = snap("__none_0", 12);
+    s1.session_cost_usd = Some(2.00);
+
+    let phase = phase_with_snapshots(Some(s0), vec![], Some(s1));
+    let report = phase_delta(&phase).expect("populated");
+    assert_eq!(
+        report.cost_delta_usd, None,
+        "synthetic key for None session_id must not collide with a real \
+         session_id of shape `__none_0`; got cost={:?}",
+        report.cost_delta_usd
+    );
 }

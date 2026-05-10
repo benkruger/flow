@@ -38,7 +38,7 @@ pub fn step_names() -> HashMap<&'static str, HashMap<i64, &'static str>> {
     code_review.insert(2, "reviewing");
     code_review.insert(3, "security review");
     code_review.insert(4, "agent reviews");
-    map.insert("flow-code-review", code_review);
+    map.insert("flow-review", code_review);
 
     let mut learn = HashMap::new();
     learn.insert(1, "gathering sources");
@@ -237,8 +237,13 @@ pub fn phase_timeline(state: &Value, now: Option<DateTime<FixedOffset>>) -> Vec<
         .get("code_task_name")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let code_review_step = state
-        .get("code_review_step")
+    // Read the canonical `review_step` key first; fall back to the
+    // legacy `code_review_step` so state files written by older plugin
+    // versions still surface step progress in the timeline. Mirrors
+    // the serde alias on `FlowState::review_step` in `src/state.rs`.
+    let review_step = state
+        .get("review_step")
+        .or_else(|| state.get("code_review_step"))
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
     let learn_step = state
@@ -343,15 +348,15 @@ pub fn phase_timeline(state: &Value, now: Option<DateTime<FixedOffset>>) -> Vec<
                 parts.push(format!("+{} -{}", ins, dels));
             }
             parts.join(", ")
-        } else if key == "flow-code-review" {
+        } else if key == "flow-review" {
             let cr_total = all_step_names
-                .get("flow-code-review")
+                .get("flow-review")
                 .map(|m| m.len() as i64)
                 .unwrap_or(0);
-            let display_step = code_review_step + 1;
+            let display_step = review_step + 1;
             if display_step <= cr_total {
                 let sn = all_step_names
-                    .get("flow-code-review")
+                    .get("flow-review")
                     .and_then(|m| m.get(&display_step))
                     .copied()
                     .unwrap_or("");
@@ -409,7 +414,11 @@ pub struct PhaseTokenRow {
     pub phase_number: usize,
     pub status: String,
     pub tokens: i64,
-    pub cost_usd: f64,
+    /// `None` when the phase has no `(Some, Some)` cost pair (issue
+    /// #1410). The TUI renders `None` as the em-dash placeholder and
+    /// excludes None-cost rows from the cost-based "active" filter
+    /// below.
+    pub cost_usd: Option<f64>,
     pub window_reset_observed: bool,
     pub in_progress: bool,
 }
@@ -465,7 +474,7 @@ pub fn phase_token_table(state: &Value) -> Vec<PhaseTokenRow> {
                     .saturating_add(report.cache_read_tokens_delta);
                 (total, report.cost_delta_usd, report.window_reset_observed)
             })
-            .unwrap_or((0, 0.0, false));
+            .unwrap_or((0, None, false));
 
         rows.push(PhaseTokenRow {
             phase_key: key.to_string(),

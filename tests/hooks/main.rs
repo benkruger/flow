@@ -14,6 +14,7 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+mod capture_session;
 mod dispatcher;
 mod shared;
 mod stop_continue;

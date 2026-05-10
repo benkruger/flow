@@ -18,14 +18,14 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
     let order = [
         "flow-start",
         "flow-code",
-        "flow-code-review",
+        "flow-review",
         "flow-learn",
         "flow-complete",
     ];
     let names = [
         ("flow-start", "Start"),
         ("flow-code", "Code"),
-        ("flow-code-review", "Code Review"),
+        ("flow-review", "Code Review"),
         ("flow-learn", "Learn"),
         ("flow-complete", "Complete"),
     ];
@@ -319,11 +319,11 @@ fn run_impl_main_loads_frozen_phase_config_when_present() {
     .unwrap();
 
     let frozen = json!({
-        "order": ["flow-start", "flow-code", "flow-code-review", "flow-learn", "flow-complete"],
+        "order": ["flow-start", "flow-code", "flow-review", "flow-learn", "flow-complete"],
         "phases": {
             "flow-start": {"name": "Start", "command": "/flow:flow-start"},
             "flow-code": {"name": "Code", "command": "/flow:flow-code"},
-            "flow-code-review": {"name": "Code Review", "command": "/flow:flow-code-review"},
+            "flow-review": {"name": "Code Review", "command": "/flow:flow-review"},
             "flow-learn": {"name": "Learn", "command": "/flow:flow-learn"},
             "flow-complete": {"name": "Complete", "command": "/flow:flow-complete"},
         }
@@ -400,11 +400,11 @@ fn run_impl_main_previous_phase_in_progress_blocks() {
 fn run_impl_main_sequential_chain_phase_3_allowed() {
     let dir = tempfile::tempdir().unwrap();
     let state = make_state(
-        "flow-code-review",
+        "flow-review",
         &[("flow-start", "complete"), ("flow-code", "complete")],
     );
     write_state(dir.path(), "test", state);
-    let (_, code) = run_impl_main("flow-code-review", Some("test"), dir.path());
+    let (_, code) = run_impl_main("flow-review", Some("test"), dir.path());
     assert_eq!(code, 0);
 }
 
@@ -458,7 +458,7 @@ fn run_impl_main_phase_4_requires_phase_3_complete() {
         &[
             ("flow-start", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "pending"),
+            ("flow-review", "pending"),
         ],
     );
     write_state(dir.path(), "test", state);
@@ -475,7 +475,7 @@ fn run_impl_main_phase_5_requires_phase_4_complete() {
         &[
             ("flow-start", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "complete"),
+            ("flow-review", "complete"),
             ("flow-learn", "pending"),
         ],
     );
@@ -503,11 +503,11 @@ fn run_impl_main_missing_phases_key_blocks() {
 fn run_impl_main_blocked_message_includes_correct_command() {
     let dir = tempfile::tempdir().unwrap();
     let state = make_state(
-        "flow-code-review",
+        "flow-review",
         &[("flow-start", "complete"), ("flow-code", "pending")],
     );
     write_state(dir.path(), "test", state);
-    let (out, code) = run_impl_main("flow-code-review", Some("test"), dir.path());
+    let (out, code) = run_impl_main("flow-review", Some("test"), dir.path());
     assert_eq!(code, 1);
     assert!(out.contains("/flow:flow-code"));
 }

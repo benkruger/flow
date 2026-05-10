@@ -19,7 +19,7 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
     let all_phases = [
         "flow-start",
         "flow-code",
-        "flow-code-review",
+        "flow-review",
         "flow-learn",
         "flow-complete",
     ];
@@ -281,7 +281,7 @@ fn panel_all_complete_shows_timing() {
     let all_phases = [
         "flow-start",
         "flow-code",
-        "flow-code-review",
+        "flow-review",
         "flow-learn",
         "flow-complete",
     ];
@@ -289,7 +289,7 @@ fn panel_all_complete_shows_timing() {
     let mut state = make_state("flow-complete", &statuses);
     state["phases"]["flow-start"]["cumulative_seconds"] = json!(30);
     state["phases"]["flow-code"]["cumulative_seconds"] = json!(3600);
-    state["phases"]["flow-code-review"]["cumulative_seconds"] = json!(870);
+    state["phases"]["flow-review"]["cumulative_seconds"] = json!(870);
     state["phases"]["flow-learn"]["cumulative_seconds"] = json!(300);
     state["phases"]["flow-complete"]["cumulative_seconds"] = json!(20);
     let panel = format_panel(&state, VERSION, None, false, None);
@@ -328,13 +328,13 @@ fn panel_timing_formats() {
         &[
             ("flow-start", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "complete"),
+            ("flow-review", "complete"),
             ("flow-learn", "in_progress"),
         ],
     );
     state["phases"]["flow-start"]["cumulative_seconds"] = json!(30);
     state["phases"]["flow-code"]["cumulative_seconds"] = json!(3660);
-    state["phases"]["flow-code-review"]["cumulative_seconds"] = json!(120);
+    state["phases"]["flow-review"]["cumulative_seconds"] = json!(120);
     let panel = format_panel(&state, VERSION, None, false, None);
     assert!(panel.contains("(<1m)"), "Panel:\n{}", panel);
     assert!(panel.contains("(1h 1m)"), "Panel:\n{}", panel);
@@ -682,14 +682,14 @@ fn format_status_run_impl_main_loads_frozen_phase_config() {
         "order": [
             "flow-start",
             "flow-code",
-            "flow-code-review",
+            "flow-review",
             "flow-learn",
             "flow-complete"
         ],
         "phases": {
             "flow-start": {"name": "Start", "command": "/flow:flow-start"},
             "flow-code": {"name": "Custom Code Name", "command": "/flow:flow-code-custom"},
-            "flow-code-review": {"name": "Code Review", "command": "/flow:flow-code-review"},
+            "flow-review": {"name": "Code Review", "command": "/flow:flow-review"},
             "flow-learn": {"name": "Learn", "command": "/flow:flow-learn"},
             "flow-complete": {"name": "Complete", "command": "/flow:flow-complete"}
         }
@@ -717,7 +717,7 @@ fn format_status_all_complete_renders_all_phases_complete_panel() {
             ("flow-start", "complete"),
             ("flow-code", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "complete"),
+            ("flow-review", "complete"),
             ("flow-learn", "complete"),
             ("flow-complete", "complete"),
         ],
@@ -744,7 +744,7 @@ fn format_status_all_complete_with_relative_cwd_renders_subdir_line() {
             ("flow-start", "complete"),
             ("flow-code", "complete"),
             ("flow-code", "complete"),
-            ("flow-code-review", "complete"),
+            ("flow-review", "complete"),
             ("flow-learn", "complete"),
             ("flow-complete", "complete"),
         ],
@@ -779,7 +779,7 @@ fn format_all_complete_dev_mode_shows_label() {
     let all_phases = [
         "flow-start",
         "flow-code",
-        "flow-code-review",
+        "flow-review",
         "flow-learn",
         "flow-complete",
     ];
@@ -994,6 +994,32 @@ fn tokens_block_renders_for_in_progress_phase_with_step_snapshots() {
     assert!(panel.contains("Tokens  :"), "Panel:\n{}", panel);
 }
 
+/// Tokens line renders the em-dash placeholder for cost when every
+/// snapshot pair lacks `session_cost_usd` but tokens grew (issue
+/// #1410). The pre-fix code rendered `$0.000` here, masking the
+/// "no cost data" condition behind a literal-zero value.
+#[test]
+fn tokens_block_renders_em_dash_when_cost_unknown_but_tokens_grew() {
+    let mut state = make_state("flow-code", &[("flow-code", "in_progress")]);
+    let mut enter = snapshot_value("S1", 0, "claude-opus-4-7");
+    let mut complete = snapshot_value("S1", 5, "claude-opus-4-7");
+    // Force tokens to grow so the line is not omitted; clear cost on
+    // both endpoints so the cost arm produces None.
+    enter["session_input_tokens"] = json!(100);
+    complete["session_input_tokens"] = json!(500);
+    enter["session_cost_usd"] = json!(null);
+    complete["session_cost_usd"] = json!(null);
+    state["phases"]["flow-code"]["window_at_enter"] = enter;
+    state["phases"]["flow-code"]["window_at_complete"] = complete;
+    let panel = format_panel(&state, VERSION, None, false, None);
+    assert!(panel.contains("Tokens  :"), "Panel:\n{}", panel);
+    assert!(
+        panel.contains("(—)"),
+        "em-dash placeholder must appear in cost field when cost data is unknown:\n{}",
+        panel
+    );
+}
+
 /// Window reset observed mid-flow (pct decreases between snapshots) →
 /// the Tokens line carries the ↻ reset marker so the user knows the
 /// rate-limit window rolled over.
@@ -1023,7 +1049,7 @@ fn tokens_block_renders_in_all_complete_panel() {
     let all_phases = [
         "flow-start",
         "flow-code",
-        "flow-code-review",
+        "flow-review",
         "flow-learn",
         "flow-complete",
     ];
@@ -1040,7 +1066,7 @@ fn tokens_block_in_all_complete_panel_omitted_when_no_snapshots() {
     let all_phases = [
         "flow-start",
         "flow-code",
-        "flow-code-review",
+        "flow-review",
         "flow-learn",
         "flow-complete",
     ];

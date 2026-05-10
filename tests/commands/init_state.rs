@@ -44,6 +44,13 @@ fn run_init_state(dir: &std::path::Path, args: &[&str]) -> std::process::Output 
         .arg("init-state")
         .args(args)
         .current_dir(dir)
+        // Isolate HOME so init_state's SessionStart capture-file read
+        // (issue #1410) cannot pick up a real
+        // `~/.claude/flow-current-session.json` written by the
+        // developer's active Claude Code session. Without this, tests
+        // that assert `state.session_id.is_null()` would intermittently
+        // fail when run inside Claude Code.
+        .env("HOME", dir)
         .output()
         .unwrap()
 }
@@ -184,7 +191,7 @@ fn state_file_has_all_5_phases() {
     let phases = state["phases"].as_object().unwrap();
     assert_eq!(phases.len(), 5);
     assert_eq!(phases["flow-start"]["name"], "Start");
-    assert_eq!(phases["flow-code-review"]["name"], "Code Review");
+    assert_eq!(phases["flow-review"]["name"], "Code Review");
 }
 
 #[test]
@@ -206,12 +213,7 @@ fn state_file_other_phases_pending() {
     setup_project(dir.path(), "rails", None);
     run_init_state(dir.path(), &["pending phases test"]);
     let state = read_state_file(dir.path(), "pending-phases-test");
-    for key in [
-        "flow-code",
-        "flow-code-review",
-        "flow-learn",
-        "flow-complete",
-    ] {
+    for key in ["flow-code", "flow-review", "flow-learn", "flow-complete"] {
         let phase = &state["phases"][key];
         assert_eq!(phase["status"], "pending");
         assert!(phase["started_at"].is_null());
@@ -301,7 +303,7 @@ fn auto_flag_overrides_skills() {
     let state = read_state_file(dir.path(), "auto-override");
     assert_eq!(state["skills"]["flow-start"]["continue"], "auto");
     assert_eq!(state["skills"]["flow-code"]["commit"], "auto");
-    assert_eq!(state["skills"]["flow-code-review"]["commit"], "auto");
+    assert_eq!(state["skills"]["flow-review"]["commit"], "auto");
 }
 
 // --- Prompt ---
@@ -1153,7 +1155,7 @@ fn lib_create_state_has_six_phases() {
     assert_eq!(phases.len(), 5);
     assert_eq!(phases["flow-start"]["name"], "Start");
     assert_eq!(phases["flow-code"]["name"], "Code");
-    assert_eq!(phases["flow-code-review"]["name"], "Code Review");
+    assert_eq!(phases["flow-review"]["name"], "Code Review");
     assert_eq!(phases["flow-learn"]["name"], "Learn");
     assert_eq!(phases["flow-complete"]["name"], "Complete");
 }
@@ -1197,12 +1199,7 @@ fn lib_create_state_other_phases_pending() {
     )
     .unwrap();
     let state = read_state_direct(dir.path(), "pending-test");
-    for key in [
-        "flow-code",
-        "flow-code-review",
-        "flow-learn",
-        "flow-complete",
-    ] {
+    for key in ["flow-code", "flow-review", "flow-learn", "flow-complete"] {
         let phase = &state["phases"][key];
         assert_eq!(
             phase["status"], "pending",
@@ -1287,7 +1284,7 @@ fn lib_create_state_auto_skills_values() {
     assert_eq!(state["skills"]["flow-start"]["continue"], "auto");
     assert_eq!(state["skills"]["flow-code"]["commit"], "auto");
     assert_eq!(state["skills"]["flow-code"]["continue"], "auto");
-    assert_eq!(state["skills"]["flow-code-review"]["commit"], "auto");
+    assert_eq!(state["skills"]["flow-review"]["commit"], "auto");
     assert_eq!(state["skills"]["flow-abort"], "auto");
 }
 

@@ -41,7 +41,7 @@ fn make_test_state() -> Value {
         "phases": {
             "flow-start": {"name": "Start", "status": "in_progress", "started_at": "2026-01-01T00:00:00Z", "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 1},
             "flow-code": {"name": "Code", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
-            "flow-code-review": {"name": "Code Review", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
+            "flow-review": {"name": "Code Review", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
             "flow-learn": {"name": "Learn", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
             "flow-complete": {"name": "Complete", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0}
         }
@@ -59,7 +59,7 @@ fn minimal_complete_state(feature: &str) -> Value {
         "phases": {
             "flow-start":        {"status": "complete", "cumulative_seconds": 10, "visit_count": 1},
             "flow-code":         {"status": "complete", "cumulative_seconds": 30, "visit_count": 1},
-            "flow-code-review":  {"status": "complete", "cumulative_seconds": 40, "visit_count": 1},
+            "flow-review":  {"status": "complete", "cumulative_seconds": 40, "visit_count": 1},
             "flow-learn":        {"status": "complete", "cumulative_seconds": 50, "visit_count": 1},
             "flow-complete":     {"status": "pending"}
         },
@@ -304,7 +304,7 @@ fn full_state() {
     state["dag_file"] = json!(dag_file.to_string_lossy().to_string());
     state["transcript_path"] = json!("/path/to/session.jsonl");
     state["issues_filed"] = json!([{
-        "label": "Flow",
+        "label": "Tech Debt",
         "title": "Test issue",
         "url": "https://github.com/test/test/issues/1",
         "phase_name": "Learn"
@@ -465,8 +465,8 @@ fn phase_timings_shows_started_only() {
     state["phases"]["flow-code"]["status"] = json!("complete");
     state["phases"]["flow-code"]["started_at"] = json!("2026-01-01T00:01:00Z");
     state["phases"]["flow-code"]["cumulative_seconds"] = json!(300);
-    state["phases"]["flow-code-review"]["status"] = json!("in_progress");
-    state["phases"]["flow-code-review"]["started_at"] = json!("2026-01-01T00:06:00Z");
+    state["phases"]["flow-review"]["status"] = json!("in_progress");
+    state["phases"]["flow-review"]["started_at"] = json!("2026-01-01T00:06:00Z");
 
     let dir = tempfile::tempdir().unwrap();
     let body = render_body(&state, dir.path()).unwrap();
@@ -505,7 +505,7 @@ fn section_order() {
     state["dag_file"] = json!(dag_file.to_string_lossy().to_string());
     state["transcript_path"] = json!("/path/to/session.jsonl");
     state["issues_filed"] = json!([{
-        "label": "Flow",
+        "label": "Tech Debt",
         "title": "Issue",
         "url": "https://github.com/t/t/issues/1",
         "phase_name": "Learn"

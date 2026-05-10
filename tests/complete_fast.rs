@@ -67,7 +67,7 @@ fn write_state_file(
         "phases": {
             "flow-start": {"status": "complete"},
             "flow-code": {"status": "complete"},
-            "flow-code-review": {"status": "complete"},
+            "flow-review": {"status": "complete"},
             "flow-learn": {"status": learn_status},
             "flow-complete": {"status": "pending"}
         },
@@ -940,7 +940,7 @@ fn no_pr_number_skips_gh_check_and_proceeds() {
         "phases": {
             "flow-start": {"status": "complete"},
             "flow-code": {"status": "complete"},
-            "flow-code-review": {"status": "complete"},
+            "flow-review": {"status": "complete"},
             "flow-learn": {"status": "complete"},
             "flow-complete": {"status": "pending"}
         },

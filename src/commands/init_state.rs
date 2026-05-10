@@ -7,7 +7,9 @@ use serde_json::{json, Value};
 use crate::commands::log::append_log;
 use crate::flow_paths::FlowPaths;
 use crate::git::{current_branch_in, project_root};
+use crate::hooks::capture_session::read_captured_session;
 use crate::label_issues::LABEL;
+use crate::lock::mutate_state;
 use crate::output::{json_error, json_ok};
 use crate::phase_config::{auto_skills, build_initial_phases, freeze_phases, read_flow_json};
 use crate::state::SkillConfig;
@@ -15,6 +17,48 @@ use crate::utils::{
     branch_name, check_duplicate_issue, detect_tty, extract_issue_numbers, fetch_issue_info, now,
     plugin_root, read_prompt_file,
 };
+use crate::window_snapshot::home_dir_or_empty;
+
+/// Read the SessionStart capture file under `$HOME/.claude/` and seed
+/// the freshly-created state file's `session_id` and `transcript_path`
+/// fields. Fail-open: a missing/malformed capture file leaves the
+/// state's session_id Null, matching the pre-fix degradation path.
+///
+/// Two upstream invariants justify the `.expect()` calls inside:
+///
+/// 1. `branch` was just successfully validated by `create_state`'s own
+///    `FlowPaths::try_new` call. Re-validating here would duplicate
+///    the check; per `.claude/rules/external-input-validation.md`
+///    "Callers that hold a branch already validated upstream chain
+///    `.expect`", the second call is documentation, not a panic
+///    vector.
+/// 2. The state file at `state_path` was just written by `create_state`
+///    as a `serde_json::Map` wrapped in `Value::Object`. The closure's
+///    `.as_object_mut().expect(...)` documents the same postcondition
+///    per `.claude/rules/testability-means-simplicity.md` "When the
+///    test resists the real production path", and prevents the
+///    `Value::IndexMut` panic the `.claude/rules/rust-patterns.md`
+///    "State Mutation Object Guards" rule targets — `Map::insert` on
+///    the unwrapped object cannot trigger that panic.
+fn seed_session_id_from_capture(project_root: &Path, branch: &str) {
+    let home = home_dir_or_empty();
+    let (session_id, transcript_path) = match read_captured_session(&home) {
+        Some(c) => c,
+        None => return,
+    };
+    let state_path = FlowPaths::try_new(project_root, branch)
+        .expect("branch validated upstream by create_state's FlowPaths::try_new")
+        .state_file();
+    let _ = mutate_state(&state_path, &mut |state| {
+        let obj = state
+            .as_object_mut()
+            .expect("create_state just wrote a JSON object to state_path");
+        obj.insert("session_id".into(), json!(session_id));
+        if let Some(tp) = transcript_path.as_ref() {
+            obj.insert("transcript_path".into(), json!(tp));
+        }
+    });
+}
 
 /// Create the initial FLOW state file with null PR fields.
 ///
@@ -276,6 +320,15 @@ pub fn run(
         json_error(&e, &[("step", json!("create_state"))]);
         std::process::exit(1);
     }
+
+    // Seed session_id and transcript_path from the SessionStart hook's
+    // capture file before downstream window snapshots run. Per
+    // `.claude/rules/external-input-path-construction.md`, both fields
+    // are validated by `read_captured_session` against the same
+    // is_safe_* predicates the existing `capture_for_active_state`
+    // path uses, so a malformed capture file leaves session_id Null
+    // (graceful degradation matching the pre-fix behavior).
+    seed_session_id_from_capture(&root, &branch);
 
     let _ = append_log(
         &root,

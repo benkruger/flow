@@ -54,7 +54,7 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
     "flow-start": {"continue": "manual"},
     "flow-plan": {"continue": "auto", "dag": "auto"},
     "flow-code": {"commit": "manual", "continue": "manual"},
-    "flow-code-review": {"commit": "auto", "continue": "auto"},
+    "flow-review": {"commit": "auto", "continue": "auto"},
     "flow-learn": {"commit": "auto", "continue": "auto"},
     "flow-abort": "auto",
     "flow-complete": "auto"
@@ -121,15 +121,15 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `start_steps_total` | integer | Total number of Start phase steps (hardcoded 5). Set by `init-state --start-steps-total` at creation. Used by the TUI for "step N of M" display |
 | `plan_step` | integer | Current Plan phase step (0-4). Set via `set-timestamp` (standard path) or `plan-extract` (extracted path) at each step boundary. Used by the TUI to show "step 2 of 4" in the Plan phase annotation. Absent when Plan is not in progress |
 | `plan_steps_total` | integer | Total number of Plan phase steps (hardcoded 4). Set via `set-timestamp` (standard path) or `plan-extract` (extracted path) after phase entry. Used by the TUI for "step N of M" display |
-| `code_review_step` | integer | Last completed Code Review step (0-4). Set to 0 on phase entry, incremented after each step (1=Gather, 2=Launch, 3=Triage, 4=Fix). Used by the TUI and for resume after context compaction |
-| `code_review_steps_total` | integer | Total number of Code Review steps (hardcoded 4). Set via `set-timestamp` after phase entry. Used by the TUI for "step N of M" display |
+| `review_step` | integer | Last completed Code Review step (0-4). Set to 0 on phase entry, incremented after each step (1=Gather, 2=Launch, 3=Triage, 4=Fix). Used by the TUI and for resume after context compaction. Legacy alias `review_step` is accepted on read for state files written by older plugin versions |
+| `review_steps_total` | integer | Total number of Code Review steps (hardcoded 4). Set via `set-timestamp` after phase entry. Used by the TUI for "step N of M" display. Legacy key `review_steps_total` is accepted on read for state files written by older plugin versions |
 | `code_tasks_total` | integer / absent | Total number of implementation tasks from the plan. Set by Phase 2 (Plan) Step 4 via `set-timestamp`. Used by the TUI to show "task 3 of 8" in the Code phase annotation. Absent in state files created before v0.40 |
 | `code_task_name` | string / absent | Short description of the current Code task from the plan. Set by Phase 3 (Code) via `set-timestamp` before each task starts. Used by the TUI to show "Update tests - task 2 of 3" in the Code phase annotation. Absent when Code phase is not in progress or in state files created before the feature was added |
 | `learn_step` | integer | Last completed Learn step (0-6). Set via `set-timestamp` at each step boundary. TUI displays `learn_step + 1` as the current step. Used for resume and TUI annotation "gathering sources - step 1 of 7" |
 | `learn_steps_total` | integer | Total number of Learn phase steps (hardcoded 7). Set via `set-timestamp` after phase entry. Used by the TUI for "step N of M" display |
 | `complete_step` | integer | Current Complete phase step (1-6). Set by Rust commands at each step boundary. Used by the TUI to show "merging PR - step 5 of 6" and as resume point for CI gate loops |
 | `complete_steps_total` | integer | Total number of Complete phase steps (hardcoded 6). Set by `complete-fast` or `complete-preflight` after phase entry. Used by the TUI for "step N of M" display |
-| `_continue_pending` | string | Child skill or action currently executing. Phase skills set this before invoking a child skill so the Stop hook (`stop-continue.py`) blocks the turn from ending and forces continuation. Values are either a child skill name (e.g. `decompose`) or the action `commit` (used by flow-code, flow-code-review, flow-learn, and flow-complete when invoking `/flow:flow-commit`). Cleared in three places: by the Stop hook after forcing continuation, by `finalize-commit` on error (to prevent blind phase advancement after a failed commit — conflict status is preserved for retry), and by `phase_enter()` on phase entry (to prevent stale flags from a previous phase). Empty string or absent means no continuation pending. |
+| `_continue_pending` | string | Child skill or action currently executing. Phase skills set this before invoking a child skill so the Stop hook (`stop-continue.py`) blocks the turn from ending and forces continuation. Values are either a child skill name (e.g. `decompose`) or the action `commit` (used by flow-code, flow-review, flow-learn, and flow-complete when invoking `/flow:flow-commit`). Cleared in three places: by the Stop hook after forcing continuation, by `finalize-commit` on error (to prevent blind phase advancement after a failed commit — conflict status is preserved for retry), and by `phase_enter()` on phase entry (to prevent stale flags from a previous phase). Empty string or absent means no continuation pending. |
 | `_continue_context` | string | Specific next-step instructions for the model after a child skill returns. Written by phase skills before `_continue_pending`, read and cleared by the Stop hook. Also cleared by `finalize-commit` on error and by `phase_enter()` on phase entry (same lifecycle as `_continue_pending`). Included in the block reason so the model knows what to do after the turn boundary. Empty string or absent means use the generic fallback message. |
 | `_blocked` | ISO 8601 / null | Timestamp when the flow was blocked on AskUserQuestion. Set by PreToolUse hook (`bin/flow hook validate-ask-user`) when allowing a prompt through. Cleared by PostToolUse hook (`bin/flow clear-blocked`) after user responds and by Stop hook (`bin/flow hook stop-continue`) as a safety net for crashed sessions. Transient. |
 | `_last_failure` | object / null | API error context from the last StopFailure event. Contains `type` (string — error category, e.g. `rate_limit`, `auth_failure`, `network_timeout`), `message` (string — error details), and `timestamp` (ISO 8601 — when the failure occurred). Written by StopFailure hook (`bin/flow hook stop-failure`). Currently has no consumer (session-start consumer removed in PR #938). Transient. |
@@ -165,7 +165,7 @@ Each phase entry has identical fields regardless of status.
 | `visit_count` | integer | Number of times this phase has been entered |
 | `window_at_enter` | object / absent | Account-window snapshot captured on phase entry. See [Window Snapshot](#window-snapshot). Absent until phase entry runs or when capture failed. |
 | `window_at_complete` | object / absent | Account-window snapshot captured on phase finalize. See [Window Snapshot](#window-snapshot). Absent until phase finalize runs. |
-| `step_snapshots` | array | Array of [Step Snapshots](#step-snapshot) appended on each step-counter increment (`plan_step`, `code_task`, `code_review_step`, `learn_step`, `complete_step`). Empty until the phase begins incrementing its step counter. Bounded by step count per phase (typically <30 entries; up to ~10 KB for a long Code phase). |
+| `step_snapshots` | array | Array of [Step Snapshots](#step-snapshot) appended on each step-counter increment (`plan_step`, `code_task`, `review_step`, `learn_step`, `complete_step`). Empty until the phase begins incrementing its step counter. Bounded by step count per phase (typically <30 entries; up to ~10 KB for a long Code phase). |
 
 ---
 
@@ -184,13 +184,13 @@ Copied from `.flow.json` into the state file by `/flow-start`. Phase skills read
 
 Present only when `.flow.json` contains a `skills` key (i.e., after running `/flow-prime` with Customize or a preset). Phase skills that don't find a `skills` key in the state file fall back to built-in defaults.
 
-Each value is either a **bare string** (`"auto"` or `"manual"`) or an **object** with per-axis settings (e.g. `{"continue": "auto", "commit": "manual"}`). Skills with a single autonomy axis — `flow-abort`, `flow-complete` — typically use the bare form. Phase skills that expose both a commit axis (per-task commit approval) and a continue axis (phase transition approval) — `flow-code`, `flow-code-review`, `flow-learn` — use the object form. The two shapes are represented in Rust as `SkillConfig::Simple(String)` and `SkillConfig::Detailed(IndexMap<String, String>)` in `src/state.rs`; consumers that read the config via `serde_json::Value` (like the `validate-ask-user` PreToolUse hook) accept both shapes by checking `Value::as_str() == Some("auto")` OR `Value::get("continue").and_then(|c| c.as_str()) == Some("auto")`.
+Each value is either a **bare string** (`"auto"` or `"manual"`) or an **object** with per-axis settings (e.g. `{"continue": "auto", "commit": "manual"}`). Skills with a single autonomy axis — `flow-abort`, `flow-complete` — typically use the bare form. Phase skills that expose both a commit axis (per-task commit approval) and a continue axis (phase transition approval) — `flow-code`, `flow-review`, `flow-learn` — use the object form. The two shapes are represented in Rust as `SkillConfig::Simple(String)` and `SkillConfig::Detailed(IndexMap<String, String>)` in `src/state.rs`; consumers that read the config via `serde_json::Value` (like the `validate-ask-user` PreToolUse hook) accept both shapes by checking `Value::as_str() == Some("auto")` OR `Value::get("continue").and_then(|c| c.as_str()) == Some("auto")`.
 
 ```json
 "skills": {
   "flow-start": {"continue": "manual"},
   "flow-code": {"commit": "manual", "continue": "manual"},
-  "flow-code-review": {"commit": "auto", "continue": "auto"},
+  "flow-review": {"commit": "auto", "continue": "auto"},
   "flow-learn": {"commit": "auto", "continue": "auto"},
   "flow-abort": "auto",
   "flow-complete": "auto"
@@ -254,8 +254,8 @@ through phases, enabling the Learn phase to identify rework patterns.
 "phase_transitions": [
   {"from": "flow-start", "to": "flow-plan", "timestamp": "2026-02-20T10:05:00-08:00"},
   {"from": "flow-plan", "to": "flow-code", "timestamp": "2026-02-20T10:30:00-08:00"},
-  {"from": "flow-code", "to": "flow-code-review", "timestamp": "2026-02-20T14:00:00-08:00"},
-  {"from": "flow-code-review", "to": "flow-code", "timestamp": "2026-02-20T14:30:00-08:00", "reason": "test failures"}
+  {"from": "flow-code", "to": "flow-review", "timestamp": "2026-02-20T14:00:00-08:00"},
+  {"from": "flow-review", "to": "flow-code", "timestamp": "2026-02-20T14:30:00-08:00", "reason": "test failures"}
 ]
 ```
 
@@ -288,7 +288,7 @@ via `bin/flow issue`. Surfaced in the Complete phase PR body and Done banner.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `label` | string | Issue category: Rule, Flow, Flaky Test, Tech Debt, or Documentation Drift |
+| `label` | string | Issue category: Rule, Flaky Test, Tech Debt, or Documentation Drift |
 | `title` | string | Issue title as filed on GitHub |
 | `url` | string | Full GitHub issue URL |
 | `phase` | string | Phase key where the issue was filed (e.g. `"flow-learn"`) |
@@ -310,7 +310,7 @@ and "Learn Findings" sections.
     "finding": "Unused import in parser.rs",
     "reason": "False positive — import used in macro expansion",
     "outcome": "dismissed",
-    "phase": "flow-code-review",
+    "phase": "flow-review",
     "phase_name": "Code Review",
     "timestamp": "2026-03-12T10:30:00-07:00"
   },
@@ -331,7 +331,7 @@ and "Learn Findings" sections.
 | `finding` | string | Description of what was found |
 | `reason` | string | Why this outcome was chosen |
 | `outcome` | string | Triage outcome: `fixed`, `dismissed`, `filed`, `rule_written`, or `rule_clarified` |
-| `phase` | string | Phase key where the finding was triaged (e.g. `"flow-code-review"`, `"flow-learn"`) |
+| `phase` | string | Phase key where the finding was triaged (e.g. `"flow-review"`, `"flow-learn"`) |
 | `phase_name` | string | Human-readable phase name |
 | `timestamp` | ISO 8601 | When the finding was recorded |
 | `issue_url` | string (optional) | GitHub issue URL — present when outcome is `filed` |
@@ -451,7 +451,7 @@ A single entry inside the `by_model` object — present only when at least one `
 
 ## Step Snapshot
 
-Appended to a phase's `step_snapshots[]` on every step-counter increment that names one of the five recognized counters: `plan_step`, `code_task`, `code_review_step`, `learn_step`, `complete_step`. Each entry combines the counter value at the time of capture, the field name, and a flattened [Window Snapshot](#window-snapshot) — so each record is one flat JSON object rather than a nested `{snapshot: {...}}` shape.
+Appended to a phase's `step_snapshots[]` on every step-counter increment that names one of the five recognized counters: `plan_step`, `code_task`, `review_step`, `learn_step`, `complete_step`. Each entry combines the counter value at the time of capture, the field name, and a flattened [Window Snapshot](#window-snapshot) — so each record is one flat JSON object rather than a nested `{snapshot: {...}}` shape.
 
 ```json
 {
@@ -473,7 +473,7 @@ Appended to a phase's `step_snapshots[]` on every step-counter increment that na
 | Field | Type | Description |
 |-------|------|-------------|
 | `step` | integer | Counter value at capture time |
-| `field` | string | Counter name (one of `plan_step`, `code_task`, `code_review_step`, `learn_step`, `complete_step`) |
+| `field` | string | Counter name (one of `plan_step`, `code_task`, `review_step`, `learn_step`, `complete_step`) |
 | _flattened snapshot fields_ | various | Every [Window Snapshot](#window-snapshot) field, inlined at the same level |
 
 ---

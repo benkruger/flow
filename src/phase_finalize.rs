@@ -31,7 +31,7 @@ use crate::phase_transition::phase_complete;
     about = "Generic phase exit: complete + Slack + notification"
 )]
 pub struct Args {
-    /// Phase name (e.g. flow-start, flow-code, flow-code-review, flow-learn)
+    /// Phase name (e.g. flow-start, flow-code, flow-review, flow-learn)
     #[arg(long)]
     pub phase: String,
 

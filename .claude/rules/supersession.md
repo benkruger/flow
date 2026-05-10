@@ -110,7 +110,7 @@ removal commit.
 
 When triaging findings from agents, apply the supersession test
 BEFORE the Real / False positive classification (see
-`.claude/rules/code-review-scope.md`).
+`.claude/rules/review-scope.md`).
 
 For every real finding, ask: **"Would deleting the code this finding
 describes leave the PR's behavior unchanged?"**

@@ -36,7 +36,7 @@ fn happy_path_writes_table_and_reports_ok() {
     let state = json!({
         "issues_filed": [
             {"label": "Rule", "title": "t1", "url": "https://github.com/o/r/issues/1", "phase_name": "Learn"},
-            {"label": "Flow", "title": "t2", "url": "https://github.com/o/r/issues/2", "phase_name": "Learn"}
+            {"label": "Tech Debt", "title": "t2", "url": "https://github.com/o/r/issues/2", "phase_name": "Learn"}
         ]
     });
     let state_path = write_state(dir.path(), &state);
@@ -228,7 +228,7 @@ fn multiple_labels_grouped() {
 
 #[test]
 fn table_contains_all_issues() {
-    let state = json!({"issues_filed": make_issues(&["Rule", "Flow"])});
+    let state = json!({"issues_filed": make_issues(&["Rule", "Tech Debt"])});
     let result = format_issues_summary(&state);
     let lines: Vec<&str> = result.table.trim().split('\n').collect();
     let header_and_separator = 2;
@@ -399,7 +399,7 @@ fn run_impl_empty_output_skips_mkdir_and_err_on_write() {
 #[test]
 fn run_impl_main_happy_path_ok_with_json_value() {
     let dir = tempfile::tempdir().unwrap();
-    let state = json!({"issues_filed": make_issues(&["Rule", "Flow"])});
+    let state = json!({"issues_filed": make_issues(&["Rule", "Tech Debt"])});
     let state_path = write_state_path(dir.path(), &state);
     let args = Args {
         state_file: state_path.to_string_lossy().to_string(),
