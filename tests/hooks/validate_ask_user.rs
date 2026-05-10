@@ -470,6 +470,56 @@ fn run_subprocess_exits_0_outside_git_repo() {
     assert_eq!(code, 0);
 }
 
+/// `run()` exits 0 when stdin is not valid JSON. Exercises
+/// `run_impl_main`'s `hook_input is None` early-return at line 220
+/// of src/hooks/validate_ask_user.rs — `read_hook_input()` returns
+/// None on parse failure.
+#[test]
+fn run_subprocess_exits_0_when_stdin_unparseable() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let (code, _stdout, _stderr) = run_hook(&root, "not valid json");
+    assert_eq!(code, 0);
+}
+
+/// `run()` exits 0 when the current git branch contains a `/` (e.g.
+/// `feature/foo`). Exercises `run_impl_main`'s `FlowPaths::try_new
+/// returns None` early-return at line 232 — slash-containing branches
+/// are valid git branches but invalid for FLOW's flat state-file
+/// layout, so the hook treats them as "no active flow".
+#[test]
+fn run_subprocess_exits_0_when_branch_has_slash() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    Command::new("git")
+        .args(["init", "--initial-branch", "feature/foo"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.email", "a@b"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "t"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "commit.gpgsign", "false"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    let (code, _stdout, _stderr) = run_hook(&root, "{}");
+    assert_eq!(code, 0);
+}
+
 // Direct `run_impl_main` / `HookAction` tests removed — the decision
 // core is now private, and its branches are exercised through the
 // subprocess tests below that spawn `bin/flow hook validate-ask-user`

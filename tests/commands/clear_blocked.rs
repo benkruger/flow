@@ -6,12 +6,10 @@
 //! `.claude/rules/test-placement.md` (migrated from the pre-existing
 //! inline `#[cfg(test)]` module in `src/commands/clear_blocked.rs`).
 
-mod common;
-
 use std::fs;
 use std::process::{Command, Stdio};
 
-use common::flow_states_dir;
+use crate::common::flow_states_dir;
 use flow_rs::commands::clear_blocked::clear_blocked;
 use serde_json::{json, Value};
 

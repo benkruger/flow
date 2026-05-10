@@ -1,9 +1,7 @@
-mod common;
-
 use std::fs;
 use std::process::Command;
 
-use common::flow_states_dir;
+use crate::common::flow_states_dir;
 use serde_json::{json, Value};
 
 fn flow_rs() -> Command {

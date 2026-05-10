@@ -132,9 +132,9 @@ fn enforce_relative_cwd_at_worktree_root_errors() {
 fn enforce_corrupt_state_file_returns_ok() {
     let dir = tempfile::tempdir().unwrap();
     init_git_repo(dir.path(), "feature-x");
-    let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join("feature-x.json"), "not json").unwrap();
+    let branch_dir = dir.path().join(".flow-states").join("feature-x");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), "not json").unwrap();
     let result = enforce(dir.path(), dir.path());
     assert!(result.is_ok(), "expected ok, got: {:?}", result);
 }
@@ -143,13 +143,9 @@ fn enforce_corrupt_state_file_returns_ok() {
 fn enforce_missing_relative_cwd_field_treats_as_empty() {
     let dir = tempfile::tempdir().unwrap();
     init_git_repo(dir.path(), "feature-x");
-    let state_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(
-        state_dir.join("feature-x.json"),
-        r#"{"branch": "feature-x"}"#,
-    )
-    .unwrap();
+    let branch_dir = dir.path().join(".flow-states").join("feature-x");
+    fs::create_dir_all(&branch_dir).unwrap();
+    fs::write(branch_dir.join("state.json"), r#"{"branch": "feature-x"}"#).unwrap();
     let result = enforce(dir.path(), dir.path());
     assert!(result.is_ok(), "expected ok, got: {:?}", result);
 }

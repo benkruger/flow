@@ -1,13 +1,52 @@
-//! Library-level tests for `flow_rs::hooks::post_compact::capture_compact_data`.
-//! Migrated from inline `#[cfg(test)]` per `.claude/rules/test-placement.md`.
+//! Tests for `flow_rs::hooks::post_compact`.
 //!
-//! Subprocess tests for the `run()` entry point live in `tests/hooks.rs`
-//! (the `post_compact` section there).
+//! Library-level tests exercise `capture_compact_data` (the pure mutator).
+//! Subprocess tests at the bottom drive `run()` end-to-end via
+//! `bin/flow hook post-compact` so every branch of the entry point is
+//! covered by the per-file gate.
 
 use std::fs;
+use std::io::Write;
+use std::path::Path;
+use std::process::{Command, Stdio};
 
 use flow_rs::hooks::post_compact::capture_compact_data;
 use serde_json::{json, Value};
+
+fn flow_rs_no_recursion() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.env_remove("FLOW_CI_RUNNING")
+        .env_remove("FLOW_SIMULATE_BRANCH");
+    cmd
+}
+
+fn run_post_compact(cwd: &Path, stdin: &[u8]) -> std::process::Output {
+    let mut child = flow_rs_no_recursion()
+        .args(["hook", "post-compact"])
+        .current_dir(cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn flow-rs hook post-compact");
+    child.stdin.as_mut().unwrap().write_all(stdin).unwrap();
+    child.wait_with_output().expect("wait")
+}
+
+fn init_git(dir: &Path, branch: &str) {
+    let run = |args: &[&str]| {
+        Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .expect("git command");
+    };
+    run(&["init", "--initial-branch", branch]);
+    run(&["config", "user.email", "a@b"]);
+    run(&["config", "user.name", "t"]);
+    run(&["config", "commit.gpgsign", "false"]);
+    run(&["commit", "--allow-empty", "-m", "init"]);
+}
 
 #[test]
 fn test_writes_summary_and_cwd() {
@@ -228,5 +267,74 @@ fn test_compact_count_unparseable_string_defaults_to_one() {
     capture_compact_data(&json!({"compact_summary": "Test"}), &path);
 
     let state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(state["compact_count"], 1);
+}
+
+// --- Subprocess tests for `run()` entry point ---
+
+/// `run()` returns silently when stdin is unparseable JSON.
+#[test]
+fn run_subprocess_exits_0_when_stdin_unparseable() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = run_post_compact(dir.path(), b"not valid json");
+    assert_eq!(output.status.code(), Some(0));
+}
+
+/// `run()` returns silently when there is no current git branch.
+#[test]
+fn run_subprocess_exits_0_when_no_git_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let output = run_post_compact(&root, br#"{"compact_summary":"x"}"#);
+    assert_eq!(output.status.code(), Some(0));
+}
+
+/// `run()` returns silently when the current branch contains `/` —
+/// `FlowPaths::try_new` rejects slash branches.
+#[test]
+fn run_subprocess_exits_0_when_branch_has_slash() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git(&root, "feature/foo");
+    let output = run_post_compact(&root, br#"{"compact_summary":"x"}"#);
+    assert_eq!(output.status.code(), Some(0));
+}
+
+/// `run()` returns silently when no state file exists for the
+/// current branch.
+#[test]
+fn run_subprocess_exits_0_when_state_file_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git(&root, "feat");
+    let output = run_post_compact(&root, br#"{"compact_summary":"x"}"#);
+    assert_eq!(output.status.code(), Some(0));
+}
+
+/// `run()` happy path: state file exists; capture_compact_data writes
+/// summary, cwd, and increments compact_count in the state file.
+#[test]
+fn run_subprocess_success_writes_compact_fields_to_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git(&root, "feat");
+    let branch_dir = root.join(".flow-states").join("feat");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let state_path = branch_dir.join("state.json");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&json!({"branch": "feat"})).unwrap(),
+    )
+    .unwrap();
+
+    let output = run_post_compact(
+        &root,
+        br#"{"compact_summary":"after compact","cwd":"/some/dir"}"#,
+    );
+    assert_eq!(output.status.code(), Some(0));
+
+    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    assert_eq!(state["compact_summary"], "after compact");
+    assert_eq!(state["compact_cwd"], "/some/dir");
     assert_eq!(state["compact_count"], 1);
 }

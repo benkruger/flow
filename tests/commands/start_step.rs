@@ -1,12 +1,10 @@
 //! Integration tests for the start-step subcommand.
 
-mod common;
-
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
-use common::{create_git_repo_with_remote, parse_output};
+use crate::common::{create_git_repo_with_remote, parse_output};
 use flow_rs::commands::start_step::{resolve_flow_bin, update_step};
 use serde_json::{json, Value};
 

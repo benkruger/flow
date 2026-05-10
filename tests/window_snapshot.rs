@@ -838,6 +838,50 @@ fn capture_for_active_state_rejects_transcript_path_outside_projects_prefix() {
     assert_eq!(snap.session_input_tokens, None);
 }
 
+/// `is_safe_transcript_path` rejects any path containing a `..`
+/// component (line 193 of src/window_snapshot.rs). The lexical
+/// pre-check fires before canonicalize so a traversal pattern like
+/// `<home>/.claude/projects/../../etc/passwd` cannot escape the
+/// validated prefix even when the underlying file exists.
+#[test]
+fn capture_for_active_state_rejects_transcript_path_with_parent_dir_component() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let projects = root.join(".claude").join("projects");
+    fs::create_dir_all(&projects).expect("mkdir projects");
+    // Path inside the projects prefix but containing a `..` component.
+    // is_safe_transcript_path's lexical ParentDir scan rejects without
+    // ever reaching canonicalize.
+    let traversal = projects.join("..").join("evil.jsonl");
+    let state = json!({
+        "session_id": "valid-sid",
+        "transcript_path": traversal.to_string_lossy(),
+    });
+    let snap = capture_for_active_state(&root, &state, &root);
+    assert_eq!(snap.session_input_tokens, None);
+}
+
+/// `is_safe_transcript_path` rejects when `path.canonicalize()` fails
+/// (line 208 of src/window_snapshot.rs). Reached by a path that
+/// passes the empty/NUL/absolute/ParentDir lexical checks but names
+/// a file that does not exist on disk — canonicalize requires the
+/// target to exist.
+#[test]
+fn capture_for_active_state_rejects_transcript_path_when_canonicalize_fails() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let projects = root.join(".claude").join("projects");
+    fs::create_dir_all(&projects).expect("mkdir projects");
+    // Path under the validated prefix but the file does not exist.
+    let missing = projects.join("nonexistent").join("transcript.jsonl");
+    let state = json!({
+        "session_id": "valid-sid",
+        "transcript_path": missing.to_string_lossy(),
+    });
+    let snap = capture_for_active_state(&root, &state, &root);
+    assert_eq!(snap.session_input_tokens, None);
+}
+
 /// `append_step_snapshot` auto-heals when `state.phases` holds a
 /// non-object value (number / string / array). Drives the per-level
 /// guard added in Review per `.claude/rules/state-files.md`

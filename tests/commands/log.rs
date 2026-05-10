@@ -5,8 +5,6 @@
 //! tests assert that the call site exists in each module's source — they
 //! verify structural presence, not behavioral log production.
 
-mod common;
-
 use std::fs;
 use std::process::Command;
 
@@ -15,7 +13,8 @@ use flow_rs::commands::log::{append_log, run_impl_main};
 /// phase_transition.rs must call append_log for phase-transition logging.
 #[test]
 fn phase_transition_uses_append_log() {
-    let src = fs::read_to_string(common::repo_root().join("src/phase_transition.rs")).unwrap();
+    let src =
+        fs::read_to_string(crate::common::repo_root().join("src/phase_transition.rs")).unwrap();
     assert!(
         src.contains("append_log("),
         "src/phase_transition.rs::run_impl_main must call append_log for phase-transition session logging"
@@ -25,7 +24,8 @@ fn phase_transition_uses_append_log() {
 /// complete_post_merge.rs must call append_log for post-merge step logging.
 #[test]
 fn complete_post_merge_uses_append_log() {
-    let src = fs::read_to_string(common::repo_root().join("src/complete_post_merge.rs")).unwrap();
+    let src =
+        fs::read_to_string(crate::common::repo_root().join("src/complete_post_merge.rs")).unwrap();
     assert!(
         src.contains("append_log("),
         "src/complete_post_merge.rs must call append_log for post-merge session logging"
@@ -35,7 +35,7 @@ fn complete_post_merge_uses_append_log() {
 /// cleanup.rs must call append_log for cleanup step logging.
 #[test]
 fn cleanup_uses_append_log() {
-    let src = fs::read_to_string(common::repo_root().join("src/cleanup.rs")).unwrap();
+    let src = fs::read_to_string(crate::common::repo_root().join("src/cleanup.rs")).unwrap();
     assert!(
         src.contains("append_log("),
         "src/cleanup.rs must call append_log for cleanup session logging"
@@ -45,7 +45,8 @@ fn cleanup_uses_append_log() {
 /// complete_finalize.rs must call append_log for orchestration logging.
 #[test]
 fn complete_finalize_uses_append_log() {
-    let src = fs::read_to_string(common::repo_root().join("src/complete_finalize.rs")).unwrap();
+    let src =
+        fs::read_to_string(crate::common::repo_root().join("src/complete_finalize.rs")).unwrap();
     assert!(
         src.contains("append_log("),
         "src/complete_finalize.rs must call append_log for orchestration session logging"
@@ -55,7 +56,8 @@ fn complete_finalize_uses_append_log() {
 /// finalize_commit.rs must call append_log for commit-cycle logging.
 #[test]
 fn finalize_commit_uses_append_log() {
-    let src = fs::read_to_string(common::repo_root().join("src/finalize_commit.rs")).unwrap();
+    let src =
+        fs::read_to_string(crate::common::repo_root().join("src/finalize_commit.rs")).unwrap();
     assert!(
         src.contains("append_log("),
         "src/finalize_commit.rs must call append_log for commit-cycle session logging"
@@ -73,7 +75,7 @@ fn flow_rs() -> Command {
 #[test]
 fn bin_flow_log_success_exits_zero_and_writes_line() {
     let dir = tempfile::tempdir().unwrap();
-    let repo = common::create_git_repo_with_remote(dir.path());
+    let repo = crate::common::create_git_repo_with_remote(dir.path());
 
     let output = flow_rs()
         .args(["log", "my-feature", "hello world"])
@@ -93,7 +95,7 @@ fn bin_flow_log_success_exits_zero_and_writes_line() {
 #[test]
 fn bin_flow_log_exits_nonzero_on_create_dir_failure() {
     let dir = tempfile::tempdir().unwrap();
-    let repo = common::create_git_repo_with_remote(dir.path());
+    let repo = crate::common::create_git_repo_with_remote(dir.path());
     // Occupy the flow_states path with a file so create_dir_all errors.
     fs::write(repo.join(".flow-states"), "sentinel").unwrap();
 
@@ -122,7 +124,7 @@ fn bin_flow_log_exits_nonzero_on_create_dir_failure() {
 #[test]
 fn bin_flow_log_exits_nonzero_when_log_path_is_directory() {
     let dir = tempfile::tempdir().unwrap();
-    let repo = common::create_git_repo_with_remote(dir.path());
+    let repo = crate::common::create_git_repo_with_remote(dir.path());
     // Create .flow-states/my-feature/log AS A DIRECTORY. The open call
     // then errors with "Is a directory".
     fs::create_dir_all(repo.join(".flow-states/my-feature/log")).unwrap();

@@ -256,6 +256,153 @@ fn capture_session_overwrites_existing_regular_file() {
     );
 }
 
+// --- read_captured_session coverage via `current-session-id` subcommand ---
+//
+// `read_captured_session` is `pub(crate)` so integration tests cannot
+// call it directly. The CLI subcommand `current-session-id` calls it
+// via `utility_marker::run_current_session_id_main(&home)` and prints
+// the resolved session_id (or empty string on None). Driving it
+// through the subprocess exercises every branch of read_captured_session
+// without exposing the function publicly.
+
+/// Spawn `flow-rs current-session-id` with `HOME=home_env` and
+/// return (stdout, exit_code).
+fn run_current_session_id(home_env: &str) -> (String, Option<i32>) {
+    let mut cmd = flow_rs_no_recursion();
+    cmd.args(["current-session-id"])
+        .env("HOME", home_env)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let output = cmd.output().expect("spawn current-session-id");
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    (stdout, output.status.code())
+}
+
+/// `read_captured_session` returns None when `home` is empty (line 67
+/// of src/hooks/capture_session.rs). Setting `HOME=""` makes
+/// `utility_marker_home()` produce an empty PathBuf.
+#[test]
+fn current_session_id_returns_empty_when_home_is_empty_string() {
+    let (stdout, code) = run_current_session_id("");
+    assert_eq!(code, Some(0));
+    assert_eq!(stdout.trim(), "");
+}
+
+/// `read_captured_session` returns None when the capture file does
+/// not exist (line 70 of src/hooks/capture_session.rs:
+/// `fs::File::open(&path).ok()?`).
+#[test]
+fn current_session_id_returns_empty_when_capture_file_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap();
+    let (stdout, code) = run_current_session_id(home.to_str().unwrap());
+    assert_eq!(code, Some(0));
+    assert_eq!(stdout.trim(), "");
+}
+
+/// `read_captured_session` returns Some((sid, None)) when the capture
+/// file has a valid session_id but no transcript_path. Exercises the
+/// success path through lines 75-87 with the transcript filter
+/// dropping the absent field.
+#[test]
+fn current_session_id_returns_session_id_when_only_session_id_present() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap();
+    fs::create_dir_all(home.join(".claude")).unwrap();
+    fs::write(capture_file(&home), br#"{"session_id":"sid-only"}"#).unwrap();
+    let (stdout, code) = run_current_session_id(home.to_str().unwrap());
+    assert_eq!(code, Some(0));
+    assert_eq!(stdout.trim(), "sid-only");
+}
+
+/// `read_captured_session` returns Some((sid, Some(tp))) when both
+/// fields validate. Exercises the success path with the transcript
+/// filter accepting a valid path under `<home>/.claude/projects/`.
+#[test]
+fn current_session_id_returns_session_id_when_both_fields_present() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap();
+    let projects = home.join(".claude").join("projects").join("p");
+    fs::create_dir_all(&projects).unwrap();
+    let transcript = projects.join("session.jsonl");
+    fs::write(&transcript, b"").unwrap();
+    fs::write(
+        capture_file(&home),
+        format!(
+            r#"{{"session_id":"sid-both","transcript_path":"{}"}}"#,
+            transcript.display()
+        )
+        .as_bytes(),
+    )
+    .unwrap();
+    let (stdout, code) = run_current_session_id(home.to_str().unwrap());
+    assert_eq!(code, Some(0));
+    assert_eq!(stdout.trim(), "sid-both");
+}
+
+/// `read_captured_session` returns None when the capture file's
+/// session_id fails `is_safe_session_id` validation. Exercises the
+/// `.filter(...)` drop on line 79.
+#[test]
+fn current_session_id_returns_empty_when_session_id_invalid() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap();
+    fs::create_dir_all(home.join(".claude")).unwrap();
+    fs::write(capture_file(&home), br#"{"session_id":"../etc/passwd"}"#).unwrap();
+    let (stdout, code) = run_current_session_id(home.to_str().unwrap());
+    assert_eq!(code, Some(0));
+    assert_eq!(stdout.trim(), "");
+}
+
+/// `read_captured_session` returns None when the capture file is not
+/// valid JSON. Exercises `serde_json::from_str(&content).ok()?` at
+/// line 75.
+#[test]
+fn current_session_id_returns_empty_when_capture_file_malformed_json() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap();
+    fs::create_dir_all(home.join(".claude")).unwrap();
+    fs::write(capture_file(&home), b"not valid json").unwrap();
+    let (stdout, code) = run_current_session_id(home.to_str().unwrap());
+    assert_eq!(code, Some(0));
+    assert_eq!(stdout.trim(), "");
+}
+
+/// `read_captured_session` returns None when the capture file
+/// contains non-UTF8 bytes that fail `read_to_string`. Exercises
+/// the `?` short-circuit on line 74 of src/hooks/capture_session.rs.
+#[test]
+fn current_session_id_returns_empty_when_capture_file_not_utf8() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap();
+    fs::create_dir_all(home.join(".claude")).unwrap();
+    // Invalid UTF-8 byte sequence: 0xFF is not a valid UTF-8 start byte.
+    fs::write(capture_file(&home), [0xFF, 0xFE, 0xFD]).unwrap();
+    let (stdout, code) = run_current_session_id(home.to_str().unwrap());
+    assert_eq!(code, Some(0));
+    assert_eq!(stdout.trim(), "");
+}
+
+/// `read_captured_session` returns Some((sid, None)) when the capture
+/// file has a valid session_id but the transcript_path fails
+/// `is_safe_transcript_path` (e.g., outside the validated prefix).
+/// Exercises the `.filter(...)` drop on line 85 — the session_id is
+/// preserved but the transcript_path is dropped to None.
+#[test]
+fn current_session_id_returns_session_id_when_transcript_path_invalid() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap();
+    fs::create_dir_all(home.join(".claude")).unwrap();
+    fs::write(
+        capture_file(&home),
+        br#"{"session_id":"good-sid","transcript_path":"/etc/passwd"}"#,
+    )
+    .unwrap();
+    let (stdout, code) = run_current_session_id(home.to_str().unwrap());
+    assert_eq!(code, Some(0));
+    assert_eq!(stdout.trim(), "good-sid");
+}
+
 #[test]
 fn capture_session_replaces_existing_symlink_at_capture_path() {
     // Symlink-safe write: a pre-existing symlink at the capture path

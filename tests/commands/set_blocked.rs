@@ -1,11 +1,9 @@
 //! Integration tests for `flow-rs set-blocked` command.
 
-mod common;
-
 use std::fs;
 use std::process::{Command, Stdio};
 
-use common::flow_states_dir;
+use crate::common::flow_states_dir;
 use flow_rs::commands::set_blocked::set_blocked;
 use regex::Regex;
 use serde_json::{json, Value};

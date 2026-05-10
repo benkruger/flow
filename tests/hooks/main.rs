@@ -16,8 +16,10 @@ mod common;
 
 mod capture_session;
 mod dispatcher;
+mod post_compact;
 mod shared;
 mod stop_continue;
+mod stop_failure;
 mod transcript_walker;
 mod validate_ask_user;
 mod validate_claude_paths;

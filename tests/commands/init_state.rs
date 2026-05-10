@@ -531,6 +531,45 @@ fn state_file_has_required_top_level_fields() {
     assert!(state["transcript_path"].is_null());
 }
 
+/// `seed_session_id_from_capture` writes BOTH `session_id` and
+/// `transcript_path` into the state file when the SessionStart
+/// capture payload carries a non-None `transcript_path`. Exercises
+/// the Some branch of `if let Some(tp) = transcript_path.as_ref()`
+/// in `seed_session_id_from_capture` — without this test, the
+/// transcript-write line never fires and per-file coverage stays
+/// below 100%. Mirrors the capture-payload shape produced by
+/// `src/hooks/capture_session.rs`.
+#[test]
+fn captured_session_with_transcript_path_seeds_both_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "rails", None);
+    // Write the capture file under HOME=dir so init-state's
+    // home_dir_or_empty() reads from the fixture.
+    let claude_dir = dir.path().join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    // Build an absolute transcript path under HOME/.claude/projects/
+    // so it passes is_safe_transcript_path's validation.
+    let projects = claude_dir.join("projects").join("-test");
+    fs::create_dir_all(&projects).unwrap();
+    let transcript = projects.join("session.jsonl");
+    fs::write(&transcript, "").unwrap();
+    let transcript_str = transcript.to_string_lossy().to_string();
+    let payload = json!({
+        "session_id": "sid-with-transcript",
+        "transcript_path": transcript_str,
+    });
+    fs::write(
+        claude_dir.join("flow-current-session.json"),
+        payload.to_string(),
+    )
+    .unwrap();
+
+    run_init_state(dir.path(), &["seed transcript test"]);
+    let state = read_state_file(dir.path(), "seed-transcript-test");
+    assert_eq!(state["session_id"], "sid-with-transcript");
+    assert_eq!(state["transcript_path"], transcript_str);
+}
+
 // --- Issue-title naming and duplicate detection (PR #823) ---
 
 #[test]

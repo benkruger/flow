@@ -468,6 +468,61 @@ fn run_subprocess_exits_0_when_current_dir_fails() {
     assert_eq!(output.status.code(), Some(0));
 }
 
+/// Drives the `validate_shared_config returns blocked` path of
+/// `run_impl_main` (line 354 of src/hooks/validate_worktree_paths.rs:
+/// `return (2, Some(sc_message));`). Spawns the hook from inside a
+/// `.worktrees/<branch>/` cwd with stdin describing an Edit on a
+/// shared config file (Cargo.toml) inside that worktree. validate()
+/// passes (file is inside the worktree) so control reaches
+/// validate_shared_config, which blocks because Edit on Cargo.toml
+/// inside a `.worktrees/` cwd matches the shared-config gate.
+#[test]
+fn run_subprocess_exits_2_when_editing_shared_config_in_worktree() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    // Build a fake worktree: <root>/.worktrees/feat/
+    let worktree = root.join(".worktrees").join("feat");
+    std::fs::create_dir_all(&worktree).expect("mkdir worktree");
+    // Create the shared-config file inside the worktree so file_path
+    // resolves to a real existing path (defends against any future
+    // path-existence check the hook might add).
+    let cargo_toml = worktree.join("Cargo.toml");
+    std::fs::write(&cargo_toml, b"[package]\nname=\"x\"\n").unwrap();
+
+    let payload = format!(
+        r#"{{"tool_name":"Edit","tool_input":{{"file_path":"{}"}}}}"#,
+        cargo_toml.display()
+    );
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["hook", "validate-worktree-paths"])
+        .env_remove("FLOW_CI_RUNNING")
+        .current_dir(&worktree)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn flow-rs");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(payload.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().expect("wait");
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("is a shared configuration file"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 // --- detect_misplaced_flow_states tests ---
 
 #[test]
