@@ -182,6 +182,23 @@ fn phase_delta_cross_session_groups_then_sums() {
     let report = phase_delta(&phase).expect("populated");
     assert_eq!(report.input_tokens_delta, 11);
     assert_eq!(report.turn_count_delta, 11);
+    // snap() seeds session_cost_usd as `Some(n * 0.01)` so both
+    // session segments have populated cost endpoints. The plan
+    // (issue #1410) calls out this assertion as the test gap that
+    // allowed the asymmetric pre-fix `pair_delta` to ship: without
+    // a cost check, the buggy (Some, None)/(None, Some) arms would
+    // have silently fabricated deltas across the session boundary.
+    // S1: 0.08 - 0.05 = 0.03; S2: 0.10 - 0.02 = 0.08; Total: 0.11.
+    let cost = report.cost_delta_usd.expect("cost is populated");
+    assert!(
+        (cost - 0.11).abs() < 1e-9,
+        "cross-session cost must sum each session independently; got {}",
+        cost
+    );
+    assert!(
+        !report.total_partial,
+        "all four cost endpoints are Some, so total_partial must be false"
+    );
 }
 
 /// Step snapshots between enter and complete contribute through
@@ -344,7 +361,11 @@ fn flow_total_empty_state_returns_zero_report() {
     let state = empty_state();
     let report = flow_total(&state);
     assert_eq!(report.input_tokens_delta, 0);
-    assert_eq!(report.cost_delta_usd, 0.0);
+    // Empty state has no cost contributions, so the zero report's
+    // `cost_delta_usd` is `None` — the new "no info" sentinel that
+    // distinguishes "we computed zero cost" from "we have no cost
+    // data at all" (issue #1410).
+    assert_eq!(report.cost_delta_usd, None);
     assert_eq!(report.five_hour_pct_delta, Some(0));
     assert!(!report.window_reset_observed);
     assert!(report.by_model_delta.is_empty());
@@ -369,29 +390,77 @@ fn flow_total_sticky_reset_flag_propagates() {
     assert!(report.window_reset_observed);
 }
 
-/// Cost delta with `start` as `None` and `end` populated treats
-/// the start as zero and reports the end's value as the delta.
+// --- pair_delta cost (Option<f64>) — issue #1410 ---
+//
+// pair_delta is private; tests drive it through phase_delta with
+// fixtures that produce a single (enter, complete) pair, isolating
+// the cost-arm logic. The four named tests below replace the
+// pre-fix tests `phase_delta_cost_with_none_start_uses_end_value`
+// and `phase_delta_cost_with_both_none_contributes_zero`, which
+// asserted the buggy fabricate-on-missing behavior. Per
+// `.claude/rules/supersession.md` the pre-fix tests are deleted
+// because their assertion contracts are obsolete.
+
+/// Both endpoints populated: cost delta is `Some(end - start)`.
 #[test]
-fn phase_delta_cost_with_none_start_uses_end_value() {
+fn pair_delta_cost_both_present_returns_some_difference() {
+    let mut enter = snap("S1", 0);
+    let mut complete = snap("S1", 0);
+    enter.session_cost_usd = Some(0.5);
+    complete.session_cost_usd = Some(2.0);
+    let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
+    let report = phase_delta(&phase).expect("populated");
+    assert_eq!(
+        report.cost_delta_usd,
+        Some(1.5),
+        "(Some, Some) must produce Some(end - start)"
+    );
+}
+
+/// End cost missing: pair_delta cannot infer a delta from a single
+/// endpoint, so the result is `None`. The pre-fix code returned
+/// `0.0`, silently dropping the start.
+#[test]
+fn pair_delta_cost_end_missing_returns_none() {
+    let mut enter = snap("S1", 0);
+    let mut complete = snap("S1", 0);
+    enter.session_cost_usd = Some(0.5);
+    complete.session_cost_usd = None;
+    let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
+    let report = phase_delta(&phase).expect("populated");
+    assert_eq!(
+        report.cost_delta_usd, None,
+        "(Some, None) must produce None — no fabricated delta"
+    );
+}
+
+/// Start cost missing: pair_delta cannot infer a delta. The pre-fix
+/// code returned the end's cumulative value, fabricating a delta
+/// from a session-total.
+#[test]
+fn pair_delta_cost_start_missing_returns_none() {
     let mut enter = snap("S1", 0);
     let mut complete = snap("S1", 0);
     enter.session_cost_usd = None;
-    complete.session_cost_usd = Some(0.42);
+    complete.session_cost_usd = Some(2.0);
     let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
     let report = phase_delta(&phase).expect("populated");
-    assert!((report.cost_delta_usd - 0.42).abs() < 1e-9);
+    assert_eq!(
+        report.cost_delta_usd, None,
+        "(None, Some) must produce None — no fabricated delta from cumulative end"
+    );
 }
 
-/// Cost delta where both endpoints are `None` contributes zero.
+/// Both endpoints missing: result is `None`.
 #[test]
-fn phase_delta_cost_with_both_none_contributes_zero() {
+fn pair_delta_cost_both_missing_returns_none() {
     let mut enter = snap("S1", 0);
     let mut complete = snap("S1", 0);
     enter.session_cost_usd = None;
     complete.session_cost_usd = None;
     let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
     let report = phase_delta(&phase).expect("populated");
-    assert_eq!(report.cost_delta_usd, 0.0);
+    assert_eq!(report.cost_delta_usd, None);
 }
 
 /// pct_delta_with_reset: when `start` is None and `end` is Some,

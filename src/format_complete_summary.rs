@@ -61,60 +61,107 @@ fn outcome_label(outcome: &str) -> &'static str {
 }
 
 /// Render the Token Cost section from `state.phases.<phase>.window_at_*`
-/// snapshots via `window_deltas::phase_delta`. Returns an empty Vec
-/// when no phase has populated snapshots — the renderer skips the
-/// section entirely rather than rendering a header with no rows.
+/// snapshots via `window_deltas::phase_delta`.
+///
+/// Per-phase rendering rules (issue #1410):
+///
+/// - Each phase whose `status` is not `"pending"` produces a row,
+///   even when its delta is unknown — silent skip on parse error or
+///   missing `window_at_enter` was the chief cause of the
+///   never-rendered Token Cost section. Unknown cost is shown as
+///   `—`; the row is marked `*` when the phase contributed without
+///   a complete cost-pair.
+/// - The section header is omitted only when every phase is
+///   `"pending"`. Any non-pending phase forces the header so users
+///   see whatever data is available.
+/// - The total line uses the same Some/None formatting as per-phase
+///   rows; an `*` suffix marks the total as approximate when any
+///   phase contributed `None` cost.
 fn token_cost_section(state: &Value) -> Vec<String> {
     let names = phase_config::phase_names();
 
-    let mut phase_rows: Vec<(String, i64, f64, bool)> = Vec::new();
+    let phases_obj = state
+        .get("phases")
+        .and_then(|p| p.as_object())
+        .cloned()
+        .unwrap_or_default();
+    if phases_obj.is_empty() {
+        return Vec::new();
+    }
+
+    // Per-phase row tuple: (display_name, tokens, cost, reset, partial).
+    let mut phase_rows: Vec<(String, i64, Option<f64>, bool, bool)> = Vec::new();
     let mut total_tokens: i64 = 0;
-    let mut total_cost: f64 = 0.0;
+    let mut total_cost: Option<f64> = None;
+    let mut total_partial = false;
     let mut combined_by_model: IndexMap<String, ModelTokens> = IndexMap::new();
     let mut reset_observed_anywhere = false;
 
     for &key in PHASE_ORDER {
-        let Some(phase_v) = state.get("phases").and_then(|p| p.get(key)) else {
+        let Some(phase_v) = phases_obj.get(key) else {
             continue;
         };
-        let Ok(phase_state) = serde_json::from_value::<PhaseState>(phase_v.clone()) else {
-            continue;
-        };
-        let Some(report) = phase_delta(&phase_state) else {
-            continue;
-        };
-        let tokens = report
-            .input_tokens_delta
-            .saturating_add(report.output_tokens_delta)
-            .saturating_add(report.cache_creation_tokens_delta)
-            .saturating_add(report.cache_read_tokens_delta);
-        // Skip phases that contributed nothing — the section is for
-        // surface-able token activity, not a per-phase placeholder.
-        if tokens == 0 && report.cost_delta_usd.abs() < f64::EPSILON {
+        let status = phase_v
+            .get("status")
+            .and_then(|s| s.as_str())
+            .unwrap_or("pending");
+        if status == "pending" {
+            // Phase never started — render no row to keep noise bounded.
             continue;
         }
+        // `phase_config::phase_names()` is keyed by PHASE_ORDER, so
+        // every PHASE_ORDER key is present. The `.expect` documents
+        // the upstream invariant per
+        // `.claude/rules/testability-means-simplicity.md`.
         let name = names
             .get(key)
             .cloned()
             .expect("phase_config::phase_names is keyed by PHASE_ORDER");
-        phase_rows.push((
-            name,
-            tokens,
-            report.cost_delta_usd,
-            report.window_reset_observed,
-        ));
+
+        // PhaseState parse error and "phase has no enter snapshot"
+        // both produce a placeholder row instead of a silent skip.
+        // The placeholder records the phase ran but cost/tokens were
+        // not recoverable from snapshots.
+        let report = serde_json::from_value::<PhaseState>(phase_v.clone())
+            .ok()
+            .and_then(|ps| phase_delta(&ps));
+
+        let (tokens, cost, reset, row_partial) = match report {
+            Some(r) => {
+                let tokens = r
+                    .input_tokens_delta
+                    .saturating_add(r.output_tokens_delta)
+                    .saturating_add(r.cache_creation_tokens_delta)
+                    .saturating_add(r.cache_read_tokens_delta);
+                if r.window_reset_observed {
+                    reset_observed_anywhere = true;
+                }
+                for (model, mt) in &r.by_model_delta {
+                    let entry = combined_by_model.entry(model.clone()).or_default();
+                    entry.input = entry.input.saturating_add(mt.input);
+                    entry.output = entry.output.saturating_add(mt.output);
+                    entry.cache_create = entry.cache_create.saturating_add(mt.cache_create);
+                    entry.cache_read = entry.cache_read.saturating_add(mt.cache_read);
+                }
+                (
+                    tokens,
+                    r.cost_delta_usd,
+                    r.window_reset_observed,
+                    r.total_partial,
+                )
+            }
+            None => (0, None, false, true),
+        };
+
         total_tokens = total_tokens.saturating_add(tokens);
-        total_cost += report.cost_delta_usd;
-        if report.window_reset_observed {
-            reset_observed_anywhere = true;
+        match cost {
+            Some(c) => total_cost = Some(total_cost.unwrap_or(0.0) + c),
+            None => total_partial = true,
         }
-        for (model, mt) in &report.by_model_delta {
-            let entry = combined_by_model.entry(model.clone()).or_default();
-            entry.input = entry.input.saturating_add(mt.input);
-            entry.output = entry.output.saturating_add(mt.output);
-            entry.cache_create = entry.cache_create.saturating_add(mt.cache_create);
-            entry.cache_read = entry.cache_read.saturating_add(mt.cache_read);
+        if row_partial {
+            total_partial = true;
         }
+        phase_rows.push((name, tokens, cost, reset, row_partial));
     }
 
     if phase_rows.is_empty() {
@@ -124,22 +171,32 @@ fn token_cost_section(state: &Value) -> Vec<String> {
     let mut lines = Vec::new();
     lines.push("  Token Cost".to_string());
     lines.push(format!("  {}", "─".repeat(28)));
-    for (name, tokens, cost, reset) in &phase_rows {
-        let marker = if *reset { " ↻" } else { "" };
+    for (name, tokens, cost, reset, partial) in &phase_rows {
+        let reset_marker = if *reset { " ↻" } else { "" };
+        let partial_marker = if *partial { "*" } else { "" };
+        let cost_str = match cost {
+            Some(c) => format!("${:.3}{}", c, partial_marker),
+            None => "—".to_string(),
+        };
         lines.push(format!(
-            "  {:<16} {:>8}  ${:.3}{}",
+            "  {:<16} {:>8}  {}{}",
             format!("{}:", name),
             format_tokens(*tokens),
-            cost,
-            marker
+            cost_str,
+            reset_marker
         ));
     }
     lines.push(format!("  {}", "─".repeat(28)));
+    let total_partial_marker = if total_partial { "*" } else { "" };
+    let total_cost_str = match total_cost {
+        Some(c) => format!("${:.3}{}", c, total_partial_marker),
+        None => "—".to_string(),
+    };
     lines.push(format!(
-        "  {:<16} {:>8}  ${:.3}",
+        "  {:<16} {:>8}  {}",
         "Total:",
         format_tokens(total_tokens),
-        total_cost
+        total_cost_str
     ));
     if combined_by_model.len() >= 2 {
         lines.push(String::new());
@@ -160,6 +217,10 @@ fn token_cost_section(state: &Value) -> Vec<String> {
     if reset_observed_anywhere {
         lines.push(String::new());
         lines.push("  ↻ rate-limit window reset observed mid-flow".to_string());
+    }
+    if total_partial {
+        lines.push(String::new());
+        lines.push("  * cost partial — some phases had no cost data".to_string());
     }
     lines.push(String::new());
     lines

@@ -353,6 +353,72 @@ fn test_render_detail_panel_token_table_breaks_when_viewport_overflows() {
     let _ = render_to_string(&app, 100, 18);
 }
 
+/// Token row keeps the cost-bearing entry when tokens did not grow
+/// but cost did. Drives the `is_some_and` arm of the active-rows
+/// filter — when `r.tokens == 0` the OR falls through to the cost
+/// check; the closure inside `is_some_and` runs only when cost is
+/// `Some(non-zero)`.
+#[test]
+fn test_render_detail_panel_token_row_kept_when_only_cost_changed() {
+    let mut app = make_app();
+    let mut flow = make_flow_with_token_snapshots();
+    // Force tokens to stay flat across the pair while cost grows.
+    flow.state["phases"]["flow-code"]["window_at_complete"]["session_input_tokens"] =
+        flow.state["phases"]["flow-code"]["window_at_enter"]["session_input_tokens"].clone();
+    flow.state["phases"]["flow-code"]["window_at_complete"]["session_output_tokens"] =
+        flow.state["phases"]["flow-code"]["window_at_enter"]["session_output_tokens"].clone();
+    flow.state["phases"]["flow-code"]["window_at_complete"]["by_model"]["claude-opus-4-7"]
+        ["input"] = flow.state["phases"]["flow-code"]["window_at_enter"]["by_model"]
+        ["claude-opus-4-7"]["input"]
+        .clone();
+    flow.state["phases"]["flow-code"]["window_at_complete"]["by_model"]["claude-opus-4-7"]
+        ["output"] = flow.state["phases"]["flow-code"]["window_at_enter"]["by_model"]
+        ["claude-opus-4-7"]["output"]
+        .clone();
+    // Cost stays Some(0.01)→Some(0.50) so cost delta is positive.
+    app.flows = vec![flow];
+    let output = render_to_string(&app, 100, 40);
+    assert!(
+        output.contains("Tokens"),
+        "Token table must render when cost grew without token growth:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Code:"),
+        "Code phase row must render:\n{}",
+        output
+    );
+}
+
+/// Token row renders the em-dash placeholder for cost when a
+/// phase grew tokens but lacks `session_cost_usd` data on either
+/// snapshot endpoint (issue #1410). Pre-fix the row showed
+/// `$0.000`, masking the unknown-cost condition.
+#[test]
+fn test_render_detail_panel_token_row_renders_em_dash_for_unknown_cost() {
+    let mut app = make_app();
+    let mut flow = make_flow_with_token_snapshots();
+    // Strip cost from both endpoints so phase_delta produces None
+    // for cost while tokens still grow → row stays in active_rows
+    // and reaches the cost rendering branch.
+    flow.state["phases"]["flow-code"]["window_at_enter"]["session_cost_usd"] =
+        serde_json::json!(null);
+    flow.state["phases"]["flow-code"]["window_at_complete"]["session_cost_usd"] =
+        serde_json::json!(null);
+    app.flows = vec![flow];
+    let output = render_to_string(&app, 100, 40);
+    assert!(
+        output.contains("Tokens"),
+        "Token table must render when tokens grew:\n{}",
+        output
+    );
+    assert!(
+        output.contains("—"),
+        "em-dash placeholder must appear when cost data is unknown:\n{}",
+        output
+    );
+}
+
 /// Window-reset marker appears on rows where the rate-limit window
 /// rolled over mid-phase.
 #[test]

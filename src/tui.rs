@@ -855,7 +855,9 @@ impl TuiApp {
             let active_rows: Vec<&tui_data::PhaseTokenRow> = token_rows
                 .iter()
                 .filter(|r| {
-                    r.tokens > 0 || r.cost_usd.abs() > f64::EPSILON || r.window_reset_observed
+                    r.tokens > 0
+                        || r.cost_usd.is_some_and(|c| c.abs() > f64::EPSILON)
+                        || r.window_reset_observed
                 })
                 .collect();
             if !active_rows.is_empty() {
@@ -877,11 +879,15 @@ impl TuiApp {
                     } else {
                         ""
                     };
+                    let cost_str = match r.cost_usd {
+                        Some(c) => format!("${:.3}", c),
+                        None => "—".to_string(),
+                    };
                     let line_text = format!(
-                        "    {}: {}  ${:.3}{}",
+                        "    {}: {}  {}{}",
                         r.phase_name,
                         format_tokens(r.tokens),
-                        r.cost_usd,
+                        cost_str,
                         marker
                     );
                     let line = Paragraph::new(Line::from(line_text));

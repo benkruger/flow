@@ -79,35 +79,13 @@ fn token_cost_section_with_full_data_renders_per_phase_and_total() {
     // for Start phase. Across 3 phases the combined Total should be > 0.
 }
 
-/// Empty state (no snapshots anywhere) → section is omitted entirely.
-#[test]
-fn token_cost_section_with_no_snapshots_returns_empty() {
-    let state = all_complete_state();
-    let result = format_complete_summary(&state, None);
-    assert!(
-        !result.summary.contains("Token Cost"),
-        "Token Cost header must not appear when no phases have snapshots"
-    );
-}
-
-/// Partial data: only some phases have snapshots → other phases are
-/// silently skipped from the per-phase rows.
-#[test]
-fn token_cost_section_with_partial_data_skips_unpopulated_phases() {
-    let mut state = all_complete_state();
-    // Only flow-code has snapshots.
-    add_phase_snapshots(&mut state, "flow-code", 10, 50);
-    let result = format_complete_summary(&state, None);
-    assert!(result.summary.contains("Token Cost"));
-    // Plan and Start phases must NOT appear in the Token Cost rows.
-    let token_section_start = result.summary.find("Token Cost").expect("section");
-    let after_token = &result.summary[token_section_start..];
-    let next_section = after_token.find("\n\n").unwrap_or(after_token.len());
-    let token_block = &after_token[..next_section];
-    assert!(token_block.contains("Code:"));
-    assert!(!token_block.contains("Start:"));
-    assert!(!token_block.contains("Plan:"));
-}
+// Pre-fix tests `token_cost_section_with_no_snapshots_returns_empty`
+// and `token_cost_section_with_partial_data_skips_unpopulated_phases`
+// were removed per `.claude/rules/supersession.md` — both asserted
+// the buggy "skip silently when no snapshots" behavior the plan
+// (issue #1410) explicitly replaces. The new contract is exercised
+// by the plan-named `token_cost_section_*` tests in the
+// "Renderer placeholder behavior" block below.
 
 /// Window reset observed: pct delta drops between enter and complete
 /// for a phase → reset marker (↻) appears next to that phase row and
@@ -176,19 +154,11 @@ fn token_cost_section_with_null_phases_value_returns_empty() {
     assert!(!result.summary.contains("Token Cost"));
 }
 
-/// Phase has snapshots but every counter field is zero → the
-/// delta is all-zero and the row is skipped from the section.
-#[test]
-fn token_cost_section_with_zero_delta_phase_is_skipped() {
-    let mut state = all_complete_state();
-    // enter=0 and complete=0 → all numeric snapshot fields zero,
-    // so the delta is zero across the board.
-    add_phase_snapshots(&mut state, "flow-code", 0, 0);
-    let result = format_complete_summary(&state, None);
-    // Section should NOT render — the only phase with snapshots
-    // contributed nothing.
-    assert!(!result.summary.contains("Token Cost"));
-}
+// Pre-fix test `token_cost_section_with_zero_delta_phase_is_skipped`
+// was removed per `.claude/rules/supersession.md` — the new contract
+// renders a row whenever a phase's status is not "pending", even when
+// the delta is zero. See the plan-named tests below for the new
+// "section omitted only when every phase is pending" semantics.
 
 /// Phase has snapshots with cost but no token delta → the row is
 /// kept (the cost arm of the AND-skip branch fires false).
@@ -220,21 +190,13 @@ fn token_cost_section_with_missing_phases_object_returns_empty() {
     assert!(!result.summary.contains("Token Cost"));
 }
 
-/// Phase value with a malformed `window_at_enter` shape (wrong type)
-/// → from_value::<PhaseState> returns Err and the phase is skipped.
-#[test]
-fn token_cost_section_with_unparseable_phase_skips_silently() {
-    let mut state = all_complete_state();
-    // Replace one phase entry with a non-object value so PhaseState
-    // deserialization fails.
-    state["phases"]["flow-code"] = json!("not an object");
-    // Plus add a real snapshot pair on a different phase so the
-    // section renders for that phase but skips flow-code.
-    add_phase_snapshots(&mut state, "flow-learn", 5, 10);
-    let result = format_complete_summary(&state, None);
-    assert!(result.summary.contains("Token Cost"));
-    assert!(result.summary.contains("Learn:"));
-}
+// Pre-fix test `token_cost_section_with_unparseable_phase_skips_silently`
+// was removed per `.claude/rules/supersession.md` — the new contract
+// renders a placeholder row (cost = "—") for phases whose PhaseState
+// fails to deserialize, instead of silently dropping them. The plan-
+// named tests below (`token_cost_section_renders_em_dash_for_unknown_cost`,
+// `token_cost_section_renders_phase_with_missing_window_at_enter`)
+// cover the placeholder shape.
 
 /// `format_tokens` boundary cases: < 1000 (raw integer), >= 1M
 /// (megaformat). Drives both branches via crafted snapshots that
@@ -253,6 +215,188 @@ fn token_cost_section_format_tokens_covers_small_and_million_ranges() {
     assert!(result.summary.contains("150"));
     // M suffix for the million-range phase.
     assert!(result.summary.contains("M"));
+}
+
+// --- Renderer placeholder behavior (issue #1410) ---
+//
+// The pre-fix renderer silently dropped the entire Token Cost
+// section when no phase had a complete snapshot pair. The fix:
+// any phase whose status is not "pending" produces a row, with
+// `—` placeholders for unknown values. The five tests below
+// cover the new contract per Task 8 of the plan.
+
+/// All phases pending → no row contributes → section omitted
+/// (only path that still hides the header).
+#[test]
+fn token_cost_section_omitted_only_when_no_phases_have_run() {
+    let mut state = all_complete_state();
+    // Reset every phase to pending so no phase has run.
+    for key in [
+        "flow-start",
+        "flow-code",
+        "flow-review",
+        "flow-learn",
+        "flow-complete",
+    ] {
+        state["phases"][key]["status"] = json!("pending");
+    }
+    let result = format_complete_summary(&state, None);
+    assert!(
+        !result.summary.contains("Token Cost"),
+        "section header must not appear when every phase is pending"
+    );
+}
+
+/// Any phase with status != "pending" forces the section header,
+/// even when no phase has snapshots and every per-phase delta
+/// would be unknown.
+#[test]
+fn token_cost_section_renders_header_when_any_phase_has_run() {
+    let state = all_complete_state();
+    // No snapshots added — every phase has run (status="complete")
+    // but no phase contributes a delta.
+    let result = format_complete_summary(&state, None);
+    assert!(
+        result.summary.contains("Token Cost"),
+        "section header must render when at least one phase has run"
+    );
+    assert!(
+        result.summary.contains("Total:"),
+        "total row must render alongside the header"
+    );
+}
+
+/// A phase whose snapshots have `session_cost_usd: None` produces
+/// an em-dash row instead of `$0.000`. The pre-fix code rendered
+/// `$0.000` for both "no cost" and "computed zero cost", erasing
+/// the distinction.
+#[test]
+fn token_cost_section_renders_em_dash_for_unknown_cost() {
+    let mut state = all_complete_state();
+    let mut enter = snapshot_value("S1", 1, "claude-opus-4-7");
+    let mut complete = snapshot_value("S1", 5, "claude-opus-4-7");
+    enter["session_cost_usd"] = json!(null);
+    complete["session_cost_usd"] = json!(null);
+    state["phases"]["flow-code"]["window_at_enter"] = enter;
+    state["phases"]["flow-code"]["window_at_complete"] = complete;
+    let result = format_complete_summary(&state, None);
+    assert!(result.summary.contains("Token Cost"));
+    assert!(
+        result.summary.contains("—"),
+        "em-dash placeholder must appear when cost data is unknown"
+    );
+}
+
+/// A phase with only `window_at_complete` (no `window_at_enter`)
+/// renders a placeholder row marked partial. The pre-fix code
+/// silently skipped the phase via the `phase_delta` returns-None
+/// branch.
+#[test]
+fn token_cost_section_renders_phase_with_missing_window_at_enter() {
+    let mut state = all_complete_state();
+    // Only window_at_complete is set; window_at_enter is left
+    // unpopulated (state has no enter snapshot).
+    state["phases"]["flow-code"]["window_at_complete"] = snapshot_value("S1", 5, "claude-opus-4-7");
+    let result = format_complete_summary(&state, None);
+    assert!(result.summary.contains("Token Cost"));
+    // Code phase row still renders even without an enter anchor.
+    let token_section_start = result.summary.find("Token Cost").expect("section");
+    let after_token = &result.summary[token_section_start..];
+    assert!(
+        after_token.contains("Code:"),
+        "Code row must render even when window_at_enter is missing"
+    );
+    assert!(
+        after_token.contains("—"),
+        "missing-enter row must use em-dash for unknown cost"
+    );
+}
+
+/// State with only a subset of PHASE_ORDER keys present in
+/// `phases` exercises the `let Some(phase_v) = phases_obj.get(key)
+/// else { continue }` branch — older state files or hand-edited
+/// state may omit phase entries entirely.
+#[test]
+fn token_cost_section_skips_phase_keys_missing_from_state() {
+    let mut state = all_complete_state();
+    let phases_obj = state["phases"].as_object().unwrap().clone();
+    let flow_code_entry = phases_obj.get("flow-code").cloned().unwrap();
+    let mut new_phases = serde_json::Map::new();
+    new_phases.insert("flow-code".to_string(), flow_code_entry);
+    state["phases"] = json!(new_phases);
+    add_phase_snapshots(&mut state, "flow-code", 0, 5);
+    let result = format_complete_summary(&state, None);
+    // The four PHASE_ORDER entries missing from the phases map hit
+    // the `continue` arm; only flow-code contributes a row inside
+    // the Token Cost section. Bound the assertion to that section
+    // (other sections — phase timing, by-model — may still mention
+    // "Start" via PHASE_NAMES_LIST).
+    let token_section_start = result
+        .summary
+        .find("Token Cost")
+        .expect("Token Cost section must render");
+    let after_token = &result.summary[token_section_start..];
+    let token_block_end = after_token.find("\n\n").unwrap_or(after_token.len());
+    let token_block = &after_token[..token_block_end];
+    assert!(
+        token_block.contains("Code:"),
+        "token block:\n{}",
+        token_block
+    );
+    assert!(
+        !token_block.contains("Start:"),
+        "missing PHASE_ORDER keys must not produce rows:\n{}",
+        token_block
+    );
+}
+
+/// Total `total_partial=false` branch: every running phase
+/// contributed `Some` cost, so the total has no `*` partial marker.
+#[test]
+fn token_cost_section_total_not_partial_when_every_phase_has_cost() {
+    // Set every phase except flow-code to status=pending so they
+    // skip; flow-code is the only running phase and has populated
+    // snapshots → cost is Some → total_partial stays false.
+    let mut state = all_complete_state();
+    for key in ["flow-start", "flow-review", "flow-learn", "flow-complete"] {
+        state["phases"][key]["status"] = json!("pending");
+    }
+    add_phase_snapshots(&mut state, "flow-code", 0, 5);
+    let result = format_complete_summary(&state, None);
+    assert!(result.summary.contains("Token Cost"));
+    assert!(
+        !result.summary.contains("cost partial"),
+        "footnote must NOT appear when every running phase has populated cost"
+    );
+}
+
+/// When at least one phase contributes `None` cost, the total row
+/// is marked partial via a `*` suffix so the user sees the total
+/// is approximate.
+#[test]
+fn token_cost_section_total_marks_partial_when_any_unknown() {
+    let mut state = all_complete_state();
+    // flow-start has both cost endpoints populated → contributes
+    // a known value to the total.
+    add_phase_snapshots(&mut state, "flow-start", 0, 5);
+    // flow-code has only window_at_complete → contributes None.
+    state["phases"]["flow-code"]["window_at_complete"] = snapshot_value("S1", 5, "claude-opus-4-7");
+    let result = format_complete_summary(&state, None);
+    assert!(result.summary.contains("Token Cost"));
+    // The total line carries the partial marker; the footnote
+    // explains it.
+    assert!(
+        result.summary.contains("Total:"),
+        "Total: header must render"
+    );
+    assert!(
+        result.summary.contains("*"),
+        "partial marker must appear when any phase contributed None cost"
+    );
+    assert!(
+        result.summary.contains("cost partial"),
+        "footnote must explain the partial marker"
+    );
 }
 
 // --- basic summary ---

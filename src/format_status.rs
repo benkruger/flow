@@ -29,7 +29,12 @@ fn tokens_line(state: &Value) -> Option<String> {
         .saturating_add(report.output_tokens_delta)
         .saturating_add(report.cache_creation_tokens_delta)
         .saturating_add(report.cache_read_tokens_delta);
-    if total == 0 && report.cost_delta_usd.abs() < f64::EPSILON && !report.window_reset_observed {
+    // Cost is now `Option<f64>` (issue #1410). Treat `None` (no
+    // cost data) and `Some(0.0)` as the same "no surfacable cost"
+    // for the omission gate; the rendering branch below
+    // distinguishes them.
+    let cost_is_negligible = report.cost_delta_usd.is_none_or(|c| c.abs() < f64::EPSILON);
+    if total == 0 && cost_is_negligible && !report.window_reset_observed {
         return None;
     }
     let marker = if report.window_reset_observed {
@@ -37,10 +42,14 @@ fn tokens_line(state: &Value) -> Option<String> {
     } else {
         ""
     };
+    let cost_str = match report.cost_delta_usd {
+        Some(c) => format!("${:.3}", c),
+        None => "—".to_string(),
+    };
     Some(format!(
-        "  Tokens  : {}  (${:.3}){}",
+        "  Tokens  : {}  ({}){}",
         format_tokens(total),
-        report.cost_delta_usd,
+        cost_str,
         marker
     ))
 }

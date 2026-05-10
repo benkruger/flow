@@ -1953,11 +1953,9 @@ fn phase_token_table_handles_missing_snapshots() {
     let rows = phase_token_table(&state);
     for row in &rows {
         assert_eq!(row.tokens, 0, "phase {} tokens", row.phase_key);
-        assert!(
-            row.cost_usd.abs() < f64::EPSILON,
-            "phase {} cost",
-            row.phase_key
-        );
+        // Missing snapshots → no cost pair → cost is `None` (issue
+        // #1410: the new sentinel for "no cost data").
+        assert!(row.cost_usd.is_none(), "phase {} cost", row.phase_key);
         assert!(!row.window_reset_observed, "phase {} reset", row.phase_key);
     }
 }
@@ -2001,7 +1999,10 @@ fn phase_token_table_with_snapshots_reports_tokens_and_cost() {
         .find(|r| r.phase_key == "flow-start")
         .expect("flow-start row");
     assert!(start_row.tokens > 0, "flow-start tokens > 0");
-    assert!(start_row.cost_usd > 0.0, "flow-start cost > 0");
+    assert!(
+        start_row.cost_usd.unwrap_or(0.0) > 0.0,
+        "flow-start cost > 0"
+    );
     let code_row = rows
         .iter()
         .find(|r| r.phase_key == "flow-code")
@@ -2089,7 +2090,10 @@ fn phase_token_table_with_unparseable_state_returns_zero_data_rows() {
     assert_eq!(rows.len(), PHASE_ORDER.len());
     for row in &rows {
         assert_eq!(row.tokens, 0);
-        assert!(row.cost_usd.abs() < f64::EPSILON);
+        // FlowState parse failure → no delta computable → cost is
+        // `None` (issue #1410). The pre-fix scaffold returned
+        // `0.0`; the new sentinel preserves the "no data" signal.
+        assert!(row.cost_usd.is_none());
         assert!(!row.window_reset_observed);
     }
 }

@@ -314,7 +314,11 @@ pub struct PhaseTokenRow {
     pub phase_number: usize,
     pub status: String,
     pub tokens: i64,
-    pub cost_usd: f64,
+    /// `None` when the phase has no `(Some, Some)` cost pair (issue
+    /// #1410). The TUI renders `None` as the em-dash placeholder and
+    /// excludes None-cost rows from the cost-based "active" filter
+    /// below.
+    pub cost_usd: Option<f64>,
     pub window_reset_observed: bool,
     pub in_progress: bool,
 }
@@ -370,7 +374,7 @@ pub fn phase_token_table(state: &Value) -> Vec<PhaseTokenRow> {
                     .saturating_add(report.cache_read_tokens_delta);
                 (total, report.cost_delta_usd, report.window_reset_observed)
             })
-            .unwrap_or((0, 0.0, false));
+            .unwrap_or((0, None, false));
 
         rows.push(PhaseTokenRow {
             phase_key: key.to_string(),

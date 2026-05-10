@@ -29,22 +29,34 @@ use crate::state::{FlowState, ModelTokens, PhaseState, WindowSnapshot};
 /// Per-phase delta computed from a phase's enter / step / complete
 /// snapshots.
 ///
-/// Token, cost, turn, and tool counters are simple non-negative
-/// deltas (cross-session sum). Rate-limit pct deltas are
-/// `Option<i64>` because a window reset (curr < prev) makes the
-/// pct delta meaningless for that span — `window_reset_observed`
-/// records whether any span observed a reset so a reader can
-/// switch to displaying the latest absolute pct instead.
+/// Token, turn, and tool counters are simple non-negative deltas
+/// (cross-session sum). Rate-limit pct deltas are `Option<i64>`
+/// because a window reset (curr < prev) makes the pct delta
+/// meaningless for that span — `window_reset_observed` records
+/// whether any span observed a reset so a reader can switch to
+/// displaying the latest absolute pct instead.
+///
+/// `cost_delta_usd: Option<f64>` — `None` means cost is unknown
+/// for this report (no Some-Some pair contributed). Aggregation
+/// in [`DeltaReport::add`] sums Some contributions and sets
+/// `total_partial = true` when any folded contribution was
+/// `None`. Renderers display `Some(c)` as `${c:.3}` and `None`
+/// as `—` (issue #1410). The asymmetric pre-fix arms (Some,
+/// None → end_value; None, Some → end_value) silently
+/// fabricated deltas from cumulative session totals; the new
+/// (Some, Some) → Some(diff), else → None semantics make the
+/// missing-data condition explicit.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeltaReport {
     pub input_tokens_delta: i64,
     pub output_tokens_delta: i64,
     pub cache_creation_tokens_delta: i64,
     pub cache_read_tokens_delta: i64,
-    pub cost_delta_usd: f64,
+    pub cost_delta_usd: Option<f64>,
     pub five_hour_pct_delta: Option<i64>,
     pub seven_day_pct_delta: Option<i64>,
     pub window_reset_observed: bool,
+    pub total_partial: bool,
     pub turn_count_delta: i64,
     pub tool_call_count_delta: i64,
     pub by_model_delta: IndexMap<String, ModelTokens>,
@@ -52,26 +64,34 @@ pub struct DeltaReport {
 
 impl DeltaReport {
     /// All-zero / `None` report — a defined "no contribution" value
-    /// that callers can fold into running totals.
+    /// that callers can fold into running totals. `cost_delta_usd`
+    /// starts as `None` so [`DeltaReport::add`] can distinguish
+    /// "no Some seen yet" from "Some(0.0) seen".
     fn zero() -> Self {
         Self {
             input_tokens_delta: 0,
             output_tokens_delta: 0,
             cache_creation_tokens_delta: 0,
             cache_read_tokens_delta: 0,
-            cost_delta_usd: 0.0,
+            cost_delta_usd: None,
             five_hour_pct_delta: Some(0),
             seven_day_pct_delta: Some(0),
             window_reset_observed: false,
+            total_partial: false,
             turn_count_delta: 0,
             tool_call_count_delta: 0,
             by_model_delta: IndexMap::new(),
         }
     }
 
-    /// Fold `other` into `self` element-wise. Token / cost / turn
-    /// counters add. Pct deltas Option-add — `None` is sticky so a
-    /// reset in any folded report propagates to the total.
+    /// Fold `other` into `self` element-wise. Token / turn / tool
+    /// counters add. Cost folds with Option semantics: a `Some`
+    /// contribution adds into the running total (initializing it
+    /// from `None` to `Some(x)` on the first `Some`); a `None`
+    /// contribution leaves the total unchanged but flips
+    /// `total_partial = true` so renderers can mark the total as
+    /// approximate. Pct deltas Option-add — `None` is sticky so a
+    /// reset in any folded report propagates.
     fn add(&mut self, other: &Self) {
         self.input_tokens_delta = self
             .input_tokens_delta
@@ -85,7 +105,18 @@ impl DeltaReport {
         self.cache_read_tokens_delta = self
             .cache_read_tokens_delta
             .saturating_add(other.cache_read_tokens_delta);
-        self.cost_delta_usd += other.cost_delta_usd;
+        match other.cost_delta_usd {
+            Some(x) => {
+                self.cost_delta_usd = Some(self.cost_delta_usd.unwrap_or(0.0) + x);
+            }
+            None => {
+                self.total_partial = true;
+            }
+        }
+        // No `other.total_partial` propagation: production callers
+        // only fold pair_delta outputs (which always set
+        // `total_partial: false`); folding an aggregated report into
+        // another would be a future change with its own tests.
         self.five_hour_pct_delta = match (self.five_hour_pct_delta, other.five_hour_pct_delta) {
             (Some(a), Some(b)) => Some(a.saturating_add(b)),
             _ => None,
@@ -215,10 +246,16 @@ fn pair_delta(start: &WindowSnapshot, end: &WindowSnapshot) -> DeltaReport {
         end.session_cache_read_tokens,
         start.session_cache_read_tokens,
     );
-    let cost_delta_usd = match (end.session_cost_usd, start.session_cost_usd) {
-        (Some(a), Some(b)) => a - b,
-        (Some(a), None) => a,
-        _ => 0.0,
+    // Cost is reported only when BOTH endpoints carry a populated
+    // value. Previous arms fabricated deltas: (Some, None) returned
+    // the end's cumulative value as if it were a delta; (None, Some)
+    // dropped the start. Both shapes silently miscounted (issue
+    // #1410). Now: only `(Some, Some)` produces `Some(end - start)`;
+    // every other shape produces `None` so renderers can mark the
+    // missing data with `—` instead of inventing a number.
+    let cost_delta_usd = match (start.session_cost_usd, end.session_cost_usd) {
+        (Some(s), Some(e)) => Some(e - s),
+        _ => None,
     };
     let (five_hour_pct_delta, five_reset) =
         pct_delta_with_reset(start.five_hour_pct, end.five_hour_pct);
@@ -257,6 +294,9 @@ fn pair_delta(start: &WindowSnapshot, end: &WindowSnapshot) -> DeltaReport {
         five_hour_pct_delta,
         seven_day_pct_delta,
         window_reset_observed,
+        // pair_delta produces a single-pair report; partial
+        // tracking is an aggregator concern computed by `add`.
+        total_partial: false,
         turn_count_delta,
         tool_call_count_delta,
         by_model_delta,
