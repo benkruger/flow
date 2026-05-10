@@ -355,7 +355,7 @@ pub fn phase_timeline(state: &Value, now: Option<DateTime<FixedOffset>>) -> Vec<
                 } else {
                     code_task_name.to_string()
                 };
-                format!("{} - {}", truncated, task_str)
+                format!("{} - {}", task_str, truncated)
             } else {
                 task_str
             };

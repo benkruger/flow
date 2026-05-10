@@ -574,7 +574,7 @@ fn test_phase_timeline_code_with_task_name() {
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
     assert_eq!(
         timeline[1].annotation,
-        "Update contract tests - task 2 of 3"
+        "task 2 of 3 - Update contract tests"
     );
 }
 
@@ -605,7 +605,7 @@ fn test_phase_timeline_code_task_name_with_diff_stats() {
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
     assert_eq!(
         timeline[1].annotation,
-        "Update contract tests - task 2 of 3, +127 -48"
+        "task 2 of 3 - Update contract tests, +127 -48"
     );
 }
 
@@ -620,7 +620,10 @@ fn test_phase_timeline_code_task_name_truncated() {
     state["code_task_name"] = json!("Implement the very long task description that exceeds limit");
 
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    let name_part = timeline[1].annotation.split(" - task ").next().unwrap();
+    // New format: "task N of M - <truncated_name>". Split on the first
+    // " - " to extract the trailing name.
+    let parts: Vec<&str> = timeline[1].annotation.splitn(2, " - ").collect();
+    let name_part = parts[1];
     assert_eq!(name_part.chars().count(), 30);
     assert!(name_part.ends_with("..."));
 }
