@@ -1258,3 +1258,129 @@ fn start_init_session_id_remains_null_when_capture_file_unparseable() {
         state["session_id"]
     );
 }
+
+/// Cost-per-flow integration test (issue #1410, plan Task 10):
+/// proves the SessionStart capture path → init-state seeding →
+/// window_at_start cost capture → format_complete_summary
+/// rendering chain works end-to-end. Pre-fix the chain broke at
+/// the first step (session_id stayed Null), which masked every
+/// downstream lookup as "no cost data" and silently hid the
+/// Token Cost section. Had this test existed before the fix, the
+/// bug would have failed CI.
+#[test]
+fn cost_per_flow_token_cost_section_renders_phase_delta_end_to_end() {
+    use chrono::Local;
+
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    let home = dir.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let home = home.canonicalize().unwrap();
+    let session_id = "cost-flow-sid";
+    write_capture_file(&home, session_id, None);
+
+    // Pre-create the cost file at <repo>/.claude/cost/<YYYY-MM>/<session_id>.txt
+    // with an initial value. capture_for_active_state reads this file
+    // when start-init writes window_at_start, so this seeds the start
+    // anchor with cost=1.00.
+    let year_month = Local::now().format("%Y-%m").to_string();
+    let cost_dir = repo.join(".claude").join("cost").join(&year_month);
+    fs::create_dir_all(&cost_dir).unwrap();
+    let cost_file = cost_dir.join(format!("{}.txt", session_id));
+    fs::write(&cost_file, "1.00\n").unwrap();
+
+    let output = run_start_init_with_home(&repo, "cost-flow-test", &home, &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    let branch = data["branch"].as_str().expect("branch field present");
+
+    // Confirm the start anchor carries the cost — without the
+    // session_id seed, this would be Null and every downstream
+    // delta would compute None.
+    let mut state = read_state_for_branch(&repo, branch);
+    assert_eq!(
+        state["window_at_start"]["session_cost_usd"]
+            .as_f64()
+            .expect("start cost populated"),
+        1.00,
+        "window_at_start cost must reflect the pre-flow cost file value"
+    );
+
+    // Simulate cost accruing during the Code phase: bump the
+    // cost file from 1.00 → 1.50 at phase-enter, then from 1.50
+    // → 2.50 at phase-finalize. Mutate the state file directly to
+    // add the phase snapshots that those subprocess calls would
+    // produce, with cost values mirroring the accrued totals.
+    fs::write(&cost_file, "2.50\n").unwrap();
+
+    // Build window_at_enter (cost=1.50, captured mid-flow) and
+    // window_at_complete (cost=2.50). The computed delta is
+    // 2.50 - 1.50 = 1.00 for the flow-code phase.
+    let snap_template = serde_json::json!({
+        "captured_at": "2026-01-01T00:00:00-08:00",
+        "session_id": session_id,
+        "model": "claude-opus-4-7",
+        "five_hour_pct": 50,
+        "seven_day_pct": 25,
+        "session_input_tokens": 100,
+        "session_output_tokens": 50,
+        "session_cache_creation_tokens": 0,
+        "session_cache_read_tokens": 0,
+        "by_model": {
+            "claude-opus-4-7": {"input": 100, "output": 50, "cache_create": 0, "cache_read": 0}
+        },
+        "turn_count": 1,
+        "tool_call_count": 2,
+        "context_at_last_turn_tokens": 100,
+        "context_window_pct": 0.05,
+    });
+    let mut enter_snap = snap_template.clone();
+    enter_snap["session_cost_usd"] = serde_json::json!(1.50);
+    enter_snap["session_input_tokens"] = serde_json::json!(100);
+    let mut complete_snap = snap_template.clone();
+    complete_snap["session_cost_usd"] = serde_json::json!(2.50);
+    complete_snap["session_input_tokens"] = serde_json::json!(500);
+    complete_snap["by_model"]["claude-opus-4-7"]["input"] = serde_json::json!(500);
+    state["phases"]["flow-code"]["status"] = serde_json::json!("complete");
+    state["phases"]["flow-code"]["window_at_enter"] = enter_snap;
+    state["phases"]["flow-code"]["window_at_complete"] = complete_snap;
+
+    let result = flow_rs::format_complete_summary::format_complete_summary(&state, None);
+    assert!(
+        result.summary.contains("Token Cost"),
+        "Token Cost section must render when session_id flows from capture file to phase deltas:\n{}",
+        result.summary
+    );
+    // Bound the assertion to the Token Cost section so other
+    // sections naming "Code" don't false-positive the check.
+    let token_section_start = result
+        .summary
+        .find("Token Cost")
+        .expect("Token Cost section present");
+    let token_block = &result.summary[token_section_start..];
+    let code_row_start = token_block
+        .find("Code:")
+        .expect("Code row must appear in Token Cost section");
+    let code_row_end = token_block[code_row_start..]
+        .find('\n')
+        .map(|n| code_row_start + n)
+        .unwrap_or(token_block.len());
+    let code_row = &token_block[code_row_start..code_row_end];
+    assert!(
+        code_row.contains("$1.000"),
+        "Code row must show the computed cost delta ($2.50 - $1.50 = $1.000); got: {:?}",
+        code_row
+    );
+    assert!(
+        !code_row.contains("—"),
+        "Code row must NOT show the em-dash placeholder when cost is fully populated; got: {:?}",
+        code_row
+    );
+}
