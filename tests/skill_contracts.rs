@@ -4359,6 +4359,81 @@ fn flow_skills_admin_and_maintainer_match_user_only() {
     }
 }
 
+// --- include-bias-in-issues rule content contract ---
+//
+// The contract test below pins four load-bearing invariants in
+// the rule body so a future paraphrase or refactor cannot
+// silently drop them or invert their meaning: the structural
+// shape of the principle (bold opening sentence, not a quoted
+// or negated phrase), the bad-reasoning patterns enumeration,
+// the lifecycle-cost framing, and the absence of inversion
+// vocabulary. The fourth assertion blocks the inversion bypass
+// where every required substring is present in a context that
+// negates the principle.
+
+fn read_include_bias_rule() -> String {
+    let path = common::repo_root()
+        .join(".claude")
+        .join("rules")
+        .join("include-bias-in-issues.md");
+    std::fs::read_to_string(&path).expect(".claude/rules/include-bias-in-issues.md must exist")
+}
+
+#[test]
+fn include_bias_rule_states_default_to_inclusion() {
+    let content = read_include_bias_rule();
+
+    // Structural shape: the principle MUST appear as a bold
+    // opening sentence (`**Default to inclusion ...`), not as a
+    // quoted or negated phrase. The bold form is the prescriptive
+    // shape; a plain reference inside a sentence does not lock
+    // the rule's intent.
+    assert!(
+        content.contains("**Default to inclusion"),
+        ".claude/rules/include-bias-in-issues.md must state the principle as a bold prescriptive opening (`**Default to inclusion ...`), not as a quoted or referenced phrase"
+    );
+
+    let bad_patterns: &[&str] = &[
+        "prior PR did",
+        "user owns this",
+        "separate code surface",
+        "would expand scope",
+    ];
+    let hits = bad_patterns.iter().filter(|p| content.contains(*p)).count();
+    assert!(
+        hits >= 3,
+        ".claude/rules/include-bias-in-issues.md must enumerate at least three of four bad-reasoning patterns ({:?}); found {}",
+        bad_patterns,
+        hits
+    );
+
+    assert!(
+        content.contains("lifecycle cost"),
+        ".claude/rules/include-bias-in-issues.md must include the 'lifecycle cost' framing"
+    );
+
+    // Inversion guard: the rule MUST NOT contain any phrasing
+    // that negates the principle. A future rewrite that keeps
+    // every required substring while flipping the meaning would
+    // satisfy the substring assertions above; this list locks
+    // out the canonical inversions.
+    let inversion_patterns: &[&str] = &[
+        "Default to inclusion is wrong",
+        "Default to inclusion is the wrong",
+        "Default to inclusion is incorrect",
+        "Default to exclusion",
+        "Defer aggressively",
+        "Bad Reasoning Patterns Are Actually Good",
+    ];
+    for inversion in inversion_patterns {
+        assert!(
+            !content.contains(inversion),
+            ".claude/rules/include-bias-in-issues.md must not contain inversion phrase `{}` — the rule's principle prescribes inclusion, not exclusion",
+            inversion
+        );
+    }
+}
+
 // --- persistence-routing rule invariant ---
 //
 // `validate-claude-paths` block message points the model at this rule

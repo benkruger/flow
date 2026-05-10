@@ -49,7 +49,6 @@ The filed issue contains enough detail for `/flow-start` to execute fully autono
 - **Acceptance Criteria** — binary pass/fail checklist
 - **Implementation Plan** — Context, Exploration, Risks, Approach, Dependency Graph, Tasks (matching plan file format)
 - **Files to Investigate** — verified paths with relevance notes
-- **Out of Scope** — explicit boundaries to prevent scope creep
 - **Context** — business reason and architectural constraints
 
 ---

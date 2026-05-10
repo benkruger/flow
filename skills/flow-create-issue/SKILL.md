@@ -134,7 +134,6 @@ re-analyze or re-explore, just distill what was already discussed:
   subjective judgment.
 - **Files to Investigate** — Real file paths verified during the conversation's
   codebase exploration. Include a brief note on why each is relevant.
-- **Out of Scope** — Explicit boundaries to prevent scope creep.
 - **Context** — Business reason, architectural constraints, or design decisions.
 
 ---
@@ -294,8 +293,7 @@ into a single issue body in working memory. The section order must be:
 **Implementation Plan** (from transform, wrapped between sentinels —
 containing Context, Exploration, Risks, Approach, Dependency Graph,
 Tasks subsections) → **Files to Investigate** (from capture) →
-**Out of Scope** (from capture) → **Context** (from capture —
-business reason).
+**Context** (from capture — business reason).
 
 Each top-level section uses `##` headings. The Implementation Plan's
 subsections use `###` headings. Task entries within the Tasks subsection

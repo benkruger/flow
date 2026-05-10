@@ -1531,3 +1531,86 @@ fn test_phase_config_rs_no_old_phase_identifier() {
          flow-phases.json and must use the new identifier."
     );
 }
+
+// --- Out of Scope template-section instruction tombstones ---
+//
+// The two tests below assert that the issue-filing skills
+// (flow-create-issue, flow-decompose-project) do NOT contain a
+// templated "Out of Scope" section instruction in any markdown
+// shape — bold heading, plain heading, italic, list-item label,
+// or body-draft enumeration entry. The structural protection
+// target is the title-cased phrase "Out of Scope" itself,
+// because every templated form (`**Out of Scope**`, `## Out of
+// Scope`, `Out of Scope:`, `Files to Investigate, Out of Scope,
+// Context`) contains that exact substring. `.claude/rules/include-bias-in-issues.md`
+// is the rule the tombstones enforce.
+
+/// Tombstone: removed in PR #1427. Must not return.
+///
+/// Asserts `skills/flow-create-issue/SKILL.md` does NOT contain
+/// the title-cased phrase `Out of Scope` in any form. This is a
+/// structural tombstone — the protected concept is "an
+/// enumeration prompt for things excluded," and every templated
+/// shape that re-introduces the prompt (bold `**Out of Scope**`,
+/// heading `## Out of Scope`, italic `*Out of Scope*`, label
+/// `Out of Scope:`, list-item entry `Out of Scope` between
+/// other section names) contains this exact substring. The
+/// assertion catches every shape with one byte check.
+///
+/// The byte-substring shape holds because:
+///   1. `concat!` reassembly: not applicable — SKILL.md is pure
+///      Markdown, no Rust macro evaluates inside it.
+///   2. `format!` reassembly: not applicable to Markdown.
+///   3. Named constant reference: not applicable to Markdown.
+///   4. Method chains / split args: not applicable to Markdown.
+///
+/// The assertion is case-sensitive on the title-cased phrase
+/// `Out of Scope`. Incidental lowercase prose like "out of scope
+/// for X" elsewhere in the file is not matched and is
+/// intentionally permitted; only the title-cased templated
+/// instruction is forbidden.
+#[test]
+fn test_flow_create_issue_skill_no_out_of_scope_instruction() {
+    let content = common::read_skill("flow-create-issue");
+    assert!(
+        !content.contains("Out of Scope"),
+        "skills/flow-create-issue/SKILL.md must not contain the \
+         title-cased phrase `Out of Scope` in any markdown shape \
+         (bold heading, plain heading, italic, label, or list \
+         entry). See .claude/rules/include-bias-in-issues.md for \
+         the rule the tombstone enforces."
+    );
+}
+
+/// Tombstone: removed in PR #1427. Must not return.
+///
+/// Asserts `skills/flow-decompose-project/SKILL.md` does NOT
+/// contain the title-cased phrase `Out of Scope` in any form.
+/// Same structural shape as the sibling tombstone for
+/// flow-create-issue: every templated re-introduction (bold,
+/// heading, label, list entry, reordered list, singular form
+/// like "Out of Scope, Context section") contains the title-
+/// cased substring. The assertion catches every shape with one
+/// byte check.
+///
+/// The byte-substring shape holds because:
+///   1. `concat!` reassembly: not applicable to Markdown.
+///   2. `format!` reassembly: not applicable to Markdown.
+///   3. Named constant reference: not applicable to Markdown.
+///   4. Method chains / split args: not applicable to Markdown.
+///
+/// The assertion is case-sensitive on the title-cased phrase.
+/// Incidental lowercase prose is not matched and is
+/// intentionally permitted.
+#[test]
+fn test_flow_decompose_project_skill_no_out_of_scope_instruction() {
+    let content = common::read_skill("flow-decompose-project");
+    assert!(
+        !content.contains("Out of Scope"),
+        "skills/flow-decompose-project/SKILL.md must not contain \
+         the title-cased phrase `Out of Scope` in any markdown \
+         shape (bold heading, plain heading, italic, label, or \
+         list entry). See .claude/rules/include-bias-in-issues.md \
+         for the rule the tombstone enforces."
+    );
+}
