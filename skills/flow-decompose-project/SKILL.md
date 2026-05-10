@@ -142,8 +142,8 @@ From the DAG synthesis, build a complete issue list:
 For each child issue, draft:
 
 - **Title** — concise, actionable
-- **Body** — Problem, Acceptance Criteria, Files to Investigate, Out of
-  Scope, Context sections.
+- **Body** — Problem, Acceptance Criteria, Files to Investigate,
+  Context sections.
 - **Labels** — `decomposed` plus the auto-derived phase label
 - **Dependencies** — which other child issues this depends on (by title,
   resolved to numbers in Step 4)

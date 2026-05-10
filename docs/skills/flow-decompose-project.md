@@ -48,7 +48,6 @@ Each child issue contains:
 - **Problem** — grounded in codebase evidence
 - **Acceptance Criteria** — binary pass/fail checklist
 - **Files to Investigate** — verified paths
-- **Out of Scope** — explicit boundaries
 - **Context** — business reason and constraints
 - **Dependencies** — tracked via native GitHub blocked-by API relationships (created in Step 5)
 

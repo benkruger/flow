@@ -8,6 +8,19 @@ if we" — they want a discussion, not a workflow. Do not invoke
 skill. Discuss the idea interactively. Only invoke filing skills
 when the user explicitly says "file an issue" or "create an issue."
 
+## Default to Inclusion
+
+When drafting an issue body or scoping a Plan-phase task list,
+default to including adjacent concerns rather than excluding
+them. The question is not "should this be in scope?" but "is
+there a *concrete* reason this must NOT be in scope?" See
+`.claude/rules/include-bias-in-issues.md` for the principle, the
+bad-reasoning patterns to avoid (prior-PR boundaries, code
+ownership, separate code surface, would-expand-scope), and the
+narrow valid exclusions. The lifecycle cost of splitting a
+concern out of an issue is multiples larger than including it
+in the current flow's exploration budget.
+
 ## After Decompose Output
 
 When filing issues that originated from a `/decompose:decompose`
