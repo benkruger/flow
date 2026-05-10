@@ -141,6 +141,26 @@ Example prompt structure:
 The decompose output produces a structured DAG with nodes, dependencies,
 and a synthesis — this becomes the foundation for the Implementation Plan.
 
+<HARD-GATE>
+
+When the Skill tool returns from the decompose:decompose invocation,
+you are still inside flow-create-issue. The Skill tool's return is
+NOT a stopping point — it is a mid-skill handoff. Do not stop, do
+not summarize, do not ask the user "want me to continue?", do not
+return control to the user. Proceed immediately to Transform + Draft
+below using the decompose output you just received.
+
+If you stop here, the user must prompt you again to continue, which
+breaks the unattended flow that flow-create-issue promises to its
+consumers (issue #1412). The whole point of the skill is that one
+invocation produces a filed issue without further user input.
+
+This gate fires whether the Decompose step invoked decompose:decompose
+or skipped it. Either path lands at Transform + Draft as the next
+action — no pause, no acknowledgement, no summary.
+
+</HARD-GATE>
+
 ---
 
 ## Transform + Draft
