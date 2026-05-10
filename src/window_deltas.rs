@@ -198,22 +198,33 @@ pub fn by_model_rollup(state: &FlowState) -> IndexMap<String, ModelTokens> {
 /// `session_id`, and compute per-session deltas summed into one
 /// report. Empty input or single-snapshot input returns the zero
 /// report — a single snapshot has no anchor pair to subtract.
+///
+/// Each snapshot whose `session_id` is `None` is given a synthetic
+/// per-index key (`__none_<i>`), so two consecutive None snapshots
+/// are treated as distinct sessions rather than collapsed into one
+/// empty-string session that would fabricate a cross-snapshot
+/// delta from cumulative session totals (issue #1410).
 fn deltas_from_snapshots(snapshots: &[&WindowSnapshot]) -> DeltaReport {
     let mut total = DeltaReport::zero();
     if snapshots.len() < 2 {
         return total;
     }
+    let key_for = |i: usize, snap: &WindowSnapshot| -> String {
+        snap.session_id
+            .clone()
+            .unwrap_or_else(|| format!("__none_{}", i))
+    };
     // Walk consecutive snapshots looking for session boundaries.
     // Within each session: subtract the first session-snapshot from
     // the last session-snapshot to get that session's contribution.
     let mut session_start: usize = 0;
-    let mut current_session = snapshots[0].session_id.as_deref().unwrap_or("");
+    let mut current_session = key_for(0, snapshots[0]);
     for i in 1..=snapshots.len() {
         let next_session = if i < snapshots.len() {
-            snapshots[i].session_id.as_deref().unwrap_or("")
+            key_for(i, snapshots[i])
         } else {
             // Sentinel value to flush the final session.
-            "\0__END__"
+            "\0__END__".to_string()
         };
         if next_session != current_session {
             // Flush the [session_start, i-1] span.

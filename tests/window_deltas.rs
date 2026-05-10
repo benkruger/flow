@@ -538,17 +538,73 @@ fn phase_delta_with_single_snapshot_session_in_middle_skips_lone_snapshot() {
     assert_eq!(report.input_tokens_delta, 9);
 }
 
-/// Cross-session deltas when `session_id` is missing on a snapshot:
-/// missing session id is treated as the empty-string sentinel,
-/// grouping consecutive None snapshots together — they share a
-/// "no session" context.
+// Pre-fix test `phase_delta_with_missing_session_ids_groups_as_one_session`
+// was removed per `.claude/rules/supersession.md` — it asserted the
+// buggy behavior where consecutive None session_id snapshots were
+// collapsed into one synthetic empty-string session, producing a
+// spurious cross-snapshot delta. The plan-named
+// `deltas_from_snapshots_*` tests below cover the new contract:
+// each None session_id is a distinct session, so consecutive
+// None snapshots produce no pair delta.
+
+/// Two consecutive snapshots with `session_id: None` are treated as
+/// distinct sessions (each gets a unique synthetic key per snapshot
+/// index), so no pair_delta is computed across them. Pre-fix the
+/// `unwrap_or("")` collapsed both into one empty-string session and
+/// produced a spurious delta of 1.5 across them.
 #[test]
-fn phase_delta_with_missing_session_ids_groups_as_one_session() {
+fn deltas_from_snapshots_two_none_session_ids_treated_as_distinct_sessions() {
     let mut s_a = snap("ignored", 5);
     let mut s_b = snap("ignored", 12);
     s_a.session_id = None;
     s_b.session_id = None;
+    s_a.session_cost_usd = Some(0.5);
+    s_b.session_cost_usd = Some(2.0);
     let phase = phase_with_snapshots(Some(s_a), vec![], Some(s_b));
     let report = phase_delta(&phase).expect("populated");
+    assert_eq!(
+        report.input_tokens_delta, 0,
+        "two distinct None sessions must not produce a token delta"
+    );
+    assert_eq!(
+        report.cost_delta_usd, None,
+        "two distinct None sessions must not fabricate a cost delta from cumulative values"
+    );
+}
+
+/// `[None, Some("A"), Some("A")]`: the leading None snapshot is its
+/// own session (no pair); the two `Some("A")` snapshots form a pair.
+/// Only that pair's delta contributes.
+#[test]
+fn deltas_from_snapshots_none_then_some_session_id_split_at_boundary() {
+    let mut s_none = snap("ignored", 0);
+    s_none.session_id = None;
+    let s_a_enter = snap("A", 5);
+    let s_a_complete = snap("A", 12);
+    let phase = phase_with_snapshots(
+        Some(s_none),
+        vec![(1, "code_task", s_a_enter)],
+        Some(s_a_complete),
+    );
+    let report = phase_delta(&phase).expect("populated");
+    // Only the (Some("A"), Some("A")) pair contributes: 12 - 5 = 7.
     assert_eq!(report.input_tokens_delta, 7);
+}
+
+/// `[Some("A"), None, Some("B")]`: three distinct sessions, none of
+/// which has more than one snapshot, so no pair contributes a
+/// delta.
+#[test]
+fn deltas_from_snapshots_some_then_none_then_some_treated_as_three_sessions() {
+    let s_a = snap("A", 5);
+    let mut s_none = snap("ignored", 7);
+    s_none.session_id = None;
+    let s_b = snap("B", 10);
+    let phase = phase_with_snapshots(Some(s_a), vec![(1, "code_task", s_none)], Some(s_b));
+    let report = phase_delta(&phase).expect("populated");
+    assert_eq!(
+        report.input_tokens_delta, 0,
+        "three distinct single-snapshot sessions must not produce a delta"
+    );
+    assert_eq!(report.cost_delta_usd, None);
 }
