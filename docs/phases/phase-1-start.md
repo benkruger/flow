@@ -33,7 +33,11 @@ Creates a git worktree at `.worktrees/<branch>`, makes an empty commit, pushes t
 
 Changes the working directory to the new worktree so all subsequent phases run in the isolated workspace.
 
-### 5. Finalize (`phase-finalize`)
+### 5. Extract plan from issue body (`plan-from-issue`)
+
+Fetches the referenced issue's body via `gh issue view`, scans for the literal sentinel pair `<!-- FLOW-PLAN-BEGIN -->` and `<!-- FLOW-PLAN-END -->`, writes the bytes between to `.flow-states/<branch>/plan.md`, and records `code_tasks_total` in the per-branch state file via `set-timestamp`. The count is derived from `#### Task N:` headings in the extracted plan and drives the Code-phase X-of-Y task counter the TUI renders. If the issue body is missing the sentinel pair, contains an unmatched marker, or wraps an empty plan section, the phase halts with a structured error reason naming the corrective action.
+
+### 6. Finalize (`phase-finalize`)
 
 Completes the phase transition, sends the initial Slack notification (if configured), and returns the formatted time and continue mode for the transition to Phase 2.
 

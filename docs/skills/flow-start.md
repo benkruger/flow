@@ -26,7 +26,8 @@ Begins a new feature. This is always the first command run for any piece of work
 2. **start-gate** — pulls latest main, runs `bin/flow ci` baseline with retry (3 attempts), updates dependencies, runs post-deps CI with retry if deps changed. Falls back to ci-fixer sub-agent for dep-induced breakage
 3. **start-workspace** — creates worktree, opens PR, backfills state file with PR fields, releases the start lock as its final action (lock release is after worktree creation, closing a race condition)
 4. Changes to the worktree directory
-5. **phase-finalize** — completes the phase transition, sends Slack notification, returns timing and continue mode
+5. **plan-from-issue** — fetches the issue body via `gh issue view`, extracts the plan content between `<!-- FLOW-PLAN-BEGIN -->` and `<!-- FLOW-PLAN-END -->` sentinels, writes it to `.flow-states/<branch>/plan.md`, and records `code_tasks_total` in the state file via `set-timestamp` so the TUI can render the Code-phase X-of-Y task counter
+6. **phase-finalize** — completes the phase transition, sends Slack notification, returns timing and continue mode
 
 ---
 

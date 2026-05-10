@@ -1752,15 +1752,15 @@ fn start_references_phase_finalize() {
     );
 }
 
-/// Locks in the `code_tasks_total` writer at flow-start. The TUI
-/// X-of-Y rendering paths (PR #1407) silently no-op when
-/// `code_tasks_total` is missing from the per-branch state file, so
-/// a future skill rewrite that drops the writer would re-introduce
-/// the unreachable-counter bug closed by PR #1417. The adjacency
-/// check requires the `set-timestamp` invocation to sit in a bash
-/// block whose preceding non-blank prose references
-/// `plan-from-issue`, anchoring the writer to the step that
-/// computes the count.
+/// Locks in the `code_tasks_total` writer at flow-start. The TUI's
+/// X-of-Y rendering paths in the Code-phase timeline read
+/// `code_tasks_total` from the per-branch state file and silently
+/// no-op when the field is absent, so the writer must remain wired
+/// for the counter to display. The adjacency check requires the
+/// `set-timestamp` invocation to sit in a bash block whose
+/// preceding non-blank prose references `plan-from-issue`,
+/// anchoring the writer to the step that computes the count and
+/// preventing it from drifting to an unrelated step.
 #[test]
 fn flow_start_writes_code_tasks_total() {
     let content = common::read_skill("flow-start");
