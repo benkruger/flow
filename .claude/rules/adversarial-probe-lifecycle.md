@@ -2,19 +2,6 @@
 
 Review's adversarial agent writes test functions that prove a
 finding by failing against the current implementation. The probe
-<<<<<<< HEAD
-lives in the worktree's test tree and is removed at Phase 5 Complete
-as a side effect of `git worktree remove`. When Review Step 4
-fixes a finding the probe surfaced, the probe's assertions become
-outdated and must be reconciled in the same Review pass — a
-probe asserting an outdated bug fails CI and blocks the commit.
-||||||| 33948018
-lives in the worktree's test tree and is removed at Phase 5 Complete
-as a side effect of `git worktree remove`. When Review Step 4
-fixes a finding the probe surfaced, the probe's assertions become
-outdated and must be reconciled in the same Review pass — a
-probe asserting an outdated bug fails CI and blocks the commit.
-=======
 lives at the path declared by `bin/test --adversarial-path`. The
 path is **never tracked by git on the integration branch** — it is
 listed in `src/prime_check.rs::EXCLUDE_ENTRIES` so `git add -A`
@@ -32,7 +19,6 @@ CI and blocks the commit. The same reconciliation applies when
 Step 3 triage dismisses the finding (out-of-scope, pre-existing,
 etc.); a dismissed finding still leaves a failing assertion behind
 and the same CI gate fires.
->>>>>>> origin/main
 
 ## The Rule
 
@@ -61,28 +47,8 @@ otherwise, blocking the commit.
 
 ## Untracked-Path Invariant
 
-<<<<<<< HEAD
-The adversarial probe path is owned by the project (declared via
-`bin/test --adversarial-path`). It typically lives at a stable path
-(`tests/test_adversarial_flow.rs` for cargo, `test/adversarial_flow_test.rb`
-for Rails, etc.) tracked on the integration branch as a
-doc-comment-only stub. The Review session writes assertions
-into the file in the worktree's copy. Restoring the file to the
-integration-branch content keeps `git status` clean when no probe
-assertions belong on the integration branch:
-||||||| 33948018
-The adversarial probe path is owned by the project (declared via
-`bin/test --adversarial-path`). It typically lives at a stable path
-(`tests/test_adversarial_flow.rs` for cargo, `test/adversarial_flow_test.rb`
-for Rails, etc.) tracked on the integration branch as a
-doc-comment-only stub. The Review session writes assertions
-into the file in the worktree's copy. Restoring the file to the
-integration-branch content keeps `git status` clean when no probe
-assertions belong on the integration branch:
-=======
 The probe path is never tracked by git on the integration branch.
 The mechanism has two layers:
->>>>>>> origin/main
 
 - `src/prime_check.rs::EXCLUDE_ENTRIES` lists
   `test_adversarial_flow.*` (and language-equivalent patterns) in
