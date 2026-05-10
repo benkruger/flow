@@ -2810,7 +2810,10 @@ fn flow_create_issue_hard_gate_names_consequence() {
     // The HARD-GATE prose must name the consequence so a future
     // maintainer reading the gate understands why it exists. Without
     // a named consequence, the gate looks like an arbitrary stylistic
-    // restriction and is at risk of being weakened or removed.
+    // restriction and is at risk of being weakened or removed. Per
+    // .claude/rules/forward-facing-authoring.md, the prose names the
+    // current invariant (unattended completion breaks if the model
+    // stops here) without citing the originating issue.
     let c = common::read_skill("flow-create-issue");
     let tail = c
         .split_once("\n## Decompose\n")
@@ -2824,10 +2827,6 @@ fn flow_create_issue_hard_gate_names_consequence() {
             || lower.contains("breaks the flow")
             || lower.contains("returns control"),
         "`## Decompose` HARD-GATE prose must name the consequence (unattended flow breaks)"
-    );
-    assert!(
-        section.contains("#1412") || section.contains("issue 1412"),
-        "`## Decompose` HARD-GATE must cite issue #1412 for traceability"
     );
 }
 

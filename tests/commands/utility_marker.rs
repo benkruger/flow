@@ -9,9 +9,11 @@
 //! or corrupted state-file value cannot escape the canonical directory.
 
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use flow_rs::commands::utility_marker::{
-    clear_marker, is_safe_skill_name, marker_path, run_clear_main, run_set_main, write_marker,
+    clear_marker, is_safe_skill_name, marker_path, run_clear_main, run_current_session_id_main,
+    run_set_main, write_marker,
 };
 
 const TEST_SKILL: &str = "flow:flow-create-issue";
@@ -180,6 +182,98 @@ fn marker_path_returns_none_for_invalid_session_id() {
         marker_path(&home, "").is_none(),
         "marker_path must reject empty"
     );
+}
+
+#[test]
+fn marker_path_rejects_empty_home() {
+    // An empty PathBuf passed as home — a hostile env where $HOME is
+    // unset and home_dir_or_empty returned "" — must produce None
+    // rather than a cwd-relative path that would silently miss or
+    // spuriously hit unrelated files.
+    assert!(
+        marker_path(&PathBuf::new(), TEST_SESSION).is_none(),
+        "marker_path must reject empty home"
+    );
+}
+
+#[test]
+fn marker_path_rejects_relative_home() {
+    // A relative path as home — env-var-derived value that wasn't
+    // absolute — must produce None per
+    // .claude/rules/external-input-path-construction.md rule 5.
+    assert!(
+        marker_path(Path::new("relative/home"), TEST_SESSION).is_none(),
+        "marker_path must reject relative home"
+    );
+    assert!(
+        marker_path(Path::new("./home"), TEST_SESSION).is_none(),
+        "marker_path must reject dot-prefixed relative home"
+    );
+}
+
+#[test]
+fn write_marker_returns_err_when_home_is_invalid() {
+    // The same absolute-home guard that marker_path enforces must
+    // also surface as an error from write_marker.
+    let result = write_marker(&PathBuf::new(), TEST_SKILL, TEST_SESSION);
+    assert!(result.is_err(), "write_marker must reject empty home");
+    let result = write_marker(Path::new("relative/home"), TEST_SKILL, TEST_SESSION);
+    assert!(result.is_err(), "write_marker must reject relative home");
+}
+
+#[test]
+fn write_marker_overwrites_pre_existing_regular_file_at_marker_path() {
+    // The symlink-safety check inspects symlink_metadata; if the
+    // existing entry is a regular file (idempotent re-write), the
+    // write proceeds in place. This exercises the "meta exists AND
+    // is a regular file" branch of the symlink check.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap();
+    let marker_dir = home.join(".claude").join("flow");
+    fs::create_dir_all(&marker_dir).unwrap();
+    let marker = marker_dir.join(format!("utility-in-progress-{}.json", TEST_SESSION));
+    fs::write(&marker, b"stale-content-from-prior-run").unwrap();
+
+    let path = write_marker(&home, TEST_SKILL, TEST_SESSION).expect("write_marker ok");
+    assert_eq!(path, marker);
+    let content = fs::read_to_string(&marker).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(json["session_id"], TEST_SESSION);
+}
+
+#[test]
+fn write_marker_replaces_pre_existing_symlink_at_marker_path() {
+    use std::os::unix::fs::symlink;
+    let home_dir = tempfile::tempdir().unwrap();
+    let escape_dir = tempfile::tempdir().unwrap();
+    let home = home_dir.path().canonicalize().unwrap();
+    let escape_target = escape_dir.path().canonicalize().unwrap().join("victim");
+    fs::write(&escape_target, b"sentinel-content").unwrap();
+
+    // Pre-create the marker dir + a symlink at the marker path that
+    // points outside home. write_marker must NOT follow the symlink
+    // and overwrite escape_target — instead it must replace the
+    // symlink with a fresh regular file at the marker path.
+    let marker_dir = home.join(".claude").join("flow");
+    fs::create_dir_all(&marker_dir).unwrap();
+    let marker = marker_dir.join(format!("utility-in-progress-{}.json", TEST_SESSION));
+    symlink(&escape_target, &marker).unwrap();
+
+    let path = write_marker(&home, TEST_SKILL, TEST_SESSION).expect("write_marker ok");
+    assert_eq!(path, marker, "marker written at canonical path");
+    let escape_after = fs::read(&escape_target).unwrap();
+    assert_eq!(
+        escape_after, b"sentinel-content",
+        "symlink target outside HOME must be untouched"
+    );
+    let marker_meta = fs::symlink_metadata(&marker).unwrap();
+    assert!(
+        marker_meta.file_type().is_file(),
+        "marker is now a regular file, not a symlink"
+    );
+    let content = fs::read_to_string(&marker).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+    assert_eq!(json["session_id"], TEST_SESSION);
 }
 
 // --- is_safe_skill_name ---
@@ -363,6 +457,33 @@ fn run_clear_main_falls_back_to_capture_file_when_session_id_omitted() {
     assert_eq!(code, 0);
     assert_eq!(value["status"], "ok");
     assert_eq!(value["removed"], true);
+}
+
+// --- run_current_session_id_main ---
+
+#[test]
+fn run_current_session_id_main_returns_captured_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap();
+    let claude = home.join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let capture = claude.join("flow-current-session.json");
+    fs::write(&capture, format!(r#"{{"session_id": "{}"}}"#, TEST_SESSION)).unwrap();
+    let (text, code) = run_current_session_id_main(&home);
+    assert_eq!(code, 0);
+    assert_eq!(text, TEST_SESSION);
+}
+
+#[test]
+fn run_current_session_id_main_returns_empty_when_capture_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap();
+    let (text, code) = run_current_session_id_main(&home);
+    assert_eq!(code, 0);
+    assert_eq!(
+        text, "",
+        "missing capture file → empty stdout (skill treats as no marker)"
+    );
 }
 
 // --- error path: write fails when parent isn't writable ---

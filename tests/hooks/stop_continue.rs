@@ -2814,8 +2814,8 @@ fn check_in_progress_utility_skill_block_message_names_skill_and_rule() {
         context
     );
     assert!(
-        context.contains("#1412") || context.contains("autonomous-phase-discipline"),
-        "block message must cite either issue #1412 or the recovery rule: {}",
+        context.contains("autonomous-phase-discipline"),
+        "block message must cite the autonomous-phase-discipline rule: {}",
         context
     );
 }
@@ -2935,6 +2935,35 @@ fn check_in_progress_utility_skill_no_block_when_marker_session_id_mismatches() 
     assert!(
         !result.should_block,
         "marker whose internal session_id mismatches must not block"
+    );
+}
+
+#[test]
+fn check_in_progress_utility_skill_no_block_when_marker_path_is_symlink() {
+    // The predicate uses `fs::symlink_metadata` (which does NOT follow
+    // symlinks) and rejects entries that are symlinks or not regular
+    // files. A symlink at the marker path — even one pointing at a
+    // valid marker JSON elsewhere — must not block. Defends against
+    // an attacker placing a symlink under `<home>/.claude/flow/` to
+    // redirect the read to an arbitrary file.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap();
+    let marker_dir = home.join(".claude").join("flow");
+    fs::create_dir_all(&marker_dir).unwrap();
+    // A real marker JSON elsewhere on disk — symlink target.
+    let target = dir.path().join("real-marker.json");
+    let payload = json!({
+        "skill": UTIL_SKILL,
+        "session_id": UTIL_SESSION,
+        "started_at": "2026-05-09T12:00:00-07:00",
+    });
+    fs::write(&target, serde_json::to_string(&payload).unwrap()).unwrap();
+    let marker = marker_dir.join(format!("utility-in-progress-{}.json", UTIL_SESSION));
+    std::os::unix::fs::symlink(&target, &marker).unwrap();
+    let result = check_in_progress_utility_skill(UTIL_SESSION, &home);
+    assert!(
+        !result.should_block,
+        "symlink at marker path must not block — only regular files do"
     );
 }
 

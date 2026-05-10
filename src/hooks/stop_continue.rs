@@ -13,7 +13,7 @@
 //!    marker at `<home>/.claude/flow/utility-in-progress-<id>.json`,
 //!    refuses turn-end so the model continues past the
 //!    Skill-tool-return handoff that otherwise breaks the unattended
-//!    contract these skills promise (issue #1412). Composed BEFORE
+//!    contract these skills promise. Composed BEFORE
 //!    `check_prose_pause_at_task_entry` so its marker-specific block
 //!    message wins for that shape.
 //! 4. `check_prose_pause_at_task_entry` — at a Code-phase task-entry
@@ -36,6 +36,7 @@
 //! no block output), but writes a diagnostic to stderr and attempts to
 //! log to `.flow-states/<branch>.log` for post-mortem visibility.
 
+use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -692,15 +693,15 @@ pub fn check_autonomous_in_progress(state_path: &Path) -> ContinueResult {
 /// structural surface where the model often treats the handoff as a
 /// natural stopping point and returns control to the user — breaking
 /// the unattended-flow contract these skills promise to their
-/// consumers (issue #1412). The skill writes a per-session marker
-/// file at `<home>/.claude/flow/utility-in-progress-<session_id>.json`
-/// at its Announce banner and clears it at the COMPLETE banner; this
+/// consumers. The skill writes a per-session marker file at
+/// `<home>/.claude/flow/utility-in-progress-<session_id>.json` at
+/// its Announce banner and clears it at the COMPLETE banner; this
 /// predicate refuses turn-end while the marker exists.
 ///
 /// Composed into `run()` AFTER `check_continue` (so multi-child-skill
 /// chains route through `check_continue` first) and BEFORE
-/// `check_prose_pause_at_task_entry` (so its more-targeted message
-/// citing this issue surfaces for the marker shape).
+/// `check_prose_pause_at_task_entry` so its marker-specific block
+/// message wins for that shape.
 ///
 /// The marker is keyed by Claude Code session_id. A marker for a
 /// different session is treated as orphaned (e.g., a crashed
@@ -709,11 +710,20 @@ pub fn check_autonomous_in_progress(state_path: &Path) -> ContinueResult {
 /// in the JSON `session_id` field, defending against a hostile or
 /// corrupted file that claims to belong to another session.
 ///
+/// Symlink-safe per `.claude/rules/rust-patterns.md` "Symlink-Safe
+/// Existence Checks Before Writes": existence is probed via
+/// `fs::symlink_metadata` (which does NOT follow symlinks). When the
+/// path exists as a symlink the predicate treats it as no marker so
+/// a hostile or accidental symlink at the marker path cannot
+/// redirect the hook's read to an arbitrary file the running user
+/// can read.
+///
 /// Fail-open on every error class: empty session_id, invalid
-/// session_id (path traversal etc.), missing marker, unparseable
-/// marker JSON, marker naming a skill outside the allowlist. The
-/// Stop hook must never panic — a hook crash terminates the user's
-/// session — and the recovery path is "no block."
+/// session_id (path traversal etc.), missing marker, marker that is
+/// a symlink, unparseable marker JSON, marker naming a skill outside
+/// the allowlist. The Stop hook must never panic — a hook crash
+/// terminates the user's session — and the recovery path is "no
+/// block."
 pub fn check_in_progress_utility_skill(session_id: &str, home: &Path) -> ContinueResult {
     let no_block = || ContinueResult {
         should_block: false,
@@ -727,7 +737,15 @@ pub fn check_in_progress_utility_skill(session_id: &str, home: &Path) -> Continu
         Some(p) => p,
         None => return no_block(),
     };
-    if !path.exists() {
+    // Symlink-safe existence check: `symlink_metadata` does NOT
+    // follow symlinks. Reject both missing entries and symlinks
+    // pointing outside `<home>/.claude/flow/`. A regular file at
+    // the marker path passes through and is read below.
+    let meta = match fs::symlink_metadata(&path) {
+        Ok(m) => m,
+        Err(_) => return no_block(),
+    };
+    if meta.file_type().is_symlink() || !meta.file_type().is_file() {
         return no_block();
     }
     // Bound the marker read with the same byte cap as the state file
@@ -759,10 +777,9 @@ pub fn check_in_progress_utility_skill(session_id: &str, home: &Path) -> Continu
              Stop refused.\n\n\
              The skill has invoked the Skill tool mid-pipeline and the model must \
              continue from where it stopped — do not return control to the user. \
-             Per issue #1412 and \
-             .claude/rules/autonomous-phase-discipline.md, this skill's contract \
-             requires unattended completion: a single user invocation produces a \
-             completed action without further prompting.\n\n\
+             Per .claude/rules/autonomous-phase-discipline.md, this skill's \
+             contract requires unattended completion: a single user invocation \
+             produces a filed issue without further prompting.\n\n\
              If you genuinely need to abort, the user may type /flow:flow-abort or \
              send an explicit stop directive.",
             skill
@@ -1118,8 +1135,8 @@ pub fn run() {
     // (e.g. flow:flow-create-issue) is in progress for the current
     // Claude Code session, refuse turn-end so the model continues
     // past the Skill-tool-return handoff that otherwise breaks the
-    // unattended-flow contract (issue #1412). Composed AFTER
-    // check_continue (multi-child-skill chains run first) and BEFORE
+    // unattended-flow contract. Composed AFTER check_continue
+    // (multi-child-skill chains run first) and BEFORE
     // check_prose_pause_at_task_entry (so the marker block message
     // wins for that specific failure shape). Reads `session_id`
     // from the hook input and `home` from $HOME via the shared

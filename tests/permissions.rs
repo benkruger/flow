@@ -127,6 +127,7 @@ const PLACEHOLDER_SUBS: &[(&str, &str)] = &[
     ("<path>", "design.approved_at"),
     ("<plan_file_path>", ".flow-states/test-branch-plan.md"),
     ("<dag_file_path>", ".flow-states/test-branch-dag.md"),
+    ("<session_id>", "abc12345"),
     ("<issue_title>", "Test issue title"),
     (
         "<transcript_path>",

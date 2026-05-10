@@ -77,6 +77,7 @@ fn all_subcommands_have_working_help() {
         "generate-id",
         "set-utility-in-progress",
         "clear-utility-in-progress",
+        "current-session-id",
         "start-lock",
         "start-step",
         "start-finalize",
@@ -1259,6 +1260,7 @@ fn main_arm_invocations_cover_dispatch() {
             ],
             None,
         ),
+        ("current-session-id", &[], None),
         (
             "start-finalize",
             &["--branch", "test-fixture", "--pr-url", "u"],
@@ -1470,6 +1472,55 @@ fn set_utility_in_progress_falls_back_when_home_unset() {
     // writable so future test runs start clean.
     let stray = std::path::Path::new("/.claude/flow/utility-in-progress-abc12345.json");
     let _ = std::fs::remove_file(stray);
+}
+
+/// `bin/flow current-session-id` with a populated capture file under
+/// `<HOME>/.claude/flow-current-session.json` prints the captured
+/// `session_id` and exits 0. Drives the `Some(Commands::CurrentSessionId)`
+/// dispatch arm through `dispatch_text` so the printed-stdout branch
+/// (text non-empty) is exercised by a real subprocess.
+#[test]
+fn current_session_id_dispatch_prints_captured_session() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let home = tmp.path().canonicalize().expect("canonicalize");
+    let claude_dir = home.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(
+        claude_dir.join("flow-current-session.json"),
+        r#"{"session_id":"abc12345","transcript_path":null}"#,
+    )
+    .unwrap();
+    let output = flow_rs_no_recursion()
+        .arg("current-session-id")
+        .env("HOME", &home)
+        .output()
+        .expect("spawn flow-rs");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "exit 0 on success\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.trim(), "abc12345");
+}
+
+/// `bin/flow current-session-id` with no capture file emits empty
+/// stdout and exits 0. Drives the `dispatch_text` empty-text branch
+/// of the `CurrentSessionId` dispatch arm so callers represent
+/// "no captured session" without an extra blank line.
+#[test]
+fn current_session_id_dispatch_empty_when_no_capture_file() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let home = tmp.path().canonicalize().expect("canonicalize");
+    let output = flow_rs_no_recursion()
+        .arg("current-session-id")
+        .env("HOME", &home)
+        .output()
+        .expect("spawn flow-rs");
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stdout.is_empty(), "no capture → no stdout");
 }
 
 /// `flow-rs upgrade-check` with `FLOW_PLUGIN_JSON` pointing at a

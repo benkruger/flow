@@ -5,7 +5,7 @@
 //! Skill tool's return is a structural surface where the model often
 //! treats the handoff as a natural stopping point and returns control
 //! to the user — breaking the unattended-flow contract that
-//! flow-create-issue promises to its consumers (issue #1412).
+//! flow-create-issue promises to its consumers.
 //!
 //! `write_marker` (called immediately after the skill's Announce
 //! banner) and `clear_marker` (called immediately before the COMPLETE
@@ -72,10 +72,18 @@ pub fn is_safe_skill_name(s: &str) -> bool {
 }
 
 /// Construct the canonical marker path for a given home directory
-/// and session_id, returning `None` when the session_id fails
-/// validation. Per `.claude/rules/external-input-path-construction.md`,
-/// the validator runs BEFORE path construction.
+/// and session_id, returning `None` when validation fails. Validates
+/// session_id via `is_safe_session_id` AND home via
+/// `is_safe_home` (rejects empty / non-absolute paths) per
+/// `.claude/rules/external-input-path-construction.md` rules 1, 2,
+/// and 5. Without the home guard, an unset HOME (env var missing
+/// or set to empty) silently resolves the marker path against the
+/// process cwd — write and read paths diverge, the predicate
+/// spuriously blocks (or silently misses) depending on cwd state.
 pub fn marker_path(home: &Path, session_id: &str) -> Option<PathBuf> {
+    if !is_safe_home(home) {
+        return None;
+    }
     if !is_safe_session_id(session_id) {
         return None;
     }
@@ -85,20 +93,47 @@ pub fn marker_path(home: &Path, session_id: &str) -> Option<PathBuf> {
     )
 }
 
+/// Validate that `home` is a usable absolute path. Rejects empty
+/// (env var unset → home_dir_or_empty returned ""), non-absolute
+/// (relative env var, "/" fallback notwithstanding clap defaults),
+/// and paths containing a NUL byte (corrupted env). Mirrors the
+/// home-validation pattern in `crate::window_snapshot::read_rate_limits`.
+fn is_safe_home(home: &Path) -> bool {
+    !home.as_os_str().is_empty() && home.is_absolute() && !home.to_string_lossy().contains('\0')
+}
+
 /// Write the marker file for the given skill and session_id. Creates
-/// the parent directory if missing. Validates `skill` and `session_id`
-/// before constructing any filesystem path. The marker JSON contains
-/// `skill`, `session_id`, and `started_at` (Pacific-time ISO 8601).
+/// the parent directory if missing. Validates `skill`, `session_id`,
+/// and `home` before constructing any filesystem path. The marker
+/// JSON contains `skill`, `session_id`, and `started_at` (Pacific-
+/// time ISO 8601).
+///
+/// Symlink-safe per `.claude/rules/rust-patterns.md` "Symlink-Safe
+/// Existence Checks Before Writes": before `fs::write`, removes any
+/// pre-existing symlink at the marker path so the write cannot
+/// follow a hostile symlink and overwrite a target outside
+/// `<home>/.claude/flow/`. Regular files are overwritten in place
+/// as before — only symlinks are unlinked first.
 pub fn write_marker(home: &Path, skill: &str, session_id: &str) -> Result<PathBuf, String> {
     if !is_safe_skill_name(skill) {
         return Err(format!("invalid skill name: {:?}", skill));
     }
     let path = marker_path(home, session_id)
-        .ok_or_else(|| format!("invalid session_id: {:?}", session_id))?;
+        .ok_or_else(|| format!("invalid session_id or home: session_id={:?}", session_id))?;
     let parent = path
         .parent()
         .expect("marker_path always carries a parent (<home>/.claude/flow)");
     fs::create_dir_all(parent).map_err(|e| format!("create dir failed: {}", e))?;
+    // Detect a pre-existing symlink at the marker path via
+    // `symlink_metadata` (which does NOT follow symlinks). Remove
+    // the symlink before `fs::write` so the write creates a fresh
+    // regular file rather than following the symlink to its
+    // arbitrary target.
+    if let Ok(meta) = fs::symlink_metadata(&path) {
+        if meta.file_type().is_symlink() {
+            let _ = fs::remove_file(&path);
+        }
+    }
     let payload = json!({
         "skill": skill,
         "session_id": session_id,
@@ -137,6 +172,15 @@ pub fn clear_marker(home: &Path, skill: &str, session_id: &str) -> Result<bool, 
 /// Claude Code session_id and is the only path by which the skill can
 /// reach a session_id matching what the Stop hook receives in its
 /// stdin payload.
+///
+/// Skills that issue paired `set` and `clear` calls must capture the
+/// session_id ONCE (via `bin/flow current-session-id`) and pass it
+/// explicitly to both calls. Reading the capture file on every call
+/// is a race surface: a concurrent Claude Code session's
+/// SessionStart hook overwrites the capture file with a different
+/// session_id, so set-time and clear-time can resolve to different
+/// values and the marker is never cleared. The explicit-pass pattern
+/// in `flow-create-issue/SKILL.md` is the correct discipline.
 fn resolve_session_id(home: &Path, explicit: Option<&str>) -> Option<String> {
     if let Some(s) = explicit {
         if !s.is_empty() {
@@ -144,6 +188,28 @@ fn resolve_session_id(home: &Path, explicit: Option<&str>) -> Option<String> {
         }
     }
     crate::hooks::capture_session::read_captured_session(home).map(|(sid, _)| sid)
+}
+
+/// Print the captured session_id (or empty string if unavailable) and
+/// exit 0. The skill uses this to capture the active Claude Code
+/// session_id ONCE at its Announce banner so subsequent
+/// `set-utility-in-progress` and `clear-utility-in-progress` calls
+/// pass the SAME `--session-id` even when a concurrent session's
+/// SessionStart hook later overwrites the capture file. Stable
+/// session_id across the full skill lifecycle is the invariant
+/// required for the marker write/clear pair to operate on the same
+/// file.
+///
+/// Empty stdout (no `\n`) means no captured session_id is available;
+/// the skill should treat this as a non-fatal "marker disabled"
+/// outcome and continue without writing a marker — the same
+/// posture as `set-utility-in-progress` returning a structured
+/// error envelope when no session_id is resolvable.
+pub fn run_current_session_id_main(home: &Path) -> (String, i32) {
+    match crate::hooks::capture_session::read_captured_session(home) {
+        Some((sid, _)) => (sid, 0),
+        None => (String::new(), 0),
+    }
 }
 
 /// CLI entry for `bin/flow set-utility-in-progress`. Accepts the

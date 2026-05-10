@@ -37,15 +37,38 @@ At the very start, output the following banner in your response (not via Bash) i
 ```
 ````
 
-Immediately after the banner, write the per-session "utility skill in
-progress" marker so the Stop hook refuses turn-end while this skill is
-running. The marker keys off the active Claude Code session_id captured
-by the SessionStart hook (see issue #1412 — without this, the model
-returns control to the user when the decompose:decompose Skill tool
-returns mid-pipeline). The clear is invoked at every exit path below.
+Immediately after the banner, capture the active Claude Code
+session_id and write the per-session "utility skill in progress"
+marker so the Stop hook refuses turn-end while this skill is running.
+Without the marker the model returns control to the user when the
+decompose:decompose Skill tool returns mid-pipeline, breaking the
+unattended-flow contract this skill promises.
+
+Capture the session_id ONCE here. Reading the SessionStart capture
+file on every set/clear call is a race surface: a concurrent Claude
+Code session's SessionStart overwrites the capture file mid-skill,
+so set-time and clear-time would resolve to different session_ids
+and the marker would orphan. Pass the captured value explicitly to
+every set/clear invocation below — including the error-exit paths
+in the Conversation Gate and the File Cancel branch.
+
+Run `bin/flow current-session-id` and capture its stdout as the
+literal `<session_id>` to substitute into every subsequent
+set-utility-in-progress and clear-utility-in-progress invocation:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-utility-in-progress --skill flow:flow-create-issue
+${CLAUDE_PLUGIN_ROOT}/bin/flow current-session-id
+```
+
+If the captured value is empty (no SessionStart capture file
+present), skip the set call entirely — proceed without the marker.
+The Stop hook treats a missing marker as a non-block, so the skill
+runs without protection but does not break.
+
+When the captured value is non-empty, write the marker:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-utility-in-progress --skill flow:flow-create-issue --session-id <session_id>
 ```
 
 ---
@@ -77,7 +100,7 @@ marker so the Stop hook does not refuse turn-end after the rejection,
 then output this guidance and stop:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-create-issue
+${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-create-issue --session-id <session_id>
 ```
 
 > "This skill captures a brainstormed solution as a pre-planned issue.
@@ -169,8 +192,8 @@ below using the decompose output you just received.
 
 If you stop here, the user must prompt you again to continue, which
 breaks the unattended flow that flow-create-issue promises to its
-consumers (issue #1412). The whole point of the skill is that one
-invocation produces a filed issue without further user input.
+consumers. The whole point of the skill is that one invocation
+produces a filed issue without further user input.
 
 This gate fires whether the Decompose step invoked decompose:decompose
 or skipped it. Either path lands at Transform + Draft as the next
@@ -302,7 +325,7 @@ filing. Do not write the body file. Do not output the COMPLETE
 banner.
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-create-issue
+${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-create-issue --session-id <session_id>
 ```
 
 </HARD-GATE>
@@ -329,7 +352,7 @@ Clear the utility-in-progress marker so the Stop hook stops refusing
 turn-end now that the skill has completed its work:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-create-issue
+${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-create-issue --session-id <session_id>
 ```
 
 Display the issue URL to the user, then output the COMPLETE banner:

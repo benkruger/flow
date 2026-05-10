@@ -296,6 +296,13 @@ enum Commands {
         session_id: Option<String>,
     },
 
+    /// Print the captured Claude Code session_id (empty if unavailable).
+    /// Skills capture this ONCE at Announce and pass it explicitly to
+    /// every set-utility-in-progress / clear-utility-in-progress call
+    /// so the SessionStart capture file's value cannot drift mid-skill.
+    #[command(name = "current-session-id")]
+    CurrentSessionId,
+
     /// Serialize flow-start with a queue directory.
     #[command(name = "start-lock")]
     StartLock {
@@ -734,6 +741,11 @@ fn main() {
             let (value, code) =
                 commands::utility_marker::run_clear_main(&home, &skill, session_id.as_deref());
             flow_rs::dispatch::dispatch_json(value, code);
+        }
+        Some(Commands::CurrentSessionId) => {
+            let home = utility_marker_home();
+            let (text, code) = commands::utility_marker::run_current_session_id_main(&home);
+            flow_rs::dispatch::dispatch_text(&text, code);
         }
         Some(Commands::StartLock {
             acquire,
