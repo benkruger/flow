@@ -135,6 +135,7 @@ pub const UNIVERSAL_ALLOW: &[&str] = &[
     "Bash(gh -C *)",
     "Bash(*bin/flow *)",
     "Bash(bin/test --adversarial-path)",
+    "Bash(bin/dependencies)",
     "Bash(rm .flow-*)",
     "Bash(test -f *)",
     "Bash(claude plugin list)",
