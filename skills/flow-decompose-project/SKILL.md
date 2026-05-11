@@ -94,9 +94,11 @@ The marker is held across the entire Step 1 → Step 2 → Step 3 →
 Step 4 → Step 5 → Step 6 chain. Step Dispatch (above) skips the
 Announce banner on `--step N` self-invocations, so the marker-set
 call fires exactly once at the first invocation. The marker is
-cleared at Cancel branches in Step 1 and Step 2 and at the Step 6
-success path; every other path holds the marker until Step 6
-completes.
+cleared at every skill-exit boundary: Step 1 Cancel, Step 2
+Cancel, Step 3 epic Cancel-filing-this-issue, Step 3 epic
+Cancel-whole-skill, Step 4 child Cancel-whole-skill, and the
+Step 6 success path. Every other path holds the marker until
+Step 6 completes.
 
 On Claude Code installs without the per-subprocess env var, the
 capture-file fallback resolves session_id independently at set and
@@ -482,10 +484,15 @@ AskUserQuestion with three options:
   Loop until the validator returns `status:ok`, then continue to
   the filer call for this child.
 - **"Skip filing this child"** — record the skip and continue to
-  the next child in the topological order. The blocked-by graph
-  in Step 5 will surface as partial coverage in the Step 6
-  report; the user can re-run decomposition for the missing
-  child later.
+  the next child in the topological order. Any sibling child
+  whose `depends_on_indices` references this skipped child has
+  no `--blocking-number` to pass to `bin/flow link-blocked-by`
+  in Step 5, so that dependency edge is silently dropped (Step 5
+  is best-effort by design). The Step 6 report surfaces the
+  partial coverage; the user can re-run decomposition for the
+  missing child later, but the blocked-by graph for already-filed
+  siblings will need manual repair via `gh issue edit` or a
+  follow-up `bin/flow link-blocked-by` call.
 - **"Cancel the whole skill"** — clear the utility-in-progress
   marker so the Stop hook releases turn-end, then stop without
   filing any remaining children:
