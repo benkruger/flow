@@ -12,8 +12,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use flow_rs::commands::utility_marker::{
-    clear_marker, is_safe_skill_name, marker_path, resolve_session_id_from, run_clear_main,
-    run_current_session_id_main, run_set_main, write_marker,
+    clear_marker, is_safe_skill_name, marker_path, run_clear_main, run_current_session_id_main,
+    run_set_main, write_marker,
 };
 
 const TEST_SKILL: &str = "flow:flow-create-issue";
@@ -588,65 +588,50 @@ fn clear_marker_returns_err_on_invalid_skill_name() {
     );
 }
 
-// --- resolve_session_id_from ---
-
 #[test]
-fn resolve_session_id_prefers_explicit_arg_over_env() {
-    // Explicit arg wins over env even when env has a valid id, so a
-    // script that wants to override the active session can do so by
-    // passing --session-id.
+fn run_set_main_prefers_explicit_session_id_over_env_value() {
+    // Wrapper-level test for the explicit-wins-over-env precedence
+    // branch: when both `--session-id` and the env var carry a
+    // value, the explicit value reaches `marker_path`. The wrapper
+    // drives the same precedence chain as the private helper but
+    // through the only production callsite, so the precedence
+    // contract is regression-protected via the public API.
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().canonicalize().unwrap();
-    let got = resolve_session_id_from(&home, Some("explicit-id-abc"), Some("env-id-xyz"));
-    assert_eq!(got.as_deref(), Some("explicit-id-abc"));
+    let (value, code) = run_set_main(
+        &home,
+        TEST_SKILL,
+        Some("explicit-id-abc"),
+        Some("env-id-xyz"),
+    );
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+    let path_str = value["path"].as_str().unwrap();
+    assert!(
+        path_str.ends_with("utility-in-progress-explicit-id-abc.json"),
+        "explicit arg must win over env value at the wrapper boundary"
+    );
 }
 
 #[test]
-fn resolve_session_id_reads_env_when_explicit_absent() {
-    // Env var is the primary fallback when no explicit arg is given —
-    // Claude Code 2.1.132+ supplies CLAUDE_CODE_SESSION_ID to every
-    // Bash subprocess, matching the Stop-hook session_id.
+fn run_set_main_rejects_invalid_env_value_and_falls_through() {
+    // Wrapper-level test for the invalid-env-fallthrough branch:
+    // an env value that fails `is_safe_session_id` must not flow
+    // into `marker_path`. With no capture file present, the wrapper
+    // surfaces the structured no-session-available error rather than
+    // writing a marker keyed by the hostile string.
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().canonicalize().unwrap();
-    let got = resolve_session_id_from(&home, None, Some("env-id-xyz"));
-    assert_eq!(got.as_deref(), Some("env-id-xyz"));
-}
-
-#[test]
-fn resolve_session_id_rejects_invalid_env_session_id() {
-    // An env-var value that fails is_safe_session_id must not flow
-    // into marker_path. When no capture file is present, the result
-    // is None.
-    let dir = tempfile::tempdir().unwrap();
-    let home = dir.path().canonicalize().unwrap();
-    let got = resolve_session_id_from(&home, None, Some("../escape-attempt"));
-    assert_eq!(got, None);
-}
-
-#[test]
-fn resolve_session_id_falls_back_to_capture_when_env_unset() {
-    // With no explicit arg and no env value, the capture file written
-    // at SessionStart provides the session_id — the legacy path that
-    // still serves older Claude Code installs without the env var.
-    let dir = tempfile::tempdir().unwrap();
-    let home = dir.path().canonicalize().unwrap();
-    let claude = home.join(".claude");
-    std::fs::create_dir_all(&claude).unwrap();
-    let capture = claude.join("flow-current-session.json");
-    std::fs::write(&capture, format!(r#"{{"session_id": "{}"}}"#, TEST_SESSION)).unwrap();
-    let got = resolve_session_id_from(&home, None, None);
-    assert_eq!(got.as_deref(), Some(TEST_SESSION));
-}
-
-#[test]
-fn resolve_session_id_returns_none_when_all_sources_absent() {
-    // No explicit, no env, no capture file — every source empty
-    // means no marker can be written, and the consumer surfaces a
-    // structured error rather than panicking.
-    let dir = tempfile::tempdir().unwrap();
-    let home = dir.path().canonicalize().unwrap();
-    let got = resolve_session_id_from(&home, None, None);
-    assert_eq!(got, None);
+    let (value, code) = run_set_main(&home, TEST_SKILL, None, Some("../escape-attempt"));
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert!(
+        value["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("no session_id available"),
+        "invalid env value must not reach marker_path"
+    );
 }
 
 #[test]

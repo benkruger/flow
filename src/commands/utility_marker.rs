@@ -172,17 +172,17 @@ pub fn clear_marker(home: &Path, skill: &str, session_id: &str) -> Result<bool, 
 /// path is the primary fallback on Claude Code 2.1.132+ because it
 /// shares the per-subprocess value the Stop hook receives in its
 /// stdin payload, so set-time and clear-time resolve to the same id
-/// even when a concurrent Claude Code session overwrites the capture
-/// file mid-skill. The capture file remains the backstop for older
-/// Claude Code installs.
+/// regardless of concurrent Claude Code activity. The capture file
+/// remains the backstop for older Claude Code installs.
 ///
-/// Accepts the env-var value as a parameter so unit tests can
-/// exercise each precedence branch without `std::env::set_var`
-/// (which races in parallel test runs per
-/// `.claude/rules/testing-gotchas.md` "Rust Parallel Test Env Var
-/// Races"). Production callers reach this through the CLI boundary
-/// in `main.rs`, which reads the env var once and forwards it
-/// through `run_set_main` / `run_clear_main`.
+/// Accepts the env-var value as a parameter so the env-reading
+/// boundary stays in `main.rs` and the same precedence chain is
+/// reachable from both wrappers without coupling to process state.
+/// Production callers are `run_set_main` and `run_clear_main` in
+/// the same module; integration tests drive the precedence chain
+/// through those wrappers with a controlled `env_value` argument
+/// per `.claude/rules/testing-gotchas.md` "Rust Parallel Test Env
+/// Var Races" (which forbids `std::env::set_var` in tests).
 ///
 /// Precedence:
 /// 1. `explicit` — non-empty wins over every other source.
@@ -194,7 +194,7 @@ pub fn clear_marker(home: &Path, skill: &str, session_id: &str) -> Result<bool, 
 ///    `<home>/.claude/flow-current-session.json`.
 ///
 /// Returns `None` when every source is empty or invalid.
-pub fn resolve_session_id_from(
+fn resolve_session_id_from(
     home: &Path,
     explicit: Option<&str>,
     env_value: Option<&str>,

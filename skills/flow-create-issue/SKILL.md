@@ -50,12 +50,12 @@ promises.
 Rust resolves the active session_id at the CLI boundary by reading
 the `CLAUDE_CODE_SESSION_ID` env var Claude Code supplies to every
 Bash subprocess (Claude Code 2.1.132+); on older Claude Code
-installs it falls back to the SessionStart capture file. The
-per-subprocess env value matches what the Stop hook receives in its
-stdin payload, so set-time and clear-time always resolve to the
-same id even when a concurrent Claude Code session overwrites the
-capture file mid-skill — the explicit session-id flag no longer
-needs to be threaded through the skill.
+installs it falls back to the SessionStart capture file. On
+2.1.132+ the per-subprocess env value matches what the Stop hook
+receives in its stdin payload, so set-time and clear-time resolve
+to the same id regardless of concurrent Claude Code activity. The
+bash invocations below pass `--skill` only; Rust supplies the
+session_id itself.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-utility-in-progress --skill flow:flow-create-issue
@@ -67,6 +67,14 @@ only on Claude Code installs without per-subprocess env support and
 without a SessionStart capture file), the skill proceeds without
 the marker. The Stop hook treats a missing marker as a non-block,
 so the skill runs without protection but does not break.
+
+On Claude Code installs without the per-subprocess env var, the
+capture-file fallback resolves session_id independently at set and
+clear time. A second Claude Code session whose SessionStart hook
+overwrites the capture file between this skill's set and clear
+calls can leave the marker orphaned at the original id. Recovery
+is `rm ~/.claude/flow/utility-in-progress-*.json` after the skill
+completes; the Stop hook treats a missing marker as a non-block.
 
 ---
 
