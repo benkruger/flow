@@ -4935,6 +4935,142 @@ fn flow_decompose_project_skill_has_backwards_reasoning_scan() {
     }
 }
 
+// --- include-bias rule + skill scans ---
+
+/// The four canonical scan phrasings the SKILL bodies enumerate. Each
+/// phrase represents a distinct defensive-scope shape; the rule must
+/// retain the body content that authorizes the scans.
+const INCLUDE_BIAS_SCAN_PHRASINGS: &[&str] = &[
+    "Out of scope",
+    "Non-goals",
+    "would expand scope",
+    "separate code surface",
+];
+
+#[test]
+fn include_bias_rule_states_inclusion_default_principle() {
+    let path = common::repo_root()
+        .join(".claude")
+        .join("rules")
+        .join("include-bias-in-issues.md");
+    let content = fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "expected `.claude/rules/include-bias-in-issues.md` to exist: {}",
+            e
+        )
+    });
+
+    assert!(
+        content.contains("Default to inclusion"),
+        "rule must state the load-bearing `Default to inclusion` invariant phrase"
+    );
+
+    for phrase in INCLUDE_BIAS_SCAN_PHRASINGS {
+        assert!(
+            content.contains(phrase),
+            "rule must enumerate the SKILL scan phrasing `{}` so the rule remains the authoritative source for what the scans target",
+            phrase
+        );
+    }
+}
+
+#[test]
+fn flow_create_issue_skill_has_pre_draft_include_bias_scan() {
+    let content = common::read_skill("flow-create-issue");
+
+    let transform_idx = content
+        .find("## Transform + Draft")
+        .expect("flow-create-issue SKILL.md missing `## Transform + Draft`");
+    let scan_idx = content
+        .find("Pre-Draft Include-Bias Scan")
+        .expect("flow-create-issue SKILL.md missing `Pre-Draft Include-Bias Scan` subsection");
+    let draft_idx = content
+        .find("### Draft Presentation")
+        .expect("flow-create-issue SKILL.md missing `### Draft Presentation`");
+
+    assert!(
+        content.contains(".claude/rules/include-bias-in-issues.md"),
+        "Pre-Draft Include-Bias Scan must cross-reference `.claude/rules/include-bias-in-issues.md`"
+    );
+    assert!(
+        transform_idx < scan_idx,
+        "Pre-Draft Include-Bias Scan must appear AFTER `## Transform + Draft`"
+    );
+    assert!(
+        scan_idx < draft_idx,
+        "Pre-Draft Include-Bias Scan must appear BEFORE `### Draft Presentation`"
+    );
+
+    let scan_tail = &content[scan_idx..];
+    let after_heading = scan_tail
+        .split_once('\n')
+        .map(|(_, t)| t)
+        .expect("scan heading must be followed by content");
+    let mut body_end = after_heading.len();
+    for marker in &["\n### ", "\n## "] {
+        if let Some((before, _)) = after_heading.split_once(marker) {
+            if before.len() < body_end {
+                body_end = before.len();
+            }
+        }
+    }
+    let scan_body = &after_heading[..body_end];
+    for phrase in INCLUDE_BIAS_SCAN_PHRASINGS {
+        assert!(
+            scan_body.contains(phrase),
+            "Pre-Draft Include-Bias Scan body must enumerate the canonical scan phrasing `{}` (a stub heading without the body content does not satisfy the contract)",
+            phrase
+        );
+    }
+}
+
+#[test]
+fn flow_decompose_project_skill_has_include_bias_scan() {
+    let content = common::read_skill("flow-decompose-project");
+
+    assert!(
+        content.contains("Include-Bias Scan"),
+        "flow-decompose-project SKILL.md must include an `Include-Bias Scan` step"
+    );
+    assert!(
+        content.contains(".claude/rules/include-bias-in-issues.md"),
+        "scan step must cross-reference `.claude/rules/include-bias-in-issues.md`"
+    );
+
+    let scan_idx = content
+        .find("Include-Bias Scan")
+        .expect("scan heading checked above");
+    let present_idx = content
+        .find("Present the full issue list")
+        .expect("flow-decompose-project must contain `Present the full issue list` where children are surfaced");
+    assert!(
+        scan_idx < present_idx,
+        "Include-Bias Scan must appear BEFORE child issues are presented"
+    );
+
+    let scan_tail = &content[scan_idx..];
+    let after_heading = scan_tail
+        .split_once('\n')
+        .map(|(_, t)| t)
+        .expect("scan heading must be followed by content");
+    let mut body_end = after_heading.len();
+    for marker in &["\n### ", "\n## "] {
+        if let Some((before, _)) = after_heading.split_once(marker) {
+            if before.len() < body_end {
+                body_end = before.len();
+            }
+        }
+    }
+    let scan_body = &after_heading[..body_end];
+    for phrase in INCLUDE_BIAS_SCAN_PHRASINGS {
+        assert!(
+            scan_body.contains(phrase),
+            "Include-Bias Scan body must enumerate the canonical scan phrasing `{}` (a stub heading without the body content does not satisfy the contract)",
+            phrase
+        );
+    }
+}
+
 #[test]
 fn flow_decompose_project_announce_sets_utility_marker() {
     // The Announce section must write the per-session

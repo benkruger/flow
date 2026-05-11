@@ -353,6 +353,39 @@ identifier-shape, revise the draft. Re-evaluate the underlying
 decision on the code's current merits, not on historical context.
 See `.claude/rules/no-backwards-reasoning.md`.
 
+### Pre-Draft Include-Bias Scan
+
+Before presenting the draft, scan the body — including the
+Implementation Plan subsections — for the following forbidden
+phrasings, which signal defensive scope shrinkage rather than
+genuine exclusion grounded in a concrete blocker:
+
+- `"Out of scope"`, `"Out-of-scope"` — defensive enumeration of
+  exclusions written before concrete blockers have surfaced
+- `"Non-goals"` — same defensive-enumeration shape under a
+  different heading; a bulleted list of "things we are not
+  doing" is speculation, not analysis
+- `"would expand scope"` — reflexive scope shrinkage that
+  bypasses the three-condition gate in
+  `.claude/rules/scope-expansion.md`
+- `"separate code surface"` — code-shape framing used as an
+  exclusion criterion; "separate surface" describes the code,
+  not the work
+
+Evaluate matches in context: a passing mention that names a
+concern is fine; an enumerated section or bulleted list of
+exclusions is forbidden. The default is inclusion — every
+adjacent concern surfaced during exploration belongs as a task
+unless one of the narrow valid exclusions (user explicitly
+rejected, requires different design conversation, blocks
+primary completion) applies. If any match is exclusion-shape
+rather than identifier-shape, revise the draft: convert the
+deferral into an inclusion task, or name the concrete blocker
+in the Context section as one sentence. The lifecycle cost of
+splitting a concern out of an issue is multiples larger than
+including it in the current exploration budget. See
+`.claude/rules/include-bias-in-issues.md`.
+
 ### Draft Presentation
 
 Present the full draft inline in the response — both title and body. Do

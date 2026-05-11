@@ -199,6 +199,18 @@ NOT:
 - Commit changes or invoke `/flow:flow-commit`.
 - File issues or invoke `/flow:flow-create-issue` — the hand-off
   belongs in Step 5 and is gated on an explicit user signal.
+- Compose draft issue bodies inline. Discussion produces context
+  for `/flow:flow-create-issue` via the shared session
+  conversation, not artifacts. The skill must NOT compose
+  `## Problem`, `## Acceptance Criteria`, `## Implementation
+  Plan`, or any other issue-body sections during discussion —
+  body composition happens in `flow-create-issue` from the
+  conversation context, where the include-bias scan runs before
+  the draft is presented per
+  `.claude/rules/include-bias-in-issues.md`. Naming files, citing
+  line numbers, and summarizing the agreed direction in
+  conversational prose is fine; rendering a markdown-block draft
+  with formal section headings is not.
 - Use `AskUserQuestion` to manufacture a checkpoint the user did
   not ask for. The discussion is conversational; the user drives
   the cadence by sending messages. Per
@@ -329,6 +341,12 @@ the slash command directly, per the ask-first discipline in
 - Never propose direct edits, commit changes, or file issues from
   inside this skill. The skill is a planning room; every artifact
   belongs to a downstream skill.
+- Never present draft issue bodies inline. Discussion produces
+  context for `/flow:flow-create-issue`, not artifacts. Body
+  composition happens in `flow-create-issue` from the
+  conversation context, where the include-bias scan runs before
+  the draft is presented per
+  `.claude/rules/include-bias-in-issues.md`.
 - Never use `AskUserQuestion` during discussion mode. The
   discussion is conversational; the user drives the cadence.
 - Never auto-dispatch to a planning sub-agent on inferred scope.

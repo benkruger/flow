@@ -316,6 +316,41 @@ historical context. The scan applies to every child issue
 produced by this skill, not just the first one.
 See `.claude/rules/no-backwards-reasoning.md`.
 
+### Include-Bias Scan
+
+After composing each child issue body and before presenting the
+issue list, scan every child body for the following forbidden
+phrasings, which signal defensive scope shrinkage rather than
+genuine exclusion grounded in a concrete blocker:
+
+- `"Out of scope"`, `"Out-of-scope"` — defensive enumeration of
+  exclusions written before concrete blockers have surfaced
+- `"Non-goals"` — same defensive-enumeration shape under a
+  different heading; a bulleted list of "things we are not
+  doing" is speculation, not analysis
+- `"would expand scope"` — reflexive scope shrinkage that
+  bypasses the three-condition gate in
+  `.claude/rules/scope-expansion.md`
+- `"separate code surface"` — code-shape framing used as an
+  exclusion criterion; "separate surface" describes the code,
+  not the work
+
+Evaluate matches in context: a passing mention that names a
+concern is fine; an enumerated section or bulleted list of
+exclusions is forbidden. The default is inclusion — every
+adjacent concern surfaced during decomposition belongs as a
+task in the appropriate child issue unless one of the narrow
+valid exclusions (user explicitly rejected, requires different
+design conversation, blocks primary completion) applies. If any
+match is exclusion-shape rather than identifier-shape in any
+child body, revise that body: convert the deferral into an
+inclusion task, or name the concrete blocker in that issue's
+Context section as one sentence. The scan applies to every
+child issue produced by this skill, not just the first one. The
+lifecycle cost of splitting a concern out of an issue is
+multiples larger than including it in the current exploration
+budget. See `.claude/rules/include-bias-in-issues.md`.
+
 Present the full issue list as a table:
 
 | # | Title | Phase | Depends On |

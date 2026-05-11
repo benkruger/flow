@@ -80,6 +80,27 @@ templated section that invites enumeration. A one-sentence
 rationale grounded in a concrete blocker is the right shape;
 a bulleted list of "things we are not doing" is not.
 
+## Canonical Scan Phrasings
+
+The mechanical backstop scans for these four canonical
+phrasings. Future changes to the scanned set must update both
+this enumeration and the corresponding subsections in
+`skills/flow-create-issue/SKILL.md` and
+`skills/flow-decompose-project/SKILL.md` so the rule remains
+the authoritative source for what the scans target:
+
+- `"Out of scope"` — defensive enumeration of exclusions
+  written before concrete blockers have surfaced
+- `"Non-goals"` — same defensive-enumeration shape under a
+  different heading; a bulleted list of "things we are not
+  doing" is speculation, not analysis
+- `"would expand scope"` — reflexive scope shrinkage that
+  bypasses the three-condition gate in
+  `.claude/rules/scope-expansion.md`
+- `"separate code surface"` — code-shape framing used as an
+  exclusion criterion; "separate surface" describes the code,
+  not the work
+
 ## How to Apply
 
 ### Plan Phase
