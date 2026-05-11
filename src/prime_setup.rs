@@ -28,6 +28,14 @@ use crate::prime_check::{
 };
 use crate::utils::{permission_to_regex, plugin_root, read_version};
 
+/// Accepted values for the `role` field in `.flow.json`. The `Skip`
+/// option in the prime SKILL.md omits `--role` entirely, so the
+/// allowlist covers only the three concrete personas. Future planning
+/// skills validate read-side against the same set per
+/// `.claude/rules/security-gates.md` "Positive Allowlist, Not Negative
+/// Denylist".
+pub const VALID_ROLES: &[&str] = &["pm", "tech-lead", "founder-solo"];
+
 /// Structural regex matching `<Type>(<inner>)`. Cached because `is_subsumed`
 /// invokes it once per candidate plus once per same-type entry in the
 /// existing set; with the FLOW universal allow list at ~80 Bash entries
@@ -612,6 +620,32 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
     // extra prime run, not a user-visible error.
     let setup_hash = compute_setup_hash(&p_root).unwrap_or_default();
 
+    // Normalize and validate --role per `.claude/rules/security-gates.md`:
+    // NUL-strip + trim + ASCII-lowercase, then membership-check against
+    // VALID_ROLES. Empty (post-normalization) maps to None so callers
+    // and the Reprime path can use `--role ""` as an explicit
+    // "no role" signal without separate validation downstream.
+    let normalized_role: Option<String> = match args.role.as_deref() {
+        Some(raw) => {
+            let cleaned = raw.replace('\0', "").trim().to_ascii_lowercase();
+            if cleaned.is_empty() {
+                None
+            } else if !VALID_ROLES.contains(&cleaned.as_str()) {
+                return Err(json!({
+                    "status": "error",
+                    "message": format!(
+                        "Invalid --role value '{}'; expected one of: {}",
+                        raw,
+                        VALID_ROLES.join(", ")
+                    ),
+                }));
+            } else {
+                Some(cleaned)
+            }
+        }
+        None => None,
+    };
+
     merge_settings(&project_root).map_err(|e| json!({"status": "error", "message": e}))?;
 
     write_version_marker(
@@ -620,7 +654,7 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
         Some(&config_hash),
         Some(&setup_hash),
         args.commit_format.as_deref(),
-        args.role.as_deref(),
+        normalized_role.as_deref(),
         args.plugin_root.as_deref(),
         skills.as_ref(),
     )

@@ -2284,9 +2284,30 @@ fn flow_prime_reprime_extracts_role() {
 #[test]
 fn flow_prime_invokes_setup_with_role_flag() {
     let c = common::read_skill("flow-prime");
+    let setup_step = c
+        .lines()
+        .find(|l| l.starts_with("### Step ") && l.to_lowercase().contains("run prime setup script"))
+        .expect("flow-prime must contain a `Run prime setup script` Step heading");
+    let setup_offset = c
+        .find(setup_step)
+        .expect("setup-script Step heading must be locatable in skill content");
+    let subsection_start = &c[setup_offset..];
+    let subsection = subsection_start
+        .split_once("\n### ")
+        .map(|(section, _)| section)
+        .unwrap_or(subsection_start);
+    let bash_blocks: Vec<&str> = subsection
+        .split("```bash")
+        .skip(1)
+        .filter_map(|tail| tail.split_once("```").map(|(body, _)| body))
+        .collect();
     assert!(
-        c.contains("--role"),
-        "flow-prime setup-script invocation must include `--role` so role flows into prime-setup"
+        !bash_blocks.is_empty(),
+        "setup-script Step must contain at least one fenced bash block",
+    );
+    assert!(
+        bash_blocks.iter().any(|body| body.contains("--role")),
+        "setup-script Step must include `--role` inside a fenced bash block so role flows into prime-setup",
     );
 }
 

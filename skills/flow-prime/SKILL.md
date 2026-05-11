@@ -172,7 +172,13 @@ default, a Tech Lead user gets the PM voice, founder/solo users wear
 multiple hats and get no default. The field is optional; skipping
 records no default and lets each conversation choose its own persona.
 
-Ask the user which role to record with AskUserQuestion:
+<HARD-GATE>
+You MUST ask the user with AskUserQuestion below and wait for an
+explicit selection before proceeding. Do NOT infer the answer from
+context, do NOT default to any option, and do NOT skip the prompt
+even when reprime appears to already carry a role. The role choice
+is a user decision per `.claude/rules/skill-authoring.md` "Decision
+Point Gates".
 
 > "What is your primary role? (Optional — sets a default planning persona.)"
 >
@@ -180,6 +186,8 @@ Ask the user which role to record with AskUserQuestion:
 > - **Tech Lead** — Engineering lead role
 > - **Founder / Solo Dev** — Wear multiple hats
 > - **Skip** — No default; choose per conversation
+
+</HARD-GATE>
 
 Store the result as `role_value`:
 
@@ -192,11 +200,24 @@ Store the result as `role_value`:
 
 Serialize `skills_dict` from Step 1 as a JSON string for the `--skills-json` argument.
 Pass the `commit_format` value from Step 2 via `--commit-format`.
-Pass the `role_value` from Step 3 via `--role` when it is set; omit
-`--role` entirely when the user chose "Skip".
+
+The `role_value` from Step 3 maps to one of two invocation shapes
+below. **Do not pass the literal string `<role_value>` or `skip`
+as the flag argument** — the role-selection step either yielded a
+concrete value (pm, tech-lead, founder-solo) OR the user chose
+Skip, and the two shapes diverge.
+
+When the user selected a concrete role (PM, Tech Lead, or Founder /
+Solo Dev), include `--role <role_value>`:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --skills-json '<skills_dict_json>' --commit-format <commit_format> --role <role_value> --plugin-root ${CLAUDE_PLUGIN_ROOT}
+```
+
+When the user chose Skip, omit `--role` entirely:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --skills-json '<skills_dict_json>' --commit-format <commit_format> --plugin-root ${CLAUDE_PLUGIN_ROOT}
 ```
 
 The script handles everything in a single call:

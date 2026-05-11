@@ -1011,6 +1011,127 @@ fn run_impl_omits_role_when_arg_missing() {
 }
 
 #[test]
+fn run_impl_omits_role_when_arg_empty() {
+    let tmp = tempfile::tempdir().unwrap();
+    make_git_repo(tmp.path());
+    let output = flow_rs()
+        .arg("prime-setup")
+        .arg(tmp.path())
+        .arg("--role")
+        .arg("")
+        .output()
+        .unwrap();
+    let data = parse_stdout(&output.stdout);
+    assert_eq!(data["status"], "ok");
+    let flow_data: Value =
+        serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
+    assert!(
+        flow_data.get("role").is_none(),
+        "--role '' must omit the field; got {:?}",
+        flow_data.get("role")
+    );
+}
+
+#[test]
+fn run_impl_omits_role_when_arg_whitespace_only() {
+    let tmp = tempfile::tempdir().unwrap();
+    make_git_repo(tmp.path());
+    let output = flow_rs()
+        .arg("prime-setup")
+        .arg(tmp.path())
+        .arg("--role")
+        .arg("   ")
+        .output()
+        .unwrap();
+    let data = parse_stdout(&output.stdout);
+    assert_eq!(data["status"], "ok");
+    let flow_data: Value =
+        serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
+    assert!(
+        flow_data.get("role").is_none(),
+        "whitespace-only --role must omit the field"
+    );
+}
+
+#[test]
+fn run_impl_trims_role_whitespace() {
+    let tmp = tempfile::tempdir().unwrap();
+    make_git_repo(tmp.path());
+    let output = flow_rs()
+        .arg("prime-setup")
+        .arg(tmp.path())
+        .arg("--role")
+        .arg("  pm  ")
+        .output()
+        .unwrap();
+    let data = parse_stdout(&output.stdout);
+    assert_eq!(data["status"], "ok");
+    let flow_data: Value =
+        serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
+    assert_eq!(flow_data["role"], "pm");
+}
+
+#[test]
+fn run_impl_lowercases_role() {
+    let tmp = tempfile::tempdir().unwrap();
+    make_git_repo(tmp.path());
+    let output = flow_rs()
+        .arg("prime-setup")
+        .arg(tmp.path())
+        .arg("--role")
+        .arg("PM")
+        .output()
+        .unwrap();
+    let data = parse_stdout(&output.stdout);
+    assert_eq!(data["status"], "ok");
+    let flow_data: Value =
+        serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
+    assert_eq!(flow_data["role"], "pm");
+}
+
+#[test]
+fn run_impl_rejects_unknown_role() {
+    let tmp = tempfile::tempdir().unwrap();
+    make_git_repo(tmp.path());
+    let output = flow_rs()
+        .arg("prime-setup")
+        .arg(tmp.path())
+        .arg("--role")
+        .arg("ic-engineer")
+        .output()
+        .unwrap();
+    let data = parse_stdout(&output.stdout);
+    assert_eq!(data["status"], "error");
+    let msg = data["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("Invalid --role") && msg.contains("ic-engineer"),
+        "error must name the rejected value; got: {}",
+        msg
+    );
+}
+
+#[test]
+fn run_impl_rejects_role_with_shell_metacharacters() {
+    let tmp = tempfile::tempdir().unwrap();
+    make_git_repo(tmp.path());
+    let output = flow_rs()
+        .arg("prime-setup")
+        .arg(tmp.path())
+        .arg("--role")
+        .arg("pm; rm -rf /")
+        .output()
+        .unwrap();
+    let data = parse_stdout(&output.stdout);
+    assert_eq!(data["status"], "error");
+    let msg = data["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("Invalid --role"),
+        "shell metacharacters must be rejected; got: {}",
+        msg
+    );
+}
+
+#[test]
 fn cli_plugin_root_written_and_launcher_installed() {
     let tmp = tempfile::tempdir().unwrap();
     let fake_home = tmp.path().join("fakehome");
@@ -1551,6 +1672,39 @@ fn run_impl_library_invalid_skills_json_errors() {
     assert_eq!(err["status"], "error");
     let msg = err["message"].as_str().unwrap_or("");
     assert!(msg.contains("Invalid --skills-json"), "got: {}", msg);
+}
+
+/// run_impl with an unrecognized --role value: exercises the role
+/// allowlist Err branch and confirms the error message names both
+/// the rejected value and the valid set.
+#[test]
+fn run_impl_library_invalid_role_errors() {
+    let tmp = tempfile::tempdir().unwrap();
+    let project = tmp.path().join("project");
+    fs::create_dir_all(&project).unwrap();
+    let args = prime_setup::Args {
+        project_root: project.to_string_lossy().to_string(),
+        skills_json: None,
+        commit_format: None,
+        role: Some("ic-engineer".to_string()),
+        plugin_root: None,
+    };
+    let err = prime_setup::run_impl(&args).unwrap_err();
+    assert_eq!(err["status"], "error");
+    let msg = err["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("Invalid --role") && msg.contains("ic-engineer"),
+        "error must name rejected value; got: {}",
+        msg
+    );
+    for valid in prime_setup::VALID_ROLES {
+        assert!(
+            msg.contains(valid),
+            "error must enumerate valid role '{}'; got: {}",
+            valid,
+            msg
+        );
+    }
 }
 
 /// check_launcher_path library test — exercises the "local_bin not
