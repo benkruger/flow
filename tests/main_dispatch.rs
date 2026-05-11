@@ -105,6 +105,7 @@ fn all_subcommands_have_working_help() {
         "tui",
         "tui-data",
         "upgrade-check",
+        "validate-issue-body",
         "hook",
     ];
     for sub in subcommands {
@@ -1320,6 +1321,11 @@ fn main_arm_invocations_cover_dispatch() {
             None,
         ),
         (
+            "validate-issue-body",
+            &["--body-file", "/nonexistent"],
+            None,
+        ),
+        (
             "render-pr-body",
             &["--pr", "1", "--branch", "test-fixture"],
             None,
@@ -1411,6 +1417,84 @@ fn set_utility_in_progress_dispatch_writes_marker() {
         .join("flow")
         .join("utility-in-progress-abc12345.json");
     assert!(marker.exists(), "marker must be written");
+}
+
+/// `bin/flow validate-issue-body --body-file <fixture>` exercises the
+/// dispatch arm end-to-end and asserts the success-envelope JSON
+/// shape. The fixture body has the canonical FLOW-PLAN sentinel
+/// pair, the `## Implementation Plan` heading, and one
+/// `#### Task 1` entry — every validator branch passes and the
+/// stdout JSON carries `status:ok` plus `tasks_total:1`. Regression
+/// guard: a future refactor that renames `--body-file`, changes the
+/// envelope shape, or breaks the `dispatch::dispatch_json` wiring
+/// for this subcommand would surface here. `FLOW_CI_RUNNING` is
+/// neutralized per `.claude/rules/subprocess-test-hygiene.md` so
+/// recursion guards do not trip on nested CI runs. `GH_TOKEN` and
+/// `HOME` are not relevant — this subcommand reads only a local
+/// file.
+#[test]
+fn validate_issue_body_dispatch_succeeds_on_well_formed_body() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let body_path = root.join("issue-body.md");
+    let body = "## Problem\n\nProse.\n\n\
+        <!-- FLOW-PLAN-BEGIN -->\n\
+        ## Implementation Plan\n\n\
+        ### Context\n\nContext prose.\n\n\
+        #### Task 1: Do the thing\n\n- Description\n\
+        <!-- FLOW-PLAN-END -->\n\n\
+        ## Files\n";
+    std::fs::write(&body_path, body).expect("write fixture body");
+
+    let output = flow_rs_no_recursion()
+        .args([
+            "validate-issue-body",
+            "--body-file",
+            body_path.to_str().expect("utf-8 path"),
+        ])
+        .output()
+        .expect("spawn flow-rs validate-issue-body");
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "exit 0 on success\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("dispatch must emit a JSON envelope");
+    assert_eq!(json["status"], "ok");
+    assert_eq!(json["tasks_total"], 1);
+}
+
+/// `bin/flow validate-issue-body --body-file <missing>` exercises
+/// the error-envelope path of the dispatch arm. A nonexistent path
+/// routes through `body_read_failed`; the dispatch wires the JSON
+/// to stdout with exit code 0 per the project's exit-code
+/// convention (errors signal via `status`, not the shell code).
+#[test]
+fn validate_issue_body_dispatch_error_envelope_for_missing_file() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let missing = root.join("nonexistent.md");
+
+    let output = flow_rs_no_recursion()
+        .args([
+            "validate-issue-body",
+            "--body-file",
+            missing.to_str().expect("utf-8 path"),
+        ])
+        .output()
+        .expect("spawn flow-rs validate-issue-body");
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("dispatch must emit a JSON envelope");
+    assert_eq!(json["status"], "error");
+    assert_eq!(json["reason"], "body_read_failed");
 }
 
 /// `bin/flow clear-utility-in-progress` removes the marker JSON.

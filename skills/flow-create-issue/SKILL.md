@@ -13,11 +13,14 @@ This skill requires prior brainstorming context in the conversation. The user mu
 
 ```text
 /flow:flow-create-issue
-/flow:flow-create-issue --force-decompose
 ```
 
-- `/flow:flow-create-issue` — start from the Conversation Gate
-- `/flow:flow-create-issue --force-decompose` — force a fresh decompose even when prior implementation-focused output exists in the conversation
+The skill takes no flags or arguments. Every invocation runs the
+full pipeline — Conversation Gate, Capture, Title Authoring,
+Decompose, Transform + Draft, File, Filing — and the Decompose step
+invokes `decompose:decompose` unconditionally so the Implementation
+Plan derives from structured decompose output rather than from
+unbounded conversation context.
 
 ## Concurrency
 
@@ -192,32 +195,14 @@ cheaper than patching every downstream surface.
 
 ## Decompose
 
-Check the conversation for **substantive exploration** of the problem
-and solution. Substantive exploration contains all three signals:
-
-- **Named files** — the conversation references specific file paths
-  in the codebase that the change will touch
-- **Identified root cause** — specific code references, line numbers,
-  or a concrete bug mechanism (not just symptoms or speculation)
-- **Agreed approach** — the user has confirmed direction on how to
-  proceed (a chosen design, a concrete plan of attack)
-
-A prior `/decompose:decompose` invocation in the conversation is a
-strong signal of substantive exploration but is not required —
-extended back-and-forth that produces the three signals above
-qualifies on its own.
-
-**If the conversation contains substantive exploration AND
-`--force-decompose` was NOT passed:** the existing context is
-sufficient. Skip the decompose invocation below and proceed
-directly to Transform + Draft.
-
-**If the conversation lacks one or more of the substantive-exploration
-signals, or `--force-decompose` was passed:** invoke
-`decompose:decompose` via the Skill tool with an implementation-focused
-prompt. The prompt must make clear that the problem and solution are
-already agreed — decompose should structure the implementation into
-tasks, not re-analyze the problem.
+Invoke `decompose:decompose` via the Skill tool with an
+implementation-focused prompt. The decompose pass runs on every
+`flow-create-issue` invocation — there is no skip path and no
+override flag. The prompt must make clear that the problem and
+solution are already agreed (the Conversation Gate already
+verified that brainstorming context exists upstream); decompose
+should structure the implementation into tasks, not re-analyze
+the problem.
 
 Example prompt structure:
 
@@ -246,22 +231,16 @@ breaks the unattended flow that flow-create-issue promises to its
 consumers. The whole point of the skill is that one invocation
 produces a filed issue without further user input.
 
-This gate fires whether the Decompose step invoked decompose:decompose
-or skipped it. Either path lands at Transform + Draft as the next
-action — no pause, no acknowledgement, no summary.
-
 </HARD-GATE>
 
 ---
 
 ## Transform + Draft
 
-Take the decompose synthesis from the conversation — either from a
-prior `/decompose:decompose` invocation (when the Decompose step
-skipped a fresh invocation) or from the invocation you just ran — and
-transform it into an Implementation Plan section that matches the plan
-file format used by `flow-plan`. The Implementation Plan must contain
-these subsections:
+Take the decompose synthesis from the invocation you just ran and
+transform it into an Implementation Plan section that matches the
+plan file format used by `flow-plan`. The Implementation Plan must
+contain these subsections:
 
 - **Context** — What the user wants to build and why
 - **Exploration** — What exists in the codebase, affected files, patterns discovered
@@ -309,6 +288,23 @@ extract verbatim and write to `.flow-states/<branch>/plan.md` when the
 issue is later picked up via `/flow:flow-start #N`. Without the
 sentinel pair, plan-from-issue rejects the issue with
 `plan_markers_missing` and the flow halts.
+
+**Paraphrase every prose reference to the plan-sentinel pair.** The
+literal HTML-comment marker strings only appear in the body at two
+positions — the opening sentinel and the closing sentinel. They
+must never appear inside prose, headings, code blocks, examples,
+or any other surface of the body. `bin/flow plan-from-issue`
+extracts the slice between the FIRST occurrence of each marker, so
+a literal marker mid-prose silently redirects the extraction to
+the wrong slice — exactly the failure mode `bin/flow
+validate-issue-body` exists to detect. Whenever the body needs to
+reference the marker pair (for example, when the issue topic is
+the sentinel protocol itself), paraphrase every reference.
+Acceptable wording: "the FLOW-PLAN sentinel pair", "the
+plan-extraction markers", "the canonical sentinels delimiting the
+plan block". The validator's `marker_count_wrong` branch catches
+violations downstream; this rule prevents them upstream so the
+Revise loop is not entered unnecessarily.
 
 The wrapped block looks like this in the issue body:
 
@@ -411,8 +407,33 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-creat
 ## Filing
 
 Write the issue body to `.flow-issue-body-<id>` in the project root
-using the Write tool. Then file it against the current repo (no
-`--repo` flag — `flow-create-issue` always files where the user is):
+using the Write tool. The body file is the validator's input and the
+filer's input in the same path — same bytes on disk for both
+subprocesses, no copy.
+
+Validate the body file through the pre-filing validator before
+asking the filer subcommand to send it to GitHub. The validator
+runs the same sentinel-extraction logic that `bin/flow
+plan-from-issue` applies at flow-start; any body that fails this
+gate is unconsumable downstream and must NOT be filed:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow validate-issue-body --body-file .flow-issue-body-<id>
+```
+
+Parse the JSON output. If `status` is `ok`, proceed to the filer
+invocation below. If `status` is `error`, do NOT file the issue.
+Show the validator's `message` field to the user, return to the
+Revise loop in the File step above with the user's feedback set to
+the validator's `message`, and re-present the corrected draft.
+Iterate until the validator returns `ok`. A body that the
+validator rejects would also be rejected by `plan-from-issue` at
+flow-start, so filing it produces an unusable issue that the next
+`/flow:flow-start` invocation cannot consume.
+
+Once the validator returns `ok`, file the issue against the current
+repo (no `--repo` flag — `flow-create-issue` always files where the
+user is):
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<issue_title>" --body-file .flow-issue-body-<id> --label decomposed
@@ -450,3 +471,4 @@ Display the issue URL to the user, then output the COMPLETE banner:
 - Always use the Write tool to create body files (`.flow-issue-body-<id>`) — never pass body text as a CLI argument
 - Never delete the body file — the `bin/flow issue` script handles cleanup
 - The Implementation Plan section must use heading levels that match the plan file format after promotion by `flow-plan` (### in the issue becomes ## in the plan file)
+- Paraphrase every prose reference to the plan-sentinel pair — the literal HTML-comment marker strings appear only at the actual delimiters of the wrapped Implementation Plan, never inside prose, headings, code blocks, or examples. A duplicate marker mid-prose silently redirects `bin/flow plan-from-issue` extraction to the wrong slice.

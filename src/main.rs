@@ -57,6 +57,7 @@ use flow_rs::tui_data;
 use flow_rs::update_deps;
 use flow_rs::update_pr_body;
 use flow_rs::upgrade_check;
+use flow_rs::validate_issue_body;
 use flow_rs::write_rule;
 
 #[derive(Parser)]
@@ -419,6 +420,10 @@ enum Commands {
     /// Fetch issue body and extract sentinel-delimited plan.
     #[command(name = "plan-from-issue")]
     PlanFromIssue(plan_from_issue::Args),
+
+    /// Validate an on-disk issue body before filing via `bin/flow issue`.
+    #[command(name = "validate-issue-body")]
+    ValidateIssueBody(validate_issue_body::Args),
 
     /// Render complete PR body from state
     #[command(name = "render-pr-body")]
@@ -866,6 +871,11 @@ fn main() {
         Some(Commands::PlanFromIssue(args)) => {
             let root = flow_rs::git::project_root();
             let (value, code) = plan_from_issue::run_impl_main(&args, &root);
+            flow_rs::dispatch::dispatch_json(value, code);
+        }
+        Some(Commands::ValidateIssueBody(args)) => {
+            let root = flow_rs::git::project_root();
+            let (value, code) = validate_issue_body::run_impl_main(&args, &root);
             flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::RenderPrBody(args)) => {

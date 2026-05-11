@@ -12,7 +12,6 @@ parent: Skills
 
 ```text
 /flow:flow-create-issue
-/flow:flow-create-issue --force-decompose
 ```
 
 Captures a brainstormed solution from the current conversation and files it as a pre-planned GitHub issue with an Implementation Plan section. The Plan phase extracts this plan directly — no re-derivation needed. Requires prior brainstorming context (typically via `/decompose:decompose`).
@@ -27,9 +26,9 @@ Before entering the pipeline, the skill verifies that brainstorming context exis
 
 ## What It Does
 
-The skill runs end-to-end as a single pipeline: capture problem sections from the conversation, decompose the implementation (or reuse prior implementation-focused decompose output), transform the synthesis into an Implementation Plan, scan the body for backward-facing reasoning patterns, present the full draft inline, and file the issue against the current repo with the `decomposed` label after explicit user approval.
+The skill runs end-to-end as a single pipeline: capture problem sections from the conversation, decompose the implementation via `decompose:decompose` (invoked unconditionally on every run), transform the synthesis into an Implementation Plan, scan the body for backward-facing reasoning patterns, present the full draft inline, and file the issue against the current repo with the `decomposed` label after explicit user approval.
 
-If prior implementation-focused decompose output already exists in the conversation, the skill skips the decompose invocation. Use `--force-decompose` to bypass the detection and force a fresh decompose.
+The Decompose step has no skip path and no override flag. Every invocation runs a fresh `decompose:decompose` pass so the Implementation Plan derives from structured decompose output rather than from unbounded conversation context.
 
 Before the draft is presented, a **Pre-Draft Backwards-Reasoning Scan** subsection scans the body for forbidden phrasings that ground the current decision in a historical artifact rather than current code merits — `"PR #<N> decided"`, `"kept for backward compatibility"`, `"older plugin versions"`, `"as PR #<N> chose to"`, and similar shapes. Forensic-detection PR references (linking blocked-by, naming a specific merge) are fine; justifying-shape references trigger revision before the draft is shown. See `.claude/rules/no-backwards-reasoning.md`.
 
