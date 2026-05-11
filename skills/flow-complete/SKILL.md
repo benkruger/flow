@@ -107,7 +107,16 @@ Read `complete_step` from the state file (default `0` if absent).
 - If `complete_step` is `4`: skip to Step 4 (Confirm with user).
 - If `complete_step` is `5`: skip to Step 5 (Merge PR).
 - If `complete_step` is `6`: skip to Step 6 (Finalize).
-- If `complete_step` is `0` or absent: proceed normally to Step 1.
+- If `complete_step` is `0` or absent: this is a fresh entry (not a
+  `--continue-step` resume). Clear any fossil
+  `_drift_recovery_attempted` flag left behind by a previously
+  aborted Complete invocation so the next `ci_drift` dispatch can
+  run recovery instead of incorrectly escalating. Then proceed
+  normally to Step 1.
+
+  ```bash
+  ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _drift_recovery_attempted=
+  ```
 
 ---
 
@@ -180,6 +189,97 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invok
 To continue, invoke `flow:flow-complete --continue-step` using
 the Skill tool as your final action. If mode was resolved to auto, pass
 `--auto` as well. Do not output anything else after this invocation.
+
+**If `"path": "ci_drift"`** — local CI passed on this exact tree but
+GitHub CI failed. This signals tool version drift between the
+developer machine and the CI runner (formatter, linter, language
+runtime version skew). The recovery is deterministic — refresh the
+toolchain locally, invalidate the CI sentinel, re-run CI on the
+upgraded tools, commit any auto-fixes, and re-check. Do not invoke
+`ci-fixer`: the same reasoning already failed in the manual case.
+
+First, read `_drift_recovery_attempted` from the state file via the
+Read tool on `<project_root>/.flow-states/<branch>/state.json`. If
+the flag is set (non-empty), recovery already ran in this Complete
+invocation and the drift persists — escalate to the user:
+
+> "GitHub CI continues to fail after a local toolchain refresh. The
+> cause is likely environmental: CI runtime version, missing env var,
+> or platform-specific behavior. Inspect failing checks with
+> `gh pr checks <pr_number>` and resolve manually."
+
+Stop. Do not loop the recovery again.
+
+Otherwise, set the loop-guard flag BEFORE running the recovery so a
+kill-signal mid-recovery still produces a flagged state (the next
+entry escalates rather than re-loops):
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _drift_recovery_attempted=1
+```
+
+Check for `<worktree>/bin/dependencies` using the Read tool. If the
+file does NOT exist, the project has no dependency-refresh script —
+dispatch as if the path had been `ci_failed`: launch the `ci-fixer`
+sub-agent with the message "Local CI passed; GitHub CI failed.
+Project has no `bin/dependencies` script to refresh the toolchain.
+Diagnose GitHub CI failure directly." Then follow the `ci_failed`
+recovery path below.
+
+If `bin/dependencies` exists, refresh the toolchain from the worktree
+cwd:
+
+```bash
+bin/dependencies
+```
+
+Re-run CI with the upgraded toolchain. Use a 10-minute Bash tool
+timeout (`timeout: 600000`) — CI runs can take 3–4 minutes and the
+default 2-minute timeout would background the process, defeating the
+gate (per `.claude/rules/ci-is-a-gate.md`). The `--force` flag
+invalidates the existing sentinel so the new toolchain actually runs
+every tool:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci --force
+```
+
+If `bin/dependencies` or `bin/flow ci --force` produced working-tree
+changes (auto-formatter / linter rewrites are common after a
+toolchain bump), commit them. Otherwise, skip directly to the
+self-invoke. Check via:
+
+```bash
+git diff --quiet
+```
+
+If the exit code is non-zero (working tree dirty), set the resume
+step and the continuation flag:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=1
+```
+
+If mode is **auto**, use the first form. If mode is **manual**, use the second:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --auto."
+```
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step --manual."
+```
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+```
+
+Commit the auto-fixes via `/flow:flow-commit`.
+
+To re-check both local and remote CI on the refreshed toolchain,
+invoke `flow:flow-complete --continue-step` using the Skill tool as
+your final action. If mode was resolved to auto, pass `--auto` as
+well. Do not output anything else after this invocation.
 
 **If `"path": "ci_failed"`** — local CI or GitHub CI failed. Launch the
 `ci-fixer` sub-agent to diagnose and fix. Use the Agent tool:

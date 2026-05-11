@@ -11,11 +11,19 @@
 //!   Already:      {"status": "ok", "path": "already_merged", ...}
 //!   Confirm:      {"status": "ok", "path": "confirm", ...}
 //!   CI stale:     {"status": "ok", "path": "ci_stale", ...}
+//!   CI drift:     {"status": "ok", "path": "ci_drift", ...}
 //!   CI failed:    {"status": "ok", "path": "ci_failed", ...}
 //!   CI pending:   {"status": "ok", "path": "ci_pending", ...}
 //!   Conflict:     {"status": "ok", "path": "conflict", ...}
 //!   Max retries:  {"status": "ok", "path": "max_retries", ...}
 //!   Error:        {"status": "error", "message": "..."}
+//!
+//! `ci_drift` is emitted when the local CI sentinel matches the current
+//! tree (ci_skipped=true) AND `gh pr checks` reports failure. The same
+//! code passed locally and failed remotely — a tool-version-drift
+//! signal with a deterministic recovery (refresh local toolchain,
+//! invalidate the sentinel, re-run, commit auto-fixes) distinct from
+//! the generic ci_failed dispatch.
 //!
 //! Tests live in `tests/complete_fast.rs` per
 //! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]` block
@@ -512,6 +520,23 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         return Ok(json!({
             "status": "ok",
             "path": "ci_pending",
+            "mode": mode,
+            "pr_number": pr_number,
+            "pr_url": pr_url,
+            "branch": branch,
+            "worktree": worktree,
+            "warnings": warnings,
+        }));
+    }
+    // ci_drift: local sentinel valid for this tree but GitHub CI red.
+    // Same bytes passed locally and failed remotely → tool-version
+    // drift. Must precede the generic gh_ci_status == "fail" branch so
+    // the deterministic recovery (toolchain refresh + sentinel
+    // invalidate) handles the case before ci-fixer would.
+    if ci_skipped && gh_ci_status == "fail" {
+        return Ok(json!({
+            "status": "ok",
+            "path": "ci_drift",
             "mode": mode,
             "pr_number": pr_number,
             "pr_url": pr_url,
