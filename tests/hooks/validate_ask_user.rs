@@ -665,8 +665,13 @@ fn run_subprocess_sets_blocked_on_allow_path() {
     let state = json!({"current_phase": "flow-code", "branch": "test"});
     let state_path = write_state(&root, "test", &state);
 
-    let (code, _stdout, _stderr) = run_hook(&root, "{}");
+    let (code, stdout, _stderr) = run_hook(&root, "{}");
     assert_eq!(code, 0);
+    assert!(
+        stdout.contains("\"permissionDecision\":\"defer\""),
+        "expected explicit defer signal on stdout from AllowWithMark path, got: {}",
+        stdout
+    );
     let updated: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert!(updated.get("_blocked").is_some(), "state: {:?}", updated);
 }
