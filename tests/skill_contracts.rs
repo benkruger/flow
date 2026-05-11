@@ -2862,67 +2862,59 @@ fn create_issue_has_implementation_plan_section() {
 }
 
 #[test]
-fn create_issue_usage_documents_force_decompose() {
+fn flow_create_issue_decompose_runs_unconditionally() {
+    // The Decompose section invokes `decompose:decompose` on every
+    // invocation of `flow-create-issue`. No skip path, no override
+    // flag, no substantive-exploration classifier — the decompose
+    // pass is unconditional. A subjective classifier flips between
+    // returns from `decompose:decompose` and produces issue bodies
+    // synthesized from thin conversation context instead of from
+    // structured decompose output. Removing the skip path eliminates
+    // the classification surface entirely.
     let c = common::read_skill("flow-create-issue");
+    // Forbidden token #1: `--force-decompose` (the manual override
+    // for the deleted skip path). Encoded via `concat!` per
+    // `.claude/rules/skill-authoring.md` "Negative-Assertion Test
+    // Compatibility" so the test's own source string does not trip
+    // the assertion. The four checklist questions in
+    // `.claude/rules/tombstone-tests.md` "Literal tombstones —
+    // stability checklist": `concat!`-bypassable (yes — already
+    // accounted for), `format!`-bypassable (no — would land as a
+    // visible runtime construction in SKILL.md, which is plain
+    // Markdown and contains no `format!` constructs), constant-
+    // bypassable (no — same reason), multi-`.arg()`-bypassable (no
+    // — SKILL.md has no method-chained string assembly).
+    let forbidden_flag = concat!("--force-", "decompose");
     assert!(
-        c.contains("--force-decompose"),
-        "Usage must document --force-decompose flag"
+        !c.contains(forbidden_flag),
+        "flow-create-issue must not document {} — the decompose pass runs unconditionally",
+        forbidden_flag
     );
-}
-
-#[test]
-fn flow_create_issue_skip_decompose_criterion_accepts_substantive_exploration() {
-    // The Decompose section's skip rule must recognize substantive
-    // exploration as sufficient context — named files, identified
-    // root cause, agreed approach — not only literal prior decompose
-    // output. This eliminates the Skill-tool roundtrip for the common
-    // case where the user has already discussed the problem in the
-    // current conversation, which is the failure surface where the
-    // model returns control to the user instead of continuing.
-    let c = common::read_skill("flow-create-issue");
+    // Bound the assertion scope to the `## Decompose` section using
+    // the bounded-slice pattern from `.claude/rules/testing-gotchas.md`
+    // "Subsection-Local Assertions in Contract Tests": split to the
+    // section start, then split to the next `\n## ` heading. Falls
+    // back to the tail on EOF.
     let tail = c
         .split_once("\n## Decompose\n")
         .map(|(_, t)| t)
         .expect("flow-create-issue must have a `## Decompose` section");
     let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
-    let lower = section.to_ascii_lowercase();
+    let section_lower = section.to_ascii_lowercase();
+    // Forbidden token #2: `substantive exploration` (the classifier
+    // phrase). The case-insensitive lowercase comparison defeats
+    // unintentional case-variant survival. Encoded via `concat!`.
+    let forbidden_phrase = concat!("substantive ", "exploration");
     assert!(
-        lower.contains("substantive exploration"),
-        "`## Decompose` skip rule must accept substantive exploration"
+        !section_lower.contains(forbidden_phrase),
+        "`## Decompose` must not contain `{}` — the skip classifier is removed",
+        forbidden_phrase
     );
-    assert!(
-        lower.contains("named files"),
-        "`## Decompose` skip rule must list named files as a signal"
-    );
-    assert!(
-        lower.contains("root cause"),
-        "`## Decompose` skip rule must list identified root cause as a signal"
-    );
-    assert!(
-        lower.contains("agreed approach") || lower.contains("approach"),
-        "`## Decompose` skip rule must list an agreed approach as a signal"
-    );
-}
-
-#[test]
-fn flow_create_issue_skip_decompose_criterion_rejects_bare_invocation() {
-    // When the conversation lacks substantive exploration, the
-    // Decompose section must still invoke decompose:decompose. The
-    // skip path is a fast-track for the common case, not a bypass
-    // that hides bare invocations.
-    let c = common::read_skill("flow-create-issue");
-    let tail = c
-        .split_once("\n## Decompose\n")
-        .map(|(_, t)| t)
-        .expect("flow-create-issue must have a `## Decompose` section");
-    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
+    // Positive assertion: the section still invokes `decompose:decompose`.
+    // The unconditional path runs the decompose pass on every invocation.
     assert!(
         section.contains("decompose:decompose"),
-        "`## Decompose` must still invoke decompose:decompose when context is missing"
-    );
-    assert!(
-        section.contains("--force-decompose"),
-        "`## Decompose` must document the --force-decompose override"
+        "`## Decompose` must invoke decompose:decompose on every invocation"
     );
 }
 

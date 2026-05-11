@@ -13,11 +13,14 @@ This skill requires prior brainstorming context in the conversation. The user mu
 
 ```text
 /flow:flow-create-issue
-/flow:flow-create-issue --force-decompose
 ```
 
-- `/flow:flow-create-issue` — start from the Conversation Gate
-- `/flow:flow-create-issue --force-decompose` — force a fresh decompose even when prior implementation-focused output exists in the conversation
+The skill takes no flags or arguments. Every invocation runs the
+full pipeline — Conversation Gate, Capture, Title Authoring,
+Decompose, Transform + Draft, File, Filing — and the Decompose step
+invokes `decompose:decompose` unconditionally so the Implementation
+Plan derives from structured decompose output rather than from
+unbounded conversation context.
 
 ## Concurrency
 
@@ -192,32 +195,14 @@ cheaper than patching every downstream surface.
 
 ## Decompose
 
-Check the conversation for **substantive exploration** of the problem
-and solution. Substantive exploration contains all three signals:
-
-- **Named files** — the conversation references specific file paths
-  in the codebase that the change will touch
-- **Identified root cause** — specific code references, line numbers,
-  or a concrete bug mechanism (not just symptoms or speculation)
-- **Agreed approach** — the user has confirmed direction on how to
-  proceed (a chosen design, a concrete plan of attack)
-
-A prior `/decompose:decompose` invocation in the conversation is a
-strong signal of substantive exploration but is not required —
-extended back-and-forth that produces the three signals above
-qualifies on its own.
-
-**If the conversation contains substantive exploration AND
-`--force-decompose` was NOT passed:** the existing context is
-sufficient. Skip the decompose invocation below and proceed
-directly to Transform + Draft.
-
-**If the conversation lacks one or more of the substantive-exploration
-signals, or `--force-decompose` was passed:** invoke
-`decompose:decompose` via the Skill tool with an implementation-focused
-prompt. The prompt must make clear that the problem and solution are
-already agreed — decompose should structure the implementation into
-tasks, not re-analyze the problem.
+Invoke `decompose:decompose` via the Skill tool with an
+implementation-focused prompt. The decompose pass runs on every
+`flow-create-issue` invocation — there is no skip path and no
+override flag. The prompt must make clear that the problem and
+solution are already agreed (the Conversation Gate already
+verified that brainstorming context exists upstream); decompose
+should structure the implementation into tasks, not re-analyze
+the problem.
 
 Example prompt structure:
 
@@ -246,22 +231,16 @@ breaks the unattended flow that flow-create-issue promises to its
 consumers. The whole point of the skill is that one invocation
 produces a filed issue without further user input.
 
-This gate fires whether the Decompose step invoked decompose:decompose
-or skipped it. Either path lands at Transform + Draft as the next
-action — no pause, no acknowledgement, no summary.
-
 </HARD-GATE>
 
 ---
 
 ## Transform + Draft
 
-Take the decompose synthesis from the conversation — either from a
-prior `/decompose:decompose` invocation (when the Decompose step
-skipped a fresh invocation) or from the invocation you just ran — and
-transform it into an Implementation Plan section that matches the plan
-file format used by `flow-plan`. The Implementation Plan must contain
-these subsections:
+Take the decompose synthesis from the invocation you just ran and
+transform it into an Implementation Plan section that matches the
+plan file format used by `flow-plan`. The Implementation Plan must
+contain these subsections:
 
 - **Context** — What the user wants to build and why
 - **Exploration** — What exists in the codebase, affected files, patterns discovered
