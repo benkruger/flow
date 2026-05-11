@@ -118,9 +118,11 @@ pub fn capture_for_active_state(home: &Path, state: &Value, project_root: &Path)
     // because the file did not yet exist), derive the canonical
     // transcript location from `<home>/.claude/projects/<encoded>/
     // <session_id>.jsonl` using Claude Code's directory-encoding
-    // convention (every `/` and every `.` in the project root path
-    // becomes `-`; e.g. `/Users/ben/code/flow` →
-    // `-Users-ben-code-flow`). The derived path runs through the
+    // convention (every character that is not ASCII alphanumeric
+    // or `_` or `-` becomes `-`; e.g. `/Users/ben/code/flow` →
+    // `-Users-ben-code-flow`, `/Users/ben/My Project` →
+    // `-Users-ben-My-Project`, `/Users/ben/.claude` →
+    // `-Users-ben--claude`). The derived path runs through the
     // same `is_safe_transcript_path` validator so a hostile entry
     // under `~/.claude/projects/` cannot redirect the read.
     let transcript_path = state
@@ -148,12 +150,15 @@ pub fn capture_for_active_state(home: &Path, state: &Value, project_root: &Path)
 
 /// Derive the canonical transcript path Claude Code writes to:
 /// `<home>/.claude/projects/<encoded-project-root>/<session_id>.jsonl`.
-/// The encoding rule (confirmed by inspecting an existing
-/// `~/.claude/projects/` entry against its source project root):
-/// every `/` and every `.` in the project root path becomes `-`.
-/// `/Users/ben/code/flow` → `-Users-ben-code-flow`;
-/// `/Users/ben/.claude` → `-Users-ben--claude` (the `.` becomes a
-/// second `-`).
+/// The encoding rule (confirmed by inspecting existing
+/// `~/.claude/projects/` entries against their source project
+/// roots): every character that is not ASCII alphanumeric and not
+/// `_` and not `-` becomes `-`. Examples:
+///
+/// - `/Users/ben/code/flow` → `-Users-ben-code-flow`
+/// - `/Users/ben/.claude` → `-Users-ben--claude` (the leading `/` and the `.` each become `-`)
+/// - `/Users/ben/My Project` → `-Users-ben-My-Project` (the space becomes `-`)
+/// - `/Users/ben/code-cc-api` → `-Users-ben-code-cc-api` (the `-` characters are preserved)
 ///
 /// The result is run through `is_safe_transcript_path` by the
 /// caller, so this helper does no validation itself — it only
@@ -162,7 +167,13 @@ fn derive_transcript_path(home: &Path, project_root: &Path, session_id: &str) ->
     let encoded: String = project_root
         .to_string_lossy()
         .chars()
-        .map(|c| if c == '/' || c == '.' { '-' } else { c })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     home.join(".claude")
         .join("projects")

@@ -1334,13 +1334,14 @@ fn cost_per_flow_token_cost_section_renders_phase_delta_end_to_end() {
 
     // Plant a transcript file at the canonical Claude Code location
     // `<home>/.claude/projects/<encoded-project-root>/<session_id>.jsonl`.
-    // Encoding rule: every `/` and every `.` in the project root path
-    // becomes `-`. The subprocess running start-init canonicalizes
-    // project_root (`/var/...` → `/private/var/...` on macOS), so the
-    // encoded directory must be derived from the canonical form too.
-    // The capture file written by `write_capture_file` above does
-    // NOT carry transcript_path (the file did not yet exist at
-    // SessionStart), so this exercises the self-healing fallback in
+    // Encoding rule: every character that is not ASCII alphanumeric
+    // and not `_` and not `-` becomes `-`. The subprocess running
+    // start-init canonicalizes project_root (`/var/...` →
+    // `/private/var/...` on macOS), so the encoded directory must
+    // be derived from the canonical form too. The capture file
+    // written by `write_capture_file` above does NOT carry
+    // transcript_path (the file did not yet exist at SessionStart),
+    // so this exercises the self-healing fallback in
     // `capture_for_active_state`: with `transcript_path` null in
     // state, the snapshot derives the path from session_id +
     // project_root and reads token usage from the transcript.
@@ -1348,7 +1349,13 @@ fn cost_per_flow_token_cost_section_renders_phase_delta_end_to_end() {
     let encoded_root: String = canonical_repo
         .to_string_lossy()
         .chars()
-        .map(|c| if c == '/' || c == '.' { '-' } else { c })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     let projects_dir = home.join(".claude").join("projects").join(&encoded_root);
     fs::create_dir_all(&projects_dir).unwrap();

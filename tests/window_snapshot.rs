@@ -970,12 +970,20 @@ fn capture_for_active_state_reads_cost_file_without_txt_extension() {
 
 /// Encode a project-root path the way Claude Code names the
 /// per-project transcript directory under `~/.claude/projects/`:
-/// every `/` and every `.` becomes `-`. So
-/// `/Users/ben/code/flow` → `-Users-ben-code-flow`.
+/// every character that is not ASCII alphanumeric and not `_` and
+/// not `-` becomes `-`. So `/Users/ben/code/flow` →
+/// `-Users-ben-code-flow`, `/Users/ben/My Project` →
+/// `-Users-ben-My-Project`.
 fn encode_project_root_for_projects_dir(project_root: &std::path::Path) -> String {
     let s = project_root.to_string_lossy();
     s.chars()
-        .map(|c| if c == '/' || c == '.' { '-' } else { c })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect()
 }
 
@@ -1018,4 +1026,44 @@ fn capture_for_active_state_derives_transcript_path_when_state_has_null() {
     assert_eq!(snap.session_output_tokens, Some(125));
     assert_eq!(snap.turn_count, Some(2));
     assert_eq!(snap.model.as_deref(), Some("claude-opus-4-7"));
+}
+
+/// Regression: Claude Code's directory-encoding convention
+/// converts every non-alphanumeric character (other than `_` and
+/// `-`) to `-` — including spaces. A project root containing a
+/// space (e.g. `/Users/me/My Project/flow`) encodes to
+/// `-Users-me-My-Project-flow`. The self-heal must produce that
+/// encoded directory; an encoder that only converts `/` and `.`
+/// (the original implementation) would silently miss the
+/// transcript and the Token Cost panel would render zeros for
+/// every user whose project path contains a space.
+#[test]
+fn capture_for_active_state_self_heal_handles_project_root_with_spaces() {
+    let tmp = TempDir::new().expect("tempdir");
+    let base = tmp.path().canonicalize().expect("canonicalize");
+    let project_root = base.join("My Project").join("flow");
+    fs::create_dir_all(&project_root).expect("mkdir project");
+    let session_id = "sid-spaces";
+
+    // Plant the transcript at the encoded path that Claude Code
+    // would produce for this project root (spaces → `-`).
+    let encoded = encode_project_root_for_projects_dir(&project_root);
+    let projects_dir = base.join(".claude").join("projects").join(&encoded);
+    fs::create_dir_all(&projects_dir).expect("mkdir projects subdir");
+    let transcript_name = format!("{}.jsonl", session_id);
+    let lines = [assistant_line("claude-opus-4-7", 444, 222, 0, 0)];
+    let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+    write_transcript(&projects_dir, &transcript_name, &line_refs);
+
+    let state = json!({
+        "session_id": session_id,
+        "transcript_path": Value::Null,
+    });
+    let snap = capture_for_active_state(&base, &state, &project_root);
+    assert_eq!(
+        snap.session_input_tokens,
+        Some(444),
+        "self-heal must find the transcript when project root contains spaces"
+    );
+    assert_eq!(snap.session_output_tokens, Some(222));
 }
