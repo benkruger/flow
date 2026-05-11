@@ -153,7 +153,13 @@ Ask the user to review the decomposition using AskUserQuestion:
   the Skill tool as your final action.
 - **"Iterate"** → re-invoke `decompose:decompose` with feedback, present
   the updated synthesis, and ask again.
-- **"Cancel"** → stop. Do not file any issues.
+- **"Cancel"** → clear the utility-in-progress marker so the Stop
+  hook does not refuse turn-end after cancellation, then stop. Do
+  not file any issues.
+
+  ```bash
+  ${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-decompose-project
+  ```
 
 Do not proceed to Step 2 without explicit user approval. Do not propose
 direct edits, commit changes, or take any action outside this skill.
@@ -248,7 +254,12 @@ Ask the user for the milestone due date and approval using AskUserQuestion:
   the Skill tool as your final action.
 - **"Revise"** → ask what to change, update the list, and re-present.
   Iterate until approved.
-- **"Cancel"** → stop.
+- **"Cancel"** → clear the utility-in-progress marker so the Stop
+  hook does not refuse turn-end after cancellation, then stop.
+
+  ```bash
+  ${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-decompose-project
+  ```
 
 Do not proceed to Step 3 without explicit user approval. Do not propose
 direct edits, commit changes, or take any action outside this skill.
@@ -419,6 +430,13 @@ Clean up the session files:
 
 ```bash
 rm .flow-states/decompose-project-<id>.json .flow-states/decompose-project-<id>-dag.md .flow-states/decompose-project-<id>-issues.json
+```
+
+Clear the utility-in-progress marker so the Stop hook stops refusing
+turn-end now that the skill has completed its work:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-decompose-project
 ```
 
 Output the COMPLETE banner:

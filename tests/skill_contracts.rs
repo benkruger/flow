@@ -4734,6 +4734,86 @@ fn flow_decompose_project_announce_sets_utility_marker() {
     );
 }
 
+#[test]
+fn flow_decompose_project_step1_cancel_clears_utility_marker() {
+    // After Step 1's Cancel branch fires, the skill must clear the
+    // per-session utility-in-progress marker. Without the clear,
+    // every subsequent turn-end in the session is blocked because
+    // the Stop hook still sees an active marker for a skill that
+    // has already cancelled — leaving the session deadlocked.
+    let c = common::read_skill("flow-decompose-project");
+    let step1_tail = c
+        .split_once("\n## Step 1")
+        .map(|(_, t)| t)
+        .expect("flow-decompose-project must have a `## Step 1` section");
+    let step1 = step1_tail
+        .split_once("\n## ")
+        .map(|(s, _)| s)
+        .unwrap_or(step1_tail);
+    let cancel_tail = step1
+        .split_once("**\"Cancel\"**")
+        .map(|(_, t)| t)
+        .expect("Step 1 must include a `**\"Cancel\"**` branch");
+    let window: String = cancel_tail.lines().take(60).collect::<Vec<_>>().join("\n");
+    assert!(
+        window.contains("clear-utility-in-progress"),
+        "Step 1 Cancel branch must invoke `bin/flow clear-utility-in-progress` so the Stop hook stops refusing turn-end after cancellation"
+    );
+    assert!(
+        window.contains("--skill flow:flow-decompose-project"),
+        "Step 1 Cancel branch's clear call must scope the marker to `flow:flow-decompose-project`"
+    );
+}
+
+#[test]
+fn flow_decompose_project_step2_cancel_clears_utility_marker() {
+    // After Step 2's Cancel branch fires, the skill must clear the
+    // per-session utility-in-progress marker. Same deadlock failure
+    // mode as Step 1: a missed clear leaves the Stop hook refusing
+    // turn-end for the rest of the session.
+    let c = common::read_skill("flow-decompose-project");
+    let step2_tail = c
+        .split_once("\n## Step 2")
+        .map(|(_, t)| t)
+        .expect("flow-decompose-project must have a `## Step 2` section");
+    let step2 = step2_tail
+        .split_once("\n## ")
+        .map(|(s, _)| s)
+        .unwrap_or(step2_tail);
+    let cancel_tail = step2
+        .split_once("**\"Cancel\"**")
+        .map(|(_, t)| t)
+        .expect("Step 2 must include a `**\"Cancel\"**` branch");
+    let window: String = cancel_tail.lines().take(60).collect::<Vec<_>>().join("\n");
+    assert!(
+        window.contains("clear-utility-in-progress"),
+        "Step 2 Cancel branch must invoke `bin/flow clear-utility-in-progress` so the Stop hook stops refusing turn-end after cancellation"
+    );
+    assert!(
+        window.contains("--skill flow:flow-decompose-project"),
+        "Step 2 Cancel branch's clear call must scope the marker to `flow:flow-decompose-project`"
+    );
+}
+
+#[test]
+fn flow_decompose_project_step6_clears_utility_marker() {
+    // Step 6 is the success path that finishes the multi-step
+    // skill. The marker must clear here so the Stop hook releases
+    // turn-end immediately after the COMPLETE banner — otherwise
+    // the user returns to a session that refuses to stop even
+    // though the skill has finished its work.
+    let c = common::read_skill("flow-decompose-project");
+    let tail = c
+        .split_once("\n## Step 6")
+        .map(|(_, t)| t)
+        .expect("flow-decompose-project must have a `## Step 6` section");
+    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
+    assert!(
+        section.contains("clear-utility-in-progress"),
+        "Step 6 success path must invoke `bin/flow clear-utility-in-progress` so the Stop hook releases turn-end after the skill completes"
+    );
+}
+
 // --- include-bias-in-issues rule content contract ---
 //
 // The contract test below pins four load-bearing invariants in
