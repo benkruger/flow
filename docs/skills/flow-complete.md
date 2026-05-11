@@ -26,8 +26,12 @@ SOFT-GATE and dispatches via the Resume Check.
    status check, merge main, local CI dirty check, GitHub CI check, and
    squash merge into a single call. Returns a `path` field for dispatch:
    `"merged"` (auto happy path), `"already_merged"`, `"confirm"` (manual
-   mode), `"ci_stale"`, `"ci_failed"`, `"ci_pending"`, `"conflict"`, or
-   `"max_retries"`. If the PR is already merged, skips to finalize (step 6)
+   mode), `"ci_stale"`, `"ci_drift"`, `"ci_failed"`, `"ci_pending"`,
+   `"conflict"`, or `"max_retries"`. `ci_drift` fires when local CI
+   passed on the current tree but GitHub CI failed (toolchain version
+   drift); recovery refreshes the local toolchain via `bin/dependencies`,
+   invalidates the sentinel via `bin/flow ci --force`, commits auto-fixes,
+   and self-invokes. If the PR is already merged, skips to finalize (step 6)
 2. **Local CI gate** — `bin/flow ci` catches test failures after merging
    main. If it fails, ci-fixer commits a fix and self-invokes to re-check
 3. **GitHub CI check** — `gh pr checks` waits for checks to pass. If pending,

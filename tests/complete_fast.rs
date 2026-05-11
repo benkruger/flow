@@ -550,8 +550,21 @@ fn ci_sentinel_miss_runs_ci_and_fails() {
 
 #[test]
 fn gh_ci_checks_fail_returns_ci_failed_github() {
+    // Sentinel-miss path: bin/* stubs succeed so ci_decider returns
+    // (ci_skipped=false, None), then gh pr checks reports "fail" →
+    // ci_failed/github. The sentinel-hit variant of the same gh-fail
+    // input is exercised by
+    // ci_drift_path_returns_when_local_sentinel_matches_and_remote_fails
+    // because the dispatch produces a distinct ci_drift path when
+    // ci_skipped is true.
     let fx = setup("complete", "auto");
-    seed_ci_sentinel(&fx.repo, BRANCH);
+    let bin_dir = fx.repo.join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    for tool in &["format", "lint", "build", "test"] {
+        let p = bin_dir.join(tool);
+        fs::write(&p, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+    }
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
@@ -565,6 +578,31 @@ fn gh_ci_checks_fail_returns_ci_failed_github() {
     assert_eq!(json["status"], "ok");
     assert_eq!(json["path"], "ci_failed");
     assert_eq!(json["source"], "github");
+}
+
+#[test]
+fn ci_drift_path_returns_when_local_sentinel_matches_and_remote_fails() {
+    // Tool version drift signal: local CI sentinel matches the current
+    // tree (ci_skipped=true) AND `gh pr checks` reports fail. The same
+    // code passed locally but failed remotely — formatter/linter/runtime
+    // version skew. Dispatch must produce path: "ci_drift" so the skill
+    // refreshes the toolchain rather than handing the failure to
+    // ci-fixer.
+    let fx = setup("complete", "auto");
+    seed_ci_sentinel(&fx.repo, BRANCH);
+    let output = run_complete_fast(
+        &fx.repo,
+        Some(BRANCH),
+        Some("--auto"),
+        &fx.flow_bin,
+        &fx.stubs,
+        &[("FAKE_PR_CHECKS_OUT", "build\tfail\n")],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["status"], "ok");
+    assert_eq!(json["path"], "ci_drift");
+    assert_eq!(json["mode"], "auto");
 }
 
 #[test]
@@ -603,8 +641,18 @@ fn gh_ci_checks_pass_proceeds_to_merge() {
 
 #[test]
 fn gh_ci_checks_fail_trumps_pending() {
+    // Asserts the parse_gh_checks_output precedence (fail > pending)
+    // routes through the ci_failed/github branch. Sentinel-miss path
+    // with succeeding bin/* stubs keeps ci_skipped=false so the
+    // dispatch lands on ci_failed rather than ci_drift.
     let fx = setup("complete", "auto");
-    seed_ci_sentinel(&fx.repo, BRANCH);
+    let bin_dir = fx.repo.join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    for tool in &["format", "lint", "build", "test"] {
+        let p = bin_dir.join(tool);
+        fs::write(&p, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+    }
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),

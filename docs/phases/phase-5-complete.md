@@ -28,10 +28,29 @@ Phase 5 is incomplete.
 check, merge of the integration branch into the feature branch, local
 CI dirty check, GitHub CI check, and squash merge into a single call. Returns a `path` field for dispatch:
 `"merged"` (auto happy path), `"already_merged"`, `"confirm"` (manual
-mode), `"ci_stale"`, `"ci_failed"`, `"ci_pending"`, `"conflict"`, or
-`"max_retries"`. If the PR is already merged, skips to finalize
-(step 6). If there are merge conflicts, resolves them and self-invokes
-to continue.
+mode), `"ci_stale"`, `"ci_drift"`, `"ci_failed"`, `"ci_pending"`,
+`"conflict"`, or `"max_retries"`. If the PR is already merged, skips
+to finalize (step 6). If there are merge conflicts, resolves them and
+self-invokes to continue.
+
+The `ci_drift` path fires when the local CI sentinel matches the
+current tree (the same bytes already passed `bin/flow ci` locally)
+AND `gh pr checks` reports failure — a structural signal that the
+developer toolchain and the CI runner have diverged
+(formatter/linter/language-runtime version skew). The recovery is
+deterministic and bypasses `ci-fixer`: refresh the local toolchain
+via `bin/dependencies`, invalidate the sentinel and re-run via
+`bin/flow ci --force`, commit any auto-fixes via
+`/flow:flow-commit`, and self-invoke to re-check both local and
+remote CI. If `bin/dependencies` is absent in the target project,
+the handler dispatches as `ci_failed` and hands the failure to
+`ci-fixer`. A second `ci_drift` detection in the same Complete
+invocation is guarded by `_drift_recovery_attempted` and escalates
+to the user because the cause is likely environmental (CI runtime
+version, missing env var, or platform-specific behavior) rather
+than something a toolchain bump can fix. See
+`skills/flow-complete/SKILL.md` Step 1 for the full dispatch
+sequence per `.claude/rules/docs-with-behavior.md`.
 
 ### 2. Run local CI gate
 

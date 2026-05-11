@@ -290,6 +290,7 @@ All universal permissions written to `.claude/settings.json` for reference:
       "Bash(gh -C *)",
       "Bash(*bin/flow *)",
       "Bash(bin/test --adversarial-path)",
+      "Bash(bin/dependencies)",
       "Bash(rm .flow-*)",
       "Bash(test -f *)",
       "Bash(claude plugin list)",
