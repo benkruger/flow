@@ -463,6 +463,112 @@ fn pair_delta_cost_both_missing_returns_none() {
     assert_eq!(report.cost_delta_usd, None);
 }
 
+// --- pair_delta cost freshness check (issue #1447) ---
+//
+// When two snapshots read the same frozen statusline-cost file
+// AND no new turn crossed the boundary, the (Some, Some) arm
+// produces `None` so the renderer shows `—` instead of a
+// misleading `$0.000`. The five tests below cover every branch
+// of the freshness check inside the `(Some, Some, Some, Some)`
+// arm of the four-tuple match.
+
+/// Both endpoints have identical cost AND identical turn_count:
+/// the statusline file is frozen — no new turn crossed the
+/// boundary so cost could not have advanced. Emit `None` so the
+/// renderer shows `—` rather than the misleading `$0.000`.
+#[test]
+fn pair_delta_emits_none_cost_when_both_cost_and_turn_count_equal() {
+    let mut enter = snap("S1", 0);
+    let mut complete = snap("S1", 0);
+    enter.session_cost_usd = Some(11.125);
+    complete.session_cost_usd = Some(11.125);
+    enter.turn_count = Some(42);
+    complete.turn_count = Some(42);
+    let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
+    let report = phase_delta(&phase).expect("populated");
+    assert_eq!(
+        report.cost_delta_usd, None,
+        "frozen-statusline pattern (equal cost AND equal turn_count) must emit None"
+    );
+}
+
+/// Equal cost but turn_count advanced: a real turn ran across
+/// the boundary, so the equal cost is the real-zero case
+/// (cached responses contributed no cost). Emit `Some(0.0)` —
+/// do not misclassify as frozen.
+#[test]
+fn pair_delta_emits_some_cost_when_turn_count_advanced() {
+    let mut enter = snap("S1", 0);
+    let mut complete = snap("S1", 0);
+    enter.session_cost_usd = Some(11.125);
+    complete.session_cost_usd = Some(11.125);
+    enter.turn_count = Some(42);
+    complete.turn_count = Some(43);
+    let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
+    let report = phase_delta(&phase).expect("populated");
+    assert_eq!(
+        report.cost_delta_usd,
+        Some(0.0),
+        "real-zero (equal cost but turn_count advanced) must emit Some(0.0)"
+    );
+}
+
+/// Costs differ: the happy path. Emit `Some(end - start)`
+/// regardless of turn_count.
+#[test]
+fn pair_delta_emits_some_cost_when_costs_differ() {
+    let mut enter = snap("S1", 0);
+    let mut complete = snap("S1", 0);
+    enter.session_cost_usd = Some(1.0);
+    complete.session_cost_usd = Some(1.5);
+    enter.turn_count = Some(10);
+    complete.turn_count = Some(12);
+    let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
+    let report = phase_delta(&phase).expect("populated");
+    assert_eq!(
+        report.cost_delta_usd,
+        Some(0.5),
+        "differing costs must emit Some(end - start)"
+    );
+}
+
+/// Start `turn_count` is None: the freshness signal is
+/// unavailable. Conservative fallback emits `None` so the
+/// renderer shows `—` rather than risk a misleading `$0.000`
+/// from a possibly-stale file.
+#[test]
+fn pair_delta_emits_none_cost_when_turn_count_missing_on_start() {
+    let mut enter = snap("S1", 0);
+    let mut complete = snap("S1", 0);
+    enter.session_cost_usd = Some(11.125);
+    complete.session_cost_usd = Some(11.125);
+    enter.turn_count = None;
+    complete.turn_count = Some(42);
+    let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
+    let report = phase_delta(&phase).expect("populated");
+    assert_eq!(
+        report.cost_delta_usd, None,
+        "missing start turn_count must emit None (conservative fallback)"
+    );
+}
+
+/// End `turn_count` is None: symmetric conservative fallback.
+#[test]
+fn pair_delta_emits_none_cost_when_turn_count_missing_on_end() {
+    let mut enter = snap("S1", 0);
+    let mut complete = snap("S1", 0);
+    enter.session_cost_usd = Some(11.125);
+    complete.session_cost_usd = Some(11.125);
+    enter.turn_count = Some(42);
+    complete.turn_count = None;
+    let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
+    let report = phase_delta(&phase).expect("populated");
+    assert_eq!(
+        report.cost_delta_usd, None,
+        "missing end turn_count must emit None (symmetric conservative fallback)"
+    );
+}
+
 /// pct_delta_with_reset: when `start` is None and `end` is Some,
 /// returns Some(0) without marking a reset (no anchor to compare
 /// against).

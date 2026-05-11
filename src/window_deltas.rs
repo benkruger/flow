@@ -263,8 +263,32 @@ fn pair_delta(start: &WindowSnapshot, end: &WindowSnapshot) -> DeltaReport {
     // value. Any missing endpoint produces `None` so renderers can
     // mark the partial-data span with `—` instead of inventing a
     // number from a cumulative session total.
-    let cost_delta_usd = match (start.session_cost_usd, end.session_cost_usd) {
-        (Some(s), Some(e)) => Some(e - s),
+    //
+    // The freshness check guards against the frozen-statusline
+    // pattern: the source file `~/.claude/cost/<YYYY-MM>/<session_id>`
+    // is refreshed only when Claude Code redraws its statusline.
+    // During autonomous Skill→Skill chains the statusline never
+    // fires, so both endpoints sample the same stale value and a
+    // raw `e - s` would produce a misleading `Some(0.0)`. When
+    // costs are equal AND `turn_count` is also equal, no new
+    // assistant turn crossed the boundary — that is the frozen
+    // signature. Emit `None` so the renderer shows `—`. When
+    // `turn_count` advanced, the equal-cost case is a real-zero
+    // (cached responses); emit `Some(0.0)`. When `turn_count` is
+    // absent on either side, fall back conservatively to `None`.
+    let cost_delta_usd = match (
+        start.session_cost_usd,
+        end.session_cost_usd,
+        start.turn_count,
+        end.turn_count,
+    ) {
+        (Some(s), Some(e), Some(ts), Some(te)) => {
+            if (e - s).abs() < f64::EPSILON && ts == te {
+                None
+            } else {
+                Some(e - s)
+            }
+        }
         _ => None,
     };
     let (five_hour_pct_delta, five_reset) =

@@ -399,6 +399,71 @@ fn token_cost_section_total_marks_partial_when_any_unknown() {
     );
 }
 
+/// End-to-end render of the frozen statusline-cost pattern from
+/// issue #1447. When a phase's enter and complete snapshots
+/// share the same `session_cost_usd` AND the same `turn_count`,
+/// the cost source file was frozen across the boundary —
+/// `pair_delta` emits `None` so this renderer prints `—` instead
+/// of the misleading `$0.000`. The phase row falls through the
+/// `None` arm at `src/format_complete_summary.rs:179`, and the
+/// `* cost partial` footnote at `src/format_complete_summary.rs:223`
+/// appears because at least one phase contributed `None` cost.
+#[test]
+fn format_complete_summary_renders_dash_for_frozen_cost_pattern() {
+    let mut state = all_complete_state();
+    // Code phase: real cost data — costs differ between enter and
+    // complete, so pair_delta returns Some(cost diff).
+    add_phase_snapshots(&mut state, "flow-code", 0, 5);
+    // Review phase: frozen pattern — enter and complete share the
+    // same n, so session_cost_usd and turn_count match on both
+    // sides. pair_delta returns None for cost.
+    add_phase_snapshots(&mut state, "flow-review", 7, 7);
+    // Learn phase: frozen pattern — same shape as Review.
+    add_phase_snapshots(&mut state, "flow-learn", 9, 9);
+
+    let result = format_complete_summary(&state, None);
+
+    assert!(result.summary.contains("Token Cost"), "section header");
+    // The summary contains both a phase timeline (with rows like
+    // `Review: 12m`) and the Token Cost section (with rows like
+    // `Review:  <tokens>  <cost>`). The cost row is the one we
+    // need to inspect, so bound the search to the Token Cost
+    // section between its header and the closing separator.
+    let after_header = result
+        .summary
+        .split_once("Token Cost")
+        .map(|(_, rest)| rest)
+        .expect("Token Cost header must appear");
+    let token_section = after_header
+        .split_once("\n\n")
+        .map(|(section, _)| section)
+        .unwrap_or(after_header);
+    for phase_label in ["Review:", "Learn:"] {
+        let row = token_section
+            .lines()
+            .find(|line| line.contains(phase_label))
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing `{}` row in Token Cost section:\n{}",
+                    phase_label, token_section
+                )
+            });
+        assert!(
+            row.ends_with('—'),
+            "row for `{}` must end in the em-dash that signals frozen cost; got `{}`",
+            phase_label,
+            row
+        );
+    }
+    // The frozen rows contributed None cost, so the total carries
+    // the partial marker and the footnote appears.
+    assert!(
+        result.summary.contains("cost partial"),
+        "footnote must appear when any phase contributes None cost; summary:\n{}",
+        result.summary
+    );
+}
+
 // --- basic summary ---
 
 #[test]
