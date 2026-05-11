@@ -1185,6 +1185,65 @@ fn window_at_start_reads_cost_when_session_id_and_cost_file_present() {
     );
 }
 
+/// `start_init` writes the account-window snapshot to BOTH the
+/// top-level `window_at_start` field AND the phase-scoped
+/// `phases.flow-start.window_at_enter` field. Without the dual
+/// write, `format_complete_summary`'s `phase_delta` short-circuits
+/// to `None` for flow-start because it reads
+/// `phase.window_at_enter`, leaving the Start row in the Token Cost
+/// section with a placeholder dash for cost and zero tokens.
+#[test]
+fn start_init_writes_phase_scoped_window_at_enter_for_flow_start() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    let home = dir.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let home = home.canonicalize().unwrap();
+    write_capture_file(&home, "sid-phase-scoped", None);
+
+    let output = run_start_init_with_home(&repo, "phase-scoped-window", &home, &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    let branch = data["branch"].as_str().unwrap();
+    let state = read_state_for_branch(&repo, branch);
+
+    let top_level = &state["window_at_start"];
+    assert!(
+        top_level.is_object(),
+        "top-level window_at_start must be populated; got: {}",
+        top_level
+    );
+
+    let phase_scoped = &state["phases"]["flow-start"]["window_at_enter"];
+    assert!(
+        phase_scoped.is_object(),
+        "phases.flow-start.window_at_enter must be populated alongside the top-level write; got: {}",
+        phase_scoped
+    );
+
+    // Both writes share the same snapshot — the captured_at timestamp
+    // and session_id must match because they came from the same
+    // `capture_for_active_state` call inside the same mutate_state
+    // closure.
+    assert_eq!(
+        top_level["captured_at"], phase_scoped["captured_at"],
+        "top-level and phase-scoped writes must share captured_at; top: {} phase: {}",
+        top_level["captured_at"], phase_scoped["captured_at"]
+    );
+    assert_eq!(
+        top_level["session_id"], phase_scoped["session_id"],
+        "top-level and phase-scoped writes must share session_id; top: {} phase: {}",
+        top_level["session_id"], phase_scoped["session_id"]
+    );
+}
+
 #[test]
 fn start_init_session_id_remains_null_when_home_unset() {
     // Covers `read_captured_session`'s empty-/non-absolute-home early

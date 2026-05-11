@@ -304,6 +304,14 @@ fn run_impl(args: &Args, root: &Path, cwd: &Path) -> Result<Value, String> {
     let _ = crate::lock::mutate_state(&state_path, &mut |state| {
         let snap = crate::window_snapshot::capture_for_active_state(&home, state, root);
         crate::window_snapshot::write_snapshot_into_state(state, "window_at_start", &snap);
+        // Mirror the snapshot under the phase-scoped key so
+        // `format_complete_summary`'s `phase_delta` reads
+        // `phases.flow-start.window_at_enter` for the Start row.
+        // `init_state` (called above) populates `phases` with an
+        // object containing `flow-start`, so the IndexMut chain
+        // cannot panic from missing scaffolding here.
+        state["phases"]["flow-start"]["window_at_enter"] =
+            serde_json::to_value(&snap).expect("WindowSnapshot must serialize");
     });
 
     // Step 5: Label issues (best-effort)
