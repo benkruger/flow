@@ -43,13 +43,23 @@ Each step is enforced via self-invocation — the skill re-invokes itself with `
 
 ## Issue Format
 
-Each child issue contains:
+The parent epic AND every child issue follow the same Body Shape Contract — `flow-decompose-project` is the single source of truth for body shape, and Steps 3 and 4 just write the bytes that Step 2 produces.
 
-- **Problem** — grounded in codebase evidence
+Each body has these five sections in this order:
+
+- **Problem** — grounded in codebase evidence (file paths, line numbers, user impact)
 - **Acceptance Criteria** — binary pass/fail checklist
+- **Implementation Plan** — wrapped in the FLOW-PLAN sentinel pair (`<!-- FLOW-PLAN-BEGIN -->` ... `<!-- FLOW-PLAN-END -->`) and containing seven `###` subsections: Context, Exploration, Risks, Approach, Dependency Graph, Tasks, and Acceptance Criteria. Tasks use `#### Task N:` headers (not numbered list items) so `bin/flow plan-from-issue`'s `count_tasks` populates `code_tasks_total` at flow-start.
 - **Files to Investigate** — verified paths
 - **Context** — business reason and constraints
-- **Dependencies** — tracked via native GitHub blocked-by API relationships (created in Step 5)
+
+The FLOW-PLAN sentinel pair delimits the bytes that `bin/flow plan-from-issue` extracts verbatim and writes to `.flow-states/<branch>/plan.md` when the issue is later picked up via `/flow:flow-start #N`. Without the sentinel pair, `plan-from-issue` rejects the issue with `plan_markers_missing` and the flow halts.
+
+### Pre-Filing Validation
+
+Step 3 (epic) and Step 4 (per-child) invoke `bin/flow validate-issue-body` BEFORE `bin/flow issue`. The validator runs the same sentinel-extraction logic that `bin/flow plan-from-issue` applies at flow-start, so any body that fails this gate is unconsumable downstream and never reaches GitHub. On validator error, the skill presents an AskUserQuestion revise-loop offering the user a chance to revise the specific body, skip filing this child (Step 4 only), or cancel the skill.
+
+The **Dependencies** between children are tracked via native GitHub blocked-by API relationships (created in Step 5).
 
 ---
 

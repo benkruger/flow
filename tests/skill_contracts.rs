@@ -4702,6 +4702,331 @@ fn flow_decompose_project_skill_has_backwards_reasoning_scan() {
     }
 }
 
+#[test]
+fn flow_decompose_project_announce_sets_utility_marker() {
+    // The Announce section must write the per-session
+    // "utility skill in progress" marker so the Stop hook's
+    // `check_in_progress_utility_skill` predicate refuses turn-end
+    // while the multi-step decompose-project skill is running. A
+    // missing marker breaks the unattended-flow contract whenever
+    // the decompose:decompose Skill tool returns mid-pipeline at
+    // Step 1, allowing the model to stop and return control to
+    // the user before the issue graph is filed.
+    //
+    // The `--session-id` flag is intentionally absent from the
+    // assertion set: Rust resolves the active session_id at the CLI
+    // boundary by reading the `CLAUDE_CODE_SESSION_ID` env var, and
+    // the sibling `flow_create_issue_marker_invocations_omit_session_id_flag`
+    // contract test enforces the same shape for flow-create-issue.
+    let c = common::read_skill("flow-decompose-project");
+    let tail = c
+        .split_once("\n## Announce\n")
+        .map(|(_, t)| t)
+        .expect("flow-decompose-project must have a `## Announce` section");
+    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
+    assert!(
+        section.contains("set-utility-in-progress"),
+        "`## Announce` must invoke `bin/flow set-utility-in-progress` so the Stop hook refuses turn-end while the multi-step skill is running"
+    );
+    assert!(
+        section.contains("--skill flow:flow-decompose-project"),
+        "`## Announce` must pass `--skill flow:flow-decompose-project` so the marker is scoped to this skill's identifier"
+    );
+}
+
+#[test]
+fn flow_decompose_project_step1_cancel_clears_utility_marker() {
+    // After Step 1's Cancel branch fires, the skill must clear the
+    // per-session utility-in-progress marker. Without the clear,
+    // every subsequent turn-end in the session is blocked because
+    // the Stop hook still sees an active marker for a skill that
+    // has already cancelled — leaving the session deadlocked.
+    let c = common::read_skill("flow-decompose-project");
+    let step1_tail = c
+        .split_once("\n## Step 1")
+        .map(|(_, t)| t)
+        .expect("flow-decompose-project must have a `## Step 1` section");
+    let step1 = step1_tail
+        .split_once("\n## ")
+        .map(|(s, _)| s)
+        .unwrap_or(step1_tail);
+    let cancel_tail = step1
+        .split_once("**\"Cancel\"**")
+        .map(|(_, t)| t)
+        .expect("Step 1 must include a `**\"Cancel\"**` branch");
+    let window: String = cancel_tail.lines().take(60).collect::<Vec<_>>().join("\n");
+    assert!(
+        window.contains("clear-utility-in-progress"),
+        "Step 1 Cancel branch must invoke `bin/flow clear-utility-in-progress` so the Stop hook stops refusing turn-end after cancellation"
+    );
+    assert!(
+        window.contains("--skill flow:flow-decompose-project"),
+        "Step 1 Cancel branch's clear call must scope the marker to `flow:flow-decompose-project`"
+    );
+}
+
+#[test]
+fn flow_decompose_project_step2_cancel_clears_utility_marker() {
+    // After Step 2's Cancel branch fires, the skill must clear the
+    // per-session utility-in-progress marker. Same deadlock failure
+    // mode as Step 1: a missed clear leaves the Stop hook refusing
+    // turn-end for the rest of the session.
+    //
+    // The end delimiter is `\n## Step ` (not a bare `\n## `) so an
+    // intra-section heading rendered inside a fenced markdown
+    // example block — like `## Implementation Plan` inside the
+    // Body Shape Contract example — cannot truncate the slice
+    // before the HARD-GATE's Cancel branch.
+    let c = common::read_skill("flow-decompose-project");
+    let step2_tail = c
+        .split_once("\n## Step 2")
+        .map(|(_, t)| t)
+        .expect("flow-decompose-project must have a `## Step 2` section");
+    let step2 = step2_tail
+        .split_once("\n## Step ")
+        .map(|(s, _)| s)
+        .unwrap_or(step2_tail);
+    let cancel_tail = step2
+        .split_once("**\"Cancel\"**")
+        .map(|(_, t)| t)
+        .expect("Step 2 must include a `**\"Cancel\"**` branch");
+    let window: String = cancel_tail.lines().take(60).collect::<Vec<_>>().join("\n");
+    assert!(
+        window.contains("clear-utility-in-progress"),
+        "Step 2 Cancel branch must invoke `bin/flow clear-utility-in-progress` so the Stop hook stops refusing turn-end after cancellation"
+    );
+    assert!(
+        window.contains("--skill flow:flow-decompose-project"),
+        "Step 2 Cancel branch's clear call must scope the marker to `flow:flow-decompose-project`"
+    );
+}
+
+#[test]
+fn flow_decompose_project_step6_clears_utility_marker() {
+    // Step 6 is the success path that finishes the multi-step
+    // skill. The marker must clear here so the Stop hook releases
+    // turn-end immediately after the COMPLETE banner — otherwise
+    // the user returns to a session that refuses to stop even
+    // though the skill has finished its work.
+    let c = common::read_skill("flow-decompose-project");
+    let tail = c
+        .split_once("\n## Step 6")
+        .map(|(_, t)| t)
+        .expect("flow-decompose-project must have a `## Step 6` section");
+    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
+    assert!(
+        section.contains("clear-utility-in-progress"),
+        "Step 6 success path must invoke `bin/flow clear-utility-in-progress` so the Stop hook releases turn-end after the skill completes"
+    );
+}
+
+#[test]
+fn flow_decompose_project_step2_names_sentinel_wrapping() {
+    // Step 2 drafts the body shape for both the parent epic and
+    // each child issue. The body must wrap its Implementation Plan
+    // in the FLOW-PLAN sentinel pair so `bin/flow plan-from-issue`
+    // can extract the plan at flow-start. A draft without the
+    // sentinels produces an issue that
+    // `flow:flow-create-issue`-class validators reject with
+    // `plan_markers_missing` — the issue files but cannot be
+    // consumed downstream.
+    // End delimiter is `\n## Step ` so an intra-section heading
+    // rendered inside a fenced markdown example block — like
+    // `## Implementation Plan` inside the Body Shape Contract
+    // example — cannot truncate the slice before the assertion
+    // targets.
+    let c = common::read_skill("flow-decompose-project");
+    let tail = c
+        .split_once("\n## Step 2")
+        .map(|(_, t)| t)
+        .expect("flow-decompose-project must have a `## Step 2` section");
+    let section = tail
+        .split_once("\n## Step ")
+        .map(|(s, _)| s)
+        .unwrap_or(tail);
+    assert!(
+        section.contains("FLOW-PLAN-BEGIN"),
+        "Step 2 must name the FLOW-PLAN-BEGIN sentinel that wraps the Implementation Plan block"
+    );
+    assert!(
+        section.contains("FLOW-PLAN-END"),
+        "Step 2 must name the FLOW-PLAN-END sentinel that closes the Implementation Plan block"
+    );
+}
+
+#[test]
+fn flow_decompose_project_step2_names_task_header_format() {
+    // The Implementation Plan's Tasks subsection uses `#### Task N:`
+    // headers — this is the heading shape `bin/flow plan-from-issue`
+    // counts via `count_tasks` to populate `code_tasks_total`. A
+    // future drift that reverted to numbered list items would break
+    // that count and produce a wrong X-of-Y annotation in the
+    // Code-phase TUI. The header presence locks the format.
+    // End delimiter is `\n## Step ` so an intra-section heading
+    // rendered inside a fenced markdown example block — like
+    // `## Implementation Plan` inside the Body Shape Contract
+    // example — cannot truncate the slice before the assertion
+    // targets.
+    let c = common::read_skill("flow-decompose-project");
+    let tail = c
+        .split_once("\n## Step 2")
+        .map(|(_, t)| t)
+        .expect("flow-decompose-project must have a `## Step 2` section");
+    let section = tail
+        .split_once("\n## Step ")
+        .map(|(s, _)| s)
+        .unwrap_or(tail);
+    let lower = section.to_ascii_lowercase();
+    assert!(
+        section.contains("#### Task "),
+        "Step 2 must name the `#### Task N:` header format used by the Tasks subsection"
+    );
+    assert!(
+        lower.contains("header"),
+        "Step 2 must describe `#### Task N:` as the header format (not a numbered list)"
+    );
+}
+
+#[test]
+fn flow_decompose_project_step2_names_paraphrase_rule() {
+    // Mirror of `flow_create_issue_forbids_inline_sentinel_strings_in_prose`:
+    // every prose reference to the FLOW-PLAN sentinel pair must
+    // paraphrase the marker strings so `bin/flow plan-from-issue`
+    // extraction matches the correct slice. A literal marker
+    // mid-prose silently redirects extraction to the wrong bytes
+    // and the validator rejects the body downstream.
+    // End delimiter is `\n## Step ` so an intra-section heading
+    // rendered inside a fenced markdown example block — like
+    // `## Implementation Plan` inside the Body Shape Contract
+    // example — cannot truncate the slice before the assertion
+    // targets.
+    let c = common::read_skill("flow-decompose-project");
+    let tail = c
+        .split_once("\n## Step 2")
+        .map(|(_, t)| t)
+        .expect("flow-decompose-project must have a `## Step 2` section");
+    let section = tail
+        .split_once("\n## Step ")
+        .map(|(s, _)| s)
+        .unwrap_or(tail);
+    let lower = section.to_ascii_lowercase();
+    assert!(
+        lower.contains("paraphrase"),
+        "Step 2 must name the paraphrase rule for sentinel-marker prose references"
+    );
+    assert!(
+        lower.contains("sentinel") || lower.contains("marker"),
+        "Step 2 must scope the paraphrase rule to the plan-sentinel/marker pair"
+    );
+}
+
+#[test]
+fn flow_decompose_project_step3_validates_before_issue() {
+    // The Step 3 epic-body filing path must invoke
+    // `bin/flow validate-issue-body` BEFORE `bin/flow issue` so a
+    // body that `bin/flow plan-from-issue` cannot consume at
+    // flow-start is rejected before it reaches GitHub. Ordering
+    // matters: validating after filing makes the gate post-hoc and
+    // useless. Regression: a future edit that moved the validator
+    // call below `bin/flow issue`, dropped it, or gated it behind
+    // a conditional would surface here. Mirror of
+    // `flow_create_issue_validates_body_before_filing`.
+    //
+    // End delimiter `\n## Step ` bounds to Step 3 even when
+    // intra-section subheadings appear.
+    let c = common::read_skill("flow-decompose-project");
+    let tail = c
+        .split_once("\n## Step 3")
+        .map(|(_, t)| t)
+        .expect("flow-decompose-project must have a `## Step 3` section");
+    let section = tail
+        .split_once("\n## Step ")
+        .map(|(s, _)| s)
+        .unwrap_or(tail);
+    let validate_pos = section
+        .find("bin/flow validate-issue-body")
+        .expect("`## Step 3` must invoke `bin/flow validate-issue-body`");
+    let issue_pos = section
+        .find("bin/flow issue")
+        .expect("`## Step 3` must invoke `bin/flow issue`");
+    assert!(
+        validate_pos < issue_pos,
+        "`bin/flow validate-issue-body` (at {}) must appear BEFORE `bin/flow issue` (at {}) in the `## Step 3` section",
+        validate_pos,
+        issue_pos
+    );
+}
+
+#[test]
+fn flow_decompose_project_hard_rules_name_validator_and_sentinels() {
+    // The Hard Rules section enumerates load-bearing invariants —
+    // a future maintainer reading the section must see the four
+    // discipline anchors the rest of the SKILL.md depends on:
+    // validator-before-filer, FLOW-PLAN sentinel wrap, `#### Task N:`
+    // header format, paraphrase rule. Without these four entries
+    // a future paraphrase of Step 2/3/4 could silently drop the
+    // discipline and the Hard Rules wouldn't reveal the gap.
+    let c = common::read_skill("flow-decompose-project");
+    let tail = c
+        .split_once("\n## Hard Rules\n")
+        .map(|(_, t)| t)
+        .expect("flow-decompose-project must have a `## Hard Rules` section");
+    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
+    let lower = section.to_ascii_lowercase();
+    assert!(
+        section.contains("validate-issue-body"),
+        "Hard Rules must name `bin/flow validate-issue-body` so the pre-filing gate is locked into the discipline list"
+    );
+    assert!(
+        section.contains("FLOW-PLAN"),
+        "Hard Rules must name the FLOW-PLAN sentinel pair so the wrap discipline is locked in"
+    );
+    assert!(
+        section.contains("#### Task"),
+        "Hard Rules must name the `#### Task N:` header format so the count_tasks-compatible heading shape is locked in"
+    );
+    assert!(
+        lower.contains("paraphrase"),
+        "Hard Rules must name the paraphrase rule for sentinel-marker prose references"
+    );
+}
+
+#[test]
+fn flow_decompose_project_step4_validates_before_issue() {
+    // The Step 4 per-child filing loop must invoke
+    // `bin/flow validate-issue-body` BEFORE `bin/flow issue` for
+    // each child. Same gate-contract as Step 3 — every child body
+    // that `bin/flow plan-from-issue` cannot consume at flow-start
+    // is rejected before it reaches GitHub. The per-child loop
+    // pattern means an un-gated Step 4 would file an entire issue
+    // graph of unconsumable children, requiring manual cleanup of
+    // every one.
+    //
+    // End delimiter `\n## Step ` bounds to Step 4 even when
+    // intra-section subheadings appear.
+    let c = common::read_skill("flow-decompose-project");
+    let tail = c
+        .split_once("\n## Step 4")
+        .map(|(_, t)| t)
+        .expect("flow-decompose-project must have a `## Step 4` section");
+    let section = tail
+        .split_once("\n## Step ")
+        .map(|(s, _)| s)
+        .unwrap_or(tail);
+    let validate_pos = section
+        .find("bin/flow validate-issue-body")
+        .expect("`## Step 4` must invoke `bin/flow validate-issue-body`");
+    let issue_pos = section
+        .find("bin/flow issue")
+        .expect("`## Step 4` must invoke `bin/flow issue`");
+    assert!(
+        validate_pos < issue_pos,
+        "`bin/flow validate-issue-body` (at {}) must appear BEFORE `bin/flow issue` (at {}) in the `## Step 4` section",
+        validate_pos,
+        issue_pos
+    );
+}
+
 // --- include-bias-in-issues rule content contract ---
 //
 // The contract test below pins four load-bearing invariants in

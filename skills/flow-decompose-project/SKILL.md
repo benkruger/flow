@@ -62,6 +62,52 @@ At the very start, output the following banner in your response (not via Bash) i
 ```
 ````
 
+Immediately after the banner, write the per-session "utility skill
+in progress" marker so the Stop hook refuses turn-end while this
+skill is running. Without the marker the model returns control to
+the user when the decompose:decompose Skill tool returns
+mid-pipeline at Step 1, breaking the unattended-flow contract this
+skill promises across its six-step chain.
+
+Rust resolves the active session_id at the CLI boundary by reading
+the `CLAUDE_CODE_SESSION_ID` env var Claude Code supplies to every
+Bash subprocess (Claude Code 2.1.132+); on older Claude Code
+installs it falls back to the SessionStart capture file. On
+2.1.132+ the per-subprocess env value matches what the Stop hook
+receives in its stdin payload, so set-time and clear-time resolve
+to the same id regardless of concurrent Claude Code activity. The
+bash invocation below passes `--skill` only; Rust supplies the
+session_id itself.
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-utility-in-progress --skill flow:flow-decompose-project
+```
+
+If the marker-write call returns `status: error` with
+`no session_id available` (no env var AND no capture file — rare,
+only on Claude Code installs without per-subprocess env support and
+without a SessionStart capture file), the skill proceeds without
+the marker. The Stop hook treats a missing marker as a non-block,
+so the skill runs without protection but does not break.
+
+The marker is held across the entire Step 1 → Step 2 → Step 3 →
+Step 4 → Step 5 → Step 6 chain. Step Dispatch (above) skips the
+Announce banner on `--step N` self-invocations, so the marker-set
+call fires exactly once at the first invocation. The marker is
+cleared at every skill-exit boundary: Step 1 Cancel, Step 2
+Cancel, Step 3 epic Cancel-filing-this-issue, Step 3 epic
+Cancel-whole-skill, Step 4 child Cancel-whole-skill, and the
+Step 6 success path. Every other path holds the marker until
+Step 6 completes.
+
+On Claude Code installs without the per-subprocess env var, the
+capture-file fallback resolves session_id independently at set and
+clear time. A second Claude Code session whose SessionStart hook
+overwrites the capture file between this skill's set and clear
+calls can leave the marker orphaned at the original id. Recovery
+is `rm ~/.claude/flow/utility-in-progress-*.json` after the skill
+completes; the Stop hook treats a missing marker as a non-block.
+
 ## Resume Check
 
 Use the Read tool to read `.flow-states/decompose-project-<id>.json`, where
@@ -109,7 +155,13 @@ Ask the user to review the decomposition using AskUserQuestion:
   the Skill tool as your final action.
 - **"Iterate"** → re-invoke `decompose:decompose` with feedback, present
   the updated synthesis, and ask again.
-- **"Cancel"** → stop. Do not file any issues.
+- **"Cancel"** → clear the utility-in-progress marker so the Stop
+  hook does not refuse turn-end after cancellation, then stop. Do
+  not file any issues.
+
+  ```bash
+  ${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-decompose-project
+  ```
 
 Do not proceed to Step 2 without explicit user approval. Do not propose
 direct edits, commit changes, or take any action outside this skill.
@@ -139,14 +191,102 @@ From the DAG synthesis, build a complete issue list:
 3. **Phase labels** — auto-derive from DAG groupings (e.g., "Phase 1: API",
    "Phase 2: SPA"). Each child issue gets a phase label.
 
-For each child issue, draft:
+For both the parent epic AND each child issue, draft:
 
 - **Title** — concise, actionable
-- **Body** — Problem, Acceptance Criteria, Files to Investigate,
-  Context sections.
+- **Body** — see the Body Shape Contract below. The same contract
+  applies to the parent epic and to every child issue — this skill
+  is the single source of truth for body shape, and Steps 3 and 4
+  just write the bytes that this step produces.
 - **Labels** — `decomposed` plus the auto-derived phase label
-- **Dependencies** — which other child issues this depends on (by title,
-  resolved to numbers in Step 4)
+  (child issues only; the parent epic is filed without these
+  labels in Step 3)
+- **Dependencies** — which other child issues this depends on
+  (by title, resolved to numbers in Step 4); the parent epic has
+  no dependencies
+
+### Body Shape Contract
+
+Every issue body — parent epic AND every child — uses this section
+order:
+
+1. **Problem** (`## Summary` heading) — what is broken, missing, or
+   inadequate. Include observable behavior, evidence from the
+   codebase (file paths, line numbers), and user impact. Grounded
+   in the exploration the decompose step already performed.
+2. **Acceptance Criteria** — binary, testable conditions. Pass/fail
+   with no subjective judgment.
+3. **Implementation Plan** — wrapped in the FLOW-PLAN sentinel
+   pair (see the wrapping rule below) and containing these
+   `###` subsections in order:
+   - **Context** — what the user wants to build and why
+   - **Exploration** — what exists in the codebase, affected
+     files, patterns discovered
+   - **Risks** — what could go wrong, edge cases, constraints
+   - **Approach** — the chosen approach and rationale
+   - **Dependency Graph** — table of tasks with types and
+     dependencies
+   - **Tasks** — ordered implementation tasks using `#### Task N:`
+     headers (these become `### Task N:` headings in the
+     `.flow-states/<branch>/plan.md` file after `bin/flow
+     plan-from-issue` extraction). The `#### Task N:` header
+     format — not a numbered list — is the heading shape
+     `count_tasks` recognises to populate `code_tasks_total`.
+   - **Acceptance Criteria** — binary, testable conditions for
+     the implementation
+4. **Files to Investigate** — real file paths verified during
+   decomposition with a brief note on why each is relevant.
+5. **Context** — business reason, architectural constraints, or
+   design decisions.
+
+**Wrap the Implementation Plan in the FLOW-PLAN sentinel pair.**
+Place the literal HTML comment `<!-- FLOW-PLAN-BEGIN -->` on its
+own line immediately before the `## Implementation Plan` heading,
+and the literal HTML comment `<!-- FLOW-PLAN-END -->` on its own
+line immediately after the last Task entry (before the next `##`
+heading). The sentinel pair delimits the bytes that `bin/flow
+plan-from-issue` extracts verbatim and writes to
+`.flow-states/<branch>/plan.md` when the issue is later picked up
+via `/flow:flow-start #N`. Without the sentinel pair,
+`plan-from-issue` rejects the issue with `plan_markers_missing`
+and the flow halts.
+
+**Paraphrase every prose reference to the plan-sentinel pair.**
+The literal HTML-comment marker strings only appear in each body
+at two positions — the opening sentinel and the closing sentinel.
+They must never appear inside prose, headings, code blocks,
+examples, or any other surface of the body. `bin/flow
+plan-from-issue` extracts the slice between the FIRST occurrence
+of each marker, so a literal marker mid-prose silently redirects
+the extraction to the wrong slice — exactly the failure mode
+`bin/flow validate-issue-body` exists to detect. Whenever a body
+needs to reference the marker pair (for example, when an issue's
+topic is the sentinel protocol itself), paraphrase every
+reference. Acceptable wording: "the FLOW-PLAN sentinel pair",
+"the plan-extraction markers", "the canonical sentinels
+delimiting the plan block". The validator's `marker_count_wrong`
+branch catches violations downstream; this rule prevents them
+upstream so the Revise loop in Step 3 or Step 4 is not entered
+unnecessarily.
+
+The wrapped block looks like this in each issue body:
+
+```markdown
+<!-- FLOW-PLAN-BEGIN -->
+## Implementation Plan
+
+### Context
+...
+
+### Exploration
+...
+
+### Tasks
+
+#### Task 1: ...
+...
+<!-- FLOW-PLAN-END -->
+```
 
 ### Backwards-Reasoning Scan
 
@@ -204,7 +344,12 @@ Ask the user for the milestone due date and approval using AskUserQuestion:
   the Skill tool as your final action.
 - **"Revise"** → ask what to change, update the list, and re-present.
   Iterate until approved.
-- **"Cancel"** → stop.
+- **"Cancel"** → clear the utility-in-progress marker so the Stop
+  hook does not refuse turn-end after cancellation, then stop.
+
+  ```bash
+  ${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-decompose-project
+  ```
 
 Do not proceed to Step 3 without explicit user approval. Do not propose
 direct edits, commit changes, or take any action outside this skill.
@@ -247,7 +392,41 @@ Parse the JSON output. Record the milestone number.
 Create the parent epic issue. The `--milestone` flag accepts the milestone
 title (not the numeric ID) — use the same `<project_name>` that was passed
 to `create-milestone --title`. Write the epic body to
-`.flow-states/decompose-project-<id>-epic-body` using the Write tool, then:
+`.flow-states/decompose-project-<id>-epic-body` using the Write tool.
+
+Validate the epic body through the pre-filing validator before
+asking the filer subcommand to send it to GitHub. The validator
+runs the same sentinel-extraction logic that `bin/flow
+plan-from-issue` applies at flow-start; any body that fails this
+gate is unconsumable downstream and must NOT be filed:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow validate-issue-body --body-file .flow-states/decompose-project-<id>-epic-body
+```
+
+Parse the JSON output. If `status` is `ok`, proceed to the filer
+invocation below. If `status` is `error`, do NOT file the issue.
+Surface the validator's `message` field to the user via
+AskUserQuestion with three options:
+
+- **"Revise the epic body and retry"** — ask what to change, edit
+  the Write tool output at
+  `.flow-states/decompose-project-<id>-epic-body`, then re-run
+  `bin/flow validate-issue-body` from the top of this step. Loop
+  until the validator returns `status:ok`.
+- **"Cancel filing this issue"** — skip the epic-filing path. The
+  flow halts at Step 3 since the epic is the parent of every
+  child issue; clear the utility-in-progress marker so the Stop
+  hook releases turn-end:
+
+  ```bash
+  ${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-decompose-project
+  ```
+
+- **"Cancel the whole skill"** — same clear-marker call as above,
+  then stop without filing any issues.
+
+Once the validator returns `ok`, file the epic:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo <repo> --title "Epic: <project_name>" --body-file .flow-states/decompose-project-<id>-epic-body --milestone "<project_name>"
@@ -279,8 +458,50 @@ Use the Read tool to read the session state and approved issue list.
 
 Create each child issue in topological order (leaves first). For each:
 
-Write the issue body to `.flow-states/decompose-project-<id>-issue-body`
-using the Write tool, then create the issue:
+Write the child issue body to
+`.flow-states/decompose-project-<id>-issue-body` using the Write
+tool.
+
+Validate the child body through the pre-filing validator before
+asking the filer subcommand to send it to GitHub. The validator
+runs the same sentinel-extraction logic that `bin/flow
+plan-from-issue` applies at flow-start; any body that fails this
+gate is unconsumable downstream and must NOT be filed:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow validate-issue-body --body-file .flow-states/decompose-project-<id>-issue-body
+```
+
+Parse the JSON output. If `status` is `ok`, proceed to the filer
+invocation below. If `status` is `error`, do NOT file this child.
+Surface the validator's `message` field to the user via
+AskUserQuestion with three options:
+
+- **"Revise this child body and retry"** — ask what to change, edit
+  the Write tool output at
+  `.flow-states/decompose-project-<id>-issue-body`, then re-run
+  `bin/flow validate-issue-body` from the top of this iteration.
+  Loop until the validator returns `status:ok`, then continue to
+  the filer call for this child.
+- **"Skip filing this child"** — record the skip and continue to
+  the next child in the topological order. Any sibling child
+  whose `depends_on_indices` references this skipped child has
+  no `--blocking-number` to pass to `bin/flow link-blocked-by`
+  in Step 5, so that dependency edge is silently dropped (Step 5
+  is best-effort by design). The Step 6 report surfaces the
+  partial coverage; the user can re-run decomposition for the
+  missing child later, but the blocked-by graph for already-filed
+  siblings will need manual repair via `gh issue edit` or a
+  follow-up `bin/flow link-blocked-by` call.
+- **"Cancel the whole skill"** — clear the utility-in-progress
+  marker so the Stop hook releases turn-end, then stop without
+  filing any remaining children:
+
+  ```bash
+  ${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-decompose-project
+  ```
+
+Once the validator returns `ok` for this child, file it:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --repo <repo> --title "<title>" --body-file .flow-states/decompose-project-<id>-issue-body --label decomposed --milestone "<project_name>"
@@ -377,6 +598,13 @@ Clean up the session files:
 rm .flow-states/decompose-project-<id>.json .flow-states/decompose-project-<id>-dag.md .flow-states/decompose-project-<id>-issues.json
 ```
 
+Clear the utility-in-progress marker so the Stop hook stops refusing
+turn-end now that the skill has completed its work:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-decompose-project
+```
+
 Output the COMPLETE banner:
 
 ````markdown
@@ -404,3 +632,7 @@ Output the COMPLETE banner:
 - Phase labels are auto-derived from DAG groupings, not user-specified
 - Milestone due date is required — asked during Step 2 review
 - Sub-issue and blocked-by linking is best-effort — failures do not block the skill
+- Every issue body (epic and children) wraps its Implementation Plan in the FLOW-PLAN sentinel pair so `bin/flow plan-from-issue` can extract the plan at flow-start
+- Tasks within the Implementation Plan use `#### Task N:` headers (not numbered list items) so `count_tasks` recognises the heading shape and populates `code_tasks_total`
+- Always invoke `${CLAUDE_PLUGIN_ROOT}/bin/flow validate-issue-body` before `${CLAUDE_PLUGIN_ROOT}/bin/flow issue` — on validator error, route through the Revise loop in Step 3 (epic) or Step 4 (per child)
+- Paraphrase every prose reference to the FLOW-PLAN sentinel pair — the literal HTML-comment marker strings appear only at the actual delimiters of the wrapped Implementation Plan
