@@ -35,8 +35,14 @@
 //!    is set and the block did not fire. Answers the AskUserQuestion
 //!    with the successor skill command so phase transitions advance
 //!    even if the skill's HARD-GATE was ignored.
-//! 5. **Allow** (exit 0, no stdout) — otherwise. The tool call passes
-//!    through to Claude Code's normal permission system.
+//! 5. **Allow** (exit 0, stdout: `{"permissionDecision":"defer"}`) —
+//!    otherwise. The explicit defer signal tells Claude Code the hook
+//!    has no opinion on this tool call, routing it through normal
+//!    permission handling without relying on empty-stdout implicit
+//!    semantics. Both the no-state-file `Allow` arm and the
+//!    state-file-found `AllowWithMark` arm emit the same defer
+//!    payload; the `AllowWithMark` arm additionally writes the
+//!    `_blocked` timestamp to the state file before exiting.
 
 use std::path::{Path, PathBuf};
 
@@ -192,14 +198,26 @@ pub fn user_only_skill_carve_out_applies(transcript_path: Option<&Path>, home: &
 /// side effect in `run()`.
 #[derive(Debug)]
 enum HookAction {
-    /// Exit 0, no side effects. Used when the hook cannot resolve a
-    /// state file (no stdin input, no branch, slash branch).
+    /// Exit 0, emits `{"permissionDecision":"defer"}` on stdout, no
+    /// state-file side effects. Used when the hook cannot resolve a
+    /// state file (no stdin input, no branch, slash branch). The
+    /// explicit defer signal tells Claude Code the hook has no
+    /// opinion on this tool call, routing it through normal
+    /// permission handling without relying on empty-stdout implicit
+    /// semantics.
     Allow,
     /// Exit 2, stderr message. Autonomous-phase block.
     Block(String),
     /// Exit 0, stdout JSON answer. `_auto_continue` auto-answer.
     AutoAnswer(Value),
-    /// Exit 0, call `set_blocked` on the given state path.
+    /// Exit 0, emits `{"permissionDecision":"defer"}` on stdout, and
+    /// calls `set_blocked` on the given state path so the state file
+    /// records that an AskUserQuestion was delivered. Used when the
+    /// hook resolved a state file and `validate` returned allow with
+    /// no auto-continue (or when a carve-out suppressed an autonomous-
+    /// phase block). The defer payload matches the `Allow` arm so
+    /// every "no opinion" outcome surfaces the same explicit signal
+    /// to Claude Code.
     AllowWithMark(std::path::PathBuf),
 }
 
@@ -293,7 +311,10 @@ pub fn run() {
     let root = project_root();
     let home = home_dir_or_empty();
     match run_impl_main(hook_input, branch, &root, &home) {
-        HookAction::Allow => std::process::exit(0),
+        HookAction::Allow => {
+            println!("{}", json!({"permissionDecision": "defer"}));
+            std::process::exit(0);
+        }
         HookAction::Block(msg) => {
             eprintln!("{}", msg);
             std::process::exit(2);
@@ -304,6 +325,7 @@ pub fn run() {
         }
         HookAction::AllowWithMark(state_path) => {
             set_blocked(&state_path);
+            println!("{}", json!({"permissionDecision": "defer"}));
             std::process::exit(0);
         }
     }
