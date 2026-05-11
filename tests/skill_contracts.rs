@@ -4939,13 +4939,30 @@ fn flow_decompose_project_skill_has_backwards_reasoning_scan() {
 
 /// The four canonical scan phrasings the SKILL bodies enumerate. Each
 /// phrase represents a distinct defensive-scope shape; the rule must
-/// retain the body content that authorizes the scans.
+/// retain the body content that authorizes the scans. The lowercase
+/// `"Out of scope"` form is the canonical anchor — the title-case
+/// variant is intentionally left out of the constant because
+/// `tests/tombstones.rs::test_flow_create_issue_skill_no_out_of_scope_instruction`
+/// blocks `"Out of Scope"` from appearing in either issue-filing
+/// SKILL.md (it protects against re-introducing the templated
+/// `## Out of Scope` section instruction PR #1427 removed). The
+/// SKILL scan instruction reads case-flexibly in practice — the
+/// model interprets the phrasing as a concept and catches
+/// title-case occurrences in issue bodies without requiring the
+/// literal byte string in the SKILL prose.
 const INCLUDE_BIAS_SCAN_PHRASINGS: &[&str] = &[
     "Out of scope",
     "Non-goals",
     "would expand scope",
     "separate code surface",
 ];
+
+/// Action-verb tokens that prove an include-bias scan SKILL section
+/// instructs the model to do something — not just enumerate the
+/// canonical phrasings. At least one must appear in each SKILL's
+/// scan body so a future stub-form rewrite (phrase list only) fails
+/// the contract test.
+const INCLUDE_BIAS_SCAN_ACTION_VERBS: &[&str] = &["scan", "revise", "evaluate", "convert"];
 
 #[test]
 fn include_bias_rule_states_inclusion_default_principle() {
@@ -4979,13 +4996,13 @@ fn flow_create_issue_skill_has_pre_draft_include_bias_scan() {
     let content = common::read_skill("flow-create-issue");
 
     let transform_idx = content
-        .find("## Transform + Draft")
+        .find("\n## Transform + Draft\n")
         .expect("flow-create-issue SKILL.md missing `## Transform + Draft`");
     let scan_idx = content
-        .find("Pre-Draft Include-Bias Scan")
-        .expect("flow-create-issue SKILL.md missing `Pre-Draft Include-Bias Scan` subsection");
+        .find("\n### Pre-Draft Include-Bias Scan\n")
+        .expect("flow-create-issue SKILL.md missing `### Pre-Draft Include-Bias Scan` heading");
     let draft_idx = content
-        .find("### Draft Presentation")
+        .find("\n### Draft Presentation\n")
         .expect("flow-create-issue SKILL.md missing `### Draft Presentation`");
 
     assert!(
@@ -5001,7 +5018,37 @@ fn flow_create_issue_skill_has_pre_draft_include_bias_scan() {
         "Pre-Draft Include-Bias Scan must appear BEFORE `### Draft Presentation`"
     );
 
-    let scan_tail = &content[scan_idx..];
+    // No real `## ` heading may sit between `## Transform + Draft`
+    // and the scan subsection — that would push the scan into a
+    // sibling top-level section. Byte ordering alone does not
+    // enforce structural containment. The check starts AFTER the
+    // Transform + Draft heading line itself and ignores `## ` lines
+    // inside fenced code blocks (e.g. example issue bodies the
+    // skill renders) because those are inert text, not headings.
+    let after_transform_heading = content[transform_idx + 1..]
+        .find('\n')
+        .map(|n| transform_idx + 1 + n + 1)
+        .expect("Transform + Draft heading must be followed by content");
+    let between = &content[after_transform_heading..scan_idx];
+    let mut in_fence = false;
+    let mut saw_real_h2 = false;
+    for line in between.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if !in_fence && line.starts_with("## ") {
+            saw_real_h2 = true;
+            break;
+        }
+    }
+    assert!(
+        !saw_real_h2,
+        "no `## ` section break may sit between `## Transform + Draft` and the `### Pre-Draft Include-Bias Scan` heading — the scan must stay inside the Transform + Draft section (fenced code blocks are ignored)"
+    );
+
+    let scan_tail = &content[scan_idx + 1..];
     let after_heading = scan_tail
         .split_once('\n')
         .map(|(_, t)| t)
@@ -5022,24 +5069,29 @@ fn flow_create_issue_skill_has_pre_draft_include_bias_scan() {
             phrase
         );
     }
+    let scan_body_lower = scan_body.to_ascii_lowercase();
+    let has_action_verb = INCLUDE_BIAS_SCAN_ACTION_VERBS
+        .iter()
+        .any(|verb| scan_body_lower.contains(verb));
+    assert!(
+        has_action_verb,
+        "Pre-Draft Include-Bias Scan body must contain at least one action verb from {:?} so the section actually instructs the model — a bare phrase listing satisfies the phrase assertion but does not fulfill the scan's purpose",
+        INCLUDE_BIAS_SCAN_ACTION_VERBS
+    );
 }
 
 #[test]
 fn flow_decompose_project_skill_has_include_bias_scan() {
     let content = common::read_skill("flow-decompose-project");
 
-    assert!(
-        content.contains("Include-Bias Scan"),
-        "flow-decompose-project SKILL.md must include an `Include-Bias Scan` step"
-    );
+    let scan_idx = content
+        .find("\n### Include-Bias Scan\n")
+        .expect("flow-decompose-project SKILL.md missing `### Include-Bias Scan` heading");
     assert!(
         content.contains(".claude/rules/include-bias-in-issues.md"),
-        "scan step must cross-reference `.claude/rules/include-bias-in-issues.md`"
+        "Include-Bias Scan must cross-reference `.claude/rules/include-bias-in-issues.md`"
     );
 
-    let scan_idx = content
-        .find("Include-Bias Scan")
-        .expect("scan heading checked above");
     let present_idx = content
         .find("Present the full issue list")
         .expect("flow-decompose-project must contain `Present the full issue list` where children are surfaced");
@@ -5048,7 +5100,7 @@ fn flow_decompose_project_skill_has_include_bias_scan() {
         "Include-Bias Scan must appear BEFORE child issues are presented"
     );
 
-    let scan_tail = &content[scan_idx..];
+    let scan_tail = &content[scan_idx + 1..];
     let after_heading = scan_tail
         .split_once('\n')
         .map(|(_, t)| t)
@@ -5069,6 +5121,15 @@ fn flow_decompose_project_skill_has_include_bias_scan() {
             phrase
         );
     }
+    let scan_body_lower = scan_body.to_ascii_lowercase();
+    let has_action_verb = INCLUDE_BIAS_SCAN_ACTION_VERBS
+        .iter()
+        .any(|verb| scan_body_lower.contains(verb));
+    assert!(
+        has_action_verb,
+        "Include-Bias Scan body must contain at least one action verb from {:?} so the section actually instructs the model — a bare phrase listing satisfies the phrase assertion but does not fulfill the scan's purpose",
+        INCLUDE_BIAS_SCAN_ACTION_VERBS
+    );
 }
 
 #[test]

@@ -360,8 +360,10 @@ Implementation Plan subsections — for the following forbidden
 phrasings, which signal defensive scope shrinkage rather than
 genuine exclusion grounded in a concrete blocker:
 
-- `"Out of scope"`, `"Out-of-scope"` — defensive enumeration of
-  exclusions written before concrete blockers have surfaced
+- `"Out of scope"` — defensive enumeration of exclusions written
+  before concrete blockers have surfaced; the scan reads
+  case-flexibly, so common section-heading title-case forms in
+  issue bodies are also flagged
 - `"Non-goals"` — same defensive-enumeration shape under a
   different heading; a bulleted list of "things we are not
   doing" is speculation, not analysis

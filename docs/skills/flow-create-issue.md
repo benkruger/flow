@@ -32,6 +32,8 @@ The Decompose step has no skip path and no override flag. Every invocation runs 
 
 Before the draft is presented, a **Pre-Draft Backwards-Reasoning Scan** subsection scans the body for forbidden phrasings that ground the current decision in a historical artifact rather than current code merits — `"PR #<N> decided"`, `"kept for backward compatibility"`, `"older plugin versions"`, `"as PR #<N> chose to"`, and similar shapes. Forensic-detection PR references (linking blocked-by, naming a specific merge) are fine; justifying-shape references trigger revision before the draft is shown. See `.claude/rules/no-backwards-reasoning.md`.
 
+A second mechanical backstop — **Pre-Draft Include-Bias Scan** — runs alongside the backwards-reasoning scan. It catches defensive scope-shrinkage phrasings that ground exclusions in shape rather than concrete blockers: `"Out of scope"` (lowercase and title case), `"Non-goals"`, `"would expand scope"`, `"separate code surface"`. The default is inclusion — every adjacent concern surfaced during exploration belongs as a task unless one of the narrow valid exclusions (user explicitly rejected, requires different design conversation, blocks primary completion) applies. Matches trigger revision before the draft is shown. See `.claude/rules/include-bias-in-issues.md`.
+
 ---
 
 ## Title Authoring

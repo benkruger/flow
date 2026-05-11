@@ -87,7 +87,11 @@ phrasings. Future changes to the scanned set must update both
 this enumeration and the corresponding subsections in
 `skills/flow-create-issue/SKILL.md` and
 `skills/flow-decompose-project/SKILL.md` so the rule remains
-the authoritative source for what the scans target:
+the authoritative source for what the scans target. The SKILL
+scan instructions read case-flexibly in practice — the model
+interprets each phrasing as a concept and catches common
+section-heading title-case variants in issue bodies (e.g.
+`## Out of Scope`) alongside the canonical lowercase forms:
 
 - `"Out of scope"` — defensive enumeration of exclusions
   written before concrete blockers have surfaced

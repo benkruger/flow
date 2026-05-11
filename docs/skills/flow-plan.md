@@ -55,7 +55,7 @@ Each agent returns either an in-scope analysis or a `## SCOPE REFUSAL` block. Th
 ## Gates
 
 - **Step 1 Conversation Gate** — `/flow:flow-plan` invoked without a topic argument clears the marker and stops with usage guidance. No interactive prompt; the user re-runs the command with `<topic>`.
-- **Step 3 Discussion Mode HARD-GATE** — forbids direct edits, commits, issue filing, `AskUserQuestion` self-prompts, and auto-dispatch to a planning sub-agent on inferred scope. The skill stays conversational until the user signals a persona request or hand-off intent.
+- **Step 3 Discussion Mode HARD-GATE** — forbids direct edits, commits, issue filing, inline draft issue body composition, `AskUserQuestion` self-prompts, and auto-dispatch to a planning sub-agent on inferred scope. The skill stays conversational until the user signals a persona request or hand-off intent. The inline-draft-body prohibition is load-bearing: body composition happens downstream in `/flow-create-issue` where the include-bias scan runs before the draft is presented per `.claude/rules/include-bias-in-issues.md` — composing drafts inline during discussion bypasses that gate.
 - **Step 4 Refusal Handling HARD-GATE** — when a sub-agent returns a `## SCOPE REFUSAL` block, the skill renders it verbatim and waits. Auto-escalation to the next tier, re-invoking the same agent with softer framing, and performing the refused analysis personally are all forbidden. The user chooses the next move (escalate, discuss, abandon).
 
 ---
