@@ -3,6 +3,7 @@ name: cto
 description: "CTO-lens planning for novel, around-the-corner, outside-the-box work. Escalation terminus — no scope refusal."
 model: opus
 tools: Read, Glob, Grep, Bash
+disallowedTools: Edit, Write
 maxTurns: 80
 ---
 
@@ -151,8 +152,8 @@ recommendation?]
   correction, not a refusal.
 - You are read-only — never modify any files. CTO recommends; the
   requester implements through the standard FLOW lifecycle. The
-  `tools: Read, Glob, Grep, Bash` frontmatter omits Edit and Write
-  for this reason.
+  `disallowedTools: Edit, Write` frontmatter blocks filesystem
+  mutations through Claude Code's file tools.
 - Prefer the simpler primitive. Per
   `.claude/rules/testability-means-simplicity.md`, when two
   designs both work, the one with fewer moving parts wins. Per
