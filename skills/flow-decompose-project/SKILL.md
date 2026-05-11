@@ -189,14 +189,102 @@ From the DAG synthesis, build a complete issue list:
 3. **Phase labels** — auto-derive from DAG groupings (e.g., "Phase 1: API",
    "Phase 2: SPA"). Each child issue gets a phase label.
 
-For each child issue, draft:
+For both the parent epic AND each child issue, draft:
 
 - **Title** — concise, actionable
-- **Body** — Problem, Acceptance Criteria, Files to Investigate,
-  Context sections.
+- **Body** — see the Body Shape Contract below. The same contract
+  applies to the parent epic and to every child issue — this skill
+  is the single source of truth for body shape, and Steps 3 and 4
+  just write the bytes that this step produces.
 - **Labels** — `decomposed` plus the auto-derived phase label
-- **Dependencies** — which other child issues this depends on (by title,
-  resolved to numbers in Step 4)
+  (child issues only; the parent epic is filed without these
+  labels in Step 3)
+- **Dependencies** — which other child issues this depends on
+  (by title, resolved to numbers in Step 4); the parent epic has
+  no dependencies
+
+### Body Shape Contract
+
+Every issue body — parent epic AND every child — uses this section
+order:
+
+1. **Problem** (`## Summary` heading) — what is broken, missing, or
+   inadequate. Include observable behavior, evidence from the
+   codebase (file paths, line numbers), and user impact. Grounded
+   in the exploration the decompose step already performed.
+2. **Acceptance Criteria** — binary, testable conditions. Pass/fail
+   with no subjective judgment.
+3. **Implementation Plan** — wrapped in the FLOW-PLAN sentinel
+   pair (see the wrapping rule below) and containing these
+   `###` subsections in order:
+   - **Context** — what the user wants to build and why
+   - **Exploration** — what exists in the codebase, affected
+     files, patterns discovered
+   - **Risks** — what could go wrong, edge cases, constraints
+   - **Approach** — the chosen approach and rationale
+   - **Dependency Graph** — table of tasks with types and
+     dependencies
+   - **Tasks** — ordered implementation tasks using `#### Task N:`
+     headers (these become `### Task N:` headings in the
+     `.flow-states/<branch>/plan.md` file after `bin/flow
+     plan-from-issue` extraction). The `#### Task N:` header
+     format — not a numbered list — is the heading shape
+     `count_tasks` recognises to populate `code_tasks_total`.
+   - **Acceptance Criteria** — binary, testable conditions for
+     the implementation
+4. **Files to Investigate** — real file paths verified during
+   decomposition with a brief note on why each is relevant.
+5. **Context** — business reason, architectural constraints, or
+   design decisions.
+
+**Wrap the Implementation Plan in the FLOW-PLAN sentinel pair.**
+Place the literal HTML comment `<!-- FLOW-PLAN-BEGIN -->` on its
+own line immediately before the `## Implementation Plan` heading,
+and the literal HTML comment `<!-- FLOW-PLAN-END -->` on its own
+line immediately after the last Task entry (before the next `##`
+heading). The sentinel pair delimits the bytes that `bin/flow
+plan-from-issue` extracts verbatim and writes to
+`.flow-states/<branch>/plan.md` when the issue is later picked up
+via `/flow:flow-start #N`. Without the sentinel pair,
+`plan-from-issue` rejects the issue with `plan_markers_missing`
+and the flow halts.
+
+**Paraphrase every prose reference to the plan-sentinel pair.**
+The literal HTML-comment marker strings only appear in each body
+at two positions — the opening sentinel and the closing sentinel.
+They must never appear inside prose, headings, code blocks,
+examples, or any other surface of the body. `bin/flow
+plan-from-issue` extracts the slice between the FIRST occurrence
+of each marker, so a literal marker mid-prose silently redirects
+the extraction to the wrong slice — exactly the failure mode
+`bin/flow validate-issue-body` exists to detect. Whenever a body
+needs to reference the marker pair (for example, when an issue's
+topic is the sentinel protocol itself), paraphrase every
+reference. Acceptable wording: "the FLOW-PLAN sentinel pair",
+"the plan-extraction markers", "the canonical sentinels
+delimiting the plan block". The validator's `marker_count_wrong`
+branch catches violations downstream; this rule prevents them
+upstream so the Revise loop in Step 3 or Step 4 is not entered
+unnecessarily.
+
+The wrapped block looks like this in each issue body:
+
+```markdown
+<!-- FLOW-PLAN-BEGIN -->
+## Implementation Plan
+
+### Context
+...
+
+### Exploration
+...
+
+### Tasks
+
+#### Task 1: ...
+...
+<!-- FLOW-PLAN-END -->
+```
 
 ### Backwards-Reasoning Scan
 

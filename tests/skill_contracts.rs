@@ -4771,13 +4771,19 @@ fn flow_decompose_project_step2_cancel_clears_utility_marker() {
     // per-session utility-in-progress marker. Same deadlock failure
     // mode as Step 1: a missed clear leaves the Stop hook refusing
     // turn-end for the rest of the session.
+    //
+    // The end delimiter is `\n## Step ` (not a bare `\n## `) so an
+    // intra-section heading rendered inside a fenced markdown
+    // example block — like `## Implementation Plan` inside the
+    // Body Shape Contract example — cannot truncate the slice
+    // before the HARD-GATE's Cancel branch.
     let c = common::read_skill("flow-decompose-project");
     let step2_tail = c
         .split_once("\n## Step 2")
         .map(|(_, t)| t)
         .expect("flow-decompose-project must have a `## Step 2` section");
     let step2 = step2_tail
-        .split_once("\n## ")
+        .split_once("\n## Step ")
         .map(|(s, _)| s)
         .unwrap_or(step2_tail);
     let cancel_tail = step2
@@ -4811,6 +4817,106 @@ fn flow_decompose_project_step6_clears_utility_marker() {
     assert!(
         section.contains("clear-utility-in-progress"),
         "Step 6 success path must invoke `bin/flow clear-utility-in-progress` so the Stop hook releases turn-end after the skill completes"
+    );
+}
+
+#[test]
+fn flow_decompose_project_step2_names_sentinel_wrapping() {
+    // Step 2 drafts the body shape for both the parent epic and
+    // each child issue. The body must wrap its Implementation Plan
+    // in the FLOW-PLAN sentinel pair so `bin/flow plan-from-issue`
+    // can extract the plan at flow-start. A draft without the
+    // sentinels produces an issue that
+    // `flow:flow-create-issue`-class validators reject with
+    // `plan_markers_missing` — the issue files but cannot be
+    // consumed downstream.
+    // End delimiter is `\n## Step ` so an intra-section heading
+    // rendered inside a fenced markdown example block — like
+    // `## Implementation Plan` inside the Body Shape Contract
+    // example — cannot truncate the slice before the assertion
+    // targets.
+    let c = common::read_skill("flow-decompose-project");
+    let tail = c
+        .split_once("\n## Step 2")
+        .map(|(_, t)| t)
+        .expect("flow-decompose-project must have a `## Step 2` section");
+    let section = tail
+        .split_once("\n## Step ")
+        .map(|(s, _)| s)
+        .unwrap_or(tail);
+    assert!(
+        section.contains("FLOW-PLAN-BEGIN"),
+        "Step 2 must name the FLOW-PLAN-BEGIN sentinel that wraps the Implementation Plan block"
+    );
+    assert!(
+        section.contains("FLOW-PLAN-END"),
+        "Step 2 must name the FLOW-PLAN-END sentinel that closes the Implementation Plan block"
+    );
+}
+
+#[test]
+fn flow_decompose_project_step2_names_task_header_format() {
+    // The Implementation Plan's Tasks subsection uses `#### Task N:`
+    // headers — this is the heading shape `bin/flow plan-from-issue`
+    // counts via `count_tasks` to populate `code_tasks_total`. A
+    // future drift that reverted to numbered list items would break
+    // that count and produce a wrong X-of-Y annotation in the
+    // Code-phase TUI. The header presence locks the format.
+    // End delimiter is `\n## Step ` so an intra-section heading
+    // rendered inside a fenced markdown example block — like
+    // `## Implementation Plan` inside the Body Shape Contract
+    // example — cannot truncate the slice before the assertion
+    // targets.
+    let c = common::read_skill("flow-decompose-project");
+    let tail = c
+        .split_once("\n## Step 2")
+        .map(|(_, t)| t)
+        .expect("flow-decompose-project must have a `## Step 2` section");
+    let section = tail
+        .split_once("\n## Step ")
+        .map(|(s, _)| s)
+        .unwrap_or(tail);
+    let lower = section.to_ascii_lowercase();
+    assert!(
+        section.contains("#### Task "),
+        "Step 2 must name the `#### Task N:` header format used by the Tasks subsection"
+    );
+    assert!(
+        lower.contains("header"),
+        "Step 2 must describe `#### Task N:` as the header format (not a numbered list)"
+    );
+}
+
+#[test]
+fn flow_decompose_project_step2_names_paraphrase_rule() {
+    // Mirror of `flow_create_issue_forbids_inline_sentinel_strings_in_prose`:
+    // every prose reference to the FLOW-PLAN sentinel pair must
+    // paraphrase the marker strings so `bin/flow plan-from-issue`
+    // extraction matches the correct slice. A literal marker
+    // mid-prose silently redirects extraction to the wrong bytes
+    // and the validator rejects the body downstream.
+    // End delimiter is `\n## Step ` so an intra-section heading
+    // rendered inside a fenced markdown example block — like
+    // `## Implementation Plan` inside the Body Shape Contract
+    // example — cannot truncate the slice before the assertion
+    // targets.
+    let c = common::read_skill("flow-decompose-project");
+    let tail = c
+        .split_once("\n## Step 2")
+        .map(|(_, t)| t)
+        .expect("flow-decompose-project must have a `## Step 2` section");
+    let section = tail
+        .split_once("\n## Step ")
+        .map(|(s, _)| s)
+        .unwrap_or(tail);
+    let lower = section.to_ascii_lowercase();
+    assert!(
+        lower.contains("paraphrase"),
+        "Step 2 must name the paraphrase rule for sentinel-marker prose references"
+    );
+    assert!(
+        lower.contains("sentinel") || lower.contains("marker"),
+        "Step 2 must scope the paraphrase rule to the plan-sentinel/marker pair"
     );
 }
 
