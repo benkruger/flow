@@ -69,6 +69,17 @@ blocks — it records warnings for the confirmation step.
      not `"complete"`, record warning "Phase 4 not complete (status: <actual status>)."
    - If the file does not exist: record warning "No state file found for
      branch '<branch>'."
+3. Clear any fossil `_drift_recovery_attempted` flag. The SOFT-GATE
+   runs only on fresh, non-`--continue-step` invocations, so a flag
+   that survives into this step is a fossil from a previously aborted
+   Complete invocation that was killed mid-recovery. Clearing here
+   guarantees the next `ci_drift` dispatch can run recovery instead
+   of incorrectly escalating, regardless of what `complete_step` value
+   the state file carries.
+
+   ```bash
+   ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _drift_recovery_attempted=
+   ```
 
 Use these values for all subsequent steps — do not re-read the state file
 or re-run git commands to gather the same information.
@@ -107,16 +118,12 @@ Read `complete_step` from the state file (default `0` if absent).
 - If `complete_step` is `4`: skip to Step 4 (Confirm with user).
 - If `complete_step` is `5`: skip to Step 5 (Merge PR).
 - If `complete_step` is `6`: skip to Step 6 (Finalize).
-- If `complete_step` is `0` or absent: this is a fresh entry (not a
-  `--continue-step` resume). Clear any fossil
-  `_drift_recovery_attempted` flag left behind by a previously
-  aborted Complete invocation so the next `ci_drift` dispatch can
-  run recovery instead of incorrectly escalating. Then proceed
-  normally to Step 1.
-
-  ```bash
-  ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _drift_recovery_attempted=
-  ```
+- If `complete_step` is `0`, `1`, or absent: proceed normally to
+  Step 1. (Fossil `_drift_recovery_attempted` cleanup happens in the
+  SOFT-GATE on fresh invocations; the legitimate post-ci_drift self-
+  invoke arrives via `--continue-step` with `complete_step=1` and
+  must NOT clear the flag, since the flag is the loop-guard that
+  fires escalation if drift persists after a toolchain refresh.)
 
 ---
 
@@ -244,10 +251,30 @@ every tool:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow ci --force
 ```
 
+If `bin/flow ci --force` exits non-zero, the toolchain refresh did
+NOT resolve the drift — it surfaced fresh local breakage on the
+upgraded tools (a yanked dependency, a breaking version bump, a
+formatter that disagrees with existing code, etc.). Launch the
+`ci-fixer` sub-agent to diagnose and fix. Use the Agent tool:
+
+- `subagent_type`: `"flow:ci-fixer"`
+- `description`: `"Fix CI failures after toolchain refresh"`
+
+Provide the `bin/flow ci --force` output in the prompt with the
+context "Local CI passed against the previous toolchain but failed
+remotely (ci_drift). Toolchain refresh via `bin/dependencies` ran;
+the post-refresh `bin/flow ci --force` failed locally." so the
+sub-agent knows the dependency state changed.
+
+If the sub-agent fixes CI, fall through to the working-tree check
+below (the fixes typically dirty the tree, so the commit path
+catches them). If not fixed after 3 attempts, stop and report.
+
 If `bin/dependencies` or `bin/flow ci --force` produced working-tree
 changes (auto-formatter / linter rewrites are common after a
-toolchain bump), commit them. Otherwise, skip directly to the
-self-invoke. Check via:
+toolchain bump, and ci-fixer changes are also captured here),
+commit them. Otherwise, skip directly to the self-invoke. Check
+via:
 
 ```bash
 git diff --quiet
