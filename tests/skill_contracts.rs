@@ -2919,6 +2919,69 @@ fn flow_create_issue_decompose_runs_unconditionally() {
 }
 
 #[test]
+fn flow_create_issue_validates_body_before_filing() {
+    // The `## Filing` section invokes the pre-filing validator
+    // `bin/flow validate-issue-body` BEFORE `bin/flow issue` so
+    // an issue body that `bin/flow plan-from-issue` cannot consume
+    // at flow-start is rejected before it ever reaches GitHub.
+    // Ordering matters: validating after filing makes the gate
+    // post-hoc and useless. Regression: a future edit that moved
+    // the validator call below `bin/flow issue`, dropped it, or
+    // gated it behind a conditional would surface here.
+    let c = common::read_skill("flow-create-issue");
+    let tail = c
+        .split_once("\n## Filing\n")
+        .map(|(_, t)| t)
+        .expect("flow-create-issue must have a `## Filing` section");
+    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
+    let validate_pos = section
+        .find("bin/flow validate-issue-body")
+        .expect("`## Filing` must invoke bin/flow validate-issue-body");
+    let issue_pos = section
+        .find("bin/flow issue")
+        .expect("`## Filing` must invoke bin/flow issue");
+    assert!(
+        validate_pos < issue_pos,
+        "`bin/flow validate-issue-body` (at {}) must appear BEFORE `bin/flow issue` (at {}) in the `## Filing` section",
+        validate_pos,
+        issue_pos
+    );
+}
+
+#[test]
+fn flow_create_issue_forbids_inline_sentinel_strings_in_prose() {
+    // The Transform + Draft section names the paraphrase rule
+    // forbidding the model from writing the literal FLOW-PLAN
+    // HTML-comment strings outside the actual sentinel pair.
+    // Without this rule, a drafted body's prose can contain a
+    // marker string mid-prose; `extract_plan` matches the first
+    // occurrence and pulls the wrong slice — exactly the failure
+    // mode the validator catches downstream. The skill prevents
+    // it upstream by paraphrasing every reference. The test
+    // searches for the rule's phrasing (the word `paraphrase` near
+    // either `sentinel` or `marker`), not the forbidden tokens
+    // themselves — per `.claude/rules/skill-authoring.md`
+    // "Negative-Assertion Test Compatibility" the test source
+    // must not include the literal HTML-comment strings it is
+    // designed to forbid in SKILL.md.
+    let c = common::read_skill("flow-create-issue");
+    let tail = c
+        .split_once("\n## Transform + Draft\n")
+        .map(|(_, t)| t)
+        .expect("flow-create-issue must have a `## Transform + Draft` section");
+    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
+    let lower = section.to_ascii_lowercase();
+    assert!(
+        lower.contains("paraphrase"),
+        "`## Transform + Draft` must name the paraphrase rule"
+    );
+    assert!(
+        lower.contains("sentinel") || lower.contains("marker"),
+        "`## Transform + Draft` must scope the paraphrase rule to the plan-sentinel/marker pair"
+    );
+}
+
+#[test]
 fn flow_create_issue_decompose_has_hard_gate_after_skill_invocation() {
     // When decompose:decompose is invoked via the Skill tool, the
     // Decompose section must close with a HARD-GATE that prevents the

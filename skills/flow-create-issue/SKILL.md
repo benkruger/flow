@@ -289,6 +289,23 @@ issue is later picked up via `/flow:flow-start #N`. Without the
 sentinel pair, plan-from-issue rejects the issue with
 `plan_markers_missing` and the flow halts.
 
+**Paraphrase every prose reference to the plan-sentinel pair.** The
+literal HTML-comment marker strings only appear in the body at two
+positions — the opening sentinel and the closing sentinel. They
+must never appear inside prose, headings, code blocks, examples,
+or any other surface of the body. `bin/flow plan-from-issue`
+extracts the slice between the FIRST occurrence of each marker, so
+a literal marker mid-prose silently redirects the extraction to
+the wrong slice — exactly the failure mode `bin/flow
+validate-issue-body` exists to detect. Whenever the body needs to
+reference the marker pair (for example, when the issue topic is
+the sentinel protocol itself), paraphrase every reference.
+Acceptable wording: "the FLOW-PLAN sentinel pair", "the
+plan-extraction markers", "the canonical sentinels delimiting the
+plan block". The validator's `marker_count_wrong` branch catches
+violations downstream; this rule prevents them upstream so the
+Revise loop is not entered unnecessarily.
+
 The wrapped block looks like this in the issue body:
 
 ```markdown
@@ -390,8 +407,33 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-creat
 ## Filing
 
 Write the issue body to `.flow-issue-body-<id>` in the project root
-using the Write tool. Then file it against the current repo (no
-`--repo` flag — `flow-create-issue` always files where the user is):
+using the Write tool. The body file is the validator's input and the
+filer's input in the same path — same bytes on disk for both
+subprocesses, no copy.
+
+Validate the body file through the pre-filing validator before
+asking the filer subcommand to send it to GitHub. The validator
+runs the same sentinel-extraction logic that `bin/flow
+plan-from-issue` applies at flow-start; any body that fails this
+gate is unconsumable downstream and must NOT be filed:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow validate-issue-body --body-file .flow-issue-body-<id>
+```
+
+Parse the JSON output. If `status` is `ok`, proceed to the filer
+invocation below. If `status` is `error`, do NOT file the issue.
+Show the validator's `message` field to the user, return to the
+Revise loop in the File step above with the user's feedback set to
+the validator's `message`, and re-present the corrected draft.
+Iterate until the validator returns `ok`. A body that the
+validator rejects would also be rejected by `plan-from-issue` at
+flow-start, so filing it produces an unusable issue that the next
+`/flow:flow-start` invocation cannot consume.
+
+Once the validator returns `ok`, file the issue against the current
+repo (no `--repo` flag — `flow-create-issue` always files where the
+user is):
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<issue_title>" --body-file .flow-issue-body-<id> --label decomposed
@@ -429,3 +471,4 @@ Display the issue URL to the user, then output the COMPLETE banner:
 - Always use the Write tool to create body files (`.flow-issue-body-<id>`) — never pass body text as a CLI argument
 - Never delete the body file — the `bin/flow issue` script handles cleanup
 - The Implementation Plan section must use heading levels that match the plan file format after promotion by `flow-plan` (### in the issue becomes ## in the plan file)
+- Paraphrase every prose reference to the plan-sentinel pair — the literal HTML-comment marker strings appear only at the actual delimiters of the wrapped Implementation Plan, never inside prose, headings, code blocks, or examples. A duplicate marker mid-prose silently redirects `bin/flow plan-from-issue` extraction to the wrong slice.
