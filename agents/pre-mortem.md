@@ -17,15 +17,21 @@ intended, or what trade-offs were considered. You see only the code.
 
 ## Input
 
-The substantive diff (`git diff origin/<base_branch>...HEAD -w`) is
-provided in your prompt — whitespace-only changes are filtered out so
-your turn budget is spent on behavioral analysis, not formatting
-noise. `<base_branch>` is the integration branch the flow coordinates
-against (resolved at runtime via `bin/flow base-branch` — usually
-`main`, but `staging`/`develop`/etc. for repos whose default branch
-is not `main`). Use the diff as your primary evidence. Use Read,
-Glob, and Grep tools to investigate the surrounding codebase for
-context.
+Your prompt embeds `SUBSTANTIVE_DIFF_FILE: <path>` naming the file
+that contains the substantive diff
+(`git diff origin/<base_branch>...HEAD -w`) — whitespace-only
+changes are filtered out so your turn budget is spent on behavioral
+analysis, not formatting noise. `<base_branch>` is the integration
+branch the flow coordinates against (resolved at runtime via
+`bin/flow base-branch` — usually `main`, but `staging`/`develop`/etc.
+for repos whose default branch is not `main`). Read the file via
+the Read tool before analyzing — do not embed its contents in any
+prompt summary or follow-up tool call. Keeping the diff out of
+subsequent prompts preserves your turn budget for codebase
+investigation on larger PRs.
+
+Use the diff as your primary evidence. Use Read, Glob, and Grep
+tools to investigate the surrounding codebase for context.
 
 ## Design Note
 
@@ -54,9 +60,10 @@ race conditions, edge cases, and data corruption scenarios.
 
 ## Workflow
 
-**Read the diff.** Identify every behavioral change — new code paths,
-modified conditions, changed error handling, new dependencies, altered
-data flows.
+**Read the diff.** Use the Read tool on the SUBSTANTIVE_DIFF_FILE
+path provided in your prompt to load the substantive diff. Identify
+every behavioral change — new code paths, modified conditions,
+changed error handling, new dependencies, altered data flows.
 
 **Investigate selectively.** For the most significant behavioral changes,
 use targeted investigation (Read, Grep) to verify your understanding of

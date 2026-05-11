@@ -177,27 +177,29 @@ standard repo produces `<base_branch> = main`.
 ${CLAUDE_PLUGIN_ROOT}/bin/flow base-branch
 ```
 
-**Get the full branch diff.** Substitute `<base_branch>` with the
-value you just captured.
+**Capture both diffs to files.** `bin/flow capture-diff` runs both
+`git diff origin/<base_branch>...HEAD` (full) and the `-w` variant
+(substantive — whitespace-only changes filtered out) and writes the
+results to canonical paths under `.flow-states/<branch>/`. The agents
+read those files via the Read tool instead of receiving the diff
+bytes inline in their prompts, keeping the parent skill's prompt
+budget bounded as PR size grows. Substitute `<branch>` with the
+flow's branch name and `<base_branch>` with the value captured
+above.
 
 ```bash
-git diff origin/<base_branch>...HEAD
+${CLAUDE_PLUGIN_ROOT}/bin/flow capture-diff --branch <branch> --base <base_branch>
 ```
 
-This is the **full diff** — used by the reviewer agent (context-rich).
-
-**Get the substantive diff.** Same `<base_branch>` substitution.
-
-```bash
-git diff origin/<base_branch>...HEAD -w
-```
-
-This is the **substantive diff** — whitespace-only changes filtered out.
-Context-sparse agents (pre-mortem, adversarial, documentation) receive
-this diff instead of the full diff. On PRs where formatters (cargo fmt,
-prettier, black) reformat many files, the substantive diff excludes
-formatting noise and preserves the agents' turn budget for behavioral
-analysis.
+Parse the JSON output. The `full` field is the path to the full
+diff file — call it `<full_diff_file>` and pass it to the reviewer
+agent (context-rich). The `substantive` field is the path to the
+substantive diff file — call it `<substantive_diff_file>` and pass
+it to the pre-mortem, adversarial, and documentation agents
+(context-sparse). On PRs where formatters (cargo fmt, prettier,
+black) reformat many files, the substantive diff excludes
+formatting noise and preserves the agents' turn budget for
+behavioral analysis.
 
 **Compute affected doc paths.**
 
@@ -357,10 +359,11 @@ Use the Agent tool with:
 - `subagent_type`: `"flow:reviewer"`
 - `description`: `"Context-isolated code review"`
 
-Provide all artifacts in the prompt with labeled sections:
+Provide all artifacts in the prompt with labeled sections. The diff
+is passed as a file path the agent reads via the Read tool rather
+than as inline bytes:
 
-> DIFF:
-> (full diff output)
+> DIFF_FILE: <full_diff_file>
 >
 > PLAN:
 > (full plan file content)
@@ -373,10 +376,11 @@ Provide all artifacts in the prompt with labeled sections:
 
 Prefix the prompt with:
 
-> "You are reviewing code you did not write. The full diff, the plan,
-> the project CLAUDE.md, and all project rules are provided inline below.
-> Review the diff for architecture adherence, simplicity, correctness,
-> and security."
+> "You are reviewing code you did not write. The path to the full
+> diff (DIFF_FILE) is provided below; Read it via the Read tool
+> before analyzing. The plan, the project CLAUDE.md, and all project
+> rules are provided inline. Review the diff for architecture
+> adherence, simplicity, correctness, and security."
 
 **Pre-mortem agent** — context-sparse (receives only the substantive diff):
 
@@ -385,12 +389,15 @@ Use the Agent tool with:
 - `subagent_type`: `"flow:pre-mortem"`
 - `description`: `"Pre-mortem incident analysis"`
 
-Provide the substantive diff output in the prompt, prefixed with:
+Provide the substantive diff as a file path the agent reads via
+the Read tool. Embed `SUBSTANTIVE_DIFF_FILE: <substantive_diff_file>`
+in the prompt and prefix with:
 
-> "This PR was merged and caused a production incident. The substantive
-> diff (whitespace-only changes filtered) is below. Investigate the
-> codebase and write the incident report. Security failure modes are
-> explicitly in scope."
+> "This PR was merged and caused a production incident. The path to
+> the substantive diff (whitespace-only changes filtered) is provided
+> below (SUBSTANTIVE_DIFF_FILE). Read the file via the Read tool
+> before analyzing. Investigate the codebase and write the incident
+> report. Security failure modes are explicitly in scope."
 
 **Adversarial agent** — context-sparse (receives substantive diff, temp
 file path, test command, CLAUDE.md path, branch name). Always launch.
@@ -405,12 +412,16 @@ Use the Agent tool with:
 - `subagent_type`: `"flow:adversarial"`
 - `description`: `"Adversarial test generation"`
 
-Provide the substantive diff output in the prompt, along with:
+Provide the substantive diff as a file path the agent reads via
+the Read tool. Embed `SUBSTANTIVE_DIFF_FILE: <substantive_diff_file>`
+in the prompt, along with:
 
 - The temp test file path (`<temp_test_file>`, including extension)
 - The test command (`<test_command>`)
 - The path to the project CLAUDE.md
 - The branch name
+
+The agent must Read the substantive diff file before analyzing.
 
 **Documentation agent** — context-sparse (receives substantive diff,
 narrowed doc-paths list, doc roots):
@@ -420,7 +431,9 @@ Use the Agent tool with:
 - `subagent_type`: `"flow:documentation"`
 - `description`: `"Documentation and maintainability review"`
 
-Provide the substantive diff output in the prompt, along with:
+Provide the substantive diff as a file path the agent reads via
+the Read tool. Embed `SUBSTANTIVE_DIFF_FILE: <substantive_diff_file>`
+in the prompt, along with:
 
 - The narrowed list of doc paths (`<doc_paths>` from Step 1) — embed
   inline, one path per line, under a `DOC_PATHS:` header
@@ -432,24 +445,39 @@ Provide the substantive diff output in the prompt, along with:
 Prefix the prompt with:
 
 > "You are a new team member reading this PR for the first time. The
-> substantive diff (whitespace-only changes filtered) is below, along
-> with a NARROWED LIST of doc paths likely affected by this PR (under
-> the DOC_PATHS header). Read each listed doc path and check it against
-> the diff for drift. Do NOT walk the full `<worktree>/docs/` tree —
-> the listed paths are exhaustive for documentation drift in this PR.
-> Investigate the codebase for comprehension barriers as usual."
+> path to the substantive diff (whitespace-only changes filtered) is
+> provided below (SUBSTANTIVE_DIFF_FILE). Read the diff file via the
+> Read tool before analyzing, along with the NARROWED LIST of doc
+> paths likely affected by this PR (under the DOC_PATHS header). Read
+> each listed doc path and check it against the diff for drift. Do
+> NOT walk the full `<worktree>/docs/` tree — the listed paths are
+> exhaustive for documentation drift in this PR. Investigate the
+> codebase for comprehension barriers as usual."
 
 Wait for all agents to return.
 
-**Detect truncation and recover.**
+**Classify each agent's response.** Apply the three classes in
+priority order — truncation first, external failure second,
+normal completion otherwise. Priority order matters because a
+truncated agent's prose may coincidentally contain
+external-failure substrings, but the correct response to
+truncation is re-invocation against a narrowed partition, not
+recording the agent as skipped.
 
-For each high-investigation agent (reviewer, learn-analyst,
-documentation), check whether the returned output contains the
-literal `END-OF-FINDINGS` completion marker as the final
-structural element. Marker absence means the agent was truncated
-by `maxTurns` exhaustion (see
+**Class 1 — Truncation.** For each high-investigation agent
+(reviewer, learn-analyst, documentation), check whether the
+returned output contains the literal `END-OF-FINDINGS`
+completion marker as the final structural element. Marker
+absence alone means the agent was truncated by `maxTurns`
+exhaustion — regardless of whether any partial `**Finding`
+block was produced. An agent that exhausts its turn budget
+DURING investigation (before producing any finding) is the
+case the recovery path most needs to catch: requiring a partial
+finding to trigger Class 1 would silently classify
+early-truncation as "found nothing." See
 `.claude/rules/cognitive-isolation.md` "Context Budget +
-Truncation Recovery").
+Truncation Recovery" — "Absence of the marker means the agent
+was truncated, not that it found nothing."
 
 When truncation is detected on an agent:
 
@@ -474,6 +502,52 @@ Note the agent as truncated in the triage summary (Step 3)
 rather than splitting infinitely. The user decides whether to
 accept partial coverage or rerun Review on a smaller
 subset of the diff.
+
+**Class 2 — External failure.** When the agent has produced
+zero structured `**Finding` blocks AND no `END-OF-FINDINGS`
+marker AND the response contains a canonical external-failure
+marker (`rate_limit`, `429`, `usage_limit`, `API Error`, `rate
+limit exceeded`), the agent hit an upstream API or quota
+failure rather than running out of turns mid-investigation. The
+agent has produced no findings the parent can use, but a future
+flow-review re-invocation could succeed.
+
+The zero-findings precondition is load-bearing: an agent that
+produced one or more `**Finding` blocks AND mentions
+`rate_limit` in its prose (e.g., a security finding about
+rate-limiting code) is NOT externally-failed — it is a normal
+completion with findings that happen to discuss the term. Class
+2 only fires when the response is structurally empty (no
+findings at all) and the failure marker is the explanation.
+
+Substring match is ASCII-case-insensitive on the agent's full
+response. False positives in this class silently discard
+legitimate findings (the agent gets recorded as skipped and
+its `**Finding` blocks never reach Step 3 triage), so the
+zero-findings precondition exists specifically to prevent the
+substring-in-prose case.
+
+Classify the reason from the marker observed:
+
+- `rate_limit`, `rate limit exceeded`, `429` → `rate_limit`
+- `API Error`, `usage_limit` → `api_error`
+- Anything else that signals upstream skip → `other`
+
+Then invoke `bin/flow add-skipped-agent` to record the entry so
+`phase-finalize` knows to gate the Done step:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-skipped-agent --branch <branch> --agent <name> --reason <classified>
+```
+
+Do not retry the agent in this step. The Done section's handler
+for the `agents_skipped` error reason gives the user the
+retry/accept/abort choice once all agents have been classified.
+
+**Class 3 — Normal completion.** The response contains the
+`END-OF-FINDINGS` marker (high-investigation agents) or has
+exited cleanly (other agents). Findings flow to Step 3 triage
+unchanged.
 
 The probe file lives inside the worktree's test tree, so worktree removal at Phase 5 Complete (or `/flow:flow-abort`) disposes of it automatically as a side effect of `git worktree remove`. The basename glob is also pre-listed in `.git/info/exclude` (`test_adversarial_flow.*`, `*_adversarial_flow_test.rb`) so the throwaway probe never appears in a user's `git status` output alongside intentional changes.
 
@@ -709,7 +783,46 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow phase-finalize --phase flow-review --branch <bran
 
 Omit `--thread-ts` if `slack_thread_ts` was not returned by `phase-enter`.
 
-Parse the JSON output. If `"status": "error"`, report the error and stop.
+Parse the JSON output.
+
+**Handle the `agents_skipped` error reason.** When the response
+shape is `{"status":"error","reason":"agents_skipped","skipped":[...],"message":"..."}`,
+one or more review agents were classified as skipped in Step 2.
+The phase has not been advanced — the gate ran before any
+state mutation so the user can decide how to proceed.
+
+Present the skipped list inline (one entry per line:
+`<agent> — <reason> @ <timestamp>`), then use AskUserQuestion:
+
+> "Review left <count> agents skipped (<reasons>). How should we
+> proceed?"
+>
+> Options:
+>
+> - **Retry the skipped agents** — re-invoke just the skipped
+>   agents from Step 2 (reusing the same `<full_diff_file>` and
+>   `<substantive_diff_file>` paths captured in Step 1). After
+>   the retry, re-run `phase-finalize` without
+>   `--accept-skipped-agents`; the gate fires again if any
+>   retried agent skips a second time, so the user can iterate.
+> - **Proceed with --accept-skipped-agents** — re-run
+>   `phase-finalize --phase flow-review --branch <branch>
+>   --thread-ts <slack_thread_ts> --accept-skipped-agents`. The
+>   skipped entries stay in state for the Learn phase audit but
+>   Review advances.
+> - **Abort back to Code phase** — invoke
+>   `bin/flow phase-transition --action back --phase flow-code`
+>   to drop Review's in-progress markers and return to Code. The
+>   skipped entries remain in state for forensic purposes; the
+>   next Review entry starts with a fresh classification pass.
+
+Do NOT advance to the COMPLETE banner until the user picks one
+of the three options and the chosen path returns a
+`{"status":"ok",...}` envelope.
+
+When the response is `{"status":"error", ...}` for any OTHER
+reason, report the error and stop.
+
 Use the `formatted_time` field in the COMPLETE banner below. Do not print
 the timing calculation.
 

@@ -32,30 +32,43 @@ Every finding must map to one of these tenants:
 
 ### Step 1 — Gather
 
-Collect all artifacts: full branch diff, substantive diff (whitespace
-changes filtered via `git diff -w`), plan file, CLAUDE.md,
-`.claude/rules/` files, and check whether `bin/flow ci --test` exists
-for adversarial testing.
+Collect all artifacts. The diff is captured to canonical file paths
+under `.flow-states/<branch>/` via `bin/flow capture-diff` — both
+full (`full-diff.diff`) and substantive (`substantive-diff.diff`,
+whitespace-only changes filtered via `git diff -w`). Agents receive
+the diff via file handoff (`DIFF_FILE` / `SUBSTANTIVE_DIFF_FILE`) and
+Read the bytes themselves, keeping the parent skill's prompt budget
+bounded as PR size grows. Step 1 also collects the plan file,
+CLAUDE.md, `.claude/rules/` files, and checks that `bin/flow ci
+--test` exists for adversarial testing.
 
 ### Step 2 — Launch
 
 Launch four agents in parallel using multiple Agent tool calls in a
 single response:
 
-- **Reviewer** (context-rich): receives full diff, plan, CLAUDE.md,
+- **Reviewer** (context-rich): receives `DIFF_FILE`, plan, CLAUDE.md,
   rules. Covers architecture (T1), simplicity (T2), and correctness
   including security (T4).
-- **Pre-mortem** (context-sparse): receives only the substantive diff,
+- **Pre-mortem** (context-sparse): receives only `SUBSTANTIVE_DIFF_FILE`,
   investigates the codebase independently. Covers correctness failure
   modes including security (T4).
-- **Adversarial** (context-sparse): receives the substantive diff and
-  writes tests designed to fail. Covers test coverage (T5). Always
-  launched — if the project's `bin/test` does not support
+- **Adversarial** (context-sparse): receives `SUBSTANTIVE_DIFF_FILE`
+  and writes tests designed to fail. Covers test coverage (T5).
+  Always launched — if the project's `bin/test` does not support
   `--file <path>` for single-file execution, the agent surfaces that
   as a finding instead of silently skipping.
-- **Documentation** (context-sparse): receives the substantive diff and
-  doc paths, investigates the codebase. Covers maintainability (T3) and
-  documentation accuracy (T6).
+- **Documentation** (context-sparse): receives `SUBSTANTIVE_DIFF_FILE`
+  and doc paths, investigates the codebase. Covers maintainability
+  (T3) and documentation accuracy (T6).
+
+After agents return, each response is classified in priority order:
+truncation first (re-invoke with narrower partition), external
+failure second (record via `bin/flow add-skipped-agent` with one of
+`rate_limit`, `api_error`, `other`), normal completion otherwise.
+When any agent is recorded as skipped, `phase-finalize` refuses to
+advance until the user passes `--accept-skipped-agents` to
+acknowledge the partial coverage.
 
 ### Step 3 — Triage
 

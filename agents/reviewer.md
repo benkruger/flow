@@ -16,16 +16,23 @@ know why any decision was made. You see only the result.
 
 Your prompt contains these labeled sections:
 
-- **DIFF** — the full `git diff origin/<base_branch>...HEAD`, where
-  `<base_branch>` is the integration branch the flow coordinates
-  against (resolved at runtime via `bin/flow base-branch` — usually
-  `main`, but `staging`/`develop`/etc. for repos whose default
-  branch is not `main`)
+- **DIFF_FILE** — the path to the full
+  `git diff origin/<base_branch>...HEAD` written to a file under
+  `.flow-states/<branch>/full-diff.diff`, where `<base_branch>` is
+  the integration branch the flow coordinates against (resolved at
+  runtime via `bin/flow base-branch` — usually `main`, but
+  `staging`/`develop`/etc. for repos whose default branch is not
+  `main`). Read this file via the Read tool before analyzing — do
+  not embed its contents in any prompt summary or follow-up tool
+  call. Keeping the diff out of subsequent prompts preserves your
+  turn budget for investigation on larger PRs.
 - **PLAN** — the implementation plan the developer followed
 - **CLAUDE.MD** — the project conventions and architecture
 - **RULES** — all `.claude/rules/*.md` file contents
 
-Do not spend turns reading these files — they are already below.
+The PLAN, CLAUDE.MD, and RULES sections are inline — do not spend
+turns re-reading them. The DIFF_FILE path is the ONE input you must
+Read explicitly before analysis begins.
 
 ## Design Note
 
@@ -42,10 +49,11 @@ Note in `agents/pre-mortem.md` for the full rationale.
 
 ## Workflow
 
-**Read the diff and context.** The diff, plan, CLAUDE.md, and rules are
-all in your prompt. Identify every behavioral change — new code paths,
-modified conditions, changed error handling, new dependencies, altered
-data flows.
+**Read the diff and context.** Use the Read tool on the DIFF_FILE
+path provided in your prompt to load the full diff. The plan,
+CLAUDE.md, and rules are inline in your prompt. Identify every
+behavioral change — new code paths, modified conditions, changed
+error handling, new dependencies, altered data flows.
 
 **Investigate selectively.** For the most significant behavioral changes,
 use targeted investigation (Read, Grep) to verify your understanding of

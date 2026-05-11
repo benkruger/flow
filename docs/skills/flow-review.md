@@ -32,28 +32,43 @@ from agents — the parent session never reviews the diff itself.
 
 ### Step 1 — Gather
 
-Collect all artifacts: full branch diff, substantive diff (whitespace
-changes filtered via `git diff -w`), plan file, CLAUDE.md, rules files,
-the adversarial agent's probe path resolved by shelling out to
-`bin/test --adversarial-path` (the path lives inside the project's
-test tree so the language runner can discover it; halt on exit 2 from
-an unconfigured stub), the `bin/flow ci --test --file` runner command,
-and a narrowed list of doc paths likely affected by the diff (derived
-from `git diff --name-only` via filename heuristics — passed to the
-documentation agent in Step 2 so it investigates only those paths
-instead of the full docs tree). Run `tombstone-audit` to identify
-stale tombstones for removal in Step 4. No analysis.
+Collect all artifacts. The diff is captured to canonical file paths
+under `.flow-states/<branch>/` via `bin/flow capture-diff --branch
+<branch> --base <base_branch>`, which writes both the full diff
+(`full-diff.diff`) and the substantive diff (`substantive-diff.diff`,
+whitespace-only changes filtered via `git diff -w`). Agents receive
+the diff via file handoff (`DIFF_FILE` / `SUBSTANTIVE_DIFF_FILE`) and
+Read the bytes themselves, keeping the parent skill's prompt budget
+bounded as PR size grows. Step 1 also collects: plan file, CLAUDE.md,
+rules files, the adversarial agent's probe path resolved by shelling
+out to `bin/test --adversarial-path` (the path lives inside the
+project's test tree so the language runner can discover it; halt on
+exit 2 from an unconfigured stub), the `bin/flow ci --test --file`
+runner command, and a narrowed list of doc paths likely affected by
+the diff (derived from `git diff --name-only` via filename
+heuristics — passed to the documentation agent in Step 2 so it
+investigates only those paths instead of the full docs tree). Run
+`tombstone-audit` to identify stale tombstones for removal in Step 4.
+No analysis.
 
 ### Step 2 — Launch
 
-Launch four agents in parallel. Reviewer is context-rich (receives full
-diff, plan, CLAUDE.md, rules). Pre-mortem and adversarial are
-context-sparse (receive substantive diff only, investigate
+Launch four agents in parallel. Reviewer is context-rich (receives
+`DIFF_FILE`, plan, CLAUDE.md, rules). Pre-mortem and adversarial are
+context-sparse (receive `SUBSTANTIVE_DIFF_FILE` only, investigate
 independently). Documentation is context-sparse + narrowed: receives
-substantive diff plus a filename-heuristic-derived list of doc paths
-likely affected by the diff (Step 1 derives the list from
+`SUBSTANTIVE_DIFF_FILE` plus a filename-heuristic-derived list of doc
+paths likely affected by the diff (Step 1 derives the list from
 `git diff --name-only`), investigating only those paths so its turn
 budget stays bounded on moderately-sized PRs.
+
+After agents return, the skill classifies each response in priority
+order: truncation first (re-invoke with narrower partition), external
+failure second (record via `bin/flow add-skipped-agent` with one of
+`rate_limit`, `api_error`, `other`), normal completion otherwise.
+When any agent is recorded as skipped, `phase-finalize` refuses to
+advance until the user passes `--accept-skipped-agents` to
+acknowledge the partial coverage.
 
 After agents return, the skill checks each high-investigation agent
 (reviewer, learn-analyst, documentation) for the literal

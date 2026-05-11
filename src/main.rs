@@ -5,11 +5,13 @@ use std::process;
 use flow_rs::add_finding;
 use flow_rs::add_issue;
 use flow_rs::add_notification;
+use flow_rs::add_skipped_agent;
 use flow_rs::analyze_issues;
 use flow_rs::append_note;
 use flow_rs::auto_close_parent;
 use flow_rs::base_branch_cmd;
 use flow_rs::bump_version;
+use flow_rs::capture_diff;
 use flow_rs::check_freshness;
 use flow_rs::check_phase;
 use flow_rs::ci;
@@ -88,6 +90,11 @@ enum Commands {
         version: Option<String>,
     },
 
+    /// Capture full + substantive diffs against `origin/<base>` to canonical
+    /// `.flow-states/<branch>/` files for the Review sub-agents.
+    #[command(name = "capture-diff")]
+    CaptureDiff(capture_diff::Args),
+
     /// Pre-merge freshness check: fetch main, verify branch is up-to-date.
     #[command(name = "check-freshness")]
     CheckFreshness {
@@ -146,6 +153,9 @@ enum Commands {
     AddIssue(add_issue::Args),
     /// Record a Slack notification in FLOW state
     AddNotification(add_notification::Args),
+    /// Record a skipped review-agent in FLOW state for phase-finalize gating.
+    #[command(name = "add-skipped-agent")]
+    AddSkippedAgent(add_skipped_agent::Args),
 
     /// FLOW cleanup orchestrator (worktree, branches, state files).
     Cleanup(cleanup::Args),
@@ -531,6 +541,12 @@ fn main() {
                 bump_version::run_impl_main(version.as_deref(), flow_rs::utils::plugin_root());
             flow_rs::dispatch::dispatch_text(&msg, code);
         }
+        Some(Commands::CaptureDiff(args)) => {
+            let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
+            let root = project_root();
+            let (value, code) = capture_diff::run_impl(&args, &root, &cwd);
+            flow_rs::dispatch::dispatch_json(value, code);
+        }
         Some(Commands::CheckFreshness { raw_args }) => {
             let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
             let (value, code) = check_freshness::run_impl_main(&raw_args, &cwd);
@@ -607,6 +623,11 @@ fn main() {
         Some(Commands::AddNotification(args)) => {
             let root = project_root();
             let (value, code) = add_notification::run_impl_main(args, &root);
+            flow_rs::dispatch::dispatch_json(value, code);
+        }
+        Some(Commands::AddSkippedAgent(args)) => {
+            let root = project_root();
+            let (value, code) = add_skipped_agent::run_impl_main(&args, &root);
             flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::Issue(args)) => {

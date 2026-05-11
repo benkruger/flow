@@ -42,6 +42,7 @@ fn all_subcommands_have_working_help() {
     // enum variant name lowercased (for variants without explicit name).
     let subcommands = [
         "bump-version",
+        "capture-diff",
         "check-freshness",
         "check-phase",
         "phase-transition",
@@ -52,6 +53,7 @@ fn all_subcommands_have_working_help() {
         "add-finding",
         "add-issue",
         "add-notification",
+        "add-skipped-agent",
         "cleanup",
         "issue",
         "close-issue",
@@ -1162,6 +1164,18 @@ fn main_arm_invocations_cover_dispatch() {
             None,
         ),
         (
+            "add-skipped-agent",
+            &[
+                "--branch",
+                "test-fixture",
+                "--agent",
+                "reviewer",
+                "--reason",
+                "rate_limit",
+            ],
+            None,
+        ),
+        (
             "issue",
             &["--title", "x", "--body-file", "/nonexistent"],
             None,
@@ -1313,6 +1327,11 @@ fn main_arm_invocations_cover_dispatch() {
         (
             "phase-finalize",
             &["--phase", "flow-code", "--branch", "test-fixture"],
+            None,
+        ),
+        (
+            "capture-diff",
+            &["--branch", "test-fixture", "--base", "nonexistent-base"],
             None,
         ),
         (

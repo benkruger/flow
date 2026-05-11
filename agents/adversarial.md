@@ -18,24 +18,31 @@ it. Only failures matter.
 
 ## Input
 
-The substantive diff (`git diff origin/<base_branch>...HEAD -w`) is
-provided in your prompt — whitespace-only changes are filtered out so
-your turn budget is spent on behavioral analysis, not formatting
-noise. `<base_branch>` is the integration branch the flow coordinates
-against (resolved at runtime via `bin/flow base-branch` — usually
-`main`, but `staging`/`develop`/etc. for repos whose default branch
-is not `main`). The branch name, project CLAUDE.md path, temp test
-file path (`<temp_test_file>`, including its file extension), and
-test command (`<test_command>`) are also provided. The path was
-chosen by the project's `bin/test --adversarial-path`, normalized
-by the calling skill (trailing whitespace stripped), and points
-inside the project's test tree so the language test runner can
-discover and execute the probe — you do not pick the path or the
-extension. The path may be absolute or relative; both forms resolve
-inside the worktree (relative is interpreted against the calling
-skill's cwd). Use the Read tool to read the CLAUDE.md for test
-conventions and patterns. Use Read, Glob, and Grep to investigate the
-codebase.
+Your prompt embeds `SUBSTANTIVE_DIFF_FILE: <path>` naming the file
+that contains the substantive diff
+(`git diff origin/<base_branch>...HEAD -w`) — whitespace-only
+changes are filtered out so your turn budget is spent on behavioral
+analysis, not formatting noise. `<base_branch>` is the integration
+branch the flow coordinates against (resolved at runtime via
+`bin/flow base-branch` — usually `main`, but `staging`/`develop`/etc.
+for repos whose default branch is not `main`). Read the file via
+the Read tool before analyzing — do not embed its contents in any
+prompt summary or follow-up tool call. Keeping the diff out of
+subsequent prompts preserves your turn budget for codebase
+investigation and probe iteration on larger PRs.
+
+The branch name, project CLAUDE.md path, temp test file path
+(`<temp_test_file>`, including its file extension), and test
+command (`<test_command>`) are also provided in the prompt. The
+path was chosen by the project's `bin/test --adversarial-path`,
+normalized by the calling skill (trailing whitespace stripped),
+and points inside the project's test tree so the language test
+runner can discover and execute the probe — you do not pick the
+path or the extension. The path may be absolute or relative; both
+forms resolve inside the worktree (relative is interpreted against
+the calling skill's cwd). Use the Read tool to read the CLAUDE.md
+for test conventions and patterns. Use Read, Glob, and Grep to
+investigate the codebase.
 
 ## Temp File
 
@@ -54,9 +61,10 @@ you. Do NOT modify any existing file.
 
 ## Workflow
 
-**Read the diff.** Identify every behavioral change — new code paths,
-modified conditions, changed error handling, new dependencies, altered
-data flows.
+**Read the diff.** Use the Read tool on the SUBSTANTIVE_DIFF_FILE
+path provided in your prompt to load the substantive diff. Identify
+every behavioral change — new code paths, modified conditions,
+changed error handling, new dependencies, altered data flows.
 
 **Read existing tests.** For each changed file, find and read its test
 file. Understand what is already tested and what is not.

@@ -114,6 +114,7 @@ the mirror rule:
 - `tests/permissions.rs` — permission allow/deny simulation
 - `tests/docs_sync.rs` — docs completeness
 - `tests/opt_out_inventory.rs` — frozen list of bypass comments in the rule corpus
+- `tests/agent_grep_tool_present.rs` — frontmatter contract: every Review-tier agent that consumes the diff via file handoff (DIFF_FILE / SUBSTANTIVE_DIFF_FILE) must declare `Grep` in its `tools:` allow-list
 
 Adding a new meta-test without a src counterpart requires amending
 this list. Every other test under `tests/` must mirror a src file.

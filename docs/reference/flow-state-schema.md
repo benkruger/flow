@@ -167,6 +167,28 @@ Each phase entry has identical fields regardless of status.
 | `window_at_enter` | object / absent | Account-window snapshot captured on phase entry. See [Window Snapshot](#window-snapshot). Absent until phase entry runs or when capture failed. |
 | `window_at_complete` | object / absent | Account-window snapshot captured on phase finalize. See [Window Snapshot](#window-snapshot). Absent until phase finalize runs. |
 | `step_snapshots` | array | Array of [Step Snapshots](#step-snapshot) appended on each step-counter increment (`plan_step`, `code_task`, `review_step`, `learn_step`, `complete_step`). Empty until the phase begins incrementing its step counter. Bounded by step count per phase (typically <30 entries; up to ~10 KB for a long Code phase). |
+| `agents_skipped` | array / absent | Review-only. Entries of `{agent: string, reason: string, timestamp: ISO 8601}` appended by `bin/flow add-skipped-agent` when flow-review's failure classification (Step 2) detects an agent returned an external-failure marker. `reason` is a positive allowlist: `rate_limit`, `api_error`, or `other`. Absent on every phase except `flow-review`, and absent on `flow-review` runs that complete with no skipped agents. Consumed by `phase-finalize`'s `agents_skipped` gate — see below. |
+
+### Agents-Skipped Gate
+
+`bin/flow phase-finalize --phase flow-review` gates on the
+`agents_skipped` array. When the array is non-empty AND
+`--accept-skipped-agents` is absent, the command returns:
+
+```json
+{
+  "status": "error",
+  "reason": "agents_skipped",
+  "skipped": [{"agent": "reviewer", "reason": "rate_limit", "timestamp": "..."}],
+  "message": "<count> agents skipped during flow-review; pass --accept-skipped-agents to proceed"
+}
+```
+
+The gate runs after the state-file existence check and before
+any state mutation, so a rejection leaves the phase in
+`in_progress` for caller retry. Pass `--accept-skipped-agents`
+to bypass the gate; the skipped entries remain in state for the
+Learn-phase audit.
 
 ---
 

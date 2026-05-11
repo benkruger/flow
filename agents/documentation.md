@@ -28,13 +28,18 @@ Your job is to identify two categories of issues:
 
 ## Input
 
-The substantive diff (`git diff origin/<base_branch>...HEAD -w`) is
-provided in your prompt — whitespace-only changes are filtered out so
-your turn budget is spent on behavioral analysis, not formatting
-noise. `<base_branch>` is the integration branch the flow coordinates
-against (resolved at runtime via `bin/flow base-branch` — usually
-`main`, but `staging`/`develop`/etc. for repos whose default branch
-is not `main`).
+Your prompt embeds `SUBSTANTIVE_DIFF_FILE: <path>` naming the file
+that contains the substantive diff
+(`git diff origin/<base_branch>...HEAD -w`) — whitespace-only
+changes are filtered out so your turn budget is spent on behavioral
+analysis, not formatting noise. `<base_branch>` is the integration
+branch the flow coordinates against (resolved at runtime via
+`bin/flow base-branch` — usually `main`, but `staging`/`develop`/etc.
+for repos whose default branch is not `main`). Read the file via
+the Read tool before analyzing — do not embed its contents in any
+prompt summary or follow-up tool call. Keeping the diff out of
+subsequent prompts preserves your turn budget for codebase
+investigation and doc reading on larger PRs.
 
 A NARROWED LIST of doc paths likely affected by this diff is also
 provided in your prompt under a `DOC_PATHS:` header. The skill
@@ -54,8 +59,10 @@ listed documentation files.
 
 ## Workflow
 
-**Read the diff.** Identify every new pattern, naming choice, structural
-decision, and implicit assumption introduced by the changes.
+**Read the diff.** Use the Read tool on the SUBSTANTIVE_DIFF_FILE
+path provided in your prompt to load the substantive diff. Identify
+every new pattern, naming choice, structural decision, and implicit
+assumption introduced by the changes.
 
 **Investigate the codebase.** For each pattern you notice, check whether
 it is documented anywhere — in CLAUDE.md, `.claude/rules/`, code

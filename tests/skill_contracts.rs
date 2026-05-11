@@ -3884,20 +3884,47 @@ fn review_mentions_tombstone_audit() {
 #[test]
 fn review_collects_substantive_diff() {
     let c = common::read_skill("flow-review");
+    // Review Step 1 captures the substantive diff via `bin/flow
+    // capture-diff` (which runs `git diff origin/<base_branch>...HEAD -w`
+    // internally and writes the bytes to a canonical
+    // `.flow-states/<branch>/substantive-diff.diff` file). The contract
+    // is that Step 1 invokes capture-diff with the branch+base args; the
+    // skill no longer embeds the `git diff` command literally because
+    // agents read the diff via the Read tool on the returned path.
     assert!(
-        c.contains("git diff origin/<base_branch>...HEAD -w"),
-        "Review Step 1 must collect a substantive diff \
-         (`git diff origin/<base_branch>...HEAD -w`) for context-sparse agents"
+        c.contains("capture-diff --branch <branch> --base <base_branch>"),
+        "Review Step 1 must invoke `bin/flow capture-diff --branch <branch> --base <base_branch>` \
+         so context-sparse agents receive the substantive diff via file handoff"
     );
 }
 
 #[test]
 fn review_routes_substantive_diff_to_context_sparse_agents() {
     let c = common::read_skill("flow-review");
+    // Each of the three context-sparse agents receives the substantive
+    // diff via the `SUBSTANTIVE_DIFF_FILE: <substantive_diff_file>`
+    // file-path handoff. The assertion is per-agent and bounded to
+    // each agent's block (see `.claude/rules/testing-gotchas.md`
+    // "Subsection-Local Assertions in Contract Tests") so a regression
+    // that drops the file-path form from any single agent's block
+    // fails — the loop body checking the same substring against the
+    // full skill would silently pass when one agent loses the handoff
+    // because the other two still mention it.
+    const HANDOFF: &str = "SUBSTANTIVE_DIFF_FILE: <substantive_diff_file>";
     for agent in &["Pre-mortem", "Adversarial", "Documentation"] {
+        let heading = format!("**{} agent**", agent);
+        let tail = c
+            .split_once(heading.as_str())
+            .map(|(_, t)| t)
+            .unwrap_or_else(|| panic!("Review Step 2 must contain `{}` heading", heading));
+        // Bound the slice to this agent's block: the next agent
+        // heading or the post-agent section ("Wait for all agents")
+        // closes the scope.
+        let block = tail.split_once("\n**").map(|(b, _)| b).unwrap_or(tail);
         assert!(
-            c.contains("substantive diff output"),
-            "Review Step 2 must route substantive diff to {} agent",
+            block.contains(HANDOFF),
+            "Review Step 2 must route substantive diff via `{}` inside the {} agent's block",
+            HANDOFF,
             agent
         );
     }

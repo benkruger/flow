@@ -46,6 +46,15 @@ pub struct Args {
     /// PR URL for Slack notification (used when creating a new thread, i.e. Start phase)
     #[arg(long = "pr-url")]
     pub pr_url: Option<String>,
+
+    /// Accept and proceed when `phases.<phase>.agents_skipped` is
+    /// non-empty. Without this flag, phase-finalize returns
+    /// `{"status":"error","reason":"agents_skipped",...}` so the
+    /// caller surfaces the skipped list to the user before
+    /// advancing. Populated by `bin/flow add-skipped-agent` during
+    /// flow-review's failure-classification logic.
+    #[arg(long = "accept-skipped-agents")]
+    pub accept_skipped_agents: bool,
 }
 
 /// Main-arm wrapper: resolves real `root` and `cwd` then delegates to
@@ -103,6 +112,16 @@ pub fn run_impl(
         }));
     }
 
+    // Normalize the `--phase` input once per
+    // `.claude/rules/security-gates.md` "Normalize Before Comparing":
+    // strip NULs, trim whitespace, ASCII-lowercase. The gate inside
+    // `mutate_state` below reads `phases[<normalized_phase>]` so a
+    // raw CLI value like "Flow-Review" does not bypass the lookup.
+    // Every subsequent state read uses `phase_key` (normalized);
+    // `args.phase` is preserved only for the response envelope
+    // (caller-facing echo).
+    let phase_key = args.phase.replace('\0', "").trim().to_ascii_lowercase();
+
     // Load frozen phase config if available
     let frozen_path = paths.frozen_phases();
     let frozen_config = if frozen_path.exists() {
@@ -146,7 +165,16 @@ pub fn run_impl(
 
     // Single state mutation: phase_complete + optional slack record.
     let result_holder = std::cell::RefCell::new(Value::Null);
+    // agents_skipped gate response — populated from inside the
+    // `mutate_state` closure when the gate fires under the exclusive
+    // file lock. Reading the field there (rather than in a separate
+    // `fs::read_to_string` above) eliminates the TOCTOU window where
+    // a concurrent `bin/flow add-skipped-agent` could write between
+    // the gate's read and `mutate_state`'s read.
+    let gate_response: std::cell::RefCell<Option<Value>> = std::cell::RefCell::new(None);
     let phase_name = args.phase.clone();
+    let phase_key_for_closure = phase_key.clone();
+    let accept_skipped = args.accept_skipped_agents;
     let slack_status_is_ok = slack_result["status"] == "ok";
     let slack_ts = slack_result["ts"].as_str().unwrap_or("").to_string();
     let user_thread_ts = args.thread_ts.clone();
@@ -156,6 +184,42 @@ pub fn run_impl(
         if !(state.is_object() || state.is_null()) {
             return;
         }
+
+        // agents_skipped gate, atomic with phase_complete under the
+        // exclusive file lock. Fail closed on any shape that is not a
+        // proper array per `.claude/rules/security-gates.md` "Fail
+        // Closed When State Is Unreliable" — a non-array (string,
+        // number, object) signals state-file corruption or
+        // attempted bypass and must NOT silently advance the phase.
+        if !accept_skipped {
+            let field = &state["phases"][&phase_key_for_closure]["agents_skipped"];
+            if let Some(arr) = field.as_array() {
+                if !arr.is_empty() {
+                    *gate_response.borrow_mut() = Some(json!({
+                        "status": "error",
+                        "reason": "agents_skipped",
+                        "message": format!(
+                            "{} agents skipped during {}; pass --accept-skipped-agents to proceed",
+                            arr.len(),
+                            phase_key_for_closure
+                        ),
+                        "skipped": arr,
+                    }));
+                    return;
+                }
+            } else if !field.is_null() {
+                *gate_response.borrow_mut() = Some(json!({
+                    "status": "error",
+                    "reason": "agents_skipped",
+                    "message": format!(
+                        "phases.{}.agents_skipped has wrong type (expected array); refusing to advance phase",
+                        phase_key_for_closure
+                    ),
+                }));
+                return;
+            }
+        }
+
         let result = phase_complete(
             state,
             &phase_name,
@@ -215,6 +279,16 @@ pub fn run_impl(
                 "message": format!("State mutation failed: {}", e),
             }));
         }
+    }
+
+    // Intercept the agents_skipped gate response if the closure
+    // populated it. The closure returned without invoking
+    // phase_complete, so result_holder is null — return the gate
+    // envelope directly. The phase's `in_progress` status is
+    // preserved (no state mutation ran), so the caller can retry the
+    // skipped agents.
+    if let Some(gate) = gate_response.into_inner() {
+        return Ok(gate);
     }
 
     let phase_result = result_holder.into_inner();
