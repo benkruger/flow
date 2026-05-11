@@ -149,6 +149,7 @@ Available at any point in the workflow:
 | `/flow-doc-sync` | Full codebase documentation accuracy review — reports drift between code and docs |
 | `/flow-hygiene` | Audit instruction corpus health — CLAUDE.md, rules, and memory for staleness, misplacement, duplication, and contradictions |
 | `/flow-issues` | Fetch open issues, categorize, prioritize, and display a dashboard. Supports readiness filters |
+| `/flow-plan` | Open a structured planning conversation — discussion mode by default, dispatches to PM/Tech Lead/CTO sub-agents on explicit user request, hands off to `/flow-create-issue` when the user signals "ready" |
 | `/flow-create-issue` | Explore a design question or decompose a concrete problem, iterate until work-ready, then file it |
 | `/flow-decompose-project` | Decompose a large project into linked GitHub issues with sub-issue relationships, blocked-by dependencies, and milestones |
 | `/flow-orchestrate` | Process decomposed issues overnight — batch orchestration via flow-start --auto |
@@ -180,6 +181,14 @@ Monitor every active flow from your terminal — no Claude session needed. `flow
 | q | Quit |
 
 The detail panel shows the full phase timeline with per-phase cumulative time, code task progress, diff stats, notes count, and issues filed. Runs standalone on macOS and Linux.
+
+### Planning Surface
+
+Think out loud against a collaborator who reads the codebase, asks the right questions, and brings in a PM, Tech Lead, or CTO voice on request. `/flow-plan <topic>` opens a discussion-mode planning conversation: it stays conversational by default — surfacing clarifying questions, exploring affected files, identifying risks — and only dispatches to a planning sub-agent when you ask for one in plain English. Each persona has its own scope authority (PM covers copy and content, Tech Lead covers extensions of existing architecture, CTO covers novel design), and each refuses overreach with a `## SCOPE REFUSAL` block that names the next tier. The skill renders refusals verbatim and waits for your direction — no auto-escalation, no soft re-prompting. When you signal "ready", `/flow-plan` hands the discussion off to `/flow-create-issue` via the shared session conversation; nothing is filed until the issue-filing skill runs.
+
+```text
+/flow-plan add a per-flow budget cap
+```
 
 ### Project Decomposition
 
