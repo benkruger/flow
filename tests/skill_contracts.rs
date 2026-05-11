@@ -4702,6 +4702,38 @@ fn flow_decompose_project_skill_has_backwards_reasoning_scan() {
     }
 }
 
+#[test]
+fn flow_decompose_project_announce_sets_utility_marker() {
+    // The Announce section must write the per-session
+    // "utility skill in progress" marker so the Stop hook's
+    // `check_in_progress_utility_skill` predicate refuses turn-end
+    // while the multi-step decompose-project skill is running. A
+    // missing marker breaks the unattended-flow contract whenever
+    // the decompose:decompose Skill tool returns mid-pipeline at
+    // Step 1, allowing the model to stop and return control to
+    // the user before the issue graph is filed.
+    //
+    // The `--session-id` flag is intentionally absent from the
+    // assertion set: Rust resolves the active session_id at the CLI
+    // boundary by reading the `CLAUDE_CODE_SESSION_ID` env var, and
+    // the sibling `flow_create_issue_marker_invocations_omit_session_id_flag`
+    // contract test enforces the same shape for flow-create-issue.
+    let c = common::read_skill("flow-decompose-project");
+    let tail = c
+        .split_once("\n## Announce\n")
+        .map(|(_, t)| t)
+        .expect("flow-decompose-project must have a `## Announce` section");
+    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
+    assert!(
+        section.contains("set-utility-in-progress"),
+        "`## Announce` must invoke `bin/flow set-utility-in-progress` so the Stop hook refuses turn-end while the multi-step skill is running"
+    );
+    assert!(
+        section.contains("--skill flow:flow-decompose-project"),
+        "`## Announce` must pass `--skill flow:flow-decompose-project` so the marker is scoped to this skill's identifier"
+    );
+}
+
 // --- include-bias-in-issues rule content contract ---
 //
 // The contract test below pins four load-bearing invariants in

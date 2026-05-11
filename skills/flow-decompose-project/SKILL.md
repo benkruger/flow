@@ -62,6 +62,50 @@ At the very start, output the following banner in your response (not via Bash) i
 ```
 ````
 
+Immediately after the banner, write the per-session "utility skill
+in progress" marker so the Stop hook refuses turn-end while this
+skill is running. Without the marker the model returns control to
+the user when the decompose:decompose Skill tool returns
+mid-pipeline at Step 1, breaking the unattended-flow contract this
+skill promises across its six-step chain.
+
+Rust resolves the active session_id at the CLI boundary by reading
+the `CLAUDE_CODE_SESSION_ID` env var Claude Code supplies to every
+Bash subprocess (Claude Code 2.1.132+); on older Claude Code
+installs it falls back to the SessionStart capture file. On
+2.1.132+ the per-subprocess env value matches what the Stop hook
+receives in its stdin payload, so set-time and clear-time resolve
+to the same id regardless of concurrent Claude Code activity. The
+bash invocation below passes `--skill` only; Rust supplies the
+session_id itself.
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-utility-in-progress --skill flow:flow-decompose-project
+```
+
+If the marker-write call returns `status: error` with
+`no session_id available` (no env var AND no capture file — rare,
+only on Claude Code installs without per-subprocess env support and
+without a SessionStart capture file), the skill proceeds without
+the marker. The Stop hook treats a missing marker as a non-block,
+so the skill runs without protection but does not break.
+
+The marker is held across the entire Step 1 → Step 2 → Step 3 →
+Step 4 → Step 5 → Step 6 chain. Step Dispatch (above) skips the
+Announce banner on `--step N` self-invocations, so the marker-set
+call fires exactly once at the first invocation. The marker is
+cleared at Cancel branches in Step 1 and Step 2 and at the Step 6
+success path; every other path holds the marker until Step 6
+completes.
+
+On Claude Code installs without the per-subprocess env var, the
+capture-file fallback resolves session_id independently at set and
+clear time. A second Claude Code session whose SessionStart hook
+overwrites the capture file between this skill's set and clear
+calls can leave the marker orphaned at the original id. Recovery
+is `rm ~/.claude/flow/utility-in-progress-*.json` after the skill
+completes; the Stop hook treats a missing marker as a non-block.
+
 ## Resume Check
 
 Use the Read tool to read `.flow-states/decompose-project-<id>.json`, where
