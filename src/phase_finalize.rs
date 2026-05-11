@@ -151,7 +151,7 @@ pub fn run_impl(
     let slack_ts = slack_result["ts"].as_str().unwrap_or("").to_string();
     let user_thread_ts = args.thread_ts.clone();
 
-    let home = crate::window_snapshot::home_dir_or_empty();
+    let home = crate::session_metrics::home_dir_or_empty();
     let mutate_result = mutate_state(&state_path, &mut |state| {
         if !(state.is_object() || state.is_null()) {
             return;
@@ -168,7 +168,7 @@ pub fn run_impl(
         // Capture window snapshot at finalize. phase_complete sets
         // phases.<phase_name>.status = "complete" but keeps the entry
         // as an object, so the IndexMut assignment below cannot panic.
-        let snap = crate::window_snapshot::capture_for_active_state(&home, state, root);
+        let snap = crate::per_flow_capture::capture_for_active_state(&home, state, root);
         state["phases"][&phase_name]["window_at_complete"] =
             serde_json::to_value(&snap).expect("WindowSnapshot must serialize");
 

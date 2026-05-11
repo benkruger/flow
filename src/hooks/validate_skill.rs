@@ -29,7 +29,7 @@ use super::read_hook_input;
 use crate::hooks::transcript_walker::{
     last_user_message_invokes_skill, normalize_gate_input, USER_ONLY_SKILLS,
 };
-use crate::window_snapshot::home_dir_or_empty;
+use crate::session_metrics::home_dir_or_empty;
 
 /// Decide whether to allow or block a Skill tool invocation.
 ///

@@ -298,12 +298,12 @@ fn run_impl(args: &Args, root: &Path, cwd: &Path) -> Result<Value, String> {
     // (no rate-limits file, no transcript yet, no cost file) leave
     // the relevant snapshot fields as `None` but the snapshot is
     // still produced and written so downstream phases have an
-    // anchor for delta math. Helpers in `window_snapshot` carry
-    // both branches (HOME unset, state-not-object) for coverage.
-    let home = crate::window_snapshot::home_dir_or_empty();
+    // anchor for delta math. Helpers carry both branches
+    // (HOME unset, state-not-object) for coverage.
+    let home = crate::session_metrics::home_dir_or_empty();
     let _ = crate::lock::mutate_state(&state_path, &mut |state| {
-        let snap = crate::window_snapshot::capture_for_active_state(&home, state, root);
-        crate::window_snapshot::write_snapshot_into_state(state, "window_at_start", &snap);
+        let snap = crate::per_flow_capture::capture_for_active_state(&home, state, root);
+        crate::session_metrics::write_snapshot_into_state(state, "window_at_start", &snap);
         // Mirror the snapshot under the phase-scoped key so
         // `format_complete_summary`'s `phase_delta` reads
         // `phases.flow-start.window_at_enter` for the Start row.

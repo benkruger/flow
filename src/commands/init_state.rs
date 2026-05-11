@@ -12,12 +12,12 @@ use crate::label_issues::LABEL;
 use crate::lock::mutate_state;
 use crate::output::{json_error, json_ok};
 use crate::phase_config::{auto_skills, build_initial_phases, freeze_phases, read_flow_json};
+use crate::session_metrics::home_dir_or_empty;
 use crate::state::SkillConfig;
 use crate::utils::{
     branch_name, check_duplicate_issue, detect_tty, extract_issue_numbers, fetch_issue_info, now,
     plugin_root, read_prompt_file,
 };
-use crate::window_snapshot::home_dir_or_empty;
 
 /// Read the SessionStart capture file under `$HOME/.claude/` and seed
 /// the freshly-created state file's `session_id` and `transcript_path`

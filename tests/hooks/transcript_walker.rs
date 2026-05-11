@@ -7,7 +7,7 @@
 //! `tests/hooks/main.rs` declares the path-aliased common module).
 //! Each line in the fixture is a Claude Code transcript turn whose
 //! top-level `type` field carries the `user`/`assistant` role
-//! (matching `src/window_snapshot.rs::read_transcript`).
+//! (matching `src/session_metrics.rs::read_transcript`).
 
 use std::fs;
 

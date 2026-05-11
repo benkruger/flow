@@ -249,7 +249,7 @@ pub fn run_impl_main(
 
     // Snapshot state before applying updates so a mid-way failure can
     // restore the original — `apply_updates` mutates in place.
-    let home = crate::window_snapshot::home_dir_or_empty();
+    let home = crate::session_metrics::home_dir_or_empty();
     let result = mutate_state(&state_path, &mut |state| {
         let backup = state.clone();
         match apply_updates(state, set_args) {
@@ -270,8 +270,8 @@ pub fn run_impl_main(
                         }
                         let step = update.value.as_i64().unwrap_or(0);
                         let snap =
-                            crate::window_snapshot::capture_for_active_state(&home, state, root);
-                        crate::window_snapshot::append_step_snapshot(
+                            crate::per_flow_capture::capture_for_active_state(&home, state, root);
+                        crate::session_metrics::append_step_snapshot(
                             state,
                             &current_phase,
                             step,

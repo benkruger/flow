@@ -1036,7 +1036,7 @@ pub fn check_prose_pause_at_task_entry(
     // read from `$HOME` inside) so tests can isolate from the real
     // `$HOME` without env-var races per
     // `.claude/rules/testing-gotchas.md`.
-    if !crate::window_snapshot::is_safe_transcript_path(transcript_path, home) {
+    if !crate::session_metrics::is_safe_transcript_path(transcript_path, home) {
         return no_block();
     }
     if !state_path.exists() {
@@ -1180,7 +1180,7 @@ pub fn run() {
             .get("session_id")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let home = crate::window_snapshot::home_dir_or_empty();
+        let home = crate::session_metrics::home_dir_or_empty();
         result = check_in_progress_utility_skill(session_id, &home);
     }
 
@@ -1206,7 +1206,7 @@ pub fn run() {
             Some(v) => v.as_str(),
             None => None,
         };
-        let home = crate::window_snapshot::home_dir_or_empty();
+        let home = crate::session_metrics::home_dir_or_empty();
         result = check_prose_pause_at_task_entry(&state_path, transcript_path, &home);
     }
 

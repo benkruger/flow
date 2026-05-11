@@ -1156,7 +1156,7 @@ fn window_at_start_reads_cost_when_session_id_and_cost_file_present() {
     // (no extension — matches the producer in
     // `~/.claude/statusline-command.sh`). The year-month component matches
     // `chrono::Local::now().format("%Y-%m")` which is what `cost_file_path`
-    // in src/window_snapshot.rs computes.
+    // in src/session_cost.rs computes.
     let year_month = chrono::Local::now().format("%Y-%m").to_string();
     let cost_dir = repo.join(".claude").join("cost").join(&year_month);
     fs::create_dir_all(&cost_dir).unwrap();

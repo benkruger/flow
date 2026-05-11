@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
-use crate::window_snapshot::{home_dir_or_empty, is_safe_session_id, is_safe_transcript_path};
+use crate::session_metrics::{home_dir_or_empty, is_safe_session_id, is_safe_transcript_path};
 
 /// Capture-file payload byte cap per
 /// `.claude/rules/external-input-path-construction.md` "Enforce a
@@ -31,7 +31,7 @@ use crate::window_snapshot::{home_dir_or_empty, is_safe_session_id, is_safe_tran
 /// hundred bytes); 64 KB bounds a corrupted, hand-edited, or
 /// adversarially-grown file to a value the SessionStart hook can
 /// process without unbounded heap allocation, matching the byte-cap
-/// pattern in `src/window_snapshot.rs::TRANSCRIPT_BYTE_CAP`.
+/// pattern in `src/session_metrics.rs::TRANSCRIPT_BYTE_CAP`.
 const CAPTURE_FILE_BYTE_CAP: u64 = 64 * 1024;
 
 /// Stdin payload byte cap for the SessionStart hook. Claude Code

@@ -366,7 +366,7 @@ pub fn run_impl_main(
     let next_phase_owned = next_phase.map(|s| s.to_string());
     let reason_owned = reason.map(|s| s.to_string());
 
-    let home = crate::window_snapshot::home_dir_or_empty();
+    let home = crate::session_metrics::home_dir_or_empty();
     let mutate_result = mutate_state(&state_path, &mut |state| {
         let result = if action_owned == "enter" {
             phase_enter(state, &phase_owned, reason_owned.as_deref())
@@ -385,7 +385,7 @@ pub fn run_impl_main(
         // phase entry exists. `phase_enter`/`phase_complete` both
         // unconditionally create or update phases.<phase> as an
         // object, so the IndexMut assignment cannot panic.
-        let snap = crate::window_snapshot::capture_for_active_state(&home, state, root);
+        let snap = crate::per_flow_capture::capture_for_active_state(&home, state, root);
         let field = if action_owned == "enter" {
             "window_at_enter"
         } else {

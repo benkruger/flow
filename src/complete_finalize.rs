@@ -101,12 +101,12 @@ pub fn run_impl(args: &Args) -> Value {
     // Lands at state.window_at_complete for consumers
     // (format_complete_summary's Token Cost section) to read when
     // rendering the post-merge summary.
-    let home = crate::window_snapshot::home_dir_or_empty();
+    let home = crate::session_metrics::home_dir_or_empty();
     let state_path = std::path::Path::new(&args.state_file);
     if state_path.exists() {
         let _ = crate::lock::mutate_state(state_path, &mut |state| {
-            let snap = crate::window_snapshot::capture_for_active_state(&home, state, &root);
-            crate::window_snapshot::write_snapshot_into_state(state, "window_at_complete", &snap);
+            let snap = crate::per_flow_capture::capture_for_active_state(&home, state, &root);
+            crate::session_metrics::write_snapshot_into_state(state, "window_at_complete", &snap);
             // Mirror the snapshot under the phase-scoped key so
             // `format_complete_summary`'s `phase_delta` reads
             // `phases.flow-complete.window_at_complete` for the

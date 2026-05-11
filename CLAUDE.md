@@ -63,6 +63,9 @@ Plan handoff happens at flow-start: `bin/flow plan-from-issue --issue <N> --bran
 - `src/plan_from_issue.rs` — extracts plan content from issue-body sentinels at flow-start
 - `src/validate_issue_body.rs` — pre-filing validator for issue bodies; reuses `plan_from_issue`'s sentinel constants, `extract_plan`, and `count_tasks` to reject bodies before `bin/flow issue` so `flow-create-issue` cannot file an issue that `plan-from-issue` would later reject at flow-start
 - `src/commands/utility_marker.rs` — per-session `<home>/.claude/flow/utility-in-progress-<session_id>.json` marker that the Stop hook reads to refuse turn-end while a multi-step utility skill is running
+- `src/session_metrics.rs` — token and rate-limit capture; reads `~/.claude/rate-limits.json` and the session transcript JSONL. Also owns the snapshot state mutators (`write_snapshot_into_state`, `append_step_snapshot`), session-id and transcript-path validators, and the `home_dir_or_empty` helper.
+- `src/session_cost.rs` — per-session cost-file reads (`<project_root>/.claude/cost/<YYYY-MM>/<session_id>`) and monthly aggregation used by the TUI header.
+- `src/per_flow_capture.rs` — orchestrator. Reads `session_id` and `transcript_path` from state, validates them, and bundles `session_metrics::capture` with `session_cost::read_cost_file` into a final `WindowSnapshot`.
 - `bin/flow` — Rust dispatcher (auto-rebuilds when source is newer than binary)
 - `bin/{format,lint,build,test}` — FLOW's own dogfood scripts
 - `assets/bin-stubs/` — self-documenting bash stubs that prime copies into target projects when absent
@@ -194,7 +197,7 @@ Claude never computes timestamps, time differences, or counter increments. All s
 
 Plan file: `.flow-states/<branch>/plan.md`, stored in `state["files"]["plan"]`. The plan is extracted from the GitHub issue body at flow-start by `bin/flow plan-from-issue` (looks for `<!-- FLOW-PLAN-BEGIN -->`/`<!-- FLOW-PLAN-END -->` sentinels). Legacy state files may still use top-level `state["plan_file"]`.
 
-Account-window snapshots are captured at every state-mutating transition by `src/window_snapshot.rs::capture` — at flow start, every phase enter/complete, every step counter increment, and flow complete. Each snapshot records account-window pcts (5h, 7d), session token totals with per-model split, session cost, turn/tool counts, and most-recent-turn context utilization. Every numeric field is `Option<...>` for fail-open semantics. Consumers read snapshots through `src/window_deltas.rs` which groups by `session_id`.
+Account-window snapshots are captured at every state-mutating transition by `src/per_flow_capture.rs::capture_for_active_state` — at flow start, every phase enter/complete, every step counter increment, and flow complete. The orchestrator bundles `session_metrics::capture` (rate limits + transcript tokens) with `session_cost::read_cost_file` (per-session cost). Each snapshot records account-window pcts (5h, 7d), session token totals with per-model split, session cost, turn/tool counts, and most-recent-turn context utilization. Every numeric field is `Option<...>` for fail-open semantics. Consumers read snapshots through `src/window_deltas.rs` which groups by `session_id`.
 
 ### Start-Init → Init-State Contract
 

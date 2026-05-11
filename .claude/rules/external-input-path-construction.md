@@ -106,7 +106,7 @@ When in doubt, treat as state-derived and validate.
 
 ## Reference Implementation
 
-`src/window_snapshot.rs` is the canonical example:
+`src/session_metrics.rs` is the canonical example:
 
 - `is_safe_session_id(s: &str) -> bool` — accepts only ASCII
   alphanumeric plus `-` and `_`; rejects empty, `.`, `..`, and

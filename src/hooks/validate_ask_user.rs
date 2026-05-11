@@ -49,8 +49,8 @@ use crate::hooks::transcript_walker::{
     most_recent_skill_in_user_only_set, recent_edit_blocked_on_shared_config,
 };
 use crate::lock::mutate_state;
+use crate::session_metrics::home_dir_or_empty;
 use crate::utils::now;
-use crate::window_snapshot::home_dir_or_empty;
 
 /// Write `_blocked` timestamp to the state file.
 ///

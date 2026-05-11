@@ -33,7 +33,7 @@
 //!
 //! Per `.claude/rules/external-input-path-construction.md`, the
 //! `path` argument is validated through
-//! `crate::window_snapshot::is_safe_transcript_path` before any
+//! `crate::session_metrics::is_safe_transcript_path` before any
 //! filesystem read. The validator rejects empty paths, NUL-byte
 //! paths, relative paths, paths containing a `..` component, and
 //! paths that do not normalize under `<home>/.claude/projects/`.
@@ -75,7 +75,7 @@
 //!
 //! ## JSONL turn shape
 //!
-//! Mirrors `crate::window_snapshot::read_transcript`. Each line is
+//! Mirrors `crate::session_metrics::read_transcript`. Each line is
 //! a JSON object with a top-level `type` field whose value is
 //! `"user"` or `"assistant"`. The line's payload lives under
 //! `message.content` — a string for user-typed turns, an array of
@@ -96,7 +96,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::window_snapshot::is_safe_transcript_path;
+use crate::session_metrics::is_safe_transcript_path;
 
 /// The four FLOW skills the model must never invoke. Each requires
 /// explicit user initiative — typing `/flow:flow-<name>` directly —
@@ -164,7 +164,7 @@ pub fn normalize_gate_input(s: &str) -> String {
 /// so the validator can run against a fixture-controlled prefix in
 /// tests without `set_var` env races. Hook callers
 /// (`validate_skill::run`, `validate_ask_user::run`) read `$HOME`
-/// via `crate::window_snapshot::home_dir_or_empty()` and pass it
+/// via `crate::session_metrics::home_dir_or_empty()` and pass it
 /// through.
 pub fn last_user_message_invokes_skill(path: &Path, skill: &str, home: &Path) -> bool {
     if !is_safe_transcript_path(path, home) {
@@ -359,7 +359,7 @@ fn read_capped(path: &Path, cap: u64) -> Option<String> {
 /// the session from authorizing unrelated AskUserQuestions later.
 ///
 /// `transcript_path` is validated through
-/// `crate::window_snapshot::is_safe_transcript_path` per
+/// `crate::session_metrics::is_safe_transcript_path` per
 /// `.claude/rules/external-input-path-construction.md` (rejects
 /// empty, NUL-byte, relative, ParentDir-component, prefix-escaping,
 /// and symlink-escape paths). `home` is passed in for the same

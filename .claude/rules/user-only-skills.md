@@ -86,7 +86,7 @@ file (50 MB) so the most recent turns are always visible
 regardless of total transcript size. Per
 `.claude/rules/external-input-path-construction.md`, the
 `transcript_path` is validated through
-`crate::window_snapshot::is_safe_transcript_path` — which rejects
+`crate::session_metrics::is_safe_transcript_path` — which rejects
 empty, NUL-byte, relative, ParentDir-component, and
 prefix-escaping paths.
 

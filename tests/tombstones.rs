@@ -256,6 +256,33 @@ fn test_claude_md_no_test_coverage_references() {
     );
 }
 
+// --- Module split: window_snapshot.rs ---
+//
+// `src/window_snapshot.rs` mixed three concerns (token capture,
+// rate-limit reads, cost-file reads) behind one entry point.
+// Splitting into `session_metrics.rs`, `session_cost.rs`, and
+// `per_flow_capture.rs` makes the cost/metrics decoupling
+// structural. The file-existence tombstone prevents merge
+// conflicts from resurrecting the old module under its original
+// path; the directory walk in `test_rust_source_no_backward_facing_comments`
+// would otherwise still pass even if the file came back.
+
+/// Tombstone: removed in PR #1456. `src/window_snapshot.rs` was
+/// split into `session_metrics.rs`, `session_cost.rs`, and
+/// `per_flow_capture.rs`. Must not return.
+#[test]
+fn test_src_no_window_snapshot_file() {
+    let root = common::repo_root();
+    let path = root.join("src").join("window_snapshot.rs");
+    assert!(
+        !path.exists(),
+        "src/window_snapshot.rs must not exist — the module was \
+         split into src/session_metrics.rs (tokens + rate limits), \
+         src/session_cost.rs (cost reads), and \
+         src/per_flow_capture.rs (per-flow orchestrator)."
+    );
+}
+
 // --- Weak-coverage prose loophole closure ---
 //
 // Weak-coverage language ("adequate test coverage", "adequately tested")

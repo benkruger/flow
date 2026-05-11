@@ -848,7 +848,7 @@ fn phase_enter_legacy_plan_file_fallback_covered() {
 
 /// Subprocess: phase-enter with HOME set to a directory that has a
 /// `.claude/rate-limits.json` file. Exercises the "HOME populated"
-/// path through `window_snapshot::capture_for_active_state` invoked
+/// path through `per_flow_capture::capture_for_active_state` invoked
 /// from inside the mutate_state closure.
 #[test]
 fn phase_enter_with_home_set_exercises_snapshot_capture() {

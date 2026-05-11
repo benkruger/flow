@@ -907,22 +907,11 @@ pub struct AccountMetrics {
 ///
 /// `home_override` allows tests to specify a fake home directory for rate-limits.json.
 pub fn load_account_metrics(repo_root: &Path, home_override: Option<&Path>) -> AccountMetrics {
-    // Monthly cost from per-session cost files
-    let now = chrono::Local::now();
-    let year_month = now.format("%Y-%m").to_string();
-    let cost_dir = repo_root.join(".claude").join("cost").join(&year_month);
-    let mut total_cost = 0.0f64;
-    if cost_dir.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(&cost_dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                    if let Ok(val) = content.trim().parse::<f64>() {
-                        total_cost += val;
-                    }
-                }
-            }
-        }
-    }
+    // Monthly cost aggregate across every session under
+    // `<repo_root>/.claude/cost/<YYYY-MM>/`. Reader lives in
+    // `session_cost` so the per-flow snapshot and the status-bar
+    // aggregate share one walker.
+    let total_cost = crate::session_cost::read_monthly_aggregate(repo_root);
     let cost_monthly = format!("{:.2}", total_cost);
 
     // Rate limits from ~/.claude/rate-limits.json

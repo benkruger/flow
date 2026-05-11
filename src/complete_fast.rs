@@ -383,12 +383,12 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     // chained IndexMut is safe because `phase_enter` ran first in
     // this closure and heals `state["phases"]` to an object if the
     // on-disk state file held a non-object value.
-    let home = crate::window_snapshot::home_dir_or_empty();
+    let home = crate::session_metrics::home_dir_or_empty();
     mutate_state(&state_path, &mut |s| {
         phase_enter(s, "flow-complete", None);
         s["complete_steps_total"] = json!(COMPLETE_STEPS_TOTAL);
         s["complete_step"] = json!(1);
-        let snap = crate::window_snapshot::capture_for_active_state(&home, s, &root);
+        let snap = crate::per_flow_capture::capture_for_active_state(&home, s, &root);
         s["phases"]["flow-complete"]["window_at_enter"] =
             serde_json::to_value(&snap).expect("WindowSnapshot must serialize");
     })

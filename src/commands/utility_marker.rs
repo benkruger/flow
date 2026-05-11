@@ -31,8 +31,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
+use crate::session_metrics::is_safe_session_id;
 use crate::utils::now;
-use crate::window_snapshot::is_safe_session_id;
 
 /// The set of multi-step utility skills the Stop hook protects from
 /// mid-skill turn-end. Currently only `flow:flow-create-issue` because
@@ -97,7 +97,7 @@ pub fn marker_path(home: &Path, session_id: &str) -> Option<PathBuf> {
 /// (env var unset → home_dir_or_empty returned ""), non-absolute
 /// (relative env var, "/" fallback notwithstanding clap defaults),
 /// and paths containing a NUL byte (corrupted env). Mirrors the
-/// home-validation pattern in `crate::window_snapshot::read_rate_limits`.
+/// home-validation pattern in `crate::session_metrics::read_rate_limits`.
 fn is_safe_home(home: &Path) -> bool {
     !home.as_os_str().is_empty() && home.is_absolute() && !home.to_string_lossy().contains('\0')
 }

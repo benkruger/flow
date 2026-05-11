@@ -32,9 +32,12 @@ pub enum PhaseStatus {
 /// `window_at_enter`, `window_at_complete`, and `step_snapshots` capture
 /// account-wide token / cost / rate-limit observations at every
 /// state-mutating phase transition. The values are populated by the
-/// `window_snapshot::capture` helper invoked from `phase_enter`,
-/// `phase_finalize`, `phase_transition`, and `set_timestamp` (when the
-/// mutated field names a step counter). Readers in `window_deltas`
+/// `per_flow_capture::capture_for_active_state` helper invoked from
+/// `phase_enter`, `phase_finalize`, `phase_transition`, and
+/// `set_timestamp` (when the mutated field names a step counter).
+/// `session_metrics::capture` produces the metrics half;
+/// `session_cost::read_cost_file` produces the cost half. Readers
+/// in `window_deltas`
 /// derive per-phase deltas, by-model rollups, and reset detection
 /// from these raw snapshots — all numeric snapshot fields are
 /// `Option<_>` so missing inputs (no rate-limits file, missing

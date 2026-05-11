@@ -1,21 +1,27 @@
-//! Pure capture function reading the three account-window inputs:
-//! the rate-limits JSON in `~/.claude`, the session transcript JSONL,
-//! and the per-session cost file under `.claude/cost/<YYYY-MM>/`.
+//! Token and rate-limit capture — the statusline-independent half of
+//! account-window snapshots. Reads the rate-limits JSON in
+//! `~/.claude` and the session transcript JSONL. Does NOT read the
+//! per-session cost file under `.claude/cost/`; that surface lives
+//! in `session_cost`, and `per_flow_capture` orchestrates both into
+//! a final [`WindowSnapshot`].
 //!
-//! The helper is invoked by every state-mutating transition in
-//! `phase_enter`, `phase_finalize`, `phase_transition`, `set_timestamp`
-//! (when the mutated field names a step counter), `start_init`, and
-//! `complete_finalize` — so it MUST never panic and MUST never block
-//! on input that does not exist. Each input source is read with a
-//! fail-open guard: a missing file leaves the corresponding fields
-//! as `None` but the snapshot is still produced. `captured_at` is
-//! always populated because it comes from the caller-supplied
-//! `now_fn` closure.
+//! The capture function is invoked by every state-mutating
+//! transition through `per_flow_capture::capture_for_active_state`,
+//! so it MUST never panic and MUST never block on input that does
+//! not exist. Each input source is read with a fail-open guard: a
+//! missing file leaves the corresponding fields as `None` but the
+//! snapshot is still produced. `captured_at` is always populated
+//! because it comes from the caller-supplied `now_fn` closure.
 //!
 //! The capture function is pure given its inputs (paths + closure
-//! values) — every effectful read is funnelled through `home`,
-//! `transcript_path`, and `cost_path` so tests can supply tempdir
-//! fixtures that drive every branch without mocking the filesystem.
+//! values) — every effectful read is funnelled through `home` and
+//! `transcript_path` so tests can supply tempdir fixtures that
+//! drive every branch without mocking the filesystem.
+//!
+//! Snapshot state mutators (`write_snapshot_into_state`,
+//! `append_step_snapshot`) live here because they are the canonical
+//! sinks for the metrics-half of a `WindowSnapshot`; cost is
+//! patched in by `per_flow_capture` before either mutator runs.
 
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
@@ -25,9 +31,13 @@ use indexmap::IndexMap;
 use serde_json::Value;
 
 use crate::state::{ModelTokens, StepSnapshot, WindowSnapshot};
-use crate::utils::{now, tolerant_i64_opt};
+use crate::utils::tolerant_i64_opt;
 
-/// Capture an account-window snapshot.
+/// Capture an account-window snapshot from rate-limits + transcript
+/// inputs only. `session_cost_usd` in the returned snapshot is
+/// always `None` — the cost field is the responsibility of
+/// `per_flow_capture`, which calls `session_cost::read_cost_file`
+/// and patches the result onto the snapshot returned here.
 ///
 /// `home` — directory holding `.claude/rate-limits.json`. Pass the
 /// real `$HOME` in production; tests pass a tempdir.
@@ -35,10 +45,6 @@ use crate::utils::{now, tolerant_i64_opt};
 /// `transcript_path` — optional path to the session transcript
 /// JSONL. `None` skips the read entirely; missing or malformed
 /// JSONL contributes nothing rather than failing.
-///
-/// `cost_path` — optional path to the per-session cost file (a
-/// single floating-point number on a single line). `None` or
-/// missing file leaves `session_cost_usd` as `None`.
 ///
 /// `session_id` — the active session UUID copied through to the
 /// snapshot for downstream multi-session delta math.
@@ -49,14 +55,12 @@ use crate::utils::{now, tolerant_i64_opt};
 pub fn capture(
     home: &Path,
     transcript_path: Option<&Path>,
-    cost_path: Option<&Path>,
     session_id: Option<&str>,
     now_fn: impl FnOnce() -> String,
 ) -> WindowSnapshot {
     let captured_at = now_fn();
 
     let (five_hour_pct, seven_day_pct) = read_rate_limits(home);
-    let cost = cost_path.and_then(read_cost);
     let agg = transcript_path.map(read_transcript).unwrap_or_default();
 
     let context_window_pct = agg.context_at_last_turn.and_then(|tokens| {
@@ -76,7 +80,7 @@ pub fn capture(
         session_output_tokens: agg.totals_present.then_some(agg.output_tokens),
         session_cache_creation_tokens: agg.totals_present.then_some(agg.cache_creation_tokens),
         session_cache_read_tokens: agg.totals_present.then_some(agg.cache_read_tokens),
-        session_cost_usd: cost,
+        session_cost_usd: None,
         by_model: agg.by_model,
         turn_count: agg.totals_present.then_some(agg.turn_count),
         tool_call_count: agg.totals_present.then_some(agg.tool_call_count),
@@ -85,108 +89,12 @@ pub fn capture(
     }
 }
 
-/// Production binder around `capture` for the six producer call
-/// sites. Reads `session_id` and `transcript_path` from the
-/// in-memory state JSON, derives the per-session cost-file path
-/// under `<project_root>/.claude/cost/<YYYY-MM>/<session_id>`
-/// (no extension — matches the producer in
-/// `~/.claude/statusline-command.sh`), and invokes `capture` with
-/// `home` plus those paths.
-///
-/// Producers call this from inside `mutate_state` closures (the
-/// state JSON is already in memory) and write the returned
-/// snapshot into the appropriate state field. `home` is supplied
-/// by the producer (typically `$HOME`) so this helper takes no
-/// process-env dependency.
-pub fn capture_for_active_state(home: &Path, state: &Value, project_root: &Path) -> WindowSnapshot {
-    // session_id and transcript_path are both state-derived strings.
-    // A corrupted or hand-edited `.flow-states/<branch>/state.json`
-    // can populate either field with attacker-controlled values, so
-    // we validate before constructing filesystem paths. session_id
-    // must look like a UUID-shaped token (no path separators, no
-    // traversal segments). transcript_path is rejected when it is
-    // not absolute or escapes the user's `~/.claude/projects/`
-    // directory — the only place flow's session transcripts live in
-    // production.
-    let session_id = state
-        .get("session_id")
-        .and_then(|v| v.as_str())
-        .filter(|s| is_safe_session_id(s))
-        .map(|s| s.to_string());
-    // Self-heal: when state's `transcript_path` is null (the
-    // SessionStart hook's strict validator rejected the path
-    // because the file did not yet exist), derive the canonical
-    // transcript location from `<home>/.claude/projects/<encoded>/
-    // <session_id>.jsonl` using Claude Code's directory-encoding
-    // convention (every character that is not ASCII alphanumeric
-    // or `_` or `-` becomes `-`; e.g. `/Users/ben/code/flow` →
-    // `-Users-ben-code-flow`, `/Users/ben/My Project` →
-    // `-Users-ben-My-Project`, `/Users/ben/.claude` →
-    // `-Users-ben--claude`). The derived path runs through the
-    // same `is_safe_transcript_path` validator so a hostile entry
-    // under `~/.claude/projects/` cannot redirect the read.
-    let transcript_path = state
-        .get("transcript_path")
-        .and_then(|v| v.as_str())
-        .map(PathBuf::from)
-        .filter(|p| is_safe_transcript_path(p, home))
-        .or_else(|| {
-            session_id
-                .as_ref()
-                .map(|sid| derive_transcript_path(home, project_root, sid))
-                .filter(|p| is_safe_transcript_path(p, home))
-        });
-    let cost_path = session_id
-        .as_ref()
-        .map(|sid| cost_file_path(project_root, sid));
-    capture(
-        home,
-        transcript_path.as_deref(),
-        cost_path.as_deref(),
-        session_id.as_deref(),
-        now,
-    )
-}
-
-/// Derive the canonical transcript path Claude Code writes to:
-/// `<home>/.claude/projects/<encoded-project-root>/<session_id>.jsonl`.
-/// The encoding rule (confirmed by inspecting existing
-/// `~/.claude/projects/` entries against their source project
-/// roots): every character that is not ASCII alphanumeric and not
-/// `_` and not `-` becomes `-`. Examples:
-///
-/// - `/Users/ben/code/flow` → `-Users-ben-code-flow`
-/// - `/Users/ben/.claude` → `-Users-ben--claude` (the leading `/` and the `.` each become `-`)
-/// - `/Users/ben/My Project` → `-Users-ben-My-Project` (the space becomes `-`)
-/// - `/Users/ben/code-cc-api` → `-Users-ben-code-cc-api` (the `-` characters are preserved)
-///
-/// The result is run through `is_safe_transcript_path` by the
-/// caller, so this helper does no validation itself — it only
-/// builds the candidate `PathBuf`.
-fn derive_transcript_path(home: &Path, project_root: &Path, session_id: &str) -> PathBuf {
-    let encoded: String = project_root
-        .to_string_lossy()
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    home.join(".claude")
-        .join("projects")
-        .join(encoded)
-        .join(format!("{}.jsonl", session_id))
-}
-
 /// Maximum accepted length for a `session_id`. Real Claude Code
 /// session ids are UUIDs (36 chars); the cap is generously sized
 /// at 256 bytes to leave room for future identifier formats while
 /// bounding the payload an attacker can land in the capture file
 /// or state file via a hostile SessionStart producer.
-pub(crate) const SESSION_ID_MAX_LEN: usize = 256;
+pub const SESSION_ID_MAX_LEN: usize = 256;
 
 /// Validate a state-derived `session_id` against the shape Claude
 /// Code populates: alphanumeric plus `-` and `_`, no path separators
@@ -200,7 +108,7 @@ pub(crate) const SESSION_ID_MAX_LEN: usize = 256;
 /// at flow-start. Per `.claude/rules/external-input-path-construction.md`,
 /// the same validator runs at every state-derived path-construction
 /// site.
-pub(crate) fn is_safe_session_id(s: &str) -> bool {
+pub fn is_safe_session_id(s: &str) -> bool {
     if s.is_empty() || s == "." || s == ".." || s.len() > SESSION_ID_MAX_LEN {
         return false;
     }
@@ -338,30 +246,14 @@ pub fn append_step_snapshot(
 
 /// Read `$HOME` as a `PathBuf`, falling back to an empty path
 /// when the env var is unset. Producers call this once per
-/// transition to thread the home dir into `capture_for_active_state`.
-/// Empty home is harmless — `capture` reads
-/// `<home>/.claude/rate-limits.json` and the open fails gracefully.
+/// transition to thread the home dir into
+/// `per_flow_capture::capture_for_active_state`. Empty home is
+/// harmless — `capture` reads `<home>/.claude/rate-limits.json`
+/// and the open fails gracefully.
 pub fn home_dir_or_empty() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_default()
-}
-
-/// Resolve the per-session cost-file path
-/// `<project_root>/.claude/cost/<YYYY-MM>/<session_id>`. No
-/// extension — the producer in `~/.claude/statusline-command.sh`
-/// writes the file as `$cost_dir/$session_id` (line 32). The
-/// month folder mirrors `tui_data::load_account_metrics` so the
-/// snapshot reads the same file that account-monthly aggregation
-/// already reads.
-fn cost_file_path(project_root: &Path, session_id: &str) -> PathBuf {
-    let now_local = chrono::Local::now();
-    let year_month = now_local.format("%Y-%m").to_string();
-    project_root
-        .join(".claude")
-        .join("cost")
-        .join(year_month)
-        .join(session_id)
 }
 
 /// Read `~/.claude/rate-limits.json` and extract the two pct fields.
@@ -386,18 +278,6 @@ fn read_rate_limits(home: &Path) -> (Option<i64>, Option<i64>) {
     let five = value.get("five_hour_pct").and_then(tolerant_i64_opt);
     let seven = value.get("seven_day_pct").and_then(tolerant_i64_opt);
     (five, seven)
-}
-
-/// Read a per-session cost file (a single floating-point number).
-/// Missing file, malformed content, or non-finite parse returns `None`.
-fn read_cost(path: &Path) -> Option<f64> {
-    let content = fs::read_to_string(path).ok()?;
-    let parsed: f64 = content.trim().parse().ok()?;
-    if parsed.is_finite() {
-        Some(parsed)
-    } else {
-        None
-    }
 }
 
 /// Aggregate state derived from a single transcript scan.
