@@ -31,7 +31,7 @@ These skills are available at any point in the workflow, regardless of phase.
 
 | Skill | Description |
 |-------|-------------|
-| [`/flow-prime`](flow-prime.md) | One-time setup — configure and commit permissions, install bin/* delegation stubs, and git excludes |
+| [`/flow-prime`](flow-prime.md) | One-time setup — configure permissions, capture primary role, install bin/* delegation stubs, and configure git excludes |
 | [`/flow-commit`](flow-commit.md) | Review the full diff, then git add + commit + push |
 | [`/flow-note`](flow-note.md) | Capture a correction or learning — invoked automatically on corrections |
 | [`/flow-abort`](flow-abort.md) | Abandon the current feature — close PR, delete branch, remove worktree |

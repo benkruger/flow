@@ -2233,6 +2233,84 @@ fn prime_has_commit_format_prompt() {
     );
 }
 
+#[test]
+fn flow_prime_has_role_selection_step() {
+    let c = common::read_skill("flow-prime");
+    let role_marker = c
+        .lines()
+        .find(|l| l.starts_with("### Step ") && l.to_lowercase().contains("role"))
+        .expect(
+            "flow-prime must contain a `### Step` heading whose subject names role selection \
+             (e.g., 'Choose primary role')",
+        );
+    let role_offset = c
+        .find(role_marker)
+        .expect("role-selection Step heading must be locatable in skill content");
+    let subsection_start = &c[role_offset..];
+    let subsection = subsection_start
+        .split_once("\n### ")
+        .map(|(section, _)| section)
+        .unwrap_or(subsection_start);
+    for option in ["PM", "Tech Lead", "Founder / Solo Dev", "Skip"] {
+        assert!(
+            subsection.contains(option),
+            "role-selection Step must list option `{}` within its body",
+            option
+        );
+    }
+}
+
+#[test]
+fn flow_prime_reprime_extracts_role() {
+    let c = common::read_skill("flow-prime");
+    let tail_at_heading = c
+        .split_once("## Reprime Check")
+        .map(|(_, t)| t)
+        .expect("flow-prime must declare a Reprime Check section");
+    let reprime = tail_at_heading
+        .split_once("\n## ")
+        .map(|(section, _)| section)
+        .unwrap_or(tail_at_heading);
+    assert!(
+        reprime.contains("role"),
+        "Reprime Check must mention extracting `role` alongside skills and commit_format"
+    );
+    assert!(
+        reprime.contains("skills") && reprime.contains("commit_format"),
+        "Reprime Check still extracts skills and commit_format"
+    );
+}
+
+#[test]
+fn flow_prime_invokes_setup_with_role_flag() {
+    let c = common::read_skill("flow-prime");
+    let setup_step = c
+        .lines()
+        .find(|l| l.starts_with("### Step ") && l.to_lowercase().contains("run prime setup script"))
+        .expect("flow-prime must contain a `Run prime setup script` Step heading");
+    let setup_offset = c
+        .find(setup_step)
+        .expect("setup-script Step heading must be locatable in skill content");
+    let subsection_start = &c[setup_offset..];
+    let subsection = subsection_start
+        .split_once("\n### ")
+        .map(|(section, _)| section)
+        .unwrap_or(subsection_start);
+    let bash_blocks: Vec<&str> = subsection
+        .split("```bash")
+        .skip(1)
+        .filter_map(|tail| tail.split_once("```").map(|(body, _)| body))
+        .collect();
+    assert!(
+        !bash_blocks.is_empty(),
+        "setup-script Step must contain at least one fenced bash block",
+    );
+    assert!(
+        bash_blocks.iter().any(|body| body.contains("--role")),
+        "setup-script Step must include `--role` inside a fenced bash block so role flows into prime-setup",
+    );
+}
+
 // --- Code phase ---
 
 #[test]

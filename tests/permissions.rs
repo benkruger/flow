@@ -143,6 +143,7 @@ const PLACEHOLDER_SUBS: &[(&str, &str)] = &[
         r#"{"flow-start":{"continue":"manual"}}"#,
     ),
     ("<commit_format>", "full"),
+    ("<role_value>", "pm"),
     ("<index>", "0"),
     ("<outcome>", "completed"),
     ("<pr_url>", "https://github.com/test/test/pull/1"),

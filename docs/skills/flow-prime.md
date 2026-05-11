@@ -20,15 +20,16 @@ One-time project setup. Configures workspace permissions in `.claude/settings.js
 
 1. Asks the user to choose an autonomy level (fully autonomous, fully manual, recommended, or customize per skill)
 2. Asks the user to choose a commit message format (title-only or full)
-3. Runs a single setup script that handles all configuration in one call:
+3. Asks the user for their primary role — PM, Tech Lead, Founder / Solo Dev, or Skip. The selection is recorded as the optional `role` field in `.flow.json` and sets a default planning persona for future planning conversations. Skipping omits the field entirely.
+4. Runs a single setup script that handles all configuration in one call:
    - Reads or creates `.claude/settings.json` and merges FLOW universal allow/deny permissions
-   - Writes `.flow.json` with version, config hash, commit format, and skills configuration
+   - Writes `.flow.json` with version, config hash, commit format, role (when set), and skills configuration
    - Adds `.flow-states/`, `.worktrees/`, `.flow.json`, `.claude/cost/`, and `.claude/scheduled_tasks.lock` to `.git/info/exclude`
    - Installs a pre-commit hook that blocks direct `git commit` during active FLOW features and requires `/flow:flow-commit`
    - Installs a global launcher at `~/.local/bin/flow`
    - Installs `bin/{format,lint,build,test}` stubs from `assets/bin-stubs/<tool>.sh` into `<project_root>/bin/<tool>` when absent. Pre-existing `bin/*` scripts are never overwritten so users who already configured their own toolchain keep their work.
-4. Installs the `decompose` plugin from the `matt-k-wong/mkw-DAG-architect` marketplace
-5. Commits generated files (`.claude/settings.json` and any newly-installed `bin/<tool>` stubs) to version control
+5. Installs the `decompose` plugin from the `matt-k-wong/mkw-DAG-architect` marketplace
+6. Commits generated files (`.claude/settings.json` and any newly-installed `bin/<tool>` stubs) to version control
 
 After prime, the user is responsible for editing each `bin/<tool>` to wire it to their actual toolchain (cargo, pytest, go test, npm, etc.). The default stubs exit 0 with a stderr reminder so a fresh prime never blocks CI.
 
