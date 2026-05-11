@@ -636,6 +636,134 @@ fn investigation_agents_no_inline_context() {
     }
 }
 
+// --- Planning-tier agent contracts ---
+//
+// Three planning-tier sub-agents — `agents/pm.md`,
+// `agents/tech-lead.md`, `agents/cto.md` — represent concentric
+// scope authority: PM authorizes copy/content/small changes,
+// Tech Lead authorizes changes within current architecture and
+// design patterns, CTO authorizes novel work and is the
+// escalation terminus. The tests below lock in the scope
+// boundary, the structured `## SCOPE REFUSAL` escalation
+// protocol, and (for Tech Lead) the Reasoning Discipline
+// section per `.claude/rules/semi-formal-reasoning.md`. Per-file
+// siblings rather than a single coordinated test because each
+// agent's regression is independent: weakening one boundary,
+// dropping one refusal template, or accidentally adding a
+// refusal to CTO each break a distinct invariant.
+//
+// Section-bounded assertion helpers (refusal_section,
+// section_by_heading) anchor on line-level heading matches rather
+// than substring scans. Prose mentions of the literal heading
+// text (inline backticked references explaining what the section
+// emits) must not satisfy the assertion. Per
+// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions
+// in Contract Tests," section-scoped tests bound the search to
+// the heading-to-next-heading slice rather than walking the file
+// or taking a fixed-line window.
+
+/// Return the body of a Markdown section beginning at the line
+/// whose trimmed content equals `heading`. The body extends to the
+/// next top-or-same-level heading (`## `) line. Returns `None` if
+/// no line in `content` exactly equals `heading` after trimming
+/// trailing whitespace — a prose mention of the heading text
+/// (inline backticked reference, code-block example) does not
+/// satisfy the match.
+fn section_by_heading<'a>(content: &'a str, heading: &str) -> Option<&'a str> {
+    let mut idx = 0usize;
+    for line in content.split_inclusive('\n') {
+        if line.trim_end() == heading {
+            let start = idx + line.len();
+            // Scan forward for the next "## " heading line; the
+            // section ends just before that line.
+            let tail = &content[start..];
+            let mut local = 0usize;
+            for next_line in tail.split_inclusive('\n') {
+                let trimmed = next_line.trim_end_matches('\n');
+                if trimmed.starts_with("## ") {
+                    return Some(&tail[..local]);
+                }
+                local += next_line.len();
+            }
+            return Some(tail);
+        }
+        idx += line.len();
+    }
+    None
+}
+
+/// Convenience: return the body of an agent's `## SCOPE REFUSAL`
+/// section. Anchors on a line-level heading match so prose
+/// mentions cannot satisfy the lookup.
+fn refusal_section(content: &str) -> Option<&str> {
+    section_by_heading(content, "## SCOPE REFUSAL")
+}
+
+#[test]
+fn agents_planning_have_scope_section() {
+    for agent in &["pm.md", "tech-lead.md", "cto.md"] {
+        let c = common::read_agent(agent);
+        let has_heading = c.lines().any(|l| l.trim_end() == "## Scope");
+        assert!(
+            has_heading,
+            "agents/{} must declare a `## Scope` heading on its own line naming the boundary of work it authorizes",
+            agent
+        );
+    }
+}
+
+#[test]
+fn agents_planning_pm_refuses_with_template_naming_tech_lead() {
+    let c = common::read_agent("pm.md");
+    let section = refusal_section(&c).expect(
+        "agents/pm.md must contain a `## SCOPE REFUSAL` heading on its own line naming the Tech Lead escalation target",
+    );
+    assert!(
+        section.contains("**Escalate to:** Tech Lead"),
+        "agents/pm.md `## SCOPE REFUSAL` section must contain the canonical `**Escalate to:** Tech Lead` bullet — section body checked: {}",
+        section
+    );
+}
+
+#[test]
+fn agents_planning_tech_lead_refuses_with_template_naming_cto() {
+    let c = common::read_agent("tech-lead.md");
+    let section = refusal_section(&c).expect(
+        "agents/tech-lead.md must contain a `## SCOPE REFUSAL` heading on its own line naming the CTO escalation target",
+    );
+    assert!(
+        section.contains("**Escalate to:** CTO"),
+        "agents/tech-lead.md `## SCOPE REFUSAL` section must contain the canonical `**Escalate to:** CTO` bullet — section body checked: {}",
+        section
+    );
+}
+
+#[test]
+fn agents_planning_cto_is_escalation_terminus() {
+    let c = common::read_agent("cto.md");
+    let has_heading = c.lines().any(|l| l.trim_end() == "## SCOPE REFUSAL");
+    assert!(
+        !has_heading,
+        "agents/cto.md must NOT contain a `## SCOPE REFUSAL` heading on its own line — CTO is the escalation terminus, the buck stops there. Prose mentions of the literal text are allowed (e.g. explaining what sibling tiers emit); only a real heading is forbidden."
+    );
+}
+
+#[test]
+fn agents_planning_tech_lead_uses_reasoning_discipline() {
+    let c = common::read_agent("tech-lead.md");
+    let section = section_by_heading(&c, "## Reasoning Discipline").expect(
+        "agents/tech-lead.md must declare a `## Reasoning Discipline` heading on its own line (per .claude/rules/semi-formal-reasoning.md) since its findings reason about code behavior",
+    );
+    for term in ["Premise", "Trace", "Conclude"] {
+        assert!(
+            section.contains(term),
+            "agents/tech-lead.md `## Reasoning Discipline` section must contain `{}` (Premise -> Trace -> Conclude template) — section body checked: {}",
+            term,
+            section
+        );
+    }
+}
+
 #[test]
 fn reviewer_inline_context_format_convention() {
     let c = common::read_skill("flow-review");

@@ -58,7 +58,7 @@ Plan handoff happens at flow-start: `bin/flow plan-from-issue --issue <N> --bran
 - `hooks/hooks.json` — hook registration
 - `.claude/settings.json` — project permissions (git rebase denied)
 - `docs/` — GitHub Pages site; `docs/reference/flow-state-schema.md` for state file schema
-- `agents/*.md` — seven custom plugin sub-agents (ci-fixer, reviewer, pre-mortem, adversarial, learn-analyst, documentation, issue-triage)
+- `agents/*.md` — ten custom plugin sub-agents split across two tiers. **Review tier (7):** ci-fixer, reviewer, pre-mortem, adversarial, learn-analyst, documentation, issue-triage. **Planning tier (3):** pm, tech-lead, cto.
 - `src/*.rs` — Rust source for all `bin/flow` subcommands. Per-module purpose lives in module doc comments.
 - `src/plan_from_issue.rs` — extracts plan content from issue-body sentinels at flow-start
 - `src/validate_issue_body.rs` — pre-filing validator for issue bodies; reuses `plan_from_issue`'s sentinel constants, `extract_plan`, and `count_tasks` to reject bodies before `bin/flow issue`. Consumed by `flow-create-issue` (Filing step) and `flow-decompose-project` (Step 3 epic + Step 4 per-child) so neither skill can file an issue that `plan-from-issue` would later reject at flow-start
@@ -145,7 +145,11 @@ The base branch's `target/` is a long-lived build surface across many source gen
 
 ### Sub-Agents
 
-Seven custom plugin sub-agents in `agents/*.md` — tiered by task complexity: opus (ci-fixer, adversarial), sonnet (reviewer, pre-mortem, issue-triage), haiku (learn-analyst, documentation). Agent frontmatter must only use supported keys (`name`, `description`, `model`, `effort`, `maxTurns`, `tools`, `disallowedTools`, `skills`, `memory`, `background`, `isolation`) — `test_agent_frontmatter_only_supported_keys` enforces this. The global `PreToolUse` hook (`bin/flow hook validate-pretool`) enforces Bash and Agent tool restrictions across all agents. See `.claude/rules/cognitive-isolation.md`.
+Ten custom plugin sub-agents in `agents/*.md`, split across two tiers. Agent frontmatter must only use supported keys (`name`, `description`, `model`, `effort`, `maxTurns`, `tools`, `disallowedTools`, `skills`, `memory`, `background`, `isolation`) — `test_agent_frontmatter_only_supported_keys` enforces this. The global `PreToolUse` hook (`bin/flow hook validate-pretool`) enforces Bash and Agent tool restrictions across all agents. See `.claude/rules/cognitive-isolation.md`.
+
+**Review tier (7):** ci-fixer (opus), reviewer (sonnet), pre-mortem (sonnet), adversarial (opus), learn-analyst (haiku), documentation (haiku), issue-triage (sonnet). Tiered by task complexity. Invoked by Review and Learn phase skills.
+
+**Planning tier (3):** pm (haiku), tech-lead (sonnet), cto (opus). Designed for invocation by a future planning skill during design discussions. Scope authority escalates PM → Tech Lead → CTO via structured `## SCOPE REFUSAL` outputs; CTO is the escalation terminus and has no refusal block. The agents land first so the consuming skill can be authored against a stable contract.
 
 When adding or modifying an agent's `maxTurns` budget, read peer agents' frontmatter to maintain parity.
 
