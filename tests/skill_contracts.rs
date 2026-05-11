@@ -636,6 +636,80 @@ fn investigation_agents_no_inline_context() {
     }
 }
 
+// --- Planning-tier agent contracts ---
+//
+// Three planning-tier sub-agents — `agents/pm.md`,
+// `agents/tech-lead.md`, `agents/cto.md` — represent concentric
+// scope authority: PM authorizes copy/content/small changes,
+// Tech Lead authorizes changes within current architecture and
+// design patterns, CTO authorizes novel work and is the
+// escalation terminus. The tests below lock in the scope
+// boundary, the structured `## SCOPE REFUSAL` escalation
+// protocol, and (for Tech Lead) the Reasoning Discipline
+// section per `.claude/rules/semi-formal-reasoning.md`. Per-file
+// siblings rather than a single coordinated test because each
+// agent's regression is independent: weakening one boundary,
+// dropping one refusal template, or accidentally adding a
+// refusal to CTO each break a distinct invariant.
+
+#[test]
+fn agents_planning_have_scope_section() {
+    for agent in &["pm.md", "tech-lead.md", "cto.md"] {
+        let c = common::read_agent(agent);
+        assert!(
+            c.contains("## Scope"),
+            "agents/{} must declare a `## Scope` heading naming the boundary of work it authorizes",
+            agent
+        );
+    }
+}
+
+#[test]
+fn agents_planning_pm_refuses_with_template_naming_tech_lead() {
+    let c = common::read_agent("pm.md");
+    let tail = c
+        .split_once("## SCOPE REFUSAL")
+        .map(|(_, t)| t)
+        .expect("agents/pm.md must contain a `## SCOPE REFUSAL` heading naming the Tech Lead escalation target");
+    let window: String = tail.lines().take(30).collect::<Vec<&str>>().join("\n");
+    assert!(
+        window.contains("Tech Lead"),
+        "agents/pm.md `## SCOPE REFUSAL` section must name `Tech Lead` within 30 lines of the heading so PM's escalation target is unambiguous"
+    );
+}
+
+#[test]
+fn agents_planning_tech_lead_refuses_with_template_naming_cto() {
+    let c = common::read_agent("tech-lead.md");
+    let tail = c
+        .split_once("## SCOPE REFUSAL")
+        .map(|(_, t)| t)
+        .expect("agents/tech-lead.md must contain a `## SCOPE REFUSAL` heading naming the CTO escalation target");
+    let window: String = tail.lines().take(30).collect::<Vec<&str>>().join("\n");
+    assert!(
+        window.contains("CTO"),
+        "agents/tech-lead.md `## SCOPE REFUSAL` section must name `CTO` within 30 lines of the heading so Tech Lead's escalation target is unambiguous"
+    );
+}
+
+#[test]
+fn agents_planning_cto_is_escalation_terminus() {
+    let c = common::read_agent("cto.md");
+    assert!(
+        !c.contains("## SCOPE REFUSAL"),
+        "agents/cto.md must NOT contain `## SCOPE REFUSAL` — CTO is the escalation terminus, the buck stops there"
+    );
+}
+
+#[test]
+fn agents_planning_tech_lead_uses_reasoning_discipline() {
+    let c = common::read_agent("tech-lead.md");
+    assert!(
+        c.contains("Premise") && c.contains("Trace"),
+        "agents/tech-lead.md must declare the Premise -> Trace -> Conclude template (per .claude/rules/semi-formal-reasoning.md) since its findings reason about code behavior"
+    );
+}
+
 #[test]
 fn reviewer_inline_context_format_convention() {
     let c = common::read_skill("flow-review");
