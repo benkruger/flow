@@ -165,40 +165,68 @@ pub fn clear_marker(home: &Path, skill: &str, session_id: &str) -> Result<bool, 
     }
 }
 
-/// Resolve the session_id for a CLI invocation. When the caller passed
-/// `--session-id`, use it directly. When the caller omitted it,
-/// fall back to the capture file written at SessionStart by
-/// `crate::hooks::capture_session::run` — that file holds the active
-/// Claude Code session_id and is the only path by which the skill can
-/// reach a session_id matching what the Stop hook receives in its
-/// stdin payload.
+/// Pure helper for resolving the active session_id from the three
+/// sources skills can reach: explicit `--session-id` arg →
+/// `CLAUDE_CODE_SESSION_ID` env var (validated via
+/// `is_safe_session_id`) → SessionStart capture file. The env-var
+/// path is the primary fallback on Claude Code 2.1.132+ because it
+/// shares the per-subprocess value the Stop hook receives in its
+/// stdin payload, so set-time and clear-time resolve to the same id
+/// regardless of concurrent Claude Code activity. The capture file
+/// remains the backstop for older Claude Code installs.
 ///
-/// Skills that issue paired `set` and `clear` calls must capture the
-/// session_id ONCE (via `bin/flow current-session-id`) and pass it
-/// explicitly to both calls. Reading the capture file on every call
-/// is a race surface: a concurrent Claude Code session's
-/// SessionStart hook overwrites the capture file with a different
-/// session_id, so set-time and clear-time can resolve to different
-/// values and the marker is never cleared. The explicit-pass pattern
-/// in `flow-create-issue/SKILL.md` is the correct discipline.
-fn resolve_session_id(home: &Path, explicit: Option<&str>) -> Option<String> {
+/// Accepts the env-var value as a parameter so the env-reading
+/// boundary stays in `main.rs` and the same precedence chain is
+/// reachable from both wrappers without coupling to process state.
+/// Production callers are `run_set_main` and `run_clear_main` in
+/// the same module; integration tests drive the precedence chain
+/// through those wrappers with a controlled `env_value` argument
+/// per `.claude/rules/testing-gotchas.md` "Rust Parallel Test Env
+/// Var Races" (which forbids `std::env::set_var` in tests).
+///
+/// Precedence:
+/// 1. `explicit` — non-empty wins over every other source.
+/// 2. `env_value` — non-empty AND `is_safe_session_id`-valid; an
+///    invalid env value falls through to the capture file rather
+///    than reaching `marker_path` per
+///    `.claude/rules/external-input-path-construction.md`.
+/// 3. SessionStart capture file at
+///    `<home>/.claude/flow-current-session.json`.
+///
+/// Returns `None` when every source is empty or invalid.
+fn resolve_session_id_from(
+    home: &Path,
+    explicit: Option<&str>,
+    env_value: Option<&str>,
+) -> Option<String> {
     if let Some(s) = explicit {
         if !s.is_empty() {
             return Some(s.to_string());
+        }
+    }
+    if let Some(env_sid) = env_value {
+        if !env_sid.is_empty() && is_safe_session_id(env_sid) {
+            return Some(env_sid.to_string());
         }
     }
     crate::hooks::capture_session::read_captured_session(home).map(|(sid, _)| sid)
 }
 
 /// Print the captured session_id (or empty string if unavailable) and
-/// exit 0. The skill uses this to capture the active Claude Code
-/// session_id ONCE at its Announce banner so subsequent
-/// `set-utility-in-progress` and `clear-utility-in-progress` calls
-/// pass the SAME `--session-id` even when a concurrent session's
-/// SessionStart hook later overwrites the capture file. Stable
-/// session_id across the full skill lifecycle is the invariant
-/// required for the marker write/clear pair to operate on the same
-/// file.
+/// exit 0.
+///
+/// Production skills should prefer `$CLAUDE_CODE_SESSION_ID` from the
+/// Bash subprocess environment; `set-utility-in-progress` and
+/// `clear-utility-in-progress` resolve the active session_id at the
+/// CLI boundary in `main.rs` and forward it through `run_set_main` /
+/// `run_clear_main`. The recommended resolution path is the pure
+/// helper `resolve_session_id_from` defined above.
+///
+/// This subcommand persists as a backward-compat surface for Claude
+/// Code installs without the per-subprocess env var (Claude Code
+/// before 2.1.132) and as an explicit override path for tests and
+/// scripted callers that need to read the SessionStart capture file
+/// directly.
 ///
 /// Empty stdout (no `\n`) means no captured session_id is available;
 /// the skill should treat this as a non-fatal "marker disabled"
@@ -213,14 +241,21 @@ pub fn run_current_session_id_main(home: &Path) -> (String, i32) {
 }
 
 /// CLI entry for `bin/flow set-utility-in-progress`. Accepts the
-/// resolved HOME directory as a parameter so tests can drive the
-/// real production path with a `TempDir` fixture. When `session_id`
-/// is `None`, falls back to the SessionStart capture file so the
-/// skill (which has no env-var path to Claude Code's session_id)
-/// can omit the flag and still get a marker keyed by the active
-/// session.
-pub fn run_set_main(home: &Path, skill: &str, session_id: Option<&str>) -> (Value, i32) {
-    let resolved = match resolve_session_id(home, session_id) {
+/// resolved HOME directory and the `CLAUDE_CODE_SESSION_ID` env
+/// value as parameters so tests can drive the real production path
+/// with a `TempDir` fixture and an explicit `env_value=None` without
+/// touching the process environment. When `session_id` is `None`,
+/// resolution falls through to the env value, then to the
+/// SessionStart capture file so older Claude Code installs without
+/// the per-subprocess env var still get a marker keyed by the
+/// active session.
+pub fn run_set_main(
+    home: &Path,
+    skill: &str,
+    session_id: Option<&str>,
+    env_value: Option<&str>,
+) -> (Value, i32) {
+    let resolved = match resolve_session_id_from(home, session_id, env_value) {
         Some(s) => s,
         None => {
             return (
@@ -240,10 +275,16 @@ pub fn run_set_main(home: &Path, skill: &str, session_id: Option<&str>) -> (Valu
 
 /// CLI entry for `bin/flow clear-utility-in-progress`. Same shape as
 /// `run_set_main` — returns JSON to stdout and exit code 0 for
-/// business outcomes per the project convention. Same capture-file
-/// fallback for `--session-id`.
-pub fn run_clear_main(home: &Path, skill: &str, session_id: Option<&str>) -> (Value, i32) {
-    let resolved = match resolve_session_id(home, session_id) {
+/// business outcomes per the project convention. Same precedence
+/// chain (explicit → env → capture file) routed through
+/// `resolve_session_id_from`.
+pub fn run_clear_main(
+    home: &Path,
+    skill: &str,
+    session_id: Option<&str>,
+    env_value: Option<&str>,
+) -> (Value, i32) {
+    let resolved = match resolve_session_id_from(home, session_id, env_value) {
         Some(s) => s,
         None => {
             return (

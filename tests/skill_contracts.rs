@@ -4604,6 +4604,56 @@ fn flow_create_issue_skill_has_pre_draft_backwards_reasoning_scan() {
 }
 
 #[test]
+fn flow_create_issue_no_current_session_id_subcommand() {
+    // Tombstone: removed in PR #1458. The capture-once pattern that
+    // ran `bin/flow current-session-id` at Announce and stored the
+    // value as `<session_id>` was replaced by reading
+    // CLAUDE_CODE_SESSION_ID from the per-subprocess env var Claude
+    // Code 2.1.132+ supplies — same value the Stop hook sees in stdin,
+    // so set-time and clear-time always resolve to the same id. The
+    // capture-once invocation must not reappear in the SKILL.md;
+    // resurrection breaks the unattended-flow contract whenever a
+    // concurrent Claude Code session overwrites the SessionStart
+    // capture file mid-skill.
+    //
+    // Stability: the forbidden token is a bash command embedded in
+    // markdown prose. SKILL.md is read as bytes — `concat!`,
+    // `format!`, and constant-reference substitutions do not run at
+    // SKILL.md read time, so a byte-substring check is sufficient.
+    let content = common::read_skill("flow-create-issue");
+    assert!(
+        !content.contains("bin/flow current-session-id"),
+        "flow-create-issue SKILL.md must not invoke \
+         `bin/flow current-session-id` — the env-var path supersedes \
+         the capture-once pattern"
+    );
+}
+
+#[test]
+fn flow_create_issue_marker_invocations_omit_session_id_flag() {
+    // Companion to `flow_create_issue_no_current_session_id_subcommand`:
+    // the simplified SKILL.md routes set/clear through
+    // `bin/flow set-utility-in-progress --skill ...` and
+    // `bin/flow clear-utility-in-progress --skill ...` with no
+    // `--session-id` flag. The Rust layer at the CLI boundary
+    // reads CLAUDE_CODE_SESSION_ID once and forwards it through
+    // `run_set_main` / `run_clear_main`.
+    //
+    // The blanket "must not contain `--session-id`" assertion is
+    // sound because no other documented invocation in the SKILL.md
+    // carries the flag. Any future legitimate use must be added
+    // alongside an explicit allowlist in this test.
+    let content = common::read_skill("flow-create-issue");
+    assert!(
+        !content.contains("--session-id"),
+        "flow-create-issue SKILL.md must not pass `--session-id` to \
+         set-utility-in-progress / clear-utility-in-progress \
+         invocations — Rust resolves the active session_id from \
+         CLAUDE_CODE_SESSION_ID at the CLI boundary"
+    );
+}
+
+#[test]
 fn flow_decompose_project_skill_has_backwards_reasoning_scan() {
     let content = common::read_skill("flow-decompose-project");
 
