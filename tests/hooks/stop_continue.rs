@@ -1206,6 +1206,144 @@ fn run_subprocess_continue_pending_uses_format_block_output() {
     );
 }
 
+// Drives the full run() → check_in_progress_utility_skill path. Sets up a
+// git repo with NO state file (the canonical context for flow-create-issue:
+// the utility skill runs outside any active FLOW phase, so check_first_stop
+// and check_continue both early-return on `!state_path.exists()`). The
+// marker file at `<HOME>/.claude/flow/utility-in-progress-<session>.json`
+// is the SOLE signal the predicate consults. Regression: a future refactor
+// that introduces a transcript-walker condition or any other gate inside
+// `check_in_progress_utility_skill` would make this test fail because the
+// run() pipeline would no longer refuse the turn-end when the marker is
+// the only state present.
+#[test]
+fn run_subprocess_blocks_when_utility_marker_present() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    Command::new("git")
+        .args(["init", "--initial-branch", "main"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.email", "t@t"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "t"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    fs::write(root.join("README.md"), "x").unwrap();
+    Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "init"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+
+    // Build HOME with the marker file present. The marker JSON names a
+    // skill in MULTI_STEP_UTILITY_SKILLS and a session_id that matches
+    // the stdin payload below.
+    let home = root.join("home");
+    let marker_dir = home.join(".claude").join("flow");
+    fs::create_dir_all(&marker_dir).unwrap();
+    let session_id = "abc12345";
+    let marker_path = marker_dir.join(format!("utility-in-progress-{}.json", session_id));
+    let payload = json!({
+        "skill": "flow:flow-create-issue",
+        "session_id": session_id,
+        "started_at": "2026-05-09T12:00:00-07:00",
+    });
+    fs::write(&marker_path, serde_json::to_string(&payload).unwrap()).unwrap();
+
+    let stdin = format!(r#"{{"session_id": "{}"}}"#, session_id);
+    let (code, stdout, _stderr) = run_hook_with_home(&root, &stdin, &home);
+    assert_eq!(code, 0);
+    let last = stdout
+        .lines()
+        .rfind(|l| l.trim_start().starts_with('{'))
+        .unwrap_or_else(|| panic!("no JSON in stdout: {}", stdout));
+    let json: Value = serde_json::from_str(last).unwrap();
+    assert_eq!(json["decision"], "block");
+    let reason = json["reason"].as_str().unwrap_or("");
+    assert!(
+        reason.contains("flow:flow-create-issue"),
+        "block reason must name the in-progress utility skill: {}",
+        reason
+    );
+}
+
+// Sibling to the marker-present test. Same fixture shape (no state file,
+// no pending continuation) but the marker file does NOT exist. The
+// run() pipeline must NOT block on the utility-skill predicate when no
+// marker is present. Regression: a future refactor that inverts the
+// marker-presence check or adds a default-block fallback in
+// `check_in_progress_utility_skill` would cause every Stop event
+// outside flow-create-issue to refuse turn-end.
+#[test]
+fn run_subprocess_no_block_when_utility_marker_absent() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    Command::new("git")
+        .args(["init", "--initial-branch", "main"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.email", "t@t"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "t"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    fs::write(root.join("README.md"), "x").unwrap();
+    Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "init"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+
+    // HOME exists but no marker file is written.
+    let home = root.join("home");
+    fs::create_dir_all(home.join(".claude").join("flow")).unwrap();
+
+    let session_id = "abc12345";
+    let stdin = format!(r#"{{"session_id": "{}"}}"#, session_id);
+    let (code, stdout, _stderr) = run_hook_with_home(&root, &stdin, &home);
+    assert_eq!(code, 0);
+    // The stdout must not contain any JSON object whose `decision` field is
+    // `"block"`. Other JSON lines (e.g., log diagnostics) are tolerated.
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with('{') {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<Value>(trimmed) else {
+            continue;
+        };
+        assert_ne!(
+            value.get("decision").and_then(|d| d.as_str()),
+            Some("block"),
+            "marker absent → no block expected; got: {}",
+            stdout
+        );
+    }
+}
+
 // --- check_autonomous_in_progress ---
 
 #[test]
