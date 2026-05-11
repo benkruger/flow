@@ -697,6 +697,41 @@ pub fn check_autonomous_in_progress(state_path: &Path) -> ContinueResult {
 /// its Announce banner and clears it at the COMPLETE banner; this
 /// predicate refuses turn-end while the marker exists.
 ///
+/// **Marker-only invariant.** The block decision depends on a SINGLE
+/// signal: marker file existence (plus the marker's internal skill
+/// name and session_id matching the caller-passed `session_id`).
+/// The predicate consults NO other state — no transcript shape, no
+/// `_continue_pending` field, no `_stop_instructed` flag. The
+/// marker is the authoritative signal for the duration of the
+/// utility skill's lifecycle, and every Stop event during that
+/// lifecycle must refuse turn-end so the model continues past the
+/// Skill tool's structural return-to-user boundary.
+///
+/// Hook-state read timing per `.claude/rules/hook-state-timing.md`:
+///
+/// - **Field read.** Marker file existence at
+///   `<home>/.claude/flow/utility-in-progress-<session_id>.json`,
+///   plus the marker's JSON fields `skill` and `session_id`.
+/// - **Writer.** `bin/flow set-utility-in-progress` (CLI surface
+///   for `crate::commands::utility_marker::write_marker`). Called
+///   by the utility skill immediately after its Announce banner.
+/// - **Clearer.** `bin/flow clear-utility-in-progress` (CLI
+///   surface for `crate::commands::utility_marker::clear_marker`).
+///   Called by the utility skill immediately before its COMPLETE
+///   banner and on every error-exit path.
+/// - **Temporal ordering.** The marker persists across the entire
+///   skill lifetime — from Announce through every internal Skill
+///   tool return until COMPLETE. The predicate's read window is
+///   every Stop event the Claude Code session emits during that
+///   span, including second-and-subsequent returns from any child
+///   Skill tool invocation.
+/// - **Read window.** Every Stop event. The marker remains
+///   authoritative on every read regardless of whether earlier
+///   predicates in `run()` short-circuited; this predicate runs
+///   only when none of `check_first_stop` / `check_continue`
+///   already blocked, but its decision is independent of why those
+///   predicates fell through.
+///
 /// Composed into `run()` AFTER `check_continue` (so multi-child-skill
 /// chains route through `check_continue` first) and BEFORE
 /// `check_prose_pause_at_task_entry` so its marker-specific block

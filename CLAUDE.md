@@ -61,6 +61,7 @@ Plan handoff happens at flow-start: `bin/flow plan-from-issue --issue <N> --bran
 - `agents/*.md` — seven custom plugin sub-agents (ci-fixer, reviewer, pre-mortem, adversarial, learn-analyst, documentation, issue-triage)
 - `src/*.rs` — Rust source for all `bin/flow` subcommands. Per-module purpose lives in module doc comments.
 - `src/plan_from_issue.rs` — extracts plan content from issue-body sentinels at flow-start
+- `src/validate_issue_body.rs` — pre-filing validator for issue bodies; reuses `plan_from_issue`'s sentinel constants, `extract_plan`, and `count_tasks` to reject bodies before `bin/flow issue` so `flow-create-issue` cannot file an issue that `plan-from-issue` would later reject at flow-start
 - `src/commands/utility_marker.rs` — per-session `<home>/.claude/flow/utility-in-progress-<session_id>.json` marker that the Stop hook reads to refuse turn-end while a multi-step utility skill is running
 - `bin/flow` — Rust dispatcher (auto-rebuilds when source is newer than binary)
 - `bin/{format,lint,build,test}` — FLOW's own dogfood scripts
@@ -114,7 +115,7 @@ State files capture `relative_cwd` at flow-start time — the path inside the pr
 
 Worktree creation mirrors every `.venv` discovered under the project root into the new worktree as a relative symlink (`src/start_workspace.rs::link_venvs`). The walker skips dotted directories other than `.venv`, a small named-skip list (`node_modules`, `target`, `vendor`, `build`, `dist`), and directory symlinks.
 
-`cwd_scope::enforce` runs as the first action in every subcommand that runs tools or mutates state: `ci`, `build`, `lint`, `format`, `test`, `phase-enter`, `phase-finalize`, `phase-transition`, `set-timestamp`, `add-finding`. Read-only subcommands (`format-status`, `status`, `tombstone-audit`, `base-branch`) do not enforce.
+`cwd_scope::enforce` runs as the first action in every subcommand that runs tools or mutates state: `ci`, `build`, `lint`, `format`, `test`, `phase-enter`, `phase-finalize`, `phase-transition`, `set-timestamp`, `add-finding`. Read-only subcommands (`format-status`, `status`, `tombstone-audit`, `base-branch`, `validate-issue-body`) do not enforce.
 
 When a mono-repo session resumes (context compaction, orchestration, multi-skill chain), the agent's Bash tool cwd may reset to the main repo root and every subsequent `bin/flow` call hard-errors under `cwd_scope::enforce`. Two recovery paths exist: every `phase-enter` response carries a `worktree_cwd` field that joins `worktree_path` with `relative_cwd`, and the phase-enter skills (`flow-code`, `flow-review`, `flow-learn`) run `cd "<worktree_cwd>"` immediately after the HARD-GATE so the re-anchor is automatic at every phase entry. When `cwd_scope::enforce` still fires (e.g. mid-phase tool calls in a session that lost cwd between Bash invocations), the error message names the expected directory and ends with a copy-pasteable `cd "<expected>"` line the user can run verbatim.
 
