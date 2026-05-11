@@ -33,8 +33,15 @@ pub const PLAN_BODY_BYTE_CAP: usize = 1_048_576;
 /// scenarios.
 pub const GH_STDOUT_BYTE_CAP: usize = PLAN_BODY_BYTE_CAP + 65_536;
 
-const BEGIN_MARKER: &str = "<!-- FLOW-PLAN-BEGIN -->";
-const END_MARKER: &str = "<!-- FLOW-PLAN-END -->";
+/// Sentinel that opens a FLOW-PLAN block in an issue body. Consumed by
+/// `crate::validate_issue_body` to count occurrences for the marker-count
+/// check before invoking `extract_plan`. Kept pub-of-module so the
+/// validator references the canonical literal rather than restating it.
+pub const BEGIN_MARKER: &str = "<!-- FLOW-PLAN-BEGIN -->";
+/// Sentinel that closes a FLOW-PLAN block in an issue body. Consumed by
+/// `crate::validate_issue_body` alongside `BEGIN_MARKER` for the
+/// marker-count check.
+pub const END_MARKER: &str = "<!-- FLOW-PLAN-END -->";
 
 /// Reasons `extract_plan` rejects an issue body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -386,8 +393,12 @@ pub fn extract_plan(body: &str) -> Result<&str, ExtractError> {
 ///
 /// Consumed by `run_impl_main` to populate the `tasks_total` field
 /// of the success envelope, which `flow-start` Step 5 reads to
-/// write `code_tasks_total` into the per-branch state file.
-fn count_tasks(plan_body: &str) -> usize {
+/// write `code_tasks_total` into the per-branch state file. Also
+/// consumed by `crate::validate_issue_body::run_impl_main` for the
+/// `no_tasks` rejection branch — the validator asserts the extracted
+/// plan contains at least one `#### Task ` heading outside fenced
+/// code blocks before the body is accepted for filing.
+pub fn count_tasks(plan_body: &str) -> usize {
     let mut fence: Option<(char, usize)> = None;
     let mut count = 0;
     for raw_line in plan_body.lines() {
