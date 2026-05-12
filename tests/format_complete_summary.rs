@@ -10,7 +10,8 @@
 use std::path::{Path, PathBuf};
 
 use flow_rs::format_complete_summary::{
-    compute_cost_breakdown, format_complete_summary, run_impl, run_impl_main, Args,
+    compute_cost_breakdown, format_complete_summary, format_findings_markdown, run_impl,
+    run_impl_main, Args,
 };
 use serde_json::{json, Value};
 
@@ -1432,6 +1433,189 @@ fn summary_findings_with_existing_artifacts() {
 
     assert!(result.summary.contains("Review Findings"));
     assert!(result.summary.contains("Issues filed: 1"));
+}
+
+// --- format_findings_markdown ---
+
+#[test]
+fn format_findings_markdown_empty_returns_empty_string() {
+    let out = format_findings_markdown(&[], "flow-review");
+    assert_eq!(out, "");
+}
+
+#[test]
+fn format_findings_markdown_no_phase_match_returns_empty_string() {
+    let findings = vec![json!({
+        "finding": "Missing rule for X",
+        "reason": "Captured during analysis",
+        "outcome": "rule_written",
+        "phase": "flow-learn",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert_eq!(out, "");
+}
+
+#[test]
+fn format_findings_markdown_renders_fixed_finding() {
+    let findings = vec![json!({
+        "finding": "Missing null check in parser",
+        "reason": "Could panic on malformed input",
+        "outcome": "fixed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("- ✓ **Missing null check in parser**"),
+        "expected fixed marker + bold finding; got:\n{}",
+        out
+    );
+    assert!(
+        out.contains("  - Fixed — Could panic on malformed input"),
+        "expected indented Fixed label + reason; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_renders_dismissed_finding() {
+    let findings = vec![json!({
+        "finding": "Unused import",
+        "reason": "False positive from macro expansion",
+        "outcome": "dismissed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("- ✗ **Unused import**"),
+        "expected dismissed marker + bold finding; got:\n{}",
+        out
+    );
+    assert!(
+        out.contains("  - Dismissed — False positive from macro expansion"),
+        "expected indented Dismissed label + reason; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_renders_mixed_outcomes_in_order() {
+    let findings = vec![
+        json!({
+            "finding": "first",
+            "reason": "r1",
+            "outcome": "fixed",
+            "phase": "flow-review",
+        }),
+        json!({
+            "finding": "second",
+            "reason": "r2",
+            "outcome": "dismissed",
+            "phase": "flow-review",
+        }),
+        json!({
+            "finding": "third",
+            "reason": "r3",
+            "outcome": "fixed",
+            "phase": "flow-review",
+        }),
+    ];
+    let out = format_findings_markdown(&findings, "flow-review");
+    let p1 = out.find("**first**").expect("first finding rendered");
+    let p2 = out.find("**second**").expect("second finding rendered");
+    let p3 = out.find("**third**").expect("third finding rendered");
+    assert!(
+        p1 < p2 && p2 < p3,
+        "findings must render in input order; got:\n{}",
+        out
+    );
+    assert!(out.contains("- ✓ **first**"));
+    assert!(out.contains("- ✗ **second**"));
+    assert!(out.contains("- ✓ **third**"));
+}
+
+#[test]
+fn format_findings_markdown_filters_by_phase() {
+    let findings = vec![
+        json!({
+            "finding": "review-only",
+            "reason": "r1",
+            "outcome": "fixed",
+            "phase": "flow-review",
+        }),
+        json!({
+            "finding": "learn-only",
+            "reason": "r2",
+            "outcome": "rule_written",
+            "phase": "flow-learn",
+        }),
+    ];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(out.contains("**review-only**"), "review entry must appear");
+    assert!(
+        !out.contains("**learn-only**"),
+        "learn entry must NOT appear when filtering for flow-review; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_sanitizes_newlines_in_finding() {
+    let findings = vec![json!({
+        "finding": "first line\nsecond line",
+        "reason": "r1",
+        "outcome": "fixed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("**first line second line**"),
+        "newline in finding must become a single space; got:\n{}",
+        out
+    );
+    // The literal newline inside the bold span would break the
+    // nested list structure on GitHub — assert it was stripped.
+    assert!(
+        !out.contains("first line\nsecond line"),
+        "raw newline inside finding must be replaced; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_sanitizes_newlines_in_reason() {
+    let findings = vec![json!({
+        "finding": "f1",
+        "reason": "reason line one\nreason line two",
+        "outcome": "fixed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("Fixed — reason line one reason line two"),
+        "newline in reason must become a single space; got:\n{}",
+        out
+    );
+    assert!(
+        !out.contains("reason line one\nreason line two"),
+        "raw newline inside reason must be replaced; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_handles_missing_outcome_field() {
+    let findings = vec![json!({
+        "finding": "no outcome key",
+        "reason": "r1",
+        "phase": "flow-review",
+    })];
+    // The helper must not panic when outcome is absent. It falls
+    // back to outcome_marker("") / outcome_label("") which the
+    // existing private helpers map to "?" / "Unknown".
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(out.contains("**no outcome key**"));
+    assert!(out.contains("?"));
+    assert!(out.contains("Unknown"));
 }
 
 // --- run_impl_main ---

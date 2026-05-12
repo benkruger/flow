@@ -309,6 +309,49 @@ fn token_cost_section(state: &Value) -> Vec<String> {
     lines
 }
 
+/// Render the per-phase findings list as a nested GitHub Markdown
+/// list for the PR body. Consumed by `render_body` in
+/// `src/render_pr_body.rs` to produce the `## Review Findings` and
+/// `## Learn Findings` sections.
+///
+/// Filters `findings` by `f["phase"] == Some(phase_key)`. Returns
+/// `String::new()` when no entries match so the caller can omit the
+/// section entirely.
+///
+/// Each matching finding renders as two lines: a top-level item
+/// `- <marker> **<finding>**` and a nested item
+/// `  - <label> — <reason>`. Embedded `\n` and `\r` in the finding
+/// or reason text are replaced with a single space — a raw newline
+/// would break the nested-list structure on GitHub.
+pub fn format_findings_markdown(findings: &[Value], phase_key: &str) -> String {
+    let matched: Vec<&Value> = findings
+        .iter()
+        .filter(|f| f.get("phase").and_then(|p| p.as_str()) == Some(phase_key))
+        .collect();
+    if matched.is_empty() {
+        return String::new();
+    }
+    let mut lines = Vec::with_capacity(matched.len() * 2);
+    for f in &matched {
+        let finding = sanitize_md_line(f.get("finding").and_then(|v| v.as_str()).unwrap_or(""));
+        let reason = sanitize_md_line(f.get("reason").and_then(|v| v.as_str()).unwrap_or(""));
+        let outcome = f.get("outcome").and_then(|v| v.as_str()).unwrap_or("");
+        let marker = outcome_marker(outcome);
+        let label = outcome_label(outcome);
+        lines.push(format!("- {} **{}**", marker, finding));
+        lines.push(format!("  - {} — {}", label, reason));
+    }
+    lines.join("\n")
+}
+
+/// Replace `\n` and `\r` with a single space so the value can sit on
+/// one line of a nested markdown list without breaking the structure.
+fn sanitize_md_line(s: &str) -> String {
+    s.chars()
+        .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
+        .collect()
+}
+
 /// Render a findings section for a single phase.
 ///
 /// Returns lines for the section header and each finding (two lines per finding:
