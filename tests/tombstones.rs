@@ -317,6 +317,96 @@ fn test_flow_plan_skill_no_link_blocked_by() {
     );
 }
 
+// --- FLOW_DENY escape-hatch entries ---
+//
+// The deny entries listed below block the canonical escape-hatch
+// program/flag combinations enumerated in
+// `.claude/rules/no-escape-hatches.md` "Canonical Escape-Hatch Shapes":
+// shell-eval (`bash -c`, `sh -c`, `zsh -c`, `eval`), interpreter-eval
+// (`perl -e/-E`, `python -c`, `python3 -c`, `ruby -e`, `node -e/-p`),
+// command-wrapper (`xargs`, `rtk proxy`), network-bridge (`nc`, direct
+// `ssh`), and inter-process (`tmux send-keys`, `screen -X`). Removing
+// any entry from `FLOW_DENY` re-opens the escape-hatch surface it
+// blocks. The structural escape-hatch layer in `validate-pretool`
+// covers indirect forms (absolute paths, env-var prefixes); the deny
+// list is the first-pass filter against direct shapes that reach
+// target projects' `.claude/settings.json` via `/flow:flow-prime`.
+
+/// Canonical FLOW_DENY entries that block escape-hatch program/flag
+/// combinations. Each entry must appear verbatim inside the
+/// `FLOW_DENY` const slice in `src/prime_check.rs`.
+const FLOW_DENY_ESCAPE_HATCH_ENTRIES: &[&str] = &[
+    "Bash(bash -c *)",
+    "Bash(sh -c *)",
+    "Bash(zsh -c *)",
+    "Bash(eval *)",
+    "Bash(xargs *)",
+    "Bash(perl -e *)",
+    "Bash(perl -E *)",
+    "Bash(python -c *)",
+    "Bash(python3 -c *)",
+    "Bash(ruby -e *)",
+    "Bash(node -e *)",
+    "Bash(node -p *)",
+    "Bash(nc *)",
+    "Bash(tmux send-keys *)",
+    "Bash(screen -X *)",
+    "Bash(ssh *)",
+    "Bash(rtk proxy *)",
+];
+
+/// Tombstone: removed in PR #1495. The seventeen escape-hatch entries
+/// listed in `FLOW_DENY_ESCAPE_HATCH_ENTRIES` block the canonical
+/// program/flag combinations from
+/// `.claude/rules/no-escape-hatches.md` "Canonical Escape-Hatch
+/// Shapes". A merge conflict or accidental edit that removes any
+/// entry from the `FLOW_DENY` const slice in `src/prime_check.rs`
+/// re-opens the corresponding escape-hatch surface — direct
+/// invocations bypass `validate-pretool`'s structural Layer 7.5 if
+/// the settings-layer deny entry is also missing.
+///
+/// Stability argument (per `.claude/rules/tombstone-tests.md`
+/// "Literal tombstones — stability checklist"): each entry is a
+/// const &str slice element in `FLOW_DENY` — the literal cannot be
+/// reassembled by `concat!`, produced by `format!`, or split across
+/// constant declarations because the patterns are stored as inline
+/// string literals in a const slice. The bounded-slice scan over
+/// the `FLOW_DENY` region (between `pub const FLOW_DENY: &[&str] = &[`
+/// and the terminating `];`) prevents prose elsewhere in
+/// `src/prime_check.rs` that mentions the pattern from satisfying
+/// the `.contains(...)` check. The `.arg()`-chain bypass does not
+/// apply because `FLOW_DENY` is parsed by `permission_to_regex` as a
+/// whole string, not as method-chain arguments.
+#[test]
+fn test_flow_deny_no_escape_hatch_entry_removal() {
+    let root = common::repo_root();
+    let path = root.join("src").join("prime_check.rs");
+    let content = fs::read_to_string(&path).expect("src/prime_check.rs must exist");
+    let tail = content
+        .split_once("pub const FLOW_DENY: &[&str] = &[")
+        .map(|(_, t)| t)
+        .expect("FLOW_DENY declaration must exist in src/prime_check.rs");
+    let region = tail
+        .split_once("];")
+        .map(|(r, _)| r)
+        .expect("FLOW_DENY const must be terminated by `];`");
+    let mut missing = Vec::new();
+    for entry in FLOW_DENY_ESCAPE_HATCH_ENTRIES {
+        let quoted = format!("\"{}\"", entry);
+        if !region.contains(&quoted) {
+            missing.push(entry.to_string());
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "src/prime_check.rs::FLOW_DENY is missing escape-hatch entries:\n  {}\n\n\
+         Each entry blocks a canonical escape-hatch shape from \
+         `.claude/rules/no-escape-hatches.md`. Removing any entry re-opens \
+         the corresponding direct-form bypass surface.",
+        missing.join("\n  ")
+    );
+}
+
 // --- Weak-coverage prose loophole closure ---
 //
 // Weak-coverage language ("adequate test coverage", "adequately tested")

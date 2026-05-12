@@ -246,6 +246,29 @@ pub const FLOW_DENY: &[&str] = &[
     "Bash(* && *)",
     "Bash(* ; *)",
     "Bash(* | *)",
+    // Escape-hatch deny entries: see
+    // `.claude/rules/no-escape-hatches.md` (the Canonical Escape-Hatch
+    // Shapes table). The structural escape-hatch layer in
+    // `validate-pretool` covers indirect forms; these glob entries are
+    // the first-pass filter for direct shapes that reach target
+    // projects via prime.
+    "Bash(bash -c *)",
+    "Bash(sh -c *)",
+    "Bash(zsh -c *)",
+    "Bash(eval *)",
+    "Bash(xargs *)",
+    "Bash(perl -e *)",
+    "Bash(perl -E *)",
+    "Bash(python -c *)",
+    "Bash(python3 -c *)",
+    "Bash(ruby -e *)",
+    "Bash(node -e *)",
+    "Bash(node -p *)",
+    "Bash(nc *)",
+    "Bash(tmux send-keys *)",
+    "Bash(screen -X *)",
+    "Bash(ssh *)",
+    "Bash(rtk proxy *)",
 ];
 
 /// Excluded paths — canonical source for git exclude entries.
