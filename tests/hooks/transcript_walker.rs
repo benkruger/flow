@@ -1464,6 +1464,28 @@ fn user_message_contains_continue_token_empty_string_returns_false() {
 }
 
 #[test]
+fn user_message_contains_continue_token_all_nul_input_returns_false() {
+    // Non-empty input made entirely of NUL bytes lowercases to an
+    // empty string after NUL stripping. The post-strip emptiness
+    // check returns false so the boundary scans do not fire on an
+    // empty buffer.
+    assert!(!user_message_contains_continue_token("\0"));
+    assert!(!user_message_contains_continue_token("\0\0\0"));
+}
+
+#[test]
+fn user_message_contains_continue_token_nul_stripped_then_matched() {
+    // NUL stripping per `.claude/rules/security-gates.md`
+    // "Normalize Before Comparing" normalizes the input before
+    // matching: `"\0continue"` becomes `"continue"` and matches.
+    // This treats embedded NULs from truncated writes or editor
+    // artifacts as if they were absent.
+    assert!(user_message_contains_continue_token("\0continue"));
+    assert!(user_message_contains_continue_token("con\0tinue"));
+    assert!(user_message_contains_continue_token("continue\0"));
+}
+
+#[test]
 fn user_message_contains_continue_token_two_word_match_with_trailing_punctuation() {
     // Two-word token followed by non-word punctuation: the trailing
     // word-boundary check passes through the right side of the

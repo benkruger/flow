@@ -713,23 +713,33 @@ pub fn check_halt_pending(
             return;
         }
 
+        // Mirror sibling `validate_ask_user::validate` and
+        // `check_autonomous_in_progress`: use the raw
+        // `current_phase` for keyed lookups so the state's
+        // canonical key shape is what determines membership.
+        // Normalizing `current_phase` upfront before the lookup
+        // creates asymmetric normalization per
+        // `.claude/rules/security-gates.md` "Normalize Before
+        // Comparing" — the lookup would miss a state file whose
+        // `current_phase` is `"Flow-Code"` with matching keys.
+        // Normalize the looked-up VALUES (`phase_status`,
+        // skill-string) instead.
         let current_phase = state
             .get("current_phase")
             .and_then(|v| v.as_str())
-            .map(normalize_gate_input)
-            .unwrap_or_default();
+            .unwrap_or("");
         if current_phase.is_empty() {
             return;
         }
 
         let phase_status = state
             .get("phases")
-            .and_then(|p| p.get(&current_phase))
+            .and_then(|p| p.get(current_phase))
             .and_then(|p| p.get("status"))
             .and_then(|v| v.as_str())
             .map(normalize_gate_input)
             .unwrap_or_default();
-        let skill_entry = state.get("skills").and_then(|s| s.get(&current_phase));
+        let skill_entry = state.get("skills").and_then(|s| s.get(current_phase));
         let is_auto = match skill_entry {
             Some(v) if v.as_str().map(normalize_gate_input).as_deref() == Some("auto") => true,
             Some(v) => {

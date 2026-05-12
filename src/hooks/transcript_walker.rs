@@ -358,10 +358,10 @@ pub fn most_recent_skill_since_user(path: &Path, home: &Path) -> Option<String> 
 }
 
 /// Return the most recent string-content user-role turn AFTER the
-/// most recent assistant Skill `tool_use` in the transcript at
+/// FIRST assistant Skill `tool_use` in the transcript at
 /// `transcript_path`. Returns `None` when no Skill call has fired,
-/// when no real user turn follows the most recent Skill call, when
-/// the validator rejects the path, when the file cannot be read or
+/// when no real user turn follows the first Skill call, when the
+/// validator rejects the path, when the file cannot be read or
 /// parsed, or when the file is empty.
 ///
 /// A "real user turn" is a turn whose `type == "user"` AND whose
@@ -370,11 +370,16 @@ pub fn most_recent_skill_since_user(path: &Path, home: &Path) -> Option<String> 
 /// assistant-generated tool output) are skipped — they do not
 /// represent user prose.
 ///
-/// The walker iterates forward in file order. Each assistant Skill
-/// `tool_use` resets the candidate window so only user turns AFTER
-/// the latest Skill call are counted; subsequent real-user-turn
-/// content overwrites the candidate so the LAST string-content
-/// user turn in file order wins.
+/// The walker iterates forward in file order. Once it sees ANY
+/// assistant Skill `tool_use`, the candidate window is open and
+/// every subsequent real-user-turn content overwrites the
+/// candidate so the LAST string-content user turn in file order
+/// wins. Subsequent Skill actions do NOT close the window — the
+/// user's pause message must remain visible even when the model
+/// fires additional Skills as part of its response to the user.
+/// (Closing the window on every Skill would erase the user's
+/// pause when autonomous mode's normal loop fires another Skill
+/// before the next Stop event.)
 ///
 /// Production consumer: `check_halt_pending` in
 /// `src/hooks/stop_continue.rs`. The predicate uses the returned
@@ -421,11 +426,14 @@ pub fn most_recent_user_message_since_skill_action(
         if turn_type == "assistant" {
             let skills = extract_skill_invocations(&turn);
             if !skills.is_empty() {
-                // Every new Skill action resets the candidate
-                // window — only user turns AFTER the latest Skill
-                // count.
+                // The first Skill action opens the candidate
+                // window. Subsequent Skills do NOT close it —
+                // the user's pause message must remain visible
+                // when the model fires additional Skills as part
+                // of its response. Closing the window on every
+                // Skill would erase user-initiated pauses in the
+                // autonomous-mode loop.
                 seen_skill = true;
-                candidate = None;
             }
             continue;
         }
@@ -474,7 +482,16 @@ pub fn user_message_contains_continue_token(msg: &str) -> bool {
     if msg.is_empty() {
         return false;
     }
-    let lower = msg.to_ascii_lowercase();
+    // Strip NUL bytes before lowercasing per
+    // `.claude/rules/security-gates.md` "Normalize Before
+    // Comparing". A NUL byte is non-alphanumeric and would
+    // otherwise satisfy the word-boundary check at position 0,
+    // so a `"\0continue"` user message would clear `_halt_pending`
+    // even though the user did not type a continue directive.
+    let lower = msg.replace('\0', "").to_ascii_lowercase();
+    if lower.is_empty() {
+        return false;
+    }
     let bytes = lower.as_bytes();
     for token in ["continue", "resume", "proceed"] {
         if find_token_with_boundary(bytes, token.as_bytes()) {
