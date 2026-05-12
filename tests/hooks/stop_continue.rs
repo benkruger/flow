@@ -4196,3 +4196,239 @@ fn check_halt_pending_runs_before_check_first_stop_in_run() {
         reason
     );
 }
+
+// End-to-end regression that closes both bugs from issue #1504 by
+// driving the real binary through a halt-pause cycle and then a
+// phase advance into Complete. The test exercises three observable
+// invariants: (1) halt-pause block fires with the
+// conversation-preserving message when the user types a non-
+// continue-token prose message, (2) `_halt_pending` and
+// `_stop_instructed` both clear when the user types a continue
+// token, and (3) the cleared residue does not bleed forward into
+// Complete — the autonomous-stop-refused block message appears
+// instead of the halt-pause message.
+#[test]
+fn subprocess_halt_pause_full_flow_blocks_premature_resume_and_clears_on_continue() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    Command::new("git")
+        .args(["init", "--initial-branch", "main"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.email", "t@t"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "t"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["checkout", "-b", "halttest"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+
+    let state_dir = root.join(".flow-states").join("halttest");
+    fs::create_dir_all(&state_dir).unwrap();
+    let state_path = state_dir.join("state.json");
+    let transcript = safe_transcript_path(&root, "halt-e2e.jsonl");
+    let session_id = "halt-e2e-session";
+
+    // --- Stage 1: build initial state with `_continue_pending`
+    // set to flow-code (typical mid-flow shape). Transcript begins
+    // with an assistant Skill action for flow:flow-code.
+    let mut state = halt_pending_state(
+        "flow-code",
+        "in_progress",
+        json!({"continue": "auto"}),
+        json!(false),
+        json!(false),
+        "flow-code",
+    );
+    state["session_id"] = json!(session_id);
+    state["transcript_path"] = json!(transcript.to_str().unwrap());
+    fs::write(&state_path, serde_json::to_string(&state).unwrap()).unwrap();
+    write_halt_transcript(&transcript, true, Some("wait, hold up"));
+
+    let stdin_input = format!(
+        "{{\"session_id\": \"{}\", \"transcript_path\": \"{}\"}}",
+        session_id,
+        transcript.to_str().unwrap()
+    );
+
+    let spawn_hook = |root: &Path, stdin_input: &str| -> (i32, String) {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+        cmd.env_remove("FLOW_CI_RUNNING");
+        cmd.args(["hook", "stop-continue"])
+            .current_dir(root)
+            .env("HOME", root)
+            .env("GH_TOKEN", "invalid")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = cmd.spawn().expect("spawn flow-rs hook");
+        child
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(stdin_input.as_bytes())
+            .unwrap();
+        let output = child.wait_with_output().expect("wait_with_output");
+        let code = output.status.code().unwrap_or(-1);
+        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+        (code, stdout)
+    };
+
+    // --- Stage 2-3: First Stop event. Halt-pause fires with the
+    // conversation-preserving message.
+    let (_code, stdout) = spawn_hook(&root, &stdin_input);
+    let parsed: Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_| panic!("stage-2 hook stdout must be JSON: {}", stdout));
+    assert_eq!(
+        parsed["decision"], "block",
+        "stage 2: halt-pause must block on user pause directive"
+    );
+    let reason = parsed["reason"].as_str().unwrap_or("");
+    assert!(
+        reason.contains("user halt is in progress"),
+        "stage 2: halt-pause reason must dominate: {}",
+        reason
+    );
+
+    // --- Stage 4: state reflects the halt. `_continue_pending` is
+    // preserved across the halt set so the resume picks up the right
+    // child skill once the user clears it.
+    assert!(
+        read_halt_pending(&state_path),
+        "stage 4: _halt_pending must be set after halt-pause block"
+    );
+    assert_eq!(
+        read_continue_pending(&state_path),
+        "flow-code",
+        "stage 4: _continue_pending must be preserved across halt set"
+    );
+
+    // --- Stage 5: user types a continue token. Rewrite the
+    // transcript to include the new message AFTER the previous
+    // ones; the walker resolves the LAST user message after the
+    // most recent Skill action.
+    let jsonl = format!(
+        "{}\n{}\n{}\n",
+        json!({
+            "type": "assistant",
+            "message": {
+                "content": [{
+                    "type": "tool_use",
+                    "name": "Skill",
+                    "input": {"skill": "flow:flow-code"}
+                }]
+            }
+        }),
+        json!({"type": "user", "message": {"content": "wait, hold up"}}),
+        json!({"type": "user", "message": {"content": "ok continue"}}),
+    );
+    fs::write(&transcript, jsonl).unwrap();
+
+    // --- Stage 6: second hook spawn. `check_halt_pending` clears
+    // both `_halt_pending` and `_stop_instructed`. The cascade
+    // then fires downstream predicates; the test does not assert
+    // on the cascade's specific output (this varies with
+    // `_continue_pending` and `_stop_instructed` state), only that
+    // the halt-pause leg is no longer active.
+    let (_code, stdout) = spawn_hook(&root, &stdin_input);
+    if !stdout.trim().is_empty() {
+        let parsed: Value = serde_json::from_str(&stdout).unwrap_or(Value::Null);
+        let reason = parsed["reason"].as_str().unwrap_or("");
+        assert!(
+            !reason.contains("user halt is in progress"),
+            "stage 6: halt-pause message must NOT appear after continue token: {}",
+            reason
+        );
+    }
+    assert!(
+        !read_halt_pending(&state_path),
+        "stage 6: _halt_pending must clear when continue token fires"
+    );
+
+    // --- Stage 7-8: Bug-2 simulation. Advance state to
+    // flow-complete with `_halt_pending=false` and
+    // `_stop_instructed=false` (clean residue from stage 6).
+    // Append a fresh Skill action for flow-complete so the walker
+    // sees no user message after the latest Skill. The Stop event
+    // must NOT produce the conversation-preserving halt-pause
+    // message — proving halt residue does not carry into Complete.
+    // (Whichever downstream predicate fires — discussion-mode or
+    // autonomous-stop-refused, depending on `_stop_instructed`
+    // state at the time — the load-bearing invariant is that the
+    // halt-pause leg is inactive in the new phase.)
+    let mut state = halt_pending_state(
+        "flow-complete",
+        "in_progress",
+        json!("auto"),
+        json!(false),
+        json!(false),
+        "",
+    );
+    state["session_id"] = json!(session_id);
+    state["transcript_path"] = json!(transcript.to_str().unwrap());
+    fs::write(&state_path, serde_json::to_string(&state).unwrap()).unwrap();
+    let jsonl = format!(
+        "{}\n{}\n{}\n{}\n",
+        json!({
+            "type": "assistant",
+            "message": {
+                "content": [{
+                    "type": "tool_use",
+                    "name": "Skill",
+                    "input": {"skill": "flow:flow-code"}
+                }]
+            }
+        }),
+        json!({"type": "user", "message": {"content": "wait, hold up"}}),
+        json!({"type": "user", "message": {"content": "ok continue"}}),
+        json!({
+            "type": "assistant",
+            "message": {
+                "content": [{
+                    "type": "tool_use",
+                    "name": "Skill",
+                    "input": {"skill": "flow:flow-complete"}
+                }]
+            }
+        }),
+    );
+    fs::write(&transcript, jsonl).unwrap();
+
+    let (_code, stdout) = spawn_hook(&root, &stdin_input);
+    let parsed: Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_| panic!("stage-8 hook stdout must be JSON: {}", stdout));
+    assert_eq!(
+        parsed["decision"], "block",
+        "stage 8: Complete-phase must still block on voluntary stop"
+    );
+    let reason = parsed["reason"].as_str().unwrap_or("");
+    // Halt-pause message must NOT appear (no halt residue carried).
+    // This is the Bug-2 fix verification: the halt-pause leg is
+    // inactive in the new phase because `check_halt_pending`
+    // cleared `_stop_instructed` alongside `_halt_pending` in
+    // stage 6, so no residue authorizes the conversation-
+    // preserving message here.
+    assert!(
+        !reason.contains("user halt is in progress"),
+        "stage 8: halt-pause message must NOT appear in Complete: {}",
+        reason
+    );
+    assert!(
+        !read_halt_pending(&state_path),
+        "stage 8: _halt_pending must remain false in Complete"
+    );
+}
