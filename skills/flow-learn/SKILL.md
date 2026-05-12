@@ -297,8 +297,22 @@ Work From the Parent Session".
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=1
 ```
 
-Take the learn-analyst findings and sort them into three buckets
-matching the three tenants.
+**Read exhausted-retry notes first.** Before triaging
+learn-analyst findings, read `state.notes` and filter entries
+whose `kind` field equals `agent_exhausted_retries`. Each
+matching entry names an agent (this phase or Review) whose
+recording subcommand reached the retry cap (3 attempts) without
+verifying a clean return — the agent's analysis is unavailable
+for this Learn pass. Treat the exhausted-retry entries as
+"missing analyses" context for synthesis, NOT as findings the
+model attributes to the missing agent. Per
+`.claude/rules/cognitive-isolation.md` "Never Supplement Agent
+Work From the Parent Session", do not fabricate the missing
+agent's findings inline; the entries flow into the Step 7 report
+banner so the user sees which agents were unavailable.
+
+Take the learn-analyst findings (when present) and sort them
+into three buckets matching the three tenants.
 
 **Default is zero artifacts.** Most Learn phases produce no rule
 edits and no filed issues. The skill is an audit, not a writing
@@ -689,6 +703,11 @@ Present the full report to the user:
   ⚠ learn-analyst — partial findings (N of 3 categories
     completed)
 
+  Missing analyses
+  ----------------
+  ⚠ reviewer — exhausted 3 retries during flow-review
+  ⚠ learn-analyst — exhausted 3 retries during flow-learn
+
   Changes applied
   ---------------
   .claude/rules/testing-gotchas.md: 1 addition (committed)
@@ -705,8 +724,11 @@ Present the full report to the user:
 ````
 
 Omit "Truncated agent" if the learn-analyst was not flagged as truncated
-in Step 1. Omit "Changes applied" if no changes were made. Omit "Issues
-filed" if no issues were filed.
+in Step 1. Populate "Missing analyses" from the
+`agent_exhausted_retries` entries in `state.notes` filtered in Step 2;
+each line names the agent and the phase that exhausted retries. Omit
+the section entirely when no such notes exist. Omit "Changes applied"
+if no changes were made. Omit "Issues filed" if no issues were filed.
 
 In the "Changes applied" section, show "(committed)" or "(uncommitted)"
 next to each file to indicate whether Step 5 committed it. Show
