@@ -5578,29 +5578,62 @@ fn flow_explore_skill_files_without_decomposed_label() {
 }
 
 #[test]
-fn flow_explore_skill_uses_utility_in_progress_marker() {
-    // Regression: a future edit drops either the set or the clear
-    // side of the per-session utility-in-progress marker. Without
-    // `set-utility-in-progress`, the Stop hook returns control to
-    // the user mid-conversation when a planning sub-agent Skill
-    // tool returns — breaking the unattended-discussion contract.
-    // Without `clear-utility-in-progress`, the session deadlocks
-    // after the skill completes.
-    //
-    // Consumer: the Stop hook's `check_in_progress_utility_skill`
-    // predicate, which refuses turn-end while a per-session marker
-    // is present for `flow:flow-explore`.
+fn flow_explore_has_no_utility_marker_calls() {
+    // Regression: a future edit re-introduces marker calls into
+    // `skills/flow-explore/SKILL.md`. The skill is excluded from
+    // `crate::commands::utility_marker::MULTI_STEP_UTILITY_SKILLS`
+    // because it never invokes `decompose:decompose` — the Stop
+    // hook's decompose-return gate cannot fire on its behalf.
+    // Adding marker calls back would create dead code: the marker
+    // would be written but the predicate would always drop it via
+    // the allowlist check, leaving the user mystified about why
+    // discussion replies still ended the turn cleanly. The
+    // regression ships silent unless this scan catches it.
     let c = common::read_skill("flow-explore");
     assert!(
-        c.contains("set-utility-in-progress"),
-        "skills/flow-explore/SKILL.md must invoke `bin/flow set-utility-in-progress` so the Stop hook refuses turn-end during discussion"
+        !c.contains("set-utility-in-progress"),
+        "skills/flow-explore/SKILL.md must not invoke `bin/flow set-utility-in-progress` — flow-explore is excluded from MULTI_STEP_UTILITY_SKILLS and the Stop hook ignores its marker"
     );
     assert!(
-        c.contains("clear-utility-in-progress"),
-        "skills/flow-explore/SKILL.md must invoke `bin/flow clear-utility-in-progress` so the Stop hook releases turn-end after every exit boundary"
+        !c.contains("clear-utility-in-progress"),
+        "skills/flow-explore/SKILL.md must not invoke `bin/flow clear-utility-in-progress` — there is no marker to clear"
+    );
+}
+
+#[test]
+fn flow_explore_has_no_wrap_up_ask_user_question() {
+    // Regression: a future edit re-introduces a wrap-up
+    // AskUserQuestion gate into the Step 5 filing path. Per the
+    // discussion-mode contract, the user's readiness signal
+    // ("ready", "file it", "let's go") is the single authorization
+    // to file — a second confirmation prompt breaks AC#4
+    // (single-signal filing). The specific phrasing the obsolete
+    // gate used was "Review the draft above. Ready to file?";
+    // catching that exact prompt locks in the discipline against
+    // accidental resurrection.
+    let c = common::read_skill("flow-explore");
+    assert!(
+        !c.contains("Review the draft above. Ready to file?"),
+        "skills/flow-explore/SKILL.md must not contain the wrap-up AskUserQuestion prompt — Step 5 files directly on the user's readiness signal"
+    );
+}
+
+#[test]
+fn flow_explore_validator_auto_fix_loop() {
+    // Regression: a future edit drops the bounded auto-fix loop and
+    // replaces it with either an unbounded loop (would silently
+    // file a malformed body if the validator passes after many
+    // retries) or a prompt-the-user gate (breaks the single-signal
+    // contract). The 5-attempt cap is the documented bound and the
+    // `validator_max_retries` reason is the contract the COMPLETE-
+    // FAILED banner depends on.
+    let c = common::read_skill("flow-explore");
+    assert!(
+        c.contains("validator_max_retries"),
+        "skills/flow-explore/SKILL.md must name the `validator_max_retries` error reason so the structured-error contract is locked in"
     );
     assert!(
-        c.contains("--skill flow:flow-explore"),
-        "skills/flow-explore/SKILL.md must pass `--skill flow:flow-explore` so the marker is scoped to this skill's identifier"
+        c.contains("5 attempts") || c.contains("5 retries"),
+        "skills/flow-explore/SKILL.md must name the 5-attempt cap so the bounded-loop contract is locked in"
     );
 }

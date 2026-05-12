@@ -31,18 +31,13 @@ adjustment. The skill takes no other flags or arguments.
 ## Concurrency
 
 This skill creates shared GitHub state (issues) only at the very
-end, on explicit user approval. Issue creation is idempotent by
-title — if an issue with the same title already exists, the user
-should be warned before filing a duplicate.
-
-The only intermediate side effect is the per-session
-utility-in-progress marker (scoped to the user's Claude home, not
-the project), which lets the Stop hook refuse turn-end while the
-discussion-mode skill is running.
+end, on the user's explicit readiness signal. Issue creation is
+idempotent by title — if an issue with the same title already
+exists, the user should be warned before filing a duplicate.
 
 Multiple `/flow:flow-explore` sessions on the same machine in
 different terminal windows are independent — each has its own
-session id, its own marker, its own conversation context.
+session id and its own conversation context.
 
 ## Announce
 
@@ -56,29 +51,6 @@ At the very start, output the following banner in your response (not via Bash) i
 ```
 ````
 
-Immediately after the banner, write the per-session "utility skill
-in progress" marker so the Stop hook refuses turn-end while this
-skill is running. Without the marker the model returns control to
-the user when a planning sub-agent Skill tool returns mid-pipeline
-at Step 4, breaking the unattended-discussion contract this skill
-promises.
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-utility-in-progress --skill flow:flow-explore
-```
-
-If the marker-write call returns `status: error` with
-`no session_id available`, the skill proceeds without the marker.
-The Stop hook treats a missing marker as a non-block, so the skill
-runs without protection but does not break.
-
-The marker is held across the entire discussion until the user
-signals "ready" or "file it" (Step 5), invokes Cancel from Step 1
-when the topic argument is missing, or selects Cancel from the
-filing AskUserQuestion in Step 5. Every skill-exit boundary clears
-the marker so the Stop hook releases turn-end after the skill
-completes.
-
 ---
 
 ## Step 1 — Conversation Gate
@@ -89,13 +61,8 @@ without it the skill has no anchor for the discussion.
 
 <HARD-GATE>
 
-If no topic argument was provided, clear the utility-in-progress
-marker so the Stop hook does not refuse turn-end after the
-rejection, then output the usage guidance and stop:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-explore
-```
+If no topic argument was provided, output the usage guidance and
+stop:
 
 > "Topic required. Usage: `/flow:flow-explore <topic>` where
 > `<topic>` names what you want to discuss — a behavior change,
@@ -280,8 +247,10 @@ follow-ups, or request another persona's view.
 
 When the user signals readiness — "ready", "file it", "let's go",
 "create the issue", or any equivalent phrasing — capture the agreed
-problem statement, validate it, file it as a vanilla GitHub issue,
-and clear the marker.
+problem statement, validate it, and file it as a vanilla GitHub
+issue. The user's readiness signal is the authorization to file —
+no second confirmation gate runs between the signal and the
+success banner.
 
 ### Capture
 
@@ -329,9 +298,9 @@ codebase.
 
 ### Pre-Draft Backwards-Reasoning Scan
 
-Before presenting the draft, scan the body for the following
-forbidden phrasings, which ground the current decision in a
-historical artifact rather than the code's current merits:
+Before composing the body, scan the captured sections for the
+following forbidden phrasings, which ground the current decision
+in a historical artifact rather than the code's current merits:
 
 - `"PR #<N> decided"`, `"the prior PR chose"`, `"the previous
   commit"` — historical decision cited as authority
@@ -347,14 +316,15 @@ Evaluate matches in context: a bare `PR #<N>` reference used for
 forensic detection (linking blocked-by, naming a specific merge)
 is fine; a `PR #<N>` reference used to justify the present design
 is forbidden. If any match is justifying-shape rather than
-identifier-shape, revise the draft. See
+identifier-shape, revise the captured sections. See
 `.claude/rules/no-backwards-reasoning.md`.
 
 ### Pre-Draft Include-Bias Scan
 
-Before presenting the draft, scan the body for the following
-forbidden phrasings, which signal defensive scope shrinkage rather
-than genuine exclusion grounded in a concrete blocker:
+Before composing the body, scan the captured sections for the
+following forbidden phrasings, which signal defensive scope
+shrinkage rather than genuine exclusion grounded in a concrete
+blocker:
 
 - `"Out of scope"` — defensive enumeration of exclusions written
   before concrete blockers have surfaced; the scan reads
@@ -371,10 +341,10 @@ than genuine exclusion grounded in a concrete blocker:
 Evaluate matches in context: a passing mention that names a
 concern is fine; an enumerated section or bulleted list of
 exclusions is forbidden. If any match is exclusion-shape rather
-than identifier-shape, revise the draft. See
+than identifier-shape, revise the captured sections. See
 `.claude/rules/include-bias-in-issues.md`.
 
-### Combine into Issue Body
+### Compose, Validate, and File
 
 Combine the captured sections into a single issue body in working
 memory. The section order must be:
@@ -386,56 +356,13 @@ contain FLOW-PLAN sentinel markers and must NOT contain an
 `## Implementation Plan` heading — those belong in the decomposed
 issue that `/flow:flow-plan #N` files later.
 
-### Draft Presentation
-
-Present the full draft inline in the response — both title and
-body. Do not tell the user to look at a file. Render it as a
-formatted markdown block so the user can review every detail.
-
-### File AskUserQuestion Gate
-
-<HARD-GATE>
-
-After presenting the draft, ask the user to confirm via
-AskUserQuestion with structured parameters:
-
-- **question**: "Review the draft above. Ready to file?"
-- **header**: "File Issue"
-- **options**:
-  - label: "File issue", description: "File against the current repo as a vanilla problem-statement issue"
-  - label: "Revise draft", description: "Edit the draft based on your feedback"
-  - label: "Cancel", description: "Stop without filing an issue"
-
-Do not file the issue, propose direct edits, commit changes, or
-take any action outside this skill without explicit user approval
-via AskUserQuestion — even if the answer appears obvious from
-context.
-
-**If "File issue"** → proceed to Validate + File below.
-
-**If "Revise draft"** → revise based on the user's feedback and
-re-present the draft. After revising, re-present the draft and ask
-the same AskUserQuestion. Iterate as many times as needed.
-
-**If "Cancel"** → clear the utility-in-progress marker, then stop
-without filing. Do not write the body file. Do not output the
-COMPLETE banner.
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-explore
-```
-
-</HARD-GATE>
-
-### Validate + File
-
 Write the issue body to `.flow-issue-body-<id>` using the Write
 tool. Per `.claude/rules/filing-issues.md` "The Pattern": when
 invoked inside an active FLOW worktree, prepend the worktree
 absolute path so the `validate-worktree-paths` hook allows the
-Write. When invoked outside a worktree, the relative form
-resolves cleanly because Write and `bin/flow issue` both target
-the same project root.
+Write. When invoked outside a worktree, the relative form resolves
+cleanly because Write and `bin/flow issue` both target the same
+project root.
 
 Validate the body file through the pre-filing validator with
 `--mode vanilla` before asking the filer subcommand to send it to
@@ -446,11 +373,36 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow validate-issue-body --mode vanilla --body-file .f
 ```
 
 Parse the JSON output. If `status` is `ok`, proceed to the filer
-invocation below. If `status` is `error`, do NOT file the issue.
-Show the validator's `message` field to the user, return to the
-Revise loop in the File AskUserQuestion Gate above with the user's
-feedback set to the validator's `message`, and re-present the
-corrected draft. Iterate until the validator returns `ok`.
+invocation below. If `status` is `error`, run the auto-fix loop:
+
+#### Validator Auto-Fix Loop (max 5 retries)
+
+When the validator returns `status: error`, the skill must NOT
+prompt the user. The validator's `message` names a concrete defect
+(missing section heading, forbidden sentinel, etc.) — apply a
+mechanical fix that addresses the named defect, rewrite the body
+file with the Write tool, and re-run the validator. Track the
+attempt count mentally — the cap is **5 attempts** including the
+first failure.
+
+After 5 failed validator runs, halt the skill with the structured
+error envelope and the COMPLETE-FAILED banner. Do NOT file the
+issue. Do NOT loop further.
+
+````markdown
+```json
+{"status":"error","reason":"validator_max_retries","attempts":5}
+```
+````
+
+````markdown
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✗ FLOW v1.1.0 — flow:flow-explore — COMPLETE-FAILED
+  Validator rejected the body 5 times. Issue not filed.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+````
 
 Once the validator returns `ok`, file the issue against the
 current repo (no `--repo` flag — `flow-explore` always files where
@@ -467,12 +419,6 @@ Record the issue in the state file (no-op if no FLOW feature is active):
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --title "<issue_title>" --url "<issue_url>" --phase flow-explore
-```
-
-Clear the utility-in-progress marker:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-explore
 ```
 
 Display the issue URL to the user, then output the COMPLETE banner
@@ -521,6 +467,9 @@ slash command directly.
   discussion mode is forbidden.
 - Never use `AskUserQuestion` during discussion mode. The
   discussion is conversational; the user drives the cadence.
+- Never use `AskUserQuestion` in the Step 5 wrap-up. The user's
+  readiness signal is the authorization to file; a second
+  confirmation gate would break the single-signal contract.
 - Never auto-dispatch to a planning sub-agent on inferred scope.
   Persona dispatch requires the user to type the request in plain
   English.
@@ -528,8 +477,6 @@ slash command directly.
   the refused analysis personally when a sub-agent returns a
   `## SCOPE REFUSAL` block. Render the refusal verbatim and wait
   for explicit user direction on the next move.
-- Never file an issue without explicit user approval — the
-  AskUserQuestion in Step 5 is the mandatory gate.
 - Never tell the user to "look at" a file — render all content
   inline.
 - Never use Bash to print banners — output them as text in your

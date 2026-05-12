@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use flow_rs::commands::utility_marker::{
     clear_marker, is_safe_skill_name, marker_path, run_clear_main, run_current_session_id_main,
-    run_set_main, write_marker,
+    run_set_main, write_marker, MULTI_STEP_UTILITY_SKILLS,
 };
 
 const TEST_SKILL: &str = "flow:flow-explore";
@@ -652,5 +652,27 @@ fn clear_marker_surfaces_io_error_when_path_is_directory() {
     assert!(
         result.unwrap_err().contains("remove failed"),
         "error must name the remove step"
+    );
+}
+
+// --- MULTI_STEP_UTILITY_SKILLS allowlist contents ---
+
+#[test]
+fn multi_step_utility_skills_excludes_flow_explore() {
+    // `flow:flow-explore` is a discussion-only skill: it presents a
+    // problem-statement conversation with a PM voice and files a
+    // vanilla issue when the user signals readiness. It never
+    // invokes `decompose:decompose`, so the Stop hook's
+    // decompose-return gate could never fire on its behalf.
+    // Leaving it in the allowlist would mark every reply during a
+    // flow-explore session as "marker-eligible" without any matching
+    // discriminator path, surfacing as silent confusion in future
+    // edits of `check_in_progress_utility_skill`. The allowlist
+    // entry is removed so the membership check itself rejects the
+    // skill before the discriminator ever runs.
+    assert!(
+        !MULTI_STEP_UTILITY_SKILLS.contains(&"flow:flow-explore"),
+        "MULTI_STEP_UTILITY_SKILLS must not contain `flow:flow-explore` — the skill files vanilla problem-statement issues and does not invoke decompose. Current allowlist: {:?}",
+        MULTI_STEP_UTILITY_SKILLS,
     );
 }

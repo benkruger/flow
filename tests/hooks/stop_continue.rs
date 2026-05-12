@@ -1255,7 +1255,7 @@ fn run_subprocess_blocks_when_utility_marker_present() {
     let session_id = "abc12345";
     let marker_path = marker_dir.join(format!("utility-in-progress-{}.json", session_id));
     let payload = json!({
-        "skill": "flow:flow-explore",
+        "skill": "flow:flow-decompose-project",
         "session_id": session_id,
         "started_at": "2026-05-09T12:00:00-07:00",
     });
@@ -2811,7 +2811,7 @@ fn prose_pause_allows_when_skills_key_missing() {
 
 // --- check_in_progress_utility_skill ---
 
-const UTIL_SKILL: &str = "flow:flow-explore";
+const UTIL_SKILL: &str = "flow:flow-plan";
 const UTIL_SESSION: &str = "abc12345";
 
 fn write_utility_marker(home: &Path, skill: &str, session_id: &str) {
@@ -3237,11 +3237,14 @@ fn utility_marker_full_lifecycle_subprocess() {
     init_main_repo(&root);
     let session_id = "abc12345";
 
-    // 1. Write marker via the real CLI.
+    // 1. Write marker via the real CLI. Use `flow:flow-plan` —
+    //    it's in `MULTI_STEP_UTILITY_SKILLS` so the Stop hook
+    //    predicate honors the marker (flow-explore was removed
+    //    because it never invokes `decompose:decompose`).
     let (code, stdout) = run_marker_subcommand(
         "set-utility-in-progress",
         &root,
-        "flow:flow-explore",
+        "flow:flow-plan",
         session_id,
     );
     assert_eq!(code, 0, "set must succeed: stdout={}", stdout);
@@ -3280,7 +3283,7 @@ fn utility_marker_full_lifecycle_subprocess() {
     let (code, stdout) = run_marker_subcommand(
         "clear-utility-in-progress",
         &root,
-        "flow:flow-explore",
+        "flow:flow-plan",
         session_id,
     );
     assert_eq!(code, 0, "clear must succeed: stdout={}", stdout);
@@ -3313,7 +3316,7 @@ fn utility_marker_orphan_from_different_session_subprocess() {
     let (code, _) = run_marker_subcommand(
         "set-utility-in-progress",
         &root,
-        "flow:flow-explore",
+        "flow:flow-plan",
         "other_session",
     );
     assert_eq!(code, 0);

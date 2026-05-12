@@ -1803,3 +1803,46 @@ fn test_skills_no_flow_create_issue_references() {
         violations.join("\n  ")
     );
 }
+
+/// Tombstone: removed in PR #1489. `skills/flow-explore/SKILL.md`
+/// no longer invokes `set-utility-in-progress` or
+/// `clear-utility-in-progress`. The skill is excluded from
+/// `crate::commands::utility_marker::MULTI_STEP_UTILITY_SKILLS`
+/// because it never invokes `decompose:decompose`, so the Stop
+/// hook's decompose-return gate cannot fire on its behalf. Both
+/// marker strings are stable source literals — they appear as
+/// exact CLI subcommand names in skill bash blocks, are never
+/// constructed via `concat!`, `format!`, or constant references in
+/// the SKILL.md corpus, and are never split across `.arg()` chains.
+#[test]
+fn test_flow_explore_no_utility_marker_calls() {
+    let content = common::read_skill("flow-explore");
+    assert!(
+        !content.contains("set-utility-in-progress"),
+        "skills/flow-explore/SKILL.md must not contain `set-utility-in-progress` (removed in PR #1489: marker writes are dead code when MULTI_STEP_UTILITY_SKILLS excludes flow-explore)"
+    );
+    assert!(
+        !content.contains("clear-utility-in-progress"),
+        "skills/flow-explore/SKILL.md must not contain `clear-utility-in-progress` (removed in PR #1489: nothing to clear when no marker is written)"
+    );
+}
+
+/// Tombstone: removed in PR #1489. `skills/flow-explore/SKILL.md`
+/// no longer carries a wrap-up AskUserQuestion gate before filing.
+/// The user's readiness signal in Step 3 is the single
+/// authorization to file; a second confirmation question breaks
+/// AC#4 (single-signal filing). The forbidden phrasing is the
+/// exact verbatim prompt the removed gate used; this is a stable
+/// source literal (a full English sentence appearing in the SKILL
+/// prose), not assembled via `concat!`, `format!`, or constant
+/// composition.
+#[test]
+fn test_flow_explore_no_wrap_up_ask_user_question() {
+    let content = common::read_skill("flow-explore");
+    let forbidden = "Review the draft above. Ready to file?";
+    assert!(
+        !content.contains(forbidden),
+        "skills/flow-explore/SKILL.md must not contain the wrap-up AskUserQuestion prompt `{}` (removed in PR #1489: Step 5 files directly on the user's readiness signal)",
+        forbidden,
+    );
+}
