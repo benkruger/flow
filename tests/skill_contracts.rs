@@ -1724,7 +1724,8 @@ fn generic_skills_have_no_language_conditionals() {
         "flow-reset",
         "flow-abort",
         "flow-issues",
-        "flow-create-issue",
+        "flow-explore",
+        "flow-plan",
         "flow-decompose-project",
         "flow-doc-sync",
         "flow-orchestrate",
@@ -3813,8 +3814,8 @@ fn phase_1_hard_gate_requires_rerun_with_arguments() {
 /// `bin/flow write-rule`.
 ///
 /// Branch-scoped and literal paths only. Session-scoped `-<id>` temp files
-/// used by `flow-create-issue` and `flow-decompose-project` are excluded
-/// because the unique id makes cross-invocation collision unlikely.
+/// used by `flow-explore`, `flow-plan`, and `flow-decompose-project` are
+/// excluded because the unique id makes cross-invocation collision unlikely.
 /// Intermediate input files used BY `bin/flow write-rule` (e.g. paths
 /// ending in `-content.md` that the Rust code reads and deletes) are
 /// also not monitored — they are the Write-tool input, not a persistent
@@ -4581,15 +4582,11 @@ fn flow_decompose_project_skill_has_backwards_reasoning_scan() {
 /// phrase represents a distinct defensive-scope shape; the rule must
 /// retain the body content that authorizes the scans. The lowercase
 /// `"Out of scope"` form is the canonical anchor — the title-case
-/// variant is intentionally left out of the constant because
-/// `tests/tombstones.rs::test_flow_create_issue_skill_no_out_of_scope_instruction`
-/// blocks `"Out of Scope"` from appearing in either issue-filing
-/// SKILL.md (it protects against re-introducing the templated
-/// `## Out of Scope` section instruction PR #1427 removed). The
-/// SKILL scan instruction reads case-flexibly in practice — the
-/// model interprets the phrasing as a concept and catches
-/// title-case occurrences in issue bodies without requiring the
-/// literal byte string in the SKILL prose.
+/// variant is intentionally left out of the constant because the
+/// SKILL scan instruction reads case-flexibly in practice (the model
+/// interprets the phrasing as a concept and catches title-case
+/// occurrences in issue bodies without requiring the literal byte
+/// string in the SKILL prose).
 const INCLUDE_BIAS_SCAN_PHRASINGS: &[&str] = &[
     "Out of scope",
     "Non-goals",
@@ -4703,9 +4700,8 @@ fn flow_decompose_project_announce_sets_utility_marker() {
     //
     // The `--session-id` flag is intentionally absent from the
     // assertion set: Rust resolves the active session_id at the CLI
-    // boundary by reading the `CLAUDE_CODE_SESSION_ID` env var, and
-    // the sibling `flow_create_issue_marker_invocations_omit_session_id_flag`
-    // contract test enforces the same shape for flow-create-issue.
+    // boundary by reading the `CLAUDE_CODE_SESSION_ID` env var, so
+    // every multi-step utility skill's marker invocation omits it.
     let c = common::read_skill("flow-decompose-project");
     let tail = c
         .split_once("\n## Announce\n")
@@ -4814,10 +4810,10 @@ fn flow_decompose_project_step2_names_sentinel_wrapping() {
     // each child issue. The body must wrap its Implementation Plan
     // in the FLOW-PLAN sentinel pair so `bin/flow plan-from-issue`
     // can extract the plan at flow-start. A draft without the
-    // sentinels produces an issue that
-    // `flow:flow-create-issue`-class validators reject with
-    // `plan_markers_missing` — the issue files but cannot be
-    // consumed downstream.
+    // sentinels produces an issue that the decomposed-body
+    // validators (`bin/flow validate-issue-body --mode decomposed`)
+    // reject with `plan_markers_missing` — the issue files but
+    // cannot be consumed downstream.
     // End delimiter is `\n## Step ` so an intra-section heading
     // rendered inside a fenced markdown example block — like
     // `## Implementation Plan` inside the Body Shape Contract
@@ -4877,8 +4873,7 @@ fn flow_decompose_project_step2_names_task_header_format() {
 
 #[test]
 fn flow_decompose_project_step2_names_paraphrase_rule() {
-    // Mirror of `flow_create_issue_forbids_inline_sentinel_strings_in_prose`:
-    // every prose reference to the FLOW-PLAN sentinel pair must
+    // Every prose reference to the FLOW-PLAN sentinel pair must
     // paraphrase the marker strings so `bin/flow plan-from-issue`
     // extraction matches the correct slice. A literal marker
     // mid-prose silently redirects extraction to the wrong bytes
@@ -4917,8 +4912,7 @@ fn flow_decompose_project_step3_validates_before_issue() {
     // matters: validating after filing makes the gate post-hoc and
     // useless. Regression: a future edit that moved the validator
     // call below `bin/flow issue`, dropped it, or gated it behind
-    // a conditional would surface here. Mirror of
-    // `flow_create_issue_validates_body_before_filing`.
+    // a conditional would surface here.
     //
     // End delimiter `\n## Step ` bounds to Step 3 even when
     // intra-section subheadings appear.
@@ -5547,10 +5541,10 @@ fn flow_explore_skill_uses_vanilla_validator_mode() {
 fn flow_explore_skill_files_without_decomposed_label() {
     // Regression: a future edit adds `--label decomposed` to the
     // flow-explore filing call. The `decomposed` label is reserved
-    // for issues filed by `/flow:flow-plan #N` (and the historical
-    // `flow-create-issue`); flow-explore files vanilla problem
-    // statements that `flow-issues` and `flow-orchestrate` must not
-    // pick up as ready-for-flow-start work.
+    // for issues filed by `/flow:flow-plan #N` and
+    // `/flow:flow-decompose-project`; flow-explore files vanilla
+    // problem statements that `flow-issues` and `flow-orchestrate`
+    // must not pick up as ready-for-flow-start work.
     //
     // Consumer: `flow-issues` / `flow-orchestrate`, which select
     // `decomposed`-labeled issues. Mis-labeling a vanilla

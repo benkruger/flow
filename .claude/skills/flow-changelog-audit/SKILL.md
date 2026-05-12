@@ -206,10 +206,9 @@ or 'none'."
 Wait for the user's response before taking any action.
 </HARD-GATE>
 
-For each approved item, invoke `/flow:flow-create-issue` with a
-description that includes the version, the changelog entry, the
-assessment category (Adopt, Remove, or Adapt), and the rationale
-from Step 5.
+For each approved item, invoke `/flow:flow-explore` with a description
+that includes the version, the changelog entry, the assessment category
+(Adopt, Remove, or Adapt), and the rationale from Step 5.
 
 If the user says "none", skip to Step 7.
 

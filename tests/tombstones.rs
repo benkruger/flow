@@ -1803,3 +1803,78 @@ fn test_skills_no_flow_create_issue_references() {
         violations.join("\n  ")
     );
 }
+
+// --- acquire_with_wait_impl Rust seam citation removal (PR #1486) ---
+
+/// Tombstone: removed in PR #1486. Must not return.
+///
+/// `.claude/rules/testing-gotchas.md` previously cited
+/// `acquire_with_wait_impl` in `src/commands/start_lock.rs` as
+/// the canonical example of an injectable `sleep_fn` seam. The
+/// production function no longer carries that signature and the
+/// `_impl` variant does not exist. The prose was rewritten to
+/// describe the retry/timeout pattern without naming a stale
+/// reference.
+///
+/// Stability: byte-substring check against the literal identifier
+/// `acquire_with_wait_impl`. The string is a Rust function name
+/// embedded in markdown prose, cannot be assembled by `concat!`
+/// or `format!` (markdown is inert text, not Rust code), cannot
+/// be a constant (the file is markdown, not Rust source), and
+/// cannot be split into multiple `.arg()` calls (not a CLI
+/// invocation). The four-question stability checklist passes.
+#[test]
+fn test_rules_no_acquire_with_wait_impl() {
+    let path = common::repo_root()
+        .join(".claude")
+        .join("rules")
+        .join("testing-gotchas.md");
+    let content = std::fs::read_to_string(&path)
+        .expect(".claude/rules/testing-gotchas.md must exist");
+    assert!(
+        !content.contains("acquire_with_wait_impl"),
+        ".claude/rules/testing-gotchas.md must not reference \
+         `acquire_with_wait_impl` — the production function no \
+         longer exposes that `_impl` seam; describe the \
+         retry/timeout pattern without naming a stale identifier."
+    );
+}
+
+// --- run_tui_arm_impl closure-pair seam citation removal (PR #1486) ---
+
+/// Tombstone: removed in PR #1486. Must not return.
+///
+/// `.claude/rules/rust-patterns.md` previously cited
+/// `run_tui_arm_impl(is_tty_fn, run_terminal_fn, root)` as the
+/// canonical closure-injection seam. That signature was
+/// collapsed: `run_tui_arm_impl` is intentionally non-generic
+/// today and `run_terminal_body<B, C, E>` is the actual
+/// closure-injection seam. The substring `is_tty_fn` uniquely
+/// identifies the obsolete closure-pair shape — `run_tui_arm_impl`
+/// itself remains a legitimate identifier in the rewritten prose
+/// (as the named non-generic layer above `run_terminal`).
+///
+/// Stability: byte-substring check against the literal identifier
+/// `is_tty_fn`. The string is a Rust parameter name embedded in
+/// markdown prose, cannot be assembled by `concat!` or `format!`
+/// (markdown is inert text, not Rust code), cannot be a constant
+/// (the file is markdown, not Rust source), and cannot be split
+/// into multiple `.arg()` calls. The four-question stability
+/// checklist passes.
+#[test]
+fn test_rules_no_run_tui_arm_impl_closure_pair() {
+    let path = common::repo_root()
+        .join(".claude")
+        .join("rules")
+        .join("rust-patterns.md");
+    let content = std::fs::read_to_string(&path)
+        .expect(".claude/rules/rust-patterns.md must exist");
+    assert!(
+        !content.contains("is_tty_fn"),
+        ".claude/rules/rust-patterns.md must not reference \
+         `is_tty_fn` — the closure-pair seam at the \
+         `run_tui_arm_impl` layer was collapsed; describe the \
+         seam at `run_terminal_body` without resurrecting the \
+         stale closure parameter."
+    );
+}

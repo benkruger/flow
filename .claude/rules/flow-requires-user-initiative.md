@@ -22,7 +22,8 @@ the change is big enough to warrant one.
 The ask-first family includes:
 
 - `/flow:flow-start`
-- `/flow:flow-create-issue`
+- `/flow:flow-explore`
+- `/flow:flow-plan`
 
 Distinguishing test: would the model proposing the action embarrass
 or surprise the user if their answer were "no"? If the answer is

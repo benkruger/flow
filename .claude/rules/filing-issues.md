@@ -4,9 +4,10 @@
 
 When the user says "lets brainstorm", "lets think about", or "what
 if we" — they want a discussion, not a workflow. Do not invoke
-`flow:flow-create-issue`, `decompose:decompose`, or any filing
-skill. Discuss the idea interactively. Only invoke filing skills
-when the user explicitly says "file an issue" or "create an issue."
+`flow:flow-explore`, `flow:flow-plan`, `flow:flow-decompose-project`,
+`decompose:decompose`, or any filing skill. Discuss the idea
+interactively. Only invoke filing skills when the user explicitly
+says "file an issue" or "create an issue."
 
 ## Default to Inclusion
 
@@ -25,10 +26,12 @@ in the current flow's exploration budget.
 
 When filing issues that originated from a `/decompose:decompose`
 analysis in the current conversation, always use
-`/flow:flow-create-issue` — never bare `bin/flow issue`. The
-decompose output IS the pre-planning. Filing without it discards
-the exploration, risks, approach, and task breakdown that the
-decompose produced.
+`/flow:flow-explore` (vanilla problem statement), `/flow:flow-plan`
+(decomposed implementation plan), or `/flow:flow-decompose-project`
+(epic decomposition) — never bare `bin/flow issue`. The decompose
+output IS the pre-planning. Filing without it discards the
+exploration, risks, approach, and task breakdown that the decompose
+produced.
 
 The signal: if the conversation contains a DAG synthesis with
 codebase exploration, file references, and an approach — the
@@ -90,11 +93,11 @@ and design happen in the Plan phase after proper codebase
 exploration.
 
 **Exception: Decomposed issues.** Issues filed by
-`flow-create-issue` include an Implementation Plan section
-(Context, Exploration, Risks, Approach, Dependency Graph,
-Tasks). This is the only context where solution design
-belongs in an issue body — these issues are pre-planned
-for fast-tracking through the Plan phase.
+`flow-plan` or `flow-decompose-project` include an
+Implementation Plan section (Context, Exploration, Risks,
+Approach, Dependency Graph, Tasks). This is the only context
+where solution design belongs in an issue body — these issues
+are pre-planned for fast-tracking through the Plan phase.
 
 - **Write for a cold start.** A future session has no
   memory of this conversation. The issue is its only
@@ -219,11 +222,12 @@ that routes process gaps cross-repo automatically:
 
 - `flow-learn` (Phase 4) — files process gap issues with `--repo`
 
-`flow-create-issue` is the related capture skill but it always files
-to the **current** repo (no `--repo` flag) — it does not prompt for
-a target. To file a FLOW process bug manually from a target project,
-invoke `bin/flow issue --repo benkruger/flow` directly rather than
-going through `flow-create-issue`.
+`flow-explore`, `flow-plan`, and `flow-decompose-project` always
+file to the **current** repo (no `--repo` flag) — they do not
+prompt for a target. To file a FLOW process bug manually from a
+target project, invoke `bin/flow issue --repo benkruger/flow`
+directly rather than going through `flow-explore`, `flow-plan`,
+or `flow-decompose-project`.
 
 When in doubt, ask the user. Filing against the wrong repo is
 worse than one extra question.
@@ -244,8 +248,8 @@ bin/flow link-blocked-by --repo <owner/repo> \
 ## Never Include
 
 These rules apply to standard issues. Decomposed issues filed
-by `flow-create-issue` are exempt — they include an Implementation
-Plan section by design.
+by `flow-plan` or `flow-decompose-project` are exempt — they
+include an Implementation Plan section by design.
 
 - Root cause analysis — a guess is not analysis
 - Proposed solutions or "open questions" about tradeoffs
