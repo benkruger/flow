@@ -1292,7 +1292,7 @@ fn run_subprocess_blocks_when_utility_marker_present() {
 // marker is present. Regression: a future refactor that inverts the
 // marker-presence check or adds a default-block fallback in
 // `check_in_progress_utility_skill` would cause every Stop event
-// outside flow-create-issue to refuse turn-end.
+// outside an in-progress utility skill to refuse turn-end.
 #[test]
 fn run_subprocess_no_block_when_utility_marker_absent() {
     let dir = tempfile::tempdir().unwrap();
@@ -3247,7 +3247,8 @@ fn run_marker_subcommand(
 
 /// Full end-to-end integration test for the utility-in-progress
 /// marker lifecycle through the real CLI surface. Drives the same
-/// path the production flow-create-issue skill takes:
+/// path production utility skills (flow-explore, flow-plan,
+/// flow-decompose-project) take:
 /// 1. spawn `set-utility-in-progress` to write the marker
 /// 2. spawn the Stop hook with matching session_id → must block
 /// 3. spawn `clear-utility-in-progress` to remove the marker

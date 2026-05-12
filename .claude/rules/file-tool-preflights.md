@@ -48,8 +48,8 @@ route through `bin/flow write-rule`:
 - `orchestrate-queue.json` — the machine-level orchestration queue
   (in `.flow-states/`)
 
-Session-scoped `-<id>` temp files used by `flow-create-issue` and
-`flow-decompose-project` are NOT monitored because their unique id
+Session-scoped `-<id>` temp files used by `flow-explore`, `flow-plan`,
+and `flow-decompose-project` are NOT monitored because their unique id
 prevents cross-invocation collision.
 
 Intermediate content files that the model Writes as input to

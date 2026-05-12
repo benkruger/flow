@@ -1,6 +1,6 @@
 # FLOW — Software Development Lifecycle for Claude Code
 
-An opinionated 5-phase development plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that enforces issue-driven, TDD discipline on every feature. Supports Rails, Python, iOS, Go, and Rust.
+An opinionated 5-phase development plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that enforces issue-driven, TDD discipline on every feature. Language-agnostic — every project owns its toolchain via `bin/format`, `bin/lint`, `bin/build`, `bin/test` stubs that FLOW orchestrates.
 
 **Every feature. Same 5 phases. Same order. No shortcuts.**
 
@@ -10,11 +10,11 @@ An opinionated 5-phase development plugin for [Claude Code](https://docs.anthrop
 
 ## Why FLOW
 
-Claude Code is powerful, but undisciplined by default. FLOW imposes structure. Not bureaucracy — discipline. DAG decomposition for planning, then TDD execution, then four-step code review, then learnings that compound. Every feature, same order.
+Claude Code is powerful, but undisciplined by default. FLOW imposes structure. Not bureaucracy — discipline. DAG decomposition for planning, then TDD execution, then four-agent code review, then learnings that compound. Every feature, same order.
 
 ---
 
-## Three Goals
+## Four Tenets
 
 ### Unobtrusive
 
@@ -26,38 +26,59 @@ Every skill has two independent axes — **commit** (show diffs or auto-commit) 
 
 ### Safe for Local Env
 
-No containers. No external dependencies. Native tools only — git, gh, your linter, your test runner. Every command is pre-approved in `.claude/settings.json` so you never see a permission prompt. Worktree isolation protects your team's trunk (`main`, `staging`, or whatever your repo's default branch is) — multiple features run in parallel without touching it.
+No containers. No external dependencies. Native tools only — git, gh, your linter, your test runner. Every command is pre-approved in `.claude/settings.json` so you never see a permission prompt. A global `PreToolUse` hook blocks compound commands, shell redirection, and other footguns so the model can't reach around the gate. Worktree isolation protects your team's trunk (`main`, `staging`, or whatever your repo's default branch is) — multiple features run in parallel without touching it.
 
-### Slack Notifications
+### N × N × N Concurrent
 
-Optional thread-per-feature notifications give your team passive awareness of feature progress. Each feature gets one Slack thread — every phase posts a reply, building a narrative from start to merge. Set two env vars, run `/flow-prime`, done. See [Slack Integration](docs/integrations/slack.md).
+N engineers running N flows on N machines simultaneously is the primary use case. Local state (`.flow-states/`, worktrees) is per-machine; shared state (PRs, issues, labels) is coordinated through GitHub. The "Flow In-Progress" label provides cross-engineer WIP detection so `/flow-issues` shows which issues are already being worked on. Nothing assumes a single active flow.
 
 ---
 
 ## The Workflow
 
+You type three commands. FLOW handles the rest.
+
+### The three commands you type
+
+| Step | Command | What you get |
+|------|---------|--------------|
+| 1 | `/flow-explore <topic>` | A vanilla `## What` / `## Why` / `## Acceptance Criteria` issue filed on GitHub (PM voice) |
+| 2 | `/flow-plan #<issue>` | A decomposed implementation plan filed as a linked issue ready for start (Tech Lead voice; mandatory `decompose:decompose` pass) |
+| 3 | `/flow-start #<issue>` | Worktree, PR, plan extraction from the issue body — and the lifecycle begins |
+
 ```text
-Start → Code → Review → Learn → Complete
-  1       2         3            4          5
+/flow-explore add a per-flow budget cap
+/flow-plan #1234
+/flow-start #1235
+```
+
+### The five phases that run after `/flow-start`
+
+Once `/flow-start` lands, you're inside the lifecycle. Each phase is its own skill, but **you don't type them** — Claude auto-chains Code → Review → Learn → Complete based on your `.flow.json` autonomy settings. You see them as phase transitions, and as approval prompts at any boundary you've kept `continue: manual`.
+
+```text
+1: Start  →  2: Code  →  3: Review  →  4: Learn  →  5: Complete
 ```
 
 | Phase | Command | What happens |
 |-------|---------|-------------|
-| **1: Start** | `/flow-start <#issue>` | Lock, pull the integration branch, `bin/ci` baseline, upgrade dependencies, `bin/ci` post-deps, commit to the integration branch, unlock, new worktree + PR — ci-fixer sub-agent handles failures. Plan is extracted from the issue body's `<!-- FLOW-PLAN-BEGIN -->`/`<!-- FLOW-PLAN-END -->` sentinels. |
-| **2: Code** | `/flow-code` | Test-first per task, diff review before `bin/ci`, commit per task, 100% coverage enforced |
-| **3: Review** | `/flow-review` | Four steps — gather artifacts, launch four cognitively isolated agents in parallel (reviewer, pre-mortem, adversarial, documentation), triage findings, fix in-scope issues |
-| **4: Learn** | `/flow-learn` | Learnings routed to CLAUDE.md, rules, and memory — plugin gaps noted |
-| **5: Complete** | `/flow-complete` | Close issues referenced in prompt, PR merged, worktree removed, state file deleted, feature done |
+| **1: Start** | `/flow-start` | Acquire start lock, run `bin/flow ci` baseline on the integration branch, upgrade dependencies, commit, unlock, then create worktree + PR. `ci-fixer` sub-agent repairs any dependency breakage once; subsequent flows inherit the fix via the CI sentinel. Plan is extracted from the issue body's `<!-- FLOW-PLAN-BEGIN -->`/`<!-- FLOW-PLAN-END -->` sentinels. |
+| **2: Code** | `/flow-code` | Test-first per task, diff review before `bin/flow ci`, commit per task, 100% coverage enforced. |
+| **3: Review** | `/flow-review` | Four cognitively isolated agents in parallel — `reviewer`, `pre-mortem`, `adversarial`, `documentation`. Parent triages findings and fixes in-scope issues. |
+| **4: Learn** | `/flow-learn` | Learnings routed to project `CLAUDE.md` and `.claude/rules/`; plugin process gaps filed as GitHub issues. |
+| **5: Complete** | `/flow-complete` | Merge the PR, close issues referenced in the prompt, remove the worktree, delete the state file. |
+
+Maintainer-only commands (private to this repo): `/flow-release` ships a tagged version; `/flow-changelog-audit` reviews Claude Code's CHANGELOG for plugin-relevant changes.
 
 ---
 
 ## Guardrails
 
-- **`bin/ci` is the universal gate** — must be green before every commit and every phase transition. Recommend keeping guardrails under 2 minutes for tight feedback loops.
+- **`bin/flow ci` is the universal gate** — must be green before every commit and every phase transition. Recommend keeping guardrails under 2 minutes for tight feedback loops.
 - **100% test coverage required** — Code phase cannot advance to Review without it.
 - **TDD always** — test must fail before implementation is written; test must pass before commit.
 - **No lint suppression** — fix the code, not the linter. No exclusions, no suppression comments.
-- **Worktree isolation** — your team's trunk (`main`/`staging`/whatever your repo's default branch is) is never touched directly; multiple features run in parallel.
+- **Worktree isolation** — your team's trunk is never touched directly; multiple features run in parallel.
 - **Commit discipline** — imperative verb + tl;dr + per-file breakdown, every commit.
 
 ---
@@ -71,7 +92,11 @@ Every skill has two independent axes you can tune:
 
 Start fully manual. As your comfort grows, dial up autonomy per skill. Go fully autonomous when you trust the workflow.
 
-### Four preset levels via `/flow-prime`
+### Configuration via `/flow-prime`
+
+`/flow-prime` is the configuration front door. Type it yourself in any Claude Code session — the plugin walks you through a preset picker, writes the result to `.flow.json` at your project root, and installs the required permissions and `bin/*` stubs. Re-run it anytime to change presets; the previous configuration is replaced cleanly.
+
+Four preset levels:
 
 | Level | What it means |
 |-------|--------------|
@@ -80,16 +105,11 @@ Start fully manual. As your comfort grows, dial up autonomy per skill. Go fully 
 | **Recommended** | Auto where safe (Review), manual where judgment matters (Code) |
 | **Customize** | Choose per skill and per axis |
 
-### Runtime overrides
+`/flow-prime` is a user-only command — the model never runs it on your behalf. That's intentional: priming mutates project config (`.claude/settings.json`, `bin/*` stubs, git excludes) that every engineer on the repo will inherit, so the decision belongs to a human.
 
-Any skill invocation accepts `--auto` or `--manual` to override the configured setting for that run:
+### What prime writes to `.flow.json`
 
-```text
-/flow-code --auto        # skip per-task approval for this session
-/flow-review --manual  # prompt before advancing, just this once
-```
-
-### Configuration lives in `.flow.json`
+`/flow-prime` materializes your preset choice as JSON at `<project_root>/.flow.json`. The file is git-excluded — each engineer sets their own autonomy. You can hand-edit it if you want fine-grained per-skill control instead of re-running the preset picker:
 
 ```json
 {
@@ -104,7 +124,7 @@ Any skill invocation accepts `--auto` or `--manual` to override the configured s
 }
 ```
 
-View your current settings anytime with `/flow-config`.
+View your current settings anytime with `/flow-config`. Run `/flow-prime` again to swap presets.
 
 ---
 
@@ -129,41 +149,81 @@ Start a new Claude Code session so permissions take effect, then start a feature
 /flow-start #309
 ```
 
-The argument must match `^#[1-9][0-9]*$` — a pre-decomposed GitHub issue number prepared via `/flow-explore` + `/flow-plan`. This acquires a start lock (serializing concurrent starts), pulls the integration branch (`main`/`staging`/whatever your repo's default branch is), runs `bin/ci` for a clean baseline, upgrades dependencies on the integration branch, runs `bin/ci` again to catch dep-induced breakage, commits everything to the integration branch, then fetches the issue title to derive the branch name, creates a worktree at `.worktrees/<branch>`, and opens a GitHub PR. You land in Phase 2: Code.
+The argument must match `^#[1-9][0-9]*$` — a pre-decomposed GitHub issue number prepared via `/flow-explore` + `/flow-plan`. This acquires a start lock (serializing concurrent starts), pulls the integration branch, runs `bin/flow ci` for a clean baseline, upgrades dependencies on the integration branch, runs `bin/flow ci` again to catch dep-induced breakage, commits everything to the integration branch, then fetches the issue title to derive the branch name, creates a worktree at `.worktrees/<branch>`, and opens a GitHub PR. You land in Phase 2: Code.
 
 ---
 
-## Utility Commands
+## More Planning Tools
 
-Available at any point in the workflow:
+The three-command workflow handles single features. For bigger surfaces, FLOW adds two more shapes — whole-project decomposition, and working through an existing backlog.
 
-| Command | What it does |
-|---------|-------------|
-| `/flow-prime` | One-time project setup — configure permissions and git excludes |
-| `/flow-commit` | Full diff review, approved commit message, pull before push |
-| `/flow-note` | Captures corrections to state file — auto-invoked when Claude is wrong |
-| `/flow-abort` | Abandon feature — close PR, delete remote branch, remove worktree, delete state |
-| `/flow-reset` | Remove all FLOW artifacts — close PRs, delete worktrees/branches/state files |
-| `/flow-config` | Display current configuration — version and per-skill autonomy |
-| `/flow-skills` | Display the FLOW skill catalog grouped by user role — Maintainer and Private buckets render only inside the FLOW plugin repo |
+Every planning skill is role-bound: PM, Tech Lead, or CTO voices with their own scope authority. Each persona refuses overreach with a `## SCOPE REFUSAL` block that names the next tier. No auto-escalation — the user always directs.
+
+### Whole-project decomposition
+
+- **`/flow-decompose-project <description>`** — Decompose a large project into a fully linked GitHub issue graph: epic, sub-issues, blocked-by dependencies, and phase labels. Every issue is filed work-ready with acceptance criteria, file paths, and scope boundaries from real codebase exploration. Feeds directly into `/flow-orchestrate`.
+
+### Working an existing backlog
+
+- **`/flow-issues`** — Fetch open issues, rank by impact, show a dashboard with recommended work order.
+- **`/flow-triage-issue #N`** — PM-lens triage of a single issue; verdict in `{close, decompose}` with confidence and flip-condition.
+- **`/flow-orchestrate`** — Process every issue labeled "Decomposed" sequentially overnight via `flow-start --auto`. Progress and results land in `flow tui`'s Orchestration tab — completed flows with PR links, failed flows with reasons, total elapsed time.
+
+---
+
+## Skill Catalog
+
+Run `/flow-skills` anytime to see the live catalog grouped by role.
+
+### Planning
+
+| Skill | Purpose |
+|-------|---------|
+| `/flow-issues` | Fetch open issues, rank by impact, display a dashboard with recommended work order |
+| `/flow-triage-issue` | PM-lens triage of a single open issue — verdict in {close, decompose} |
+| `/flow-explore` | Open a problem-statement conversation (PM voice); file a vanilla `## What` / `## Why` / `## Acceptance Criteria` issue on signal |
+| `/flow-plan` | Decompose a vanilla problem-statement issue into a linked decomposed issue ready for the start phase (Tech Lead voice) |
+| `/flow-decompose-project` | Decompose a large project into linked GitHub issues with sub-issue and blocked-by relationships |
+| `/flow-orchestrate` | Process decomposed issues sequentially overnight via `flow-start --auto` |
+
+### Work
+
+| Skill | Purpose |
+|-------|---------|
+| `/flow-start` | Begin a new feature — worktree, PR, state file, plan extraction from issue body sentinels |
+| `/flow-commit` | Show diff, write commit message, run CI gate, commit and push — used by every commit-producing skill |
+| `/flow-note` | Capture a correction or learning to the active flow's state file mid-session |
+| `/flow-config` | Display the per-skill autonomy configuration from `.flow.json` |
+| `/flow-skills` | Display this catalog grouped by role |
+
+### Health
+
+| Skill | Purpose |
+|-------|---------|
 | `/flow-doc-sync` | Full codebase documentation accuracy review — reports drift between code and docs |
-| `/flow-hygiene` | Audit instruction corpus health — CLAUDE.md, rules, and memory for staleness, misplacement, duplication, and contradictions |
-| `/flow-issues` | Fetch open issues, categorize, prioritize, and display a dashboard. Supports readiness filters |
-| `/flow-explore` | Open a problem-statement conversation (PM voice) — discussion-mode by default, files a vanilla `## What` / `## Why` / `## Acceptance Criteria` issue on user signal |
-| `/flow-plan` | Decompose a vanilla problem-statement issue (filed by `/flow-explore`) into a linked decomposed issue ready for the start phase. Tech Lead voice, mandatory `decompose:decompose` pass, files with `--label decomposed` and a blocked-by link to the parent |
-| `/flow-decompose-project` | Decompose a large project into linked GitHub issues with sub-issue relationships, blocked-by dependencies, and phase labels |
-| `/flow-orchestrate` | Process decomposed issues overnight — batch orchestration via flow-start --auto |
-| `/flow-triage-issue` | Triage a single open GitHub issue from a PM lens — reads code, checks for already-shipped work, returns a verdict in {close, decompose} |
+| `/flow-hygiene` | Audit instruction corpus health — `CLAUDE.md`, rules, and memory for staleness, duplication, and contradictions |
 
-### Standalone Tools
+### Admin (user-only)
 
-| Command | What it does |
-|---------|-------------|
-| `flow tui` | Interactive terminal UI — view active flows, open worktrees, tail logs, abort features (no Claude session needed) |
+These commands are reserved for direct user invocation — type the slash command yourself. The model never invokes them on your behalf.
 
-### Terminal Dashboard
+| Skill | Purpose |
+|-------|---------|
+| `/flow-prime` | One-time project setup — configure permissions, install `bin/*` stubs, write the version marker |
+| `/flow-abort` | Abort the current feature — close the PR, delete the remote branch, remove the worktree, delete the state file |
+| `/flow-reset` | Reset all FLOW artifacts on this machine — close PRs, remove worktrees, delete branches, clear state files |
 
-Monitor every active flow from your terminal — no Claude session needed. `flow tui` reads state files directly and auto-refreshes every 2 seconds, so phase transitions and code task progress appear as they happen.
+---
+
+## Terminal Dashboard
+
+Monitor every active flow from your terminal — no Claude session needed.
+
+```bash
+flow tui
+```
+
+Reads state files directly and auto-refreshes every 2 seconds, so phase transitions and code task progress appear as they happen. Runs standalone on macOS and Linux.
 
 | Key | Action |
 |-----|--------|
@@ -180,40 +240,22 @@ Monitor every active flow from your terminal — no Claude session needed. `flow
 | Esc | Back to list view |
 | q | Quit |
 
-The detail panel shows the full phase timeline with per-phase cumulative time, code task progress, diff stats, notes count, and issues filed. Runs standalone on macOS and Linux.
-
-### Planning Surface
-
-Think out loud against a collaborator who reads the codebase, asks the right questions, and brings in a PM, Tech Lead, or CTO voice on request. The planning surface is split into two role-bound skills: `/flow-explore <topic>` opens a problem-statement conversation in PM voice and files a vanilla `## What` / `## Why` / `## Acceptance Criteria` issue when you signal "ready"; `/flow-plan #N` then opens an implementation-planning conversation in Tech Lead voice against that vanilla issue, runs `decompose:decompose` on the agreed approach, and files a linked decomposed issue ready for `/flow-start`. Each persona has its own scope authority (PM covers copy and content, Tech Lead covers extensions of existing architecture, CTO covers novel design), and each refuses overreach with a `## SCOPE REFUSAL` block that names the next tier. The skills render refusals verbatim and wait for your direction — no auto-escalation, no soft re-prompting.
-
-```text
-/flow-explore add a per-flow budget cap
-/flow-plan #1234
-```
-
-### Project Decomposition
-
-Describe a project in plain language and FLOW decomposes it into a fully linked GitHub issue graph — epic, child issues, sub-issue relationships, blocked-by dependencies, and phase labels. Every issue is filed work-ready with acceptance criteria, file paths, and scope boundaries from real codebase exploration.
-
-```text
-/flow-decompose-project add multi-tenant billing
-```
-
-The skill walks through 6 steps: DAG decomposition with codebase exploration, issue list build, parent epic creation, child issue filing in topological order, sub-issue and blocked-by relationship linking, and a final report. The user's invocation is the single signal — the pipeline runs unattended, with bounded auto-fix loops on validator failure. The resulting issue graph feeds directly into `/flow-orchestrate` for overnight processing, or you pick issues one at a time with `/flow-start work on issue #N`.
-
-### Batch Orchestration
-
-Feed the issue graph into `/flow-orchestrate` and let FLOW process them overnight. It fetches open issues labeled "Decomposed", filters out any marked "Flow In-Progress", and runs each sequentially through all 5 phases via `flow-start --auto`.
-
-The next time you open a Claude Code session, the session-start hook delivers a morning report: which issues completed (with PR links), which failed (with reasons), and total elapsed time. One command to start, zero intervention overnight, full accountability in the morning.
+The detail panel shows the full phase timeline with per-phase cumulative time, code task progress, diff stats, notes count, and issues filed.
 
 ---
 
 ## Architecture
 
-### Sub-Agent Architecture
+### Sub-agents
 
-Start and Complete use a ci-fixer sub-agent for CI failures. The `/flow-plan` utility skill invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition before a feature reaches `/flow-start`. Review launches four cognitively isolated agents in parallel: `reviewer` (context-rich — receives diff + plan + CLAUDE.md + rules, covers architecture, simplicity, and correctness including security), `pre-mortem` (context-sparse — receives only the diff, investigates failure modes including security), `adversarial` (context-sparse — writes tests designed to break the implementation), and `documentation` (context-sparse — assesses maintainability and documentation accuracy). The parent session gathers context, triages findings, and fixes. Code has no sub-agent. Learn uses `learn-analyst` (cognitively isolated compliance audit).
+Review launches four cognitively isolated agents in parallel:
+
+- **`reviewer`** (context-rich) — receives diff + plan + `CLAUDE.md` + rules; covers architecture, simplicity, and correctness including security.
+- **`pre-mortem`** (context-sparse) — receives only the substantive diff; investigates failure modes including security.
+- **`adversarial`** (context-sparse) — writes tests designed to break the implementation.
+- **`documentation`** (context-sparse) — assesses maintainability and documentation accuracy.
+
+The parent session gathers context, triages findings, and fixes in-scope issues. Learn uses `learn-analyst` (cognitively isolated compliance audit). Planning skills can dispatch to `pm` / `tech-lead` / `cto` agents for scope-bound voices. Start uses `ci-fixer` when CI on the integration branch fails.
 
 ```text
 Main conversation          Sub-agent (custom plugin)
@@ -230,53 +272,27 @@ Main conversation          Sub-agent (custom plugin)
       |─── Updates state file
 ```
 
-Phase 1 uses the **ci-fixer sub-agent** when `bin/ci` fails — at the baseline CI gate and again after dependency upgrades. The sub-agent diagnoses failures, fixes them, iterates up to 3 times, then reports back. A file lock serializes concurrent starts so they do not fight over main.
+### State file persistence
 
-### State File Persistence
+Every feature has a state file at `.flow-states/<branch>/state.json` containing identity (branch, repo, PR), phase tracking (current phase, timings, transitions), artifact paths (plan, dag, log), progress counters, notes captured via `/flow-note`, continuation and compaction recovery fields, autonomy settings, Slack thread info, issues filed, and diff stats. Full schema: [`docs/reference/flow-state-schema.md`](docs/reference/flow-state-schema.md).
 
-Every feature has a state file at `.flow-states/<branch>/state.json`. Key fields include:
+State survives session breaks and compaction. Multiple features run simultaneously in separate worktrees with separate state files — both on the same machine and across multiple engineers.
 
-- **Identity** — `branch`, `relative_cwd`, `repo`, `pr_number`, `pr_url`, `prompt`
-- **Phase tracking** — `current_phase`, per-phase `status`/`started_at`/`completed_at`/`cumulative_seconds`/`visit_count`, `phase_transitions` history
-- **Artifact paths** — `files.plan`, `files.dag`, `files.log`, `files.state`
-- **Progress** — `code_task` counter, `review_step`, `learn_step`, `complete_step`
-- **Notes** — corrections captured via `/flow-note` throughout the session
-- **Continuation** — `_continue_pending`, `_continue_context`, `_auto_continue` for stop-hook resumption
-- **Compaction** — `compact_summary`, `compact_cwd`, `compact_count` for post-compaction context recovery
-- **Autonomy** — `skills` object with per-skill `commit`/`continue` settings
-- **Slack** — `slack_thread_ts`, `slack_notifications` for thread-per-feature tracking
-- **Issues** — `issues_filed` array (Tech Debt, Documentation Drift, Flow issues)
-- **Diff stats** — `files_changed`, `insertions`, `deletions` captured at Code phase completion
+### Session-start hook
 
-Full schema reference: `docs/reference/flow-state-schema.md`.
+Every Claude Code session start — new terminal, `/clear`, `/compact` — triggers a hook that scans `.flow-states/` for in-progress features. If one is found, Claude knows the feature name, current phase, worktree, and code task progress, but does not act on it.
 
-State survives session breaks and compaction. Multiple features can run simultaneously in separate worktrees with separate state files — both on the same machine and across multiple engineers. State files are local to each machine; GitHub labels ("Flow In-Progress") provide cross-engineer WIP detection so `/flow-issues` shows which issues are already being worked on.
+The hook also handles timing recovery (resets interrupted session timing so cumulative phase durations stay accurate), compaction recovery (consumes `compact_summary` and `compact_cwd` for richer context after `/compact`), correction capture (injects the instruction to invoke `/flow-note` whenever the user corrects Claude), and deterministic terminal tab colors per repo.
 
-### Session Hook — Feature Awareness
+### The learning system
 
-Every Claude Code session start — new terminal, `/clear`, `/compact` — triggers a hook that scans `.flow-states/` for in-progress features.
-
-If a feature is found, Claude knows the feature name, current phase, worktree, and code task progress — but does not act on it. No auto-prompting, no "Ready to continue?" When you want to resume, `cd` into the worktree and run the phase command, or simply ask Claude to continue.
-
-The hook also handles:
-
-- **Timing recovery** — resets interrupted session timing so cumulative phase durations stay accurate across session breaks
-- **Compaction recovery** — consumes `compact_summary` and `compact_cwd` from the state file to inject richer context after `/compact`
-- **Orchestration awareness** — detects in-progress or completed orchestration runs and delivers the morning report
-- **Correction capture** — injects the instruction to invoke `/flow-note` whenever the user corrects Claude
-- **Tab color** — sets a deterministic terminal tab color based on the repo name (pinned colors for known repos, hash-based for others). Configurable via `tab_color` in `.flow.json`
-
-All behaviors are wired at session start without any user action.
-
-### The Learning System
-
-Every correction and observation has a path to becoming a permanent, reusable pattern — routed to the right home:
+Every correction and observation has a path to becoming a permanent, reusable pattern:
 
 ```text
 User corrects Claude → /flow-note captures it in state["notes"]
 Claude writes observations → auto-memory (shared across worktrees)
        ↓
-Learn reads three sources in Phase 4 (CLAUDE.md rules, learn-analyst agent, state/plan data)
+Learn reads CLAUDE.md, rules, plan, state notes, and diff in Phase 4
        ↓
 Each learning is routed to the right repo-local destination:
     → Project CLAUDE.md   (process rules and architecture — committed via PR)
@@ -285,32 +301,13 @@ Each learning is routed to the right repo-local destination:
 
 The learnings don't evaporate at session end. They compound.
 
-### Bash Validation Hook
+### Slack notifications (optional)
 
-A global `PreToolUse` hook (`bin/flow hook validate-pretool`) fires on every Bash call in any FLOW-primed project. It enforces 6 validation layers in order:
-
-1. **Compound commands and command substitution** — blocks `&&`, `||`, `|`, `;`, lone `&` (backgrounding), input redirection `<` / `<<` / `<<<` / `<(...)`, and command substitution `$()` / backticks. Operator characters inside single-quoted (`'...'`) or double-quoted (`"..."`) arguments are treated as literal data and pass through. Unclosed quotes are pessimistically blocked so a bypass cannot hide structural operators inside a dangling quote. Use separate Bash calls for each command.
-2. **Shell output redirection** — blocks `>`, `>>`, `2>` (use Read/Write tools). Also quote-aware.
-3. **Blanket restore** — blocks `git restore .` (restore files individually)
-4. **Deny list** — blocks commands matching deny patterns in `.claude/settings.json`
-5. **File-read commands** — blocks `cat`, `head`, `tail`, `grep`, `rg`, `find`, `ls` (use dedicated tools)
-6. **Whitelist** — command must match a `Bash(...)` allow pattern in `.claude/settings.json`
-
-Layers 1–5 are always enforced. Layer 6 (whitelist) is **flow-aware**: it only enforces during an active flow (when `.flow-states/<branch>/state.json` exists). Outside of flows, unlisted commands fall through to Claude Code's native permission system so users can still run `npm test`, `docker compose up`, or any other command by approving the prompt.
-
-### Phase Back-Navigation
-
-Phases that allow it offer back-navigation when something was missed:
-
-| Phase | Can return to |
-|-------|--------------|
-| Review | Code |
-
-When returning, state is reset appropriately. Later phases are invalidated. Prior findings are preserved and extended — never discarded.
+Thread-per-feature notifications give your team passive awareness of feature progress. Each feature gets one Slack thread — every phase posts a reply, building a narrative from start to merge. Set two env vars, run `/flow-prime`, done. See [Slack Integration](docs/integrations/slack.md).
 
 ---
 
-## What Gets Built Per Feature
+## What gets built per feature
 
 Every completed feature produces:
 
@@ -318,45 +315,8 @@ Every completed feature produces:
 - Individual commits per plan task with detailed messages
 - 100% test coverage maintained
 - All identified risks addressed (verified by Review phase)
-- New CLAUDE.md patterns from corrections and learnings
+- New `CLAUDE.md` patterns and rules from corrections and learnings
 - A clean state file (deleted at Complete)
-
----
-
-## Instructions Are Advisory. Gates Aren't
-
-Most agent workflows put enforcement in instructions: "always run bin/ci", "never skip Review". Instructions work until they don't. FLOW's phase enforcement is layered and deterministic. There is no instruction path from an incomplete phase to the next one running.
-
-Four independent mechanisms enforce this:
-
-- **Inline phase guard** — every phase skill opens with a tool-based gate (HARD-GATE) or a Rust command that reads the state file and exits immediately with `BLOCKED` if the previous phase isn't complete. The skill doesn't run — there's nothing for Claude to interpret or override.
-
-- **`bin/flow check-phase`** — a standalone Rust verification command callable from anywhere in the workflow. One source of truth for phase state, used by skills, hooks, and utility commands alike.
-
-- **SessionStart hook** — fires on every session start (`startup`, `/clear`, `/compact`). Reads the state file and injects the current phase directly into Claude's context. After a week away, Claude opens knowing exactly where it is and cannot proceed as if it doesn't.
-
-- **PostCompact hook** — fires after context compaction. Captures the conversation summary and CWD into the state file so the SessionStart hook can inject richer context on resume. Tracks compaction count per feature.
-
----
-
-## Maintainer Tools
-
-These skills and scripts live in the FLOW repo itself (`.claude/skills/`). They are not part of the user-facing plugin — they exist to develop, test, and release FLOW.
-
-| Command | What it does |
-|---------|-------------|
-| `/flow-release` | Bump version in plugin.json and marketplace.json, tag, push, create GitHub Release |
-| `/flow-changelog-audit` | Audit Claude Code CHANGELOG.md for plugin-relevant changes, categorize as Adopt/Remove/Adapt, file issues |
-
-### Local Testing
-
-To test plugin changes against a target project, point Claude Code at the local plugin source via `--plugin-dir`:
-
-```bash
-claude --plugin-dir=$HOME/code/flow
-```
-
-That overrides the installed marketplace version for the duration of the session, so source-level edits take effect on the next session start.
 
 ---
 
