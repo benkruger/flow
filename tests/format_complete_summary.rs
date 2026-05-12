@@ -9,7 +9,9 @@
 
 use std::path::{Path, PathBuf};
 
-use flow_rs::format_complete_summary::{format_complete_summary, run_impl, run_impl_main, Args};
+use flow_rs::format_complete_summary::{
+    compute_cost_breakdown, format_complete_summary, run_impl, run_impl_main, Args,
+};
 use serde_json::{json, Value};
 
 mod common;
@@ -539,6 +541,179 @@ fn format_complete_summary_renders_dash_for_frozen_cost_pattern() {
         result.summary.contains("cost partial"),
         "footnote must appear when any phase contributes None cost; summary:\n{}",
         result.summary
+    );
+}
+
+// --- compute_cost_breakdown structural API ---
+//
+// The structured intermediate `compute_cost_breakdown` returns the
+// Token Cost data needed by two formatters: the terminal banner
+// (existing `token_cost_section`) and the new PR-body markdown table
+// (Task 4 `format_cost_table`). Tests below drive each branch of the
+// extracted helper directly so coverage of the structural API is
+// independent of the formatter that consumes it.
+
+/// Full state with snapshots for every phase produces five rows and
+/// totals that match the per-phase sums.
+#[test]
+fn compute_cost_breakdown_full_data_returns_all_five_phase_rows() {
+    let mut state = all_complete_state();
+    add_phase_snapshots(&mut state, "flow-start", 0, 5);
+    add_phase_snapshots(&mut state, "flow-code", 5, 15);
+    add_phase_snapshots(&mut state, "flow-review", 15, 20);
+    add_phase_snapshots(&mut state, "flow-learn", 20, 25);
+    add_phase_snapshots(&mut state, "flow-complete", 25, 30);
+
+    let breakdown = compute_cost_breakdown(&state).expect("breakdown");
+    assert_eq!(breakdown.rows.len(), 5, "five phase rows");
+
+    let summed_tokens: i64 = breakdown.rows.iter().map(|r| r.tokens).sum();
+    assert_eq!(breakdown.total_tokens, summed_tokens, "totals match sum");
+
+    let summed_cost: f64 = breakdown.rows.iter().filter_map(|r| r.cost).sum();
+    assert!(
+        (breakdown.total_cost.unwrap_or(0.0) - summed_cost).abs() < 1e-9,
+        "total_cost matches sum of per-row costs"
+    );
+}
+
+/// Phases map is `{}` → no rows accumulate → return None.
+#[test]
+fn compute_cost_breakdown_returns_none_when_phases_empty() {
+    let mut state = all_complete_state();
+    state["phases"] = json!({});
+    assert!(compute_cost_breakdown(&state).is_none());
+}
+
+/// Every phase status is "pending" → no row contributes → return None.
+#[test]
+fn compute_cost_breakdown_returns_none_when_all_phases_pending() {
+    let mut state = all_complete_state();
+    for key in [
+        "flow-start",
+        "flow-code",
+        "flow-review",
+        "flow-learn",
+        "flow-complete",
+    ] {
+        state["phases"][key]["status"] = json!("pending");
+    }
+    assert!(compute_cost_breakdown(&state).is_none());
+}
+
+/// A phase whose enter snapshot has `session_cost_usd = null` produces
+/// a row with `cost = None` and flips `total_partial`.
+#[test]
+fn compute_cost_breakdown_marks_partial_when_cost_missing() {
+    let mut state = all_complete_state();
+    let mut enter = snapshot_value("S1", 1, "claude-opus-4-7");
+    let complete = snapshot_value("S1", 5, "claude-opus-4-7");
+    enter["session_cost_usd"] = json!(null);
+    state["phases"]["flow-code"]["window_at_enter"] = enter;
+    state["phases"]["flow-code"]["window_at_complete"] = complete;
+    // Drop the other phases so flow-code is the only contributor.
+    for key in ["flow-start", "flow-review", "flow-learn", "flow-complete"] {
+        state["phases"][key]["status"] = json!("pending");
+    }
+
+    let breakdown = compute_cost_breakdown(&state).expect("breakdown");
+    assert!(breakdown.total_partial, "partial marker set");
+    let row = breakdown
+        .rows
+        .iter()
+        .find(|r| r.phase_name == "Code")
+        .expect("Code row present");
+    assert!(row.cost.is_none(), "Code row cost is None");
+}
+
+/// A phase whose snapshot pair shows the 5h pct dropping between
+/// enter and complete records a window reset.
+#[test]
+fn compute_cost_breakdown_records_reset_observed() {
+    let mut state = all_complete_state();
+    let mut enter = snapshot_value("S1", 80, "claude-opus-4-7");
+    let mut complete = snapshot_value("S1", 5, "claude-opus-4-7");
+    // Force token growth so the row carries a non-trivial delta.
+    enter["session_input_tokens"] = json!(100);
+    complete["session_input_tokens"] = json!(500);
+    state["phases"]["flow-code"]["window_at_enter"] = enter;
+    state["phases"]["flow-code"]["window_at_complete"] = complete;
+
+    let breakdown = compute_cost_breakdown(&state).expect("breakdown");
+    assert!(breakdown.reset_observed_anywhere, "anywhere flag set");
+    let row = breakdown
+        .rows
+        .iter()
+        .find(|r| r.phase_name == "Code")
+        .expect("Code row present");
+    assert!(row.reset_observed, "Code row reset flag set");
+}
+
+/// Multi-model snapshots accumulate per-model tokens in `by_model`.
+#[test]
+fn compute_cost_breakdown_accumulates_by_model() {
+    let mut state = all_complete_state();
+    state["phases"]["flow-code"]["window_at_enter"] = snapshot_value("S1", 0, "claude-opus-4-7");
+    let mut complete_v = snapshot_value("S1", 50, "claude-opus-4-7");
+    complete_v["by_model"]["claude-sonnet-4-6"] = json!({
+        "input": 1000, "output": 500, "cache_create": 0, "cache_read": 0
+    });
+    state["phases"]["flow-code"]["window_at_complete"] = complete_v;
+
+    let breakdown = compute_cost_breakdown(&state).expect("breakdown");
+    assert!(
+        breakdown.by_model.contains_key("claude-opus-4-7"),
+        "opus key present"
+    );
+    assert!(
+        breakdown.by_model.contains_key("claude-sonnet-4-6"),
+        "sonnet key present"
+    );
+}
+
+/// Per `.claude/rules/security-gates.md` "Normalize Before
+/// Comparing", the status comparison in `compute_cost_breakdown`
+/// must accept case- and whitespace-drifted variants of
+/// `"pending"` (`"PENDING"`, `"Pending"`, `" pending"`,
+/// `"pending "`). State files can be hand-edited or carry
+/// case-drifted values; an un-normalized comparison would flip
+/// those phases from "pending" to "active" and produce phantom
+/// rows.
+#[test]
+fn compute_cost_breakdown_normalizes_status_case_and_whitespace() {
+    let mut state = all_complete_state();
+    state["phases"]["flow-start"]["status"] = json!("PENDING");
+    state["phases"]["flow-code"]["status"] = json!("Pending");
+    state["phases"]["flow-review"]["status"] = json!("pending ");
+    state["phases"]["flow-learn"]["status"] = json!(" pending");
+    state["phases"]["flow-complete"]["status"] = json!("pending");
+
+    assert!(
+        compute_cost_breakdown(&state).is_none(),
+        "every phase is a case/whitespace variant of pending; breakdown should be None"
+    );
+}
+
+/// Empty-string status is semantically equivalent to "missing
+/// field" — it must be treated as pending so no row is produced.
+/// Without this collapse, a hand-edited state file that clears
+/// the status field to `""` flips the phase to "active" and
+/// produces a phantom row.
+#[test]
+fn compute_cost_breakdown_treats_empty_string_status_as_pending() {
+    let mut state = all_complete_state();
+    // Only flow-code carries the empty-string status; the other
+    // phases stay "complete" so they would contribute rows if
+    // the gate is correct. We want to verify the empty-string
+    // status specifically skips flow-code.
+    for key in ["flow-start", "flow-review", "flow-learn", "flow-complete"] {
+        state["phases"][key]["status"] = json!("pending");
+    }
+    state["phases"]["flow-code"]["status"] = json!("");
+
+    assert!(
+        compute_cost_breakdown(&state).is_none(),
+        "empty-string status must be treated as pending; got non-empty breakdown"
     );
 }
 

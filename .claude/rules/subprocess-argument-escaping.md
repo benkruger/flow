@@ -4,9 +4,9 @@ When a value sourced from outside the process (state file, git
 output, user config, parsed JSON, env var, CLI arg) is interpolated
 into a string that another interpreter will parse — AppleScript via
 `osascript`, shell via `bash -c`, SQL via a query string, regex,
-JSON, etc. — the value MUST be escaped according to that
-interpreter's literal-syntax rules before interpolation. Raw
-`format!` interpolation is an injection vector.
+JSON, GitHub Markdown table cells, etc. — the value MUST be escaped
+according to that interpreter's literal-syntax rules before
+interpolation. Raw `format!` interpolation is an injection vector.
 
 ## Why
 
@@ -28,11 +28,13 @@ escape helper before `format!`. The escape helper:
 
 1. **Names the target language** in its function name —
    `escape_applescript_string`, `escape_shell_arg`,
-   `escape_sql_literal`, etc. Generic "sanitize" or "clean" helpers
-   are a smell.
+   `escape_sql_literal`, `escape_markdown_cell`, etc. Generic
+   "sanitize" or "clean" helpers are a smell.
 2. **Has a doc comment that names the structural characters** for
    that language. AppleScript's are `\` and `"`. Shell's are the
    full operator set plus quotes. SQL's depend on the dialect.
+   GitHub Markdown table cells use `|` as the column delimiter
+   and `\n`/`\r` as the row delimiter.
 3. **Is exhaustively unit-tested** against:
    - the empty input,
    - input containing only safe chars,
@@ -52,6 +54,13 @@ double-quoted literals) with a leading backslash. Adversarial tests
 prove the injection substring `" then do shell script` cannot
 appear unescaped in the output for a malicious input.
 
+A sibling reference is `escape_markdown_cell` in
+`src/render_pr_body.rs`, used by `format_cost_table` to render
+session-derived model names inside the GitHub Markdown table.
+It escapes `|`, `\`, `\n`, and `\r` — preventing a model name
+with a literal pipe from injecting an extra column, and a model
+name with a newline from breaking the row onto two lines.
+
 ## Where This Applies
 
 - **`osascript -e <script>`** — escape AppleScript string literals
@@ -68,6 +77,13 @@ appear unescaped in the output for a malicious input.
   `regex::escape`.
 - **Any external value reaching a shell command via `bash -c`** —
   use a quoting helper or restructure to avoid `bash -c`.
+- **`format!("| {} | {} |", name, value)` rendering to GitHub
+  Markdown** — escape `|`, `\`, `\n`, `\r` in every external
+  string interpolated into a table cell. An unescaped pipe in a
+  cell value injects an extra column delimiter and breaks the
+  table; an unescaped newline ends the table row early. The
+  reference helper is `escape_markdown_cell` in
+  `src/render_pr_body.rs`.
 
 ## Plan-Phase Trigger
 

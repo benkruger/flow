@@ -4,11 +4,12 @@ use clap::Parser;
 use serde_json::json;
 
 use crate::flow_paths::FlowPaths;
+use crate::format_complete_summary::compute_cost_breakdown;
 use crate::format_issues_summary::format_issues_summary;
 use crate::format_pr_timings::format_timings_table;
 use crate::git::{current_branch, project_root};
 use crate::update_pr_body::{build_details_block, build_plain_section, gh_set_body};
-use crate::utils::extract_issue_numbers;
+use crate::utils::{extract_issue_numbers, format_tokens};
 
 /// Resolve a file path, handling both absolute and relative paths.
 ///
@@ -76,6 +77,133 @@ fn build_artifacts(state: &serde_json::Value) -> Vec<String> {
         }
     }
     items
+}
+
+/// Escape a value that flows into a GitHub Markdown table cell.
+///
+/// Per `.claude/rules/subprocess-argument-escaping.md`, external
+/// strings interpolated into a structural-syntax target must be
+/// escaped. Markdown table cells use `|` as the column delimiter
+/// and `\n`/`\r` as the row delimiter — a model name or other
+/// snapshot-derived string that carries any of these characters
+/// would break the table structure when rendered on GitHub.
+/// `\` is also escaped so a value ending in `\` cannot escape
+/// the closing pipe.
+fn escape_markdown_cell(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '|' => out.push_str("\\|"),
+            '\n' | '\r' => out.push(' '),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// Build the Token Cost markdown table from state snapshots.
+///
+/// Calls [`compute_cost_breakdown`] to fold each phase's window
+/// snapshots into per-row token / cost / reset / by-model data, then
+/// renders the result as a GitHub Markdown table consumed by
+/// [`render_body`]. Returns an empty string when the breakdown is
+/// `None` (no phase has run yet, or the `phases` map is empty) so
+/// [`render_body`] can omit the section.
+///
+/// Format:
+///
+/// - `| Phase | Tokens | Cost |` header + `|-------|--------|------|`
+///   separator.
+/// - One row per `CostRow`. Cost cell is `${:.3}` with a `*` suffix
+///   when `row_partial`; the em-dash `—` is used when `cost == None`.
+///   A trailing ` ↻` marks rows whose snapshot pair observed a
+///   rate-limit window reset.
+/// - Bold `| **Total** | **<tokens>** | **<cost>** |` row with the
+///   same Some/None/partial rules.
+/// - When `by_model.len() >= 2`, a `| Model | Tokens |` sub-table
+///   follows after a blank line.
+/// - Trailing italic footnotes explain the reset and partial markers
+///   when set.
+pub fn format_cost_table(state: &serde_json::Value) -> String {
+    let breakdown = match compute_cost_breakdown(state) {
+        Some(b) => b,
+        None => return String::new(),
+    };
+
+    let mut lines = Vec::new();
+    lines.push("| Phase | Tokens | Cost |".to_string());
+    lines.push("|-------|--------|------|".to_string());
+
+    for row in &breakdown.rows {
+        let cost_cell = match row.cost {
+            Some(c) => {
+                let partial_marker = if row.row_partial { "*" } else { "" };
+                format!("${:.3}{}", c, partial_marker)
+            }
+            None => "—".to_string(),
+        };
+        let reset_marker = if row.reset_observed { " ↻" } else { "" };
+        lines.push(format!(
+            "| {} | {} | {}{} |",
+            row.phase_name,
+            format_tokens(row.tokens),
+            cost_cell,
+            reset_marker
+        ));
+    }
+
+    // The Total cost cell is wrapped in bold delimiters, so the
+    // partial marker `*` must be appended OUTSIDE the closing
+    // `**` and escaped as `\*` — otherwise the trailing
+    // asterisks form `**$X.YYY***`, which GitHub Markdown can
+    // parse ambiguously as bold+emphasis or strong+literal.
+    // Bold the dollar value alone; emit the marker as a
+    // backslash-escaped literal star after the bold wrapper.
+    let (total_cost_bold, total_partial_suffix) = match breakdown.total_cost {
+        Some(c) => (
+            format!("${:.3}", c),
+            if breakdown.total_partial { "\\*" } else { "" },
+        ),
+        None => ("—".to_string(), ""),
+    };
+    lines.push(format!(
+        "| **Total** | **{}** | **{}**{} |",
+        format_tokens(breakdown.total_tokens),
+        total_cost_bold,
+        total_partial_suffix
+    ));
+
+    if breakdown.by_model.len() >= 2 {
+        lines.push(String::new());
+        lines.push("| Model | Tokens |".to_string());
+        lines.push("|-------|--------|".to_string());
+        for (model, mt) in &breakdown.by_model {
+            let total_model = mt
+                .input
+                .saturating_add(mt.output)
+                .saturating_add(mt.cache_create)
+                .saturating_add(mt.cache_read);
+            // Escape the model name — it is a state-derived
+            // string and may carry `|` from session capture data.
+            lines.push(format!(
+                "| {} | {} |",
+                escape_markdown_cell(model),
+                format_tokens(total_model)
+            ));
+        }
+    }
+
+    if breakdown.reset_observed_anywhere {
+        lines.push(String::new());
+        lines.push("*↻ rate-limit window reset observed mid-flow.*".to_string());
+    }
+    if breakdown.total_partial {
+        lines.push(String::new());
+        lines.push("*Partial: some phases had no cost data.*".to_string());
+    }
+
+    lines.join("\n")
 }
 
 /// Render the complete PR body from state and artifact files.
@@ -171,6 +299,14 @@ pub fn render_body(state: &serde_json::Value, project_dir: &Path) -> Result<Stri
     let timings_table = format_timings_table(state, true);
     sections.push(build_plain_section("Phase Timings", &timings_table));
     section_names.push("Phase Timings".to_string());
+
+    // 5b. Token Cost (conditional — only when at least one phase
+    // contributes a row via `compute_cost_breakdown`)
+    let cost_table = format_cost_table(state);
+    if !cost_table.is_empty() {
+        sections.push(build_plain_section("Token Cost", &cost_table));
+        section_names.push("Token Cost".to_string());
+    }
 
     // 6. State File (always)
     let state_json = serde_json::to_string_pretty(state).unwrap_or_default();

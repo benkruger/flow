@@ -94,7 +94,7 @@ rather than stranding the shell in a deleted directory.
 
 - Phase transition complete (records timing)
 - PR body rendering (What, Artifacts, Plan, DAG Analysis, Phase
-  Timings, State File, Session Log, Issues Filed)
+  Timings, Token Cost, State File, Session Log, Issues Filed)
 - Close referenced GitHub issues from the start prompt
 - Generate business-friendly summary (feature name, prompt,
   per-phase timeline, artifact counts)

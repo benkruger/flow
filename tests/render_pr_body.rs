@@ -10,10 +10,12 @@ use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
-use common::{create_gh_stub, create_git_repo_with_remote, parse_output};
+use common::{
+    add_phase_snapshots, create_gh_stub, create_git_repo_with_remote, parse_output, snapshot_value,
+};
 use flow_rs::format_pr_timings::format_timings_table;
 use flow_rs::phase_config::PHASE_ORDER;
-use flow_rs::render_pr_body::render_body;
+use flow_rs::render_pr_body::{format_cost_table, render_body};
 use serde_json::{json, Value};
 
 // --- Fixtures ---
@@ -144,6 +146,454 @@ fn timings_table_float_cumulative_seconds() {
     let table = format_timings_table(&state, true);
     assert!(table.contains("| Start | 2m |"));
     assert!(table.contains("| **Total** | **2m** |"));
+}
+
+// --- format_cost_table ---
+//
+// The Markdown formatter consumes the same `CostBreakdown` the
+// terminal banner does. Tests below mirror the structural shape:
+// header, per-phase rows, bold total, em-dash placeholders, partial /
+// reset markers, optional By Model sub-table, empty-on-None.
+
+fn full_cost_state() -> Value {
+    let mut state = make_test_state();
+    for key in PHASE_ORDER {
+        state["phases"][key]["status"] = json!("complete");
+    }
+    add_phase_snapshots(&mut state, "flow-start", 0, 5);
+    add_phase_snapshots(&mut state, "flow-code", 5, 15);
+    add_phase_snapshots(&mut state, "flow-review", 15, 20);
+    add_phase_snapshots(&mut state, "flow-learn", 20, 25);
+    add_phase_snapshots(&mut state, "flow-complete", 25, 30);
+    state
+}
+
+/// Header and separator lead the table — `| Phase | Tokens | Cost |`
+/// then the markdown alignment row.
+#[test]
+fn cost_table_renders_header_and_separator() {
+    let state = full_cost_state();
+    let table = format_cost_table(&state);
+    assert!(
+        table.starts_with("| Phase | Tokens | Cost |\n|-------|--------|------|"),
+        "header + separator must lead the table; got:\n{}",
+        table
+    );
+}
+
+/// Each non-pending phase appears as a `| <name> | ... | ... |` row.
+#[test]
+fn cost_table_renders_per_phase_rows() {
+    let state = full_cost_state();
+    let table = format_cost_table(&state);
+    for name in ["Start", "Code", "Review", "Learn", "Complete"] {
+        assert!(
+            table.contains(&format!("| {} |", name)),
+            "phase row for {} missing; table:\n{}",
+            name,
+            table
+        );
+    }
+}
+
+/// The final data row is the bold Total row.
+#[test]
+fn cost_table_total_row_is_bold() {
+    let state = full_cost_state();
+    let table = format_cost_table(&state);
+    assert!(
+        table.contains("| **Total** | **"),
+        "bold Total row must appear; table:\n{}",
+        table
+    );
+}
+
+/// A phase row whose cost is `None` renders the em-dash placeholder
+/// in the Cost cell.
+#[test]
+fn cost_table_uses_em_dash_for_unknown_cost() {
+    let mut state = make_test_state();
+    for key in PHASE_ORDER {
+        state["phases"][key]["status"] = json!("complete");
+    }
+    let mut enter = snapshot_value("S1", 1, "claude-opus-4-7");
+    let complete = snapshot_value("S1", 5, "claude-opus-4-7");
+    enter["session_cost_usd"] = json!(null);
+    state["phases"]["flow-code"]["window_at_enter"] = enter;
+    state["phases"]["flow-code"]["window_at_complete"] = complete;
+
+    let table = format_cost_table(&state);
+    let code_row = table
+        .lines()
+        .find(|l| l.starts_with("| Code |"))
+        .unwrap_or_else(|| panic!("Code row missing; table:\n{}", table));
+    assert!(
+        code_row.contains("—"),
+        "Code row must carry em-dash for unknown cost; row: {:?}",
+        code_row
+    );
+}
+
+/// When any phase contributes `None` cost, the Total's cost cell
+/// ends with the `*` partial marker.
+#[test]
+fn cost_table_appends_partial_marker_in_total() {
+    let mut state = make_test_state();
+    for key in PHASE_ORDER {
+        state["phases"][key]["status"] = json!("complete");
+    }
+    add_phase_snapshots(&mut state, "flow-start", 0, 5);
+    // flow-code's enter has cost None → cost_delta_usd None → total_partial.
+    let mut enter = snapshot_value("S1", 1, "claude-opus-4-7");
+    let complete = snapshot_value("S1", 5, "claude-opus-4-7");
+    enter["session_cost_usd"] = json!(null);
+    state["phases"]["flow-code"]["window_at_enter"] = enter;
+    state["phases"]["flow-code"]["window_at_complete"] = complete;
+
+    let table = format_cost_table(&state);
+    let total_row = table
+        .lines()
+        .find(|l| l.contains("**Total**"))
+        .expect("Total row");
+    assert!(
+        total_row.contains("*"),
+        "Total row cost cell must carry the partial marker; row: {:?}",
+        total_row
+    );
+}
+
+/// A phase whose snapshot pair shows the 5h pct dropping between
+/// enter and complete renders the reset marker `↻` in that row's
+/// Cost cell.
+#[test]
+fn cost_table_appends_reset_marker_per_row() {
+    let mut state = make_test_state();
+    for key in PHASE_ORDER {
+        state["phases"][key]["status"] = json!("complete");
+    }
+    let mut enter = snapshot_value("S1", 80, "claude-opus-4-7");
+    let mut complete = snapshot_value("S1", 5, "claude-opus-4-7");
+    enter["session_input_tokens"] = json!(100);
+    complete["session_input_tokens"] = json!(500);
+    state["phases"]["flow-code"]["window_at_enter"] = enter;
+    state["phases"]["flow-code"]["window_at_complete"] = complete;
+
+    let table = format_cost_table(&state);
+    let code_row = table
+        .lines()
+        .find(|l| l.starts_with("| Code |"))
+        .expect("Code row");
+    assert!(
+        code_row.contains("↻"),
+        "Code row must carry the reset marker; row: {:?}",
+        code_row
+    );
+}
+
+/// A multi-model breakdown renders a `| Model | Tokens |` sub-table
+/// after the per-phase table.
+#[test]
+fn cost_table_includes_by_model_subtable_when_multi_model() {
+    let mut state = make_test_state();
+    for key in PHASE_ORDER {
+        state["phases"][key]["status"] = json!("complete");
+    }
+    state["phases"]["flow-code"]["window_at_enter"] = snapshot_value("S1", 0, "claude-opus-4-7");
+    let mut complete = snapshot_value("S1", 50, "claude-opus-4-7");
+    complete["by_model"]["claude-sonnet-4-6"] = json!({
+        "input": 1000, "output": 500, "cache_create": 0, "cache_read": 0
+    });
+    state["phases"]["flow-code"]["window_at_complete"] = complete;
+
+    let table = format_cost_table(&state);
+    assert!(
+        table.contains("| Model | Tokens |"),
+        "By Model sub-table header missing; table:\n{}",
+        table
+    );
+    assert!(
+        table.contains("claude-opus-4-7"),
+        "opus row missing in sub-table"
+    );
+    assert!(
+        table.contains("claude-sonnet-4-6"),
+        "sonnet row missing in sub-table"
+    );
+}
+
+/// A single-model breakdown skips the `| Model | Tokens |` sub-table
+/// (a one-row breakdown adds no signal).
+#[test]
+fn cost_table_omits_by_model_subtable_when_single_model() {
+    let mut state = make_test_state();
+    for key in PHASE_ORDER {
+        state["phases"][key]["status"] = json!("complete");
+    }
+    add_phase_snapshots(&mut state, "flow-code", 0, 5);
+
+    let table = format_cost_table(&state);
+    assert!(
+        !table.contains("| Model | Tokens |"),
+        "single-model breakdown must suppress sub-table; table:\n{}",
+        table
+    );
+}
+
+/// Model names flow from snapshot data (`by_model` keys are
+/// session-captured strings). A model name containing the
+/// Markdown table delimiter `|` must be escaped or the rendered
+/// `| Model | Tokens |` row breaks the table structure — extra
+/// pipe characters produce phantom columns and misaligned cells
+/// on GitHub. Per `.claude/rules/subprocess-argument-escaping.md`,
+/// external strings interpolated into a structural-syntax target
+/// must be escaped before interpolation.
+#[test]
+fn cost_table_escapes_pipe_in_model_name() {
+    let mut state = make_test_state();
+    for key in PHASE_ORDER {
+        state["phases"][key]["status"] = json!("complete");
+    }
+    state["phases"]["flow-code"]["window_at_enter"] = snapshot_value("S1", 0, "claude-opus-4-7");
+    let mut complete = snapshot_value("S1", 50, "claude-opus-4-7");
+    // Two models so the by-model sub-table renders; the second
+    // model carries a literal `|` in its name.
+    complete["by_model"]["claude|injected-evil"] = json!({
+        "input": 1000, "output": 500, "cache_create": 0, "cache_read": 0
+    });
+    state["phases"]["flow-code"]["window_at_complete"] = complete;
+
+    let table = format_cost_table(&state);
+    let evil_row = table
+        .lines()
+        .find(|l| l.contains("injected-evil"))
+        .unwrap_or_else(|| panic!("injected model row missing; table:\n{}", table));
+    // The escape produces `claude\|injected-evil` — GitHub
+    // Markdown's parser treats `\|` inside a table cell as a
+    // literal pipe character and ignores it as a column
+    // delimiter. The rendered cell shows `claude|injected-evil`.
+    assert!(
+        evil_row.contains("claude\\|injected-evil"),
+        "escaped model name must appear in row; got: {:?}",
+        evil_row
+    );
+    // Count UNESCAPED pipes — those preceded by a backslash do
+    // not act as column delimiters. A 2-column markdown table
+    // row has exactly 3 unescaped pipes: leading, separator,
+    // trailing.
+    let bytes = evil_row.as_bytes();
+    let mut unescaped_pipes = 0;
+    for i in 0..bytes.len() {
+        if bytes[i] == b'|' && (i == 0 || bytes[i - 1] != b'\\') {
+            unescaped_pipes += 1;
+        }
+    }
+    assert_eq!(
+        unescaped_pipes, 3,
+        "by-model row must have exactly 3 unescaped pipes; found {} in row {:?}",
+        unescaped_pipes, evil_row
+    );
+}
+
+/// A model name ending in `\` must have the backslash escaped
+/// in the Markdown cell — otherwise the following pipe column
+/// delimiter would be parsed as an escaped pipe and the cell
+/// would absorb the next column's content.
+#[test]
+fn cost_table_escapes_backslash_in_model_name() {
+    let mut state = make_test_state();
+    for key in PHASE_ORDER {
+        state["phases"][key]["status"] = json!("complete");
+    }
+    state["phases"]["flow-code"]["window_at_enter"] = snapshot_value("S1", 0, "claude-opus-4-7");
+    let mut complete = snapshot_value("S1", 50, "claude-opus-4-7");
+    complete["by_model"]["claude\\"] = json!({
+        "input": 100, "output": 50, "cache_create": 0, "cache_read": 0
+    });
+    state["phases"]["flow-code"]["window_at_complete"] = complete;
+
+    let table = format_cost_table(&state);
+    // The escape produces `claude\\` (a literal backslash
+    // doubled) — GitHub Markdown renders `\\` as a single
+    // literal backslash inside a cell.
+    assert!(
+        table.contains("| claude\\\\ |"),
+        "backslash in model name must be escaped as `\\\\`; table:\n{}",
+        table
+    );
+}
+
+/// A model name containing `\n` or `\r` must NOT inject a line
+/// break into the Markdown table — newlines inside cells break
+/// the table structure on GitHub. The escape collapses them to
+/// spaces so the row stays on a single line.
+#[test]
+fn cost_table_escapes_newline_in_model_name() {
+    let mut state = make_test_state();
+    for key in PHASE_ORDER {
+        state["phases"][key]["status"] = json!("complete");
+    }
+    state["phases"]["flow-code"]["window_at_enter"] = snapshot_value("S1", 0, "claude-opus-4-7");
+    let mut complete = snapshot_value("S1", 50, "claude-opus-4-7");
+    complete["by_model"]["claude\nrogue\rmodel"] = json!({
+        "input": 100, "output": 50, "cache_create": 0, "cache_read": 0
+    });
+    state["phases"]["flow-code"]["window_at_complete"] = complete;
+
+    let table = format_cost_table(&state);
+    let rogue_row = table
+        .lines()
+        .find(|l| l.contains("rogue"))
+        .unwrap_or_else(|| panic!("rogue-model row missing; table:\n{}", table));
+    // After escape, the row must NOT contain any literal newline
+    // or carriage return — both should be replaced with spaces.
+    assert!(
+        !rogue_row.contains('\n'),
+        "row must not contain literal newline; row: {:?}",
+        rogue_row
+    );
+    assert!(
+        !rogue_row.contains('\r'),
+        "row must not contain literal carriage return; row: {:?}",
+        rogue_row
+    );
+    // The model name's three segments should appear as
+    // space-separated tokens on the same line.
+    assert!(
+        rogue_row.contains("claude rogue model"),
+        "escaped model name segments must appear on one line; row: {:?}",
+        rogue_row
+    );
+}
+
+/// The Total cost cell is bold-wrapped (`**$X.YYY**`). When
+/// `total_partial == true` AND cost is Some, the partial marker
+/// `*` must NOT land between the closing `**` and the trailing
+/// pipe — that produces `**$X.YYY***`, which GitHub Markdown can
+/// parse ambiguously as bold+emphasis. Escape the marker as
+/// `\*` and place it AFTER the bold wrapper so the cell renders
+/// unambiguously as bold value + literal asterisk.
+#[test]
+fn cost_table_total_partial_marker_does_not_produce_triple_asterisk() {
+    let mut state = make_test_state();
+    for key in PHASE_ORDER {
+        state["phases"][key]["status"] = json!("complete");
+    }
+    add_phase_snapshots(&mut state, "flow-start", 0, 5);
+    // flow-code's enter has null cost → total_partial flips on.
+    let mut enter = snapshot_value("S1", 1, "claude-opus-4-7");
+    let complete = snapshot_value("S1", 5, "claude-opus-4-7");
+    enter["session_cost_usd"] = json!(null);
+    state["phases"]["flow-code"]["window_at_enter"] = enter;
+    state["phases"]["flow-code"]["window_at_complete"] = complete;
+
+    let table = format_cost_table(&state);
+    let total_row = table
+        .lines()
+        .find(|l| l.contains("**Total**"))
+        .expect("Total row");
+    assert!(
+        !total_row.contains("***"),
+        "Total row must not produce three consecutive asterisks; row: {:?}",
+        total_row
+    );
+    // The fix places the partial marker as `\*` after the bold
+    // wrapper, so the row contains the escape sequence rather
+    // than a bare trailing star inside the bold delimiters.
+    assert!(
+        total_row.contains("\\*"),
+        "Total row must carry the escaped partial marker `\\*` after the bold wrapper; row: {:?}",
+        total_row
+    );
+}
+
+/// A phase whose multi-session snapshot fold produces
+/// `Some(cost)` AND `row_partial == true` renders the per-row
+/// cost cell as `${:.3}*` — the dollar value with the partial
+/// marker suffix. The fold groups by `session_id`: session S1
+/// (enter + step0) contributes a Some cost delta; session S2
+/// (step1 + complete-with-null-cost) contributes a None delta
+/// that flips `total_partial` while leaving the running `Some`
+/// cost in place.
+#[test]
+fn cost_table_appends_partial_marker_to_row_when_cost_partial() {
+    let mut state = make_test_state();
+    for key in PHASE_ORDER {
+        state["phases"][key]["status"] = json!("complete");
+    }
+    let enter = snapshot_value("S1", 1, "claude-opus-4-7");
+    let step0 = snapshot_value("S1", 5, "claude-opus-4-7");
+    let step1 = snapshot_value("S2", 2, "claude-opus-4-7");
+    let mut complete = snapshot_value("S2", 6, "claude-opus-4-7");
+    complete["session_cost_usd"] = json!(null);
+    state["phases"]["flow-code"]["window_at_enter"] = enter;
+    state["phases"]["flow-code"]["window_at_complete"] = complete;
+    state["phases"]["flow-code"]["step_snapshots"] = json!([
+        {
+            "step": 1,
+            "field": "code_task",
+            "captured_at": step0["captured_at"],
+            "session_id": step0["session_id"],
+            "model": step0["model"],
+            "five_hour_pct": step0["five_hour_pct"],
+            "seven_day_pct": step0["seven_day_pct"],
+            "session_input_tokens": step0["session_input_tokens"],
+            "session_output_tokens": step0["session_output_tokens"],
+            "session_cache_creation_tokens": step0["session_cache_creation_tokens"],
+            "session_cache_read_tokens": step0["session_cache_read_tokens"],
+            "session_cost_usd": step0["session_cost_usd"],
+            "by_model": step0["by_model"],
+            "turn_count": step0["turn_count"],
+            "tool_call_count": step0["tool_call_count"],
+            "context_at_last_turn_tokens": step0["context_at_last_turn_tokens"],
+            "context_window_pct": step0["context_window_pct"],
+        },
+        {
+            "step": 2,
+            "field": "code_task",
+            "captured_at": step1["captured_at"],
+            "session_id": step1["session_id"],
+            "model": step1["model"],
+            "five_hour_pct": step1["five_hour_pct"],
+            "seven_day_pct": step1["seven_day_pct"],
+            "session_input_tokens": step1["session_input_tokens"],
+            "session_output_tokens": step1["session_output_tokens"],
+            "session_cache_creation_tokens": step1["session_cache_creation_tokens"],
+            "session_cache_read_tokens": step1["session_cache_read_tokens"],
+            "session_cost_usd": step1["session_cost_usd"],
+            "by_model": step1["by_model"],
+            "turn_count": step1["turn_count"],
+            "tool_call_count": step1["tool_call_count"],
+            "context_at_last_turn_tokens": step1["context_at_last_turn_tokens"],
+            "context_window_pct": step1["context_window_pct"],
+        },
+    ]);
+
+    let table = format_cost_table(&state);
+    let code_row = table
+        .lines()
+        .find(|l| l.starts_with("| Code |"))
+        .unwrap_or_else(|| panic!("Code row missing; table:\n{}", table));
+    assert!(
+        code_row.contains('$'),
+        "Code row must carry $ cost cell when Some(cost); row: {:?}",
+        code_row
+    );
+    assert!(
+        code_row.contains('*'),
+        "Code row must carry the * partial marker when row_partial; row: {:?}",
+        code_row
+    );
+}
+
+/// Empty phases map → `compute_cost_breakdown` returns None →
+/// `format_cost_table` returns an empty string so renderers can omit
+/// the section.
+#[test]
+fn cost_table_returns_empty_when_breakdown_none() {
+    let mut state = make_test_state();
+    state["phases"] = json!({});
+    let table = format_cost_table(&state);
+    assert_eq!(table, "", "expected empty string; got: {:?}", table);
 }
 
 // --- render_body ---
@@ -527,6 +977,146 @@ fn section_order() {
     let mut sorted = positions.clone();
     sorted.sort();
     assert_eq!(positions, sorted, "Sections out of order");
+}
+
+// --- render_body Token Cost section integration ---
+
+/// Full state with snapshots → render_body splices a `## Token Cost`
+/// section between `## Phase Timings` and `## State File`.
+#[test]
+fn render_body_includes_token_cost_section_with_cost_data() {
+    let state = full_cost_state();
+    let dir = tempfile::tempdir().unwrap();
+    let body = render_body(&state, dir.path()).unwrap();
+
+    assert!(
+        body.contains("## Token Cost"),
+        "Token Cost section header must appear; body:\n{}",
+        body
+    );
+    let token_pos = body
+        .find("## Token Cost")
+        .expect("Token Cost section position");
+    let timings_pos = body
+        .find("## Phase Timings")
+        .expect("Phase Timings position");
+    let state_pos = body.find("## State File").expect("State File position");
+    assert!(
+        timings_pos < token_pos && token_pos < state_pos,
+        "Token Cost must sit between Phase Timings and State File"
+    );
+}
+
+/// State without window snapshots → format_cost_table returns empty
+/// → render_body omits the section. Other sections still render in
+/// the canonical order.
+#[test]
+fn render_body_omits_token_cost_section_when_no_data() {
+    let mut state = make_test_state();
+    state["phases"] = json!({});
+    let dir = tempfile::tempdir().unwrap();
+    let body = render_body(&state, dir.path()).unwrap();
+
+    assert!(
+        !body.contains("## Token Cost"),
+        "Token Cost section must NOT appear when no snapshot data; body:\n{}",
+        body
+    );
+    let what_pos = body.find("## What").expect("What position");
+    let artifacts_pos = body.find("## Artifacts").expect("Artifacts position");
+    let timings_pos = body
+        .find("## Phase Timings")
+        .expect("Phase Timings position");
+    let state_pos = body.find("## State File").expect("State File position");
+    assert!(
+        what_pos < artifacts_pos && artifacts_pos < timings_pos && timings_pos < state_pos,
+        "core sections must remain in canonical order even without Token Cost"
+    );
+}
+
+/// All eight optional sections rendered together: their `## `
+/// heading positions must follow the canonical order
+/// What < Artifacts < Plan < DAG Analysis < Phase Timings <
+/// Token Cost < State File < Session Log < Issues Filed.
+#[test]
+fn render_body_token_cost_section_order_invariant() {
+    let mut state = full_cost_state();
+    let dir = tempfile::tempdir().unwrap();
+
+    let plan_file = dir.path().join("plan.md");
+    fs::write(&plan_file, "Plan").unwrap();
+    let dag_file = dir.path().join("dag.md");
+    fs::write(&dag_file, "DAG").unwrap();
+    let branch_log_dir = dir.path().join(".flow-states").join("test-feature");
+    fs::create_dir_all(&branch_log_dir).unwrap();
+    fs::write(branch_log_dir.join("log"), "log entry").unwrap();
+    state["plan_file"] = json!(plan_file.to_string_lossy().to_string());
+    state["dag_file"] = json!(dag_file.to_string_lossy().to_string());
+    state["transcript_path"] = json!("/path/to/session.jsonl");
+    state["issues_filed"] = json!([{
+        "label": "Tech Debt",
+        "title": "Issue",
+        "url": "https://github.com/t/t/issues/1",
+        "phase_name": "Learn"
+    }]);
+
+    let body = render_body(&state, dir.path()).unwrap();
+
+    let headings = [
+        "## What",
+        "## Artifacts",
+        "## Plan",
+        "## DAG Analysis",
+        "## Phase Timings",
+        "## Token Cost",
+        "## State File",
+        "## Session Log",
+        "## Issues Filed",
+    ];
+    let positions: Vec<usize> = headings
+        .iter()
+        .map(|h| {
+            body.find(h)
+                .unwrap_or_else(|| panic!("missing heading {} in body:\n{}", h, body))
+        })
+        .collect();
+    let mut sorted = positions.clone();
+    sorted.sort();
+    assert_eq!(
+        positions, sorted,
+        "Token Cost out of order; body:\n{}",
+        body
+    );
+}
+
+/// The Token Cost section is rendered as a plain section (`## Token
+/// Cost\n\n<table>`), not wrapped in a `<details>` collapsible block.
+#[test]
+fn render_body_token_cost_uses_plain_section_format() {
+    let state = full_cost_state();
+    let dir = tempfile::tempdir().unwrap();
+    let body = render_body(&state, dir.path()).unwrap();
+
+    let token_pos = body
+        .find("## Token Cost")
+        .expect("Token Cost section position");
+    let after_token = &body[token_pos..];
+    let next_section = after_token[1..]
+        .find("\n## ")
+        .map(|i| i + 1)
+        .unwrap_or(after_token.len());
+    let token_section = &after_token[..next_section];
+
+    assert!(
+        !token_section.contains("<details>"),
+        "Token Cost section must be plain markdown, not wrapped in <details>; section:\n{}",
+        token_section
+    );
+    assert!(
+        token_section.starts_with("## Token Cost\n\n"),
+        "Token Cost section must start with `## Token Cost\\n\\n`; section starts:\n{:?}",
+        &token_section[..token_section.len().min(80)]
+    );
 }
 
 #[test]
