@@ -5712,32 +5712,3 @@ fn every_marker_writing_skill_is_in_multi_step_allowlist() {
         value.trim()
     );
 }
-
-#[test]
-fn flow_plan_skill_uses_utility_in_progress_marker() {
-    // Regression: a future edit drops either the set or the clear
-    // side of the per-session utility-in-progress marker. Without
-    // `set-utility-in-progress`, the Stop hook returns control to
-    // the user mid-conversation when a sub-agent Skill tool returns
-    // — breaking the unattended-discussion contract. Without
-    // `clear-utility-in-progress`, the session deadlocks because
-    // the Stop hook keeps refusing turn-end after the skill has
-    // already completed or cancelled.
-    //
-    // Consumer: the Stop hook's `check_in_progress_utility_skill`
-    // predicate, which refuses turn-end while a per-session marker
-    // is present for `flow:flow-plan`.
-    let c = common::read_skill("flow-plan");
-    assert!(
-        c.contains("set-utility-in-progress"),
-        "skills/flow-plan/SKILL.md must invoke `bin/flow set-utility-in-progress` so the Stop hook refuses turn-end while the discussion-mode skill is running"
-    );
-    assert!(
-        c.contains("clear-utility-in-progress"),
-        "skills/flow-plan/SKILL.md must invoke `bin/flow clear-utility-in-progress` so the Stop hook releases turn-end after every exit boundary"
-    );
-    assert!(
-        c.contains("--skill flow:flow-plan"),
-        "skills/flow-plan/SKILL.md must pass `--skill flow:flow-plan` so the marker is scoped to this skill's identifier"
-    );
-}

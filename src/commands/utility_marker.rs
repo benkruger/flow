@@ -44,11 +44,8 @@ use crate::utils::now;
 /// The `every_marker_writing_skill_is_in_multi_step_allowlist` contract
 /// test in `tests/skill_contracts.rs` scans every SKILL.md and locks
 /// this invariant in mechanically.
-pub const MULTI_STEP_UTILITY_SKILLS: &[&str] = &[
-    "flow:flow-create-issue",
-    "flow:flow-decompose-project",
-    "flow:flow-plan",
-];
+pub const MULTI_STEP_UTILITY_SKILLS: &[&str] =
+    &["flow:flow-create-issue", "flow:flow-decompose-project"];
 
 /// Subdirectory under HOME where markers live. A future expansion to
 /// other FLOW machine-global state can share this directory.

@@ -1718,3 +1718,85 @@ fn test_flow_issues_skill_no_flaky_tests_phrase() {
          filing path was deleted."
     );
 }
+
+/// Tombstone: removed in PR #1475. Must not return.
+///
+/// Asserts `src/commands/utility_marker.rs` does NOT contain the
+/// literal byte sequence `"flow:flow-plan"` (a quoted Rust string
+/// literal) anywhere in the file. flow-plan is a conversational
+/// "thinking room" skill — the per-session marker contract is
+/// designed for unattended multi-step utility skills that must
+/// not return control to the user mid-pipeline. Registering
+/// flow-plan in the allowlist made the Stop hook refuse turn-end
+/// on every conversational turn, breaking the back-and-forth
+/// discussion the skill exists to host.
+///
+/// Consumer: `check_in_progress_utility_skill`'s allowlist check
+/// at `src/hooks/stop_continue.rs::check_in_progress_utility_skill`,
+/// which uses `MULTI_STEP_UTILITY_SKILLS.contains(&skill)` to
+/// decide whether a marker-naming skill blocks turn-end.
+///
+/// The byte-substring shape holds because:
+///   1. `concat!` reassembly: while `concat!("flow:", "flow-plan")`
+///      is technically a constant expression usable in a `&[&str]`
+///      slot, no realistic future author types the macro to add a
+///      skill back to the allowlist — they type the literal. The
+///      `concat!` path is a contrived bypass, not an organic one.
+///   2. `format!` reassembly: `format!` returns `String`, which is
+///      not `&'static str` and cannot appear in the const slice
+///      `MULTI_STEP_UTILITY_SKILLS: &[&str]` without leaking. The
+///      type system rejects this path entirely.
+///   3. Named constant reference: a `const FLOW_PLAN: &str =
+///      "flow:flow-plan";` followed by use of `FLOW_PLAN` would
+///      still place the literal `"flow:flow-plan"` in the source —
+///      the constant definition itself trips the byte check.
+///   4. Method chains / split args: not applicable — the value
+///      lives inside a slice literal, not constructed via `.arg()`
+///      or any chained method call.
+#[test]
+fn test_utility_marker_no_flow_plan_in_allowlist() {
+    let path = common::repo_root().join("src/commands/utility_marker.rs");
+    let content = fs::read_to_string(&path).expect("src/commands/utility_marker.rs must exist");
+    assert!(
+        !content.contains("\"flow:flow-plan\""),
+        "src/commands/utility_marker.rs must not contain the quoted \
+         literal `\"flow:flow-plan\"` — flow-plan is a conversational \
+         skill whose back-and-forth discussion is incompatible with the \
+         Stop-hook marker contract that MULTI_STEP_UTILITY_SKILLS \
+         entries opt into."
+    );
+}
+
+/// Tombstone: removed in PR #1475. Must not return.
+///
+/// Asserts `skills/flow-plan/SKILL.md` does NOT contain the literal
+/// byte sequence `set-utility-in-progress`. flow-plan is a
+/// conversational skill — registering a per-session marker via this
+/// CLI subcommand made the Stop hook refuse turn-end on every
+/// discussion turn, breaking the back-and-forth interaction the
+/// skill exists to host.
+///
+/// Consumer: the flow-plan back-and-forth contract. Re-introducing
+/// the marker invocation would re-attach the skill to the Stop-hook
+/// allowlist family that requires unattended completion.
+///
+/// The byte-substring shape holds because:
+///   1. `concat!` reassembly: not applicable to Markdown.
+///   2. `format!` reassembly: not applicable to Markdown.
+///   3. Named constant reference: not applicable to Markdown.
+///   4. Method chains / split args: not applicable to Markdown.
+///      The forbidden string is a literal CLI subcommand name that
+///      a future SKILL.md author would have to type verbatim to
+///      re-invoke; there is no legitimate prose surface where the
+///      bare token would appear.
+#[test]
+fn test_flow_plan_skill_no_utility_marker_calls() {
+    let content = common::read_skill("flow-plan");
+    assert!(
+        !content.contains("set-utility-in-progress"),
+        "skills/flow-plan/SKILL.md must not invoke \
+         `set-utility-in-progress` — the conversational skill is \
+         incompatible with the Stop-hook marker contract that the \
+         CLI subcommand opts into."
+    );
+}
