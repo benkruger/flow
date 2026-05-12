@@ -647,6 +647,38 @@ for `<vanilla_number>` and the new decomposed issue number for
 ${CLAUDE_PLUGIN_ROOT}/bin/flow close-issue --number <vanilla_number> --comment "Decomposed into #<M>. Implementation plan tracked there; closing this problem statement."
 ```
 
+Parse the JSON result. When the response shape is
+`{"status":"error","message":"..."}` the gh subprocess refused the
+closure (transient network failure, auth scope mismatch, the
+parent was already closed by a parallel operation, etc.). The
+decomposed child issue #M already exists at this point — do NOT
+re-file it and do NOT retry the closure. Instead, report the
+failure inline so the user has a concrete recovery step:
+
+> "Filed decomposed issue #M but failed to close parent #N:
+> `<message>`. Close the parent manually with
+> `gh issue close <N> --comment "Decomposed into #M. ..."` once
+> the underlying gh failure is resolved, then run
+> `/flow:flow-start #M`."
+
+Then skip the remaining state-recording steps below (the
+`add-issue` and `clear-utility-in-progress` calls), print the
+COMPLETE-FAILED banner, and stop. Failing to halt would leave
+the utility-in-progress marker cleared with no breadcrumb back
+to the open parent — the user must reconcile the GitHub state
+before the flow can proceed.
+
+````markdown
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✗ FLOW v1.1.0 — flow:flow-plan — COMPLETE-FAILED
+  Decomposed issue filed; parent closure failed.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+````
+
+When the response is `{"status":"ok"}`, proceed.
+
 Record the issue in the state file (no-op if no FLOW feature is
 active):
 

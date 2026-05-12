@@ -242,6 +242,50 @@ fn close_issue_with_comment_passes_comment_to_gh() {
     );
 }
 
+#[test]
+fn close_issue_with_hyphen_prefixed_comment_passes_through() {
+    // Regression: `Args::comment` carries `allow_hyphen_values = true`
+    // so callers can pass comment text beginning with `-` or `--`
+    // (Markdown horizontal rules, dash-prefixed prose). Without that
+    // attribute, clap rejects the value as an unrecognized flag and
+    // the close-issue subcommand exits 2 before the gh invocation
+    // runs. Verify a `--`-prefixed comment reaches gh's argv verbatim.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let stub_dir = create_gh_stub(
+        &repo,
+        "#!/bin/bash\nprintf '%s\\n' \"$@\" > .gh-argv\nexit 0\n",
+    );
+
+    let hyphenated = "--- end of problem statement";
+    let output = run_close_issue(
+        &repo,
+        &[
+            "--repo",
+            "owner/name",
+            "--number",
+            "42",
+            "--comment",
+            hyphenated,
+        ],
+        &stub_dir,
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let argv = std::fs::read_to_string(repo.join(".gh-argv")).expect("gh stub argv recorded");
+    let args: Vec<&str> = argv.lines().collect();
+    assert!(
+        args.contains(&hyphenated),
+        "argv missing hyphen-prefixed comment verbatim: {:?}",
+        args
+    );
+}
+
 // --- run_impl_main ---
 
 #[test]

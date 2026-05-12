@@ -27,7 +27,11 @@ pub struct Args {
     pub number: i64,
 
     /// Optional closing comment forwarded to `gh issue close --comment`.
-    #[arg(long)]
+    /// `allow_hyphen_values = true` lets the value begin with `-`/`--`
+    /// (Markdown horizontal rules, dash-prefixed prose) so callers can
+    /// pass arbitrary comment text without clap rejecting it as an
+    /// unrecognized flag.
+    #[arg(long, allow_hyphen_values = true)]
     pub comment: Option<String>,
 }
 
