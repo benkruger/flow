@@ -7,12 +7,13 @@ description: "Decompose a vanilla problem-statement issue into a pre-planned dec
 
 Decompose a vanilla problem-statement issue (filed by
 `/flow:flow-explore`) into a structured implementation plan and
-file it as a linked decomposed GitHub issue. The skill reads the
+file it as a new decomposed GitHub issue. The skill reads the
 parent issue body, holds a Tech-Lead-default planning conversation,
 runs `decompose:decompose` against the agreed approach, transforms
 the synthesis into an Implementation Plan section wrapped in
-FLOW-PLAN sentinels, and files the new issue with the `decomposed`
-label and a blocked-by link to the parent.
+FLOW-PLAN sentinels, files the new issue with the `decomposed`
+label, and closes the parent vanilla issue with a comment naming
+the decomposed child.
 
 The output is a decomposed issue ready for `/flow:flow-start #M`.
 The vanilla issue stays as the durable problem statement; the
@@ -34,10 +35,10 @@ some topic`) are rejected with a migration message naming
 ## Concurrency
 
 The skill creates shared GitHub state (a new decomposed issue and
-a `blocked-by` link) only at the very end, on explicit user
-approval. Issue creation is idempotent by title — if a decomposed
-issue with the same title already exists, the user should be
-warned before filing a duplicate.
+a closure of the parent vanilla issue) only at the very end, on
+explicit user approval. Issue creation is idempotent by title —
+if a decomposed issue with the same title already exists, the
+user should be warned before filing a duplicate.
 
 The intermediate side effect is the per-session
 utility-in-progress marker (scoped to the user's Claude home, not
@@ -354,7 +355,7 @@ agent's recommendation is the user's decision.
 
 ---
 
-## Step 6 — Wrap-up: Decompose, Transform, Validate, File, Link
+## Step 6 — Wrap-up: Decompose, Transform, Validate, File, Close Parent
 
 When the user signals readiness — "ready", "file it", "let's go",
 "create the issue", or any equivalent phrasing — run the
@@ -628,24 +629,55 @@ Capture the new issue's number from the URL in the filer's output
 issue number M** — distinct from the parent **vanilla issue
 number N** the user passed at Step 1.
 
-Link the parent vanilla issue as blocked-by the new decomposed
-issue. The direction matters: vanilla problem statements are
-durable artifacts that close only when the implementation lands,
-so the vanilla is the issue WAITING (blocked) and the decomposed
-is the issue that BLOCKS it (the work that must complete to
-unblock the vanilla). The reverse direction (decomposed
-blocked-by vanilla) would permanently mark every decomposed work
-item as blocked — `flow-issues` filters blocked issues from the
-actionable backlog, so the decomposed work would never surface
-for `/flow:flow-start`. This is the load-bearing thread that ties
-the role-based pipeline together. Substitute the parent vanilla
-issue number (the `#N` the user passed at Step 1) for
-`<child_number>` (the issue being blocked) and the new decomposed
-issue number for `<dep_number>` (the dependency that blocks):
+Close the parent vanilla issue with a comment naming the
+decomposed child. The decomposed issue's Implementation Plan is
+now the full problem-and-solution artifact for this work — the
+vanilla problem statement is superseded once the decomposed plan
+exists, and leaving the vanilla open duplicates the open surface
+for the same problem (`flow-issues` would surface both, and
+engineers picking from the backlog could not tell which is the
+canonical entry point). The closing comment carries a pointer to
+the decomposed child so a reader landing on the closed parent has
+a breadcrumb back to the work that supersedes it. Substitute the
+parent vanilla issue number (the `#N` the user passed at Step 1)
+for `<vanilla_number>` and the new decomposed issue number for
+`<M>`:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow link-blocked-by --blocked-number <child_number> --blocking-number <dep_number>
+${CLAUDE_PLUGIN_ROOT}/bin/flow close-issue --number <vanilla_number> --comment "Decomposed into #<M>. Implementation plan tracked there; closing this problem statement."
 ```
+
+Parse the JSON result. When the response shape is
+`{"status":"error","message":"..."}` the gh subprocess refused the
+closure (transient network failure, auth scope mismatch, the
+parent was already closed by a parallel operation, etc.). The
+decomposed child issue #M already exists at this point — do NOT
+re-file it and do NOT retry the closure. Instead, report the
+failure inline so the user has a concrete recovery step:
+
+> "Filed decomposed issue #M but failed to close parent #N:
+> `<message>`. Close the parent manually with
+> `gh issue close <N> --comment "Decomposed into #M. ..."` once
+> the underlying gh failure is resolved, then run
+> `/flow:flow-start #M`."
+
+Then skip the remaining state-recording steps below (the
+`add-issue` and `clear-utility-in-progress` calls), print the
+COMPLETE-FAILED banner, and stop. Failing to halt would leave
+the utility-in-progress marker cleared with no breadcrumb back
+to the open parent — the user must reconcile the GitHub state
+before the flow can proceed.
+
+````markdown
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✗ FLOW v1.1.0 — flow:flow-plan — COMPLETE-FAILED
+  Decomposed issue filed; parent closure failed.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+````
+
+When the response is `{"status":"ok"}`, proceed.
 
 Record the issue in the state file (no-op if no FLOW feature is
 active):
@@ -674,8 +706,8 @@ code block:
 
 Then instruct the user:
 
-> "Filed decomposed issue #M, linked as blocked-by parent #N. To
-> start implementing, run `/flow:flow-start #M`."
+> "Filed decomposed issue #M and closed parent #N. To start
+> implementing, run `/flow:flow-start #M`."
 
 Do not invoke `/flow:flow-start` yourself — the user types the
 slash command directly.
@@ -687,9 +719,10 @@ slash command directly.
 - **Always require `#N` argument.** Bare-topic invocations are
   rejected at Step 1 with a migration message naming
   `/flow:flow-explore`.
-- **Always invoke `bin/flow link-blocked-by`** after filing the
-  decomposed issue. The blocked-by link is the load-bearing
-  thread tying the role-based pipeline together.
+- **Always invoke `bin/flow close-issue` with `--comment`** after
+  filing the decomposed issue. Closing the vanilla parent at plan
+  time removes the duplicate problem-statement surface so the
+  decomposed work is the only open artifact for the problem.
 - **Never edit issue #N.** The parent vanilla issue stays as the
   durable problem statement; the decomposed issue is filed as a
   NEW linked issue, not an in-place edit.

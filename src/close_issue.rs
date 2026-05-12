@@ -1,7 +1,7 @@
 //! Close a single GitHub issue via gh CLI.
 //!
 //! Usage:
-//!   bin/flow close-issue --number <N> [--repo <repo>]
+//!   bin/flow close-issue --number <N> [--repo <repo>] [--comment <text>]
 //!
 //! Output (JSON to stdout):
 //!   Success: {"status": "ok"}
@@ -25,17 +25,29 @@ pub struct Args {
     /// Issue number
     #[arg(long)]
     pub number: i64,
+
+    /// Optional closing comment forwarded to `gh issue close --comment`.
+    /// `allow_hyphen_values = true` lets the value begin with `-`/`--`
+    /// (Markdown horizontal rules, dash-prefixed prose) so callers can
+    /// pass arbitrary comment text without clap rejecting it as an
+    /// unrecognized flag.
+    #[arg(long, allow_hyphen_values = true)]
+    pub comment: Option<String>,
 }
 
 /// Close a GitHub issue and return error message or None on success.
+/// When `comment` is `Some(text)`, `--comment <text>` is appended to
+/// the gh invocation so the closure carries an explanatory remark.
 /// gh has its own network timeout; no hand-rolled loop needed per
 /// .claude/rules/testability-means-simplicity.md.
-fn close_issue_by_number(repo: &str, number: i64) -> Option<String> {
+fn close_issue_by_number(repo: &str, number: i64, comment: Option<&str>) -> Option<String> {
     let number_s = number.to_string();
-    let output = match Command::new("gh")
-        .args(["issue", "close", "--repo", repo, &number_s])
-        .output()
-    {
+    let mut gh_args: Vec<&str> = vec!["issue", "close", "--repo", repo, &number_s];
+    if let Some(c) = comment {
+        gh_args.push("--comment");
+        gh_args.push(c);
+    }
+    let output = match Command::new("gh").args(&gh_args).output() {
         Ok(o) => o,
         Err(e) => return Some(format!("Failed to spawn: {}", e)),
     };
@@ -71,7 +83,7 @@ pub fn run_impl_main(args: Args, repo_resolver: &dyn Fn() -> Option<String>) -> 
         },
     };
 
-    if let Some(e) = close_issue_by_number(&repo, args.number) {
+    if let Some(e) = close_issue_by_number(&repo, args.number, args.comment.as_deref()) {
         return (json!({"status": "error", "message": e}), 1);
     }
 

@@ -283,6 +283,40 @@ fn test_src_no_window_snapshot_file() {
     );
 }
 
+// --- flow-plan parent-issue closure ---
+//
+// The decomposed-child issue supersedes the vanilla parent's
+// problem-statement surface. Closing the parent at plan time
+// (with a comment naming the child via
+// `bin/flow close-issue --comment`) is what makes the decomposed
+// issue the single open artifact for the problem. The prior
+// `bin/flow link-blocked-by` invocation in flow-plan Step 6 is
+// removed; this tombstone catches a merge conflict or accidental
+// edit that re-introduces the invocation in `skills/flow-plan/SKILL.md`.
+
+/// Tombstone: removed in PR #1492. The `bin/flow link-blocked-by`
+/// invocation in `skills/flow-plan/SKILL.md` is replaced by a
+/// `bin/flow close-issue --comment` call so the parent vanilla
+/// issue closes at plan time. Must not return to the SKILL.md.
+///
+/// Stability argument: the protected target is markdown prose,
+/// not Rust source. The byte literal `link-blocked-by` cannot be
+/// reassembled at runtime — Markdown is a flat byte stream with
+/// no `concat!` macro, no `format!` interpolation, and no named
+/// constant references. A merge conflict can only resurrect the
+/// exact bytes, which this scanner catches.
+#[test]
+fn test_flow_plan_skill_no_link_blocked_by() {
+    let path = common::skills_dir().join("flow-plan").join("SKILL.md");
+    let content = fs::read_to_string(&path).expect("flow-plan SKILL.md must exist");
+    assert!(
+        !content.contains("link-blocked-by"),
+        "skills/flow-plan/SKILL.md must not reference `link-blocked-by` — \
+         flow-plan now closes the vanilla parent with `bin/flow close-issue --comment` \
+         so the decomposed child is the single open artifact for the problem."
+    );
+}
+
 // --- Weak-coverage prose loophole closure ---
 //
 // Weak-coverage language ("adequate test coverage", "adequately tested")
