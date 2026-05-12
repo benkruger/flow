@@ -54,6 +54,16 @@ pub struct Args {
     /// `body_too_large`.
     #[arg(long)]
     pub body_file: PathBuf,
+    /// Validation mode. `decomposed` (default) requires FLOW-PLAN
+    /// sentinels and an `## Implementation Plan` heading with at
+    /// least one `#### Task ` entry. `vanilla` requires the
+    /// problem-statement triad (`## What`, `## Why`,
+    /// `## Acceptance Criteria`) and forbids both sentinels and the
+    /// `## Implementation Plan` heading. Other values are rejected
+    /// with `{"status":"error","reason":"invalid_mode"}` so callers
+    /// see a JSON envelope instead of a clap exit-2 surface.
+    #[arg(long, default_value = "decomposed")]
+    pub mode: String,
 }
 
 /// Main-arm dispatcher for `bin/flow validate-issue-body`.
@@ -107,6 +117,23 @@ pub fn run_impl_main(args: &Args, _root: &Path) -> (Value, i32) {
         }
     };
 
+    match args.mode.as_str() {
+        "decomposed" => validate_decomposed(&body),
+        "vanilla" => validate_vanilla(&body),
+        other => error_envelope(
+            "invalid_mode",
+            &format!(
+                "unknown --mode value '{}'; expected 'vanilla' or 'decomposed'",
+                other
+            ),
+        ),
+    }
+}
+
+/// Validate a decomposed-issue body — the existing FLOW-PLAN
+/// sentinel + `## Implementation Plan` + `#### Task ` regime that
+/// `bin/flow plan-from-issue` later extracts at flow-start.
+fn validate_decomposed(body: &str) -> (Value, i32) {
     let begin_count = body.matches(BEGIN_MARKER).count();
     let end_count = body.matches(END_MARKER).count();
     if begin_count != 1 || end_count != 1 {
@@ -119,7 +146,7 @@ pub fn run_impl_main(args: &Args, _root: &Path) -> (Value, i32) {
         );
     }
 
-    let plan_content = match extract_plan(&body) {
+    let plan_content = match extract_plan(body) {
         Ok(c) => c,
         Err(e) => {
             return error_envelope(
@@ -151,6 +178,57 @@ pub fn run_impl_main(args: &Args, _root: &Path) -> (Value, i32) {
         }),
         0,
     )
+}
+
+/// Validate a vanilla problem-statement body — the
+/// `/flow:flow-explore` filing shape. The body must carry the
+/// `## What` / `## Why` / `## Acceptance Criteria` triad and must
+/// NOT contain FLOW-PLAN sentinels or an `## Implementation Plan`
+/// heading. Forbidden constructs are checked first so a body that
+/// drifts toward the decomposed shape gets a precise diagnostic
+/// instead of "missing heading X" pointing at a section that was
+/// deliberately omitted.
+fn validate_vanilla(body: &str) -> (Value, i32) {
+    if body.contains(BEGIN_MARKER) || body.contains(END_MARKER) {
+        return error_envelope(
+            "vanilla_has_sentinels",
+            "vanilla body must not contain FLOW-PLAN sentinel markers",
+        );
+    }
+    if has_h2_heading(body, "Implementation Plan") {
+        return error_envelope(
+            "vanilla_has_implementation_plan",
+            "vanilla body must not contain an `## Implementation Plan` heading",
+        );
+    }
+    if !has_h2_heading(body, "What") {
+        return error_envelope(
+            "vanilla_missing_section_what",
+            "vanilla body must contain a `## What` heading",
+        );
+    }
+    if !has_h2_heading(body, "Why") {
+        return error_envelope(
+            "vanilla_missing_section_why",
+            "vanilla body must contain a `## Why` heading",
+        );
+    }
+    if !has_h2_heading(body, "Acceptance Criteria") {
+        return error_envelope(
+            "vanilla_missing_section_acceptance",
+            "vanilla body must contain a `## Acceptance Criteria` heading",
+        );
+    }
+    (json!({"status": "ok"}), 0)
+}
+
+/// Returns true when `body` contains a line whose trimmed content
+/// matches `## <title>` exactly. Trailing whitespace is tolerated;
+/// leading whitespace is not (Markdown headings must start at column
+/// zero to render as headings).
+fn has_h2_heading(body: &str, title: &str) -> bool {
+    let needle = format!("## {}", title);
+    body.lines().any(|line| line.trim_end() == needle)
 }
 
 /// Reasons `read_body` rejects the body-file input.

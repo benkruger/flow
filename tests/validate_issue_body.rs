@@ -29,10 +29,23 @@ fn well_formed_body() -> String {
 }
 
 fn run(path: &Path) -> (serde_json::Value, i32) {
+    run_with_mode(path, "decomposed")
+}
+
+fn run_vanilla(path: &Path) -> (serde_json::Value, i32) {
+    run_with_mode(path, "vanilla")
+}
+
+fn run_with_mode(path: &Path, mode: &str) -> (serde_json::Value, i32) {
     let args = Args {
         body_file: path.to_path_buf(),
+        mode: mode.to_string(),
     };
     run_impl_main(&args, path.parent().unwrap_or_else(|| Path::new(".")))
+}
+
+fn well_formed_vanilla_body() -> String {
+    "## What\n\nObservable problem statement.\n\n## Why\n\nWhy it matters.\n\n## Acceptance Criteria\n\n- Criterion 1\n- Criterion 2\n".to_string()
 }
 
 // --- happy path ---
@@ -308,4 +321,130 @@ fn body_at_cap_passes_size_check_and_routes_to_marker_check() {
     assert_eq!(code, 0);
     assert_eq!(value["status"], "error");
     assert_eq!(value["reason"], "marker_count_wrong");
+}
+
+// --- mode dispatch ---
+
+#[test]
+fn decomposed_mode_default_preserves_existing_behavior() {
+    // Explicit `--mode decomposed` matches the default-mode path
+    // exercised by every test above: a well-formed body returns
+    // status=ok with the task count.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_body()).unwrap();
+    let (value, code) = run_with_mode(&path, "decomposed");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["tasks_total"], 1);
+}
+
+#[test]
+fn invalid_mode_returns_structured_error() {
+    // A `--mode <other>` invocation must fail closed with a JSON
+    // envelope so the calling skill can route through its Revise
+    // loop, not see a clap exit-2 surface.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_vanilla_body()).unwrap();
+    let (value, code) = run_with_mode(&path, "fancy");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["reason"], "invalid_mode");
+}
+
+// --- vanilla mode happy path ---
+
+#[test]
+fn vanilla_mode_accepts_body_with_what_why_acceptance_headings() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_vanilla_body()).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+}
+
+// --- vanilla mode missing-section rejections ---
+
+#[test]
+fn vanilla_missing_section_what() {
+    let body = "## Why\n\nProse.\n\n## Acceptance Criteria\n\n- one\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["reason"], "vanilla_missing_section_what");
+}
+
+#[test]
+fn vanilla_missing_section_why() {
+    let body = "## What\n\nProse.\n\n## Acceptance Criteria\n\n- one\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["reason"], "vanilla_missing_section_why");
+}
+
+#[test]
+fn vanilla_missing_section_acceptance() {
+    let body = "## What\n\nProse.\n\n## Why\n\nProse.\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["reason"], "vanilla_missing_section_acceptance");
+}
+
+// --- vanilla mode forbidden-construct rejections ---
+
+#[test]
+fn vanilla_has_sentinels_when_begin_marker_present() {
+    let body = format!(
+        "## What\n\nProse.\n\n## Why\n\nProse.\n\n## Acceptance Criteria\n\n- one\n\n{}\n## Implementation Plan\n\n#### Task 1: x\n{}",
+        BEGIN, END
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["reason"], "vanilla_has_sentinels");
+}
+
+#[test]
+fn vanilla_has_sentinels_when_end_marker_present_alone() {
+    // Even a stray END marker without a BEGIN trips the sentinel
+    // check — vanilla bodies must contain neither.
+    let body = format!(
+        "## What\n\nProse.\n\n## Why\n\nProse.\n\n## Acceptance Criteria\n\n- one\n\nstray {} marker\n",
+        END
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["reason"], "vanilla_has_sentinels");
+}
+
+#[test]
+fn vanilla_has_implementation_plan_heading() {
+    let body = "## What\n\nProse.\n\n## Why\n\nProse.\n\n## Acceptance Criteria\n\n- one\n\n## Implementation Plan\n\nplan content\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["reason"], "vanilla_has_implementation_plan");
 }
