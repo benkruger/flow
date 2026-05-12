@@ -1,5 +1,13 @@
 //! Complete phase "Done" banner formatter.
 //!
+//! Two consumers share the Token Cost computation. The terminal
+//! banner formatter (`token_cost_section`, called from
+//! [`format_complete_summary`]) renders the fixed-width separator
+//! block printed at the end of every flow. The PR-body markdown
+//! formatter in `crate::render_pr_body::format_cost_table` renders
+//! the same data as a GitHub Markdown table. Both consume the
+//! structured intermediate produced by [`compute_cost_breakdown`].
+//!
 //! Tests live in `tests/format_complete_summary.rs` per
 //! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]`
 //! block in this file.
@@ -60,24 +68,60 @@ fn outcome_label(outcome: &str) -> &'static str {
     }
 }
 
-/// Render the Token Cost section from `state.phases.<phase>.window_at_*`
+/// One row of Token Cost data describing a single phase's
+/// contribution. `cost == None` signals that the phase had no
+/// complete cost-pair (either endpoint missing or both `None`).
+/// `row_partial` is set whenever the underlying snapshot pair could
+/// not produce a full delta (parse error, missing `window_at_enter`,
+/// or a partial fold inside `phase_delta`).
+#[derive(Debug, Clone)]
+pub struct CostRow {
+    pub phase_name: String,
+    pub tokens: i64,
+    pub cost: Option<f64>,
+    pub reset_observed: bool,
+    pub row_partial: bool,
+}
+
+/// Structured Token Cost breakdown shared by the terminal banner
+/// formatter ([`token_cost_section`]) and the PR-body Markdown
+/// formatter (`crate::render_pr_body::format_cost_table`). Both
+/// formatters consume the same data so per-phase rows, totals, the
+/// by-model rollup, and the reset-anywhere flag stay consistent
+/// across surfaces.
+///
+/// `total_partial == true` indicates at least one row contributed
+/// `None` cost OR an upstream partial fold; renderers mark the total
+/// with `*` so users see the value is approximate.
+#[derive(Debug, Clone)]
+pub struct CostBreakdown {
+    pub rows: Vec<CostRow>,
+    pub total_tokens: i64,
+    pub total_cost: Option<f64>,
+    pub total_partial: bool,
+    pub by_model: IndexMap<String, ModelTokens>,
+    pub reset_observed_anywhere: bool,
+}
+
+/// Compute the Token Cost breakdown from `state.phases.<phase>.window_at_*`
 /// snapshots via `window_deltas::phase_delta`.
 ///
-/// Per-phase rendering rules (issue #1410):
+/// Per-phase rules:
 ///
 /// - Each phase whose `status` is not `"pending"` produces a row,
 ///   even when its delta is unknown — silent skip on parse error or
 ///   missing `window_at_enter` was the chief cause of the
-///   never-rendered Token Cost section. Unknown cost is shown as
-///   `—`; the row is marked `*` when the phase contributed without
+///   never-rendered Token Cost section. Unknown cost is `None`; the
+///   row is marked `row_partial` when the phase contributed without
 ///   a complete cost-pair.
-/// - The section header is omitted only when every phase is
-///   `"pending"`. Any non-pending phase forces the header so users
-///   see whatever data is available.
-/// - The total line uses the same Some/None formatting as per-phase
-///   rows; an `*` suffix marks the total as approximate when any
-///   phase contributed `None` cost.
-fn token_cost_section(state: &Value) -> Vec<String> {
+/// - Returns `None` when no row accumulates (every phase is
+///   `"pending"`, the `phases` map is empty, or no phase key
+///   appears in `PHASE_ORDER`). Renderers omit the section in
+///   that case.
+/// - `total_cost` uses Option-add semantics: `Some` contributions
+///   sum into the running total; `None` contributions flip
+///   `total_partial` so renderers mark the total as approximate.
+pub fn compute_cost_breakdown(state: &Value) -> Option<CostBreakdown> {
     let names = phase_config::phase_names();
 
     let phases_obj = state
@@ -86,15 +130,14 @@ fn token_cost_section(state: &Value) -> Vec<String> {
         .cloned()
         .unwrap_or_default();
     if phases_obj.is_empty() {
-        return Vec::new();
+        return None;
     }
 
-    // Per-phase row tuple: (display_name, tokens, cost, reset, partial).
-    let mut phase_rows: Vec<(String, i64, Option<f64>, bool, bool)> = Vec::new();
+    let mut rows: Vec<CostRow> = Vec::new();
     let mut total_tokens: i64 = 0;
     let mut total_cost: Option<f64> = None;
     let mut total_partial = false;
-    let mut combined_by_model: IndexMap<String, ModelTokens> = IndexMap::new();
+    let mut by_model: IndexMap<String, ModelTokens> = IndexMap::new();
     let mut reset_observed_anywhere = false;
 
     for &key in PHASE_ORDER {
@@ -106,7 +149,7 @@ fn token_cost_section(state: &Value) -> Vec<String> {
             .and_then(|s| s.as_str())
             .unwrap_or("pending");
         if status == "pending" {
-            // Phase never started — render no row to keep noise bounded.
+            // Phase never started — produce no row to keep noise bounded.
             continue;
         }
         // `phase_config::phase_names()` is keyed by PHASE_ORDER, so
@@ -137,7 +180,7 @@ fn token_cost_section(state: &Value) -> Vec<String> {
                     reset_observed_anywhere = true;
                 }
                 for (model, mt) in &r.by_model_delta {
-                    let entry = combined_by_model.entry(model.clone()).or_default();
+                    let entry = by_model.entry(model.clone()).or_default();
                     entry.input = entry.input.saturating_add(mt.input);
                     entry.output = entry.output.saturating_add(mt.output);
                     entry.cache_create = entry.cache_create.saturating_add(mt.cache_create);
@@ -161,47 +204,76 @@ fn token_cost_section(state: &Value) -> Vec<String> {
         if row_partial {
             total_partial = true;
         }
-        phase_rows.push((name, tokens, cost, reset, row_partial));
+        rows.push(CostRow {
+            phase_name: name,
+            tokens,
+            cost,
+            reset_observed: reset,
+            row_partial,
+        });
     }
 
-    if phase_rows.is_empty() {
-        return Vec::new();
+    if rows.is_empty() {
+        return None;
     }
+
+    Some(CostBreakdown {
+        rows,
+        total_tokens,
+        total_cost,
+        total_partial,
+        by_model,
+        reset_observed_anywhere,
+    })
+}
+
+/// Render the terminal Token Cost block from [`CostBreakdown`].
+///
+/// Returns an empty Vec when no breakdown is available (no phase has
+/// run yet, or the `phases` map is empty). The rendered output is the
+/// fixed-width separator block shown at the end of every flow:
+/// header, per-phase rows, separator, total, optional By Model
+/// sub-block, optional reset / partial footnotes, trailing blank line.
+fn token_cost_section(state: &Value) -> Vec<String> {
+    let breakdown = match compute_cost_breakdown(state) {
+        Some(b) => b,
+        None => return Vec::new(),
+    };
 
     let mut lines = Vec::new();
     lines.push("  Token Cost".to_string());
     lines.push(format!("  {}", "─".repeat(28)));
-    for (name, tokens, cost, reset, partial) in &phase_rows {
-        let reset_marker = if *reset { " ↻" } else { "" };
-        let partial_marker = if *partial { "*" } else { "" };
-        let cost_str = match cost {
+    for row in &breakdown.rows {
+        let reset_marker = if row.reset_observed { " ↻" } else { "" };
+        let partial_marker = if row.row_partial { "*" } else { "" };
+        let cost_str = match row.cost {
             Some(c) => format!("${:.3}{}", c, partial_marker),
             None => "—".to_string(),
         };
         lines.push(format!(
             "  {:<16} {:>8}  {}{}",
-            format!("{}:", name),
-            format_tokens(*tokens),
+            format!("{}:", row.phase_name),
+            format_tokens(row.tokens),
             cost_str,
             reset_marker
         ));
     }
     lines.push(format!("  {}", "─".repeat(28)));
-    let total_partial_marker = if total_partial { "*" } else { "" };
-    let total_cost_str = match total_cost {
+    let total_partial_marker = if breakdown.total_partial { "*" } else { "" };
+    let total_cost_str = match breakdown.total_cost {
         Some(c) => format!("${:.3}{}", c, total_partial_marker),
         None => "—".to_string(),
     };
     lines.push(format!(
         "  {:<16} {:>8}  {}",
         "Total:",
-        format_tokens(total_tokens),
+        format_tokens(breakdown.total_tokens),
         total_cost_str
     ));
-    if combined_by_model.len() >= 2 {
+    if breakdown.by_model.len() >= 2 {
         lines.push(String::new());
         lines.push("  By Model".to_string());
-        for (model, mt) in &combined_by_model {
+        for (model, mt) in &breakdown.by_model {
             let total_model = mt
                 .input
                 .saturating_add(mt.output)
@@ -214,11 +286,11 @@ fn token_cost_section(state: &Value) -> Vec<String> {
             ));
         }
     }
-    if reset_observed_anywhere {
+    if breakdown.reset_observed_anywhere {
         lines.push(String::new());
         lines.push("  ↻ rate-limit window reset observed mid-flow".to_string());
     }
-    if total_partial {
+    if breakdown.total_partial {
         lines.push(String::new());
         lines.push("  * cost partial — some phases had no cost data".to_string());
     }
