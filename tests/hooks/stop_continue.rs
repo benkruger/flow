@@ -2974,6 +2974,28 @@ fn check_in_progress_utility_skill_no_block_when_skill_not_in_known_set() {
 }
 
 #[test]
+fn check_in_progress_utility_skill_flow_plan_marker_does_not_block() {
+    // Regression: a future commit re-adds `flow:flow-plan` to
+    // `MULTI_STEP_UTILITY_SKILLS`, restoring the Stop-hook
+    // turn-end block on every discussion-mode reply and breaking
+    // the back-and-forth conversation flow-plan is designed for.
+    // The plan skill is conversational — registering it in the
+    // unattended-utility allowlist conflates two different skill
+    // shapes. This test guards the conversational contract by
+    // asserting a marker naming flow:flow-plan does NOT block.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap();
+    write_utility_marker(&home, "flow:flow-plan", UTIL_SESSION);
+    let result = check_in_progress_utility_skill(UTIL_SESSION, &home);
+    assert!(
+        !result.should_block,
+        "marker naming `flow:flow-plan` must not block — the \
+         conversational skill is incompatible with the unattended \
+         utility-skill marker contract"
+    );
+}
+
+#[test]
 fn check_in_progress_utility_skill_no_block_when_marker_session_id_mismatches() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().canonicalize().unwrap();

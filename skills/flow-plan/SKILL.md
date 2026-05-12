@@ -30,14 +30,12 @@ copy adjustment. The skill takes no other flags or arguments.
 ## Concurrency
 
 This skill creates no shared state — no PRs, no issues, no labels,
-no branch-scoped artifacts. The only side effect is the per-session
-utility-in-progress marker (scoped to the user's Claude home, not
-the project), which lets the Stop hook refuse turn-end while the
-discussion-mode skill is running.
+no branch-scoped artifacts. The conversation lives entirely in the
+session context.
 
 Multiple `/flow:flow-plan` sessions on the same machine in
 different terminal windows are independent — each has its own
-session id, its own marker, its own conversation context.
+session id, its own conversation context.
 
 ## Announce
 
@@ -51,49 +49,6 @@ At the very start, output the following banner in your response (not via Bash) i
 ```
 ````
 
-Immediately after the banner, write the per-session "utility skill
-in progress" marker so the Stop hook refuses turn-end while this
-skill is running. Without the marker the model returns control to
-the user when a planning sub-agent Skill tool returns mid-pipeline
-at Step 4, breaking the unattended-discussion contract this skill
-promises.
-
-Rust resolves the active session_id at the CLI boundary by reading
-the `CLAUDE_CODE_SESSION_ID` env var Claude Code supplies to every
-Bash subprocess (Claude Code 2.1.132+); on older Claude Code
-installs it falls back to the SessionStart capture file. The bash
-invocation below passes `--skill` only; Rust supplies the
-session_id itself.
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-utility-in-progress --skill flow:flow-plan
-```
-
-If the marker-write call returns `status: error` with
-`no session_id available` (no env var AND no capture file — rare,
-only on Claude Code installs without per-subprocess env support and
-without a SessionStart capture file), the skill proceeds without
-the marker. The Stop hook treats a missing marker as a non-block,
-so the skill runs without protection but does not break.
-
-The marker is held across the entire discussion until the user
-signals "ready" or "file it" (Step 5) or invokes Cancel from Step 1
-when the topic argument is missing. Every skill-exit boundary
-clears the marker so the Stop hook releases turn-end after the
-skill completes.
-
-On Claude Code installs without the per-subprocess env var, the
-capture-file fallback resolves session_id independently at set and
-clear time. A second Claude Code session whose SessionStart hook
-overwrites the capture file between this skill's set and clear
-calls can leave the marker orphaned at the original id. The same
-orphan shape can occur when an unhandled error in Step 2, Step 3,
-or Step 4 exits the skill before reaching a clear branch — the
-marker persists and the Stop hook keeps refusing turn-end for the
-rest of the session. Recovery in either case is
-`rm ~/.claude/flow/utility-in-progress-*.json` after the skill
-exits; the Stop hook treats a missing marker as a non-block.
-
 ---
 
 ## Step 1 — Conversation Gate
@@ -104,13 +59,8 @@ the skill has no anchor for the discussion.
 
 <HARD-GATE>
 
-If no topic argument was provided, clear the utility-in-progress
-marker so the Stop hook does not refuse turn-end after the
-rejection, then output the usage guidance and stop:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-plan
-```
+If no topic argument was provided, output the usage guidance and
+stop:
 
 > "Planning topic required. Usage: `/flow:flow-plan <topic>` where
 > `<topic>` names what you want to discuss — a behavior change, a
@@ -298,19 +248,12 @@ the agent's recommendation is the user's decision.
 ## Step 5 — Wrap-up
 
 When the user signals readiness — "ready", "file it", "let's go",
-"create the issue", or any equivalent phrasing — clear the
-utility-in-progress marker, output the COMPLETE banner, and direct
-the user to invoke `/flow:flow-create-issue`. The planning context
-flows downstream via the shared session conversation; the
-issue-filing skill reads the same conversation history and
-synthesizes the captured discussion into the filed issue's
-sections.
-
-Clear the marker:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-plan
-```
+"create the issue", or any equivalent phrasing — output the
+COMPLETE banner and direct the user to invoke
+`/flow:flow-create-issue`. The planning context flows downstream
+via the shared session conversation; the issue-filing skill reads
+the same conversation history and synthesizes the captured
+discussion into the filed issue's sections.
 
 Output the COMPLETE banner in your response (not via Bash) inside a fenced code block:
 
@@ -357,10 +300,8 @@ the slash command directly, per the ask-first discipline in
   `## SCOPE REFUSAL` block. Render the refusal verbatim and wait
   for explicit user direction on the next move.
 - Never write to FLOW per-branch state surfaces. The skill is
-  stateless beyond the per-session utility-in-progress marker
-  scoped to the user's Claude home — planning context flows to
-  `/flow:flow-create-issue` via the shared session conversation,
-  not via persisted artifacts.
+  stateless — planning context flows to `/flow:flow-create-issue`
+  via the shared session conversation, not via persisted artifacts.
 - Treat absence or unknown values of the `.flow.json` `role` field
   as "no preferred default" and proceed silently. Never block on a
   missing field.
