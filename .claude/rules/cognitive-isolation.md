@@ -259,3 +259,17 @@ When adding a sub-agent for cognitive isolation:
   Output Format AND add a per-agent sibling test in
   `tests/skill_contracts.rs` per "Completion-marker contract"
   above
+- If the agent is required for its phase (i.e., the phase
+  `phase-finalize` should refuse to advance when the agent
+  neither returned nor was skipped), register it in
+  `src/required_agents.rs::REQUIRED_AGENTS`. The constant binds
+  each phase to its required-agent set so the
+  `phase-finalize` required-agents gate composes
+  `agents_returned` ∪ `agents_skipped` and rejects with reason
+  `required_agent_not_returned` when any required agent is
+  missing. The
+  `tests/skill_contracts.rs::required_agents_matches_skill_invocations`
+  contract test binds the constant to the matching SKILL.md
+  `subagent_type: "flow:<name>"` invocations — adding a new
+  agent invocation in a phase SKILL.md without extending the
+  constant fails CI

@@ -1,14 +1,21 @@
-//! Stop hook composed of five predicates that may refuse a turn-end.
+//! Stop hook composed of six predicates that may refuse a turn-end.
 //!
 //! `run()` evaluates them in order:
 //!
-//! 1. `check_first_stop` — on the first Stop event of a session,
+//! 1. `check_halt_pending` — when the user has typed a pause
+//!    directive during an autonomous flow, refuses turn-end with a
+//!    conversation-preserving message that names the closed
+//!    continue-token grammar. Runs FIRST so an explicit user pause
+//!    cannot be misclassified as generic discussion mode. See
+//!    `.claude/rules/autonomous-phase-discipline.md` "Explicit User
+//!    Pause Directives".
+//! 2. `check_first_stop` — on the first Stop event of a session,
 //!    enters discussion mode (or consumes a pending continuation
 //!    with a conditional message).
-//! 2. `check_continue` — on subsequent stops, forces continuation
+//! 3. `check_continue` — on subsequent stops, forces continuation
 //!    when `_continue_pending=<skill_name>` is set, supporting
 //!    multi-child-skill chains.
-//! 3. `check_in_progress_utility_skill` — when a multi-step utility
+//! 4. `check_in_progress_utility_skill` — when a multi-step utility
 //!    skill (`flow:flow-plan`, `flow:flow-decompose-project`) wrote
 //!    a per-session marker at
 //!    `<home>/.claude/flow/utility-in-progress-<id>.json` AND
@@ -21,7 +28,7 @@
 //!    normal conversational reply" (no block). Composed BEFORE
 //!    `check_prose_pause_at_task_entry` so its block message —
 //!    the verbatim encouraging string — wins for that shape.
-//! 4. `check_prose_pause_at_task_entry` — at a Code-phase task-entry
+//! 5. `check_prose_pause_at_task_entry` — at a Code-phase task-entry
 //!    boundary in autonomous mode, refuses a voluntary turn-end when
 //!    the most recent assistant message contains a prose question
 //!    outside code blocks and produced no tool_use. Targeted catch
@@ -29,7 +36,7 @@
 //!    in its block message. See
 //!    `.claude/rules/autonomous-phase-discipline.md` "Prose-Based
 //!    Pauses Bypass AskUserQuestion".
-//! 5. `check_autonomous_in_progress` — when the current phase is
+//! 6. `check_autonomous_in_progress` — when the current phase is
 //!    in-progress AND configured `auto` AND `_continue_pending` is
 //!    empty, refuses a voluntary turn-end. Closes the
 //!    text-only-stop hole that PreToolUse hooks cannot reach. Runs
@@ -316,6 +323,29 @@ The user interrupted the session. Before continuing any work:
 
 Wait for the user — they are not done talking.";
 
+/// Conversation-preserving block reason for `check_halt_pending`.
+/// Names the closed continue-token grammar (`continue`, `go ahead`,
+/// `resume`, `proceed`, `keep going`) so the model knows the only
+/// way the user clears the halt, and carries do-not-advance
+/// guidance so the message cannot be misread as "you can't stop,
+/// so keep going" (the failure mode the generic autonomous-stop
+/// message produces under a user pause directive). Cites the rule
+/// for traceability.
+pub const HALT_PAUSE_BLOCK_REASON: &str = "\
+A user halt is in progress in an autonomous FLOW phase. The user is
+in conversation — they may still be typing or thinking. Do NOT
+advance the parent skill, do NOT self-invoke, do NOT proceed to the
+next task.
+
+If the user's most recent message carries a correction or learning,
+capture it via /flow:flow-note.
+
+Hold position until the user types an explicit continue token:
+\"continue\", \"go ahead\", \"resume\", \"proceed\", or \"keep going\".
+
+See .claude/rules/autonomous-phase-discipline.md \"Explicit User
+Pause Directives\" for the contract.";
+
 /// Check if this is the first user interruption during an active flow.
 ///
 /// **Superseded in `run()` by `check_first_stop()`** which handles both
@@ -578,6 +608,201 @@ const STATE_FILE_BYTE_CAP: u64 = 4 * 1024 * 1024;
 /// lowercase (case-insensitive intent across `auto`/`Auto`/`AUTO`).
 fn normalize_gate_input(s: &str) -> String {
     s.replace('\0', "").trim().to_ascii_lowercase()
+}
+
+/// Refuse a voluntary turn-end when the user has typed a pause
+/// directive during an autonomous flow.
+///
+/// PreToolUse hooks cannot observe a turn-end with no tool call,
+/// and the generic `check_autonomous_in_progress` block reads to
+/// the model as "you can't stop, so keep going" — the wrong reply
+/// when the user explicitly said "pause". This predicate detects
+/// the pause shape and emits a conversation-preserving block
+/// message that names the closed continue-token grammar, so the
+/// model holds position until the user explicitly resumes.
+///
+/// **Algorithm.**
+///
+/// 1. If no active flow (no state file), return non-blocking.
+/// 2. If `current_phase` is not in-progress OR not configured
+///    `auto`, return non-blocking. Clear a stale `_halt_pending=true`
+///    along the way — the phase that set it has since completed.
+/// 3. Read the persisted transcript via
+///    `most_recent_user_message_since_skill_action`.
+///    - If the helper returns `Some(msg)` AND `msg` contains a
+///      continue token, clear `_halt_pending` and the discussion-
+///      mode `_stop_instructed` residue in a single mutate, return
+///      non-blocking so the cascade falls through to the normal
+///      continuation logic.
+///    - If `Some(msg)` AND no continue token, set `_halt_pending=true`
+///      and return blocking with `HALT_PAUSE_BLOCK_REASON`.
+///    - If `None` (no user message since the most recent Skill) AND
+///      `_halt_pending` was already true, return blocking
+///      (persistent halt across multiple Stops).
+///    - Otherwise return non-blocking.
+///
+/// **Composition.** Runs FIRST in `run()`, before `check_first_stop`,
+/// so an explicit user pause directive cannot be misclassified as
+/// generic discussion mode.
+///
+/// **`_continue_pending` is preserved** across every set / clear
+/// of `_halt_pending` — the cascade's multi-child-skill chain
+/// needs `_continue_pending` to resume from the right place once
+/// the user types a continue token.
+///
+/// Hook-state read timing per `.claude/rules/hook-state-timing.md`:
+///
+/// - **Field reads.** `current_phase`, `phases.<N>.status`,
+///   `skills.<N>`, `_halt_pending`, `_stop_instructed`,
+///   `_continue_pending` are all written before the Stop event
+///   fires. The `current_phase == "<x>"` plus
+///   `phases.<x>.status == "in_progress"` pair confines the guard
+///   to actively-executing autonomous windows, so transition-
+///   boundary races (between `phase_complete` and `phase_enter` of
+///   the next phase) cannot trip it.
+/// - **Writers.** `phase_enter` / `phase_finalize` mutate phase
+///   status. This predicate is the sole writer of `_halt_pending`;
+///   `check_first_stop` / `check_continue` write `_stop_instructed`
+///   and `_continue_pending`.
+///
+/// Read window: every Stop event during an autonomous phase. Fail-
+/// open on every error class (missing state file, unparseable JSON,
+/// missing transcript path, validator rejection, walker None) so
+/// a corrupt transcript cannot deadlock the session.
+pub fn check_halt_pending(
+    state_path: &Path,
+    transcript_path: Option<&str>,
+    home: &Path,
+) -> ContinueResult {
+    let no_block = || ContinueResult {
+        should_block: false,
+        skill: None,
+        context: None,
+    };
+    if !state_path.exists() {
+        return no_block();
+    }
+
+    // Read the transcript-derived user message OUTSIDE the state-file
+    // lock — the transcript file is unrelated and reading it inside
+    // mutate_state would hold the state lock during unrelated I/O.
+    let user_msg = match transcript_path {
+        Some(p) if !p.is_empty() => {
+            crate::hooks::transcript_walker::most_recent_user_message_since_skill_action(
+                Path::new(p),
+                home,
+                crate::hooks::transcript_walker::TRANSCRIPT_BYTE_CAP,
+            )
+        }
+        _ => None,
+    };
+
+    // Single `mutate_state` call performs every state read and write
+    // atomically. Collapsing the predicate's read-then-mutate into
+    // one closure makes the standard
+    // `.claude/rules/rust-patterns.md` "State Mutation Object
+    // Guards" guard reachable for wrong-root-type fixtures (the
+    // guard's `return` arm fires when the state file's root is an
+    // array, string, or other non-object), keeps the
+    // `_halt_pending` decision consistent with the value the
+    // closure actually writes, and preserves the invariant that
+    // `_continue_pending` is untouched across every halt set/clear.
+    let mut should_block = false;
+    let _ = mutate_state(state_path, &mut |state| {
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
+
+        // Mirror sibling `validate_ask_user::validate` and
+        // `check_autonomous_in_progress`: use the raw
+        // `current_phase` for keyed lookups so the state's
+        // canonical key shape is what determines membership.
+        // Normalizing `current_phase` upfront before the lookup
+        // creates asymmetric normalization per
+        // `.claude/rules/security-gates.md` "Normalize Before
+        // Comparing" — the lookup would miss a state file whose
+        // `current_phase` is `"Flow-Code"` with matching keys.
+        // Normalize the looked-up VALUES (`phase_status`,
+        // skill-string) instead.
+        let current_phase = state
+            .get("current_phase")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if current_phase.is_empty() {
+            return;
+        }
+
+        let phase_status = state
+            .get("phases")
+            .and_then(|p| p.get(current_phase))
+            .and_then(|p| p.get("status"))
+            .and_then(|v| v.as_str())
+            .map(normalize_gate_input)
+            .unwrap_or_default();
+        let skill_entry = state.get("skills").and_then(|s| s.get(current_phase));
+        let is_auto = match skill_entry {
+            Some(v) if v.as_str().map(normalize_gate_input).as_deref() == Some("auto") => true,
+            Some(v) => {
+                v.get("continue")
+                    .and_then(|c| c.as_str())
+                    .map(normalize_gate_input)
+                    .as_deref()
+                    == Some("auto")
+            }
+            None => false,
+        };
+
+        let halt_was_set = state
+            .get("_halt_pending")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        if phase_status != "in_progress" || !is_auto {
+            // Stale `_halt_pending=true` from a prior phase that
+            // has since completed must be cleared so it does not
+            // bleed forward into the next phase's stop handling.
+            if halt_was_set {
+                state["_halt_pending"] = json!(false);
+            }
+            return;
+        }
+
+        match user_msg.as_deref() {
+            Some(msg) => {
+                if crate::hooks::transcript_walker::user_message_contains_continue_token(msg) {
+                    // User typed a continue token — clear both
+                    // halt and the discussion-mode residue. The
+                    // `_continue_pending` field is preserved by
+                    // leaving it untouched.
+                    state["_halt_pending"] = json!(false);
+                    state["_stop_instructed"] = json!(false);
+                } else {
+                    // User typed a pause directive — set halt and
+                    // block.
+                    state["_halt_pending"] = json!(true);
+                    should_block = true;
+                }
+            }
+            None => {
+                // No user message since the most recent Skill
+                // action. If a halt was already pending, it
+                // persists across this Stop event.
+                if halt_was_set {
+                    should_block = true;
+                }
+            }
+        }
+    });
+
+    if should_block {
+        ContinueResult {
+            should_block: true,
+            skill: Some("halt-pending".to_string()),
+            context: Some(HALT_PAUSE_BLOCK_REASON.to_string()),
+        }
+    } else {
+        no_block()
+    }
 }
 
 /// Refuse a voluntary turn-end when the current phase is in-progress,
@@ -1168,10 +1393,24 @@ pub fn run() {
         None => return,
     };
 
+    // Halt-pause detection: BEFORE check_first_stop so an explicit
+    // user pause directive ("pause", "wait", etc.) emits the
+    // conversation-preserving halt-pause message instead of the
+    // generic discussion-mode message. Reads `transcript_path` from
+    // the hook input so the current session's transcript is
+    // consulted; reads `home` via the shared helper so
+    // `most_recent_user_message_since_skill_action` can validate
+    // the path's canonical prefix before opening the file.
+    let halt_transcript_path = hook_input.get("transcript_path").and_then(|v| v.as_str());
+    let halt_home = crate::session_metrics::home_dir_or_empty();
+    let mut result = check_halt_pending(&state_path, halt_transcript_path, &halt_home);
+
     // First stop handler: on the first Stop event (no _stop_instructed),
     // handles both pending continuations (with conditional user-awareness)
     // and pure discussion mode. Subsequent stops fall through to check_continue.
-    let mut result = check_first_stop(&hook_input, &state_path);
+    if !result.should_block {
+        result = check_first_stop(&hook_input, &state_path);
+    }
 
     // Multi-child-skill chains: after the first stop set _stop_instructed,
     // subsequent child skill completions need check_continue to fire.
@@ -1249,14 +1488,16 @@ pub fn run() {
     if result.should_block {
         let skill_name = result.skill.as_deref().unwrap_or("");
         // Discussion mode, discussion-with-pending, autonomous-stop-refused,
-        // and utility-in-progress all carry the context string straight into
-        // the `decision: "block"` envelope's reason — not the "child skill
-        // returned" framing from format_block_output, which is designed
-        // for multi-child-skill check_continue continuations.
+        // utility-in-progress, and halt-pending all carry the context
+        // string straight into the `decision: "block"` envelope's reason —
+        // not the "child skill returned" framing from format_block_output,
+        // which is designed for multi-child-skill check_continue
+        // continuations.
         let output = if skill_name == "discussion"
             || skill_name == "discussion-with-pending"
             || skill_name == "autonomous-stop-refused"
             || skill_name == "utility-in-progress"
+            || skill_name == "halt-pending"
         {
             json!({"decision": "block", "reason": result.context.as_deref().unwrap_or(DISCUSSION_BLOCK_REASON)})
         } else {

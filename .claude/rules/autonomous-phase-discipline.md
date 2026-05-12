@@ -204,38 +204,94 @@ distinguishing test: did the user type the pause instruction in
 the conversation, or is the model imagining a pause point on its
 own?
 
-### Mechanical interaction with the Stop hook
+### Mechanical halt-pause contract
 
-`stop_continue::check_autonomous_in_progress` refuses a voluntary
-turn-end during in-progress autonomous phases regardless of why
-the model wants to stop. The hook cannot distinguish a user-
-directed pause from a self-imposed pause — both surface as
-"voluntary stop with no `_continue_pending`." When the hook
-refuses, the model has three sanctioned responses:
+`stop_continue::check_halt_pending` is the predicate that detects
+user pause directives during autonomous flows and emits a
+conversation-preserving block message naming the closed
+continue-token grammar. The predicate composes the new
+transcript-walker helpers
+(`transcript_walker::most_recent_user_message_since_skill_action`
+and `transcript_walker::user_message_contains_continue_token`)
+with the state-file fields `_halt_pending`, `_stop_instructed`,
+and `_continue_pending` to track halt state across multiple Stop
+events.
 
-1. **Capture the user's correction via `/flow:flow-note`.** The
-   note records the directive without ending the flow. After
-   capture, hold position by responding to the user's message
-   directly; do NOT advance to the next skill instruction. The
-   conversational pause IS the honored pause — Stop-hook
-   refusals do not require the model to keep advancing past the
-   user's directive. Once the model emits prose acknowledging
-   the pause and the user replies (continue or otherwise), the
-   model resumes per the user's reply.
-2. **Continue at the lowest-side-effect boundary.** When the
-   user has named a future boundary ("pause AFTER X returns"),
-   complete the work up to that boundary, then capture and
-   acknowledge. Do not skip ahead to a later boundary just
-   because the hook refused; the user's named boundary is the
-   commitment.
-3. **Treat `/flow:flow-abort` as the escape hatch only when the
-   user explicitly asks to abort.** The hook's block message
-   suggests `/flow:flow-abort` as the route for stop intent,
-   but abort is destructive — closes the PR, deletes the
-   branch, removes the worktree. Never invoke it for a pause.
+**Closed continue-token set.** The grammar that clears
+`_halt_pending` is exactly: `continue`, `resume`, `proceed`,
+`go ahead`, `keep going`. Comparison is case-insensitive with
+word-boundary checks: `discontinue`, `resumed`, `proceedings`,
+`goahead`, `keepgoing` do NOT clear the halt. Trailing
+punctuation (`continue.`, `continue!`) is permitted because
+non-word characters satisfy the trailing boundary. Two-word
+tokens tolerate any run of ASCII whitespace between the words
+(`go ahead`, `go  ahead`, `go\tahead`) but reject zero-whitespace
+concatenations.
 
-Per `.claude/rules/user-only-skills.md`, the user types
-`/flow:flow-abort` themselves; the model never invokes it.
+**Predicate ordering.** `check_halt_pending` runs FIRST in
+`stop_continue::run`, before `check_first_stop`. This ordering
+is load-bearing: if `check_first_stop` ran first when the user
+typed "pause", the block would emit the discussion-mode message
+("Wait for the user — they are not done talking"), which lacks
+the do-not-advance guidance and the closed token grammar. The
+halt-pause-specific message must dominate so the model holds
+position correctly. The reverse ordering would also leak
+`_stop_instructed=true` past the halt window, which compounds
+into Bug 2 (residual halt residue carried into Complete).
+
+**State-field lifecycle.**
+
+- `_halt_pending: bool` — owned by `check_halt_pending`. Set to
+  true when the user typed a non-continue-token message after
+  the most recent assistant Skill action. Cleared when the user
+  types a continue token. Default-false on missing or wrong-type
+  values per `.claude/rules/state-files.md` Corruption Resilience.
+- `_stop_instructed: bool` — owned by `check_first_stop` /
+  `check_continue` (discussion-mode state). When
+  `check_halt_pending` clears `_halt_pending` via a continue
+  token, it also clears `_stop_instructed` in the same
+  `mutate_state` call so the discussion-mode residue does not
+  bleed forward into subsequent phases (closes Bug 2).
+- `_continue_pending: string` — preserved across every set and
+  clear of `_halt_pending`. The cascade's multi-child-skill
+  resume path reads `_continue_pending` once the user clears the
+  halt, so trampling it would break the resume contract.
+
+**Persistence across multiple Stops.** When the user has typed a
+non-continue-token message and `_halt_pending=true` is set, every
+subsequent Stop event continues to block until a continue token
+arrives. The persistence branch fires when the walker returns
+`None` (no new user message since the most recent Skill action)
+but `_halt_pending` was already true.
+
+**Stale halt residue.** When the current phase is no longer
+in-progress OR no longer configured `auto`, the predicate clears
+a stale `_halt_pending=true` (a previous phase set it and that
+phase has since completed). This prevents a halt set in Code
+from bleeding forward into Complete.
+
+**Preconditions for firing.** The predicate sets `_halt_pending`
+only when:
+
+1. The state file exists and parses as a JSON object.
+2. `current_phase` is non-empty and present in `phases`.
+3. `phases.<current_phase>.status == "in_progress"`.
+4. `skills.<current_phase>.continue == "auto"` (Simple `"auto"`
+   string or Detailed `{"continue":"auto"}` object — both
+   recognized through `normalize_gate_input`).
+5. `transcript_path` is non-empty AND passes
+   `is_safe_transcript_path` validation.
+6. The walker returns `Some(msg)` AND `msg` contains no continue
+   token.
+
+When any precondition fails, the predicate falls through to the
+no-block path (after clearing stale `_halt_pending` per the
+"Stale halt residue" branch).
+
+**Fail-open.** Every error class returns no-block: missing state
+file, unparseable JSON, missing or invalid transcript path,
+walker `None`, missing `current_phase`. The Stop hook must never
+panic; a hook crash terminates the user's session.
 
 ### Resumption discipline
 

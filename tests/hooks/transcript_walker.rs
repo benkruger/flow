@@ -13,7 +13,8 @@ use std::fs;
 
 use flow_rs::hooks::transcript_walker::{
     last_user_message_invokes_skill, most_recent_skill_in_user_only_set,
-    most_recent_skill_since_user, recent_edit_blocked_on_shared_config,
+    most_recent_skill_since_user, most_recent_user_message_since_skill_action,
+    recent_edit_blocked_on_shared_config, user_message_contains_continue_token,
     verify_agent_returned_in_phase, SHARED_CONFIG_BLOCK_BYTE_CAP, TRANSCRIPT_BYTE_CAP,
     USER_ONLY_SKILLS,
 };
@@ -1607,4 +1608,363 @@ fn verify_agent_returned_skips_non_tool_result_block_in_result_search() {
         verify_agent_returned_in_phase(&path, home, "reviewer", "flow-review"),
         Ok(())
     );
+}
+
+// --- most_recent_user_message_since_skill_action ---
+//
+// The `check_halt_pending` predicate in `stop_continue.rs` consults
+// this helper to find the user's most recent prose message after the
+// most recent assistant Skill `tool_use`. The walker stops at the
+// latest Skill call (going forward through the file in time order)
+// and returns the latest string-content user turn that lands after
+// it. Synthetic tool_result-wrapped user turns (content as array of
+// blocks) are skipped — they carry tool output, not user intent.
+
+#[test]
+fn most_recent_user_message_since_skill_action_returns_string_content_user_turn_after_skill_call() {
+    // Assistant Skill call, then real user turn with prose content.
+    // Helper returns the user content.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"start\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"wait, hold up\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home, TRANSCRIPT_BYTE_CAP),
+        Some("wait, hold up".to_string()),
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_skips_tool_result_array_wrappers() {
+    // Synthetic tool_result-wrapped user turn (array content) between
+    // the Skill call and a real string-content user turn. The walker
+    // skips the array wrapper and returns the real user prose.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"start\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"ok\"}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"real prose\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home, TRANSCRIPT_BYTE_CAP),
+        Some("real prose".to_string()),
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_returns_none_when_no_user_turn_after_skill_call() {
+    // Skill is the most recent action; no subsequent user turn. The
+    // halt-pause predicate's caller treats `None` as "no new user
+    // message since the model last acted" — Stop event proceeds.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home, TRANSCRIPT_BYTE_CAP),
+        None,
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_returns_none_when_no_skill_action_present() {
+    // No assistant Skill call anywhere in the transcript. The window
+    // the walker scopes (after the most recent Skill) is empty, so
+    // user turns before any Skill call are invisible. Helper returns
+    // `None`.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hello\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"goodbye\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home, TRANSCRIPT_BYTE_CAP),
+        None,
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_byte_cap_regression() {
+    // A user turn + Skill call sit at the file's HEAD, then padding
+    // pushes them past the tail cap. The capped read sees only the
+    // tail bytes, which have no parseable Skill call — helper
+    // returns `None`. Locks in the byte-cap bound per
+    // `.claude/rules/external-input-path-construction.md`.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let proj = home.join(".claude").join("projects").join("p");
+    fs::create_dir_all(&proj).unwrap();
+    let path = proj.join("byte-cap.jsonl");
+    let leading = b"{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"buried\"}}\n";
+    let small_cap: u64 = 1024;
+    let mut content: Vec<u8> = leading.to_vec();
+    let padding_size = (small_cap as usize) + 1024;
+    content.extend(std::iter::repeat_n(b'\n', padding_size));
+    fs::write(&path, &content).unwrap();
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home, small_cap),
+        None,
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_rejects_unsafe_transcript_path() {
+    // Path outside `<home>/.claude/projects/` fails
+    // `is_safe_transcript_path` validation. Helper returns `None`
+    // without opening the file. Mirrors the path-validation pattern
+    // used by the sibling walkers.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let stray = home.join("malicious").join("session.jsonl");
+    fs::create_dir_all(stray.parent().unwrap()).unwrap();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n";
+    fs::write(&stray, jsonl).unwrap();
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&stray, home, TRANSCRIPT_BYTE_CAP),
+        None,
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_non_utf8_file_returns_none() {
+    // File opens but `read_to_string` inside `read_capped` fails on
+    // non-UTF-8 bytes. `read_capped` returns `None` and the helper's
+    // `?` operator propagates `None`. Mirrors the
+    // `most_recent_skill_non_utf8_file_returns_none` shape.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let proj = home.join(".claude").join("projects").join("p");
+    fs::create_dir_all(&proj).unwrap();
+    let path = proj.join("invalid.jsonl");
+    // 0xC3 starts a 2-byte UTF-8 sequence; 0x28 is `(` (not a valid
+    // continuation byte), so the pair is invalid UTF-8.
+    fs::write(&path, [0xC3u8, 0x28u8]).unwrap();
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home, TRANSCRIPT_BYTE_CAP),
+        None,
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_unparseable_line_skipped() {
+    // An unparseable JSONL line is skipped via the
+    // `Err(_) => continue` branch. The valid Skill call and
+    // subsequent user turn surrounding the bad line still produce
+    // the correct candidate.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n\
+not valid json at all\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hold up\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home, TRANSCRIPT_BYTE_CAP),
+        Some("hold up".to_string()),
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_unknown_turn_type_skipped() {
+    // A turn whose `type` is neither `user` nor `assistant`
+    // (e.g. a future `system` turn shape from Claude Code) is
+    // skipped via the `if turn_type != "user" { continue; }`
+    // branch. The walker continues past it without affecting the
+    // candidate.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n\
+{\"type\":\"system\",\"message\":{\"role\":\"system\",\"content\":\"compaction summary\"}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hold up\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home, TRANSCRIPT_BYTE_CAP),
+        Some("hold up".to_string()),
+    );
+}
+
+// --- user_message_contains_continue_token ---
+//
+// The continue-token parser is the closed grammar that clears
+// `_halt_pending` in `check_halt_pending`. Each canonical token
+// gets per-token tests covering the bare form, trailing punctuation,
+// case insensitivity, and (for two-word tokens) flexible whitespace
+// plus rejection of concatenation. Word-boundary rejection cases
+// cover the common false-positive shapes the prose corpus surfaces.
+
+#[test]
+fn user_message_contains_continue_token_matches_continue_bare() {
+    assert!(user_message_contains_continue_token("continue"));
+}
+
+#[test]
+fn user_message_contains_continue_token_matches_go_ahead() {
+    assert!(user_message_contains_continue_token("go ahead"));
+}
+
+#[test]
+fn user_message_contains_continue_token_matches_resume_bare() {
+    assert!(user_message_contains_continue_token("resume"));
+}
+
+#[test]
+fn user_message_contains_continue_token_matches_proceed_bare() {
+    assert!(user_message_contains_continue_token("proceed"));
+}
+
+#[test]
+fn user_message_contains_continue_token_matches_keep_going() {
+    assert!(user_message_contains_continue_token("keep going"));
+}
+
+#[test]
+fn user_message_contains_continue_token_case_insensitive() {
+    assert!(user_message_contains_continue_token("CONTINUE"));
+    assert!(user_message_contains_continue_token("Continue"));
+    assert!(user_message_contains_continue_token("Resume."));
+}
+
+#[test]
+fn user_message_contains_continue_token_word_boundary_rejects_discontinue() {
+    // `discontinue` contains `continue` as a substring but starts
+    // mid-word, so the preceding word-boundary check rejects it.
+    assert!(!user_message_contains_continue_token("discontinue"));
+}
+
+#[test]
+fn user_message_contains_continue_token_word_boundary_rejects_resumed() {
+    // `resumed` extends `resume` past its tail; the trailing word-
+    // boundary check rejects it because the next byte is alphanumeric.
+    assert!(!user_message_contains_continue_token("resumed"));
+}
+
+#[test]
+fn user_message_contains_continue_token_word_boundary_rejects_proceedings() {
+    // Same shape as `resumed`: `proceedings` extends `proceed` so the
+    // trailing word-boundary check rejects it.
+    assert!(!user_message_contains_continue_token("proceedings"));
+}
+
+#[test]
+fn user_message_contains_continue_token_two_word_flexible_whitespace() {
+    // `go ahead` tolerates any run of whitespace between the words —
+    // single space, double space, tab. The parser skips ASCII
+    // whitespace after the first word before matching the second.
+    assert!(user_message_contains_continue_token("go ahead"));
+    assert!(user_message_contains_continue_token("go  ahead"));
+    assert!(user_message_contains_continue_token("go\tahead"));
+}
+
+#[test]
+fn user_message_contains_continue_token_two_word_rejects_concatenated() {
+    // Zero whitespace between the words fails the after-first
+    // word-boundary check (the byte after `go` is `a`, an alphanumeric
+    // character). Same shape for `keepgoing`.
+    assert!(!user_message_contains_continue_token("goahead"));
+    assert!(!user_message_contains_continue_token("keepgoing"));
+}
+
+#[test]
+fn user_message_contains_continue_token_with_punctuation() {
+    // Trailing punctuation is a non-word character, so the trailing
+    // word-boundary check passes. Covers the natural punctuation
+    // shapes users type at the end of a continue directive.
+    assert!(user_message_contains_continue_token("continue!"));
+    assert!(user_message_contains_continue_token("continue."));
+    assert!(user_message_contains_continue_token("continue,"));
+}
+
+#[test]
+fn user_message_contains_continue_token_with_followup_text() {
+    // A continue token followed by additional prose still matches —
+    // the user can type `continue, also fix the typo` and the
+    // halt-pause contract still clears.
+    assert!(user_message_contains_continue_token(
+        "continue, also fix the typo"
+    ));
+}
+
+#[test]
+fn user_message_contains_continue_token_empty_string_returns_false() {
+    // Empty input never carries a token; the early-return short-
+    // circuits the boundary scans.
+    assert!(!user_message_contains_continue_token(""));
+}
+
+#[test]
+fn user_message_contains_continue_token_all_nul_input_returns_false() {
+    // Non-empty input made entirely of NUL bytes lowercases to an
+    // empty string after NUL stripping. The post-strip emptiness
+    // check returns false so the boundary scans do not fire on an
+    // empty buffer.
+    assert!(!user_message_contains_continue_token("\0"));
+    assert!(!user_message_contains_continue_token("\0\0\0"));
+}
+
+#[test]
+fn user_message_contains_continue_token_nul_stripped_then_matched() {
+    // NUL stripping per `.claude/rules/security-gates.md`
+    // "Normalize Before Comparing" normalizes the input before
+    // matching: `"\0continue"` becomes `"continue"` and matches.
+    // This treats embedded NULs from truncated writes or editor
+    // artifacts as if they were absent.
+    assert!(user_message_contains_continue_token("\0continue"));
+    assert!(user_message_contains_continue_token("con\0tinue"));
+    assert!(user_message_contains_continue_token("continue\0"));
+}
+
+#[test]
+fn user_message_contains_continue_token_two_word_match_with_trailing_punctuation() {
+    // Two-word token followed by non-word punctuation: the trailing
+    // word-boundary check passes through the right side of the
+    // short-circuit (`is_word_byte(haystack[end])` evaluated, returns
+    // false for `!`). Covers the right-side branch of the trailing
+    // boundary `||`.
+    assert!(user_message_contains_continue_token("go ahead!"));
+}
+
+#[test]
+fn user_message_contains_continue_token_two_word_rejects_extended_second_word() {
+    // Two-word match where the second word is followed by an
+    // alphanumeric character. The trailing boundary check fails
+    // because `is_word_byte` returns true, so the candidate match
+    // falls through without returning. The loop continues and
+    // ultimately the function returns false.
+    assert!(!user_message_contains_continue_token("go aheadx"));
+}
+
+#[test]
+fn user_message_contains_continue_token_two_word_rejects_second_word_mismatch() {
+    // First word matches and there's room for `slen` more bytes
+    // after the whitespace, but the bytes are not the expected
+    // second word. The `haystack[pos..pos+slen] != second` branch
+    // continues to the next candidate start. Covers the second-
+    // word-mismatch continue.
+    assert!(!user_message_contains_continue_token("go aside"));
+}
+
+#[test]
+fn user_message_contains_continue_token_two_word_rejects_second_word_too_short() {
+    // First word matches, but there are not enough bytes remaining
+    // for the expected second word. The `pos + slen > hlen`
+    // branch continues to the next candidate start. Constructs a
+    // case where `go` appears late enough that no `ahead`-length
+    // tail fits.
+    assert!(!user_message_contains_continue_token("abc go xy"));
+}
+
+#[test]
+fn user_message_contains_continue_token_two_word_word_boundary_via_right_side() {
+    // First word `go` at a non-zero start position, preceded by a
+    // non-word character. The `before_ok = start == 0 ||
+    // !is_word_byte(haystack[start - 1])` short-circuit evaluates
+    // the right side and finds it true. Confirms the boundary check
+    // accepts mid-string matches when the preceding character is
+    // non-word.
+    assert!(user_message_contains_continue_token("please go ahead"));
 }

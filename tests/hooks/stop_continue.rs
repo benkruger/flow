@@ -12,9 +12,10 @@ use std::process::{Command, Stdio};
 use flow_rs::commands::clear_blocked::clear_blocked;
 use flow_rs::hooks::stop_continue::{
     body_has_question_outside_code, capture_session_id, check_autonomous_in_progress,
-    check_continue, check_discussion_mode, check_first_stop, check_in_progress_utility_skill,
-    check_prose_pause_at_task_entry, format_block_output, format_conditional_continue_reason,
-    set_blocked_idle, set_tab_color, DISCUSSION_BLOCK_REASON,
+    check_continue, check_discussion_mode, check_first_stop, check_halt_pending,
+    check_in_progress_utility_skill, check_prose_pause_at_task_entry, format_block_output,
+    format_conditional_continue_reason, set_blocked_idle, set_tab_color, DISCUSSION_BLOCK_REASON,
+    HALT_PAUSE_BLOCK_REASON,
 };
 use serde_json::{json, Value};
 
@@ -3357,4 +3358,1077 @@ fn utility_marker_orphan_from_different_session_subprocess() {
             stdout
         );
     }
+}
+
+// --- check_halt_pending ---
+//
+// `check_halt_pending` is the Stop-hook predicate that detects user
+// pause directives during autonomous flows. When the user has typed
+// a prose message since the model's most recent Skill action AND
+// the message contains no continue token, the predicate sets
+// `_halt_pending=true` and refuses turn-end with the
+// conversation-preserving message. The flag persists across
+// subsequent Stop events until the user types an explicit continue
+// token, which clears both `_halt_pending` and `_stop_instructed`.
+
+/// Build a minimal state JSON for the halt-pending predicate.
+fn halt_pending_state(
+    current_phase: &str,
+    phase_status: &str,
+    skill_config: Value,
+    halt_pending: Value,
+    stop_instructed: Value,
+    continue_pending: &str,
+) -> Value {
+    json!({
+        "branch": "test",
+        "current_phase": current_phase,
+        "phases": { current_phase: { "status": phase_status } },
+        "skills": { current_phase: skill_config },
+        "_halt_pending": halt_pending,
+        "_stop_instructed": stop_instructed,
+        "_continue_pending": continue_pending,
+    })
+}
+
+/// Write a transcript JSONL with an assistant Skill action followed
+/// (optionally) by a real user prose message. Used to drive the
+/// `most_recent_user_message_since_skill_action` walker.
+fn write_halt_transcript(path: &Path, include_skill: bool, user_message: Option<&str>) {
+    let mut lines = Vec::new();
+    if include_skill {
+        lines.push(
+            json!({
+                "type": "assistant",
+                "message": {
+                    "content": [{
+                        "type": "tool_use",
+                        "name": "Skill",
+                        "input": {"skill": "flow:flow-code"}
+                    }]
+                }
+            })
+            .to_string(),
+        );
+    }
+    if let Some(msg) = user_message {
+        lines.push(
+            json!({
+                "type": "user",
+                "message": {"content": msg}
+            })
+            .to_string(),
+        );
+    }
+    let mut body = lines.join("\n");
+    if !body.is_empty() {
+        body.push('\n');
+    }
+    fs::write(path, body).unwrap();
+}
+
+/// Read `_halt_pending` from the state file as a bool, defaulting
+/// to false when the field is missing or wrong-typed.
+fn read_halt_pending(state_path: &Path) -> bool {
+    let state: Value =
+        serde_json::from_str(&fs::read_to_string(state_path).unwrap()).unwrap_or(Value::Null);
+    state
+        .get("_halt_pending")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+/// Read `_stop_instructed` from the state file as a bool.
+fn read_stop_instructed(state_path: &Path) -> bool {
+    let state: Value =
+        serde_json::from_str(&fs::read_to_string(state_path).unwrap()).unwrap_or(Value::Null);
+    state
+        .get("_stop_instructed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+/// Read `_continue_pending` from the state file as a string.
+fn read_continue_pending(state_path: &Path) -> String {
+    let state: Value =
+        serde_json::from_str(&fs::read_to_string(state_path).unwrap()).unwrap_or(Value::Null);
+    state
+        .get("_continue_pending")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
+// --- Precondition matrix ---
+
+#[test]
+fn check_halt_pending_sets_when_user_message_after_skill_action_and_phase_in_progress_and_auto() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            json!(false),
+            json!(false),
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&transcript, true, Some("please pause"));
+
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+
+    assert!(result.should_block);
+    assert_eq!(result.skill.as_deref(), Some("halt-pending"));
+    assert!(read_halt_pending(&state_path));
+}
+
+#[test]
+fn check_halt_pending_does_not_set_when_phase_not_in_progress() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "complete",
+            json!("auto"),
+            json!(false),
+            json!(false),
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&transcript, true, Some("please pause"));
+
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+
+    assert!(!result.should_block);
+    assert!(!read_halt_pending(&state_path));
+}
+
+#[test]
+fn check_halt_pending_does_not_set_when_skill_not_auto() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "in_progress",
+            json!("manual"),
+            json!(false),
+            json!(false),
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&transcript, true, Some("please pause"));
+
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+
+    assert!(!result.should_block);
+    assert!(!read_halt_pending(&state_path));
+}
+
+#[test]
+fn check_halt_pending_does_not_set_when_no_user_message_after_skill_action() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            json!(false),
+            json!(false),
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    // Skill action with no subsequent user message.
+    write_halt_transcript(&transcript, true, None);
+
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+
+    assert!(!result.should_block);
+    assert!(!read_halt_pending(&state_path));
+}
+
+// --- Continue-token clearance (one per token) ---
+
+#[test]
+fn check_halt_pending_clears_on_continue_token_continue() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            json!(true),
+            json!(true),
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&transcript, true, Some("continue"));
+
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+
+    assert!(!result.should_block);
+    assert!(!read_halt_pending(&state_path));
+}
+
+#[test]
+fn check_halt_pending_clears_on_continue_token_go_ahead() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            json!(true),
+            json!(true),
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&transcript, true, Some("go ahead"));
+
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+
+    assert!(!result.should_block);
+    assert!(!read_halt_pending(&state_path));
+}
+
+#[test]
+fn check_halt_pending_clears_on_continue_token_resume() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            json!(true),
+            json!(true),
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&transcript, true, Some("resume"));
+
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+
+    assert!(!result.should_block);
+    assert!(!read_halt_pending(&state_path));
+}
+
+#[test]
+fn check_halt_pending_clears_on_continue_token_proceed() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            json!(true),
+            json!(true),
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&transcript, true, Some("proceed"));
+
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+
+    assert!(!result.should_block);
+    assert!(!read_halt_pending(&state_path));
+}
+
+#[test]
+fn check_halt_pending_clears_on_continue_token_keep_going() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            json!(true),
+            json!(true),
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&transcript, true, Some("keep going"));
+
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+
+    assert!(!result.should_block);
+    assert!(!read_halt_pending(&state_path));
+}
+
+// --- Residue clearing ---
+
+#[test]
+fn check_halt_pending_clears_stop_instructed_when_clearing_halt_pending() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            json!(true),
+            json!(true),
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&transcript, true, Some("continue"));
+
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+
+    assert!(!result.should_block);
+    assert!(!read_halt_pending(&state_path));
+    // `_stop_instructed` is the discussion-mode residue. Bug 2 had it
+    // carry forward into Complete and authorize invented constraints
+    // there. Clearing it alongside `_halt_pending` closes that bug.
+    assert!(!read_stop_instructed(&state_path));
+}
+
+// --- `_continue_pending` preservation ---
+
+#[test]
+fn check_halt_pending_preserves_continue_pending_across_set() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            json!(false),
+            json!(false),
+            "flow-code",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&transcript, true, Some("hold on a sec"));
+
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+
+    assert!(result.should_block);
+    assert!(read_halt_pending(&state_path));
+    // Setting `_halt_pending` must not clobber `_continue_pending` —
+    // the resume must pick up where it paused once the user types
+    // a continue token.
+    assert_eq!(read_continue_pending(&state_path), "flow-code");
+}
+
+#[test]
+fn check_halt_pending_preserves_continue_pending_across_clear() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            json!(true),
+            json!(true),
+            "flow-code",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&transcript, true, Some("continue"));
+
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+
+    assert!(!result.should_block);
+    assert!(!read_halt_pending(&state_path));
+    // Clearing `_halt_pending` must not clobber `_continue_pending`
+    // — the cascade falls through to the multi-child-skill resume
+    // path which reads `_continue_pending`.
+    assert_eq!(read_continue_pending(&state_path), "flow-code");
+}
+
+// --- Message shape ---
+
+#[test]
+fn check_halt_pending_block_message_contains_token_set_and_do_not_advance_guidance() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            json!(false),
+            json!(false),
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&transcript, true, Some("hold on"));
+
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+
+    let context = result.context.expect("block carries context");
+    // Every continue token must be named so the model knows the
+    // closed grammar that resumes the flow.
+    assert!(context.contains("continue"), "names `continue` token");
+    assert!(context.contains("resume"), "names `resume` token");
+    assert!(context.contains("proceed"), "names `proceed` token");
+    assert!(context.contains("go ahead"), "names `go ahead` token");
+    assert!(context.contains("keep going"), "names `keep going` token");
+    // Do-not-advance guidance prevents the model from misreading
+    // the block as "you can't stop, so keep going". Normalize
+    // line-wrap whitespace before substring match so the literal
+    // message can wrap across newlines for readability without
+    // breaking the assertion.
+    let collapsed: String = context
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_whitespace() { ' ' } else { c })
+        .collect();
+    assert!(
+        collapsed.contains("do not advance"),
+        "carries do-not-advance guidance"
+    );
+    // Rule citation for traceability.
+    assert!(
+        context.contains("autonomous-phase-discipline.md"),
+        "cites the rule"
+    );
+}
+
+// --- Skill config shape tolerance ---
+
+#[test]
+fn check_halt_pending_simple_and_detailed_skill_config_shapes() {
+    let dir = tempfile::tempdir().unwrap();
+    // Simple `"auto"` shape.
+    let simple_state = dir.path().join("simple.json");
+    let simple_transcript = safe_transcript_path(dir.path(), "simple.jsonl");
+    fs::write(
+        &simple_state,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            json!(false),
+            json!(false),
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&simple_transcript, true, Some("hold on"));
+    let simple = check_halt_pending(
+        &simple_state,
+        Some(simple_transcript.to_str().unwrap()),
+        dir.path(),
+    );
+    assert!(simple.should_block, "Simple `\"auto\"` shape must fire");
+
+    // Detailed `{"continue":"auto"}` shape.
+    let detailed_state = dir.path().join("detailed.json");
+    let detailed_transcript = safe_transcript_path(dir.path(), "detailed.jsonl");
+    fs::write(
+        &detailed_state,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "in_progress",
+            json!({"continue": "auto", "commit": "auto"}),
+            json!(false),
+            json!(false),
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&detailed_transcript, true, Some("hold on"));
+    let detailed = check_halt_pending(
+        &detailed_state,
+        Some(detailed_transcript.to_str().unwrap()),
+        dir.path(),
+    );
+    assert!(
+        detailed.should_block,
+        "Detailed `{{\"continue\":\"auto\"}}` shape must fire"
+    );
+}
+
+// --- Persistence + short-circuit ---
+
+#[test]
+fn check_halt_pending_persists_across_multiple_stops_without_continue_token() {
+    // After the user's pause message lands and `_halt_pending=true`
+    // is set, subsequent Stop events with NO new user turn must
+    // continue to block. Stage 1: user pauses → block, `_halt_pending=true`.
+    // Stage 2: model takes another Skill action; no new user turn;
+    // the walker returns None for "user message since latest Skill",
+    // but `_halt_pending` is still true → persistent block.
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+
+    // Stage 1: user pauses.
+    fs::write(
+        &state_path,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            json!(false),
+            json!(false),
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&transcript, true, Some("hold on"));
+    let result_1 = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+    assert!(result_1.should_block);
+    assert!(read_halt_pending(&state_path));
+
+    // Stage 2: model fires another Skill (no new user turn after).
+    write_halt_transcript(&transcript, true, None);
+    let result_2 = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+    assert!(
+        result_2.should_block,
+        "halt persists across stops without a new continue token"
+    );
+    assert!(read_halt_pending(&state_path));
+}
+
+#[test]
+fn check_halt_pending_short_circuits_cascade_when_halt_pending_true_no_continue_token() {
+    // When the predicate fires, its block is final — callers must
+    // not run downstream predicates (which would emit the generic
+    // stop-intent message that Bug 1 misreads).
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            json!(false),
+            json!(false),
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&transcript, true, Some("wait"));
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+    assert!(result.should_block);
+    assert_eq!(result.skill.as_deref(), Some("halt-pending"));
+    // The context is the verbatim halt-pause reason — not the
+    // generic autonomous-stop message.
+    assert_eq!(result.context.as_deref(), Some(HALT_PAUSE_BLOCK_REASON));
+}
+
+#[test]
+fn check_halt_pending_falls_through_when_continue_token_clears_halt_pending() {
+    // When the continue token clears `_halt_pending`, the predicate
+    // returns non-blocking so the cascade falls through to
+    // `check_first_stop` / `check_continue` for normal continuation.
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            json!(true),
+            json!(true),
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&transcript, true, Some("continue"));
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+    assert!(!result.should_block);
+    assert!(result.skill.is_none());
+    assert!(result.context.is_none());
+}
+
+// --- Tolerance ---
+
+#[test]
+fn check_halt_pending_no_state_file_returns_non_blocking() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("nonexistent.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    write_halt_transcript(&transcript, true, Some("hold on"));
+
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+    assert!(!result.should_block);
+}
+
+#[test]
+fn check_halt_pending_array_root_state_file_does_not_crash() {
+    // State file root is a JSON array — the mutate_state closure's
+    // object-or-null guard short-circuits. Predicate returns
+    // non-blocking; no panic from IndexMut on a non-object.
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    fs::write(&state_path, r#"["not", "an", "object"]"#).unwrap();
+    write_halt_transcript(&transcript, true, Some("please pause"));
+
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+    assert!(!result.should_block);
+}
+
+#[test]
+fn check_halt_pending_clears_stale_halt_when_phase_no_longer_in_progress() {
+    // A halt set in a prior phase that has since completed must be
+    // cleared so it does not bleed forward. The current phase is no
+    // longer in_progress (complete) but `_halt_pending=true` is
+    // stale residue — the predicate clears it and returns
+    // non-blocking. Closes the "halt bleeds into Complete" leg of
+    // Bug 2.
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "complete",
+            json!("auto"),
+            json!(true),
+            json!(false),
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&transcript, true, None);
+
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+    assert!(!result.should_block);
+    assert!(!read_halt_pending(&state_path));
+}
+
+#[test]
+fn check_halt_pending_wrong_type_state_field_defaults_to_false() {
+    // `_halt_pending` stored as a string instead of a bool must
+    // be treated as false. The transcript determines behavior; with
+    // no user message, the wrong-type field cannot resurrect a
+    // persistent block.
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = safe_transcript_path(dir.path(), "halt.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&halt_pending_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            json!("not-a-bool"),
+            json!(false),
+            "",
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_halt_transcript(&transcript, true, None);
+
+    let result = check_halt_pending(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+    assert!(!result.should_block);
+}
+
+// --- Ordering (subprocess test) ---
+//
+// Drives the full `run()` cascade to verify `check_halt_pending`
+// runs BEFORE `check_first_stop` in the production order. A state
+// with no `_stop_instructed` would normally trip `check_first_stop`
+// into discussion mode; with a halt-pause user message present,
+// `check_halt_pending` must fire FIRST and return the halt-pause
+// block message, not the discussion-mode message.
+
+#[test]
+fn check_halt_pending_runs_before_check_first_stop_in_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    Command::new("git")
+        .args(["init", "--initial-branch", "main"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.email", "t@t"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "t"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["checkout", "-b", "halttest"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+
+    let state_dir = root.join(".flow-states").join("halttest");
+    fs::create_dir_all(&state_dir).unwrap();
+    let state_path = state_dir.join("state.json");
+    let session_id = "halt-session";
+    let transcript = safe_transcript_path(&root, "halt-ordering.jsonl");
+    let mut state = halt_pending_state(
+        "flow-code",
+        "in_progress",
+        json!("auto"),
+        json!(false),
+        json!(false),
+        "",
+    );
+    // The subprocess `run()` reads `session_id` and `transcript_path`
+    // from state via capture_session_id flow; provide the path so
+    // the predicate sees the transcript.
+    state["session_id"] = json!(session_id);
+    state["transcript_path"] = json!(transcript.to_str().unwrap());
+    fs::write(&state_path, serde_json::to_string(&state).unwrap()).unwrap();
+    write_halt_transcript(&transcript, true, Some("hold on, let me look"));
+
+    let stdin_input = format!(
+        "{{\"session_id\": \"{}\", \"transcript_path\": \"{}\"}}",
+        session_id,
+        transcript.to_str().unwrap()
+    );
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.env_remove("FLOW_CI_RUNNING");
+    cmd.args(["hook", "stop-continue"])
+        .current_dir(&root)
+        .env("HOME", &root)
+        .env("GH_TOKEN", "invalid")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn flow-rs hook");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(stdin_input.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().expect("wait_with_output");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_| panic!("hook stdout must be JSON: {}", stdout));
+    assert_eq!(parsed["decision"], "block");
+    let reason = parsed["reason"].as_str().unwrap_or("");
+    // Halt-pause block message wins over discussion-mode message.
+    // Discriminator: the halt-pause message names the continue
+    // token grammar and cites the autonomous-phase-discipline rule;
+    // the discussion-mode message starts with "The user interrupted
+    // the session." The halt-pause message must appear and the
+    // discussion-mode opening must not.
+    assert!(
+        reason.contains("user halt is in progress"),
+        "halt-pause reason must dominate first-stop discussion reason: {}",
+        reason
+    );
+    assert!(
+        !reason.contains("The user interrupted the session"),
+        "discussion-mode message must not appear: {}",
+        reason
+    );
+}
+
+// End-to-end regression that closes both bugs from issue #1504 by
+// driving the real binary through a halt-pause cycle and then a
+// phase advance into Complete. The test exercises three observable
+// invariants: (1) halt-pause block fires with the
+// conversation-preserving message when the user types a non-
+// continue-token prose message, (2) `_halt_pending` and
+// `_stop_instructed` both clear when the user types a continue
+// token, and (3) the cleared residue does not bleed forward into
+// Complete — the autonomous-stop-refused block message appears
+// instead of the halt-pause message.
+#[test]
+fn subprocess_halt_pause_full_flow_blocks_premature_resume_and_clears_on_continue() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    Command::new("git")
+        .args(["init", "--initial-branch", "main"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.email", "t@t"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["config", "user.name", "t"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["checkout", "-b", "halttest"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+
+    let state_dir = root.join(".flow-states").join("halttest");
+    fs::create_dir_all(&state_dir).unwrap();
+    let state_path = state_dir.join("state.json");
+    let transcript = safe_transcript_path(&root, "halt-e2e.jsonl");
+    let session_id = "halt-e2e-session";
+
+    // --- Stage 1: build initial state with `_continue_pending`
+    // set to flow-code (typical mid-flow shape). Transcript begins
+    // with an assistant Skill action for flow:flow-code.
+    let mut state = halt_pending_state(
+        "flow-code",
+        "in_progress",
+        json!({"continue": "auto"}),
+        json!(false),
+        json!(false),
+        "flow-code",
+    );
+    state["session_id"] = json!(session_id);
+    state["transcript_path"] = json!(transcript.to_str().unwrap());
+    fs::write(&state_path, serde_json::to_string(&state).unwrap()).unwrap();
+    write_halt_transcript(&transcript, true, Some("wait, hold up"));
+
+    let stdin_input = format!(
+        "{{\"session_id\": \"{}\", \"transcript_path\": \"{}\"}}",
+        session_id,
+        transcript.to_str().unwrap()
+    );
+
+    let spawn_hook = |root: &Path, stdin_input: &str| -> (i32, String) {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+        cmd.env_remove("FLOW_CI_RUNNING");
+        cmd.args(["hook", "stop-continue"])
+            .current_dir(root)
+            .env("HOME", root)
+            .env("GH_TOKEN", "invalid")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = cmd.spawn().expect("spawn flow-rs hook");
+        child
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(stdin_input.as_bytes())
+            .unwrap();
+        let output = child.wait_with_output().expect("wait_with_output");
+        let code = output.status.code().unwrap_or(-1);
+        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+        (code, stdout)
+    };
+
+    // --- Stage 2-3: First Stop event. Halt-pause fires with the
+    // conversation-preserving message.
+    let (_code, stdout) = spawn_hook(&root, &stdin_input);
+    let parsed: Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_| panic!("stage-2 hook stdout must be JSON: {}", stdout));
+    assert_eq!(
+        parsed["decision"], "block",
+        "stage 2: halt-pause must block on user pause directive"
+    );
+    let reason = parsed["reason"].as_str().unwrap_or("");
+    assert!(
+        reason.contains("user halt is in progress"),
+        "stage 2: halt-pause reason must dominate: {}",
+        reason
+    );
+
+    // --- Stage 4: state reflects the halt. `_continue_pending` is
+    // preserved across the halt set so the resume picks up the right
+    // child skill once the user clears it.
+    assert!(
+        read_halt_pending(&state_path),
+        "stage 4: _halt_pending must be set after halt-pause block"
+    );
+    assert_eq!(
+        read_continue_pending(&state_path),
+        "flow-code",
+        "stage 4: _continue_pending must be preserved across halt set"
+    );
+
+    // --- Stage 5: user types a continue token. Rewrite the
+    // transcript to include the new message AFTER the previous
+    // ones; the walker resolves the LAST user message after the
+    // most recent Skill action.
+    let jsonl = format!(
+        "{}\n{}\n{}\n",
+        json!({
+            "type": "assistant",
+            "message": {
+                "content": [{
+                    "type": "tool_use",
+                    "name": "Skill",
+                    "input": {"skill": "flow:flow-code"}
+                }]
+            }
+        }),
+        json!({"type": "user", "message": {"content": "wait, hold up"}}),
+        json!({"type": "user", "message": {"content": "ok continue"}}),
+    );
+    fs::write(&transcript, jsonl).unwrap();
+
+    // --- Stage 6: second hook spawn. `check_halt_pending` clears
+    // both `_halt_pending` and `_stop_instructed`. The cascade
+    // then fires downstream predicates; the test does not assert
+    // on the cascade's specific output (this varies with
+    // `_continue_pending` and `_stop_instructed` state), only that
+    // the halt-pause leg is no longer active.
+    let (_code, stdout) = spawn_hook(&root, &stdin_input);
+    if !stdout.trim().is_empty() {
+        let parsed: Value = serde_json::from_str(&stdout).unwrap_or(Value::Null);
+        let reason = parsed["reason"].as_str().unwrap_or("");
+        assert!(
+            !reason.contains("user halt is in progress"),
+            "stage 6: halt-pause message must NOT appear after continue token: {}",
+            reason
+        );
+    }
+    assert!(
+        !read_halt_pending(&state_path),
+        "stage 6: _halt_pending must clear when continue token fires"
+    );
+
+    // --- Stage 7-8: Bug-2 simulation. Advance state to
+    // flow-complete with `_halt_pending=false` and
+    // `_stop_instructed=false` (clean residue from stage 6).
+    // Append a fresh Skill action for flow-complete so the walker
+    // sees no user message after the latest Skill. The Stop event
+    // must NOT produce the conversation-preserving halt-pause
+    // message — proving halt residue does not carry into Complete.
+    // (Whichever downstream predicate fires — discussion-mode or
+    // autonomous-stop-refused, depending on `_stop_instructed`
+    // state at the time — the load-bearing invariant is that the
+    // halt-pause leg is inactive in the new phase.)
+    let mut state = halt_pending_state(
+        "flow-complete",
+        "in_progress",
+        json!("auto"),
+        json!(false),
+        json!(false),
+        "",
+    );
+    state["session_id"] = json!(session_id);
+    state["transcript_path"] = json!(transcript.to_str().unwrap());
+    fs::write(&state_path, serde_json::to_string(&state).unwrap()).unwrap();
+    let jsonl = format!(
+        "{}\n{}\n{}\n{}\n",
+        json!({
+            "type": "assistant",
+            "message": {
+                "content": [{
+                    "type": "tool_use",
+                    "name": "Skill",
+                    "input": {"skill": "flow:flow-code"}
+                }]
+            }
+        }),
+        json!({"type": "user", "message": {"content": "wait, hold up"}}),
+        json!({"type": "user", "message": {"content": "ok continue"}}),
+        json!({
+            "type": "assistant",
+            "message": {
+                "content": [{
+                    "type": "tool_use",
+                    "name": "Skill",
+                    "input": {"skill": "flow:flow-complete"}
+                }]
+            }
+        }),
+    );
+    fs::write(&transcript, jsonl).unwrap();
+
+    let (_code, stdout) = spawn_hook(&root, &stdin_input);
+    let parsed: Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_| panic!("stage-8 hook stdout must be JSON: {}", stdout));
+    assert_eq!(
+        parsed["decision"], "block",
+        "stage 8: Complete-phase must still block on voluntary stop"
+    );
+    let reason = parsed["reason"].as_str().unwrap_or("");
+    // Halt-pause message must NOT appear (no halt residue carried).
+    // This is the Bug-2 fix verification: the halt-pause leg is
+    // inactive in the new phase because `check_halt_pending`
+    // cleared `_stop_instructed` alongside `_halt_pending` in
+    // stage 6, so no residue authorizes the conversation-
+    // preserving message here.
+    assert!(
+        !reason.contains("user halt is in progress"),
+        "stage 8: halt-pause message must NOT appear in Complete: {}",
+        reason
+    );
+    assert!(
+        !read_halt_pending(&state_path),
+        "stage 8: _halt_pending must remain false in Complete"
+    );
 }

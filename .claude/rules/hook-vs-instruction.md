@@ -94,6 +94,26 @@ insufficient:
       checked first. See
       `.claude/rules/autonomous-phase-discipline.md`
       "Shared-Config Carve-Out".
+- **Explicit user pause directives during autonomous phases** —
+  `stop_continue::check_halt_pending` refuses the Stop event
+  with `{"decision":"block"}` and a conversation-preserving
+  reason naming the closed continue-token grammar (`continue`,
+  `resume`, `proceed`, `go ahead`, `keep going`) when the user
+  has typed a prose message after the model's most recent Skill
+  action AND the message contains no continue token AND the
+  current phase is in-progress + auto. Sets state field
+  `_halt_pending=true` so the block persists across multiple
+  Stop events until a continue token arrives. When the user
+  types a continue token, `_halt_pending` AND `_stop_instructed`
+  are both cleared in the same `mutate_state` call so halt
+  residue does not bleed forward into subsequent phases.
+  `_continue_pending` is preserved across every halt set/clear
+  so the multi-child-skill resume path picks up where it
+  paused. Composed FIRST in `stop_continue::run` — BEFORE
+  `check_first_stop` — so an explicit user pause directive
+  cannot be misclassified as generic discussion mode. See
+  `.claude/rules/autonomous-phase-discipline.md` "Mechanical
+  halt-pause contract".
 - **Decompose-return turn-end during a multi-step utility skill** —
   `stop_continue::check_in_progress_utility_skill` refuses the Stop
   event with `{"decision":"block"}` and the verbatim encouraging

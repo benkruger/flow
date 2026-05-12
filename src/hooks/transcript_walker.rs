@@ -582,6 +582,232 @@ fn user_turn_carries_tool_result_for(turn: &Value, target_id: &str) -> bool {
     false
 }
 
+/// Return the most recent string-content user-role turn AFTER the
+/// FIRST assistant Skill `tool_use` in the transcript at
+/// `transcript_path`. Returns `None` when no Skill call has fired,
+/// when no real user turn follows the first Skill call, when the
+/// validator rejects the path, when the file cannot be read or
+/// parsed, or when the file is empty.
+///
+/// A "real user turn" is a turn whose `type == "user"` AND whose
+/// `message.content` is a string. Synthetic tool_result-wrapped
+/// user turns (where `content` is an array of blocks carrying
+/// assistant-generated tool output) are skipped — they do not
+/// represent user prose.
+///
+/// The walker iterates forward in file order. Once it sees ANY
+/// assistant Skill `tool_use`, the candidate window is open and
+/// every subsequent real-user-turn content overwrites the
+/// candidate so the LAST string-content user turn in file order
+/// wins. Subsequent Skill actions do NOT close the window — the
+/// user's pause message must remain visible even when the model
+/// fires additional Skills as part of its response to the user.
+/// (Closing the window on every Skill would erase the user's
+/// pause when autonomous mode's normal loop fires another Skill
+/// before the next Stop event.)
+///
+/// Production consumer: `check_halt_pending` in
+/// `src/hooks/stop_continue.rs`. The predicate uses the returned
+/// content to detect whether the user has typed a new prose
+/// message since the model last took a Skill action — the trigger
+/// for the mechanical halt-pause contract per
+/// `.claude/rules/autonomous-phase-discipline.md` "Explicit User
+/// Pause Directives".
+///
+/// Validation contract per
+/// `.claude/rules/external-input-path-construction.md`:
+/// `transcript_path` runs through
+/// `crate::session_metrics::is_safe_transcript_path` (rejects
+/// empty, NUL-byte, relative, ParentDir-component, and prefix-
+/// escaping paths). File reads are bounded by the caller-supplied
+/// `cap` via `BufReader::new(file.take(cap))` so a corrupted or
+/// hostile transcript cannot cause unbounded I/O.
+///
+/// `home` is passed in (rather than read from `$HOME` inside) so
+/// fixture-controlled tests can isolate from the real user
+/// environment per `.claude/rules/testing-gotchas.md`.
+pub fn most_recent_user_message_since_skill_action(
+    transcript_path: &Path,
+    home: &Path,
+    cap: u64,
+) -> Option<String> {
+    if !is_safe_transcript_path(transcript_path, home) {
+        return None;
+    }
+    let lines = read_capped(transcript_path, cap)?;
+    let mut candidate: Option<String> = None;
+    let mut seen_skill = false;
+    for line in lines.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let turn: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let turn_type =
+            normalize_gate_input(turn.get("type").and_then(|v| v.as_str()).unwrap_or(""));
+        if turn_type == "assistant" {
+            let skills = extract_skill_invocations(&turn);
+            if !skills.is_empty() {
+                // The first Skill action opens the candidate
+                // window. Subsequent Skills do NOT close it —
+                // the user's pause message must remain visible
+                // when the model fires additional Skills as part
+                // of its response. Closing the window on every
+                // Skill would erase user-initiated pauses in the
+                // autonomous-mode loop.
+                seen_skill = true;
+            }
+            continue;
+        }
+        if turn_type != "user" {
+            continue;
+        }
+        if !seen_skill {
+            continue;
+        }
+        // Only string-content user turns count. Synthetic
+        // tool_result-wrapped user turns carry assistant-generated
+        // tool output, not user prose, and must not satisfy the
+        // halt-pause trigger.
+        if let Some(s) = turn
+            .get("message")
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+        {
+            candidate = Some(s.to_string());
+        }
+    }
+    candidate
+}
+
+/// Returns `true` when `msg` contains a continue-token at a word
+/// boundary. The closed token set is `continue`, `resume`,
+/// `proceed`, `go ahead`, `keep going` — the tokens that clear the
+/// `_halt_pending` state set by `check_halt_pending` in
+/// `src/hooks/stop_continue.rs` per
+/// `.claude/rules/autonomous-phase-discipline.md` "Explicit User
+/// Pause Directives".
+///
+/// Comparison is case-insensitive (the input is ASCII-lowercased
+/// once at entry). Word boundaries reject substrings inside larger
+/// words: `discontinue`, `resumed`, `proceedings` do NOT match.
+/// Trailing punctuation (`continue.`, `continue!`, `continue,`) is
+/// permitted because the punctuation is a non-word character.
+/// Two-word tokens tolerate one or more whitespace characters
+/// between the words (`go ahead`, `go  ahead`, `go\tahead`) but
+/// reject concatenated forms (`goahead`, `keepgoing`) — the first
+/// word must end at a word boundary before the second word begins.
+///
+/// Pure function: no I/O, no allocations beyond the lowercased
+/// input buffer.
+pub fn user_message_contains_continue_token(msg: &str) -> bool {
+    if msg.is_empty() {
+        return false;
+    }
+    // Strip NUL bytes before lowercasing per
+    // `.claude/rules/security-gates.md` "Normalize Before
+    // Comparing". A NUL byte is non-alphanumeric and would
+    // otherwise satisfy the word-boundary check at position 0,
+    // so a `"\0continue"` user message would clear `_halt_pending`
+    // even though the user did not type a continue directive.
+    let lower = msg.replace('\0', "").to_ascii_lowercase();
+    if lower.is_empty() {
+        return false;
+    }
+    let bytes = lower.as_bytes();
+    for token in ["continue", "resume", "proceed"] {
+        if find_token_with_boundary(bytes, token.as_bytes()) {
+            return true;
+        }
+    }
+    for (first, second) in [("go", "ahead"), ("keep", "going")] {
+        if find_two_word_token(bytes, first.as_bytes(), second.as_bytes()) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Word characters are ASCII alphanumerics plus underscore — the
+/// standard regex `\w` definition. Continue-token word boundaries
+/// require the character on each side of the token to be either
+/// outside the buffer or non-word.
+fn is_word_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
+/// Scan `haystack` for `needle` at every position where the
+/// preceding byte is outside the buffer or non-word AND the
+/// following byte is outside the buffer or non-word. Both buffers
+/// are ASCII (the caller lowercases the input).
+fn find_token_with_boundary(haystack: &[u8], needle: &[u8]) -> bool {
+    let nlen = needle.len();
+    let hlen = haystack.len();
+    if nlen == 0 || nlen > hlen {
+        return false;
+    }
+    let last_start = hlen - nlen;
+    for start in 0..=last_start {
+        if &haystack[start..start + nlen] != needle {
+            continue;
+        }
+        let before_ok = start == 0 || !is_word_byte(haystack[start - 1]);
+        let end = start + nlen;
+        let after_ok = end == hlen || !is_word_byte(haystack[end]);
+        if before_ok && after_ok {
+            return true;
+        }
+    }
+    false
+}
+
+/// Scan `haystack` for `first <whitespace+> second` with word
+/// boundaries on the outer edges and a word boundary at the end of
+/// `first` before whitespace. Tolerates any run of ASCII
+/// whitespace between the words but rejects zero-whitespace
+/// concatenations.
+fn find_two_word_token(haystack: &[u8], first: &[u8], second: &[u8]) -> bool {
+    let flen = first.len();
+    let slen = second.len();
+    let hlen = haystack.len();
+    if flen == 0 || slen == 0 || flen + 1 + slen > hlen {
+        return false;
+    }
+    let last_start = hlen - flen;
+    for start in 0..=last_start {
+        if &haystack[start..start + flen] != first {
+            continue;
+        }
+        let before_ok = start == 0 || !is_word_byte(haystack[start - 1]);
+        if !before_ok {
+            continue;
+        }
+        let after_first = start + flen;
+        if after_first >= hlen || is_word_byte(haystack[after_first]) {
+            continue;
+        }
+        let mut pos = after_first;
+        while pos < hlen && haystack[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+        if pos + slen > hlen {
+            continue;
+        }
+        if &haystack[pos..pos + slen] != second {
+            continue;
+        }
+        let end = pos + slen;
+        let after_ok = end == hlen || !is_word_byte(haystack[end]);
+        if after_ok {
+            return true;
+        }
+    }
+    false
+}
+
 /// Read the LAST `cap` bytes of `path` as a UTF-8 String. Returns
 /// `None` on `File::open` error or non-UTF-8 content.
 ///
