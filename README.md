@@ -126,10 +126,10 @@ Then initialize in your project (once per project, and again after each FLOW upg
 Start a new Claude Code session so permissions take effect, then start a feature:
 
 ```bash
-/flow-start invoice pdf export
+/flow-start #309
 ```
 
-This acquires a start lock (serializing concurrent starts), pulls the integration branch (`main`/`staging`/whatever your repo's default branch is), runs `bin/ci` for a clean baseline, upgrades dependencies on the integration branch, runs `bin/ci` again to catch dep-induced breakage, commits everything to the integration branch, then creates branch `invoice-pdf-export` with a worktree at `.worktrees/invoice-pdf-export` and opens a GitHub PR. You land in Phase 2: Code.
+The argument must match `^#[1-9][0-9]*$` — a pre-decomposed GitHub issue number prepared via `/flow-explore` + `/flow-plan`. This acquires a start lock (serializing concurrent starts), pulls the integration branch (`main`/`staging`/whatever your repo's default branch is), runs `bin/ci` for a clean baseline, upgrades dependencies on the integration branch, runs `bin/ci` again to catch dep-induced breakage, commits everything to the integration branch, then fetches the issue title to derive the branch name, creates a worktree at `.worktrees/<branch>`, and opens a GitHub PR. You land in Phase 2: Code.
 
 ---
 
@@ -276,7 +276,7 @@ Every correction and observation has a path to becoming a permanent, reusable pa
 User corrects Claude → /flow-note captures it in state["notes"]
 Claude writes observations → auto-memory (shared across worktrees)
        ↓
-Learn reads three sources in Phase 5 (CLAUDE.md rules, learn-analyst agent, state/plan data)
+Learn reads three sources in Phase 4 (CLAUDE.md rules, learn-analyst agent, state/plan data)
        ↓
 Each learning is routed to the right repo-local destination:
     → Project CLAUDE.md   (process rules and architecture — committed via PR)

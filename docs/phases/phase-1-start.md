@@ -9,6 +9,8 @@ nav_order: 2
 
 **Example:** `/flow-start #1234`
 
+**Prerequisite:** The referenced issue must be pre-decomposed — its body must carry the `<!-- FLOW-PLAN-BEGIN -->` and `<!-- FLOW-PLAN-END -->` sentinels around an implementation plan. The conventional way to prepare an issue is `/flow-explore <topic>` to file a vanilla `## What` / `## Why` / `## Acceptance Criteria` problem statement, then `/flow-plan #M` to decompose it into a linked, pre-planned issue ready for `/flow-start`. `bin/flow plan-from-issue` extracts the plan from the sentinels at Step 5; missing or malformed sentinels halt the flow with a structured error.
+
 This is always the first phase, for every feature without exception. It establishes an isolated workspace, verifies the health of the codebase, configures workspace permissions, and opens the PR before any feature work begins. Project-specific setup (dependency upgrades, CI fixes) is handled by the project's `bin/dependencies` script and CLAUDE.md conventions.
 
 ---
