@@ -39,7 +39,7 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
   "pr_number": 42,
   "pr_url": "https://github.com/org/repo/pull/42",
   "started_at": "2026-02-20T10:00:00-08:00",
-  "current_phase": "flow-plan",
+  "current_phase": "flow-code",
   "prompt": "fix #83 and #89 — close issues at complete time",
   "files": {
     "plan": null,
@@ -52,7 +52,6 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
   "transcript_path": null,
   "skills": {
     "flow-start": {"continue": "manual"},
-    "flow-plan": {"continue": "auto", "dag": "auto"},
     "flow-code": {"commit": "manual", "continue": "manual"},
     "flow-review": {"commit": "auto", "continue": "auto"},
     "flow-learn": {"commit": "auto", "continue": "auto"},
@@ -69,8 +68,8 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
       "cumulative_seconds": 300,
       "visit_count": 1
     },
-    "flow-plan": {
-      "name": "Plan",
+    "flow-code": {
+      "name": "Code",
       "status": "in_progress",
       "started_at": "2026-02-20T10:05:00-08:00",
       "completed_at": null,
@@ -78,8 +77,8 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
       "cumulative_seconds": 1800,
       "visit_count": 2
     },
-    "flow-code": {
-      "name": "Code",
+    "flow-review": {
+      "name": "Review",
       "status": "pending",
       "started_at": null,
       "completed_at": null,
@@ -119,8 +118,6 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `commit_format` | string / absent | Commit message format: `"full"` or `"title-only"`. Copied from `.flow.json` by `/flow-start`. Absent when `.flow.json` has no `commit_format` key — skills default to `"full"` |
 | `start_step` | integer | Current Start phase step (0-5). Set by `init-state --start-step` at creation, then updated by `start-step` subcommand at each step boundary. Used by the TUI to show "step 3 of 5" in the Start phase annotation. Absent when Start is not in progress |
 | `start_steps_total` | integer | Total number of Start phase steps (hardcoded 5). Set by `init-state --start-steps-total` at creation. Used by the TUI for "step N of M" display |
-| `plan_step` | integer | Current Plan phase step (0-4). Set via `set-timestamp` (standard path) or `plan-extract` (extracted path) at each step boundary. Used by the TUI to show "step 2 of 4" in the Plan phase annotation. Absent when Plan is not in progress |
-| `plan_steps_total` | integer | Total number of Plan phase steps (hardcoded 4). Set via `set-timestamp` (standard path) or `plan-extract` (extracted path) after phase entry. Used by the TUI for "step N of M" display |
 | `review_step` | integer | Last completed Review step (0-4). Set to 0 on phase entry, incremented after each step (1=Gather, 2=Launch, 3=Triage, 4=Fix). Used by the TUI and for resume after context compaction |
 | `review_steps_total` | integer | Total number of Review steps (hardcoded 4). Set via `set-timestamp` after phase entry. Used by the TUI for "step N of M" display |
 | `code_tasks_total` | integer / absent | Total number of implementation tasks from the plan. Set by Phase 1 (Start) Step 5 via `set-timestamp`, derived from a count of `#### Task N:` headings in the extracted `plan.md` (returned by `bin/flow plan-from-issue` in its success envelope as `tasks_total`). Used by the TUI to show "task 3 of 8" in the Code phase annotation. Absent in state files created before v0.40 |
@@ -133,7 +130,7 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `_continue_context` | string | Specific next-step instructions for the model after a child skill returns. Written by phase skills before `_continue_pending`, read and cleared by the Stop hook. Also cleared by `finalize-commit` on error and by `phase_enter()` on phase entry (same lifecycle as `_continue_pending`). Included in the block reason so the model knows what to do after the turn boundary. Empty string or absent means use the generic fallback message. |
 | `_blocked` | ISO 8601 / null | Timestamp when the flow was blocked on AskUserQuestion. Set by PreToolUse hook (`bin/flow hook validate-ask-user`) when allowing a prompt through. Cleared by PostToolUse hook (`bin/flow clear-blocked`) after user responds and by Stop hook (`bin/flow hook stop-continue`) as a safety net for crashed sessions. Transient. |
 | `_last_failure` | object / null | API error context from the last StopFailure event. Contains `type` (string — error category, e.g. `rate_limit`, `auth_failure`, `network_timeout`), `message` (string — error details), and `timestamp` (ISO 8601 — when the failure occurred). Written by StopFailure hook (`bin/flow hook stop-failure`). Currently has no consumer (session-start consumer removed in PR #938). Transient. |
-| `_auto_continue` | string | Command to invoke next (e.g. `/flow:flow-plan`). Set by `phase_complete()` when `skills.<phase>.continue` is `"auto"`. Cleared by `phase_enter()` when the next phase starts. A PreToolUse hook on AskUserQuestion automatically answers prompts via `updatedInput` while this flag is set. |
+| `_auto_continue` | string | Command to invoke next (e.g. `/flow:flow-code`). Set by `phase_complete()` when `skills.<phase>.continue` is `"auto"`. Cleared by `phase_enter()` when the next phase starts. A PreToolUse hook on AskUserQuestion automatically answers prompts via `updatedInput` while this flag is set. |
 | `_stop_instructed` | boolean | Discussion-mode flag. Set to `true` by the Stop hook (`check_first_stop`) on the first stop event during an active flow — either a pure discussion-mode block (no pending) or a conditional continuation (pending set, with user-message awareness). On subsequent stops the flag is already `true` and `check_first_stop` allows stop through to `check_continue`. Cleared by `check_continue` when `_continue_pending` is consumed (atomically in the same `mutate_state` closure) and by `phase_enter()` on phase entry. Not cleared on session mismatch — `phase_enter()` handles the reset when the new session enters a phase. Transient. |
 | `_drift_recovery_attempted` | string / absent | Loop-guard flag for the Phase 5 Complete `ci_drift` dispatch path (local CI sentinel matches but GitHub CI reports failure). Set to `"1"` by `skills/flow-complete/SKILL.md` Step 1 BEFORE the recovery sequence runs (`bin/dependencies` toolchain refresh + `bin/flow ci --force`), so a kill-signal mid-recovery leaves the flag set and the next invocation escalates instead of looping recovery. Cleared by the SOFT-GATE on every fresh non-`--continue-step` invocation so the next genuine `ci_drift` detection runs recovery. The legitimate post-recovery self-invoke (`flow:flow-complete --continue-step`) skips the SOFT-GATE and preserves the flag — the next `ci_drift` detection on the same invocation then reads the flag and escalates the user (drift persists after toolchain refresh = environmental cause). Empty string or absent means no recovery in progress. Transient. |
 | `prompt` | string | The full text passed to `/flow-start` — used by Plan as feature description and by Complete to extract `#N` issue references for auto-closing |
@@ -147,7 +144,7 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `slack_thread_ts` | string / null | Slack message timestamp of the initial thread message. Set by Start phase after first `notify-slack` call. Used by subsequent phases as `thread_ts` to reply in the same thread. Null or absent if Slack is not configured. |
 | `slack_notifications` | array | Slack notifications sent during the feature — see [Slack Notifications Array](#slack-notifications-array) |
 | `window_at_start` | object / absent | Account-window snapshot captured at flow-start. See [Window Snapshot](#window-snapshot). Absent when not yet populated or when capture failed. |
-| `window_at_complete` | object / absent | Account-window snapshot captured at Phase 6 finalize. See [Window Snapshot](#window-snapshot). Absent until Complete runs. |
+| `window_at_complete` | object / absent | Account-window snapshot captured at Phase 5 finalize. See [Window Snapshot](#window-snapshot). Absent until Complete runs. |
 
 ---
 
@@ -166,7 +163,7 @@ Each phase entry has identical fields regardless of status.
 | `visit_count` | integer | Number of times this phase has been entered |
 | `window_at_enter` | object / absent | Account-window snapshot captured on phase entry. See [Window Snapshot](#window-snapshot). Absent until phase entry runs or when capture failed. |
 | `window_at_complete` | object / absent | Account-window snapshot captured on phase finalize. See [Window Snapshot](#window-snapshot). Absent until phase finalize runs. |
-| `step_snapshots` | array | Array of [Step Snapshots](#step-snapshot) appended on each step-counter increment (`plan_step`, `code_task`, `review_step`, `learn_step`, `complete_step`). Empty until the phase begins incrementing its step counter. Bounded by step count per phase (typically <30 entries; up to ~10 KB for a long Code phase). |
+| `step_snapshots` | array | Array of [Step Snapshots](#step-snapshot) appended on each step-counter increment (`code_task`, `review_step`, `learn_step`, `complete_step`). Empty until the phase begins incrementing its step counter. Bounded by step count per phase (typically <30 entries; up to ~10 KB for a long Code phase). |
 | `agents_skipped` | array / absent | Review-only. Entries of `{agent: string, reason: string, timestamp: ISO 8601}` appended by `bin/flow add-skipped-agent` when flow-review's failure classification (Step 2) detects an agent returned an external-failure marker. `reason` is a positive allowlist: `rate_limit`, `api_error`, or `other`. Absent on every phase except `flow-review`, and absent on `flow-review` runs that complete with no skipped agents. Consumed by `phase-finalize`'s `agents_skipped` gate — see below. |
 
 ### Agents-Skipped Gate
@@ -226,8 +223,12 @@ Each value is either a **bare string** (`"auto"` or `"manual"`) or an **object**
 
 Structured artifact file paths using relative paths (relative to project root)
 for portability. Created by `/flow-start` with `plan` and `dag` set to `null`.
-Updated by `/flow-plan` via `set-timestamp --set files.plan=<path>` and
-`set-timestamp --set files.dag=<path>`.
+`files.plan` is populated at Phase 1 (Start) Step 5 by `bin/flow plan-from-issue`,
+which extracts the plan from the issue body's
+`<!-- FLOW-PLAN-BEGIN -->`/`<!-- FLOW-PLAN-END -->` sentinels and writes it to
+`.flow-states/<branch>/plan.md`. `files.dag` is written by the pre-decompose
+flow (`/flow-decompose-project` and `/flow-plan` utility skills) when a DAG
+analysis is produced.
 
 ```json
 "files": {
@@ -240,8 +241,8 @@ Updated by `/flow-plan` via `set-timestamp --set files.plan=<path>` and
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `plan` | string / null | Relative path to the implementation plan file — set by Phase 2 |
-| `dag` | string / null | Relative path to the DAG analysis file — set by Phase 2 |
+| `plan` | string / null | Relative path to the implementation plan file — set by Phase 1 Step 5 (`bin/flow plan-from-issue`) |
+| `dag` | string / null | Relative path to the DAG analysis file — written by the pre-decompose flow when applicable |
 | `log` | string | Relative path to the session log file — set at creation |
 | `state` | string | Relative path to this state file — set at creation |
 
@@ -275,8 +276,7 @@ through phases, enabling the Learn phase to identify rework patterns.
 
 ```json
 "phase_transitions": [
-  {"from": "flow-start", "to": "flow-plan", "timestamp": "2026-02-20T10:05:00-08:00"},
-  {"from": "flow-plan", "to": "flow-code", "timestamp": "2026-02-20T10:30:00-08:00"},
+  {"from": "flow-start", "to": "flow-code", "timestamp": "2026-02-20T10:30:00-08:00"},
   {"from": "flow-code", "to": "flow-review", "timestamp": "2026-02-20T14:00:00-08:00"},
   {"from": "flow-review", "to": "flow-code", "timestamp": "2026-02-20T14:30:00-08:00", "reason": "test failures"}
 ]
@@ -474,7 +474,7 @@ A single entry inside the `by_model` object — present only when at least one `
 
 ## Step Snapshot
 
-Appended to a phase's `step_snapshots[]` on every step-counter increment that names one of the five recognized counters: `plan_step`, `code_task`, `review_step`, `learn_step`, `complete_step`. Each entry combines the counter value at the time of capture, the field name, and a flattened [Window Snapshot](#window-snapshot) — so each record is one flat JSON object rather than a nested `{snapshot: {...}}` shape.
+Appended to a phase's `step_snapshots[]` on every step-counter increment that names one of the four recognized counters: `code_task`, `review_step`, `learn_step`, `complete_step`. Each entry combines the counter value at the time of capture, the field name, and a flattened [Window Snapshot](#window-snapshot) — so each record is one flat JSON object rather than a nested `{snapshot: {...}}` shape.
 
 ```json
 {
@@ -496,7 +496,7 @@ Appended to a phase's `step_snapshots[]` on every step-counter increment that na
 | Field | Type | Description |
 |-------|------|-------------|
 | `step` | integer | Counter value at capture time |
-| `field` | string | Counter name (one of `plan_step`, `code_task`, `review_step`, `learn_step`, `complete_step`) |
+| `field` | string | Counter name (one of `code_task`, `review_step`, `learn_step`, `complete_step`) |
 | _flattened snapshot fields_ | various | Every [Window Snapshot](#window-snapshot) field, inlined at the same level |
 
 ---
@@ -505,4 +505,4 @@ Appended to a phase's `step_snapshots[]` on every step-counter increment that na
 
 Valid phase transitions are defined in `flow-phases.json` at the plugin root. Forward progression is always valid. Backward transitions are limited per phase.
 
-Valid transitions are defined in `flow-phases.json`: Code can return to Plan; Review can return to Code or Plan.
+Valid transitions are defined in `flow-phases.json`: Review can return to Code.

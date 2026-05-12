@@ -127,7 +127,7 @@ removed, what was already gone, and what failed.
 
 ## What You Get
 
-By the end of Phase 6:
+By the end of Phase 5:
 
 - PR squash-merged into the integration branch
 - Referenced GitHub issues closed (extracted from the start prompt)
@@ -161,8 +161,8 @@ The skill is safe to re-invoke (e.g., via `/loop 15s /flow:flow-complete`):
 
 | Scenario | Behavior |
 |---|---|
-| State file exists, Phase 5 complete | Normal merge and cleanup — no warnings |
-| State file exists, Phase 5 incomplete | Warns, proceeds (confirms if `--manual`) |
+| State file exists, Learn (Phase 4) complete | Normal merge and cleanup — no warnings |
+| State file exists, Learn (Phase 4) incomplete | Warns, proceeds (confirms if `--manual`) |
 | State file missing | Warns, infers from git, proceeds (confirms if `--manual`) |
 | PR not open or merged | Hard block, does not proceed |
 
@@ -174,7 +174,7 @@ one fails, continue to the next.
 ## Gates
 
 - PR must be open or already merged — hard block if closed
-- Phase 5 complete is a warning, not a hard block
+- Learn (Phase 4) complete is a warning, not a hard block
 - Missing state file is a warning, not a hard block
 - CI must pass before merge
 - Confirmation only when `--manual` is passed

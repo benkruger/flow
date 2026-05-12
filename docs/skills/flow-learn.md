@@ -6,7 +6,7 @@ parent: Skills
 
 # /flow-learn
 
-**Phase:** 5 — Learn
+**Phase:** 4 — Learn
 
 **Usage:** `/flow-learn`, `/flow-learn --auto`, `/flow-learn --manual`, or `/flow-learn --continue-step`
 
@@ -33,7 +33,7 @@ merges.
 |--------|------|---------------------|
 | CLAUDE.md and rules files | Project rules and conventions that should have been followed | Yes |
 | State file and plan data | Visit counts, timing, notes, plan risks | Yes |
-| Branch diff | Full `git diff origin/main...HEAD` | Yes |
+| Branch diff | Full `git diff origin/<base_branch>...HEAD` | Yes |
 | Learn-analyst agent | Categorized findings from cognitively isolated compliance audit | N/A (agent output) |
 
 All artifacts are passed inline to the learn-analyst agent. The agent
@@ -88,5 +88,5 @@ advances to Complete without asking.
 
 ## Gates
 
-- Phase 4: Review must be complete
+- Phase 3: Review must be complete
 - Only CLAUDE.md and `.claude/` files are committed — never application code

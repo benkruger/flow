@@ -58,15 +58,9 @@ The targeted test command is `bin/flow ci --test --file <path>`, which forwards 
 
 ---
 
-## Back Navigation
-
-- **Go back to Plan** — task description is wrong or tasks are missing
-
----
-
 ## What You Get
 
-By the end of Phase 3:
+By the end of Phase 2:
 
 - Every planned task complete and committed
 - Full TDD — every implementation has a test that was written first
@@ -77,5 +71,7 @@ By the end of Phase 3:
 
 ## What Comes Next
 
-Phase 4: Review (`/flow-review`) — four steps: clarity with convention
-compliance, correctness with rule compliance, safety, and parallel agent reviews.
+Phase 3: Review (`/flow-review`) — six tenants assessed by four
+cognitively isolated agents (reviewer, pre-mortem, adversarial,
+documentation) launched in parallel. The parent session gathers
+context, triages findings, and fixes in a single commit.

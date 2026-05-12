@@ -6,7 +6,7 @@ parent: Skills
 
 # /flow-review
 
-**Phase:** 4 — Review
+**Phase:** 3 — Review
 
 **Usage:** `/flow-review`, `/flow-review --auto`, or `/flow-review --manual`
 
@@ -132,4 +132,5 @@ Check which dispatches to the next step.
 - Code phase must be complete before Review can start
 - `bin/flow ci` must be green after all fixes
 - `bin/flow ci` must be green before transitioning to Learn
-- Can return to Code or Plan
+- Can return to Code
+- If any agent is recorded as skipped (`rate_limit`, `api_error`, or `other`), `bin/flow phase-finalize` refuses to advance until `--accept-skipped-agents` is passed. The skipped entries remain in state for the Learn-phase audit. See `docs/reference/flow-state-schema.md` "Agents-Skipped Gate" for the JSON contract.

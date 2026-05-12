@@ -32,7 +32,7 @@ cognitively isolated analysis:
 
 1. **CLAUDE.md and rules files** — the project's rules and conventions that should have been followed
 2. **State file and plan data** — visit counts, timing, captured `/flow-note` entries, plan file risks
-3. **Branch diff** — the full `git diff origin/main...HEAD`
+3. **Branch diff** — the full `git diff origin/<base_branch>...HEAD`
 
 All artifacts are passed inline to the learn-analyst agent, which
 produces structured findings categorized by the three tenants. The agent
@@ -85,5 +85,5 @@ When a rule is violated, Learn assesses the enforcement level:
 
 ## What Comes Next
 
-Run Phase 6: Complete (`/flow-complete`) to merge the PR (which now
+Run Phase 5: Complete (`/flow-complete`) to merge the PR (which now
 includes rule improvements) and clean up.
