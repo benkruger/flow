@@ -345,10 +345,7 @@ time per CI run, compounding across the test corpus.
 - **Wall-clock functions** — accept an injectable `now_fn`
   closure parameter so tests can return a controlled timestamp.
 - **Retry/timeout loops** — accept an injectable `sleep_fn`
-  closure so the test can count calls without blocking. Reference:
-  `acquire_with_wait_impl` in `src/commands/start_lock.rs` injects
-  `sleep_fn: F` where tests pass a no-op or a side-effecting
-  closure.
+  closure so the test can count calls without blocking.
 
 **How to apply.** When writing a test for time-dependent behavior,
 identify which time source the production code reads (mtime, system

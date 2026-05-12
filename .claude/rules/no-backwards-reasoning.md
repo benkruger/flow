@@ -137,7 +137,7 @@ durable output:
   not consume historical artifacts as authority on
   should-questions.
 - **Issue drafting** (mechanical backstop). The
-  `flow-create-issue` skill scans candidate issue bodies for
+  `flow-plan` skill scans candidate issue bodies for
   forbidden phrasings before presenting the draft, and the
   `flow-decompose-project` skill scans each child issue body
   before children are surfaced. The scan is a backstop for
@@ -153,7 +153,7 @@ durable output:
 The mechanical backstop scans for these four canonical
 phrasings. Future changes to the scanned set must update both
 this enumeration and the corresponding subsections in
-`skills/flow-create-issue/SKILL.md` and
+`skills/flow-plan/SKILL.md` and
 `skills/flow-decompose-project/SKILL.md` so the rule remains
 the authoritative source for what the scans target:
 

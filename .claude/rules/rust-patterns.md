@@ -154,13 +154,18 @@ externally-coupled seam. Per
 `.claude/rules/test-placement.md` "Bright-line test for `pub`
 additions", it is forbidden unless it has a named non-test consumer.
 
-Reference:
-`tui_terminal::run_tui_arm_impl(is_tty_fn, run_terminal_fn, root)`
-accepts `is_tty_fn: FnOnce() -> bool` and `run_terminal_fn:
-FnOnce(&mut TuiApp) -> io::Result<()>` so unit tests substitute
-mock closures and assert each branch's return tuple. The production
-wrapper `run_tui_arm` returns `!` and calls `run_tui_arm_impl` with
-real implementations, then matches the Result to `process::exit`.
+Reference: `tui_terminal::run_terminal_body<B, C, E>(app, terminal,
+cleanup_fn, events_fn)` accepts `cleanup_fn: C` and `events_fn: E`
+closures so unit tests construct a `Terminal<TestBackend>` and pass
+mock closures to exercise every branch without touching a real
+terminal. The production wrapper `run_terminal` enables raw mode,
+enters the alternate screen, builds the `CrosstermBackend`-backed
+`Terminal`, and hands off to `run_terminal_body` with real cleanup
+and `crossterm_events` closures. `run_tui_arm_impl` (the TTY-check
+layer above `run_terminal`) is intentionally non-generic — the
+prior closure-injection seam at that layer was collapsed because
+its closures could not be exercised distinctly from the
+`run_terminal_body` layer.
 
 The same closure-injection pattern applies to RAII guards whose
 release path needs unit-test verification: parameterize the cleanup

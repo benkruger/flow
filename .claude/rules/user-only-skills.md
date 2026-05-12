@@ -17,12 +17,12 @@ command) rather than from inferred context.
 | `/flow:flow-prime` | Writes `.claude/settings.json` and the four `bin/*` stubs into the project. | Environment-mutating — modifies shared config the project has not yet reviewed. |
 
 The criterion is "model must never propose." This is stricter than
-the sibling "ask-first" pattern (`/flow:flow-create-issue`,
-`/flow:flow-start`, etc.) where the model may ask the user whether
-to proceed but the user then answers and the model invokes. For
-user-only skills the model does NOT invoke even after a
-hypothetical "yes" answer — the user types the slash command
-directly.
+the sibling "ask-first" pattern (`/flow:flow-explore`,
+`/flow:flow-plan`, `/flow:flow-start`, etc.) where the model may
+ask the user whether to proceed but the user then answers and the
+model invokes. For user-only skills the model does NOT invoke even
+after a hypothetical "yes" answer — the user types the slash
+command directly.
 
 ## Three-Layer Enforcement Chain
 
@@ -176,8 +176,9 @@ it belongs in the user-only set or the ask-first set:
 Default to user-only when the action's blast radius spans
 shared resources (PRs, branches, releases, project config).
 Reserve ask-first for scoped actions whose error path is local
-recovery (`/flow:flow-create-issue` files an issue but the user
-can close it; `/flow:flow-start` opens a worktree but the user
+recovery (`/flow:flow-explore` files a problem statement and
+`/flow:flow-plan` files an implementation plan but the user can
+close either; `/flow:flow-start` opens a worktree but the user
 can abort).
 
 See `.claude/rules/autonomous-phase-discipline.md` "User-Only
