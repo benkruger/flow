@@ -1829,8 +1829,8 @@ fn test_rules_no_acquire_with_wait_impl() {
         .join(".claude")
         .join("rules")
         .join("testing-gotchas.md");
-    let content = std::fs::read_to_string(&path)
-        .expect(".claude/rules/testing-gotchas.md must exist");
+    let content =
+        std::fs::read_to_string(&path).expect(".claude/rules/testing-gotchas.md must exist");
     assert!(
         !content.contains("acquire_with_wait_impl"),
         ".claude/rules/testing-gotchas.md must not reference \
@@ -1867,8 +1867,8 @@ fn test_rules_no_run_tui_arm_impl_closure_pair() {
         .join(".claude")
         .join("rules")
         .join("rust-patterns.md");
-    let content = std::fs::read_to_string(&path)
-        .expect(".claude/rules/rust-patterns.md must exist");
+    let content =
+        std::fs::read_to_string(&path).expect(".claude/rules/rust-patterns.md must exist");
     assert!(
         !content.contains("is_tty_fn"),
         ".claude/rules/rust-patterns.md must not reference \
