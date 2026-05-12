@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FLOW — Software Development Lifecycle for Claude Code</title>
-  <meta name="description" content="An opinionated 5-phase software development lifecycle plugin for Claude Code. Issue-driven, TDD. Every feature, same phases, no shortcuts. Language-agnostic — every project owns its toolchain via repo-local bin/* delegation.">
+  <meta name="description" content="An opinionated 5-phase software development lifecycle plugin for Claude Code. Three commands you type. Five phases that run themselves. Language-agnostic — every project owns its toolchain via repo-local bin/* delegation.">
   <style>
     :root {
       --bg: #ffffff;
@@ -105,6 +105,7 @@
 
     .stat-bar {
       display: flex;
+      flex-wrap: wrap;
       gap: 32px;
       margin-top: 24px;
       padding-top: 24px;
@@ -231,12 +232,15 @@
       font-weight: 600;
       font-size: 15px;
       color: var(--text);
+      min-width: 140px;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
 
     .step-detail {
       color: var(--text-muted);
       font-size: 13px;
-      margin-left: auto;
+      flex: 1;
     }
 
     .features {
@@ -294,6 +298,12 @@
     td:first-child {
       color: var(--text);
       font-weight: 500;
+      white-space: nowrap;
+      width: 1%;
+    }
+
+    td:first-child code {
+      white-space: nowrap;
     }
 
     tr:last-child td { border-bottom: none; }
@@ -372,12 +382,21 @@
       margin: 24px 0;
     }
 
+    .cool-grid-4 {
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+    }
+
+    @media (max-width: 880px) {
+      .cool-grid-4 { grid-template-columns: 1fr 1fr; }
+    }
+
     @media (max-width: 760px) {
       .cool-grid { grid-template-columns: 1fr 1fr; }
     }
 
     @media (max-width: 480px) {
       .cool-grid { grid-template-columns: 1fr; }
+      .cool-grid-4 { grid-template-columns: 1fr; }
     }
 
     .cool-card-front {
@@ -476,6 +495,8 @@
     .t-bold { color: #ede9fe; font-weight: 600; }
     .t-accent { color: #a78bfa; }
     .t-green { color: #34d399; }
+    .t-yellow { color: #fbbf24; }
+    .t-blue { color: #60a5fa; }
     .t-dim { color: #64607a; }
     .t-footer { color: #7c7594; }
   </style>
@@ -493,38 +514,46 @@
   </nav>
 
   <header>
-    <h1><a href="https://github.com/benkruger/flow" style="color: inherit; text-decoration: none;"><span>FLOW</span></a></h1>
-    <p class="tagline">An opinionated 5-phase software development lifecycle for Claude Code. Every feature follows the same phases in the same order. No shortcuts. Supports <span class="highlight-phrase">Rails</span>, <span class="highlight-phrase">Python</span>, <span class="highlight-phrase">iOS</span>, <span class="highlight-phrase">Go</span>, and <span class="highlight-phrase">Rust</span>.</p>
+    <h1><a href="#" style="color: inherit; text-decoration: none;" aria-label="FLOW — top of page"><span>FLOW</span></a></h1>
+    <p class="tagline">An opinionated 5-phase software development lifecycle for Claude Code. <strong>Three commands you type. Five phases that run themselves.</strong> Same order every time. <span class="highlight-phrase">Language-agnostic</span> &mdash; every project owns its toolchain via repo-local <code>bin/*</code> delegation.</p>
     <div class="stat-bar">
+      <div class="stat"><strong>3</strong> Commands</div>
       <div class="stat"><strong>5</strong> Phases</div>
-      <div class="stat"><strong>4</strong> Review Lenses</div>
+      <div class="stat"><strong>3</strong> Planning Voices</div>
+      <div class="stat"><strong>4</strong> Review Agents</div>
       <div class="stat"><strong>0</strong> Dependencies</div>
     </div>
     <a href="#get-started" class="cta" style="margin-top: 28px;">Get Started</a>
   </header>
 
-  <!-- THREE GOALS -->
+  <!-- FOUR TENETS -->
   <section>
-    <h2>Three Goals</h2>
+    <h2>Four Tenets</h2>
     <p>Claude Code is powerful, but undisciplined by default. <strong>FLOW imposes structure. Not bureaucracy &mdash; discipline.</strong></p>
 
-    <div class="cool-grid">
+    <div class="cool-grid cool-grid-4">
       <div class="cool-card-front">
         <span class="cool-mono">{}</span>
         <div class="cool-headline">Unobtrusive</div>
-        <p class="cool-desc">Zero dependencies. Prime commits <code>.claude/settings.json</code> and <code>CLAUDE.md</code> as project config &mdash; shared permissions and conventions. <code>.flow.json</code> and <code>.flow-states</code> are git-excluded. One state file while you work &mdash; Complete deletes it.</p>
+        <p class="cool-desc">Zero dependencies. Prime commits <code>.claude/settings.json</code> and the four <code>bin/*</code> delegation stubs as project config. <code>.flow.json</code> and <code>.flow-states/</code> are git-excluded. One state file while you work &mdash; Complete deletes it.</p>
       </div>
 
       <div class="cool-card-front">
         <span class="cool-mono">~/</span>
         <div class="cool-headline">Autonomous or Manual</div>
-        <p class="cool-desc">Two axes &mdash; commit and continue. Four presets from fully manual to fully autonomous. Per-skill override. You control the autonomy.</p>
+        <p class="cool-desc">Two axes &mdash; commit and continue. Four presets from fully manual to fully autonomous. Per-skill override via <code>/flow-prime</code>.</p>
       </div>
 
       <div class="cool-card-front">
         <span class="cool-mono">$_</span>
         <div class="cool-headline">Safe for Local Env</div>
-        <p class="cool-desc">No containers. Native tools only &mdash; git, gh, linter, test runner. Every command pre-approved during flows &mdash; zero permission prompts. Outside flows, Claude Code&rsquo;s native prompts handle approval. Worktree isolation protects your team&rsquo;s trunk (main, staging, or whatever your repo&rsquo;s default branch is).</p>
+        <p class="cool-desc">No containers. Native tools only &mdash; git, gh, your linter, your test runner. Every command pre-approved during flows. Worktree isolation protects your team&rsquo;s trunk (main, staging, or whatever your repo&rsquo;s default branch is).</p>
+      </div>
+
+      <div class="cool-card-front">
+        <span class="cool-mono">N&times;N&times;N</span>
+        <div class="cool-headline">Concurrent by Design</div>
+        <p class="cool-desc">N engineers running N flows on N machines simultaneously. Local state is per-machine; shared state is coordinated through GitHub. The &ldquo;Flow In-Progress&rdquo; label provides cross-engineer WIP detection.</p>
       </div>
     </div>
   </section>
@@ -532,33 +561,55 @@
   <!-- HOW -->
   <section>
     <h2>How</h2>
-    <p>Every feature goes through <span class="highlight-phrase">5 phases</span>. Each phase must complete before the next one starts. If something was missed, go back. Opus for code and review. Sonnet for sub-agent reviews.</p>
+    <p>Three commands drive the workflow. Five phases run themselves.</p>
+
+    <h3>The three commands you type</h3>
+    <div class="pipeline">
+      <div class="pipeline-step">
+        <div class="step-num">1</div>
+        <span class="step-label">/flow-explore</span>
+        <span class="step-detail">Problem-statement conversation (PM voice). Files a vanilla <code>## What</code> / <code>## Why</code> / <code>## Acceptance Criteria</code> issue.</span>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">2</div>
+        <span class="step-label">/flow-plan #N</span>
+        <span class="step-detail">Decomposes the vanilla issue (Tech Lead voice). Files a linked decomposed issue ready for start.</span>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">3</div>
+        <span class="step-label">/flow-start #N</span>
+        <span class="step-detail">Worktree, PR, plan extraction from the issue body. The lifecycle begins.</span>
+      </div>
+    </div>
+
+    <h3>The five phases that follow</h3>
+    <p>Once <code>/flow-start</code> lands, you&rsquo;re inside the lifecycle. Each phase is its own skill, but <strong>you don&rsquo;t type them</strong> &mdash; Claude auto-chains Code &rarr; Review &rarr; Learn &rarr; Complete according to your autonomy settings. You see them as transitions, and as approval prompts at any boundary you&rsquo;ve kept manual.</p>
 
     <div class="pipeline">
       <div class="pipeline-step">
         <div class="step-num">1</div>
         <span class="step-label">Start</span>
-        <span class="step-detail">Lock, CI baseline, dependencies on the integration branch, CI post-deps, worktree + PR; plan extracted from issue body sentinels</span>
+        <span class="step-detail">Start lock, <code>bin/flow ci</code> baseline on the integration branch, dependency upgrade, worktree + PR. <code>ci-fixer</code> sub-agent repairs breakage once.</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">2</div>
         <span class="step-label">Code</span>
-        <span class="step-detail">Test first, then implement, review every diff, commit per task</span>
+        <span class="step-detail">Test first, then implement. Diff review, <code>bin/flow ci</code> gate, commit per task. 100% coverage enforced.</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">3</div>
         <span class="step-label">Review</span>
-        <span class="step-detail">Six tenants assessed by four cognitively isolated agents (reviewer, pre-mortem, adversarial, documentation) &mdash; gather, launch, triage, fix</span>
+        <span class="step-detail">Four cognitively isolated agents in parallel &mdash; reviewer, pre-mortem, adversarial, documentation. Parent triages and fixes.</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">4</div>
         <span class="step-label">Learn</span>
-        <span class="step-detail">Capture what went wrong, route corrections to permanent homes</span>
+        <span class="step-detail">Capture corrections, route to permanent homes. <code>CLAUDE.md</code> and project rules. Plugin gaps filed as issues.</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">5</div>
         <span class="step-label">Complete</span>
-        <span class="step-detail">Close issues referenced in prompt, merge PR, clean up, done</span>
+        <span class="step-detail">Merge the PR, remove the worktree, delete the state file.</span>
       </div>
     </div>
   </section>
@@ -572,10 +623,12 @@
       <li><strong>Continue</strong> &mdash; whether Claude prompts before advancing to the next phase or auto-advances</li>
     </ul>
 
-    <h3>Four preset levels via <code>/flow-prime</code></h3>
+    <h3>Configuration via <code>/flow-prime</code></h3>
+    <p><code>/flow-prime</code> is the configuration front door. Run it in any Claude Code session &mdash; the plugin walks you through a preset picker, writes the result to <code>.flow.json</code> at your project root, and installs the required permissions and <code>bin/*</code> stubs. Re-run it anytime to change presets.</p>
+
     <table>
       <thead>
-        <tr><th>Level</th><th>What it means</th></tr>
+        <tr><th>Preset</th><th>What it means</th></tr>
       </thead>
       <tbody>
         <tr><td>Fully autonomous</td><td>All skills auto for both axes &mdash; zero prompts</td></tr>
@@ -585,7 +638,13 @@
       </tbody>
     </table>
 
-    <p>Any skill invocation accepts <code>--auto</code> or <code>--manual</code> to override the configured setting for that run.</p>
+    <div class="callout">
+      <p><code>/flow-prime</code> is user-only &mdash; you type it yourself. The model never runs it on your behalf, because priming mutates project config every engineer on the repo will inherit.</p>
+    </div>
+
+    <div class="callout">
+      <p><strong style="color: var(--text);">Want help dialing it up?</strong> <a href="https://acme-ai-consulting.com">Acme AI Consulting</a> helps small engineering teams adopt FLOW &mdash; assessment first, coaching as you ratchet up. <a href="https://cal.com/acme-ai-consultating/consult?user=acme-ai-consultating">Book a consultation &rarr;</a></p>
+    </div>
   </section>
 
   <!-- GUARDRAILS -->
@@ -594,7 +653,7 @@
     <p>Every commit and every phase transition is gated. No exceptions, no workarounds.</p>
     <div class="features">
       <div class="feature">
-        <h4><code>bin/ci</code> is the universal gate</h4>
+        <h4><code>bin/flow ci</code> is the universal gate</h4>
         <p>Must be green before every commit and every phase transition. Keep guardrails under 2 minutes for tight feedback loops.</p>
       </div>
       <div class="feature">
@@ -611,15 +670,11 @@
       </div>
       <div class="feature">
         <h4>Bash validation hook</h4>
-        <p>Blocks compound commands (<code>&amp;&amp;</code>, <code>;</code>, <code>|</code>), shell redirection (<code>&gt;</code>, <code>&gt;&gt;</code>), and file-read commands. Use dedicated tools instead.</p>
+        <p>Blocks compound commands, shell redirection, and other footguns before they execute. Enforced as a Claude Code <code>PreToolUse</code> hook &mdash; the model can&rsquo;t reach around it.</p>
       </div>
       <div class="feature">
-        <h4>Pre-merge freshness</h4>
-        <p>Complete fetches the integration branch (main, staging, or whatever your repo&rsquo;s default branch is) and merges it into the feature branch before squash-merging. Stale branches are updated automatically.</p>
-      </div>
-      <div class="feature">
-        <h4>Hook-based enforcement</h4>
-        <p>Critical constraints are enforced by hooks, not instructions. If Claude shouldn&rsquo;t do it, Claude can&rsquo;t do it &mdash; the action is blocked before it executes.</p>
+        <h4>Worktree isolation</h4>
+        <p>Your team&rsquo;s trunk is never touched directly. Multiple features run in parallel without colliding.</p>
       </div>
     </div>
   </section>
@@ -627,7 +682,7 @@
   <!-- THE LEARNING SYSTEM -->
   <section>
     <h2>The Learning System</h2>
-    <p>Most AI coding tools forget everything when the session ends. FLOW captures corrections as they happen and routes each learning to the right permanent home in the repo &mdash; where it compounds across every future feature.</p>
+    <p>Most AI coding tools forget everything when the session ends. FLOW captures corrections as they happen and routes each learning to its permanent home in the repo &mdash; where it compounds across every future feature.</p>
 
     <div class="pipeline">
       <div class="pipeline-step">
@@ -643,39 +698,39 @@
       <div class="pipeline-step">
         <div class="step-num">3</div>
         <span class="step-label">Synthesize</span>
-        <span class="step-detail">Learn-analyst agent audits three tenants: process gaps &middot; rule compliance &middot; missing rules</span>
+        <span class="step-detail">Learn-analyst agent audits the diff, plan, state notes, and rule corpus</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">4</div>
         <span class="step-label">Route</span>
-        <span class="step-detail">Each learning is routed to its correct permanent destination</span>
+        <span class="step-detail">Each learning lands at its correct permanent destination</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">5</div>
         <span class="step-label">Survive</span>
-        <span class="step-detail">Worktree is destroyed &mdash; nothing is lost</span>
+        <span class="step-detail">Worktree destroyed, state file deleted &mdash; nothing is lost</span>
       </div>
     </div>
 
-    <h3>2 Destinations</h3>
+    <h3>Two Destinations</h3>
     <div class="features">
       <div class="feature">
-        <h4>Project CLAUDE.md</h4>
-        <p>Process rules and project architecture. &ldquo;Always run bin/ci before committing.&rdquo;</p>
+        <h4>Project <code>CLAUDE.md</code></h4>
+        <p>Process rules and project architecture. &ldquo;Always run <code>bin/flow ci</code> before committing.&rdquo;</p>
       </div>
       <div class="feature">
         <h4>Project Rules</h4>
-        <p>Coding anti-patterns and gotchas. &ldquo;Never use update_column in tests.&rdquo;</p>
+        <p>Coding anti-patterns and gotchas. &ldquo;Never use <code>update_column</code> in tests.&rdquo;</p>
       </div>
     </div>
 
     <h3>Maintenance</h3>
-    <p>When you extract learnings across many sessions into CLAUDE.md and project rules, references go stale, constraints duplicate, and content drifts to the wrong destination. Two read-only utilities audit the corpus between features.</p>
+    <p>When you extract learnings across many sessions into <code>CLAUDE.md</code> and project rules, references go stale, constraints duplicate, and content drifts to the wrong destination. Two read-only utilities audit the corpus between features.</p>
 
     <div class="features">
       <div class="feature">
         <h4><code>/flow-hygiene</code></h4>
-        <p>Audits the instruction corpus itself &mdash; CLAUDE.md, rules, and memory. Six finding types: stale, orphaned, unenforced, misplaced, duplicate, contradiction. Run weekly or after big refactors.</p>
+        <p>Audits the instruction corpus itself &mdash; <code>CLAUDE.md</code>, rules, and memory. Catches staleness, duplication, and contradictions. Run weekly or after big refactors.</p>
       </div>
       <div class="feature">
         <h4><code>/flow-doc-sync</code></h4>
@@ -684,18 +739,102 @@
     </div>
   </section>
 
-  <!-- BEYOND THE PHASES -->
+  <!-- TERMINAL UI -->
   <section>
-    <h2>Beyond the Phases</h2>
+    <h2>Terminal Dashboard</h2>
+    <p>Monitor every active flow from your terminal. No Claude session needed &mdash; <code>flow tui</code> reads state files directly and auto-refreshes every 2 seconds.</p>
 
-    <h3>Project Decomposition</h3>
+    <div class="terminal">
+      <div class="terminal-bar">
+        <span class="t-close"></span>
+        <span class="t-min"></span>
+        <span class="t-max"></span>
+      </div>
+      <div class="terminal-body">
+<span class="t-dim">──</span> <span class="t-accent t-bold">FLOW v1.1.0</span>  <span class="t-yellow t-bold">ACME-APP</span> <span class="t-dim">───────────────────</span>  <span class="t-dim">$23.47/mo</span>  <span class="t-green">5h:14%</span>  <span class="t-yellow">7d:42%</span>  <span class="t-dim">2s</span>
+
+  <span class="t-blue t-bold">Active Flows (2)</span>  <span class="t-dim">&#9474;</span>  <span class="t-dim">Orchestration</span>
+  <span class="t-dim">  Feature                       Phase                  Total   PR</span>
+  <span class="t-bold">&#9656; invoice-pdf-export            2: Code (task 2/5)  8m  12m   PR #42</span>
+    slack-thread-replies          3: Review           5m   5m   PR #41
+  <span class="t-dim">────────────────────────────────────────────────────────────────────────</span>
+
+  <span class="t-bold">invoice-pdf-export</span>
+  Branch: invoice-pdf-export
+  Worktree: .worktrees/invoice-pdf-export
+
+  <span class="t-bold">Code &mdash; task 2 of 5</span>
+
+  <span class="t-green">[x]</span> Start          &lt;1m
+  <span class="t-yellow t-bold">[&gt;]</span> Code           8m  <span class="t-dim">(task 2/5)</span>
+  <span class="t-dim">[ ]</span> Review
+  <span class="t-dim">[ ]</span> Learn
+  <span class="t-dim">[ ]</span> Complete
+
+  <span class="t-bold">Tokens</span>
+    Start: 4.2k  $0.018
+    Code: 12.8k  $0.071
+
+  Notes: 1
+
+  <span class="t-footer"> ?=help  Ctrl-C/q=quit</span></div>
+    </div>
+
+    <div class="cool-grid">
+      <div class="cool-card-front">
+        <span class="cool-icon">&#9618;</span>
+        <div class="cool-headline">No Claude Needed</div>
+        <p class="cool-desc">Runs standalone in your terminal. Check on flows while Claude is busy, between sessions, or from another machine.</p>
+      </div>
+
+      <div class="cool-card-front">
+        <span class="cool-icon">&#8635;</span>
+        <div class="cool-headline">Live Refresh</div>
+        <p class="cool-desc">Auto-reads state files every 2 seconds. Phase transitions, code task progress, and log entries appear as they happen.</p>
+      </div>
+
+      <div class="cool-card-front">
+        <span class="cool-icon">&#9000;</span>
+        <div class="cool-headline">Full Control</div>
+        <p class="cool-desc">Open worktrees in your terminal, jump to PRs in your browser, tail session logs, abort features &mdash; all from the keyboard.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- MORE PLANNING TOOLS -->
+  <section>
+    <h2>More Planning Tools</h2>
+    <p>The three-command workflow handles single features. FLOW adds tools for bigger surfaces and existing backlogs.</p>
+
+    <h3>Three planning voices</h3>
+    <p>The planning skills are role-bound to specialized sub-agents. Each persona has its own scope authority and refuses overreach with a <code>## SCOPE REFUSAL</code> block naming the next tier. No auto-escalation &mdash; the user always directs.</p>
+
+    <div class="cool-grid">
+      <div class="cool-card-front">
+        <span class="cool-mono">PM</span>
+        <div class="cool-headline">Product Manager</div>
+        <p class="cool-desc">Copy, content, and problem statements. Default voice for <code>/flow-explore</code>. Refuses architectural overreach &mdash; escalates to Tech Lead.</p>
+      </div>
+      <div class="cool-card-front">
+        <span class="cool-mono">TL</span>
+        <div class="cool-headline">Tech Lead</div>
+        <p class="cool-desc">Extensions of existing architecture and design patterns. Default voice for <code>/flow-plan</code>. Refuses novel design &mdash; escalates to CTO.</p>
+      </div>
+      <div class="cool-card-front">
+        <span class="cool-mono">CTO</span>
+        <div class="cool-headline">Chief Technology Officer</div>
+        <p class="cool-desc">Novel, around-the-corner work. Escalation terminus &mdash; no scope refusal. Invoked on explicit user request during planning.</p>
+      </div>
+    </div>
+
+    <h3>Decompose a whole project</h3>
     <p>Describe a project in plain language and FLOW decomposes it into a fully linked GitHub issue graph &mdash; epic, milestones, sub-issues, blocked-by dependencies, and phase labels. Every issue is filed work-ready with acceptance criteria, file paths, and scope boundaries from real codebase exploration.</p>
 
     <div class="pipeline">
       <div class="pipeline-step">
         <div class="step-num">1</div>
         <span class="step-label">Describe</span>
-        <span class="step-detail">Tell Claude what to build &mdash; <code>/flow-decompose-project add multi-tenant billing</code></span>
+        <span class="step-detail"><code>/flow-decompose-project add multi-tenant billing</code></span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">2</div>
@@ -714,36 +853,8 @@
       </div>
     </div>
 
-    <div class="terminal">
-      <div class="terminal-bar">
-        <span class="t-close"></span>
-        <span class="t-min"></span>
-        <span class="t-max"></span>
-      </div>
-      <div class="terminal-body">
-<span class="t-bold">  ── Step 6 of 6: Report ──</span>
-
-  #   Title                              Issue   Phase          Deps
-  <span class="t-dim">──────────────────────────────────────────────────────────────────────────</span>
-  —   <span class="t-bold">Epic: Multi-tenant billing</span>          <span class="t-accent">#120</span>    —              —
-  1   Add tenant model and migrations    <span class="t-green">#121</span>    Phase 1: Data  —
-  2   Scope queries to current tenant    <span class="t-green">#122</span>    Phase 1: Data  <span class="t-dim">#121</span>
-  3   Stripe Connect per-tenant accounts <span class="t-green">#123</span>    Phase 2: API   <span class="t-dim">#121</span>
-  4   Metered usage tracking             <span class="t-green">#124</span>    Phase 2: API   <span class="t-dim">#122</span>
-  5   Invoice generation and PDF export  <span class="t-green">#125</span>    Phase 3: UI    <span class="t-dim">#123 #124</span>
-  6   Tenant admin billing dashboard     <span class="t-green">#126</span>    Phase 3: UI    <span class="t-dim">#125</span>
-  <span class="t-dim">──────────────────────────────────────────────────────────────────────────</span>
-
-  Issues: <span class="t-green">6 created</span>  ·  Milestone: <span class="t-accent">Multi-tenant billing (2026-04-15)</span>
-  Sub-issues: <span class="t-green">6 linked</span>  ·  Dependencies: <span class="t-green">5 linked</span></div>
-    </div>
-
-    <div class="callout">
-      <p>The issue graph feeds directly into <code>/flow-orchestrate</code> below — or pick issues one at a time with <code>/flow-start work on issue #121</code>.</p>
-    </div>
-
-    <h3>Batch Orchestration</h3>
-    <p>Feed the issue graph into <code>/flow-orchestrate</code> and let FLOW process them overnight. Each issue runs through all 5 phases autonomously. Wake up to a morning report.</p>
+    <h3>Work your backlog overnight</h3>
+    <p>Triage what&rsquo;s open with <code>/flow-issues</code> and <code>/flow-triage-issue</code>, then feed the decomposed graph into <code>/flow-orchestrate</code>. Each issue runs through all 5 phases autonomously. Check progress &mdash; or the final tally &mdash; in <code>flow tui</code>&rsquo;s Orchestration tab.</p>
 
     <div class="pipeline">
       <div class="pipeline-step">
@@ -759,12 +870,12 @@
       <div class="pipeline-step">
         <div class="step-num">3</div>
         <span class="step-label">Process</span>
-        <span class="step-detail">Each issue runs Start &rarr; Code &rarr; Review &rarr; Learn &rarr; Complete</span>
+        <span class="step-detail">Each issue runs Start &rarr; Code &rarr; Review &rarr; Learn &rarr; Complete autonomously</span>
       </div>
       <div class="pipeline-step">
         <div class="step-num">4</div>
-        <span class="step-label">Report</span>
-        <span class="step-detail">Morning report delivered at end of orchestration &mdash; what completed, what failed, PR links</span>
+        <span class="step-label">Track</span>
+        <span class="step-detail">Live status in the TUI&rsquo;s Orchestration tab &mdash; completed flows with PR links, failed flows with reasons, elapsed time</span>
       </div>
     </div>
 
@@ -775,25 +886,28 @@
         <span class="t-max"></span>
       </div>
       <div class="terminal-body">
-<span class="t-bold"># FLOW Orchestration Report</span>
+<span class="t-dim">──</span> <span class="t-accent t-bold">FLOW v1.1.0</span>  <span class="t-yellow t-bold">ACME-APP</span> <span class="t-dim">───────────────────</span>  <span class="t-dim">$23.47/mo</span>  <span class="t-green">5h:14%</span>  <span class="t-yellow">7d:42%</span>  <span class="t-dim">2s</span>
 
-Started: 2026-03-19T23:14:07-07:00
-Completed: 2026-03-20T05:41:33-07:00
-Duration: <span class="t-accent">6h 27m</span>
+  <span class="t-dim">Active Flows (1)</span>  <span class="t-dim">&#9474;</span>  <span class="t-blue t-bold">Orchestration (3/5)</span>
 
-<span class="t-bold">## Results</span>
+  Elapsed: <span class="t-accent">4h 12m</span>
 
-| #  | Issue                        | Outcome   | PR    |
-|----|------------------------------|-----------|-------|
-| 1  | <span class="t-green">#42 Add PDF export</span>            | <span class="t-green">completed</span> | PR #58 |
-| 2  | <span class="t-green">#44 Refactor auth module</span>      | <span class="t-green">completed</span> | PR #60 |
-| 3  | <span class="t-accent">#43 Fix login timeout</span>        | <span class="t-accent">failed</span>    | &mdash;    |
-| 4  | <span class="t-green">#45 Update payment hooks</span>      | <span class="t-green">completed</span> | PR #61 |
-| 5  | <span class="t-green">#46 Add rate limiting</span>         | <span class="t-green">completed</span> | PR #62 |</div>
+  <span class="t-bold">&#9656; <span class="t-green">&#10003;</span> #42  Add PDF export                  2h 30m  PR 58</span>
+    <span class="t-green">&#10003;</span> #44  Refactor auth module            1h 45m  PR 60
+    <span class="t-accent">&#10007;</span> #43  Fix login timeout                  42m
+    <span class="t-yellow">&#9654;</span> #45  Update payment hooks               15m
+    <span class="t-dim">&middot;</span> #46  Add rate limiting
+
+    PR: <span class="t-accent">https://github.com/acme/app/pull/58</span>
+
+  <span class="t-footer"> ?=help  Ctrl-C/q=quit</span></div>
     </div>
+  </section>
 
-    <h3>Slack Notifications</h3>
-    <p>Optional thread-per-feature notifications give your team passive awareness of feature progress without any active monitoring.</p>
+  <!-- SLACK -->
+  <section>
+    <h2>Slack Notifications</h2>
+    <p>Optional thread-per-feature notifications give your team passive awareness of feature progress &mdash; without any active monitoring.</p>
 
     <div class="cool-grid">
       <div class="cool-card-front">
@@ -819,145 +933,57 @@ Duration: <span class="t-accent">6h 27m</span>
   <!-- COMMANDS -->
   <section>
     <h2>Commands</h2>
+    <p>One catalog grouped by role. Run <code>/flow-skills</code> in any Claude Code session to see the live version.</p>
 
-    <h3>Phase Commands</h3>
-    <table>
-      <thead>
-        <tr><th>Command</th><th>Phase</th><th>What it does</th></tr>
-      </thead>
-      <tbody>
-        <tr><td><code>/flow-start</code></td><td>1</td><td>Lock, CI baseline on the integration branch, upgrade dependencies, CI post-deps, commit to the integration branch, create worktree + PR; extract plan from issue body sentinels</td></tr>
-        <tr><td><code>/flow-code</code></td><td>2</td><td>TDD task by task, diff review, <code>bin/ci</code> gate before each commit</td></tr>
-        <tr><td><code>/flow-review</code></td><td>3</td><td>Six tenants via four agents (reviewer, pre-mortem, adversarial, documentation) &mdash; gather, launch, triage, fix</td></tr>
-        <tr><td><code>/flow-learn</code></td><td>4</td><td>Extract learnings, route to CLAUDE.md and project rules</td></tr>
-        <tr><td><code>/flow-complete</code></td><td>5</td><td>Merge PR, remove worktree, delete state file</td></tr>
-      </tbody>
-    </table>
-
-    <h3>Utility Commands</h3>
+    <h3>Planning</h3>
     <table>
       <thead>
         <tr><th>Command</th><th>What it does</th></tr>
       </thead>
       <tbody>
-        <tr><td><code>/flow-prime</code></td><td>One-time project setup &mdash; configure permissions and git excludes</td></tr>
-        <tr><td><code>/flow-commit</code></td><td>Full diff review, approved commit message, pull before push</td></tr>
-        <tr><td><code>/flow-note</code></td><td>Capture a correction &mdash; auto-invoked when Claude is wrong</td></tr>
-        <tr><td><code>/flow-abort</code></td><td>Abandon feature &mdash; close PR, delete branch, remove worktree</td></tr>
-        <tr><td><code>/flow-reset</code></td><td>Remove all FLOW artifacts &mdash; close PRs, delete worktrees/branches/state files</td></tr>
-        <tr><td><code>/flow-config</code></td><td>Display current configuration &mdash; version and per-skill autonomy</td></tr>
-        <tr><td><code>/flow-skills</code></td><td>Display the FLOW skill catalog grouped by user role &mdash; Maintainer and Private buckets render only inside the FLOW plugin repo</td></tr>
-        <tr><td><code>/flow-issues</code></td><td>Fetch open issues, categorize, prioritize, and display a dashboard. Supports readiness filters</td></tr>
-        <tr><td><code>/flow-explore</code></td><td>Open a problem-statement conversation (PM voice) &mdash; discussion-mode by default, files a vanilla <code>## What</code> / <code>## Why</code> / <code>## Acceptance Criteria</code> issue on user signal</td></tr>
-        <tr><td><code>/flow-plan</code></td><td>Decompose a vanilla problem-statement issue (filed by <code>/flow-explore</code>) into a linked decomposed issue ready for the start phase. Tech Lead voice, mandatory <code>decompose:decompose</code> pass, files with <code>--label decomposed</code> and a blocked-by link to the parent</td></tr>
-        <tr><td><code>/flow-doc-sync</code></td><td>Audit documentation against code behavior &mdash; reports drift between what docs say and what code does</td></tr>
-        <tr><td><code>/flow-hygiene</code></td><td>Audit instruction corpus health &mdash; CLAUDE.md, rules, and memory for staleness, misplacement, duplication, and contradictions</td></tr>
-        <tr><td><code>/flow-decompose-project</code></td><td>Decompose a project into a linked GitHub issue graph &mdash; epic, milestones, sub-issues, blocked-by dependencies</td></tr>
-        <tr><td><code>/flow-orchestrate</code></td><td>Batch orchestration &mdash; process decomposed issues overnight via flow-start --auto</td></tr>
-        <tr><td><code>/flow-triage-issue</code></td><td>Triage a single open GitHub issue from a PM lens &mdash; reads code, checks for already-shipped work, returns a verdict in {close, decompose}</td></tr>
+        <tr><td><code>/flow-issues</code></td><td>Fetch open issues, rank by impact, display a dashboard with recommended work order</td></tr>
+        <tr><td><code>/flow-triage-issue</code></td><td>PM-lens triage of a single open issue &mdash; verdict in {close, decompose}</td></tr>
+        <tr><td><code>/flow-explore</code></td><td>Open a problem-statement conversation (PM voice); file a vanilla <code>## What</code> / <code>## Why</code> / <code>## Acceptance Criteria</code> issue on signal</td></tr>
+        <tr><td><code>/flow-plan</code></td><td>Decompose a vanilla problem-statement issue into a linked decomposed issue ready for start (Tech Lead voice)</td></tr>
+        <tr><td><code>/flow-decompose-project</code></td><td>Decompose a large project into linked GitHub issues with sub-issue and blocked-by relationships</td></tr>
+        <tr><td><code>/flow-orchestrate</code></td><td>Process decomposed issues sequentially overnight via <code>flow-start --auto</code></td></tr>
       </tbody>
     </table>
 
-  </section>
-
-  <!-- TERMINAL UI -->
-  <section>
-    <h2>Terminal Dashboard</h2>
-    <p>Monitor every active flow from your terminal. No Claude session needed &mdash; <code>flow tui</code> reads state files directly and auto-refreshes every 2 seconds.</p>
-
-    <div class="terminal">
-      <div class="terminal-bar">
-        <span class="t-close"></span>
-        <span class="t-min"></span>
-        <span class="t-max"></span>
-      </div>
-      <div class="terminal-body">
-<span class="t-dim">────</span> <span class="t-bold">FLOW v1.1.0</span> <span class="t-dim">──────────────────────────────────────────────</span>
-
-  <span class="t-bold">Active Flows (2)</span>  <span class="t-dim">&#9474;</span>  <span class="t-dim">Orchestration</span>
-  <span class="t-dim">  Feature                      Phase                    Total   PR</span>
-  <span class="t-dim">──────────────────────────────────────────────────────────────────────</span>
-  <span class="t-bold">&#9656; invoice-pdf-export          2: Code (task 2/5)   8m     12m   PR #42</span>
-    slack-thread-replies        3: Review            5m      5m   PR #41
-  <span class="t-dim">──────────────────────────────────────────────────────────────────────</span>
-
-  <span class="t-bold">invoice-pdf-export</span>
-  Branch: <span class="t-accent">invoice-pdf-export</span>
-  Worktree: <span class="t-accent">.worktrees/invoice-pdf-export</span>
-
-  <span class="t-green">[x]</span> Start          &lt;1m
-  <span class="t-accent">[&gt;]</span> Code           8m  <span class="t-dim">(task 2/5)</span>
-  <span class="t-dim">[ ]</span> Review
-  <span class="t-dim">[ ]</span> Learn
-  <span class="t-dim">[ ]</span> Complete
-
-  Notes: 1
-
-  <span class="t-footer">[&#8592;&#8594;] Tab  [&#8593;&#8595;] Navigate  [Enter] Worktree  [p] PR  [i] Issues  [I] Issue  [t] Tasks  [l] Log  [a] Abort  [r] Refresh  [q] Quit</span></div>
-    </div>
-
-    <div class="terminal">
-      <div class="terminal-bar">
-        <span class="t-close"></span>
-        <span class="t-min"></span>
-        <span class="t-max"></span>
-      </div>
-      <div class="terminal-body">
-<span class="t-dim">────</span> <span class="t-bold">FLOW v1.1.0</span> <span class="t-dim">──────────────────────────────────────────────</span>
-
-  <span class="t-dim">Active Flows (2)</span>  <span class="t-dim">&#9474;</span>  <span class="t-bold">Orchestration (4/5)</span>
-
-  Elapsed: <span class="t-accent">6h 27m</span>
-  <span class="t-bold">&#9656; <span class="t-green">&#10003;</span> #42  Add PDF export                6h 12m   PR #58</span>
-    <span class="t-green">&#10003;</span> #44  Refactor auth module          1h 45m   PR #60
-    <span class="t-accent">&#10007;</span> #43  Fix login timeout             42m
-    <span class="t-green">&#10003;</span> #45  Update payment hooks          2h 18m   PR #61
-    <span class="t-green">&#10003;</span> #46  Add rate limiting             1h 30m   PR #62
-  <span class="t-dim">──────────────────────────────────────────────────────</span>
-
-  PR: <span class="t-accent">https://github.com/acme/app/pull/58</span>
-
-  <span class="t-footer">[&#8592;&#8594;] Tab  [&#8593;&#8595;] Navigate  [i] Issue  [r] Refresh  [q] Quit</span></div>
-    </div>
-
-    <div class="cool-grid">
-      <div class="cool-card-front">
-        <span class="cool-icon">&#9618;</span>
-        <div class="cool-headline">No Claude Needed</div>
-        <p class="cool-desc">Runs standalone in your terminal. Check on flows while Claude is busy, between sessions, or from another machine.</p>
-      </div>
-
-      <div class="cool-card-front">
-        <span class="cool-icon">&#8635;</span>
-        <div class="cool-headline">Live Refresh</div>
-        <p class="cool-desc">Auto-reads state files every 2 seconds. Phase transitions, code task progress, and log entries appear as they happen.</p>
-      </div>
-
-      <div class="cool-card-front">
-        <span class="cool-icon">&#9000;</span>
-        <div class="cool-headline">Full Control</div>
-        <p class="cool-desc">Open worktrees in your terminal, jump to PRs in your browser, tail session logs, abort features &mdash; all from the keyboard.</p>
-      </div>
-    </div>
-
-    <h3>Keyboard Actions</h3>
+    <h3>Work</h3>
     <table>
       <thead>
-        <tr><th>Key</th><th>Action</th></tr>
+        <tr><th>Command</th><th>What it does</th></tr>
       </thead>
       <tbody>
-        <tr><td><code>&#8593;</code> <code>&#8595;</code></td><td>Navigate flow list</td></tr>
-        <tr><td><code>&#8592;</code> <code>&#8594;</code></td><td>Switch tab</td></tr>
-        <tr><td><code>Enter</code></td><td>Open worktree in a new terminal tab</td></tr>
-        <tr><td><code>p</code></td><td>Open PR in browser</td></tr>
-        <tr><td><code>i</code></td><td>Show issues list</td></tr>
-        <tr><td><code>I</code></td><td>Open issue in browser</td></tr>
-        <tr><td><code>t</code></td><td>Show tasks view</td></tr>
-        <tr><td><code>l</code></td><td>Show session log</td></tr>
-        <tr><td><code>a</code></td><td>Abort flow (with Y/N confirmation)</td></tr>
-        <tr><td><code>r</code></td><td>Force refresh</td></tr>
-        <tr><td><code>Esc</code></td><td>Back to list view</td></tr>
-        <tr><td><code>q</code></td><td>Quit</td></tr>
+        <tr><td><code>/flow-start</code></td><td>Begin a new feature &mdash; worktree, PR, state file, plan extraction from issue body sentinels</td></tr>
+        <tr><td><code>/flow-config</code></td><td>Display the per-skill autonomy configuration from <code>.flow.json</code></td></tr>
+        <tr><td><code>/flow-skills</code></td><td>Display this catalog grouped by role</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Health</h3>
+    <table>
+      <thead>
+        <tr><th>Command</th><th>What it does</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>/flow-doc-sync</code></td><td>Full codebase documentation accuracy review &mdash; reports drift between code and docs</td></tr>
+        <tr><td><code>/flow-hygiene</code></td><td>Audit instruction corpus health &mdash; <code>CLAUDE.md</code>, rules, and memory</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Admin <span style="color: var(--text-muted); font-weight: 400; font-size: 14px;">&mdash; user-only</span></h3>
+    <p>These commands are reserved for direct user invocation &mdash; type the slash command yourself. The model never invokes them on your behalf.</p>
+
+    <table>
+      <thead>
+        <tr><th>Command</th><th>What it does</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>/flow-prime</code></td><td>One-time project setup &mdash; configure permissions, install <code>bin/*</code> stubs, write the version marker</td></tr>
+        <tr><td><code>/flow-abort</code></td><td>Abort the current feature &mdash; close the PR, delete the remote branch, remove the worktree, delete the state file</td></tr>
+        <tr><td><code>/flow-reset</code></td><td>Reset all FLOW artifacts on this machine &mdash; close PRs, remove worktrees, delete branches, clear state files</td></tr>
       </tbody>
     </table>
   </section>
@@ -965,7 +991,7 @@ Duration: <span class="t-accent">6h 27m</span>
   <!-- CTA -->
   <section id="get-started" style="padding: 64px 0;">
     <h2>Get Started</h2>
-    <p>All 5 phase skills, state file infrastructure, session hooks, and reference documentation in one plugin. Marketplace plugin &mdash; updates ship automatically.</p>
+    <p>Five phase skills plus the full planning and health catalog, state file infrastructure, session hooks, and reference documentation &mdash; one plugin. Marketplace-distributed, updates ship automatically.</p>
 
     <p style="color: var(--text-muted); font-size: 15px; margin-bottom: 12px;">Step 1: Install in Claude Code</p>
     <div style="position: relative;">
@@ -975,7 +1001,7 @@ Duration: <span class="t-accent">6h 27m</span>
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
       </button>
     </div>
-    <p style="color: var(--text-muted); font-size: 15px; margin-top: 20px; margin-bottom: 12px;">Step 2: Initialize in your project (once per project)</p>
+    <p style="color: var(--text-muted); font-size: 15px; margin-top: 20px; margin-bottom: 12px;">Step 2: Initialize in your project (once per project, and again after each FLOW upgrade)</p>
     <div style="position: relative;">
       <pre style="font-size: 15px; padding: 20px 24px; margin: 0;"><code>/flow-prime</code></pre>
       <button onclick="copyInit()" style="position: absolute; top: 12px; right: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; cursor: pointer; color: var(--text-muted); line-height: 1; transition: color 0.15s, border-color 0.15s;" aria-label="Copy" id="copy-btn-init">
@@ -984,10 +1010,15 @@ Duration: <span class="t-accent">6h 27m</span>
     </div>
     <p style="color: var(--text-muted); font-size: 15px; margin-top: 20px; margin-bottom: 12px;">Step 3: Start a feature</p>
     <div style="position: relative;">
-      <pre style="font-size: 15px; padding: 20px 24px; margin: 0;"><code>/flow-start #309</code></pre>
+      <pre style="font-size: 15px; padding: 20px 24px; margin: 0;"><code>/flow-explore add a per-flow budget cap
+/flow-plan #1234
+/flow-start #1235</code></pre>
       <button onclick="copyStart()" style="position: absolute; top: 12px; right: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; cursor: pointer; color: var(--text-muted); line-height: 1; transition: color 0.15s, border-color 0.15s;" aria-label="Copy" id="copy-btn-start">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
       </button>
+    </div>
+    <div class="callout" style="margin-top: 32px;">
+      <p><strong style="color: var(--text);">Need a sherpa?</strong> <a href="https://acme-ai-consulting.com">Acme AI Consulting</a> runs FLOW-adoption engagements for small engineering teams &mdash; assessment first, coaching as you ratchet up. <a href="https://cal.com/acme-ai-consultating/consult?user=acme-ai-consultating">Book a consultation &rarr;</a></p>
     </div>
     <a href="https://github.com/benkruger/flow" class="cta" style="margin-top: 28px;">View on GitHub</a>
   </section>
@@ -1002,7 +1033,7 @@ Duration: <span class="t-accent">6h 27m</span>
       <a href="https://github.com/benkruger/flow/blob/main/RELEASE-NOTES.md">Changelog</a>
       <a href="https://github.com/benkruger/flow/blob/main/LICENSE">MIT License</a>
     </div>
-    <p>Built by <a href="https://github.com/benkruger">Ben Kruger</a>.</p>
+    <p>Built by <a href="https://github.com/benkruger">Ben Kruger</a>. FLOW adoption consulting by <a href="https://acme-ai-consulting.com">Acme AI Consulting</a>.</p>
   </div>
 </footer>
 
@@ -1025,7 +1056,7 @@ Duration: <span class="t-accent">6h 27m</span>
   }
 
   function copyStart() {
-    copyText('/flow-start #309', 'copy-btn-start');
+    copyText('/flow-explore add a per-flow budget cap\n/flow-plan #1234\n/flow-start #1235', 'copy-btn-start');
   }
 
   function setIcon(theme) {

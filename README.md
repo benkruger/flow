@@ -165,7 +165,7 @@ Every planning skill is role-bound: PM, Tech Lead, or CTO voices with their own 
 
 - **`/flow-issues`** — Fetch open issues, rank by impact, show a dashboard with recommended work order.
 - **`/flow-triage-issue #N`** — PM-lens triage of a single issue; verdict in `{close, decompose}` with confidence and flip-condition.
-- **`/flow-orchestrate`** — Process every issue labeled "Decomposed" sequentially overnight via `flow-start --auto`. The session-start hook delivers a morning report on the next session: which issues completed (with PR links), which failed (with reasons), and total elapsed time.
+- **`/flow-orchestrate`** — Process every issue labeled "Decomposed" sequentially overnight via `flow-start --auto`. Progress and results land in `flow tui`'s Orchestration tab — completed flows with PR links, failed flows with reasons, total elapsed time.
 
 ---
 
@@ -278,7 +278,7 @@ State survives session breaks and compaction. Multiple features run simultaneous
 
 Every Claude Code session start — new terminal, `/clear`, `/compact` — triggers a hook that scans `.flow-states/` for in-progress features. If one is found, Claude knows the feature name, current phase, worktree, and code task progress, but does not act on it.
 
-The hook also handles timing recovery (resets interrupted session timing so cumulative phase durations stay accurate), compaction recovery (consumes `compact_summary` and `compact_cwd` for richer context after `/compact`), orchestration awareness (delivers the morning report after `/flow-orchestrate`), correction capture (injects the instruction to invoke `/flow-note` whenever the user corrects Claude), and deterministic terminal tab colors per repo.
+The hook also handles timing recovery (resets interrupted session timing so cumulative phase durations stay accurate), compaction recovery (consumes `compact_summary` and `compact_cwd` for richer context after `/compact`), correction capture (injects the instruction to invoke `/flow-note` whenever the user corrects Claude), and deterministic terminal tab colors per repo.
 
 ### The learning system
 
