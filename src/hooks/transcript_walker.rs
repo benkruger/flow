@@ -357,6 +357,231 @@ pub fn most_recent_skill_since_user(path: &Path, home: &Path) -> Option<String> 
     last_skill
 }
 
+/// Verify that the agent named `agent` was invoked and returned a
+/// `tool_result` after the most recent `phase-enter --phase <phase>`
+/// Bash invocation in the persisted transcript. Returns `Ok(())` on
+/// match; `Err(<reason>)` names the first verification step that
+/// failed.
+///
+/// Production consumer: `bin/flow record-agent-return` — the
+/// recording subcommand calls this verifier before appending to
+/// `phases.<phase>.agents_returned` in state. The verification
+/// prevents inline-synthesis bypass: a model that did not actually
+/// invoke the agent (and so produced no `tool_use`/`tool_result`
+/// pair in the persisted transcript) cannot fabricate the state
+/// entry.
+///
+/// Failure reasons (string-typed for `record_agent_return`'s JSON
+/// error envelope):
+///
+/// - `"transcript_path_invalid"` — `path` fails
+///   `is_safe_transcript_path`. The validator rejects empty paths,
+///   NUL bytes, relative paths, ParentDir components, and paths that
+///   do not normalize under `<home>/.claude/projects/`.
+/// - `"phase_marker_not_found"` — no `phase-enter --phase <phase>`
+///   Bash tool_use is visible in the file's tail (read via
+///   `read_capped` with `TRANSCRIPT_BYTE_CAP`), OR `agent`/`phase`
+///   normalize to an empty string, OR the file cannot be read /
+///   parsed at all.
+/// - `"tool_use_missing"` — no Agent tool_use with
+///   `input.subagent_type == "flow:<agent>"` appears AFTER the most
+///   recent phase-enter marker.
+/// - `"tool_result_missing"` — the Agent tool_use was found but no
+///   matching `tool_result` with the same `tool_use_id` appears
+///   AFTER the marker.
+///
+/// The verifier anchors at the LAST phase-enter marker for `phase` so
+/// agent invocations from a prior pass through the phase (rare, but
+/// possible on resume) cannot satisfy a later round's required-agents
+/// gate. Lines that fail to parse as JSON are silently skipped — the
+/// walker's behavior on malformed input is fail-open at the line
+/// level so a corrupted JSONL row does not poison the entire scan.
+///
+/// `home` is passed in (rather than read from `$HOME` internally) so
+/// the validator can run against a fixture-controlled prefix in
+/// tests without `set_var` env races. CLI callers
+/// (`record_agent_return::run`) read `$HOME` via
+/// `crate::session_metrics::home_dir_or_empty()` and pass it
+/// through.
+pub fn verify_agent_returned_in_phase(
+    path: &Path,
+    home: &Path,
+    agent: &str,
+    phase: &str,
+) -> Result<(), String> {
+    if !is_safe_transcript_path(path, home) {
+        return Err("transcript_path_invalid".to_string());
+    }
+    let agent_norm = normalize_gate_input(agent);
+    let phase_norm = normalize_gate_input(phase);
+    if agent_norm.is_empty() || phase_norm.is_empty() {
+        return Err("phase_marker_not_found".to_string());
+    }
+    let lines = match read_capped(path, TRANSCRIPT_BYTE_CAP) {
+        Some(s) => s,
+        None => return Err("phase_marker_not_found".to_string()),
+    };
+    let all_lines: Vec<&str> = lines.lines().collect();
+    let phase_marker = format!("phase-enter --phase {}", phase_norm);
+    let mut marker_idx: Option<usize> = None;
+    for (i, line) in all_lines.iter().enumerate().rev() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let turn: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if assistant_turn_runs_phase_enter(&turn, &phase_marker) {
+            marker_idx = Some(i);
+            break;
+        }
+    }
+    let marker_idx = match marker_idx {
+        Some(i) => i,
+        None => return Err("phase_marker_not_found".to_string()),
+    };
+    let subagent_needle = format!("flow:{}", agent_norm);
+    let mut agent_tool_use_id: Option<String> = None;
+    for line in all_lines.iter().skip(marker_idx + 1) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let turn: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if let Some(id) = find_agent_tool_use_id(&turn, &subagent_needle) {
+            agent_tool_use_id = Some(id);
+            break;
+        }
+    }
+    let agent_id = match agent_tool_use_id {
+        Some(id) => id,
+        None => return Err("tool_use_missing".to_string()),
+    };
+    for line in all_lines.iter().skip(marker_idx + 1) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let turn: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if user_turn_carries_tool_result_for(&turn, &agent_id) {
+            return Ok(());
+        }
+    }
+    Err("tool_result_missing".to_string())
+}
+
+/// Returns `true` when `turn` is an assistant turn that fires a Bash
+/// tool_use whose `input.command` contains `marker` as a substring.
+/// Used by `verify_agent_returned_in_phase` to locate the
+/// `phase-enter --phase <phase>` boundary.
+fn assistant_turn_runs_phase_enter(turn: &Value, marker: &str) -> bool {
+    let turn_type = normalize_gate_input(turn.get("type").and_then(|v| v.as_str()).unwrap_or(""));
+    if turn_type != "assistant" {
+        return false;
+    }
+    let content = match turn
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_array())
+    {
+        Some(c) => c,
+        None => return false,
+    };
+    for block in content {
+        if block.get("type").and_then(|v| v.as_str()) != Some("tool_use") {
+            continue;
+        }
+        if block.get("name").and_then(|v| v.as_str()) != Some("Bash") {
+            continue;
+        }
+        let cmd = block
+            .get("input")
+            .and_then(|i| i.get("command"))
+            .and_then(|c| c.as_str())
+            .unwrap_or("");
+        if cmd.contains(marker) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Returns the `id` of the first Agent tool_use in `turn` whose
+/// `input.subagent_type` (normalized) equals `subagent_needle`.
+/// Returns `None` when the turn is not an assistant turn, when no
+/// Agent block matches, or when the matching block lacks an `id`
+/// field. Recognized tool names are `"Agent"` and `"Task"` —
+/// Claude Code's transcripts use one or the other for sub-agent
+/// invocations depending on version.
+fn find_agent_tool_use_id(turn: &Value, subagent_needle: &str) -> Option<String> {
+    let turn_type = normalize_gate_input(turn.get("type").and_then(|v| v.as_str()).unwrap_or(""));
+    if turn_type != "assistant" {
+        return None;
+    }
+    let content = turn
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_array())?;
+    for block in content {
+        if block.get("type").and_then(|v| v.as_str()) != Some("tool_use") {
+            continue;
+        }
+        let name = block.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        if name != "Agent" && name != "Task" {
+            continue;
+        }
+        let sa = block
+            .get("input")
+            .and_then(|i| i.get("subagent_type"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if normalize_gate_input(sa) == subagent_needle {
+            return block
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+        }
+    }
+    None
+}
+
+/// Returns `true` when `turn` is a user turn whose content array
+/// carries a `tool_result` block with `tool_use_id == target_id`.
+/// String-content user turns (the user typed prose) do not satisfy
+/// the check; only the array-content shape (tool_result-wrapped user
+/// turns) is examined.
+fn user_turn_carries_tool_result_for(turn: &Value, target_id: &str) -> bool {
+    let turn_type = normalize_gate_input(turn.get("type").and_then(|v| v.as_str()).unwrap_or(""));
+    if turn_type != "user" {
+        return false;
+    }
+    let content = match turn
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_array())
+    {
+        Some(c) => c,
+        None => return false,
+    };
+    for block in content {
+        if block.get("type").and_then(|v| v.as_str()) != Some("tool_result") {
+            continue;
+        }
+        if block.get("tool_use_id").and_then(|v| v.as_str()) == Some(target_id) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Read the LAST `cap` bytes of `path` as a UTF-8 String. Returns
 /// `None` on `File::open` error or non-UTF-8 content.
 ///
