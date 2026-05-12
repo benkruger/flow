@@ -812,6 +812,146 @@ fn section_order() {
     assert_eq!(positions, sorted, "Sections out of order");
 }
 
+// --- render_body Token Cost section integration ---
+
+/// Full state with snapshots → render_body splices a `## Token Cost`
+/// section between `## Phase Timings` and `## State File`.
+#[test]
+fn render_body_includes_token_cost_section_with_cost_data() {
+    let state = full_cost_state();
+    let dir = tempfile::tempdir().unwrap();
+    let body = render_body(&state, dir.path()).unwrap();
+
+    assert!(
+        body.contains("## Token Cost"),
+        "Token Cost section header must appear; body:\n{}",
+        body
+    );
+    let token_pos = body
+        .find("## Token Cost")
+        .expect("Token Cost section position");
+    let timings_pos = body
+        .find("## Phase Timings")
+        .expect("Phase Timings position");
+    let state_pos = body.find("## State File").expect("State File position");
+    assert!(
+        timings_pos < token_pos && token_pos < state_pos,
+        "Token Cost must sit between Phase Timings and State File"
+    );
+}
+
+/// State without window snapshots → format_cost_table returns empty
+/// → render_body omits the section. Other sections still render in
+/// the canonical order.
+#[test]
+fn render_body_omits_token_cost_section_when_no_data() {
+    let mut state = make_test_state();
+    state["phases"] = json!({});
+    let dir = tempfile::tempdir().unwrap();
+    let body = render_body(&state, dir.path()).unwrap();
+
+    assert!(
+        !body.contains("## Token Cost"),
+        "Token Cost section must NOT appear when no snapshot data; body:\n{}",
+        body
+    );
+    let what_pos = body.find("## What").expect("What position");
+    let artifacts_pos = body.find("## Artifacts").expect("Artifacts position");
+    let timings_pos = body
+        .find("## Phase Timings")
+        .expect("Phase Timings position");
+    let state_pos = body.find("## State File").expect("State File position");
+    assert!(
+        what_pos < artifacts_pos && artifacts_pos < timings_pos && timings_pos < state_pos,
+        "core sections must remain in canonical order even without Token Cost"
+    );
+}
+
+/// All eight optional sections rendered together: their `## `
+/// heading positions must follow the canonical order
+/// What < Artifacts < Plan < DAG Analysis < Phase Timings <
+/// Token Cost < State File < Session Log < Issues Filed.
+#[test]
+fn render_body_token_cost_section_order_invariant() {
+    let mut state = full_cost_state();
+    let dir = tempfile::tempdir().unwrap();
+
+    let plan_file = dir.path().join("plan.md");
+    fs::write(&plan_file, "Plan").unwrap();
+    let dag_file = dir.path().join("dag.md");
+    fs::write(&dag_file, "DAG").unwrap();
+    let branch_log_dir = dir.path().join(".flow-states").join("test-feature");
+    fs::create_dir_all(&branch_log_dir).unwrap();
+    fs::write(branch_log_dir.join("log"), "log entry").unwrap();
+    state["plan_file"] = json!(plan_file.to_string_lossy().to_string());
+    state["dag_file"] = json!(dag_file.to_string_lossy().to_string());
+    state["transcript_path"] = json!("/path/to/session.jsonl");
+    state["issues_filed"] = json!([{
+        "label": "Tech Debt",
+        "title": "Issue",
+        "url": "https://github.com/t/t/issues/1",
+        "phase_name": "Learn"
+    }]);
+
+    let body = render_body(&state, dir.path()).unwrap();
+
+    let headings = [
+        "## What",
+        "## Artifacts",
+        "## Plan",
+        "## DAG Analysis",
+        "## Phase Timings",
+        "## Token Cost",
+        "## State File",
+        "## Session Log",
+        "## Issues Filed",
+    ];
+    let positions: Vec<usize> = headings
+        .iter()
+        .map(|h| {
+            body.find(h)
+                .unwrap_or_else(|| panic!("missing heading {} in body:\n{}", h, body))
+        })
+        .collect();
+    let mut sorted = positions.clone();
+    sorted.sort();
+    assert_eq!(
+        positions, sorted,
+        "Token Cost out of order; body:\n{}",
+        body
+    );
+}
+
+/// The Token Cost section is rendered as a plain section (`## Token
+/// Cost\n\n<table>`), not wrapped in a `<details>` collapsible block.
+#[test]
+fn render_body_token_cost_uses_plain_section_format() {
+    let state = full_cost_state();
+    let dir = tempfile::tempdir().unwrap();
+    let body = render_body(&state, dir.path()).unwrap();
+
+    let token_pos = body
+        .find("## Token Cost")
+        .expect("Token Cost section position");
+    let after_token = &body[token_pos..];
+    let next_section = after_token[1..]
+        .find("\n## ")
+        .map(|i| i + 1)
+        .unwrap_or(after_token.len());
+    let token_section = &after_token[..next_section];
+
+    assert!(
+        !token_section.contains("<details>"),
+        "Token Cost section must be plain markdown, not wrapped in <details>; section:\n{}",
+        token_section
+    );
+    assert!(
+        token_section.starts_with("## Token Cost\n\n"),
+        "Token Cost section must start with `## Token Cost\\n\\n`; section starts:\n{:?}",
+        &token_section[..token_section.len().min(80)]
+    );
+}
+
 #[test]
 fn no_issues_no_section() {
     let mut state = make_test_state();

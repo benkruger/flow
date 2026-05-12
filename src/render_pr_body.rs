@@ -263,6 +263,14 @@ pub fn render_body(state: &serde_json::Value, project_dir: &Path) -> Result<Stri
     sections.push(build_plain_section("Phase Timings", &timings_table));
     section_names.push("Phase Timings".to_string());
 
+    // 5b. Token Cost (conditional — only when at least one phase
+    // contributes a row via `compute_cost_breakdown`)
+    let cost_table = format_cost_table(state);
+    if !cost_table.is_empty() {
+        sections.push(build_plain_section("Token Cost", &cost_table));
+        section_names.push("Token Cost".to_string());
+    }
+
     // 6. State File (always)
     let state_json = serde_json::to_string_pretty(state).unwrap_or_default();
     let branch = state
