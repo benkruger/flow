@@ -5619,23 +5619,38 @@ fn flow_plan_skill_surfaces_refusals_verbatim() {
 }
 
 #[test]
-fn flow_plan_skill_no_state_writes() {
-    // Regression: a future edit introduces writes to per-branch
-    // FLOW state files. The skill is stateless beyond the
-    // utility-in-progress marker (which lives under
-    // `~/.claude/flow/`, not `.flow-states/`); planning context
-    // flows downstream to `flow-create-issue` via the shared
-    // session conversation, not via persisted artifacts.
+fn flow_plan_skill_no_per_branch_state_mutations() {
+    // Regression: a future edit introduces per-branch FLOW state
+    // mutations. flow-plan files a new GitHub issue and writes the
+    // issue body file as its persistent surface; it must NOT mutate
+    // a per-branch state file (which would couple the planning skill
+    // to a flow that does not yet exist — the decomposed issue is
+    // filed BEFORE any flow-start picks it up). Forbidden mutators:
+    // set-timestamp, phase-enter, phase-finalize, phase-transition,
+    // add-finding, init-state.
     //
-    // Consumer: the cross-skill hand-off contract. Coupling
-    // `flow-plan` to `.flow-states/` would create branch-scoped
-    // state the discussion-mode skill does not need and complicate
-    // the lifecycle (cleanup, concurrency, resume).
+    // Consumer: the planning lifecycle contract. flow-plan produces
+    // a filed decomposed issue; the per-branch state file for any
+    // future flow only comes into existence when /flow:flow-start
+    // #M is invoked against that issue. Mutating per-branch state
+    // here would either fail (no state file exists) or write to a
+    // stale state file from an unrelated branch.
     let c = common::read_skill("flow-plan");
-    assert!(
-        !c.contains(".flow-states/"),
-        "skills/flow-plan/SKILL.md must not reference `.flow-states/` — the skill is stateless beyond the utility-in-progress marker (which lives under the user's Claude home, not project state)"
-    );
+    let forbidden_mutators = [
+        "bin/flow set-timestamp",
+        "bin/flow phase-enter",
+        "bin/flow phase-finalize",
+        "bin/flow phase-transition",
+        "bin/flow add-finding",
+        "bin/flow init-state",
+    ];
+    for mutator in forbidden_mutators {
+        assert!(
+            !c.contains(mutator),
+            "skills/flow-plan/SKILL.md must not invoke `{}` — the skill files a GitHub issue but does not mutate per-branch FLOW state (no flow exists yet for the decomposed issue until /flow:flow-start picks it up)",
+            mutator
+        );
+    }
 }
 
 #[test]
@@ -5740,6 +5755,161 @@ fn flow_plan_skill_uses_utility_in_progress_marker() {
         c.contains("--skill flow:flow-plan"),
         "skills/flow-plan/SKILL.md must pass `--skill flow:flow-plan` so the marker is scoped to this skill's identifier"
     );
+}
+
+// --- flow-plan rewrite contract tests ---
+//
+// `/flow:flow-plan #N` consumes a vanilla problem-statement issue
+// filed by `/flow:flow-explore` and produces a decomposed issue
+// linked as blocked-by the parent. The contracts below pin the
+// load-bearing invariants of the new shape: argument is `#N`,
+// validator runs in decomposed mode, filer applies the decomposed
+// label, link-blocked-by ties decomposed back to vanilla, and the
+// issue fetch reads title/body/number/labels.
+
+#[test]
+fn flow_plan_skill_usage_requires_issue_number_argument() {
+    // Regression: a future edit reverts the Conversation Gate to
+    // accept bare-topic invocations (the pre-rewrite shape). The
+    // role-based pipeline depends on flow-plan operating against a
+    // pre-filed vanilla issue — without the `#N` argument the skill
+    // would have no problem statement to plan against.
+    //
+    // Consumer: the role-based pipeline contract — the user types
+    // `/flow:flow-explore <topic>` to file a vanilla issue, then
+    // `/flow:flow-plan #N` against that issue. A bare-topic
+    // flow-plan invocation breaks the contract.
+    let c = common::read_skill("flow-plan");
+    assert!(
+        c.contains("/flow:flow-plan #N"),
+        "skills/flow-plan/SKILL.md Usage must show `/flow:flow-plan #N` so the issue-reference shape is documented"
+    );
+    // The Conversation Gate must reject bare-topic invocations with
+    // a migration message naming /flow:flow-explore. Match either
+    // the explicit `^#[1-9][0-9]*$` regex contract or a prose hint
+    // that the `#N` form is required.
+    assert!(
+        c.contains("^#[1-9][0-9]*$") || c.contains("must be `#N`"),
+        "skills/flow-plan/SKILL.md must reject bare-topic invocations — name the `#N` argument shape in the Conversation Gate"
+    );
+}
+
+#[test]
+fn flow_plan_skill_invokes_decompose() {
+    // Regression: a future edit drops the `decompose:decompose`
+    // Skill tool invocation in the wrap-up. Without decompose the
+    // Implementation Plan would have to be hand-written by the
+    // model — exactly the failure mode that motivated structuring
+    // the wrap-up around decompose's DAG output in the first place.
+    //
+    // Consumer: the Plan-phase consumers of the decomposed issue
+    // (flow-start's plan-from-issue extractor, flow-code's task
+    // execution loop). Both depend on the structured task list
+    // that decompose produces.
+    let c = common::read_skill("flow-plan");
+    assert!(
+        c.contains("decompose:decompose"),
+        "skills/flow-plan/SKILL.md must invoke `decompose:decompose` so the Implementation Plan derives from structured DAG output"
+    );
+}
+
+#[test]
+fn flow_plan_skill_validates_with_decomposed_mode() {
+    // Regression: a future edit drops `--mode decomposed` from the
+    // validate-issue-body invocation. Without the mode flag the
+    // validator defaults to decomposed (which is what we want), but
+    // an explicit mode is the load-bearing contract — if the
+    // default ever changes, the skill must continue to validate
+    // against the decomposed shape.
+    //
+    // Consumer: `bin/flow validate-issue-body --mode decomposed` —
+    // the validator branch that requires FLOW-PLAN sentinels and
+    // an `## Implementation Plan` heading with at least one
+    // `#### Task ` entry. flow-plan's wrap-up writes exactly that
+    // shape; mismatched validator mode would silently accept a
+    // body that plan-from-issue rejects at flow-start.
+    let c = common::read_skill("flow-plan");
+    assert!(
+        c.contains("validate-issue-body --mode decomposed"),
+        "skills/flow-plan/SKILL.md must invoke `bin/flow validate-issue-body --mode decomposed` so decomposed bodies are validated against the sentinel-and-Implementation-Plan contract"
+    );
+}
+
+#[test]
+fn flow_plan_skill_files_with_decomposed_label() {
+    // Regression: a future edit drops the `--label decomposed`
+    // flag from the filing call. Without the label, `flow-issues`
+    // and `flow-orchestrate` won't recognize the new issue as
+    // ready-for-flow-start work — engineers picking from the
+    // backlog would treat it as a bare problem statement.
+    //
+    // Consumer: `flow-issues` / `flow-orchestrate`, which select
+    // `decomposed`-labeled issues. flow-plan's output must carry
+    // the label or it becomes invisible to those readers.
+    let c = common::read_skill("flow-plan");
+    let mut found = false;
+    for line in c.lines() {
+        let trimmed = line.trim();
+        if trimmed.contains("bin/flow issue") && trimmed.contains("--label decomposed") {
+            found = true;
+            break;
+        }
+    }
+    assert!(
+        found,
+        "skills/flow-plan/SKILL.md must file the decomposed issue with `--label decomposed` on a single bin/flow issue invocation line"
+    );
+}
+
+#[test]
+fn flow_plan_skill_invokes_link_blocked_by() {
+    // Regression: a future edit drops the `bin/flow link-blocked-by`
+    // call after filing. The blocked-by link is the load-bearing
+    // thread tying the role-based pipeline together — without it,
+    // the parent vanilla issue (filed by /flow:flow-explore) is
+    // disconnected from the decomposed child, and `flow-issues`
+    // cannot detect the parent as the original problem statement.
+    //
+    // Consumer: GitHub's native `blockedBy` relationship, which
+    // `flow-issues` reads to detect blocked status and origin
+    // chains. The link must fire after every successful decomposed
+    // filing.
+    let c = common::read_skill("flow-plan");
+    assert!(
+        c.contains("bin/flow link-blocked-by"),
+        "skills/flow-plan/SKILL.md must invoke `bin/flow link-blocked-by` after filing so the decomposed issue is tied to the parent vanilla issue"
+    );
+}
+
+#[test]
+fn flow_plan_skill_fetches_issue_with_required_fields() {
+    // Regression: a future edit changes the gh issue view JSON
+    // field list. The skill needs `title` (for the decomposed
+    // issue's title), `body` (for the parent context section in
+    // the new body), `number` (for the link-blocked-by call), and
+    // `labels` (for the gate that rejects already-decomposed
+    // issues). Dropping any field breaks a downstream step.
+    //
+    // Consumer: Step 2's Fetch Vanilla Issue + the Combine into
+    // Issue Body and Link steps in Step 6. Each downstream
+    // consumer depends on a specific field from this fetch.
+    let c = common::read_skill("flow-plan");
+    assert!(
+        c.contains("gh issue view"),
+        "skills/flow-plan/SKILL.md must invoke `gh issue view` to fetch the parent vanilla issue at Step 2"
+    );
+    assert!(
+        c.contains("--json"),
+        "skills/flow-plan/SKILL.md gh issue view must use --json to fetch structured fields"
+    );
+    let required_fields = ["title", "body", "number", "labels"];
+    for field in required_fields {
+        assert!(
+            c.contains(field),
+            "skills/flow-plan/SKILL.md gh issue view --json field list must include `{}` so downstream steps can read it",
+            field
+        );
+    }
 }
 
 // --- flow-explore skill content contracts ---
