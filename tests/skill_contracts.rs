@@ -3006,280 +3006,14 @@ fn flow_abort_removes_labels() {
 }
 
 // --- Create issue skill ---
-
-#[test]
-fn create_issue_has_starting_banner() {
-    let c = common::read_skill("flow-create-issue");
-    assert!(
-        c.contains("STARTING") || c.contains("banner"),
-        "Skill must have STARTING banner"
-    );
-}
-
-#[test]
-fn create_issue_has_ask_user_gate() {
-    // Bound the assertion to the `## File` HARD-GATE section so a future
-    // edit that gutted the section (leaving "AskUserQuestion" only in
-    // the Hard Rules prose) cannot satisfy the test vacuously. Per
-    // .claude/rules/testing-gotchas.md "Subsection-Local Assertions in
-    // Contract Tests".
-    let c = common::read_skill("flow-create-issue");
-    let tail = c
-        .split_once("\n## File\n")
-        .map(|(_, t)| t)
-        .expect("flow-create-issue must have a `## File` section");
-    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
-    assert!(
-        section.contains("AskUserQuestion"),
-        "flow-create-issue `## File` section must fire AskUserQuestion"
-    );
-}
-
-#[test]
-fn create_issue_has_conversation_gate() {
-    let c = common::read_skill("flow-create-issue");
-    assert!(
-        c.contains("cold-start") || c.contains("conversation") || c.contains("context"),
-        "flow-create-issue must reject cold-start invocations"
-    );
-}
-
-#[test]
-fn create_issue_has_implementation_plan_section() {
-    // Bound the assertion to the `## Transform + Draft` section so a
-    // future edit that gutted the section (leaving "Implementation
-    // Plan" only in intro/Hard-Rules prose) cannot satisfy the test
-    // vacuously. Also assert the FLOW-PLAN sentinel is documented so
-    // bin/flow plan-from-issue extraction stays valid.
-    let c = common::read_skill("flow-create-issue");
-    let tail = c
-        .split_once("\n## Transform + Draft\n")
-        .map(|(_, t)| t)
-        .expect("flow-create-issue must have a `## Transform + Draft` section");
-    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
-    assert!(
-        section.contains("Implementation Plan"),
-        "`## Transform + Draft` must produce an Implementation Plan section"
-    );
-    assert!(
-        section.contains("FLOW-PLAN-BEGIN") && section.contains("FLOW-PLAN-END"),
-        "`## Transform + Draft` must wrap the plan in FLOW-PLAN sentinels"
-    );
-}
-
-#[test]
-fn flow_create_issue_decompose_runs_unconditionally() {
-    // The Decompose section invokes `decompose:decompose` on every
-    // invocation of `flow-create-issue`. No skip path, no override
-    // flag, no substantive-exploration classifier — the decompose
-    // pass is unconditional. A subjective classifier flips between
-    // returns from `decompose:decompose` and produces issue bodies
-    // synthesized from thin conversation context instead of from
-    // structured decompose output. Removing the skip path eliminates
-    // the classification surface entirely.
-    let c = common::read_skill("flow-create-issue");
-    // Forbidden token #1: `--force-decompose` (the manual override
-    // for the deleted skip path). Encoded via `concat!` per
-    // `.claude/rules/skill-authoring.md` "Negative-Assertion Test
-    // Compatibility" so the test's own source string does not trip
-    // the assertion. The four checklist questions in
-    // `.claude/rules/tombstone-tests.md` "Literal tombstones —
-    // stability checklist": `concat!`-bypassable (yes — already
-    // accounted for), `format!`-bypassable (no — would land as a
-    // visible runtime construction in SKILL.md, which is plain
-    // Markdown and contains no `format!` constructs), constant-
-    // bypassable (no — same reason), multi-`.arg()`-bypassable (no
-    // — SKILL.md has no method-chained string assembly).
-    let forbidden_flag = concat!("--force-", "decompose");
-    assert!(
-        !c.contains(forbidden_flag),
-        "flow-create-issue must not document {} — the decompose pass runs unconditionally",
-        forbidden_flag
-    );
-    // Bound the assertion scope to the `## Decompose` section using
-    // the bounded-slice pattern from `.claude/rules/testing-gotchas.md`
-    // "Subsection-Local Assertions in Contract Tests": split to the
-    // section start, then split to the next `\n## ` heading. Falls
-    // back to the tail on EOF.
-    let tail = c
-        .split_once("\n## Decompose\n")
-        .map(|(_, t)| t)
-        .expect("flow-create-issue must have a `## Decompose` section");
-    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
-    let section_lower = section.to_ascii_lowercase();
-    // Forbidden token #2: `substantive exploration` (the classifier
-    // phrase). The case-insensitive lowercase comparison defeats
-    // unintentional case-variant survival. Encoded via `concat!`.
-    let forbidden_phrase = concat!("substantive ", "exploration");
-    assert!(
-        !section_lower.contains(forbidden_phrase),
-        "`## Decompose` must not contain `{}` — the skip classifier is removed",
-        forbidden_phrase
-    );
-    // Positive assertion: the section still invokes `decompose:decompose`.
-    // The unconditional path runs the decompose pass on every invocation.
-    assert!(
-        section.contains("decompose:decompose"),
-        "`## Decompose` must invoke decompose:decompose on every invocation"
-    );
-}
-
-#[test]
-fn flow_create_issue_validates_body_before_filing() {
-    // The `## Filing` section invokes the pre-filing validator
-    // `bin/flow validate-issue-body` BEFORE `bin/flow issue` so
-    // an issue body that `bin/flow plan-from-issue` cannot consume
-    // at flow-start is rejected before it ever reaches GitHub.
-    // Ordering matters: validating after filing makes the gate
-    // post-hoc and useless. Regression: a future edit that moved
-    // the validator call below `bin/flow issue`, dropped it, or
-    // gated it behind a conditional would surface here.
-    let c = common::read_skill("flow-create-issue");
-    let tail = c
-        .split_once("\n## Filing\n")
-        .map(|(_, t)| t)
-        .expect("flow-create-issue must have a `## Filing` section");
-    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
-    let validate_pos = section
-        .find("bin/flow validate-issue-body")
-        .expect("`## Filing` must invoke bin/flow validate-issue-body");
-    let issue_pos = section
-        .find("bin/flow issue")
-        .expect("`## Filing` must invoke bin/flow issue");
-    assert!(
-        validate_pos < issue_pos,
-        "`bin/flow validate-issue-body` (at {}) must appear BEFORE `bin/flow issue` (at {}) in the `## Filing` section",
-        validate_pos,
-        issue_pos
-    );
-}
-
-#[test]
-fn flow_create_issue_forbids_inline_sentinel_strings_in_prose() {
-    // The Transform + Draft section names the paraphrase rule
-    // forbidding the model from writing the literal FLOW-PLAN
-    // HTML-comment strings outside the actual sentinel pair.
-    // Without this rule, a drafted body's prose can contain a
-    // marker string mid-prose; `extract_plan` matches the first
-    // occurrence and pulls the wrong slice — exactly the failure
-    // mode the validator catches downstream. The skill prevents
-    // it upstream by paraphrasing every reference. The test
-    // searches for the rule's phrasing (the word `paraphrase` near
-    // either `sentinel` or `marker`), not the forbidden tokens
-    // themselves — per `.claude/rules/skill-authoring.md`
-    // "Negative-Assertion Test Compatibility" the test source
-    // must not include the literal HTML-comment strings it is
-    // designed to forbid in SKILL.md.
-    let c = common::read_skill("flow-create-issue");
-    let tail = c
-        .split_once("\n## Transform + Draft\n")
-        .map(|(_, t)| t)
-        .expect("flow-create-issue must have a `## Transform + Draft` section");
-    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
-    let lower = section.to_ascii_lowercase();
-    assert!(
-        lower.contains("paraphrase"),
-        "`## Transform + Draft` must name the paraphrase rule"
-    );
-    assert!(
-        lower.contains("sentinel") || lower.contains("marker"),
-        "`## Transform + Draft` must scope the paraphrase rule to the plan-sentinel/marker pair"
-    );
-}
-
-#[test]
-fn flow_create_issue_decompose_has_hard_gate_after_skill_invocation() {
-    // When decompose:decompose is invoked via the Skill tool, the
-    // Decompose section must close with a HARD-GATE that prevents the
-    // model from stopping, summarizing, or returning control to the
-    // user once the Skill tool returns. The HARD-GATE is the
-    // mechanical defense for the failure mode where Claude treats the
-    // Skill tool's return as a natural stopping point — the same
-    // surface that produced the original bug this issue tracks.
-    let c = common::read_skill("flow-create-issue");
-    let tail = c
-        .split_once("\n## Decompose\n")
-        .map(|(_, t)| t)
-        .expect("flow-create-issue must have a `## Decompose` section");
-    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
-    assert!(
-        section.contains("<HARD-GATE>"),
-        "`## Decompose` must include a HARD-GATE block"
-    );
-    assert!(
-        section.contains("</HARD-GATE>"),
-        "`## Decompose` HARD-GATE block must be closed"
-    );
-    let lower = section.to_ascii_lowercase();
-    assert!(
-        lower.contains("do not stop") || lower.contains("must not stop"),
-        "`## Decompose` HARD-GATE must prohibit stopping after Skill return"
-    );
-    assert!(
-        lower.contains("skill tool returns") || lower.contains("when the skill returns"),
-        "`## Decompose` HARD-GATE must reference the Skill tool's return point"
-    );
-}
-
-#[test]
-fn flow_create_issue_hard_gate_names_consequence() {
-    // The HARD-GATE prose must name the consequence so a future
-    // maintainer reading the gate understands why it exists. Without
-    // a named consequence, the gate looks like an arbitrary stylistic
-    // restriction and is at risk of being weakened or removed. Per
-    // .claude/rules/forward-facing-authoring.md, the prose names the
-    // current invariant (unattended completion breaks if the model
-    // stops here) without citing the originating issue.
-    let c = common::read_skill("flow-create-issue");
-    let tail = c
-        .split_once("\n## Decompose\n")
-        .map(|(_, t)| t)
-        .expect("flow-create-issue must have a `## Decompose` section");
-    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
-    let lower = section.to_ascii_lowercase();
-    assert!(
-        lower.contains("unattended")
-            || lower.contains("user must prompt")
-            || lower.contains("breaks the flow")
-            || lower.contains("returns control"),
-        "`## Decompose` HARD-GATE prose must name the consequence (unattended flow breaks)"
-    );
-}
-
-#[test]
-fn flow_create_issue_has_title_authoring_section() {
-    // Issue titles flow into branch names, PR titles, commit subjects,
-    // and TUI feature lines. Without explicit guidance, the model
-    // paraphrases code symbols and shorthand from the brainstorming
-    // conversation, and every downstream surface inherits unreadable
-    // output. The Title Authoring section is the model-facing rule;
-    // this contract test guards it against regression.
-    let c = common::read_skill("flow-create-issue");
-    assert!(
-        c.contains("## Title Authoring"),
-        "flow-create-issue must have a `## Title Authoring` section"
-    );
-    let tail = c
-        .split_once("\n## Title Authoring\n")
-        .map(|(_, t)| t)
-        .expect("flow-create-issue must have a `## Title Authoring` section");
-    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
-    let lower = section.to_ascii_lowercase();
-    assert!(
-        lower.contains("plain english"),
-        "`## Title Authoring` must require plain English titles"
-    );
-    assert!(
-        lower.contains("forbid") || lower.contains("must not"),
-        "`## Title Authoring` must forbid code symbols / shorthand explicitly"
-    );
-    let bad_idx = lower.find("bad").or_else(|| lower.find("wrong"));
-    let good_idx = lower.find("good").or_else(|| lower.find("better"));
-    assert!(
-        bad_idx.is_some() && good_idx.is_some(),
-        "`## Title Authoring` must include at least one bad/good example pair"
-    );
-}
+//
+// Tombstone: PR #1477 retired the flow-create-issue skill.
+// Its responsibilities split into /flow:flow-explore (PM voice,
+// vanilla What/Why/Acceptance Criteria filing) and /flow:flow-plan
+// #N (Tech Lead voice, decompose+file pipeline against a vanilla
+// parent). Contract tests for the deleted skill have been removed
+// and replaced by file-existence and prose-absence tombstones in
+// tests/tombstones.rs.
 
 // --- More tombstones ---
 
@@ -4783,108 +4517,14 @@ fn no_backwards_reasoning_rule_states_current_merits_principle() {
     }
 }
 
-#[test]
-fn flow_create_issue_skill_has_pre_draft_backwards_reasoning_scan() {
-    let content = common::read_skill("flow-create-issue");
-
-    let transform_idx = content
-        .find("## Transform + Draft")
-        .expect("flow-create-issue SKILL.md missing `## Transform + Draft`");
-    let scan_idx = content.find("Pre-Draft Backwards-Reasoning Scan").expect(
-        "flow-create-issue SKILL.md missing `Pre-Draft Backwards-Reasoning Scan` subsection",
-    );
-    let draft_idx = content
-        .find("### Draft Presentation")
-        .expect("flow-create-issue SKILL.md missing `### Draft Presentation`");
-
-    assert!(
-        content.contains(".claude/rules/no-backwards-reasoning.md"),
-        "Pre-Draft scan must cross-reference `.claude/rules/no-backwards-reasoning.md`"
-    );
-    assert!(
-        transform_idx < scan_idx,
-        "Pre-Draft scan must appear AFTER `## Transform + Draft`"
-    );
-    assert!(
-        scan_idx < draft_idx,
-        "Pre-Draft scan must appear BEFORE `### Draft Presentation`"
-    );
-
-    // Bound to the scan's body so a future drift cannot leave a stub heading
-    // and move the body elsewhere. The scan body sits between its `### `
-    // heading and the next `### ` (or the next `## `) heading.
-    let scan_tail = &content[scan_idx..];
-    let after_heading = scan_tail
-        .split_once('\n')
-        .map(|(_, t)| t)
-        .expect("scan heading must be followed by content");
-    let mut body_end = after_heading.len();
-    for marker in &["\n### ", "\n## "] {
-        if let Some((before, _)) = after_heading.split_once(marker) {
-            if before.len() < body_end {
-                body_end = before.len();
-            }
-        }
-    }
-    let scan_body = &after_heading[..body_end];
-    for phrase in SCAN_PHRASINGS {
-        assert!(
-            scan_body.contains(phrase),
-            "Pre-Draft scan body must enumerate the canonical scan phrasing `{}` (a stub heading without the body content does not satisfy the contract)",
-            phrase
-        );
-    }
-}
-
-#[test]
-fn flow_create_issue_no_current_session_id_subcommand() {
-    // Tombstone: removed in PR #1458. The capture-once pattern that
-    // ran `bin/flow current-session-id` at Announce and stored the
-    // value as `<session_id>` was replaced by reading
-    // CLAUDE_CODE_SESSION_ID from the per-subprocess env var Claude
-    // Code 2.1.132+ supplies — same value the Stop hook sees in stdin,
-    // so set-time and clear-time always resolve to the same id. The
-    // capture-once invocation must not reappear in the SKILL.md;
-    // resurrection breaks the unattended-flow contract whenever a
-    // concurrent Claude Code session overwrites the SessionStart
-    // capture file mid-skill.
-    //
-    // Stability: the forbidden token is a bash command embedded in
-    // markdown prose. SKILL.md is read as bytes — `concat!`,
-    // `format!`, and constant-reference substitutions do not run at
-    // SKILL.md read time, so a byte-substring check is sufficient.
-    let content = common::read_skill("flow-create-issue");
-    assert!(
-        !content.contains("bin/flow current-session-id"),
-        "flow-create-issue SKILL.md must not invoke \
-         `bin/flow current-session-id` — the env-var path supersedes \
-         the capture-once pattern"
-    );
-}
-
-#[test]
-fn flow_create_issue_marker_invocations_omit_session_id_flag() {
-    // Companion to `flow_create_issue_no_current_session_id_subcommand`:
-    // the simplified SKILL.md routes set/clear through
-    // `bin/flow set-utility-in-progress --skill ...` and
-    // `bin/flow clear-utility-in-progress --skill ...` with no
-    // `--session-id` flag. The Rust layer at the CLI boundary
-    // reads CLAUDE_CODE_SESSION_ID once and forwards it through
-    // `run_set_main` / `run_clear_main`.
-    //
-    // The blanket "must not contain `--session-id`" assertion is
-    // sound because no other documented invocation in the SKILL.md
-    // carries the flag. Any future legitimate use must be added
-    // alongside an explicit allowlist in this test.
-    let content = common::read_skill("flow-create-issue");
-    assert!(
-        !content.contains("--session-id"),
-        "flow-create-issue SKILL.md must not pass `--session-id` to \
-         set-utility-in-progress / clear-utility-in-progress \
-         invocations — Rust resolves the active session_id from \
-         CLAUDE_CODE_SESSION_ID at the CLI boundary"
-    );
-}
+// Three flow_create_issue contract tests retired alongside the
+// flow-create-issue skill — Tombstone: PR #1477 (covers
+// pre_draft_backwards_reasoning_scan, no_current_session_id_subcommand,
+// and marker_invocations_omit_session_id_flag).
+// The Pre-Draft Backwards-Reasoning Scan invariant is now pinned
+// for the surviving issue-filing skills (flow-explore via the new
+// flow_explore_skill_* tests above and flow-decompose-project via
+// flow_decompose_project_skill_has_backwards_reasoning_scan below).
 
 #[test]
 fn flow_decompose_project_skill_has_backwards_reasoning_scan() {
@@ -4991,94 +4631,12 @@ fn include_bias_rule_states_inclusion_default_principle() {
     }
 }
 
-#[test]
-fn flow_create_issue_skill_has_pre_draft_include_bias_scan() {
-    let content = common::read_skill("flow-create-issue");
-
-    let transform_idx = content
-        .find("\n## Transform + Draft\n")
-        .expect("flow-create-issue SKILL.md missing `## Transform + Draft`");
-    let scan_idx = content
-        .find("\n### Pre-Draft Include-Bias Scan\n")
-        .expect("flow-create-issue SKILL.md missing `### Pre-Draft Include-Bias Scan` heading");
-    let draft_idx = content
-        .find("\n### Draft Presentation\n")
-        .expect("flow-create-issue SKILL.md missing `### Draft Presentation`");
-
-    assert!(
-        content.contains(".claude/rules/include-bias-in-issues.md"),
-        "Pre-Draft Include-Bias Scan must cross-reference `.claude/rules/include-bias-in-issues.md`"
-    );
-    assert!(
-        transform_idx < scan_idx,
-        "Pre-Draft Include-Bias Scan must appear AFTER `## Transform + Draft`"
-    );
-    assert!(
-        scan_idx < draft_idx,
-        "Pre-Draft Include-Bias Scan must appear BEFORE `### Draft Presentation`"
-    );
-
-    // No real `## ` heading may sit between `## Transform + Draft`
-    // and the scan subsection — that would push the scan into a
-    // sibling top-level section. Byte ordering alone does not
-    // enforce structural containment. The check starts AFTER the
-    // Transform + Draft heading line itself and ignores `## ` lines
-    // inside fenced code blocks (e.g. example issue bodies the
-    // skill renders) because those are inert text, not headings.
-    let after_transform_heading = content[transform_idx + 1..]
-        .find('\n')
-        .map(|n| transform_idx + 1 + n + 1)
-        .expect("Transform + Draft heading must be followed by content");
-    let between = &content[after_transform_heading..scan_idx];
-    let mut in_fence = false;
-    let mut saw_real_h2 = false;
-    for line in between.lines() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("```") {
-            in_fence = !in_fence;
-            continue;
-        }
-        if !in_fence && line.starts_with("## ") {
-            saw_real_h2 = true;
-            break;
-        }
-    }
-    assert!(
-        !saw_real_h2,
-        "no `## ` section break may sit between `## Transform + Draft` and the `### Pre-Draft Include-Bias Scan` heading — the scan must stay inside the Transform + Draft section (fenced code blocks are ignored)"
-    );
-
-    let scan_tail = &content[scan_idx + 1..];
-    let after_heading = scan_tail
-        .split_once('\n')
-        .map(|(_, t)| t)
-        .expect("scan heading must be followed by content");
-    let mut body_end = after_heading.len();
-    for marker in &["\n### ", "\n## "] {
-        if let Some((before, _)) = after_heading.split_once(marker) {
-            if before.len() < body_end {
-                body_end = before.len();
-            }
-        }
-    }
-    let scan_body = &after_heading[..body_end];
-    for phrase in INCLUDE_BIAS_SCAN_PHRASINGS {
-        assert!(
-            scan_body.contains(phrase),
-            "Pre-Draft Include-Bias Scan body must enumerate the canonical scan phrasing `{}` (a stub heading without the body content does not satisfy the contract)",
-            phrase
-        );
-    }
-    let scan_body_lower = scan_body.to_ascii_lowercase();
-    let has_action_verb = INCLUDE_BIAS_SCAN_ACTION_VERBS
-        .iter()
-        .any(|verb| scan_body_lower.contains(verb));
-    assert!(
-        has_action_verb,
-        "Pre-Draft Include-Bias Scan body must contain at least one action verb from {:?} so the section actually instructs the model — a bare phrase listing satisfies the phrase assertion but does not fulfill the scan's purpose",
-        INCLUDE_BIAS_SCAN_ACTION_VERBS
-    );
-}
+// flow_create_issue_skill_has_pre_draft_include_bias_scan retired
+// alongside the flow-create-issue skill — Tombstone: PR #1477.
+// The Include-Bias Scan invariant is now pinned for the surviving
+// issue-filing skills (flow-explore via the new flow_explore_skill_*
+// tests above and flow-decompose-project via
+// flow_decompose_project_skill_has_include_bias_scan below).
 
 #[test]
 fn flow_decompose_project_skill_has_include_bias_scan() {
@@ -5619,23 +5177,38 @@ fn flow_plan_skill_surfaces_refusals_verbatim() {
 }
 
 #[test]
-fn flow_plan_skill_no_state_writes() {
-    // Regression: a future edit introduces writes to per-branch
-    // FLOW state files. The skill is stateless beyond the
-    // utility-in-progress marker (which lives under
-    // `~/.claude/flow/`, not `.flow-states/`); planning context
-    // flows downstream to `flow-create-issue` via the shared
-    // session conversation, not via persisted artifacts.
+fn flow_plan_skill_no_per_branch_state_mutations() {
+    // Regression: a future edit introduces per-branch FLOW state
+    // mutations. flow-plan files a new GitHub issue and writes the
+    // issue body file as its persistent surface; it must NOT mutate
+    // a per-branch state file (which would couple the planning skill
+    // to a flow that does not yet exist — the decomposed issue is
+    // filed BEFORE any flow-start picks it up). Forbidden mutators:
+    // set-timestamp, phase-enter, phase-finalize, phase-transition,
+    // add-finding, init-state.
     //
-    // Consumer: the cross-skill hand-off contract. Coupling
-    // `flow-plan` to `.flow-states/` would create branch-scoped
-    // state the discussion-mode skill does not need and complicate
-    // the lifecycle (cleanup, concurrency, resume).
+    // Consumer: the planning lifecycle contract. flow-plan produces
+    // a filed decomposed issue; the per-branch state file for any
+    // future flow only comes into existence when /flow:flow-start
+    // #M is invoked against that issue. Mutating per-branch state
+    // here would either fail (no state file exists) or write to a
+    // stale state file from an unrelated branch.
     let c = common::read_skill("flow-plan");
-    assert!(
-        !c.contains(".flow-states/"),
-        "skills/flow-plan/SKILL.md must not reference `.flow-states/` — the skill is stateless beyond the utility-in-progress marker (which lives under the user's Claude home, not project state)"
-    );
+    let forbidden_mutators = [
+        "bin/flow set-timestamp",
+        "bin/flow phase-enter",
+        "bin/flow phase-finalize",
+        "bin/flow phase-transition",
+        "bin/flow add-finding",
+        "bin/flow init-state",
+    ];
+    for mutator in forbidden_mutators {
+        assert!(
+            !c.contains(mutator),
+            "skills/flow-plan/SKILL.md must not invoke `{}` — the skill files a GitHub issue but does not mutate per-branch FLOW state (no flow exists yet for the decomposed issue until /flow:flow-start picks it up)",
+            mutator
+        );
+    }
 }
 
 #[test]
@@ -5710,5 +5283,324 @@ fn every_marker_writing_skill_is_in_multi_step_allowlist() {
         "Every utility skill that writes a per-session marker must be registered in MULTI_STEP_UTILITY_SKILLS so the Stop hook honors the marker. Missing entries: {:?}. Current allowlist value: `{}`",
         missing,
         value.trim()
+    );
+}
+
+#[test]
+fn flow_plan_skill_uses_utility_in_progress_marker() {
+    // Regression: a future edit drops either the set or the clear
+    // side of the per-session utility-in-progress marker. Without
+    // `set-utility-in-progress`, the Stop hook returns control to
+    // the user mid-conversation when a sub-agent Skill tool returns
+    // — breaking the unattended-discussion contract. Without
+    // `clear-utility-in-progress`, the session deadlocks because
+    // the Stop hook keeps refusing turn-end after the skill has
+    // already completed or cancelled.
+    //
+    // Consumer: the Stop hook's `check_in_progress_utility_skill`
+    // predicate, which refuses turn-end while a per-session marker
+    // is present for `flow:flow-plan`.
+    let c = common::read_skill("flow-plan");
+    assert!(
+        c.contains("set-utility-in-progress"),
+        "skills/flow-plan/SKILL.md must invoke `bin/flow set-utility-in-progress` so the Stop hook refuses turn-end while the discussion-mode skill is running"
+    );
+    assert!(
+        c.contains("clear-utility-in-progress"),
+        "skills/flow-plan/SKILL.md must invoke `bin/flow clear-utility-in-progress` so the Stop hook releases turn-end after every exit boundary"
+    );
+    assert!(
+        c.contains("--skill flow:flow-plan"),
+        "skills/flow-plan/SKILL.md must pass `--skill flow:flow-plan` so the marker is scoped to this skill's identifier"
+    );
+}
+
+// --- flow-plan rewrite contract tests ---
+//
+// `/flow:flow-plan #N` consumes a vanilla problem-statement issue
+// filed by `/flow:flow-explore` and produces a decomposed issue
+// linked as blocked-by the parent. The contracts below pin the
+// load-bearing invariants of the new shape: argument is `#N`,
+// validator runs in decomposed mode, filer applies the decomposed
+// label, link-blocked-by ties decomposed back to vanilla, and the
+// issue fetch reads title/body/number/labels.
+
+#[test]
+fn flow_plan_skill_usage_requires_issue_number_argument() {
+    // Regression: a future edit reverts the Conversation Gate to
+    // accept bare-topic invocations (the pre-rewrite shape). The
+    // role-based pipeline depends on flow-plan operating against a
+    // pre-filed vanilla issue — without the `#N` argument the skill
+    // would have no problem statement to plan against.
+    //
+    // Consumer: the role-based pipeline contract — the user types
+    // `/flow:flow-explore <topic>` to file a vanilla issue, then
+    // `/flow:flow-plan #N` against that issue. A bare-topic
+    // flow-plan invocation breaks the contract.
+    let c = common::read_skill("flow-plan");
+    assert!(
+        c.contains("/flow:flow-plan #N"),
+        "skills/flow-plan/SKILL.md Usage must show `/flow:flow-plan #N` so the issue-reference shape is documented"
+    );
+    // The Conversation Gate must reject bare-topic invocations with
+    // a migration message naming /flow:flow-explore. Match either
+    // the explicit `^#[1-9][0-9]*$` regex contract or a prose hint
+    // that the `#N` form is required.
+    assert!(
+        c.contains("^#[1-9][0-9]*$") || c.contains("must be `#N`"),
+        "skills/flow-plan/SKILL.md must reject bare-topic invocations — name the `#N` argument shape in the Conversation Gate"
+    );
+}
+
+#[test]
+fn flow_plan_skill_invokes_decompose() {
+    // Regression: a future edit drops the `decompose:decompose`
+    // Skill tool invocation in the wrap-up. Without decompose the
+    // Implementation Plan would have to be hand-written by the
+    // model — exactly the failure mode that motivated structuring
+    // the wrap-up around decompose's DAG output in the first place.
+    //
+    // Consumer: the Plan-phase consumers of the decomposed issue
+    // (flow-start's plan-from-issue extractor, flow-code's task
+    // execution loop). Both depend on the structured task list
+    // that decompose produces.
+    let c = common::read_skill("flow-plan");
+    assert!(
+        c.contains("decompose:decompose"),
+        "skills/flow-plan/SKILL.md must invoke `decompose:decompose` so the Implementation Plan derives from structured DAG output"
+    );
+}
+
+#[test]
+fn flow_plan_skill_validates_with_decomposed_mode() {
+    // Regression: a future edit drops `--mode decomposed` from the
+    // validate-issue-body invocation. Without the mode flag the
+    // validator defaults to decomposed (which is what we want), but
+    // an explicit mode is the load-bearing contract — if the
+    // default ever changes, the skill must continue to validate
+    // against the decomposed shape.
+    //
+    // Consumer: `bin/flow validate-issue-body --mode decomposed` —
+    // the validator branch that requires FLOW-PLAN sentinels and
+    // an `## Implementation Plan` heading with at least one
+    // `#### Task ` entry. flow-plan's wrap-up writes exactly that
+    // shape; mismatched validator mode would silently accept a
+    // body that plan-from-issue rejects at flow-start.
+    let c = common::read_skill("flow-plan");
+    assert!(
+        c.contains("validate-issue-body --mode decomposed"),
+        "skills/flow-plan/SKILL.md must invoke `bin/flow validate-issue-body --mode decomposed` so decomposed bodies are validated against the sentinel-and-Implementation-Plan contract"
+    );
+}
+
+#[test]
+fn flow_plan_skill_files_with_decomposed_label() {
+    // Regression: a future edit drops the `--label decomposed`
+    // flag from the filing call. Without the label, `flow-issues`
+    // and `flow-orchestrate` won't recognize the new issue as
+    // ready-for-flow-start work — engineers picking from the
+    // backlog would treat it as a bare problem statement.
+    //
+    // Consumer: `flow-issues` / `flow-orchestrate`, which select
+    // `decomposed`-labeled issues. flow-plan's output must carry
+    // the label or it becomes invisible to those readers.
+    let c = common::read_skill("flow-plan");
+    let mut found = false;
+    for line in c.lines() {
+        let trimmed = line.trim();
+        if trimmed.contains("bin/flow issue") && trimmed.contains("--label decomposed") {
+            found = true;
+            break;
+        }
+    }
+    assert!(
+        found,
+        "skills/flow-plan/SKILL.md must file the decomposed issue with `--label decomposed` on a single bin/flow issue invocation line"
+    );
+}
+
+#[test]
+fn flow_plan_skill_invokes_link_blocked_by() {
+    // Regression: a future edit drops the `bin/flow link-blocked-by`
+    // call after filing. The blocked-by link is the load-bearing
+    // thread tying the role-based pipeline together — without it,
+    // the parent vanilla issue (filed by /flow:flow-explore) is
+    // disconnected from the decomposed child, and `flow-issues`
+    // cannot detect the parent as the original problem statement.
+    //
+    // Consumer: GitHub's native `blockedBy` relationship, which
+    // `flow-issues` reads to detect blocked status and origin
+    // chains. The link must fire after every successful decomposed
+    // filing.
+    let c = common::read_skill("flow-plan");
+    assert!(
+        c.contains("bin/flow link-blocked-by"),
+        "skills/flow-plan/SKILL.md must invoke `bin/flow link-blocked-by` after filing so the decomposed issue is tied to the parent vanilla issue"
+    );
+}
+
+#[test]
+fn flow_plan_skill_fetches_issue_with_required_fields() {
+    // Regression: a future edit changes the gh issue view JSON
+    // field list. The skill needs `title` (for the decomposed
+    // issue's title), `body` (for the parent context section in
+    // the new body), `number` (for the link-blocked-by call), and
+    // `labels` (for the gate that rejects already-decomposed
+    // issues). Dropping any field breaks a downstream step.
+    //
+    // Consumer: Step 2's Fetch Vanilla Issue + the Combine into
+    // Issue Body and Link steps in Step 6. Each downstream
+    // consumer depends on a specific field from this fetch.
+    let c = common::read_skill("flow-plan");
+    assert!(
+        c.contains("gh issue view"),
+        "skills/flow-plan/SKILL.md must invoke `gh issue view` to fetch the parent vanilla issue at Step 2"
+    );
+    assert!(
+        c.contains("--json"),
+        "skills/flow-plan/SKILL.md gh issue view must use --json to fetch structured fields"
+    );
+    let required_fields = ["title", "body", "number", "labels", "state"];
+    for field in required_fields {
+        assert!(
+            c.contains(field),
+            "skills/flow-plan/SKILL.md gh issue view --json field list must include `{}` so downstream steps can read it",
+            field
+        );
+    }
+}
+
+// --- flow-explore skill content contracts ---
+//
+// `flow-explore` opens a problem-statement conversation (PM voice)
+// and files a vanilla `## What` / `## Why` / `## Acceptance Criteria`
+// issue. The contracts below pin the discipline that distinguishes
+// it from `/flow:flow-plan #N` (which is the Tech-Lead-default
+// implementation-decomposition pipeline): vanilla bodies must not
+// carry sentinels, must not carry `## Implementation Plan`, must not
+// be filed with the `decomposed` label, must validate via
+// `--mode vanilla`, and must not invoke `decompose:decompose`.
+
+#[test]
+fn flow_explore_skill_does_not_invoke_decompose() {
+    // Regression: a future edit adds a `decompose:decompose` Skill
+    // tool invocation to flow-explore. Decomposition is implementation
+    // work and belongs in `/flow:flow-plan #N` against a filed
+    // problem-statement issue; embedding it in flow-explore would
+    // collapse the role separation the new pipeline depends on.
+    //
+    // Consumer: the role-based pipeline contract — `/flow:flow-explore`
+    // produces a vanilla problem statement; `/flow:flow-plan #N`
+    // produces a decomposed implementation plan. Mixing the two
+    // breaks both `--mode vanilla` validation and the Tech-Lead
+    // role boundary.
+    //
+    // Implementation: scan each line containing `decompose:decompose`
+    // and assert the surrounding context is prohibitive (Hard Rule
+    // mention) rather than imperative (a directive to invoke the
+    // Skill). Prohibitive cues: `never`, `not`, `do not`, `must not`,
+    // `forbids`. Imperative cues that would fail the gate:
+    // `Invoke <name>`, `via the Skill tool`, `using the Skill tool`.
+    let c = common::read_skill("flow-explore");
+    for (line_idx, line) in c.lines().enumerate() {
+        if !line.contains("decompose:decompose") {
+            continue;
+        }
+        let lower = line.to_ascii_lowercase();
+        let prohibitive = lower.contains("never")
+            || lower.contains("not invoke")
+            || lower.contains("must not")
+            || lower.contains("do not")
+            || lower.contains("forbid")
+            || lower.contains("forbids");
+        // Prohibitive context wins: a line whose surface matches an
+        // imperative pattern but which is wrapped in `Never invoke`
+        // / `must not invoke` is prohibitive and acceptable. Only
+        // flag imperative mentions that lack any prohibitive cue.
+        assert!(
+            prohibitive,
+            "skills/flow-explore/SKILL.md line {} mentions `decompose:decompose` outside a prohibitive context. Every mention must be a Hard Rule or in-prose prohibition (containing `never`, `not invoke`, `must not`, `do not`, or `forbid`). Decomposition belongs in `/flow:flow-plan #N`.",
+            line_idx + 1
+        );
+    }
+}
+
+#[test]
+fn flow_explore_skill_uses_vanilla_validator_mode() {
+    // Regression: a future edit drops `--mode vanilla` from the
+    // validate-issue-body invocation, or invokes the validator
+    // without any mode flag (which defaults to `decomposed` and
+    // would reject every flow-explore body for missing FLOW-PLAN
+    // sentinels).
+    //
+    // Consumer: `bin/flow validate-issue-body --mode vanilla` —
+    // the only validator branch that accepts a What/Why/Acceptance
+    // body without sentinels or an Implementation Plan heading.
+    let c = common::read_skill("flow-explore");
+    assert!(
+        c.contains("validate-issue-body --mode vanilla"),
+        "skills/flow-explore/SKILL.md must invoke `bin/flow validate-issue-body --mode vanilla` so vanilla bodies are validated against the problem-statement contract, not the decomposed contract"
+    );
+}
+
+#[test]
+fn flow_explore_skill_files_without_decomposed_label() {
+    // Regression: a future edit adds `--label decomposed` to the
+    // flow-explore filing call. The `decomposed` label is reserved
+    // for issues filed by `/flow:flow-plan #N` (and the historical
+    // `flow-create-issue`); flow-explore files vanilla problem
+    // statements that `flow-issues` and `flow-orchestrate` must not
+    // pick up as ready-for-flow-start work.
+    //
+    // Consumer: `flow-issues` / `flow-orchestrate`, which select
+    // `decomposed`-labeled issues. Mis-labeling a vanilla
+    // problem-statement issue would let an engineer or the
+    // overnight orchestrator try to start a flow on an issue that
+    // has no Implementation Plan.
+    let c = common::read_skill("flow-explore");
+    // Find every `bin/flow issue ` invocation and verify none carry
+    // `--label decomposed`. The skill may legitimately mention the
+    // label in prose ("without --label decomposed"); the assertion
+    // is scoped to lines that are actual filing invocations.
+    for (line_idx, line) in c.lines().enumerate() {
+        let trimmed = line.trim();
+        if !trimmed.contains("bin/flow issue ") && !trimmed.contains("bin/flow issue\t") {
+            continue;
+        }
+        // A line that contains both `bin/flow issue` and `--label decomposed`
+        // is a filing invocation that violates the contract.
+        assert!(
+            !trimmed.contains("--label decomposed"),
+            "skills/flow-explore/SKILL.md line {} files an issue with `--label decomposed`; vanilla problem statements must not carry the decomposed label",
+            line_idx + 1
+        );
+    }
+}
+
+#[test]
+fn flow_explore_skill_uses_utility_in_progress_marker() {
+    // Regression: a future edit drops either the set or the clear
+    // side of the per-session utility-in-progress marker. Without
+    // `set-utility-in-progress`, the Stop hook returns control to
+    // the user mid-conversation when a planning sub-agent Skill
+    // tool returns — breaking the unattended-discussion contract.
+    // Without `clear-utility-in-progress`, the session deadlocks
+    // after the skill completes.
+    //
+    // Consumer: the Stop hook's `check_in_progress_utility_skill`
+    // predicate, which refuses turn-end while a per-session marker
+    // is present for `flow:flow-explore`.
+    let c = common::read_skill("flow-explore");
+    assert!(
+        c.contains("set-utility-in-progress"),
+        "skills/flow-explore/SKILL.md must invoke `bin/flow set-utility-in-progress` so the Stop hook refuses turn-end during discussion"
+    );
+    assert!(
+        c.contains("clear-utility-in-progress"),
+        "skills/flow-explore/SKILL.md must invoke `bin/flow clear-utility-in-progress` so the Stop hook releases turn-end after every exit boundary"
+    );
+    assert!(
+        c.contains("--skill flow:flow-explore"),
+        "skills/flow-explore/SKILL.md must pass `--skill flow:flow-explore` so the marker is scoped to this skill's identifier"
     );
 }

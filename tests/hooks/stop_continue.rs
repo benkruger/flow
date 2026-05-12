@@ -1256,7 +1256,7 @@ fn run_subprocess_blocks_when_utility_marker_present() {
     let session_id = "abc12345";
     let marker_path = marker_dir.join(format!("utility-in-progress-{}.json", session_id));
     let payload = json!({
-        "skill": "flow:flow-create-issue",
+        "skill": "flow:flow-explore",
         "session_id": session_id,
         "started_at": "2026-05-09T12:00:00-07:00",
     });
@@ -1273,7 +1273,7 @@ fn run_subprocess_blocks_when_utility_marker_present() {
     assert_eq!(json["decision"], "block");
     let reason = json["reason"].as_str().unwrap_or("");
     assert!(
-        reason.contains("flow:flow-create-issue"),
+        reason.contains("flow:flow-explore"),
         "block reason must name the in-progress utility skill: {}",
         reason
     );
@@ -2804,7 +2804,7 @@ fn prose_pause_allows_when_skills_key_missing() {
 
 // --- check_in_progress_utility_skill ---
 
-const UTIL_SKILL: &str = "flow:flow-create-issue";
+const UTIL_SKILL: &str = "flow:flow-explore";
 const UTIL_SESSION: &str = "abc12345";
 
 fn write_utility_marker(home: &Path, skill: &str, session_id: &str) {
@@ -2974,28 +2974,6 @@ fn check_in_progress_utility_skill_no_block_when_skill_not_in_known_set() {
 }
 
 #[test]
-fn check_in_progress_utility_skill_flow_plan_marker_does_not_block() {
-    // Regression: a future commit re-adds `flow:flow-plan` to
-    // `MULTI_STEP_UTILITY_SKILLS`, restoring the Stop-hook
-    // turn-end block on every discussion-mode reply and breaking
-    // the back-and-forth conversation flow-plan is designed for.
-    // The plan skill is conversational — registering it in the
-    // unattended-utility allowlist conflates two different skill
-    // shapes. This test guards the conversational contract by
-    // asserting a marker naming flow:flow-plan does NOT block.
-    let dir = tempfile::tempdir().unwrap();
-    let home = dir.path().canonicalize().unwrap();
-    write_utility_marker(&home, "flow:flow-plan", UTIL_SESSION);
-    let result = check_in_progress_utility_skill(UTIL_SESSION, &home);
-    assert!(
-        !result.should_block,
-        "marker naming `flow:flow-plan` must not block — the \
-         conversational skill is incompatible with the unattended \
-         utility-skill marker contract"
-    );
-}
-
-#[test]
 fn check_in_progress_utility_skill_no_block_when_marker_session_id_mismatches() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().canonicalize().unwrap();
@@ -3123,7 +3101,7 @@ fn utility_marker_full_lifecycle_subprocess() {
     let (code, stdout) = run_marker_subcommand(
         "set-utility-in-progress",
         &root,
-        "flow:flow-create-issue",
+        "flow:flow-explore",
         session_id,
     );
     assert_eq!(code, 0, "set must succeed: stdout={}", stdout);
@@ -3146,7 +3124,7 @@ fn utility_marker_full_lifecycle_subprocess() {
     );
     let reason = parsed["reason"].as_str().unwrap_or("");
     assert!(
-        reason.contains("flow:flow-create-issue"),
+        reason.contains("flow:flow-explore"),
         "block reason must name the in-progress skill: {}",
         reason
     );
@@ -3155,7 +3133,7 @@ fn utility_marker_full_lifecycle_subprocess() {
     let (code, stdout) = run_marker_subcommand(
         "clear-utility-in-progress",
         &root,
-        "flow:flow-create-issue",
+        "flow:flow-explore",
         session_id,
     );
     assert_eq!(code, 0, "clear must succeed: stdout={}", stdout);
@@ -3188,7 +3166,7 @@ fn utility_marker_orphan_from_different_session_subprocess() {
     let (code, _) = run_marker_subcommand(
         "set-utility-in-progress",
         &root,
-        "flow:flow-create-issue",
+        "flow:flow-explore",
         "other_session",
     );
     assert_eq!(code, 0);

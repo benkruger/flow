@@ -286,7 +286,7 @@ enum Commands {
     /// `<home>/.claude/flow-current-session.json`.
     #[command(name = "set-utility-in-progress")]
     SetUtilityInProgress {
-        /// Skill name (e.g. flow:flow-create-issue)
+        /// Skill name (e.g. flow:flow-explore)
         #[arg(long)]
         skill: String,
         /// Claude Code session_id (optional — defaults to capture file)
@@ -299,7 +299,7 @@ enum Commands {
     /// Same `--session-id` fallback as `set-utility-in-progress`.
     #[command(name = "clear-utility-in-progress")]
     ClearUtilityInProgress {
-        /// Skill name (e.g. flow:flow-create-issue)
+        /// Skill name (e.g. flow:flow-explore)
         #[arg(long)]
         skill: String,
         /// Claude Code session_id (optional — defaults to capture file)

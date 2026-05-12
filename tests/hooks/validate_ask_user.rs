@@ -693,7 +693,7 @@ fn validate_ask_user_carve_out_does_not_apply_when_skill_not_user_only() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"check\"}}\n\
-{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-create-issue\"}}]}}\n";
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-explore\"}}]}}\n";
     let path = carve_out_transcript_fixture(home, jsonl);
     assert!(!user_only_skill_carve_out_applies(Some(&path), home));
 }

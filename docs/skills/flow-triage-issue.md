@@ -46,7 +46,7 @@ verbatim and stops — no auto-actions.
    message rendered.
 7. Prints a one-line hint pointing at the next manual step based on the
    disposition (e.g. `gh issue close <num>` for `close`,
-   `/flow:flow-create-issue` for `decompose`).
+   `/flow:flow-plan #N` for `decompose`).
 
 ---
 
@@ -73,7 +73,7 @@ every code claim:
 | Disposition | Meaning | Next manual step |
 |---|---|---|
 | `close` | No longer a real problem (already shipped, framing wrong, behavior changed) | `gh issue close <num>` after reading evidence |
-| `decompose` | Real and ready for implementation planning; needs an Implementation Plan before `/flow:flow-start` | `/flow:flow-create-issue` to draft a pre-decomposed replacement |
+| `decompose` | Real and ready for implementation planning; needs an Implementation Plan before `/flow:flow-start` | `/flow:flow-plan #N` to decompose the vanilla problem statement into a linked decomposed issue |
 
 The set is closed in v1. Adding new dispositions requires a separate
 design conversation.

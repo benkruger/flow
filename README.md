@@ -149,8 +149,8 @@ Available at any point in the workflow:
 | `/flow-doc-sync` | Full codebase documentation accuracy review — reports drift between code and docs |
 | `/flow-hygiene` | Audit instruction corpus health — CLAUDE.md, rules, and memory for staleness, misplacement, duplication, and contradictions |
 | `/flow-issues` | Fetch open issues, categorize, prioritize, and display a dashboard. Supports readiness filters |
-| `/flow-plan` | Open a structured planning conversation — discussion mode by default, dispatches to PM/Tech Lead/CTO sub-agents on explicit user request, hands off to `/flow-create-issue` when the user signals "ready" |
-| `/flow-create-issue` | Explore a design question or decompose a concrete problem, iterate until work-ready, then file it |
+| `/flow-explore` | Open a problem-statement conversation (PM voice) — discussion-mode by default, files a vanilla `## What` / `## Why` / `## Acceptance Criteria` issue on user signal |
+| `/flow-plan` | Decompose a vanilla problem-statement issue (filed by `/flow-explore`) into a linked decomposed issue ready for the start phase. Tech Lead voice, mandatory `decompose:decompose` pass, files with `--label decomposed` and a blocked-by link to the parent |
 | `/flow-decompose-project` | Decompose a large project into linked GitHub issues with sub-issue relationships, blocked-by dependencies, and milestones |
 | `/flow-orchestrate` | Process decomposed issues overnight — batch orchestration via flow-start --auto |
 | `/flow-triage-issue` | Triage a single open GitHub issue from a PM lens — reads code, checks for already-shipped work, returns a verdict in {close, decompose} |
@@ -184,10 +184,11 @@ The detail panel shows the full phase timeline with per-phase cumulative time, c
 
 ### Planning Surface
 
-Think out loud against a collaborator who reads the codebase, asks the right questions, and brings in a PM, Tech Lead, or CTO voice on request. `/flow-plan <topic>` opens a discussion-mode planning conversation: it stays conversational by default — surfacing clarifying questions, exploring affected files, identifying risks — and only dispatches to a planning sub-agent when you ask for one in plain English. Each persona has its own scope authority (PM covers copy and content, Tech Lead covers extensions of existing architecture, CTO covers novel design), and each refuses overreach with a `## SCOPE REFUSAL` block that names the next tier. The skill renders refusals verbatim and waits for your direction — no auto-escalation, no soft re-prompting. When you signal "ready", `/flow-plan` hands the discussion off to `/flow-create-issue` via the shared session conversation; nothing is filed until the issue-filing skill runs.
+Think out loud against a collaborator who reads the codebase, asks the right questions, and brings in a PM, Tech Lead, or CTO voice on request. The planning surface is split into two role-bound skills: `/flow-explore <topic>` opens a problem-statement conversation in PM voice and files a vanilla `## What` / `## Why` / `## Acceptance Criteria` issue when you signal "ready"; `/flow-plan #N` then opens an implementation-planning conversation in Tech Lead voice against that vanilla issue, runs `decompose:decompose` on the agreed approach, and files a linked decomposed issue ready for `/flow-start`. Each persona has its own scope authority (PM covers copy and content, Tech Lead covers extensions of existing architecture, CTO covers novel design), and each refuses overreach with a `## SCOPE REFUSAL` block that names the next tier. The skills render refusals verbatim and wait for your direction — no auto-escalation, no soft re-prompting.
 
 ```text
-/flow-plan add a per-flow budget cap
+/flow-explore add a per-flow budget cap
+/flow-plan #1234
 ```
 
 ### Project Decomposition

@@ -1,11 +1,11 @@
 //! Per-session "utility skill in progress" marker file.
 //!
-//! Multi-step utility skills (currently just `flow:flow-create-issue`)
-//! invoke the Skill tool mid-skill to delegate to a child skill. The
-//! Skill tool's return is a structural surface where the model often
-//! treats the handoff as a natural stopping point and returns control
-//! to the user — breaking the unattended-flow contract that
-//! flow-create-issue promises to its consumers.
+//! Multi-step utility skills (`flow:flow-explore`, `flow:flow-plan`,
+//! `flow:flow-decompose-project`) invoke the Skill tool mid-skill to
+//! delegate to a child skill. The Skill tool's return is a structural
+//! surface where the model often treats the handoff as a natural
+//! stopping point and returns control to the user — breaking the
+//! unattended-flow contract these skills promise to their consumers.
 //!
 //! `write_marker` (called immediately after the skill's Announce
 //! banner) and `clear_marker` (called immediately before the COMPLETE
@@ -17,11 +17,11 @@
 //! multi-step utility skill.
 //!
 //! The marker is per-session (not per-flow): it lives under the
-//! user's HOME, not `.flow-states/`, because flow-create-issue runs
-//! outside any active FLOW phase. Concurrent Claude Code sessions
-//! each get their own marker file because the filename includes
-//! `session_id`, so cleaning up after a crashed session is a no-op
-//! for other live sessions.
+//! user's HOME, not `.flow-states/`, because the multi-step utility
+//! skills run outside any active FLOW phase. Concurrent Claude Code
+//! sessions each get their own marker file because the filename
+//! includes `session_id`, so cleaning up after a crashed session is a
+//! no-op for other live sessions.
 //!
 //! Tests live at `tests/commands/utility_marker.rs` per
 //! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]` here.
@@ -44,8 +44,11 @@ use crate::utils::now;
 /// The `every_marker_writing_skill_is_in_multi_step_allowlist` contract
 /// test in `tests/skill_contracts.rs` scans every SKILL.md and locks
 /// this invariant in mechanically.
-pub const MULTI_STEP_UTILITY_SKILLS: &[&str] =
-    &["flow:flow-create-issue", "flow:flow-decompose-project"];
+pub const MULTI_STEP_UTILITY_SKILLS: &[&str] = &[
+    "flow:flow-decompose-project",
+    "flow:flow-explore",
+    "flow:flow-plan",
+];
 
 /// Subdirectory under HOME where markers live. A future expansion to
 /// other FLOW machine-global state can share this directory.

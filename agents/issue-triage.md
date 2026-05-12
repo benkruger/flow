@@ -153,8 +153,11 @@ The closed set is `{close, decompose}`. Pick exactly one:
 - **decompose** — the issue is real and ready for implementation
   planning. A decomposed issue carries an Implementation Plan
   section and is the input to `/flow:flow-start`. The PM should
-  invoke `/flow:flow-create-issue` to draft a pre-decomposed
-  replacement, then close the original.
+  invoke `/flow:flow-plan #N` against the vanilla problem
+  statement to decompose it into a linked decomposed issue,
+  then close the original (or leave it open as the durable
+  problem statement and start the flow against the new
+  decomposed issue).
 
 ## Hard Rules
 

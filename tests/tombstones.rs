@@ -1532,53 +1532,25 @@ fn test_corpus_no_old_code_review_identifiers() {
 
 // --- Out of Scope template-section instruction tombstones ---
 //
-// The two tests below assert that the issue-filing skills
-// (flow-create-issue, flow-decompose-project) do NOT contain a
-// templated "Out of Scope" section instruction in any markdown
-// shape — bold heading, plain heading, italic, list-item label,
-// or body-draft enumeration entry. The structural protection
-// target is the title-cased phrase "Out of Scope" itself,
-// because every templated form (`**Out of Scope**`, `## Out of
-// Scope`, `Out of Scope:`, `Files to Investigate, Out of Scope,
-// Context`) contains that exact substring. `.claude/rules/include-bias-in-issues.md`
-// is the rule the tombstones enforce.
-
-/// Tombstone: removed in PR #1427. Must not return.
-///
-/// Asserts `skills/flow-create-issue/SKILL.md` does NOT contain
-/// the title-cased phrase `Out of Scope` in any form. This is a
-/// structural tombstone — the protected concept is "an
-/// enumeration prompt for things excluded," and every templated
-/// shape that re-introduces the prompt (bold `**Out of Scope**`,
-/// heading `## Out of Scope`, italic `*Out of Scope*`, label
-/// `Out of Scope:`, list-item entry `Out of Scope` between
-/// other section names) contains this exact substring. The
-/// assertion catches every shape with one byte check.
-///
-/// The byte-substring shape holds because:
-///   1. `concat!` reassembly: not applicable — SKILL.md is pure
-///      Markdown, no Rust macro evaluates inside it.
-///   2. `format!` reassembly: not applicable to Markdown.
-///   3. Named constant reference: not applicable to Markdown.
-///   4. Method chains / split args: not applicable to Markdown.
-///
-/// The assertion is case-sensitive on the title-cased phrase
-/// `Out of Scope`. Incidental lowercase prose like "out of scope
-/// for X" elsewhere in the file is not matched and is
-/// intentionally permitted; only the title-cased templated
-/// instruction is forbidden.
-#[test]
-fn test_flow_create_issue_skill_no_out_of_scope_instruction() {
-    let content = common::read_skill("flow-create-issue");
-    assert!(
-        !content.contains("Out of Scope"),
-        "skills/flow-create-issue/SKILL.md must not contain the \
-         title-cased phrase `Out of Scope` in any markdown shape \
-         (bold heading, plain heading, italic, label, or list \
-         entry). See .claude/rules/include-bias-in-issues.md for \
-         the rule the tombstone enforces."
-    );
-}
+// The tests below assert that the surviving issue-filing skills
+// (flow-explore, flow-plan, flow-decompose-project) do NOT
+// contain a templated "Out of Scope" section instruction in any
+// markdown shape — bold heading, plain heading, italic,
+// list-item label, or body-draft enumeration entry. The
+// structural protection target is the title-cased phrase "Out of
+// Scope" itself, because every templated form (`**Out of
+// Scope**`, `## Out of Scope`, `Out of Scope:`, `Files to
+// Investigate, Out of Scope, Context`) contains that exact
+// substring. `.claude/rules/include-bias-in-issues.md` is the
+// rule the tombstones enforce.
+//
+// The flow-create-issue tombstone (`Tombstone: removed in
+// PR #1427`) was retired in PR #1477 alongside the flow-create-issue
+// skill itself; the file-existence and prose-absence tombstones
+// for the skill removal live below as
+// `test_skills_no_flow_create_issue_dir`,
+// `test_docs_no_flow_create_issue_md`, and
+// `test_skills_no_flow_create_issue_references`.
 
 /// Tombstone: removed in PR #1427. Must not return.
 ///
@@ -1719,92 +1691,115 @@ fn test_flow_issues_skill_no_flaky_tests_phrase() {
     );
 }
 
-/// Tombstone: removed in PR #1475. Must not return.
+// --- flow-create-issue skill removal (PR #1477) ---
+//
+// The `/flow:flow-create-issue` skill was retired alongside the
+// addition of `/flow:flow-explore` (PM voice, vanilla
+// problem-statement filing) and the rewrite of `/flow:flow-plan`
+// into a `#N`-argument decompose-and-file pipeline. The three
+// tombstones below assert that the skill directory, its docs page,
+// and its references in surviving SKILL.md files do not return.
+//
+// Stability: each tombstone targets a stable on-disk path or a
+// SKILL.md byte-substring. Markdown contains no `concat!` /
+// `format!` / constant-reference reassembly, so byte-substring
+// checks suffice.
+
+/// Tombstone: removed in PR #1477. Must not return.
 ///
-/// Asserts `src/commands/utility_marker.rs` does NOT contain the
-/// literal byte sequence `"flow:flow-plan"` (a quoted Rust string
-/// literal) anywhere in the file. flow-plan is a conversational
-/// "thinking room" skill — the per-session marker contract is
-/// designed for unattended multi-step utility skills that must
-/// not return control to the user mid-pipeline. Registering
-/// flow-plan in the allowlist made the Stop hook refuse turn-end
-/// on every conversational turn, breaking the back-and-forth
-/// discussion the skill exists to host.
+/// The `skills/flow-create-issue/` directory housed the deleted
+/// skill. A merge-conflict resolution that re-introduces the
+/// directory would resurrect the skill. The check is path-existence
+/// only (does NOT depend on a particular SKILL.md content) so any
+/// re-creation of the directory fires the tombstone.
 ///
-/// Consumer: `check_in_progress_utility_skill`'s allowlist check
-/// at `src/hooks/stop_continue.rs::check_in_progress_utility_skill`,
-/// which uses `MULTI_STEP_UTILITY_SKILLS.contains(&skill)` to
-/// decide whether a marker-naming skill blocks turn-end.
-///
-/// The byte-substring shape holds because:
-///   1. `concat!` reassembly: while `concat!("flow:", "flow-plan")`
-///      is technically a constant expression usable in a `&[&str]`
-///      slot, no realistic future author types the macro to add a
-///      skill back to the allowlist — they type the literal. The
-///      `concat!` path is a contrived bypass, not an organic one.
-///   2. `format!` reassembly: `format!` returns `String`, which is
-///      not `&'static str` and cannot appear in the const slice
-///      `MULTI_STEP_UTILITY_SKILLS: &[&str]` without leaking. The
-///      type system rejects this path entirely.
-///   3. Named constant reference: a `const FLOW_PLAN: &str =
-///      "flow:flow-plan";` followed by use of `FLOW_PLAN` would
-///      still place the literal `"flow:flow-plan"` in the source —
-///      the constant definition itself trips the byte check.
-///   4. Method chains / split args: not applicable — the value
-///      lives inside a slice literal, not constructed via `.arg()`
-///      or any chained method call.
+/// Stability: pure path-existence assertion against a stable
+/// project-relative path. No string reassembly applies.
 #[test]
-fn test_utility_marker_no_flow_plan_in_allowlist() {
-    let path = common::repo_root().join("src/commands/utility_marker.rs");
-    let content = fs::read_to_string(&path).expect("src/commands/utility_marker.rs must exist");
+fn test_skills_no_flow_create_issue_dir() {
+    let path = common::repo_root().join("skills").join("flow-create-issue");
     assert!(
-        !content.contains("\"flow:flow-plan\""),
-        "src/commands/utility_marker.rs must not contain the quoted \
-         literal `\"flow:flow-plan\"` — flow-plan is a conversational \
-         skill whose back-and-forth discussion is incompatible with the \
-         Stop-hook marker contract that MULTI_STEP_UTILITY_SKILLS \
-         entries opt into."
+        !path.exists(),
+        "skills/flow-create-issue/ must not exist — the skill was \
+         retired in PR #1477. The pipeline split into \
+         /flow:flow-explore (vanilla problem statements) and \
+         /flow:flow-plan #N (decomposed implementation plans)."
     );
 }
 
-/// Tombstone: removed in PR #1475. Must not return.
+/// Tombstone: removed in PR #1477. Must not return.
 ///
-/// Asserts `skills/flow-plan/SKILL.md` does NOT contain the literal
-/// byte sequence `set-utility-in-progress`. flow-plan is a
-/// conversational skill — registering a per-session marker via this
-/// CLI subcommand made the Stop hook refuse turn-end on every
-/// discussion turn, breaking the back-and-forth interaction the
-/// skill exists to host.
+/// The `docs/skills/flow-create-issue.md` page documented the
+/// deleted skill. `tests/docs_sync.rs::every_docs_skill_page_has_a_skill_dir`
+/// would also fire if the docs page returned without the skill
+/// directory, but the docs-sync test is a sibling-pair invariant;
+/// this tombstone asserts the docs page is gone independently so a
+/// merge-conflict re-introduction surfaces here even if a future
+/// edit also re-adds the skill directory (which the sibling
+/// tombstone above catches).
 ///
-/// Consumer: the flow-plan back-and-forth contract. Re-introducing
-/// the marker invocation would re-attach the skill to the Stop-hook
-/// allowlist family that requires unattended completion.
-///
-/// The byte-substring shape holds because:
-///   1. `concat!` reassembly: not applicable to Markdown.
-///   2. `format!` reassembly: not applicable to Markdown.
-///   3. Named constant reference: not applicable to Markdown.
-///   4. Method chains / split args: not applicable to Markdown.
-///      The forbidden string is a literal CLI subcommand name that
-///      a future SKILL.md author would have to type verbatim to
-///      re-invoke; there is no legitimate prose surface where the
-///      bare token would appear.
+/// Stability: pure path-existence assertion. No reassembly applies.
 #[test]
-fn test_flow_plan_skill_no_utility_marker_calls() {
-    let content = common::read_skill("flow-plan");
+fn test_docs_no_flow_create_issue_md() {
+    let path = common::repo_root()
+        .join("docs")
+        .join("skills")
+        .join("flow-create-issue.md");
     assert!(
-        !content.contains("set-utility-in-progress"),
-        "skills/flow-plan/SKILL.md must not invoke \
-         `set-utility-in-progress` — the conversational skill is \
-         incompatible with the Stop-hook marker contract that the \
-         CLI subcommand opts into."
+        !path.exists(),
+        "docs/skills/flow-create-issue.md must not exist — the \
+         skill was retired in PR #1477."
     );
+}
+
+/// Tombstone: removed in PR #1477. Must not return.
+///
+/// Surviving SKILL.md files must not reference the deleted
+/// `flow-create-issue` skill. References would either:
+/// (a) violate `tests/skill_contracts.rs::flow_references_point_to_existing_skills`
+/// (which fails CI on `/flow:<name>` references to non-existent
+/// skills), OR
+/// (b) for non-slash-command prose mentions, mislead readers into
+/// thinking the skill still exists.
+///
+/// The check scans every `skills/<name>/SKILL.md` for the literal
+/// string `flow-create-issue`. The skill name is a stable kebab-case
+/// identifier — it cannot be reassembled by `concat!` / `format!` /
+/// constant reference at SKILL.md read time (Markdown is inert
+/// text), so a byte-substring check is sufficient.
+///
+/// Stability: byte-substring check against a stable kebab-case
+/// identifier. Markdown contains no Rust macros that could
+/// reassemble the literal at read time.
+#[test]
+fn test_skills_no_flow_create_issue_references() {
+    let skills_dir = common::skills_dir();
+    let mut violations: Vec<String> = Vec::new();
+    for entry in std::fs::read_dir(&skills_dir).expect("skills/ must exist") {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let skill_md = entry.path().join("SKILL.md");
+        if !skill_md.exists() {
+            continue;
+        }
+        let content = match std::fs::read_to_string(&skill_md) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        if content.contains("flow-create-issue") {
+            let rel = skill_md
+                .strip_prefix(common::repo_root())
+                .unwrap_or(&skill_md);
+            violations.push(rel.display().to_string());
+        }
+    }
     assert!(
-        !content.contains("clear-utility-in-progress"),
-        "skills/flow-plan/SKILL.md must not invoke \
-         `clear-utility-in-progress` — both halves of the removed \
-         marker pattern (set and clear) are guarded together so a \
-         merge-conflict resolution that re-adds only the clear side \
-         (e.g. as an unrelated cleanup hook) is still caught."
+        violations.is_empty(),
+        "Surviving SKILL.md files must not reference \
+         `flow-create-issue` (skill retired in PR #1477). \
+         Offending files:\n  {}",
+        violations.join("\n  ")
     );
 }

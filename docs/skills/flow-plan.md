@@ -11,12 +11,12 @@ parent: Skills
 **Usage:**
 
 ```text
-/flow:flow-plan <topic>
+/flow:flow-plan #N
 ```
 
-Opens a structured planning conversation about a proposed change. The skill stays in discussion mode by default — surfacing clarifying questions, exploring the codebase, identifying risks — and dispatches to PM, Tech Lead, or CTO planning sub-agents only on explicit user request. When the user signals "ready" or "file it", the skill hands off to `/flow-create-issue` via the shared session conversation.
+Decomposes a vanilla problem-statement issue (filed by `/flow-explore`) into a structured implementation plan and files it as a linked decomposed GitHub issue. The skill reads the parent issue body, holds a Tech-Lead-default planning conversation, runs `decompose:decompose` against the agreed approach, transforms the synthesis into an Implementation Plan section wrapped in FLOW-PLAN sentinels, and files the new issue with the `decomposed` label and a blocked-by link to the parent.
 
-This is a thinking room, not a workflow. The skill never proposes direct edits, never commits, never files anything itself.
+The output is a decomposed issue ready for `/flow-start #M`. The vanilla issue stays as the durable problem statement; the decomposed issue carries the implementation plan that `bin/flow plan-from-issue` extracts at flow-start.
 
 ---
 
@@ -24,17 +24,19 @@ This is a thinking room, not a workflow. The skill never proposes direct edits, 
 
 | Step | Name | Gate |
 |------|------|------|
-| 1 | Conversation Gate | HARD-GATE: topic argument required |
-| 2 | Role Read | Reads `.flow.json` `role` field; absence-tolerant |
-| 3 | Discussion Mode | HARD-GATE: no actions, no `AskUserQuestion`, no auto-dispatch |
-| 4 | Persona Dispatch | HARD-GATE: render `## SCOPE REFUSAL` verbatim, no auto-escalation |
-| 5 | Wrap-up | Hand off to `/flow-create-issue` |
+| 1 | Conversation Gate | HARD-GATE: `#N` argument required (regex `^#[1-9][0-9]*$`); bare-topic invocations rejected with migration message naming `/flow-explore` |
+| 2 | Fetch Vanilla Issue | HARD-GATE: `gh issue view --json title,body,number,labels,state`; rejects issues already carrying `decomposed` label or in closed state |
+| 3 | Role Read | Reads `.flow.json` `role` field; Tech Lead is the default voice |
+| 4 | Discussion Mode | HARD-GATE: codebase reads permitted; no inline draft Implementation Plan; no `AskUserQuestion` self-prompts; no auto-dispatch to a planning sub-agent |
+| 5 | Persona Dispatch | HARD-GATE: render `## SCOPE REFUSAL` verbatim, no auto-escalation |
+| 6 | Wrap-up | `decompose:decompose` invocation, transform to Implementation Plan wrapped in FLOW-PLAN sentinels, validate with `--mode decomposed`, file with `--label decomposed`, link via `bin/flow link-blocked-by`, clear marker |
 
-1. **Step 1 — Conversation Gate:** Verifies a topic argument was provided. Without a topic the skill has no anchor for the discussion; the gate stops with usage guidance.
-2. **Step 2 — Role Read:** Reads `.flow.json` for the optional `role` field — `"pm"`, `"tech-lead"`, `"founder-solo"`, or absent. Maps the role to a complementary-default suggestion (PM → Tech Lead voice, Tech Lead → PM voice, founder-solo → no preset). Treats absence and unknown values as "no preferred default" — never blocks on a missing field.
-3. **Step 3 — Discussion Mode:** The default posture. Surfaces clarifying questions, explores the codebase via Read/Glob/Grep, identifies risks, iterates with the user. Never proposes actions, never files anything, never uses `AskUserQuestion`. Stays here until the user explicitly requests a persona dispatch (Step 4) or signals readiness to hand off (Step 5).
-4. **Step 4 — Persona Dispatch:** On explicit user request ("PM view?", "Tech Lead view?", "CTO view?"), summarizes the discussion as `CONVERSATION_SUMMARY` + `PROPOSED_CHANGE` and invokes the named sub-agent (`flow:pm`, `flow:tech-lead`, or `flow:cto`) via the Skill tool. Renders the agent's response verbatim. When the response is a `## SCOPE REFUSAL` block, the HARD-GATE prohibits auto-escalation, soft-re-prompting, and personal performance of the refused analysis — the refusal surfaces as-is and the user chooses the next move.
-5. **Step 5 — Wrap-up:** On a user readiness signal ("ready", "file it", "let's go"), outputs the COMPLETE banner and instructs the user to invoke `/flow-create-issue`. The planning context flows downstream via the shared session conversation — no scratch file, no state hand-off.
+1. **Step 1 — Conversation Gate:** Verifies the argument matches `#N`. Without an argument or with a bare-topic value, the gate clears the utility-in-progress marker and stops with migration guidance directing the user to `/flow-explore` for problem-statement filing first.
+2. **Step 2 — Fetch Vanilla Issue:** Calls `gh issue view <N> --json title,body,number,labels,state`. Rejects already-`decomposed` issues (re-planning would file a sibling decomposed issue against an already-decomposed parent) and closed issues (require explicit reopen).
+3. **Step 3 — Role Read:** Reads `.flow.json` for the optional `role` field. Tech Lead is the default voice; the role only adjusts a one-line conversational note.
+4. **Step 4 — Discussion Mode:** The default posture. Surfaces clarifying questions, reads source code via Read/Glob/Grep (unlike `/flow-explore` where source reads are forbidden), identifies risks and edge cases, iterates with the user. Composing inline draft Implementation Plan sections is forbidden — the wrap-up step builds the plan from the decompose pass.
+5. **Step 5 — Persona Dispatch:** On explicit user request ("PM view?", "Tech Lead view?", "CTO view?"), summarizes the discussion as `PARENT_ISSUE` + `CONVERSATION_SUMMARY` + `PROPOSED_APPROACH` and invokes the named sub-agent (`flow:pm`, `flow:tech-lead`, or `flow:cto`) via the Skill tool.
+6. **Step 6 — Wrap-up:** Generates a session ID, invokes `decompose:decompose` against the agreed approach + parent body, transforms the synthesis into an Implementation Plan section wrapped in FLOW-PLAN sentinels, runs the backwards-reasoning and include-bias scans, presents the draft inline, asks for filing approval via `AskUserQuestion`, validates the body via `bin/flow validate-issue-body --mode decomposed`, files the issue via `bin/flow issue --label decomposed`, links the new decomposed issue as blocked-by the parent vanilla issue via `bin/flow link-blocked-by`, and clears the marker.
 
 ---
 
@@ -54,12 +56,14 @@ Each agent returns either an in-scope analysis or a `## SCOPE REFUSAL` block. Th
 
 ## Gates
 
-- **Step 1 Conversation Gate** — `/flow:flow-plan` invoked without a topic argument stops with usage guidance. No interactive prompt; the user re-runs the command with `<topic>`.
-- **Step 3 Discussion Mode HARD-GATE** — forbids direct edits, commits, issue filing, inline draft issue body composition, `AskUserQuestion` self-prompts, and auto-dispatch to a planning sub-agent on inferred scope. The skill stays conversational until the user signals a persona request or hand-off intent. The inline-draft-body prohibition is load-bearing: body composition happens downstream in `/flow-create-issue` where the include-bias scan runs before the draft is presented per `.claude/rules/include-bias-in-issues.md` — composing drafts inline during discussion bypasses that gate.
-- **Step 4 Refusal Handling HARD-GATE** — when a sub-agent returns a `## SCOPE REFUSAL` block, the skill renders it verbatim and waits. Auto-escalation to the next tier, re-invoking the same agent with softer framing, and performing the refused analysis personally are all forbidden. The user chooses the next move (escalate, discuss, abandon).
+- **Step 1 Conversation Gate** — rejects no-argument and bare-topic invocations with a migration message directing the user to `/flow-explore`. No interactive prompt; the user re-runs the command with `#N`.
+- **Step 2 Fetch Gate** — refuses to plan against issues that already carry the `decomposed` label or are closed. The user retargets to a vanilla problem-statement issue or reopens the closed issue first.
+- **Step 4 Discussion Mode HARD-GATE** — forbids direct edits, commits, issue filing, inline draft Implementation Plan composition, `AskUserQuestion` self-prompts, and auto-dispatch to a planning sub-agent on inferred scope. Source-code reads are permitted (unlike `/flow-explore`).
+- **Step 5 Refusal Handling HARD-GATE** — when a sub-agent returns a `## SCOPE REFUSAL` block, the skill renders it verbatim and waits. Auto-escalation, soft-re-prompting, and personally performing the refused analysis are forbidden.
+- **Step 6 File Gate** — `AskUserQuestion` mandatory before filing. The validator gate fires on the body before `bin/flow issue` runs; a body that fails `--mode decomposed` validation routes back to the Revise loop. The `bin/flow link-blocked-by` call fires after every successful filing — the blocked-by link is the load-bearing thread tying the role-based pipeline together.
 
 ---
 
-## Hand-off
+## Output
 
-The skill produces no persistent artifact. Planning context flows downstream to `/flow-create-issue` via the shared session conversation: the next skill reads the same conversation history and synthesizes the captured discussion into the filed issue's Problem, Acceptance Criteria, Implementation Plan, Files to Investigate, and Context sections. The user types `/flow-create-issue` directly — `/flow-plan` never invokes it on the user's behalf.
+A decomposed GitHub issue with five top-level sections (`## What`, `## Why`, `## Acceptance Criteria`, `## Implementation Plan` wrapped in FLOW-PLAN sentinels, `## Parent Issue`) labeled `decomposed` and linked as blocked-by the parent vanilla issue. The user runs `/flow-start #M` next, which fetches the issue body, extracts the Implementation Plan section verbatim into `.flow-states/<branch>/plan.md`, opens the worktree and PR, and dispatches the Code phase against the plan tasks.

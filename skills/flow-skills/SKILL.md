@@ -90,8 +90,8 @@ plugin source.
 |-------|---------|
 | `/flow:flow-issues` | Fetch open issues, rank by impact, and display a dashboard with recommended work order |
 | `/flow:flow-triage-issue` | PM-lens triage of a single open issue — verdict in {close, decompose} |
-| `/flow:flow-plan` | Open a structured planning conversation — discussion mode by default, dispatches to PM/Tech Lead/CTO sub-agents on explicit user request, hands off to flow-create-issue when ready |
-| `/flow:flow-create-issue` | Capture a brainstormed solution as a pre-planned issue with an Implementation Plan section |
+| `/flow:flow-explore` | Open a problem-statement conversation (PM voice) — discussion-mode by default, files a vanilla `## What` / `## Why` / `## Acceptance Criteria` issue on user signal |
+| `/flow:flow-plan` | Decompose a vanilla problem-statement issue into a linked decomposed issue ready for the start phase. Tech Lead voice, mandatory `decompose:decompose` pass, files with `--label decomposed` and `bin/flow link-blocked-by` |
 | `/flow:flow-decompose-project` | Decompose a large project into linked GitHub issues with sub-issue and blocked-by relationships |
 | `/flow:flow-orchestrate` | Process decomposed issues sequentially overnight via flow-start --auto |
 

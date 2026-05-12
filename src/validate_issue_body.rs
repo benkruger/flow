@@ -1,16 +1,24 @@
-//! Pre-filing validator for the issue body that `flow-create-issue`
-//! is about to write.
+//! Pre-filing validator for issue bodies that the role-based
+//! planning skills are about to write.
 //!
-//! `bin/flow validate-issue-body --body-file <path>` reads the body
-//! file from disk, runs the same sentinel-extraction logic that
-//! `bin/flow plan-from-issue` will later apply at flow-start, and
+//! `bin/flow validate-issue-body --mode <vanilla|decomposed>
+//! --body-file <path>` reads the body file from disk and runs the
+//! validation branch matching the requested mode. The decomposed
+//! branch runs the same sentinel-extraction logic that
+//! `bin/flow plan-from-issue` will later apply at flow-start and
 //! rejects bodies whose plan section is malformed, empty, missing
-//! the canonical heading, or empty of tasks. The validator's named
-//! consumer is the `## Filing` step in
-//! `skills/flow-create-issue/SKILL.md`: the skill invokes this
-//! subcommand BEFORE `bin/flow issue` so a misformatted body never
-//! reaches the filed issue — it routes back to the Revise loop with
-//! the validator's `message` field instead.
+//! the canonical heading, or empty of tasks. The vanilla branch
+//! requires the `## What` / `## Why` / `## Acceptance Criteria`
+//! triad and forbids both FLOW-PLAN sentinels and an `##
+//! Implementation Plan` heading.
+//!
+//! The validator's named consumers are the `### Validate + File`
+//! step in `skills/flow-explore/SKILL.md` (vanilla mode) and the
+//! `### Validate + File + Link` step in `skills/flow-plan/SKILL.md`
+//! (decomposed mode). Each skill invokes this subcommand BEFORE
+//! `bin/flow issue` so a misformatted body never reaches the filed
+//! issue — it routes back to the skill's Revise loop with the
+//! validator's `message` field instead.
 //!
 //! The validator deliberately re-uses `crate::plan_from_issue`'s
 //! constants and helpers (`BEGIN_MARKER`, `END_MARKER`,
@@ -54,6 +62,16 @@ pub struct Args {
     /// `body_too_large`.
     #[arg(long)]
     pub body_file: PathBuf,
+    /// Validation mode. `decomposed` (default) requires FLOW-PLAN
+    /// sentinels and an `## Implementation Plan` heading with at
+    /// least one `#### Task ` entry. `vanilla` requires the
+    /// problem-statement triad (`## What`, `## Why`,
+    /// `## Acceptance Criteria`) and forbids both sentinels and the
+    /// `## Implementation Plan` heading. Other values are rejected
+    /// with `{"status":"error","reason":"invalid_mode"}` so callers
+    /// see a JSON envelope instead of a clap exit-2 surface.
+    #[arg(long, default_value = "decomposed")]
+    pub mode: String,
 }
 
 /// Main-arm dispatcher for `bin/flow validate-issue-body`.
@@ -107,6 +125,37 @@ pub fn run_impl_main(args: &Args, _root: &Path) -> (Value, i32) {
         }
     };
 
+    match normalize_mode(&args.mode).as_str() {
+        "decomposed" => validate_decomposed(&body),
+        "vanilla" => validate_vanilla(&body),
+        _ => error_envelope(
+            "invalid_mode",
+            &format!(
+                "unknown --mode value '{}'; expected 'vanilla' or 'decomposed' (case-insensitive, trimmed)",
+                args.mode
+            ),
+        ),
+    }
+}
+
+/// Normalize a `--mode` value before dispatch.
+///
+/// Per `.claude/rules/security-gates.md` "Normalize Before
+/// Comparing" — every gate that decides on string input must strip
+/// NULs (defeats embedded-NUL bypass from truncated writes), trim
+/// whitespace (defeats shell-quoting accidents and trailing
+/// newlines), and ASCII-lowercase (defeats case-variant survival).
+/// The original raw value is preserved in the error envelope so the
+/// caller sees what they passed; the normalized value is what
+/// dispatches.
+fn normalize_mode(mode: &str) -> String {
+    mode.replace('\0', "").trim().to_ascii_lowercase()
+}
+
+/// Validate a decomposed-issue body — the existing FLOW-PLAN
+/// sentinel + `## Implementation Plan` + `#### Task ` regime that
+/// `bin/flow plan-from-issue` later extracts at flow-start.
+fn validate_decomposed(body: &str) -> (Value, i32) {
     let begin_count = body.matches(BEGIN_MARKER).count();
     let end_count = body.matches(END_MARKER).count();
     if begin_count != 1 || end_count != 1 {
@@ -119,7 +168,7 @@ pub fn run_impl_main(args: &Args, _root: &Path) -> (Value, i32) {
         );
     }
 
-    let plan_content = match extract_plan(&body) {
+    let plan_content = match extract_plan(body) {
         Ok(c) => c,
         Err(e) => {
             return error_envelope(
@@ -151,6 +200,57 @@ pub fn run_impl_main(args: &Args, _root: &Path) -> (Value, i32) {
         }),
         0,
     )
+}
+
+/// Validate a vanilla problem-statement body — the
+/// `/flow:flow-explore` filing shape. The body must carry the
+/// `## What` / `## Why` / `## Acceptance Criteria` triad and must
+/// NOT contain FLOW-PLAN sentinels or an `## Implementation Plan`
+/// heading. Forbidden constructs are checked first so a body that
+/// drifts toward the decomposed shape gets a precise diagnostic
+/// instead of "missing heading X" pointing at a section that was
+/// deliberately omitted.
+fn validate_vanilla(body: &str) -> (Value, i32) {
+    if body.contains(BEGIN_MARKER) || body.contains(END_MARKER) {
+        return error_envelope(
+            "vanilla_has_sentinels",
+            "vanilla body must not contain FLOW-PLAN sentinel markers",
+        );
+    }
+    if has_h2_heading(body, "Implementation Plan") {
+        return error_envelope(
+            "vanilla_has_implementation_plan",
+            "vanilla body must not contain an `## Implementation Plan` heading",
+        );
+    }
+    if !has_h2_heading(body, "What") {
+        return error_envelope(
+            "vanilla_missing_section_what",
+            "vanilla body must contain a `## What` heading",
+        );
+    }
+    if !has_h2_heading(body, "Why") {
+        return error_envelope(
+            "vanilla_missing_section_why",
+            "vanilla body must contain a `## Why` heading",
+        );
+    }
+    if !has_h2_heading(body, "Acceptance Criteria") {
+        return error_envelope(
+            "vanilla_missing_section_acceptance",
+            "vanilla body must contain a `## Acceptance Criteria` heading",
+        );
+    }
+    (json!({"status": "ok"}), 0)
+}
+
+/// Returns true when `body` contains a line whose trimmed content
+/// matches `## <title>` exactly. Trailing whitespace is tolerated;
+/// leading whitespace is not (Markdown headings must start at column
+/// zero to render as headings).
+fn has_h2_heading(body: &str, title: &str) -> bool {
+    let needle = format!("## {}", title);
+    body.lines().any(|line| line.trim_end() == needle)
 }
 
 /// Reasons `read_body` rejects the body-file input.

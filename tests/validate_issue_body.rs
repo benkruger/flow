@@ -1,13 +1,17 @@
 //! Tests for the `validate_issue_body` subcommand — the pre-filing
-//! validator that `flow-create-issue` invokes before writing the
-//! issue to GitHub.
+//! validator the role-based planning skills invoke before writing
+//! the issue to GitHub.
 //!
-//! The contract: every issue body that passes the validator must
-//! also pass `bin/flow plan-from-issue`'s extraction logic at
-//! flow-start. The validator's named consumer is the
-//! `## Filing` step in `skills/flow-create-issue/SKILL.md`, which
-//! routes a non-`ok` envelope back to the Revise loop with the
-//! validator's `message` field shown.
+//! The contract: every decomposed-mode body that passes the
+//! validator must also pass `bin/flow plan-from-issue`'s extraction
+//! logic at flow-start; vanilla-mode bodies must satisfy the
+//! `## What` / `## Why` / `## Acceptance Criteria` triad without
+//! sentinels. The validator's named consumers are the
+//! `### Validate + File` step in `skills/flow-explore/SKILL.md`
+//! (vanilla) and the `### Validate + File + Link` step in
+//! `skills/flow-plan/SKILL.md` (decomposed); both route a non-`ok`
+//! envelope back to the Revise loop with the validator's `message`
+//! field shown.
 
 mod common;
 
@@ -29,10 +33,23 @@ fn well_formed_body() -> String {
 }
 
 fn run(path: &Path) -> (serde_json::Value, i32) {
+    run_with_mode(path, "decomposed")
+}
+
+fn run_vanilla(path: &Path) -> (serde_json::Value, i32) {
+    run_with_mode(path, "vanilla")
+}
+
+fn run_with_mode(path: &Path, mode: &str) -> (serde_json::Value, i32) {
     let args = Args {
         body_file: path.to_path_buf(),
+        mode: mode.to_string(),
     };
     run_impl_main(&args, path.parent().unwrap_or_else(|| Path::new(".")))
+}
+
+fn well_formed_vanilla_body() -> String {
+    "## What\n\nObservable problem statement.\n\n## Why\n\nWhy it matters.\n\n## Acceptance Criteria\n\n- Criterion 1\n- Criterion 2\n".to_string()
 }
 
 // --- happy path ---
@@ -308,4 +325,229 @@ fn body_at_cap_passes_size_check_and_routes_to_marker_check() {
     assert_eq!(code, 0);
     assert_eq!(value["status"], "error");
     assert_eq!(value["reason"], "marker_count_wrong");
+}
+
+// --- mode dispatch ---
+
+#[test]
+fn decomposed_mode_default_preserves_existing_behavior() {
+    // Explicit `--mode decomposed` matches the default-mode path
+    // exercised by every test above: a well-formed body returns
+    // status=ok with the task count.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_body()).unwrap();
+    let (value, code) = run_with_mode(&path, "decomposed");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["tasks_total"], 1);
+}
+
+#[test]
+fn invalid_mode_returns_structured_error() {
+    // A `--mode <other>` invocation must fail closed with a JSON
+    // envelope so the calling skill can route through its Revise
+    // loop, not see a clap exit-2 surface.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_vanilla_body()).unwrap();
+    let (value, code) = run_with_mode(&path, "fancy");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["reason"], "invalid_mode");
+}
+
+// --- mode normalization (security-gates "Normalize Before Comparing") ---
+
+#[test]
+fn vanilla_mode_normalizes_uppercase() {
+    // `--mode VANILLA` must dispatch to the vanilla branch — the
+    // normalization step lowercases ASCII before comparison.
+    // Without normalization, uppercase variants fall through to the
+    // invalid_mode arm and the calling skill enters a Revise loop
+    // it cannot escape.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_vanilla_body()).unwrap();
+    let (value, code) = run_with_mode(&path, "VANILLA");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+}
+
+#[test]
+fn vanilla_mode_normalizes_mixed_case() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_vanilla_body()).unwrap();
+    let (value, code) = run_with_mode(&path, "Vanilla");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+}
+
+#[test]
+fn vanilla_mode_normalizes_leading_whitespace() {
+    // Leading whitespace is trimmed per security-gates.md so
+    // shell-quoting accidents (e.g. ` vanilla` from a stray space)
+    // do not defeat the gate.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_vanilla_body()).unwrap();
+    let (value, code) = run_with_mode(&path, " vanilla");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+}
+
+#[test]
+fn vanilla_mode_normalizes_trailing_newline() {
+    // Trailing newlines from config-file substitution must be
+    // trimmed before comparison.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_vanilla_body()).unwrap();
+    let (value, code) = run_with_mode(&path, "vanilla\n");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+}
+
+#[test]
+fn vanilla_mode_normalizes_embedded_nul() {
+    // Per security-gates.md "Normalize Before Comparing", embedded
+    // NULs from truncated writes or editor artifacts must be
+    // stripped before byte-equality comparison.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_vanilla_body()).unwrap();
+    let (value, code) = run_with_mode(&path, "vanilla\0");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+}
+
+#[test]
+fn decomposed_mode_normalizes_uppercase() {
+    // The case-insensitivity guard is symmetric across both
+    // branches of the mode dispatch — `DECOMPOSED` must route to
+    // validate_decomposed exactly as `VANILLA` routes to
+    // validate_vanilla.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_body()).unwrap();
+    let (value, code) = run_with_mode(&path, "DECOMPOSED");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["tasks_total"], 1);
+}
+
+#[test]
+fn invalid_mode_error_preserves_raw_value_in_message() {
+    // The error envelope's `message` field must show the raw
+    // (un-normalized) value the caller passed so the user can spot
+    // typos. The normalized form is the dispatch key, not the
+    // diagnostic surface.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_vanilla_body()).unwrap();
+    let (value, code) = run_with_mode(&path, "fAnCy");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["reason"], "invalid_mode");
+    assert!(
+        value["message"].as_str().unwrap().contains("'fAnCy'"),
+        "error message should preserve the raw value, got: {value}"
+    );
+}
+
+// --- vanilla mode happy path ---
+
+#[test]
+fn vanilla_mode_accepts_body_with_what_why_acceptance_headings() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_vanilla_body()).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+}
+
+// --- vanilla mode missing-section rejections ---
+
+#[test]
+fn vanilla_missing_section_what() {
+    let body = "## Why\n\nProse.\n\n## Acceptance Criteria\n\n- one\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["reason"], "vanilla_missing_section_what");
+}
+
+#[test]
+fn vanilla_missing_section_why() {
+    let body = "## What\n\nProse.\n\n## Acceptance Criteria\n\n- one\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["reason"], "vanilla_missing_section_why");
+}
+
+#[test]
+fn vanilla_missing_section_acceptance() {
+    let body = "## What\n\nProse.\n\n## Why\n\nProse.\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["reason"], "vanilla_missing_section_acceptance");
+}
+
+// --- vanilla mode forbidden-construct rejections ---
+
+#[test]
+fn vanilla_has_sentinels_when_begin_marker_present() {
+    let body = format!(
+        "## What\n\nProse.\n\n## Why\n\nProse.\n\n## Acceptance Criteria\n\n- one\n\n{}\n## Implementation Plan\n\n#### Task 1: x\n{}",
+        BEGIN, END
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["reason"], "vanilla_has_sentinels");
+}
+
+#[test]
+fn vanilla_has_sentinels_when_end_marker_present_alone() {
+    // Even a stray END marker without a BEGIN trips the sentinel
+    // check — vanilla bodies must contain neither.
+    let body = format!(
+        "## What\n\nProse.\n\n## Why\n\nProse.\n\n## Acceptance Criteria\n\n- one\n\nstray {} marker\n",
+        END
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["reason"], "vanilla_has_sentinels");
+}
+
+#[test]
+fn vanilla_has_implementation_plan_heading() {
+    let body = "## What\n\nProse.\n\n## Why\n\nProse.\n\n## Acceptance Criteria\n\n- one\n\n## Implementation Plan\n\nplan content\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["reason"], "vanilla_has_implementation_plan");
 }
