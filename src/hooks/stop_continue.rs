@@ -9,7 +9,7 @@
 //!    when `_continue_pending=<skill_name>` is set, supporting
 //!    multi-child-skill chains.
 //! 3. `check_in_progress_utility_skill` — when a multi-step utility
-//!    skill (e.g. `flow:flow-create-issue`) wrote a per-session
+//!    skill (e.g. `flow:flow-explore`) wrote a per-session
 //!    marker at `<home>/.claude/flow/utility-in-progress-<id>.json`,
 //!    refuses turn-end so the model continues past the
 //!    Skill-tool-return handoff that otherwise breaks the unattended
@@ -687,8 +687,9 @@ pub fn check_autonomous_in_progress(state_path: &Path) -> ContinueResult {
 /// Refuse a voluntary turn-end while a multi-step utility skill is
 /// in progress for the current Claude Code session.
 ///
-/// Multi-step utility skills (currently `flow:flow-create-issue`)
-/// invoke the Skill tool mid-pipeline. The Skill tool's return is a
+/// Multi-step utility skills (`flow:flow-explore`,
+/// `flow:flow-plan`, `flow:flow-decompose-project`) invoke the Skill
+/// tool mid-pipeline. The Skill tool's return is a
 /// structural surface where the model often treats the handoff as a
 /// natural stopping point and returns control to the user — breaking
 /// the unattended-flow contract these skills promise to their
@@ -1166,7 +1167,7 @@ pub fn run() {
     }
 
     // Utility-skill marker guard: when a multi-step utility skill
-    // (e.g. flow:flow-create-issue) is in progress for the current
+    // (e.g. flow:flow-explore) is in progress for the current
     // Claude Code session, refuse turn-end so the model continues
     // past the Skill-tool-return handoff that otherwise breaks the
     // unattended-flow contract. Composed AFTER check_continue

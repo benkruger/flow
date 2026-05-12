@@ -16,7 +16,7 @@ use flow_rs::commands::utility_marker::{
     run_set_main, write_marker,
 };
 
-const TEST_SKILL: &str = "flow:flow-create-issue";
+const TEST_SKILL: &str = "flow:flow-explore";
 const TEST_SESSION: &str = "abc12345";
 
 // --- write_marker ---
@@ -280,7 +280,7 @@ fn write_marker_replaces_pre_existing_symlink_at_marker_path() {
 
 #[test]
 fn is_safe_skill_name_accepts_canonical_flow_skill() {
-    assert!(is_safe_skill_name("flow:flow-create-issue"));
+    assert!(is_safe_skill_name("flow:flow-explore"));
     assert!(is_safe_skill_name("flow:flow-start"));
     assert!(is_safe_skill_name("a"));
     assert!(is_safe_skill_name("a_b-c:d"));

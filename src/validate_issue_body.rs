@@ -1,16 +1,24 @@
-//! Pre-filing validator for the issue body that `flow-create-issue`
-//! is about to write.
+//! Pre-filing validator for issue bodies that the role-based
+//! planning skills are about to write.
 //!
-//! `bin/flow validate-issue-body --body-file <path>` reads the body
-//! file from disk, runs the same sentinel-extraction logic that
-//! `bin/flow plan-from-issue` will later apply at flow-start, and
+//! `bin/flow validate-issue-body --mode <vanilla|decomposed>
+//! --body-file <path>` reads the body file from disk and runs the
+//! validation branch matching the requested mode. The decomposed
+//! branch runs the same sentinel-extraction logic that
+//! `bin/flow plan-from-issue` will later apply at flow-start and
 //! rejects bodies whose plan section is malformed, empty, missing
-//! the canonical heading, or empty of tasks. The validator's named
-//! consumer is the `## Filing` step in
-//! `skills/flow-create-issue/SKILL.md`: the skill invokes this
-//! subcommand BEFORE `bin/flow issue` so a misformatted body never
-//! reaches the filed issue — it routes back to the Revise loop with
-//! the validator's `message` field instead.
+//! the canonical heading, or empty of tasks. The vanilla branch
+//! requires the `## What` / `## Why` / `## Acceptance Criteria`
+//! triad and forbids both FLOW-PLAN sentinels and an `##
+//! Implementation Plan` heading.
+//!
+//! The validator's named consumers are the `### Validate + File`
+//! step in `skills/flow-explore/SKILL.md` (vanilla mode) and the
+//! `### Validate + File + Link` step in `skills/flow-plan/SKILL.md`
+//! (decomposed mode). Each skill invokes this subcommand BEFORE
+//! `bin/flow issue` so a misformatted body never reaches the filed
+//! issue — it routes back to the skill's Revise loop with the
+//! validator's `message` field instead.
 //!
 //! The validator deliberately re-uses `crate::plan_from_issue`'s
 //! constants and helpers (`BEGIN_MARKER`, `END_MARKER`,

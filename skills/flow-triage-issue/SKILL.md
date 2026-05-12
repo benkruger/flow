@@ -69,7 +69,7 @@ The argument MUST match the regex `^#[1-9][0-9]*$` exactly — a
 literal `#` followed by a positive decimal integer with no leading
 zero, no sign, no decimal point, no scientific notation, no
 whitespace, no quotes, no flags. The strict `#` prefix matches the
-sibling `/flow:flow-start` and `/flow:flow-create-issue` argument
+sibling `/flow:flow-start` and `/flow:flow-plan` argument
 formats so issue references are unambiguous across the FLOW skill
 family. The strict shape rejects argument-injection vectors like
 `#42 --repo other/repo`, regex-metacharacter values like `#1[23]`,
@@ -282,8 +282,9 @@ Output the following banner in your response (not via Bash) inside a fenced code
   Step 6 on the happy path, and also removed in Step 4's
   truncation early-stop branch so every exit path leaves the
   issue free of the label.
-- Never auto-invoke `/flow:flow-create-issue`, `/flow:flow-start`, or
-  any other skill based on the verdict. The PM acts manually.
+- Never auto-invoke `/flow:flow-explore`, `/flow:flow-plan`,
+  `/flow:flow-start`, or any other skill based on the verdict. The
+  PM acts manually.
 - v1: open issues only. The agent refuses closed issues with the
   out-of-scope envelope; the skill renders that envelope cleanly.
 - Verdict format is exactly the 5-field card produced by

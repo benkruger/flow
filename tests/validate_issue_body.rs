@@ -1,13 +1,17 @@
 //! Tests for the `validate_issue_body` subcommand — the pre-filing
-//! validator that `flow-create-issue` invokes before writing the
-//! issue to GitHub.
+//! validator the role-based planning skills invoke before writing
+//! the issue to GitHub.
 //!
-//! The contract: every issue body that passes the validator must
-//! also pass `bin/flow plan-from-issue`'s extraction logic at
-//! flow-start. The validator's named consumer is the
-//! `## Filing` step in `skills/flow-create-issue/SKILL.md`, which
-//! routes a non-`ok` envelope back to the Revise loop with the
-//! validator's `message` field shown.
+//! The contract: every decomposed-mode body that passes the
+//! validator must also pass `bin/flow plan-from-issue`'s extraction
+//! logic at flow-start; vanilla-mode bodies must satisfy the
+//! `## What` / `## Why` / `## Acceptance Criteria` triad without
+//! sentinels. The validator's named consumers are the
+//! `### Validate + File` step in `skills/flow-explore/SKILL.md`
+//! (vanilla) and the `### Validate + File + Link` step in
+//! `skills/flow-plan/SKILL.md` (decomposed); both route a non-`ok`
+//! envelope back to the Revise loop with the validator's `message`
+//! field shown.
 
 mod common;
 

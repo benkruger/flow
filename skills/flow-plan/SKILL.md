@@ -149,9 +149,8 @@ Verify the fetched issue is in a state this skill can plan against:
   to the user. Do not proceed.
 - The issue's labels MUST NOT include `decomposed`. The
   `decomposed` label marks an issue that has already been planned
-  via this skill (or was filed pre-planned via the historical
-  `flow-create-issue`); re-planning would file a sibling
-  decomposed issue against an already-decomposed parent. If the
+  via this skill; re-planning would file a sibling decomposed
+  issue against an already-decomposed parent. If the
   issue carries `decomposed`, clear the marker and output:
 
   > "Issue #N already carries the `decomposed` label. To start

@@ -16,7 +16,7 @@ description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrad
 **Strict argument format:** After stripping flags (`--auto`, `--manual`),
 the remaining argument MUST match the regex `^#[1-9][0-9]*$` — a literal
 `#` followed by a positive integer. The argument names a GitHub issue
-that has been pre-decomposed via `/flow:flow-create-issue` and carries
+that has been pre-decomposed via `/flow:flow-plan #N` and carries
 its plan wrapped between the literal sentinel markers
 `<!-- FLOW-PLAN-BEGIN -->` and `<!-- FLOW-PLAN-END -->` in the issue
 body. `start-init` fetches the issue title and derives the branch name
@@ -56,7 +56,8 @@ any value that does not begin with `#` followed by a positive integer.
 Output this error message and stop:
 
 > "Argument must be `#N` (e.g., `#1234`). To file a new pre-decomposed
-> issue, run `/flow:flow-create-issue`."
+> issue, run `/flow:flow-explore <topic>` to file the problem
+> statement, then `/flow:flow-plan #M` to decompose it."
 
 No interactive prompt. The user re-runs the command with `#N`.
 </HARD-GATE>
@@ -308,7 +309,7 @@ corrective action:
 - `issue_not_found` — verify the issue exists in the current repo
 - `issue_closed` — reopen the issue or pick an open one
 - `gh_fetch_failed` — run `gh auth status` and retry
-- `plan_markers_missing` — re-file via `/flow:flow-create-issue`
+- `plan_markers_missing` — re-file via `/flow:flow-plan #N` against the parent vanilla issue
 - `plan_markers_malformed` — edit the issue body to fix sentinels
 - `plan_empty` — edit the issue body to add plan content
 - `plan_too_large` — trim the issue body

@@ -1257,22 +1257,12 @@ fn main_arm_invocations_cover_dispatch() {
         ("generate-id", &[], None),
         (
             "set-utility-in-progress",
-            &[
-                "--skill",
-                "flow:flow-create-issue",
-                "--session-id",
-                "abc12345",
-            ],
+            &["--skill", "flow:flow-explore", "--session-id", "abc12345"],
             None,
         ),
         (
             "clear-utility-in-progress",
-            &[
-                "--skill",
-                "flow:flow-create-issue",
-                "--session-id",
-                "abc12345",
-            ],
+            &["--skill", "flow:flow-explore", "--session-id", "abc12345"],
             None,
         ),
         ("current-session-id", &[], None),
@@ -1414,7 +1404,7 @@ fn set_utility_in_progress_dispatch_writes_marker() {
         .args([
             "set-utility-in-progress",
             "--skill",
-            "flow:flow-create-issue",
+            "flow:flow-explore",
             "--session-id",
             "abc12345",
         ])
@@ -1528,7 +1518,7 @@ fn clear_utility_in_progress_dispatch_removes_marker() {
     let marker = claude_flow.join("utility-in-progress-abc12345.json");
     std::fs::write(
         &marker,
-        r#"{"skill":"flow:flow-create-issue","session_id":"abc12345"}"#,
+        r#"{"skill":"flow:flow-explore","session_id":"abc12345"}"#,
     )
     .unwrap();
 
@@ -1536,7 +1526,7 @@ fn clear_utility_in_progress_dispatch_removes_marker() {
         .args([
             "clear-utility-in-progress",
             "--skill",
-            "flow:flow-create-issue",
+            "flow:flow-explore",
             "--session-id",
             "abc12345",
         ])
@@ -1563,7 +1553,7 @@ fn set_utility_in_progress_falls_back_when_home_unset() {
         .args([
             "set-utility-in-progress",
             "--skill",
-            "flow:flow-create-issue",
+            "flow:flow-explore",
             "--session-id",
             "abc12345",
         ])
