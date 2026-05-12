@@ -47,7 +47,8 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
                 false,
                 format!(
                     "BLOCKED: Compound commands ({}) are not allowed outside quoted arguments. \
-                     Use separate Bash calls for each command.",
+                     Use separate Bash calls for each command. \
+                     See .claude/rules/no-escape-hatches.md.",
                     op
                 ),
             );
@@ -56,7 +57,8 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
             return (
                 false,
                 "BLOCKED: Command has an unclosed single or double quote. \
-                 Close the quote before running the command."
+                 Close the quote before running the command. \
+                 See .claude/rules/no-escape-hatches.md."
                     .to_string(),
             );
         }
@@ -72,7 +74,8 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
             false,
             "BLOCKED: Shell redirection (>, >>) is not allowed. \
              Use the Read tool to view file contents and the \
-             Write tool to create files."
+             Write tool to create files. \
+             See .claude/rules/no-escape-hatches.md."
                 .to_string(),
         );
     }
@@ -87,7 +90,8 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
             false,
             "BLOCKED: 'exec' prefix triggers a permission prompt. \
              Remove 'exec' and run the command directly — \
-             the behavior is identical."
+             the behavior is identical. \
+             See .claude/rules/no-escape-hatches.md."
                 .to_string(),
         );
     }
@@ -125,7 +129,8 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
                         "BLOCKED: 'find' with destructive flag '{}' is forbidden. \
                          `-exec`, `-execdir`, `-ok`, `-okdir`, and `-delete` \
                          run arbitrary commands or unlink files. Use Glob to \
-                         discover paths and Read to inspect them.",
+                         discover paths and Read to inspect them. \
+                         See .claude/rules/no-escape-hatches.md.",
                         token
                     ),
                 );
@@ -168,7 +173,8 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
                     false,
                     format!(
                         "BLOCKED: Command matches deny list: '{}'. \
-                         This operation is explicitly forbidden.",
+                         This operation is explicitly forbidden. \
+                         See .claude/rules/no-escape-hatches.md.",
                         command
                     ),
                 );
