@@ -702,9 +702,9 @@ all best-effort in a single call.
 
 The render-pr-body step produces the PR body with all sections —
 What, Artifacts, Plan, DAG Analysis, Phase Timings, Token Cost,
-State File, Session Log, and Issues Filed — from the state file and
-available artifact files. Sections with missing data are omitted
-automatically.
+Review Findings, Learn Findings, State File, Session Log, and
+Issues Filed — from the state file and available artifact files.
+Sections with missing data are omitted automatically.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow complete-finalize --pr <pr_number> --state-file <project_root>/.flow-states/<branch>/state.json --branch <branch> --worktree <worktree_path> --pull

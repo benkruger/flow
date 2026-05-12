@@ -1261,6 +1261,189 @@ fn session_log_as_directory_propagates_error() {
     assert!(result.is_err());
 }
 
+// --- render_body Findings sections integration ---
+//
+// `render_body` calls `format_findings_markdown` twice (once per phase)
+// and splices the resulting `## Review Findings` and `## Learn Findings`
+// sections between the Token Cost block (or Phase Timings when Token
+// Cost is absent) and the State File block.
+
+/// Helper: build a fixture with snapshot data so Token Cost renders,
+/// plus a configurable findings array.
+fn full_cost_state_with_findings(findings: Value) -> Value {
+    let mut state = full_cost_state();
+    state["findings"] = findings;
+    state
+}
+
+#[test]
+fn render_body_omits_findings_sections_when_findings_empty() {
+    let state = full_cost_state_with_findings(json!([]));
+    let dir = tempfile::tempdir().unwrap();
+    let body = render_body(&state, dir.path()).unwrap();
+
+    assert!(
+        !body.contains("## Review Findings"),
+        "Review Findings must NOT appear when findings empty; body:\n{}",
+        body
+    );
+    assert!(
+        !body.contains("## Learn Findings"),
+        "Learn Findings must NOT appear when findings empty; body:\n{}",
+        body
+    );
+}
+
+#[test]
+fn render_body_renders_review_findings_when_only_review_present() {
+    let state = full_cost_state_with_findings(json!([
+        {
+            "finding": "Missing null check",
+            "reason": "Could panic on malformed input",
+            "outcome": "fixed",
+            "phase": "flow-review",
+        }
+    ]));
+    let dir = tempfile::tempdir().unwrap();
+    let body = render_body(&state, dir.path()).unwrap();
+
+    assert!(
+        body.contains("## Review Findings"),
+        "Review Findings section must appear; body:\n{}",
+        body
+    );
+    assert!(
+        !body.contains("## Learn Findings"),
+        "Learn Findings must NOT appear when no learn findings; body:\n{}",
+        body
+    );
+
+    let cost_pos = body
+        .find("## Token Cost")
+        .expect("Token Cost section position");
+    let review_pos = body
+        .find("## Review Findings")
+        .expect("Review Findings section position");
+    let state_pos = body.find("## State File").expect("State File position");
+    assert!(
+        cost_pos < review_pos && review_pos < state_pos,
+        "Review Findings must sit between Token Cost and State File; body:\n{}",
+        body
+    );
+}
+
+#[test]
+fn render_body_renders_learn_findings_when_only_learn_present() {
+    let state = full_cost_state_with_findings(json!([
+        {
+            "finding": "Missing rule for X",
+            "reason": "Identified during analysis",
+            "outcome": "rule_written",
+            "phase": "flow-learn",
+        }
+    ]));
+    let dir = tempfile::tempdir().unwrap();
+    let body = render_body(&state, dir.path()).unwrap();
+
+    assert!(
+        body.contains("## Learn Findings"),
+        "Learn Findings section must appear; body:\n{}",
+        body
+    );
+    assert!(
+        !body.contains("## Review Findings"),
+        "Review Findings must NOT appear when no review findings; body:\n{}",
+        body
+    );
+
+    let cost_pos = body
+        .find("## Token Cost")
+        .expect("Token Cost section position");
+    let learn_pos = body
+        .find("## Learn Findings")
+        .expect("Learn Findings section position");
+    let state_pos = body.find("## State File").expect("State File position");
+    assert!(
+        cost_pos < learn_pos && learn_pos < state_pos,
+        "Learn Findings must sit between Token Cost and State File; body:\n{}",
+        body
+    );
+}
+
+#[test]
+fn render_body_renders_both_sections_in_order_when_both_present() {
+    let state = full_cost_state_with_findings(json!([
+        {
+            "finding": "Bug in parser",
+            "reason": "Fixed inline",
+            "outcome": "fixed",
+            "phase": "flow-review",
+        },
+        {
+            "finding": "Missing rule",
+            "reason": "Created new rule",
+            "outcome": "rule_written",
+            "phase": "flow-learn",
+        },
+    ]));
+    let dir = tempfile::tempdir().unwrap();
+    let body = render_body(&state, dir.path()).unwrap();
+
+    let cost_pos = body
+        .find("## Token Cost")
+        .expect("Token Cost section position");
+    let review_pos = body
+        .find("## Review Findings")
+        .expect("Review Findings section position");
+    let learn_pos = body
+        .find("## Learn Findings")
+        .expect("Learn Findings section position");
+    let state_pos = body.find("## State File").expect("State File position");
+
+    assert!(
+        cost_pos < review_pos && review_pos < learn_pos && learn_pos < state_pos,
+        "Order must be Token Cost < Review Findings < Learn Findings < State File; body:\n{}",
+        body
+    );
+}
+
+#[test]
+fn render_body_renders_findings_after_phase_timings_when_token_cost_absent() {
+    // No phase carries window snapshots → format_cost_table returns
+    // empty → Token Cost section is omitted. Findings must then
+    // anchor against Phase Timings on the upper side instead.
+    let mut state = make_test_state();
+    state["phases"] = json!({});
+    state["findings"] = json!([
+        {
+            "finding": "Bug found",
+            "reason": "Fixed inline",
+            "outcome": "fixed",
+            "phase": "flow-review",
+        }
+    ]);
+    let dir = tempfile::tempdir().unwrap();
+    let body = render_body(&state, dir.path()).unwrap();
+
+    assert!(
+        !body.contains("## Token Cost"),
+        "Token Cost must be absent when no snapshot data; body:\n{}",
+        body
+    );
+    let timings_pos = body
+        .find("## Phase Timings")
+        .expect("Phase Timings position");
+    let review_pos = body
+        .find("## Review Findings")
+        .expect("Review Findings position");
+    let state_pos = body.find("## State File").expect("State File position");
+    assert!(
+        timings_pos < review_pos && review_pos < state_pos,
+        "Review Findings must sit between Phase Timings and State File when Token Cost is absent; body:\n{}",
+        body
+    );
+}
+
 // --- CLI subprocess tests for run_impl_main ---
 
 #[test]

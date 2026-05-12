@@ -10,7 +10,8 @@
 use std::path::{Path, PathBuf};
 
 use flow_rs::format_complete_summary::{
-    compute_cost_breakdown, format_complete_summary, run_impl, run_impl_main, Args,
+    compute_cost_breakdown, format_complete_summary, format_findings_markdown, run_impl,
+    run_impl_main, Args,
 };
 use serde_json::{json, Value};
 
@@ -1432,6 +1433,370 @@ fn summary_findings_with_existing_artifacts() {
 
     assert!(result.summary.contains("Review Findings"));
     assert!(result.summary.contains("Issues filed: 1"));
+}
+
+// --- format_findings_markdown ---
+
+#[test]
+fn format_findings_markdown_empty_returns_empty_string() {
+    let out = format_findings_markdown(&[], "flow-review");
+    assert_eq!(out, "");
+}
+
+#[test]
+fn format_findings_markdown_no_phase_match_returns_empty_string() {
+    let findings = vec![json!({
+        "finding": "Missing rule for X",
+        "reason": "Captured during analysis",
+        "outcome": "rule_written",
+        "phase": "flow-learn",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert_eq!(out, "");
+}
+
+#[test]
+fn format_findings_markdown_renders_fixed_finding() {
+    let findings = vec![json!({
+        "finding": "Missing null check in parser",
+        "reason": "Could panic on malformed input",
+        "outcome": "fixed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("- ✓ **Missing null check in parser**"),
+        "expected fixed marker + bold finding; got:\n{}",
+        out
+    );
+    assert!(
+        out.contains("  - Fixed — Could panic on malformed input"),
+        "expected indented Fixed label + reason; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_renders_dismissed_finding() {
+    let findings = vec![json!({
+        "finding": "Unused import",
+        "reason": "False positive from macro expansion",
+        "outcome": "dismissed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("- ✗ **Unused import**"),
+        "expected dismissed marker + bold finding; got:\n{}",
+        out
+    );
+    assert!(
+        out.contains("  - Dismissed — False positive from macro expansion"),
+        "expected indented Dismissed label + reason; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_renders_mixed_outcomes_in_order() {
+    let findings = vec![
+        json!({
+            "finding": "first",
+            "reason": "r1",
+            "outcome": "fixed",
+            "phase": "flow-review",
+        }),
+        json!({
+            "finding": "second",
+            "reason": "r2",
+            "outcome": "dismissed",
+            "phase": "flow-review",
+        }),
+        json!({
+            "finding": "third",
+            "reason": "r3",
+            "outcome": "fixed",
+            "phase": "flow-review",
+        }),
+    ];
+    let out = format_findings_markdown(&findings, "flow-review");
+    let p1 = out.find("**first**").expect("first finding rendered");
+    let p2 = out.find("**second**").expect("second finding rendered");
+    let p3 = out.find("**third**").expect("third finding rendered");
+    assert!(
+        p1 < p2 && p2 < p3,
+        "findings must render in input order; got:\n{}",
+        out
+    );
+    assert!(out.contains("- ✓ **first**"));
+    assert!(out.contains("- ✗ **second**"));
+    assert!(out.contains("- ✓ **third**"));
+}
+
+#[test]
+fn format_findings_markdown_filters_by_phase() {
+    let findings = vec![
+        json!({
+            "finding": "review-only",
+            "reason": "r1",
+            "outcome": "fixed",
+            "phase": "flow-review",
+        }),
+        json!({
+            "finding": "learn-only",
+            "reason": "r2",
+            "outcome": "rule_written",
+            "phase": "flow-learn",
+        }),
+    ];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(out.contains("**review-only**"), "review entry must appear");
+    assert!(
+        !out.contains("**learn-only**"),
+        "learn entry must NOT appear when filtering for flow-review; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_sanitizes_newlines_in_finding() {
+    let findings = vec![json!({
+        "finding": "first line\nsecond line",
+        "reason": "r1",
+        "outcome": "fixed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("**first line second line**"),
+        "newline in finding must become a single space; got:\n{}",
+        out
+    );
+    // The literal newline inside the bold span would break the
+    // nested list structure on GitHub — assert it was stripped.
+    assert!(
+        !out.contains("first line\nsecond line"),
+        "raw newline inside finding must be replaced; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_sanitizes_newlines_in_reason() {
+    let findings = vec![json!({
+        "finding": "f1",
+        "reason": "reason line one\nreason line two",
+        "outcome": "fixed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("Fixed — reason line one reason line two"),
+        "newline in reason must become a single space; got:\n{}",
+        out
+    );
+    assert!(
+        !out.contains("reason line one\nreason line two"),
+        "raw newline inside reason must be replaced; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_handles_missing_outcome_field() {
+    let findings = vec![json!({
+        "finding": "no outcome key",
+        "reason": "r1",
+        "phase": "flow-review",
+    })];
+    // The helper must not panic when outcome is absent. It falls
+    // back to outcome_marker("") / outcome_label("") which the
+    // existing private helpers map to "?" / "Unknown".
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(out.contains("**no outcome key**"));
+    assert!(out.contains("?"));
+    assert!(out.contains("Unknown"));
+}
+
+#[test]
+fn format_findings_markdown_normalizes_uppercase_phase() {
+    let findings = vec![json!({
+        "finding": "Uppercase phase finding",
+        "reason": "Phase value was FLOW-REVIEW",
+        "outcome": "fixed",
+        "phase": "FLOW-REVIEW",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("**Uppercase phase finding**"),
+        "uppercase phase value must normalize to lowercase before filter equality; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_normalizes_whitespace_padded_phase() {
+    let findings = vec![json!({
+        "finding": "Padded phase finding",
+        "reason": "Phase value carried surrounding whitespace",
+        "outcome": "fixed",
+        "phase": " flow-review ",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("**Padded phase finding**"),
+        "whitespace-padded phase value must trim before filter equality; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_normalizes_phase_with_embedded_nul() {
+    let findings = vec![json!({
+        "finding": "NUL phase finding",
+        "reason": "Phase value carried an embedded NUL",
+        "outcome": "fixed",
+        "phase": "flow-review\u{0}",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("**NUL phase finding**"),
+        "NUL-bearing phase value must strip NUL before filter equality; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_collapses_crlf_to_single_space() {
+    let findings = vec![json!({
+        "finding": "line1\r\nline2",
+        "reason": "r1",
+        "outcome": "fixed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("**line1 line2**"),
+        "CRLF must collapse to a single space; got:\n{}",
+        out
+    );
+    assert!(
+        !out.contains("line1  line2"),
+        "CRLF must not leave a double-space gap; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_collapses_lone_cr_to_single_space() {
+    // Lone `\r` without a following `\n` (classic Mac line ending,
+    // or a corrupted CRLF where the LF was stripped) exercises the
+    // false branch of the CRLF-peek inside escape_markdown_list_value.
+    let findings = vec![json!({
+        "finding": "line1\rline2",
+        "reason": "r1",
+        "outcome": "fixed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("**line1 line2**"),
+        "lone CR must collapse to a single space; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_sanitizes_tab_in_reason() {
+    let findings = vec![json!({
+        "finding": "f1",
+        "reason": "before\tafter",
+        "outcome": "fixed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("Fixed — before after"),
+        "tab in reason must become a single space; got:\n{}",
+        out
+    );
+    assert!(
+        !out.contains("before\tafter"),
+        "raw tab in reason must be replaced; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_escapes_bold_markers_in_finding() {
+    let findings = vec![json!({
+        "finding": "Inner **bold** marker",
+        "reason": "r1",
+        "outcome": "fixed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("**Inner \\*\\*bold\\*\\* marker**"),
+        "asterisks in finding must be backslash-escaped; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_escapes_backtick_in_reason() {
+    let findings = vec![json!({
+        "finding": "f1",
+        "reason": "Run `bin/flow ci` before commit",
+        "outcome": "fixed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("Fixed — Run \\`bin/flow ci\\` before commit"),
+        "backticks in reason must be backslash-escaped; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_escapes_html_angle_brackets() {
+    let findings = vec![json!({
+        "finding": "Renders <script>alert(1)</script>",
+        "reason": "Untrusted HTML must not pass through",
+        "outcome": "dismissed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("&lt;script&gt;"),
+        "`<` and `>` must be HTML-entity escaped; got:\n{}",
+        out
+    );
+    assert!(
+        !out.contains("<script>"),
+        "raw `<script>` must NOT appear in output; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_escapes_backslash_first() {
+    let findings = vec![json!({
+        "finding": "trailing backslash\\",
+        "reason": "r1",
+        "outcome": "fixed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    // A trailing single backslash would otherwise escape the
+    // closing `**` markdown marker. The escape pass doubles each
+    // backslash so the value cannot escape the closing wrapper.
+    assert!(
+        out.contains("**trailing backslash\\\\**"),
+        "backslash must be doubled to neutralize trailing-escape on closing markers; got:\n{}",
+        out
+    );
 }
 
 // --- run_impl_main ---

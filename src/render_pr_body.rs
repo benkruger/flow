@@ -4,7 +4,7 @@ use clap::Parser;
 use serde_json::json;
 
 use crate::flow_paths::FlowPaths;
-use crate::format_complete_summary::compute_cost_breakdown;
+use crate::format_complete_summary::{compute_cost_breakdown, format_findings_markdown};
 use crate::format_issues_summary::format_issues_summary;
 use crate::format_pr_timings::format_timings_table;
 use crate::git::{current_branch, project_root};
@@ -306,6 +306,25 @@ pub fn render_body(state: &serde_json::Value, project_dir: &Path) -> Result<Stri
     if !cost_table.is_empty() {
         sections.push(build_plain_section("Token Cost", &cost_table));
         section_names.push("Token Cost".to_string());
+    }
+
+    // 5c. Review Findings + Learn Findings (each conditional —
+    // omitted entirely when `format_findings_markdown` returns an
+    // empty string for that phase). The PR-body sibling of the
+    // terminal-banner findings panel: same `findings[]` array,
+    // `outcome_marker`/`outcome_label` vocabulary, and per-phase
+    // filtering, rendered as nested markdown lists.
+    if let Some(findings_arr) = state.get("findings").and_then(|v| v.as_array()) {
+        let review_md = format_findings_markdown(findings_arr, "flow-review");
+        if !review_md.is_empty() {
+            sections.push(build_plain_section("Review Findings", &review_md));
+            section_names.push("Review Findings".to_string());
+        }
+        let learn_md = format_findings_markdown(findings_arr, "flow-learn");
+        if !learn_md.is_empty() {
+            sections.push(build_plain_section("Learn Findings", &learn_md));
+            section_names.push("Learn Findings".to_string());
+        }
     }
 
     // 6. State File (always)
