@@ -794,7 +794,13 @@ pub fn check_in_progress_utility_skill(
         Some(v) => v,
         None => return no_block(),
     };
-    let skill = marker.get("skill").and_then(|v| v.as_str()).unwrap_or("");
+    // Normalize the marker `skill` field per `.claude/rules/security-gates.md`
+    // "Normalize Before Comparing": strip NULs, trim whitespace, lowercase
+    // ASCII. The marker file is state-derived (hand-editable JSON) so a
+    // whitespace-padded, NUL-tainted, or uppercase value must still match
+    // the allowlist of canonical lowercase skill names.
+    let skill_raw = marker.get("skill").and_then(|v| v.as_str()).unwrap_or("");
+    let skill_norm = skill_raw.replace('\0', "").trim().to_ascii_lowercase();
     let marker_session = marker
         .get("session_id")
         .and_then(|v| v.as_str())
@@ -802,7 +808,7 @@ pub fn check_in_progress_utility_skill(
     if marker_session != session_id {
         return no_block();
     }
-    if !crate::commands::utility_marker::MULTI_STEP_UTILITY_SKILLS.contains(&skill) {
+    if !crate::commands::utility_marker::MULTI_STEP_UTILITY_SKILLS.contains(&skill_norm.as_str()) {
         return no_block();
     }
     // Marker precondition satisfied. Now check the discriminator:

@@ -2948,6 +2948,28 @@ fn check_in_progress_utility_skill_no_block_when_skill_not_in_known_set() {
 }
 
 #[test]
+fn utility_skill_marker_skill_field_normalized_before_allowlist_check() {
+    // Per `.claude/rules/security-gates.md` "Normalize Before Comparing",
+    // the marker `skill` field is a state-derived string (hand-editable
+    // JSON) and must be NUL-stripped, whitespace-trimmed, and
+    // ASCII-lowercased before comparison against the canonical
+    // allowlist of lowercase skill names. Without normalization, a
+    // hand-edit or whitespace-padded marker would silently fail-open
+    // and the gate would never fire.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().canonicalize().unwrap();
+    // Marker skill carries trailing whitespace AND mixed case — both
+    // must be normalized to the canonical `flow:flow-plan`.
+    write_utility_marker(&home, "  FLOW:Flow-Plan  ", UTIL_SESSION);
+    let transcript = transcript_with_skill_calls(&home, &["decompose:decompose"]);
+    let result = check_in_progress_utility_skill(UTIL_SESSION, transcript.to_str(), &home);
+    assert!(
+        result.should_block,
+        "marker skill with whitespace/case noise must normalize and match the allowlist",
+    );
+}
+
+#[test]
 fn check_in_progress_utility_skill_no_block_when_marker_session_id_mismatches() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().canonicalize().unwrap();
