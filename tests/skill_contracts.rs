@@ -5709,6 +5709,35 @@ fn flow_explore_skill_uses_vanilla_validator_mode() {
 }
 
 #[test]
+fn flow_explore_skill_files_with_vanilla_label() {
+    // Regression: a future edit drops `--label vanilla` from the
+    // flow-explore filing call. Without the label, vanilla problem-
+    // statement issues land unlabeled — `gh issue list`, the
+    // `/flow:flow-issues` dashboard, and any future label-based
+    // triage tooling cannot distinguish vanilla problem statements
+    // from decomposed implementation issues at a glance.
+    //
+    // Consumer: `gh issue list` and `/flow:flow-issues` filter and
+    // group issues by origin label. The paired origin labels
+    // (`vanilla` for problem statements, `decomposed` for
+    // pre-planned implementation issues) make provenance visible
+    // without opening the issue body.
+    let c = common::read_skill("flow-explore");
+    let mut found = false;
+    for line in c.lines() {
+        let trimmed = line.trim();
+        if trimmed.contains("bin/flow issue") && trimmed.contains("--label vanilla") {
+            found = true;
+            break;
+        }
+    }
+    assert!(
+        found,
+        "skills/flow-explore/SKILL.md must file the vanilla issue with `--label vanilla` on a single bin/flow issue invocation line"
+    );
+}
+
+#[test]
 fn flow_explore_skill_files_without_decomposed_label() {
     // Regression: a future edit adds `--label decomposed` to the
     // flow-explore filing call. The `decomposed` label is reserved

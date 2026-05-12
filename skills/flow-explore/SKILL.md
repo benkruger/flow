@@ -406,11 +406,12 @@ issue. Do NOT loop further.
 
 Once the validator returns `ok`, file the issue against the
 current repo (no `--repo` flag — `flow-explore` always files where
-the user is) and **without** `--label decomposed` (this is a
-vanilla problem-statement, not a pre-planned issue):
+the user is) with `--label vanilla` to mark its origin as a
+problem statement (never `--label decomposed`, which is reserved
+for issues filed by `/flow:flow-plan #N`):
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<issue_title>" --body-file .flow-issue-body-<id>
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<issue_title>" --body-file .flow-issue-body-<id> --label vanilla
 ```
 
 Capture the returned issue URL.
@@ -458,9 +459,12 @@ slash command directly.
   inline output. Vanilla bodies must not contain sentinels.
 - **Never compose an `## Implementation Plan` heading.** Vanilla
   bodies must not contain that heading.
-- **Never apply `--label decomposed`** when filing. Vanilla
-  issues are problem statements; the decomposed label is reserved
-  for issues filed by `/flow:flow-plan #N`.
+- **Always apply `--label vanilla`** when filing; never apply
+  `--label decomposed`. The `vanilla` label marks the issue's
+  origin as a problem statement; the `decomposed` label is
+  reserved for issues filed by `/flow:flow-plan #N`. `bin/flow
+  issue` auto-creates the `vanilla` label via `gh label create`
+  on first use if it does not already exist in the repo.
 - Never present draft issue bodies inline before reaching Step 5
   Wrap-up. Discussion produces context for the wrap-up; rendering
   a markdown-block draft with formal section headings during
