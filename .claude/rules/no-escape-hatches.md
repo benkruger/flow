@@ -17,7 +17,8 @@ that model by:
 - Wrapping a command in an interpreter that evaluates a string
   (`bash -c '<cmd>'`, `python -c '<cmd>'`, `eval '<cmd>'`).
 - Routing commands through a launcher that obscures the effective
-  program (`xargs <cmd>`, `rtk proxy <cmd>`).
+  program (`xargs <cmd>`, `rtk proxy <cmd>`, `env <cmd>`,
+  `time <cmd>`).
 - Reaching across the network or to another session
   (`nc`, `ssh`, `tmux send-keys`, `screen -X`).
 - Relying on a state-file marker to authorize a sensitive action
@@ -40,10 +41,11 @@ tool that performs the same task.
 | Category | Shape | Sanctioned alternative |
 |---|---|---|
 | Shell-eval | `bash -c '<cmd>'`, `sh -c '<cmd>'`, `zsh -c '<cmd>'`, `eval '<cmd>'` | Separate Bash tool calls per command; the Bash tool already accepts allow-listed programs directly. |
-| Interpreter-eval | `perl -e '<code>'`, `perl -E '<code>'`, `python -c '<code>'`, `python3 -c '<code>'`, `ruby -e '<code>'`, `node -e '<code>'`, `node -p '<code>'` | Read tool to view files; Write tool to create files; a proper script file plus the project's `bin/*` runners when computation is needed. |
+| Interpreter-eval | `perl -e/-E '<code>'`, `python -c '<code>'`, `python3 -c '<code>'`, `ruby -e '<code>'`, `node -e/-p '<code>'`, `osascript -e '<code>'`, `tclsh -c '<code>'`, `lua -e '<code>'` | Read tool to view files; Write tool to create files; a proper script file plus the project's `bin/*` runners when computation is needed. |
 | Command-wrapper | `xargs <cmd>`, `rtk proxy <cmd>` | Issue separate Bash calls per argument; invoke the underlying command directly through the sanctioned allow list. |
+| Wrapper-launcher | `env <cmd>`, `time <cmd>`, `nice <cmd>`, `nohup <cmd>`, `taskset <cmd>`, `ionice <cmd>` | These wrap an inner program and obscure the effective basename. Always invoke the inner program directly; the structural layer strips the wrapper so the inner shape is caught. |
 | Network-bridge | `nc <host> <port>`, direct `ssh <host>` | Use the dedicated network tool surface; use the approved ssh wrapper script when remote access is genuinely required. |
-| Inter-process | `tmux send-keys ...`, `screen -X ...` | Use direct Bash invocations, not multiplexer key injection. The session running the action is the session that should run it. |
+| Inter-process | `tmux send-keys ...` (with any global flags such as `-L socket`, `-S path`, `-f config`), `screen -X ...` | Use direct Bash invocations, not multiplexer key injection. The session running the action is the session that should run it. |
 
 Indirect forms route around glob-based deny patterns and are
 treated the same as the direct forms. Examples:
@@ -51,16 +53,52 @@ treated the same as the direct forms. Examples:
 - Absolute path prefixes — `/usr/bin/bash -c '...'`,
   `/bin/sh -c '...'`.
 - Environment-variable prefixes — `FOO=bar bash -c '...'`.
-- Flags before the trigger — `bash --norc -c '...'`,
+- Long flags before the trigger — `bash --norc -c '...'`,
   `bash --login -c '...'`.
+- Combined short-flag tokens — `bash -lc '...'`, `bash -ic '...'`,
+  `bash -xc '...'`, `node -ep '...'`. The structural check
+  iterates short-flag characters within each `-<chars>` token, so
+  any token containing the trigger character matches.
+- Wrapper launchers — `env bash -c '...'`, `time bash -c '...'`,
+  `nice python -c '...'`, `/usr/bin/env bash -c '...'`. The
+  structural layer strips one or more wrapper tokens before
+  checking the basename.
 
 The structural escape-hatch layer in `validate-pretool` strips
-env-var prefixes and the path prefix, basenames the first token,
-and matches against the program set with trigger-flag awareness.
-Legitimate uses that pass an escape-hatch program WITHOUT a
-string-eval trigger (`bash -n script.sh` for syntax checking,
-`ssh-keygen` because the basename is `ssh-keygen` rather than
-`ssh`) remain allowed.
+env-var prefixes (`KEY=VAL `), wrapper launchers (`env`, `time`,
+`nice`, `nohup`, `taskset`, `ionice`), and the path prefix;
+basenames the first token; and matches against the program set
+with trigger-flag awareness using `has_flag_char` (per-character
+scan of short-flag tokens). Legitimate uses that pass an escape-
+hatch program WITHOUT a string-eval trigger (`bash -n script.sh`
+for syntax checking, `ssh-keygen` because the basename is
+`ssh-keygen` rather than `ssh`, `tmux ls`, `screen -ls`,
+`rtk discover`) remain allowed.
+
+### Known v1 Boundaries
+
+The structural layer covers the canonical shapes above. The
+following bypass shapes are documented v1 boundaries — they slip
+past the current implementation and a future tightening is a
+deliberate decision rather than an accident:
+
+- **`awk` with `system()`** — `awk` is in `UNIVERSAL_ALLOW` for
+  routine text processing; a script containing `system("cmd")` is
+  a shell-eval shape but blocking `awk` entirely would break
+  every legitimate awk one-liner. A smarter content-aware check
+  could be added but carries high false-positive risk.
+- **`env` with flag arguments** — `env -u VAR bash -c '...'`
+  passes the `-u VAR` tokens through `strip_wrapper_launchers`
+  without consuming them. The next basename check sees `-u` as
+  the first token (not in the program set) and returns None.
+- **Recursive wrapper nesting** — `env time bash -c '...'`
+  consumes both wrappers in sequence; more deeply nested forms
+  (`env nice ionice bash -c`) also strip correctly because the
+  wrapper loop iterates until the first non-wrapper basename.
+- **Alternative interpreters not in the program set** — `racket`,
+  `swift`, `R`, `julia`, and other less-common interpreters with
+  eval flags are not enumerated. Adding them carries a small
+  prose-table maintenance cost; weigh on demand.
 
 ## Canonical Bypass-Shortcut Shapes
 
@@ -108,17 +146,20 @@ layer catches direct shapes: `bash -c 'rm /'`, `rtk proxy ls`,
 `python -c '...'`, and so on.
 
 The deny list operates on the raw command string, so absolute
-paths and env-var prefixes that change the textual shape of the
-invocation can route around it. Layer B closes that gap.
+paths, env-var prefixes, combined-flag tokens, and wrapper
+launchers that change the textual shape of the invocation can
+route around it. Layer B closes those gaps.
 
 ### Layer B — Structural hook layer (catches indirect forms)
 
 The structural escape-hatch layer in
 `src/hooks/validate_pretool.rs::validate()` slots between the
 existing deny-list check and the whitelist check. It strips
-env-var prefixes (`KEY=VAL `) and the path prefix, basenames the
-first token, and checks the basename against the escape-hatch
-program set with trigger-flag awareness.
+env-var prefixes (`KEY=VAL `), wrapper launchers (`env`, `time`,
+`nice`, `nohup`, `taskset`, `ionice`), and the path prefix;
+basenames the first token; and checks the basename against the
+escape-hatch program set with `has_flag_char` trigger-character
+matching.
 
 The layer is settings-independent — it fires regardless of whether
 `.claude/settings.json` is primed, so pre-prime sessions inherit

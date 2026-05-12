@@ -839,6 +839,208 @@ fn test_layer_7_5_passes_bare_env_assignment() {
     assert!(allowed);
 }
 
+// --- Layer 7.5: combined-flag scan (adversarial regression) ---
+//
+// `bash -lc 'cmd'` packs `-l` (login) and `-c` (eval) into a single
+// token. A literal `rest.contains(&"-c")` check matches only the
+// literal `-c` token, missing the combined-flag shape. The
+// `has_flag_char` helper iterates each short-flag token character-
+// by-character so any token starting with `-` (but not `--`) that
+// contains the trigger character matches.
+
+#[test]
+fn test_layer_7_5_blocks_bash_dash_lc() {
+    let (allowed, msg) = validate("bash -lc 'echo hi'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_bash_dash_ic() {
+    let (allowed, msg) = validate("bash -ic 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_bash_dash_xc() {
+    let (allowed, msg) = validate("bash -xc 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_env_prefix_bash_dash_lc() {
+    // Compounds the env-prefix strip with the combined-flag scan.
+    let (allowed, msg) = validate("FOO=bar bash -lc 'echo hi'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_passes_bash_dash_n_long() {
+    // `bash --noprofile -n script.sh` — long flag, no eval trigger.
+    // Must pass.
+    let (allowed, _msg) = validate("bash --noprofile -n script.sh", None, false);
+    assert!(allowed);
+}
+
+// --- Layer 7.5: wrapper-launcher strip (adversarial regression) ---
+//
+// `env`, `time`, `nice`, `nohup`, `taskset`, `ionice` wrap another
+// command. The `strip_wrapper_launchers` helper consumes the
+// wrapper token so the effective program reaches the basename
+// check.
+
+#[test]
+fn test_layer_7_5_blocks_env_bash_dash_c() {
+    let (allowed, msg) = validate("env bash -c 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_env_with_kv_bash_dash_c() {
+    // env's KEY=VAL args land between the wrapper and the wrapped
+    // program. After strip_wrapper_launchers consumes `env`,
+    // strip_env_prefix consumes the KEY=VAL, exposing `bash -c`.
+    let (allowed, msg) = validate("env FOO=bar bash -c 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_time_bash_dash_c() {
+    let (allowed, msg) = validate("time bash -c 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_nice_python_dash_c() {
+    let (allowed, msg) = validate("nice python -c 'print(1)'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_nohup_bash_dash_c() {
+    let (allowed, msg) = validate("nohup bash -c 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_taskset_bash_dash_c() {
+    let (allowed, msg) = validate("taskset bash -c 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_ionice_bash_dash_c() {
+    let (allowed, msg) = validate("ionice bash -c 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_absolute_path_env_bash_dash_c() {
+    let (allowed, msg) = validate("/usr/bin/env bash -c 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_passes_env_with_only_wrapper() {
+    // `env` alone with no following command — wrapper-launcher
+    // returns empty. The next token check sees nothing, the
+    // `first` extraction fails, and Layer 7.5 returns None.
+    let (allowed, _msg) = validate("env", None, false);
+    assert!(allowed);
+}
+
+#[test]
+fn test_layer_7_5_passes_time_alone() {
+    let (allowed, _msg) = validate("time", None, false);
+    assert!(allowed);
+}
+
+// --- Layer 7.5: additional interpreter-eval programs ---
+//
+// osascript (macOS AppleScript), tclsh (Tcl), and lua all evaluate
+// strings passed via -e/-c flags and have builtins that shell out
+// (`do shell script`, `exec`, `os.execute`). Same interpreter-eval
+// class as perl/python/ruby/node; added to the escape-hatch program
+// set during the Review fix sweep.
+
+#[test]
+fn test_layer_7_5_blocks_osascript_dash_e() {
+    let (allowed, msg) = validate("osascript -e 'do shell script \"id\"'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("osascript"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_tclsh_dash_c() {
+    let (allowed, msg) = validate("tclsh -c 'exec id'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("tclsh"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_lua_dash_e() {
+    let (allowed, msg) = validate("lua -e 'os.execute(\"id\")'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("lua"));
+}
+
+#[test]
+fn test_layer_7_5_passes_osascript_script_invocation() {
+    // `osascript script.scpt` runs an AppleScript file; no -e flag.
+    let (allowed, _msg) = validate("osascript script.scpt", None, false);
+    assert!(allowed);
+}
+
+#[test]
+fn test_layer_7_5_passes_tclsh_script_invocation() {
+    let (allowed, _msg) = validate("tclsh script.tcl", None, false);
+    assert!(allowed);
+}
+
+#[test]
+fn test_layer_7_5_passes_lua_script_invocation() {
+    let (allowed, _msg) = validate("lua script.lua", None, false);
+    assert!(allowed);
+}
+
+// --- Layer 7.5: tmux with global flags (adversarial regression) ---
+//
+// `tmux send-keys` was previously caught only when send-keys was
+// the first arg token. Global tmux flags (`-L socket`, `-S path`,
+// `-f config`, `-v`) before the subcommand shifted send-keys past
+// the `rest.first()` check. Fixed by switching to `rest.contains`.
+
+#[test]
+fn test_layer_7_5_blocks_tmux_with_socket_flag() {
+    let (allowed, msg) = validate("tmux -L mysocket send-keys 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("send-keys"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_tmux_with_config_flag() {
+    let (allowed, msg) = validate("tmux -f /tmp/cfg send-keys 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
 // --- Layer 7.5: block message sanctioned-alternative content ---
 
 #[test]
@@ -2168,9 +2370,9 @@ fn t19_git_ci_alias_on_main_allows_in_v1() {
 }
 
 #[test]
-fn t20_xargs_git_commit_on_main_allows_in_v1() {
-    // The `xargs git commit` shape is now blocked structurally by
-    // Layer 7.5 (`.claude/rules/no-escape-hatches.md` "Canonical
+fn t20_xargs_git_commit_on_main_blocks_via_escape_hatch_layer() {
+    // The `xargs git commit` shape is blocked structurally by Layer
+    // 7.5 (`.claude/rules/no-escape-hatches.md` "Canonical
     // Escape-Hatch Shapes"). Layer 9's commit-invocation matcher
     // never sees the wrapped `git commit` because Layer 7.5 fires
     // first on the `xargs` first-token basename — the wrapper itself
@@ -2178,10 +2380,7 @@ fn t20_xargs_git_commit_on_main_allows_in_v1() {
     let (_dir, root) = setup_repo_on_branch("main");
     let input = r#"{"tool_input": {"command": "xargs git commit"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
-    assert_eq!(
-        code, 2,
-        "xargs is now blocked at Layer 7.5; stderr={stderr}"
-    );
+    assert_eq!(code, 2, "xargs is blocked at Layer 7.5; stderr={stderr}");
     assert!(stderr.contains("BLOCKED"));
     assert!(stderr.contains("xargs"));
     assert!(stderr.contains("escape hatch"));

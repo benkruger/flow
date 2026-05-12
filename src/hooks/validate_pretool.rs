@@ -481,15 +481,15 @@ fn first_token_basename(token: &str) -> &str {
 /// cites `.claude/rules/no-escape-hatches.md` for the citation
 /// contract test.
 fn check_escape_hatch_structural(stripped: &str) -> Option<String> {
-    let after_env = strip_env_prefix(stripped);
-    let mut tokens = after_env.split_whitespace();
+    let unwrapped = strip_env_and_wrappers(stripped);
+    let mut tokens = unwrapped.split_whitespace();
     let first = tokens.next()?;
     let basename = first_token_basename(first);
     let rest: Vec<&str> = tokens.collect();
 
     match basename {
         "bash" | "sh" | "zsh" => {
-            if rest.contains(&"-c") {
+            if has_flag_char(&rest, 'c') {
                 Some(format!(
                     "BLOCKED: '{} -c' is a shell-eval escape hatch. \
                      Use separate Bash tool calls per command. \
@@ -513,7 +513,7 @@ fn check_escape_hatch_structural(stripped: &str) -> Option<String> {
                 .to_string(),
         ),
         "perl" => {
-            if rest.contains(&"-e") || rest.contains(&"-E") {
+            if has_flag_char(&rest, 'e') || has_flag_char(&rest, 'E') {
                 Some(
                     "BLOCKED: 'perl -e'/'perl -E' is an interpreter-eval escape hatch. \
                      Use the Read tool to view files and the Write tool to create files. \
@@ -525,7 +525,7 @@ fn check_escape_hatch_structural(stripped: &str) -> Option<String> {
             }
         }
         "python" | "python3" => {
-            if rest.contains(&"-c") {
+            if has_flag_char(&rest, 'c') {
                 Some(format!(
                     "BLOCKED: '{} -c' is an interpreter-eval escape hatch. \
                      Use the Read tool to view files and the Write tool to create files. \
@@ -537,7 +537,7 @@ fn check_escape_hatch_structural(stripped: &str) -> Option<String> {
             }
         }
         "ruby" => {
-            if rest.contains(&"-e") {
+            if has_flag_char(&rest, 'e') {
                 Some(
                     "BLOCKED: 'ruby -e' is an interpreter-eval escape hatch. \
                      Use the Read tool to view files and the Write tool to create files. \
@@ -549,9 +549,48 @@ fn check_escape_hatch_structural(stripped: &str) -> Option<String> {
             }
         }
         "node" => {
-            if rest.contains(&"-e") || rest.contains(&"-p") {
+            if has_flag_char(&rest, 'e') || has_flag_char(&rest, 'p') {
                 Some(
                     "BLOCKED: 'node -e'/'node -p' is an interpreter-eval escape hatch. \
+                     Use the Read tool to view files and the Write tool to create files. \
+                     See .claude/rules/no-escape-hatches.md."
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        "osascript" => {
+            if has_flag_char(&rest, 'e') {
+                Some(
+                    "BLOCKED: 'osascript -e' is an interpreter-eval escape hatch. \
+                     AppleScript can shell out via `do shell script`. \
+                     Use the Read tool to view files and the Write tool to create files. \
+                     See .claude/rules/no-escape-hatches.md."
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        "tclsh" => {
+            if has_flag_char(&rest, 'c') {
+                Some(
+                    "BLOCKED: 'tclsh -c' is an interpreter-eval escape hatch. \
+                     Tcl can shell out via `exec`. \
+                     Use the Read tool to view files and the Write tool to create files. \
+                     See .claude/rules/no-escape-hatches.md."
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        "lua" => {
+            if has_flag_char(&rest, 'e') {
+                Some(
+                    "BLOCKED: 'lua -e' is an interpreter-eval escape hatch. \
+                     Lua can shell out via `os.execute`. \
                      Use the Read tool to view files and the Write tool to create files. \
                      See .claude/rules/no-escape-hatches.md."
                         .to_string(),
@@ -573,7 +612,7 @@ fn check_escape_hatch_structural(stripped: &str) -> Option<String> {
                 .to_string(),
         ),
         "tmux" => {
-            if rest.first() == Some(&"send-keys") {
+            if rest.contains(&"send-keys") {
                 Some(
                     "BLOCKED: 'tmux send-keys' is an inter-process escape hatch. \
                      Use direct Bash invocations, not multiplexer key injection. \
@@ -610,6 +649,86 @@ fn check_escape_hatch_structural(stripped: &str) -> Option<String> {
         }
         _ => None,
     }
+}
+
+/// Alternate `strip_wrapper_launchers` and `strip_env_prefix` until
+/// the input stabilizes. Handles both orderings of env-var prefix
+/// and wrapper launcher: `env FOO=bar bash -c '...'` (wrapper-then-
+/// env-args) AND `FOO=bar env bash -c '...'` (env-prefix-then-
+/// wrapper). A single pass cannot cover both because each pass only
+/// strips one layer at a time. The loop terminates when neither
+/// stripper makes progress — bounded above by the number of tokens
+/// in the input, so worst-case O(N²) in token count for a clearly
+/// linear input.
+fn strip_env_and_wrappers(s: &str) -> &str {
+    let mut current = s;
+    loop {
+        let after = strip_env_prefix(strip_wrapper_launchers(current));
+        if after.len() == current.len() {
+            return current;
+        }
+        current = after;
+    }
+}
+
+/// Strip leading wrapper-launcher tokens (`env`, `time`, `nice`,
+/// `nohup`, `taskset`, `ionice`) so a wrapper-launched escape hatch
+/// like `env bash -c 'cmd'` or `time bash -c 'cmd'` exposes its
+/// effective program to the basename check. Each iteration consumes
+/// the wrapper token; `strip_env_prefix` running afterward consumes
+/// any KEY=VAL arguments env may carry (`env KEY=VAL bash -c`).
+/// `env -u VAR bash -c` is a documented v1 boundary — the helper
+/// stops at the first wrapper-flag token (`-u`) rather than
+/// consuming flag args, so the program-set check sees `-u` as the
+/// first token and returns None. The structural-layer rule's table
+/// names this gap explicitly so a future tightening is a deliberate
+/// design choice rather than discovery during adversarial review.
+fn strip_wrapper_launchers(s: &str) -> &str {
+    const WRAPPERS: &[&str] = &["env", "time", "nice", "nohup", "taskset", "ionice"];
+    let mut current = s.trim_start();
+    loop {
+        let Some(first) = current.split_whitespace().next() else {
+            return current;
+        };
+        let basename = first_token_basename(first);
+        if !WRAPPERS.contains(&basename) {
+            return current;
+        }
+        // Find the first whitespace boundary past the wrapper token.
+        // Iterate chars rather than bytes so multi-byte UTF-8 paths
+        // in absolute-path wrappers (`/opt/utf-8-path/env`) advance
+        // correctly. `current` is the worktree-derived stripped
+        // command, but any path can pass through.
+        let mut idx = 0;
+        for (i, c) in current.char_indices() {
+            if c.is_whitespace() {
+                idx = i;
+                break;
+            }
+        }
+        if idx == 0 {
+            // Wrapper is the only token — nothing escapes through.
+            return "";
+        }
+        current = current[idx..].trim_start();
+    }
+}
+
+/// Return true iff any token in `rest` starts with `-` (but not
+/// `--`) and contains the given short-flag character. Catches
+/// combined-flag shapes like `bash -lc`, `bash -ic`, `bash -xc`,
+/// `node -ep`, etc., which a literal `rest.contains(&"-c")` check
+/// would miss (the token is `-lc`, not `-c`).
+///
+/// Long flags (`--login`, `--noprofile`) are excluded because
+/// short-flag-character semantics do not apply.
+fn has_flag_char(rest: &[&str], flag: char) -> bool {
+    rest.iter().any(|t| {
+        if !t.starts_with('-') || t.starts_with("--") {
+            return false;
+        }
+        t.chars().skip(1).any(|c| c == flag)
+    })
 }
 
 /// Walk `tokens` skipping git-level flags that take an argument

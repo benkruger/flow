@@ -5929,9 +5929,17 @@ fn validate_pretool_escape_hatch_messages_cite_rule() {
     // section in `validate()` just dispatches to the helper. Scope
     // the citation assertion to the helper's function body so the
     // contract tests each block-message string produced by Layer
-    // 7.5's match arms (twelve distinct messages, one per
-    // escape-hatch family).
-    let layer7_5_helper = slice(&content, "fn check_escape_hatch_structural", "_ => None,");
+    // 7.5's match arms (one per escape-hatch family). The end
+    // marker is the next function definition
+    // (`fn strip_env_and_wrappers`) — function-boundary markers
+    // prevent a future refactor from accidentally shrinking the
+    // slice via a common Rust pattern like `_ => None,` appearing
+    // elsewhere in the file.
+    let layer7_5_helper = slice(
+        &content,
+        "fn check_escape_hatch_structural",
+        "\nfn strip_env_and_wrappers",
+    );
     assert!(
         layer7_5_helper.contains(CITATION),
         "Layer 7.5 helper `check_escape_hatch_structural` block messages must cite no-escape-hatches.md; function body:\n{}",
