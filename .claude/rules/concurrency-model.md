@@ -114,15 +114,10 @@ by basename suffix so absolute paths like
   subcommand.
 - **`bash -c '<inner>'` and `sh -c '<inner>'`** — one level of
   shell wrapping is unwrapped, and the inner script is
-  re-evaluated through the same matcher.
-- **`git -C <other_repo> commit ...`** — branch resolution reads
-  from BOTH the hook's process cwd AND the `-C` argument's path,
-  and Layer 9 blocks if EITHER resolves to its own integration
-  branch.
-- **`bin/flow <flag> finalize-commit`** — the `bin/flow` arm
-  matches `finalize-commit` as any subsequent token, not just
-  the immediate next one, so a future global flag cannot slip the
-  subcommand past the matcher.
+  re-evaluated through the same matcher. The `unwrap_bash_c`
+  helper stays in place as the structural backup for the
+  pre-prime window, where `.claude/settings.json` may not yet
+  carry the matching `FLOW_DENY` entries.
 
 ### Active-Flow Trigger
 
@@ -158,8 +153,8 @@ once a flow is genuinely active.
 **Skill-commit carve-out.** The active-flow gate would otherwise
 block the legitimate skill path itself, because
 `/flow:flow-commit` invokes `bin/flow finalize-commit` via the
-Bash tool. The carve-out passes the invocation through iff BOTH
-conditions hold for the candidate cwd:
+Bash tool. The carve-out passes the invocation through iff ALL
+THREE conditions hold for the candidate cwd:
 
 1. The command shape is `bin/flow ... finalize-commit` (NOT
    `git commit`). Raw `git commit` is never legitimate during a
@@ -170,20 +165,37 @@ conditions hold for the candidate cwd:
    `bin/flow set-timestamp` immediately before invoking
    `/flow:flow-commit`, and `phase_enter()` clears it on phase
    advance.
+3. The most recent assistant Skill tool_use call since the most
+   recent user turn — resolved by
+   `transcript_walker::most_recent_skill_since_user(transcript_path, home)`
+   — is `flow:flow-commit`. The walker is the load-bearing
+   predicate that proves the surrounding skill choreography
+   (diff review, commit-message review) actually ran; the
+   `_continue_pending` marker on its own is belt-and-suspenders
+   for a fresh-session resume window. The transcript-walker
+   check is the AND-combined condition per
+   `.claude/rules/no-escape-hatches.md` Layer C, which closes
+   the bypass-shortcut surface where a model could write the
+   marker directly and invoke `bin/flow finalize-commit` without
+   going through `/flow:flow-commit`.
 
 The integration-branch context is NOT carved out — commits on
 the integration branch are blocked regardless of the marker.
 
 Trust contract: the `_continue_pending` field is writable by
 the model (the same `bin/flow set-timestamp` call that the
-skills use is reachable from any Bash invocation). A model that
-deliberately bypasses `/flow:flow-commit` could write the
-marker, then call `bin/flow finalize-commit` directly, skipping
-the skill's diff review and commit-message review. The hook
+skills use is reachable from any Bash invocation). Without the
+transcript-walker condition, a model that deliberately bypassed
+`/flow:flow-commit` could write the marker, then call
+`bin/flow finalize-commit` directly, skipping the skill's diff
+review and commit-message review. The walker check closes that
+bypass: only the genuine `/flow:flow-commit` skill invocation
+produces an assistant Skill tool_use with `skill ==
+"flow:flow-commit"` since the most recent user turn. The hook
 preserves the CI invariant — `finalize-commit` runs
-`ci::run_impl()` before `git commit` regardless — but the
-surrounding choreography is upheld by the rule discipline, not
-by the hook.
+`ci::run_impl()` before `git commit` regardless — AND the
+surrounding choreography is now upheld by the hook, not by rule
+discipline alone.
 
 ### Known Limitations
 

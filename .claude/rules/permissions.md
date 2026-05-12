@@ -360,3 +360,17 @@ self-imposed pauses. See
 `.claude/rules/autonomous-phase-discipline.md` "Shared-Config
 Carve-Out" subsection for the helper, the detection signal, and
 the ordering relative to the user-only-skill carve-out.
+
+## Upstream Principle: No Escape Hatches
+
+The `FLOW_DENY` patterns enumerated above and the structural
+escape-hatch layer in `validate-pretool` are both expressions of
+the same principle: use sanctioned tools; never route around them.
+`.claude/rules/no-escape-hatches.md` is the authoritative articulation
+of that principle, and it lists every program/flag combination the
+deny list covers along with the sanctioned alternative for each.
+
+When extending `FLOW_DENY` to cover a new escape-hatch program or
+flag combination, update the Canonical Escape-Hatch Shapes table
+in `no-escape-hatches.md` in the same PR so the rule prose and
+the mechanical deny list stay synchronized.
