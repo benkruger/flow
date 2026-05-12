@@ -54,6 +54,7 @@ pub mod prime_setup;
 pub mod promote_permissions;
 pub mod protected_paths;
 pub mod render_pr_body;
+pub mod required_agents;
 pub mod session_cost;
 pub mod session_metrics;
 pub mod start_finalize;

@@ -5963,3 +5963,33 @@ fn validate_pretool_escape_hatch_messages_cite_rule() {
         layer9_active
     );
 }
+
+// --- REQUIRED_AGENTS ↔ SKILL.md binding ---
+
+/// `flow_rs::required_agents::REQUIRED_AGENTS` is the authoritative
+/// per-phase required-agent set the `phase-finalize` gate composes
+/// against `agents_returned` / `agents_skipped`. This contract test
+/// binds the constant to the matching SKILL.md invocation set: a
+/// SKILL.md edit that adds, removes, or renames an
+/// `subagent_type: "flow:<name>"` invocation without updating the
+/// constant fails CI.
+#[test]
+fn required_agents_matches_skill_invocations() {
+    let re = Regex::new("subagent_type[^\"]*\"flow:([a-z][a-z0-9_-]*)\"").unwrap();
+    for (phase, expected) in flow_rs::required_agents::REQUIRED_AGENTS {
+        let skill = common::read_skill(phase);
+        let mut found: Vec<String> = re
+            .captures_iter(&skill)
+            .map(|cap| cap[1].to_string())
+            .collect();
+        found.sort_unstable();
+        found.dedup();
+        let mut want: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
+        want.sort_unstable();
+        assert_eq!(
+            found, want,
+            "REQUIRED_AGENTS for {} does not match SKILL.md `subagent_type: \"flow:<name>\"` invocations.\n  REQUIRED_AGENTS: {:?}\n  found in SKILL: {:?}",
+            phase, want, found
+        );
+    }
+}
