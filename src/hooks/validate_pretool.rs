@@ -10,17 +10,19 @@
 //! Exit 0 — allow (command passes through to normal permission system)
 //! Exit 2 — block (error message on stderr is fed back to the sub-agent)
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use regex::Regex;
 use serde_json::Value;
 
+use super::transcript_walker::most_recent_skill_since_user;
 use super::{
     build_permission_regexes, detect_branch_from_path, find_settings_and_root_from, is_flow_active,
     read_hook_input, resolve_main_root,
 };
 use crate::flow_paths::FlowPaths;
 use crate::git::{current_branch_in, default_branch_in};
+use crate::session_metrics::home_dir_or_empty;
 
 /// Validate a Bash command string.
 ///
@@ -45,7 +47,8 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
                 false,
                 format!(
                     "BLOCKED: Compound commands ({}) are not allowed outside quoted arguments. \
-                     Use separate Bash calls for each command.",
+                     Use separate Bash calls for each command. \
+                     See .claude/rules/no-escape-hatches.md.",
                     op
                 ),
             );
@@ -54,7 +57,8 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
             return (
                 false,
                 "BLOCKED: Command has an unclosed single or double quote. \
-                 Close the quote before running the command."
+                 Close the quote before running the command. \
+                 See .claude/rules/no-escape-hatches.md."
                     .to_string(),
             );
         }
@@ -70,7 +74,8 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
             false,
             "BLOCKED: Shell redirection (>, >>) is not allowed. \
              Use the Read tool to view file contents and the \
-             Write tool to create files."
+             Write tool to create files. \
+             See .claude/rules/no-escape-hatches.md."
                 .to_string(),
         );
     }
@@ -85,7 +90,8 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
             false,
             "BLOCKED: 'exec' prefix triggers a permission prompt. \
              Remove 'exec' and run the command directly — \
-             the behavior is identical."
+             the behavior is identical. \
+             See .claude/rules/no-escape-hatches.md."
                 .to_string(),
         );
     }
@@ -123,7 +129,8 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
                         "BLOCKED: 'find' with destructive flag '{}' is forbidden. \
                          `-exec`, `-execdir`, `-ok`, `-okdir`, and `-delete` \
                          run arbitrary commands or unlink files. Use Glob to \
-                         discover paths and Read to inspect them.",
+                         discover paths and Read to inspect them. \
+                         See .claude/rules/no-escape-hatches.md.",
                         token
                     ),
                 );
@@ -166,12 +173,24 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
                     false,
                     format!(
                         "BLOCKED: Command matches deny list: '{}'. \
-                         This operation is explicitly forbidden.",
+                         This operation is explicitly forbidden. \
+                         See .claude/rules/no-escape-hatches.md.",
                         command
                     ),
                 );
             }
         }
+    }
+
+    // Layer 7.5: Structural escape-hatch program/flag block. Catches
+    // indirect forms (absolute paths, env-var prefixes, flags-before-
+    // trigger) that route around Layer 7's glob deny patterns. Fires
+    // regardless of `settings` or `flow_active` so pre-prime sessions
+    // and outside-FLOW invocations inherit the protection. See
+    // `.claude/rules/no-escape-hatches.md` for the canonical
+    // program/flag table this layer enforces structurally.
+    if let Some(msg) = check_escape_hatch_structural(stripped) {
+        return (false, msg);
     }
 
     // Layer 8: Whitelist check — only during an active flow
@@ -401,21 +420,315 @@ fn dequote_token(s: &str) -> &str {
     s.trim_matches('\'').trim_matches('"')
 }
 
-/// When `stripped` is a `bash -c <arg>` or `sh -c <arg>` invocation,
-/// return the inner script string with one layer of surrounding
-/// quotes removed. Otherwise return None. Used to re-evaluate the
-/// inner command through the same matcher one level deeper. v1 does
-/// not recurse a second time (`bash -c 'bash -c "..."'` falls
-/// through to allow), does not handle env-var-indirected launchers
-/// (`SHELL=bash $SHELL -c '...'`), and does not handle bash flags
-/// before `-c` (`bash --norc -c '...'`) — these shapes pass through
-/// to the standard first-token check, which sees `bash` as the
-/// first token and returns false from `is_commit_invocation_inner`.
-fn unwrap_bash_c(stripped: &str) -> Option<String> {
-    let after = stripped
-        .strip_prefix("bash -c ")
-        .or_else(|| stripped.strip_prefix("sh -c "))?;
-    Some(dequote_token(after.trim_start()).to_string())
+/// Strip leading `KEY=VAL ` env-var prefix segments from `s` and
+/// return the remainder. Zero or more segments are stripped — each
+/// segment is an ASCII identifier (letter or `_` followed by
+/// letters/digits/`_`), an `=`, a non-whitespace value, and a
+/// trailing whitespace separator. The final token after env vars
+/// is NOT stripped: an `s` of `"FOO=bar"` alone returns `"FOO=bar"`
+/// because there is no whitespace boundary that proves a following
+/// command exists. Used by Layer 7.5 to see past `FOO=bar bash -c`
+/// to the effective program.
+fn strip_env_prefix(s: &str) -> &str {
+    let mut current = s.trim_start();
+    loop {
+        let bytes = current.as_bytes();
+        if bytes.is_empty() {
+            return current;
+        }
+        let first = bytes[0];
+        if !(first.is_ascii_alphabetic() || first == b'_') {
+            return current;
+        }
+        let mut i = 0;
+        while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+            i += 1;
+        }
+        if i >= bytes.len() || bytes[i] != b'=' {
+            return current;
+        }
+        let mut j = i + 1;
+        while j < bytes.len() && !bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        if j >= bytes.len() {
+            return current;
+        }
+        current = current[j..].trim_start();
+    }
+}
+
+/// Return the basename of a first-token path. When `token` contains
+/// no `/`, returns `token` unchanged. Otherwise returns the substring
+/// after the final `/`. Used by Layer 7.5 to match `/usr/bin/bash`
+/// against the escape-hatch program set by its basename `bash`.
+fn first_token_basename(token: &str) -> &str {
+    match token.rfind('/') {
+        Some(idx) => &token[idx + 1..],
+        None => token,
+    }
+}
+
+/// Layer 7.5's structural escape-hatch check. Strips env-var prefix,
+/// tokenizes on whitespace, basenames the first token, and matches
+/// against the canonical escape-hatch program set from
+/// `.claude/rules/no-escape-hatches.md`. Trigger-flag awareness keeps
+/// legitimate sibling invocations (`bash -n` syntax check, `tmux ls`,
+/// `rtk discover`) from being blocked while the eval shapes
+/// (`bash -c`, `tmux send-keys`, `rtk proxy`) are rejected. Returns
+/// `Some(message)` when the layer fires; the message names the
+/// program, the escape-hatch class, the sanctioned alternative, and
+/// cites `.claude/rules/no-escape-hatches.md` for the citation
+/// contract test.
+fn check_escape_hatch_structural(stripped: &str) -> Option<String> {
+    let unwrapped = strip_env_and_wrappers(stripped);
+    let mut tokens = unwrapped.split_whitespace();
+    let first = tokens.next()?;
+    let basename = first_token_basename(first);
+    let rest: Vec<&str> = tokens.collect();
+
+    match basename {
+        "bash" | "sh" | "zsh" => {
+            if has_flag_char(&rest, 'c') {
+                Some(format!(
+                    "BLOCKED: '{} -c' is a shell-eval escape hatch. \
+                     Use separate Bash tool calls per command. \
+                     See .claude/rules/no-escape-hatches.md.",
+                    basename
+                ))
+            } else {
+                None
+            }
+        }
+        "eval" => Some(
+            "BLOCKED: 'eval' is a shell-eval escape hatch. \
+             Use separate Bash tool calls per command. \
+             See .claude/rules/no-escape-hatches.md."
+                .to_string(),
+        ),
+        "xargs" => Some(
+            "BLOCKED: 'xargs' is a command-wrapper escape hatch. \
+             Issue separate Bash calls per argument. \
+             See .claude/rules/no-escape-hatches.md."
+                .to_string(),
+        ),
+        "perl" => {
+            if has_flag_char(&rest, 'e') || has_flag_char(&rest, 'E') {
+                Some(
+                    "BLOCKED: 'perl -e'/'perl -E' is an interpreter-eval escape hatch. \
+                     Use the Read tool to view files and the Write tool to create files. \
+                     See .claude/rules/no-escape-hatches.md."
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        "python" | "python3" => {
+            if has_flag_char(&rest, 'c') {
+                Some(format!(
+                    "BLOCKED: '{} -c' is an interpreter-eval escape hatch. \
+                     Use the Read tool to view files and the Write tool to create files. \
+                     See .claude/rules/no-escape-hatches.md.",
+                    basename
+                ))
+            } else {
+                None
+            }
+        }
+        "ruby" => {
+            if has_flag_char(&rest, 'e') {
+                Some(
+                    "BLOCKED: 'ruby -e' is an interpreter-eval escape hatch. \
+                     Use the Read tool to view files and the Write tool to create files. \
+                     See .claude/rules/no-escape-hatches.md."
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        "node" => {
+            if has_flag_char(&rest, 'e') || has_flag_char(&rest, 'p') {
+                Some(
+                    "BLOCKED: 'node -e'/'node -p' is an interpreter-eval escape hatch. \
+                     Use the Read tool to view files and the Write tool to create files. \
+                     See .claude/rules/no-escape-hatches.md."
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        "osascript" => {
+            if has_flag_char(&rest, 'e') {
+                Some(
+                    "BLOCKED: 'osascript -e' is an interpreter-eval escape hatch. \
+                     AppleScript can shell out via `do shell script`. \
+                     Use the Read tool to view files and the Write tool to create files. \
+                     See .claude/rules/no-escape-hatches.md."
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        "tclsh" => {
+            if has_flag_char(&rest, 'c') {
+                Some(
+                    "BLOCKED: 'tclsh -c' is an interpreter-eval escape hatch. \
+                     Tcl can shell out via `exec`. \
+                     Use the Read tool to view files and the Write tool to create files. \
+                     See .claude/rules/no-escape-hatches.md."
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        "lua" => {
+            if has_flag_char(&rest, 'e') {
+                Some(
+                    "BLOCKED: 'lua -e' is an interpreter-eval escape hatch. \
+                     Lua can shell out via `os.execute`. \
+                     Use the Read tool to view files and the Write tool to create files. \
+                     See .claude/rules/no-escape-hatches.md."
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        "nc" => Some(
+            "BLOCKED: 'nc' is a network-bridge escape hatch. \
+             Use the dedicated network tool surface. \
+             See .claude/rules/no-escape-hatches.md."
+                .to_string(),
+        ),
+        "ssh" => Some(
+            "BLOCKED: 'ssh' is a network-bridge escape hatch. \
+             Use the approved ssh wrapper script when remote access is required. \
+             See .claude/rules/no-escape-hatches.md."
+                .to_string(),
+        ),
+        "tmux" => {
+            if rest.contains(&"send-keys") {
+                Some(
+                    "BLOCKED: 'tmux send-keys' is an inter-process escape hatch. \
+                     Use direct Bash invocations, not multiplexer key injection. \
+                     See .claude/rules/no-escape-hatches.md."
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        "screen" => {
+            if rest.contains(&"-X") {
+                Some(
+                    "BLOCKED: 'screen -X' is an inter-process escape hatch. \
+                     Use direct Bash invocations, not multiplexer key injection. \
+                     See .claude/rules/no-escape-hatches.md."
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        "rtk" => {
+            if rest.first() == Some(&"proxy") {
+                Some(
+                    "BLOCKED: 'rtk proxy' is a command-wrapper escape hatch. \
+                     Use the underlying command directly through the sanctioned allow list. \
+                     See .claude/rules/no-escape-hatches.md."
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Alternate `strip_wrapper_launchers` and `strip_env_prefix` until
+/// the input stabilizes. Handles both orderings of env-var prefix
+/// and wrapper launcher: `env FOO=bar bash -c '...'` (wrapper-then-
+/// env-args) AND `FOO=bar env bash -c '...'` (env-prefix-then-
+/// wrapper). A single pass cannot cover both because each pass only
+/// strips one layer at a time. The loop terminates when neither
+/// stripper makes progress — bounded above by the number of tokens
+/// in the input, so worst-case O(N²) in token count for a clearly
+/// linear input.
+fn strip_env_and_wrappers(s: &str) -> &str {
+    let mut current = s;
+    loop {
+        let after = strip_env_prefix(strip_wrapper_launchers(current));
+        if after.len() == current.len() {
+            return current;
+        }
+        current = after;
+    }
+}
+
+/// Strip leading wrapper-launcher tokens (`env`, `time`, `nice`,
+/// `nohup`, `taskset`, `ionice`) so a wrapper-launched escape hatch
+/// like `env bash -c 'cmd'` or `time bash -c 'cmd'` exposes its
+/// effective program to the basename check. Each iteration consumes
+/// the wrapper token; `strip_env_prefix` running afterward consumes
+/// any KEY=VAL arguments env may carry (`env KEY=VAL bash -c`).
+/// `env -u VAR bash -c` is a documented v1 boundary — the helper
+/// stops at the first wrapper-flag token (`-u`) rather than
+/// consuming flag args, so the program-set check sees `-u` as the
+/// first token and returns None. The structural-layer rule's table
+/// names this gap explicitly so a future tightening is a deliberate
+/// design choice rather than discovery during adversarial review.
+fn strip_wrapper_launchers(s: &str) -> &str {
+    const WRAPPERS: &[&str] = &["env", "time", "nice", "nohup", "taskset", "ionice"];
+    let mut current = s.trim_start();
+    loop {
+        let Some(first) = current.split_whitespace().next() else {
+            return current;
+        };
+        let basename = first_token_basename(first);
+        if !WRAPPERS.contains(&basename) {
+            return current;
+        }
+        // Find the first whitespace boundary past the wrapper token.
+        // Iterate chars rather than bytes so multi-byte UTF-8 paths
+        // in absolute-path wrappers (`/opt/utf-8-path/env`) advance
+        // correctly. `current` is the worktree-derived stripped
+        // command, but any path can pass through.
+        let mut idx = 0;
+        for (i, c) in current.char_indices() {
+            if c.is_whitespace() {
+                idx = i;
+                break;
+            }
+        }
+        if idx == 0 {
+            // Wrapper is the only token — nothing escapes through.
+            return "";
+        }
+        current = current[idx..].trim_start();
+    }
+}
+
+/// Return true iff any token in `rest` starts with `-` (but not
+/// `--`) and contains the given short-flag character. Catches
+/// combined-flag shapes like `bash -lc`, `bash -ic`, `bash -xc`,
+/// `node -ep`, etc., which a literal `rest.contains(&"-c")` check
+/// would miss (the token is `-lc`, not `-c`).
+///
+/// Long flags (`--login`, `--noprofile`) are excluded because
+/// short-flag-character semantics do not apply.
+fn has_flag_char(rest: &[&str], flag: char) -> bool {
+    rest.iter().any(|t| {
+        if !t.starts_with('-') || t.starts_with("--") {
+            return false;
+        }
+        t.chars().skip(1).any(|c| c == flag)
+    })
 }
 
 /// Walk `tokens` skipping git-level flags that take an argument
@@ -457,13 +770,14 @@ fn extract_dash_c_path(stripped: &str) -> Option<&str> {
 /// when the effective cwd is on the integration branch. v1 matches:
 /// `git ... commit` (skipping `-c k=v` and `-C path` between `git`
 /// and the subcommand), `bin/flow ... finalize-commit` (matched by
-/// `bin/flow` exact or `*/bin/flow` suffix), `'git' commit` /
-/// `"git" commit` (with the first token dequoted), and `bash -c
-/// '<inner>'` / `sh -c '<inner>'` (re-evaluating the inner script).
+/// `bin/flow` exact or `*/bin/flow` suffix), and `'git' commit` /
+/// `"git" commit` (with the first token dequoted). `bash -c
+/// '<inner>'` and `sh -c '<inner>'` wrappers do NOT need to be
+/// unwrapped here because Layer 7.5 in `validate` blocks every
+/// shell-eval shape (`bash -c`, `sh -c`, `zsh -c`, `eval`) before
+/// Layer 9 runs — the wrapper itself is a structural escape hatch
+/// per `.claude/rules/no-escape-hatches.md`.
 fn is_commit_invocation(stripped: &str) -> bool {
-    if let Some(inner) = unwrap_bash_c(stripped) {
-        return is_commit_invocation_inner(&inner);
-    }
     is_commit_invocation_inner(stripped)
 }
 
@@ -497,7 +811,7 @@ fn commit_block_message(branch: &str) -> String {
     format!(
         "BLOCKED: direct commits on the integration branch '{}' are not allowed. \
          Run /flow:flow-commit from a feature worktree instead. \
-         This block is mechanical (Layer 9).",
+         This block is mechanical (Layer 9). See .claude/rules/no-escape-hatches.md.",
         branch
     )
 }
@@ -511,8 +825,9 @@ fn commit_block_message(branch: &str) -> String {
 fn commit_block_message_active_flow(branch: &str) -> String {
     format!(
         "BLOCKED: direct commits during an active flow on '{}' are not allowed. \
-         Run /flow:flow-commit instead so CI runs through the gate. \
-         This block is mechanical (Layer 9).",
+         Run /flow:flow-commit instead so CI and the skill's diff review run through \
+         the gate. This block is mechanical (Layer 9). \
+         See .claude/rules/no-escape-hatches.md.",
         branch
     )
 }
@@ -538,14 +853,19 @@ fn commit_block_message_active_flow(branch: &str) -> String {
 /// the rare case where both apply (the integration branch itself
 /// has an active flow). Across candidates: process cwd is checked
 /// before the `-C` target.
-fn check_commit_during_flow(command: &str, cwd: &Path) -> Option<String> {
+fn check_commit_during_flow(
+    command: &str,
+    cwd: &Path,
+    transcript_path: Option<&Path>,
+    home: &Path,
+) -> Option<String> {
     if !is_commit_invocation(command) {
         return None;
     }
     if let Some(msg) = match_branch_at(cwd) {
         return Some(msg);
     }
-    if let Some(msg) = check_active_flow_at(command, cwd) {
+    if let Some(msg) = check_active_flow_at(command, cwd, transcript_path, home) {
         return Some(msg);
     }
     if let Some(p) = extract_dash_c_path(command) {
@@ -553,7 +873,7 @@ fn check_commit_during_flow(command: &str, cwd: &Path) -> Option<String> {
         if let Some(msg) = match_branch_at(target) {
             return Some(msg);
         }
-        if let Some(msg) = check_active_flow_at(command, target) {
+        if let Some(msg) = check_active_flow_at(command, target, transcript_path, home) {
             return Some(msg);
         }
     }
@@ -617,7 +937,12 @@ fn match_branch_at(path: &Path) -> Option<String> {
 /// every invocation regardless of how the carve-out is reached. A
 /// stronger one-shot-token design is on the table if the marker-only
 /// gate proves insufficient in practice.
-fn check_active_flow_at(command: &str, path: &Path) -> Option<String> {
+fn check_active_flow_at(
+    command: &str,
+    path: &Path,
+    transcript_path: Option<&Path>,
+    home: &Path,
+) -> Option<String> {
     let branch = detect_branch_from_path(path)?;
     let (_, project_root) = find_settings_and_root_from(path);
     let root = project_root?;
@@ -627,27 +952,52 @@ fn check_active_flow_at(command: &str, path: &Path) -> Option<String> {
     }
     if is_finalize_commit_invocation(command)
         && state_continue_pending_is_commit(&branch, &main_root)
+        && transcript_shows_flow_commit(transcript_path, home)
     {
         return None;
     }
     Some(commit_block_message_active_flow(&branch))
 }
 
+/// Walker check for the skill-commit carve-out's third AND-combined
+/// condition. Returns true iff the most recent assistant Skill
+/// tool_use call since the most recent user turn in the persisted
+/// transcript at `transcript_path` names `flow:flow-commit`. Returns
+/// false when transcript_path is None, when the walker cannot read
+/// the file, or when the most recent Skill call is something other
+/// than `flow:flow-commit`.
+///
+/// The walker is the load-bearing predicate that proves the
+/// surrounding skill choreography (diff review, commit-message
+/// review) actually ran. The `_continue_pending` marker on its own
+/// is belt-and-suspenders for a fresh-session resume window; the
+/// walker closes the bypass-shortcut surface where a model could
+/// write the marker directly and invoke `bin/flow finalize-commit`
+/// without going through `/flow:flow-commit`. See
+/// `.claude/rules/no-escape-hatches.md` Layer C for the design.
+fn transcript_shows_flow_commit(transcript_path: Option<&Path>, home: &Path) -> bool {
+    let Some(path) = transcript_path else {
+        return false;
+    };
+    most_recent_skill_since_user(path, home).as_deref() == Some("flow:flow-commit")
+}
+
 /// Recognize a `bin/flow ... finalize-commit` invocation specifically.
 /// Mirrors the `bin/flow` arm of `is_commit_invocation_inner`: handles
 /// the bare `bin/flow` token and the `*/bin/flow` suffix form via
-/// `is_bin_flow_token`, dequotes the first token, unwraps one level
-/// of `bash -c`/`sh -c`, and matches `finalize-commit` as any
-/// subsequent token (so future global flags between launcher and
-/// subcommand cannot defeat the matcher).
+/// `is_bin_flow_token`, dequotes the first token, and matches
+/// `finalize-commit` as any subsequent token (so future global flags
+/// between launcher and subcommand cannot defeat the matcher).
+///
+/// `bash -c '<inner>'` and `sh -c '<inner>'` wrappers do NOT need to
+/// be unwrapped here because Layer 7.5 in `validate` blocks every
+/// shell-eval shape before Layer 9 runs — the wrapper itself is a
+/// structural escape hatch per `.claude/rules/no-escape-hatches.md`.
 ///
 /// Returns false for `git commit` in any form. The skill carve-out
 /// is finalize-commit-only — raw `git commit` is never legitimate
 /// during a flow even when the state marker is set.
 fn is_finalize_commit_invocation(stripped: &str) -> bool {
-    if let Some(inner) = unwrap_bash_c(stripped) {
-        return is_finalize_commit_inner(&inner);
-    }
     is_finalize_commit_inner(stripped)
 }
 
@@ -830,6 +1180,12 @@ pub fn run() {
         .cloned()
         .unwrap_or(Value::Object(Default::default()));
 
+    let transcript_path: Option<PathBuf> = hook_input
+        .get("transcript_path")
+        .and_then(|v| v.as_str())
+        .map(PathBuf::from);
+    let home = home_dir_or_empty();
+
     let command = tool_input
         .get("command")
         .and_then(|v| v.as_str())
@@ -873,7 +1229,9 @@ pub fn run() {
     // structural gates AND is a commit invocation routed through one
     // of the two trigger contexts.
     if let Some(cwd_path) = cwd.as_deref() {
-        if let Some(msg) = check_commit_during_flow(command, cwd_path) {
+        if let Some(msg) =
+            check_commit_during_flow(command, cwd_path, transcript_path.as_deref(), &home)
+        {
             eprintln!("{}", msg);
             std::process::exit(2);
         }

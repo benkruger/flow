@@ -536,6 +536,549 @@ fn test_layer4_skips_non_find_command() {
     assert!(allowed);
 }
 
+// --- Layer 7.5: structural escape-hatch program/flag block ---
+//
+// Layer 7.5 in src/hooks/validate_pretool.rs::validate strips env-var
+// prefixes (KEY=VAL ...), strips the path prefix to a basename, and
+// matches the basename against the escape-hatch program set from
+// `.claude/rules/no-escape-hatches.md` "Canonical Escape-Hatch Shapes"
+// with trigger-flag awareness. The block fires regardless of
+// `settings` content or `flow_active` state so the protection holds
+// during the pre-prime upgrade window AND outside FLOW phases.
+//
+// Each test passes None for settings and false for flow_active so the
+// block is provably independent of those surfaces. Block messages
+// must cite `.claude/rules/no-escape-hatches.md` so retrofit drift
+// fails the citation contract test.
+
+// Shell-eval direct-form rejections.
+
+#[test]
+fn test_blocks_bash_dash_c() {
+    let (allowed, msg) = validate("bash -c 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("bash"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_sh_dash_c() {
+    let (allowed, msg) = validate("sh -c 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_zsh_dash_c() {
+    let (allowed, msg) = validate("zsh -c 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_eval_command() {
+    let (allowed, msg) = validate("eval 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+// Command-wrapper direct-form rejections.
+
+#[test]
+fn test_blocks_xargs_command() {
+    let (allowed, msg) = validate("xargs ls", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_rtk_proxy() {
+    let (allowed, msg) = validate("rtk proxy ls", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+// Interpreter-eval direct-form rejections.
+
+#[test]
+fn test_blocks_perl_dash_e_lowercase() {
+    let (allowed, msg) = validate("perl -e 'print 1'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_perl_dash_e_uppercase() {
+    let (allowed, msg) = validate("perl -E 'say 1'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_python_dash_c() {
+    let (allowed, msg) = validate("python -c 'print(1)'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_python3_dash_c() {
+    let (allowed, msg) = validate("python3 -c 'print(1)'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_ruby_dash_e() {
+    let (allowed, msg) = validate("ruby -e 'puts 1'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_node_dash_e() {
+    let (allowed, msg) = validate("node -e 'console.log(1)'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_node_dash_p() {
+    let (allowed, msg) = validate("node -p '1+1'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+// Network-bridge direct-form rejections.
+
+#[test]
+fn test_blocks_nc_command() {
+    let (allowed, msg) = validate("nc 1.2.3.4 80", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_ssh_command() {
+    let (allowed, msg) = validate("ssh host", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+// Inter-process direct-form rejections.
+
+#[test]
+fn test_blocks_tmux_send_keys() {
+    let (allowed, msg) = validate("tmux send-keys 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_screen_capital_x() {
+    let (allowed, msg) = validate("screen -X stuff cmd", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+// --- Layer 7.5: indirect-form rejections ---
+//
+// Glob deny patterns require the exact first-token spelling; these
+// indirect shapes (absolute path prefix, env-var prefix, flags
+// before the trigger) route around Layer 7's settings-driven check.
+// Layer 7.5's structural tokenization catches them.
+
+#[test]
+fn test_blocks_absolute_path_bash_dash_c() {
+    let (allowed, msg) = validate("/usr/bin/bash -c 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_absolute_path_sh_dash_c() {
+    let (allowed, msg) = validate("/bin/sh -c 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_env_prefix_bash_dash_c() {
+    let (allowed, msg) = validate("FOO=bar bash -c 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_multiple_env_prefix_bash_dash_c() {
+    let (allowed, msg) = validate("A=1 B=2 bash -c 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_blocks_bash_norc_dash_c() {
+    let (allowed, msg) = validate("bash --norc -c 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_bash_login_dash_c() {
+    let (allowed, msg) = validate("bash --login -c 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+// --- Layer 7.5: pass-through cases ---
+//
+// `bash -n script.sh` (syntax check, no eval) is in UNIVERSAL_ALLOW
+// and must pass Layer 7.5 untouched. `ssh-keygen` has the basename
+// `ssh-keygen` rather than `ssh` and must NOT trip the ssh-class
+// block — basename matching is exact, not prefix-based.
+
+#[test]
+fn test_layer_7_5_passes_bash_dash_n() {
+    let (allowed, msg) = validate("bash -n script.sh", None, false);
+    assert!(allowed, "bash -n must pass Layer 7.5; msg={msg:?}");
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn test_layer_7_5_passes_ssh_keygen() {
+    // Pass settings=None so we skip Layer 8's whitelist; the test is
+    // that Layer 7.5 doesn't fire on `ssh-keygen`.
+    let (allowed, _msg) = validate("ssh-keygen -t rsa", None, false);
+    assert!(
+        allowed,
+        "ssh-keygen basename must not match ssh-class block"
+    );
+}
+
+#[test]
+fn test_layer_7_5_passes_python_without_dash_c() {
+    // `python script.py` is a script execution, not a -c eval — the
+    // shell-eval class doesn't apply. Falls through to other layers.
+    let (allowed, _msg) = validate("python script.py", None, false);
+    assert!(allowed);
+}
+
+#[test]
+fn test_layer_7_5_passes_node_without_eval_flag() {
+    let (allowed, _msg) = validate("node script.js", None, false);
+    assert!(allowed);
+}
+
+#[test]
+fn test_layer_7_5_passes_perl_script_invocation() {
+    let (allowed, _msg) = validate("perl script.pl", None, false);
+    assert!(allowed);
+}
+
+#[test]
+fn test_layer_7_5_passes_rtk_subcommand_other_than_proxy() {
+    let (allowed, _msg) = validate("rtk discover", None, false);
+    assert!(allowed, "rtk subcommands other than proxy must pass");
+}
+
+#[test]
+fn test_layer_7_5_passes_ruby_script_invocation() {
+    // `ruby script.rb` is a script run, not a `-e` eval — falls
+    // through to subsequent layers.
+    let (allowed, _msg) = validate("ruby script.rb", None, false);
+    assert!(allowed);
+}
+
+#[test]
+fn test_layer_7_5_passes_tmux_ls() {
+    // `tmux ls` lists sessions — not the `send-keys` injection
+    // shape, so Layer 7.5 must let it through.
+    let (allowed, _msg) = validate("tmux ls", None, false);
+    assert!(allowed, "tmux without send-keys subcommand must pass");
+}
+
+#[test]
+fn test_layer_7_5_passes_screen_ls() {
+    // `screen -ls` lists sessions — not the `-X` stuff-key shape, so
+    // Layer 7.5 must let it through.
+    let (allowed, _msg) = validate("screen -ls", None, false);
+    assert!(allowed, "screen without -X flag must pass");
+}
+
+#[test]
+fn test_layer_7_5_passes_bare_env_assignment() {
+    // A `KEY=VAL` assignment with no trailing whitespace and no
+    // following command is structurally an env-var set;
+    // `strip_env_prefix` does not strip the final segment because
+    // there is no whitespace boundary proving a following command
+    // exists. The tokenized basename is `KEY=VAL`, which matches no
+    // escape-hatch program — Layer 7.5 returns None and the call
+    // passes through.
+    let (allowed, _msg) = validate("FOO=BAR", None, false);
+    assert!(allowed);
+}
+
+// --- Layer 7.5: combined-flag scan (adversarial regression) ---
+//
+// `bash -lc 'cmd'` packs `-l` (login) and `-c` (eval) into a single
+// token. A literal `rest.contains(&"-c")` check matches only the
+// literal `-c` token, missing the combined-flag shape. The
+// `has_flag_char` helper iterates each short-flag token character-
+// by-character so any token starting with `-` (but not `--`) that
+// contains the trigger character matches.
+
+#[test]
+fn test_layer_7_5_blocks_bash_dash_lc() {
+    let (allowed, msg) = validate("bash -lc 'echo hi'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_bash_dash_ic() {
+    let (allowed, msg) = validate("bash -ic 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_bash_dash_xc() {
+    let (allowed, msg) = validate("bash -xc 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_env_prefix_bash_dash_lc() {
+    // Compounds the env-prefix strip with the combined-flag scan.
+    let (allowed, msg) = validate("FOO=bar bash -lc 'echo hi'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_passes_bash_dash_n_long() {
+    // `bash --noprofile -n script.sh` — long flag, no eval trigger.
+    // Must pass.
+    let (allowed, _msg) = validate("bash --noprofile -n script.sh", None, false);
+    assert!(allowed);
+}
+
+// --- Layer 7.5: wrapper-launcher strip (adversarial regression) ---
+//
+// `env`, `time`, `nice`, `nohup`, `taskset`, `ionice` wrap another
+// command. The `strip_wrapper_launchers` helper consumes the
+// wrapper token so the effective program reaches the basename
+// check.
+
+#[test]
+fn test_layer_7_5_blocks_env_bash_dash_c() {
+    let (allowed, msg) = validate("env bash -c 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_env_with_kv_bash_dash_c() {
+    // env's KEY=VAL args land between the wrapper and the wrapped
+    // program. After strip_wrapper_launchers consumes `env`,
+    // strip_env_prefix consumes the KEY=VAL, exposing `bash -c`.
+    let (allowed, msg) = validate("env FOO=bar bash -c 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_time_bash_dash_c() {
+    let (allowed, msg) = validate("time bash -c 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_nice_python_dash_c() {
+    let (allowed, msg) = validate("nice python -c 'print(1)'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_nohup_bash_dash_c() {
+    let (allowed, msg) = validate("nohup bash -c 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_taskset_bash_dash_c() {
+    let (allowed, msg) = validate("taskset bash -c 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_ionice_bash_dash_c() {
+    let (allowed, msg) = validate("ionice bash -c 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_absolute_path_env_bash_dash_c() {
+    let (allowed, msg) = validate("/usr/bin/env bash -c 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_layer_7_5_passes_env_with_only_wrapper() {
+    // `env` alone with no following command — wrapper-launcher
+    // returns empty. The next token check sees nothing, the
+    // `first` extraction fails, and Layer 7.5 returns None.
+    let (allowed, _msg) = validate("env", None, false);
+    assert!(allowed);
+}
+
+#[test]
+fn test_layer_7_5_passes_time_alone() {
+    let (allowed, _msg) = validate("time", None, false);
+    assert!(allowed);
+}
+
+// --- Layer 7.5: additional interpreter-eval programs ---
+//
+// osascript (macOS AppleScript), tclsh (Tcl), and lua all evaluate
+// strings passed via -e/-c flags and have builtins that shell out
+// (`do shell script`, `exec`, `os.execute`). Same interpreter-eval
+// class as perl/python/ruby/node; added to the escape-hatch program
+// set during the Review fix sweep.
+
+#[test]
+fn test_layer_7_5_blocks_osascript_dash_e() {
+    let (allowed, msg) = validate("osascript -e 'do shell script \"id\"'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("osascript"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_tclsh_dash_c() {
+    let (allowed, msg) = validate("tclsh -c 'exec id'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("tclsh"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_lua_dash_e() {
+    let (allowed, msg) = validate("lua -e 'os.execute(\"id\")'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("lua"));
+}
+
+#[test]
+fn test_layer_7_5_passes_osascript_script_invocation() {
+    // `osascript script.scpt` runs an AppleScript file; no -e flag.
+    let (allowed, _msg) = validate("osascript script.scpt", None, false);
+    assert!(allowed);
+}
+
+#[test]
+fn test_layer_7_5_passes_tclsh_script_invocation() {
+    let (allowed, _msg) = validate("tclsh script.tcl", None, false);
+    assert!(allowed);
+}
+
+#[test]
+fn test_layer_7_5_passes_lua_script_invocation() {
+    let (allowed, _msg) = validate("lua script.lua", None, false);
+    assert!(allowed);
+}
+
+// --- Layer 7.5: tmux with global flags (adversarial regression) ---
+//
+// `tmux send-keys` was previously caught only when send-keys was
+// the first arg token. Global tmux flags (`-L socket`, `-S path`,
+// `-f config`, `-v`) before the subcommand shifted send-keys past
+// the `rest.first()` check. Fixed by switching to `rest.contains`.
+
+#[test]
+fn test_layer_7_5_blocks_tmux_with_socket_flag() {
+    let (allowed, msg) = validate("tmux -L mysocket send-keys 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("send-keys"));
+}
+
+#[test]
+fn test_layer_7_5_blocks_tmux_with_config_flag() {
+    let (allowed, msg) = validate("tmux -f /tmp/cfg send-keys 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+// --- Layer 7.5: block message sanctioned-alternative content ---
+
+#[test]
+fn test_bash_block_message_names_sanctioned_alternative() {
+    let (_, msg) = validate("bash -c 'ls'", None, false);
+    assert!(
+        msg.contains("separate Bash"),
+        "bash -c block must name the sanctioned alternative; msg={msg:?}"
+    );
+}
+
+#[test]
+fn test_python_block_message_names_sanctioned_alternative() {
+    let (_, msg) = validate("python -c 'x'", None, false);
+    assert!(
+        msg.contains("Read tool") || msg.contains("Write tool"),
+        "python -c block must name the sanctioned alternative; msg={msg:?}"
+    );
+}
+
+#[test]
+fn test_xargs_block_message_names_sanctioned_alternative() {
+    let (_, msg) = validate("xargs ls", None, false);
+    assert!(
+        msg.contains("separate Bash"),
+        "xargs block must name the sanctioned alternative; msg={msg:?}"
+    );
+}
+
+#[test]
+fn test_ssh_block_message_names_sanctioned_alternative() {
+    let (_, msg) = validate("ssh host", None, false);
+    assert!(
+        msg.contains("ssh wrapper") || msg.contains("approved ssh"),
+        "ssh block must name the sanctioned alternative; msg={msg:?}"
+    );
+}
+
 // --- Read-only file commands pass with active flow + standard allow list ---
 //
 // UNIVERSAL_ALLOW carries `Bash(cat *)`, `Bash(grep *)`, `Bash(find *)`,
@@ -1029,6 +1572,22 @@ fn is_bg_truthy_object_allows() {
 // discovery, Agent-tool dispatch, and the validate() exit-2 fall-through.
 
 fn run_hook_with_input(input: &str, cwd: Option<&std::path::Path>) -> (i32, String, String) {
+    run_hook_with_input_and_home(input, cwd, None)
+}
+
+/// Subprocess test helper that lets the caller override the child
+/// process's HOME env var. Used by tests that include a
+/// `transcript_path` in the hook input — the walker validates the
+/// path is rooted under `<home>/.claude/projects/`, so HOME must
+/// point at the tempdir that holds the transcript fixture for the
+/// validator to accept the path. Tests that don't pass a
+/// transcript_path can continue using `run_hook_with_input` and
+/// inherit the test runner's HOME unchanged.
+fn run_hook_with_input_and_home(
+    input: &str,
+    cwd: Option<&std::path::Path>,
+    home: Option<&std::path::Path>,
+) -> (i32, String, String) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
     cmd.args(["hook", "validate-pretool"])
         .env_remove("FLOW_CI_RUNNING")
@@ -1037,6 +1596,9 @@ fn run_hook_with_input(input: &str, cwd: Option<&std::path::Path>) -> (i32, Stri
         .stderr(Stdio::piped());
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
+    }
+    if let Some(h) = home {
+        cmd.env("HOME", h);
     }
     let mut child = cmd.spawn().expect("spawn flow-rs");
     {
@@ -1048,6 +1610,29 @@ fn run_hook_with_input(input: &str, cwd: Option<&std::path::Path>) -> (i32, Stri
         output.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&output.stdout).to_string(),
         String::from_utf8_lossy(&output.stderr).to_string(),
+    )
+}
+
+/// Build a JSONL transcript line representing an assistant turn
+/// with a Skill tool_use whose `input.skill` is the given name. Used
+/// by the skill-commit carve-out tests to build controlled
+/// transcript fixtures that drive the walker's
+/// `most_recent_skill_since_user` predicate.
+fn assistant_skill_jsonl(skill: &str) -> String {
+    format!(
+        "{{\"type\":\"assistant\",\"message\":{{\"role\":\"assistant\",\"content\":[{{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{{\"skill\":\"{}\"}}}}]}}}}\n",
+        skill
+    )
+}
+
+/// Build a JSONL user-turn line with the given content string. The
+/// walker's `most_recent_skill_since_user` stops at the most recent
+/// user turn going backward, so a user turn after a Skill call
+/// invalidates the walker's view of that Skill.
+fn user_jsonl(content: &str) -> String {
+    format!(
+        "{{\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":\"{}\"}}}}\n",
+        content
     )
 }
 
@@ -1785,15 +2370,20 @@ fn t19_git_ci_alias_on_main_allows_in_v1() {
 }
 
 #[test]
-fn t20_xargs_git_commit_on_main_allows_in_v1() {
-    // Documented v1 gap: `xargs git commit` hides commit behind
-    // another binary. is_commit_invocation matches only when the
-    // FIRST token is `git` (later tasks add `bin/flow`). With
-    // `xargs` as the first token, the matcher returns false → allow.
+fn t20_xargs_git_commit_on_main_blocks_via_escape_hatch_layer() {
+    // The `xargs git commit` shape is blocked structurally by Layer
+    // 7.5 (`.claude/rules/no-escape-hatches.md` "Canonical
+    // Escape-Hatch Shapes"). Layer 9's commit-invocation matcher
+    // never sees the wrapped `git commit` because Layer 7.5 fires
+    // first on the `xargs` first-token basename — the wrapper itself
+    // is the escape hatch regardless of what is being wrapped.
     let (_dir, root) = setup_repo_on_branch("main");
     let input = r#"{"tool_input": {"command": "xargs git commit"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
-    assert_eq!(code, 0, "xargs git commit allows in v1; stderr={stderr}");
+    assert_eq!(code, 2, "xargs is blocked at Layer 7.5; stderr={stderr}");
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("xargs"));
+    assert!(stderr.contains("escape hatch"));
 }
 
 #[test]
@@ -1971,12 +2561,15 @@ fn t15_quoted_git_commit_on_main_blocks() {
 
 #[test]
 fn t16_bash_dash_c_git_commit_on_main_blocks() {
-    // `bash -c '<inner>'` runs `<inner>` as a shell script. The
-    // matcher must unwrap the `-c` argument and re-evaluate the
-    // inner command. The inner is `git commit -m "x"` → matches.
+    // `bash -c '<inner>'` is a shell-eval escape hatch regardless
+    // of the inner content. Layer 7.5
+    // (`.claude/rules/no-escape-hatches.md`) fires before Layer 9's
+    // integration-branch matcher unwraps the `-c` argument, so the
+    // block message is the escape-hatch citation rather than the
+    // integration-branch citation. The intent of the original test
+    // — `bash -c 'git commit ...'` is rejected on main — is preserved
+    // by the earlier and stronger Layer 7.5 block.
     let (_dir, root) = setup_repo_on_branch("main");
-    // Outer JSON encodes a shell command whose `-c` argument is a
-    // single-quoted shell string containing `git commit -m "x"`.
     let input = r#"{"tool_input": {"command": "bash -c 'git commit -m \"x\"'"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
     assert_eq!(
@@ -1988,8 +2581,8 @@ fn t16_bash_dash_c_git_commit_on_main_blocks() {
         "stderr should contain BLOCKED; got: {stderr}"
     );
     assert!(
-        stderr.contains("main"),
-        "stderr should name 'main'; got: {stderr}"
+        stderr.contains("escape hatch") || stderr.contains("main"),
+        "stderr should cite the escape-hatch class or name the integration branch; got: {stderr}"
     );
 }
 
@@ -2200,7 +2793,14 @@ fn layer_10_blocks_bash_dash_c_git_commit_on_active_flow_worktree() {
         "bash -c 'git commit ...' during active flow must block; stderr={stderr}"
     );
     assert!(stderr.contains("BLOCKED"));
-    assert!(stderr.contains("active flow"));
+    // Layer 7.5's structural escape-hatch block fires before Layer 10's
+    // commit-during-flow gate because `bash -c` is itself a shell-eval
+    // escape hatch regardless of what's wrapped inside it. The block
+    // still fires; the message is the no-escape-hatches.md citation
+    // rather than the active-flow citation. The test's intent —
+    // `bash -c 'git commit ...'` is rejected during an active flow —
+    // is preserved by the earlier and stronger Layer 7.5 block.
+    assert!(stderr.contains("escape hatch") || stderr.contains("active flow"));
 }
 
 #[test]
@@ -2432,15 +3032,21 @@ fn setup_active_flow_worktree_with_state(
 
 #[test]
 fn layer_10_carveout_allows_bin_flow_finalize_commit_when_continue_pending_is_commit() {
-    // Skill choreography: flow-code (or sibling) wrote
-    // _continue_pending=commit, then dispatched
-    // bin/flow finalize-commit via /flow:flow-commit. Layer 9 must
-    // pass through so CI can run inside finalize-commit and the
-    // commit can land.
-    let (_dir, _root, cwd) =
+    // Skill choreography: /flow:flow-commit fires (most recent
+    // assistant Skill in the transcript) AND flow-code (or sibling)
+    // wrote _continue_pending=commit, AND the command shape is
+    // bin/flow finalize-commit. All three carve-out conditions hold,
+    // so Layer 9 passes through. CI runs inside finalize-commit and
+    // the commit lands.
+    let (_dir, root, cwd) =
         setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
-    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    let jsonl = assistant_skill_jsonl("flow:flow-commit");
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
     assert_eq!(
         code, 0,
         "skill-invoked finalize-commit must pass; stderr={stderr}"
@@ -2452,11 +3058,18 @@ fn layer_10_carveout_allows_absolute_bin_flow_finalize_commit_when_marker_set() 
     // Skill bash blocks invoke `${CLAUDE_PLUGIN_ROOT}/bin/flow
     // finalize-commit ...` which expands to an absolute-path form.
     // The carve-out's command-shape predicate uses `is_bin_flow_token`
-    // which accepts both bare and `*/bin/flow` suffix forms.
-    let (_dir, _root, cwd) =
+    // which accepts both bare and `*/bin/flow` suffix forms. All
+    // three carve-out conditions are exercised here so the
+    // absolute-path shape also passes.
+    let (_dir, root, cwd) =
         setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
-    let input = r#"{"tool_input": {"command": "/Users/me/code/flow/bin/flow finalize-commit msg.txt feat"}}"#;
-    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    let jsonl = assistant_skill_jsonl("flow:flow-commit");
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "/Users/me/code/flow/bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
     assert_eq!(
         code, 0,
         "absolute-path skill-invoked finalize-commit must pass; stderr={stderr}"
@@ -2594,19 +3207,28 @@ fn layer_10_carveout_blocks_finalize_commit_when_state_file_is_unreadable() {
 
 #[test]
 fn layer_10_carveout_allows_bash_c_wrapped_finalize_commit() {
-    // A `bash -c 'bin/flow finalize-commit ...'` wrapping must be
-    // recognized by the carve-out. `is_finalize_commit_invocation`
-    // calls `unwrap_bash_c` first to descend one level before
-    // matching the bin/flow shape, mirroring the integration-branch
-    // matcher.
+    // Layer 7.5 (`.claude/rules/no-escape-hatches.md`) blocks
+    // `bash -c '...'` as a shell-eval escape hatch regardless of the
+    // wrapped inner command. The active-flow carve-out at Layer 10
+    // recognizes a `bash -c`-wrapped finalize-commit shape only for
+    // callers that bypass Layer 7.5 — and during an active flow no
+    // such caller exists, because /flow:flow-commit invokes
+    // `bin/flow finalize-commit` directly via the Bash tool (no
+    // bash -c wrapper). The skill-commit carve-out is therefore
+    // unreachable from the active-flow path when the wrapper is
+    // bash -c. The legitimate skill commit path bypasses Layer 7.5
+    // because it does not pass through bash -c at all.
     let (_dir, _root, cwd) =
         setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
     let input = r#"{"tool_input": {"command": "bash -c 'bin/flow finalize-commit msg.txt feat'"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
     assert_eq!(
-        code, 0,
-        "bash -c wrapped skill finalize-commit must pass; stderr={stderr}"
+        code, 2,
+        "bash -c wrapper is itself a shell-eval escape hatch and must block at Layer 7.5; stderr={stderr}"
     );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("escape hatch"));
+    assert!(stderr.contains("no-escape-hatches.md"));
 }
 
 #[test]
@@ -2639,4 +3261,178 @@ fn layer_10_carveout_does_not_apply_on_integration_branch() {
         stderr.contains("integration branch"),
         "stderr should name integration-branch context; got: {stderr}"
     );
+}
+
+// --- skill_commit_closure: transcript-walker carve-out condition ---
+//
+// The third AND-combined condition on the skill-commit carve-out
+// (per `.claude/rules/no-escape-hatches.md` Layer C). Each test
+// fixtures the state.json marker, builds a transcript JSONL that
+// exercises the walker's most_recent_skill_since_user semantics,
+// and asserts the gate behavior.
+
+#[test]
+fn layer_10_closure_blocks_when_transcript_shows_different_skill() {
+    // Marker present AND finalize-commit shape, but the most recent
+    // assistant Skill call is `decompose:decompose` (not
+    // flow:flow-commit). The walker's third condition fails so the
+    // carve-out does not apply.
+    let (_dir, root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    let jsonl = assistant_skill_jsonl("decompose:decompose");
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
+    assert_eq!(
+        code, 2,
+        "finalize-commit with non-flow-commit Skill in transcript must block; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("active flow"));
+    assert!(stderr.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn layer_10_closure_blocks_when_no_skill_since_user_turn() {
+    // The user turn appears AFTER the Skill call, so the walker
+    // returns None (no Skill call since the most recent user turn).
+    // The third condition fails → block.
+    let (_dir, root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    let jsonl = format!(
+        "{}{}",
+        assistant_skill_jsonl("flow:flow-commit"),
+        user_jsonl("follow-up prompt")
+    );
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
+    assert_eq!(
+        code, 2,
+        "user turn after the Skill call invalidates the carve-out; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("active flow"));
+}
+
+#[test]
+fn layer_10_closure_blocks_when_marker_absent_but_transcript_shows_flow_commit() {
+    // Belt-and-suspenders: even though the walker would return
+    // Some("flow:flow-commit"), the second condition
+    // (_continue_pending == "commit") fails because the state has
+    // a different value. The marker is preserved as a precondition.
+    let (_dir, root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "review"}"#);
+    let jsonl = assistant_skill_jsonl("flow:flow-commit");
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
+    assert_eq!(
+        code, 2,
+        "missing marker must block even when transcript shows flow:flow-commit; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("active flow"));
+}
+
+#[test]
+fn layer_10_closure_blocks_when_transcript_path_missing() {
+    // hook input omits transcript_path entirely. The walker check
+    // sees None and returns false, so the third condition fails
+    // even though the marker is set. Fail-closed: missing transcript
+    // means the surrounding skill choreography cannot be verified.
+    let (_dir, _root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 2,
+        "missing transcript_path must block even with marker set; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("active flow"));
+}
+
+#[test]
+fn layer_10_closure_blocks_when_transcript_path_invalid() {
+    // transcript_path supplied but rooted outside <home>/.claude/projects/.
+    // is_safe_transcript_path rejects, the walker returns None, the
+    // third condition fails. Block.
+    let (_dir, root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    // Write a JSONL file outside the safe prefix.
+    let bad_path = root.join("not-in-projects.jsonl");
+    std::fs::write(&bad_path, assistant_skill_jsonl("flow:flow-commit")).unwrap();
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        bad_path.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
+    assert_eq!(
+        code, 2,
+        "transcript_path outside ~/.claude/projects/ must be rejected; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+}
+
+#[test]
+fn layer_10_closure_integration_branch_message_wins_over_active_flow() {
+    // When the resolved branch IS the integration branch AND a state
+    // file exists, match_branch_at fires first inside
+    // check_commit_during_flow, so the integration-branch message
+    // wins over the active-flow message. Even with all three
+    // carve-out conditions met, the integration-branch context is
+    // never carved out.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let states_dir = root.join(".flow-states").join("main");
+    std::fs::create_dir_all(&states_dir).unwrap();
+    std::fs::write(
+        states_dir.join("state.json"),
+        r#"{"_continue_pending": "commit"}"#,
+    )
+    .unwrap();
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = assistant_skill_jsonl("flow:flow-commit");
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 2,
+        "integration-branch must block even when all carve-out conditions hold; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("integration branch"),
+        "stderr should name the integration-branch context; got: {stderr}"
+    );
+}
+
+#[test]
+fn layer_10_closure_block_message_cites_no_escape_hatches_rule() {
+    // The active-flow block message must cite
+    // .claude/rules/no-escape-hatches.md (the citation contract test
+    // in Task 11 enforces this forward). Exercise the block path
+    // and check the message content.
+    let (_dir, root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    // No transcript fixture → carve-out fails → block.
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(input, Some(&cwd), Some(&root));
+    assert_eq!(code, 2);
+    assert!(stderr.contains("/flow:flow-commit"));
+    assert!(stderr.contains("no-escape-hatches.md"));
 }

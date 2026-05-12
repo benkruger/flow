@@ -447,7 +447,24 @@ All universal permissions written to `.claude/settings.json` for reference:
       "Bash(dotnet *)",
       "Bash(* && *)",
       "Bash(* ; *)",
-      "Bash(* | *)"
+      "Bash(* | *)",
+      "Bash(bash -c *)",
+      "Bash(sh -c *)",
+      "Bash(zsh -c *)",
+      "Bash(eval *)",
+      "Bash(xargs *)",
+      "Bash(perl -e *)",
+      "Bash(perl -E *)",
+      "Bash(python -c *)",
+      "Bash(python3 -c *)",
+      "Bash(ruby -e *)",
+      "Bash(node -e *)",
+      "Bash(node -p *)",
+      "Bash(nc *)",
+      "Bash(tmux send-keys *)",
+      "Bash(screen -X *)",
+      "Bash(ssh *)",
+      "Bash(rtk proxy *)"
     ]
   },
   "defaultMode": "acceptEdits"
