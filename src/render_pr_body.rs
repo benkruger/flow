@@ -4,11 +4,12 @@ use clap::Parser;
 use serde_json::json;
 
 use crate::flow_paths::FlowPaths;
+use crate::format_complete_summary::compute_cost_breakdown;
 use crate::format_issues_summary::format_issues_summary;
 use crate::format_pr_timings::format_timings_table;
 use crate::git::{current_branch, project_root};
 use crate::update_pr_body::{build_details_block, build_plain_section, gh_set_body};
-use crate::utils::extract_issue_numbers;
+use crate::utils::{extract_issue_numbers, format_tokens};
 
 /// Resolve a file path, handling both absolute and relative paths.
 ///
@@ -76,6 +77,96 @@ fn build_artifacts(state: &serde_json::Value) -> Vec<String> {
         }
     }
     items
+}
+
+/// Build the Token Cost markdown table from state snapshots.
+///
+/// Calls [`compute_cost_breakdown`] to fold each phase's window
+/// snapshots into per-row token / cost / reset / by-model data, then
+/// renders the result as a GitHub Markdown table consumed by
+/// [`render_body`]. Returns an empty string when the breakdown is
+/// `None` (no phase has run yet, or the `phases` map is empty) so
+/// [`render_body`] can omit the section.
+///
+/// Format:
+///
+/// - `| Phase | Tokens | Cost |` header + `|-------|--------|------|`
+///   separator.
+/// - One row per `CostRow`. Cost cell is `${:.3}` with a `*` suffix
+///   when `row_partial`; the em-dash `—` is used when `cost == None`.
+///   A trailing ` ↻` marks rows whose snapshot pair observed a
+///   rate-limit window reset.
+/// - Bold `| **Total** | **<tokens>** | **<cost>** |` row with the
+///   same Some/None/partial rules.
+/// - When `by_model.len() >= 2`, a `| Model | Tokens |` sub-table
+///   follows after a blank line.
+/// - Trailing italic footnotes explain the reset and partial markers
+///   when set.
+pub fn format_cost_table(state: &serde_json::Value) -> String {
+    let breakdown = match compute_cost_breakdown(state) {
+        Some(b) => b,
+        None => return String::new(),
+    };
+
+    let mut lines = Vec::new();
+    lines.push("| Phase | Tokens | Cost |".to_string());
+    lines.push("|-------|--------|------|".to_string());
+
+    for row in &breakdown.rows {
+        let cost_cell = match row.cost {
+            Some(c) => {
+                let partial_marker = if row.row_partial { "*" } else { "" };
+                format!("${:.3}{}", c, partial_marker)
+            }
+            None => "—".to_string(),
+        };
+        let reset_marker = if row.reset_observed { " ↻" } else { "" };
+        lines.push(format!(
+            "| {} | {} | {}{} |",
+            row.phase_name,
+            format_tokens(row.tokens),
+            cost_cell,
+            reset_marker
+        ));
+    }
+
+    let total_cost_cell = match breakdown.total_cost {
+        Some(c) => {
+            let partial_marker = if breakdown.total_partial { "*" } else { "" };
+            format!("${:.3}{}", c, partial_marker)
+        }
+        None => "—".to_string(),
+    };
+    lines.push(format!(
+        "| **Total** | **{}** | **{}** |",
+        format_tokens(breakdown.total_tokens),
+        total_cost_cell
+    ));
+
+    if breakdown.by_model.len() >= 2 {
+        lines.push(String::new());
+        lines.push("| Model | Tokens |".to_string());
+        lines.push("|-------|--------|".to_string());
+        for (model, mt) in &breakdown.by_model {
+            let total_model = mt
+                .input
+                .saturating_add(mt.output)
+                .saturating_add(mt.cache_create)
+                .saturating_add(mt.cache_read);
+            lines.push(format!("| {} | {} |", model, format_tokens(total_model)));
+        }
+    }
+
+    if breakdown.reset_observed_anywhere {
+        lines.push(String::new());
+        lines.push("*↻ rate-limit window reset observed mid-flow.*".to_string());
+    }
+    if breakdown.total_partial {
+        lines.push(String::new());
+        lines.push("*Partial: some phases had no cost data.*".to_string());
+    }
+
+    lines.join("\n")
 }
 
 /// Render the complete PR body from state and artifact files.
