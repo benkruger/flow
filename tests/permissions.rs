@@ -159,6 +159,8 @@ const PLACEHOLDER_SUBS: &[(&str, &str)] = &[
     ("<child_number>", "5"),
     ("<epic_number>", "1"),
     ("<dep_number>", "3"),
+    ("<vanilla_number>", "42"),
+    ("<M>", "99"),
     ("<topic>", "testing-gotchas"),
     ("<description>", "Update contract tests"),
     ("<slack_thread_ts>", "1234567890.123456"),

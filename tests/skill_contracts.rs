@@ -5564,22 +5564,42 @@ fn flow_plan_skill_files_with_decomposed_label() {
 }
 
 #[test]
-fn flow_plan_skill_invokes_link_blocked_by() {
-    // Regression: a future edit drops the `bin/flow link-blocked-by`
-    // call after filing. The blocked-by link is the load-bearing
-    // thread tying the role-based pipeline together — without it,
-    // the parent vanilla issue (filed by /flow:flow-explore) is
-    // disconnected from the decomposed child, and `flow-issues`
-    // cannot detect the parent as the original problem statement.
+fn flow_plan_skill_closes_parent_with_comment() {
+    // Regression: a future edit drops the `bin/flow close-issue`
+    // call after filing, or drops the `--comment` flag from it.
+    // Without the parent-closure call, the vanilla problem-statement
+    // issue stays open alongside the decomposed child, duplicating
+    // the open-artifact surface for the same problem. Without the
+    // `--comment` flag the closure carries no pointer to the
+    // decomposed child, leaving readers no breadcrumb back from the
+    // closed parent to the work that supersedes it.
     //
-    // Consumer: GitHub's native `blockedBy` relationship, which
-    // `flow-issues` reads to detect blocked status and origin
-    // chains. The link must fire after every successful decomposed
-    // filing.
+    // Consumer: the Step 6 wrap-up's `bin/flow close-issue --comment`
+    // invocation. The Step 6 subsection scope (bounded between
+    // `## Step 6 — Wrap-up` and the next `## ` heading per
+    // `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions
+    // in Contract Tests") keeps the assertion from being satisfied
+    // by an unrelated mention elsewhere in the file.
     let c = common::read_skill("flow-plan");
+    let subsection = c
+        .split_once("## Step 6 — Wrap-up")
+        .map(|(_, tail)| tail)
+        .expect("flow-plan SKILL.md must contain `## Step 6 — Wrap-up` heading");
+    let subsection = subsection
+        .split_once("\n## ")
+        .map(|(section, _)| section)
+        .unwrap_or(subsection);
+    let mut found = false;
+    for line in subsection.lines() {
+        let trimmed = line.trim();
+        if trimmed.contains("bin/flow close-issue") && trimmed.contains("--comment") {
+            found = true;
+            break;
+        }
+    }
     assert!(
-        c.contains("bin/flow link-blocked-by"),
-        "skills/flow-plan/SKILL.md must invoke `bin/flow link-blocked-by` after filing so the decomposed issue is tied to the parent vanilla issue"
+        found,
+        "skills/flow-plan/SKILL.md Step 6 must invoke `bin/flow close-issue` with `--comment` on a single line so the parent vanilla issue closes with a pointer to the decomposed child"
     );
 }
 
@@ -5588,12 +5608,13 @@ fn flow_plan_skill_fetches_issue_with_required_fields() {
     // Regression: a future edit changes the gh issue view JSON
     // field list. The skill needs `title` (for the decomposed
     // issue's title), `body` (for the parent context section in
-    // the new body), `number` (for the link-blocked-by call), and
-    // `labels` (for the gate that rejects already-decomposed
-    // issues). Dropping any field breaks a downstream step.
+    // the new body), `number` (for the close-issue call that
+    // closes the vanilla parent), and `labels` (for the gate that
+    // rejects already-decomposed issues). Dropping any field
+    // breaks a downstream step.
     //
     // Consumer: Step 2's Fetch Vanilla Issue + the Combine into
-    // Issue Body and Link steps in Step 6. Each downstream
+    // Issue Body and Close Parent steps in Step 6. Each downstream
     // consumer depends on a specific field from this fetch.
     let c = common::read_skill("flow-plan");
     assert!(
