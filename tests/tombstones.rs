@@ -1690,3 +1690,116 @@ fn test_flow_issues_skill_no_flaky_tests_phrase() {
          filing path was deleted."
     );
 }
+
+// --- flow-create-issue skill removal (PR #1477) ---
+//
+// The `/flow:flow-create-issue` skill was retired alongside the
+// addition of `/flow:flow-explore` (PM voice, vanilla
+// problem-statement filing) and the rewrite of `/flow:flow-plan`
+// into a `#N`-argument decompose-and-file pipeline. The three
+// tombstones below assert that the skill directory, its docs page,
+// and its references in surviving SKILL.md files do not return.
+//
+// Stability: each tombstone targets a stable on-disk path or a
+// SKILL.md byte-substring. Markdown contains no `concat!` /
+// `format!` / constant-reference reassembly, so byte-substring
+// checks suffice.
+
+/// Tombstone: removed in PR #1477. Must not return.
+///
+/// The `skills/flow-create-issue/` directory housed the deleted
+/// skill. A merge-conflict resolution that re-introduces the
+/// directory would resurrect the skill. The check is path-existence
+/// only (does NOT depend on a particular SKILL.md content) so any
+/// re-creation of the directory fires the tombstone.
+///
+/// Stability: pure path-existence assertion against a stable
+/// project-relative path. No string reassembly applies.
+#[test]
+fn test_skills_no_flow_create_issue_dir() {
+    let path = common::repo_root().join("skills").join("flow-create-issue");
+    assert!(
+        !path.exists(),
+        "skills/flow-create-issue/ must not exist — the skill was \
+         retired in PR #1477. The pipeline split into \
+         /flow:flow-explore (vanilla problem statements) and \
+         /flow:flow-plan #N (decomposed implementation plans)."
+    );
+}
+
+/// Tombstone: removed in PR #1477. Must not return.
+///
+/// The `docs/skills/flow-create-issue.md` page documented the
+/// deleted skill. `tests/docs_sync.rs::every_docs_skill_page_has_a_skill_dir`
+/// would also fire if the docs page returned without the skill
+/// directory, but the docs-sync test is a sibling-pair invariant;
+/// this tombstone asserts the docs page is gone independently so a
+/// merge-conflict re-introduction surfaces here even if a future
+/// edit also re-adds the skill directory (which the sibling
+/// tombstone above catches).
+///
+/// Stability: pure path-existence assertion. No reassembly applies.
+#[test]
+fn test_docs_no_flow_create_issue_md() {
+    let path = common::repo_root()
+        .join("docs")
+        .join("skills")
+        .join("flow-create-issue.md");
+    assert!(
+        !path.exists(),
+        "docs/skills/flow-create-issue.md must not exist — the \
+         skill was retired in PR #1477."
+    );
+}
+
+/// Tombstone: removed in PR #1477. Must not return.
+///
+/// Surviving SKILL.md files must not reference the deleted
+/// `flow-create-issue` skill. References would either:
+/// (a) violate `tests/skill_contracts.rs::flow_references_point_to_existing_skills`
+/// (which fails CI on `/flow:<name>` references to non-existent
+/// skills), OR
+/// (b) for non-slash-command prose mentions, mislead readers into
+/// thinking the skill still exists.
+///
+/// The check scans every `skills/<name>/SKILL.md` for the literal
+/// string `flow-create-issue`. The skill name is a stable kebab-case
+/// identifier — it cannot be reassembled by `concat!` / `format!` /
+/// constant reference at SKILL.md read time (Markdown is inert
+/// text), so a byte-substring check is sufficient.
+///
+/// Stability: byte-substring check against a stable kebab-case
+/// identifier. Markdown contains no Rust macros that could
+/// reassemble the literal at read time.
+#[test]
+fn test_skills_no_flow_create_issue_references() {
+    let skills_dir = common::skills_dir();
+    let mut violations: Vec<String> = Vec::new();
+    for entry in std::fs::read_dir(&skills_dir).expect("skills/ must exist") {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let skill_md = entry.path().join("SKILL.md");
+        if !skill_md.exists() {
+            continue;
+        }
+        let content = match std::fs::read_to_string(&skill_md) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        if content.contains("flow-create-issue") {
+            let rel = skill_md
+                .strip_prefix(common::repo_root())
+                .unwrap_or(&skill_md);
+            violations.push(rel.display().to_string());
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "Surviving SKILL.md files must not reference \
+         `flow-create-issue` (skill retired in PR #1477). \
+         Offending files:\n  {}",
+        violations.join("\n  ")
+    );
+}

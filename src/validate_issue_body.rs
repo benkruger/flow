@@ -125,17 +125,31 @@ pub fn run_impl_main(args: &Args, _root: &Path) -> (Value, i32) {
         }
     };
 
-    match args.mode.as_str() {
+    match normalize_mode(&args.mode).as_str() {
         "decomposed" => validate_decomposed(&body),
         "vanilla" => validate_vanilla(&body),
-        other => error_envelope(
+        _ => error_envelope(
             "invalid_mode",
             &format!(
-                "unknown --mode value '{}'; expected 'vanilla' or 'decomposed'",
-                other
+                "unknown --mode value '{}'; expected 'vanilla' or 'decomposed' (case-insensitive, trimmed)",
+                args.mode
             ),
         ),
     }
+}
+
+/// Normalize a `--mode` value before dispatch.
+///
+/// Per `.claude/rules/security-gates.md` "Normalize Before
+/// Comparing" — every gate that decides on string input must strip
+/// NULs (defeats embedded-NUL bypass from truncated writes), trim
+/// whitespace (defeats shell-quoting accidents and trailing
+/// newlines), and ASCII-lowercase (defeats case-variant survival).
+/// The original raw value is preserved in the error envelope so the
+/// caller sees what they passed; the normalized value is what
+/// dispatches.
+fn normalize_mode(mode: &str) -> String {
+    mode.replace('\0', "").trim().to_ascii_lowercase()
 }
 
 /// Validate a decomposed-issue body — the existing FLOW-PLAN

@@ -5460,7 +5460,7 @@ fn flow_plan_skill_fetches_issue_with_required_fields() {
         c.contains("--json"),
         "skills/flow-plan/SKILL.md gh issue view must use --json to fetch structured fields"
     );
-    let required_fields = ["title", "body", "number", "labels"];
+    let required_fields = ["title", "body", "number", "labels", "state"];
     for field in required_fields {
         assert!(
             c.contains(field),

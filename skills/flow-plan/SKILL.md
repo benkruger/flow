@@ -127,14 +127,19 @@ take any action outside this skill without a valid `#N` argument.
 
 ## Step 2 — Fetch Vanilla Issue
 
-Read the parent issue's title, body, number, and labels via the
-`gh` CLI. The body becomes the input the Tech Lead reads to ground
-the planning conversation; the labels gate the skill's posture
-(`decomposed`-labeled issues have already been planned and must
-not be re-planned).
+Read the parent issue's title, body, number, labels, and state via
+the `gh` CLI. The body becomes the input the Tech Lead reads to
+ground the planning conversation; the labels gate the skill's
+posture (`decomposed`-labeled issues have already been planned and
+must not be re-planned); the state gates against closed issues
+(re-planning a closed problem statement requires the user to reopen
+it explicitly). The `state` field is load-bearing — without it,
+the closed-issue gate below silently bypasses for every issue
+because `state == "closed"` evaluates against an absent field that
+is never equal to `"closed"`.
 
 ```bash
-gh issue view <issue_number> --json title,body,number,labels
+gh issue view <issue_number> --json title,body,number,labels,state
 ```
 
 Parse the JSON output. Extract `title`, `body`, `number`, and the
@@ -634,14 +639,20 @@ Capture the new issue's number from the URL in the filer's output
 issue number M** — distinct from the parent **vanilla issue
 number N** the user passed at Step 1.
 
-Link the decomposed issue as blocked-by the parent vanilla issue.
-This is the load-bearing thread that ties the role-based pipeline
-together: `flow-issues` reads native `blockedBy` relationships to
-detect blocked status, so the link makes the parent's role as
-problem statement visible across every consumer of the GitHub
-issue graph. Substitute the new decomposed issue number for
-`<child_number>` and the parent vanilla issue number (the `#N`
-the user passed at Step 1) for `<dep_number>`:
+Link the parent vanilla issue as blocked-by the new decomposed
+issue. The direction matters: vanilla problem statements are
+durable artifacts that close only when the implementation lands,
+so the vanilla is the issue WAITING (blocked) and the decomposed
+is the issue that BLOCKS it (the work that must complete to
+unblock the vanilla). The reverse direction (decomposed
+blocked-by vanilla) would permanently mark every decomposed work
+item as blocked — `flow-issues` filters blocked issues from the
+actionable backlog, so the decomposed work would never surface
+for `/flow:flow-start`. This is the load-bearing thread that ties
+the role-based pipeline together. Substitute the parent vanilla
+issue number (the `#N` the user passed at Step 1) for
+`<child_number>` (the issue being blocked) and the new decomposed
+issue number for `<dep_number>` (the dependency that blocks):
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow link-blocked-by --blocked-number <child_number> --blocking-number <dep_number>

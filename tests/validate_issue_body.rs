@@ -357,6 +357,105 @@ fn invalid_mode_returns_structured_error() {
     assert_eq!(value["reason"], "invalid_mode");
 }
 
+// --- mode normalization (security-gates "Normalize Before Comparing") ---
+
+#[test]
+fn vanilla_mode_normalizes_uppercase() {
+    // `--mode VANILLA` must dispatch to the vanilla branch — the
+    // normalization step lowercases ASCII before comparison.
+    // Without normalization, uppercase variants fall through to the
+    // invalid_mode arm and the calling skill enters a Revise loop
+    // it cannot escape.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_vanilla_body()).unwrap();
+    let (value, code) = run_with_mode(&path, "VANILLA");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+}
+
+#[test]
+fn vanilla_mode_normalizes_mixed_case() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_vanilla_body()).unwrap();
+    let (value, code) = run_with_mode(&path, "Vanilla");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+}
+
+#[test]
+fn vanilla_mode_normalizes_leading_whitespace() {
+    // Leading whitespace is trimmed per security-gates.md so
+    // shell-quoting accidents (e.g. ` vanilla` from a stray space)
+    // do not defeat the gate.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_vanilla_body()).unwrap();
+    let (value, code) = run_with_mode(&path, " vanilla");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+}
+
+#[test]
+fn vanilla_mode_normalizes_trailing_newline() {
+    // Trailing newlines from config-file substitution must be
+    // trimmed before comparison.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_vanilla_body()).unwrap();
+    let (value, code) = run_with_mode(&path, "vanilla\n");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+}
+
+#[test]
+fn vanilla_mode_normalizes_embedded_nul() {
+    // Per security-gates.md "Normalize Before Comparing", embedded
+    // NULs from truncated writes or editor artifacts must be
+    // stripped before byte-equality comparison.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_vanilla_body()).unwrap();
+    let (value, code) = run_with_mode(&path, "vanilla\0");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+}
+
+#[test]
+fn decomposed_mode_normalizes_uppercase() {
+    // The case-insensitivity guard is symmetric across both
+    // branches of the mode dispatch — `DECOMPOSED` must route to
+    // validate_decomposed exactly as `VANILLA` routes to
+    // validate_vanilla.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_body()).unwrap();
+    let (value, code) = run_with_mode(&path, "DECOMPOSED");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["tasks_total"], 1);
+}
+
+#[test]
+fn invalid_mode_error_preserves_raw_value_in_message() {
+    // The error envelope's `message` field must show the raw
+    // (un-normalized) value the caller passed so the user can spot
+    // typos. The normalized form is the dispatch key, not the
+    // diagnostic surface.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, well_formed_vanilla_body()).unwrap();
+    let (value, code) = run_with_mode(&path, "fAnCy");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["reason"], "invalid_mode");
+    assert!(
+        value["message"].as_str().unwrap().contains("'fAnCy'"),
+        "error message should preserve the raw value, got: {value}"
+    );
+}
+
 // --- vanilla mode happy path ---
 
 #[test]
