@@ -174,6 +174,17 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
         }
     }
 
+    // Layer 7.5: Structural escape-hatch program/flag block. Catches
+    // indirect forms (absolute paths, env-var prefixes, flags-before-
+    // trigger) that route around Layer 7's glob deny patterns. Fires
+    // regardless of `settings` or `flow_active` so pre-prime sessions
+    // and outside-FLOW invocations inherit the protection. See
+    // `.claude/rules/no-escape-hatches.md` for the canonical
+    // program/flag table this layer enforces structurally.
+    if let Some(msg) = check_escape_hatch_structural(stripped) {
+        return (false, msg);
+    }
+
     // Layer 8: Whitelist check — only during an active flow
     if let Some(settings) = settings {
         if flow_active {
@@ -401,21 +412,196 @@ fn dequote_token(s: &str) -> &str {
     s.trim_matches('\'').trim_matches('"')
 }
 
-/// When `stripped` is a `bash -c <arg>` or `sh -c <arg>` invocation,
-/// return the inner script string with one layer of surrounding
-/// quotes removed. Otherwise return None. Used to re-evaluate the
-/// inner command through the same matcher one level deeper. v1 does
-/// not recurse a second time (`bash -c 'bash -c "..."'` falls
-/// through to allow), does not handle env-var-indirected launchers
-/// (`SHELL=bash $SHELL -c '...'`), and does not handle bash flags
-/// before `-c` (`bash --norc -c '...'`) — these shapes pass through
-/// to the standard first-token check, which sees `bash` as the
-/// first token and returns false from `is_commit_invocation_inner`.
-fn unwrap_bash_c(stripped: &str) -> Option<String> {
-    let after = stripped
-        .strip_prefix("bash -c ")
-        .or_else(|| stripped.strip_prefix("sh -c "))?;
-    Some(dequote_token(after.trim_start()).to_string())
+/// Strip leading `KEY=VAL ` env-var prefix segments from `s` and
+/// return the remainder. Zero or more segments are stripped — each
+/// segment is an ASCII identifier (letter or `_` followed by
+/// letters/digits/`_`), an `=`, a non-whitespace value, and a
+/// trailing whitespace separator. The final token after env vars
+/// is NOT stripped: an `s` of `"FOO=bar"` alone returns `"FOO=bar"`
+/// because there is no whitespace boundary that proves a following
+/// command exists. Used by Layer 7.5 to see past `FOO=bar bash -c`
+/// to the effective program.
+fn strip_env_prefix(s: &str) -> &str {
+    let mut current = s.trim_start();
+    loop {
+        let bytes = current.as_bytes();
+        if bytes.is_empty() {
+            return current;
+        }
+        let first = bytes[0];
+        if !(first.is_ascii_alphabetic() || first == b'_') {
+            return current;
+        }
+        let mut i = 0;
+        while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+            i += 1;
+        }
+        if i >= bytes.len() || bytes[i] != b'=' {
+            return current;
+        }
+        let mut j = i + 1;
+        while j < bytes.len() && !bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        if j >= bytes.len() {
+            return current;
+        }
+        current = current[j..].trim_start();
+    }
+}
+
+/// Return the basename of a first-token path. When `token` contains
+/// no `/`, returns `token` unchanged. Otherwise returns the substring
+/// after the final `/`. Used by Layer 7.5 to match `/usr/bin/bash`
+/// against the escape-hatch program set by its basename `bash`.
+fn first_token_basename(token: &str) -> &str {
+    match token.rfind('/') {
+        Some(idx) => &token[idx + 1..],
+        None => token,
+    }
+}
+
+/// Layer 7.5's structural escape-hatch check. Strips env-var prefix,
+/// tokenizes on whitespace, basenames the first token, and matches
+/// against the canonical escape-hatch program set from
+/// `.claude/rules/no-escape-hatches.md`. Trigger-flag awareness keeps
+/// legitimate sibling invocations (`bash -n` syntax check, `tmux ls`,
+/// `rtk discover`) from being blocked while the eval shapes
+/// (`bash -c`, `tmux send-keys`, `rtk proxy`) are rejected. Returns
+/// `Some(message)` when the layer fires; the message names the
+/// program, the escape-hatch class, the sanctioned alternative, and
+/// cites `.claude/rules/no-escape-hatches.md` for the citation
+/// contract test.
+fn check_escape_hatch_structural(stripped: &str) -> Option<String> {
+    let after_env = strip_env_prefix(stripped);
+    let mut tokens = after_env.split_whitespace();
+    let first = tokens.next()?;
+    let basename = first_token_basename(first);
+    let rest: Vec<&str> = tokens.collect();
+
+    match basename {
+        "bash" | "sh" | "zsh" => {
+            if rest.contains(&"-c") {
+                Some(format!(
+                    "BLOCKED: '{} -c' is a shell-eval escape hatch. \
+                     Use separate Bash tool calls per command. \
+                     See .claude/rules/no-escape-hatches.md.",
+                    basename
+                ))
+            } else {
+                None
+            }
+        }
+        "eval" => Some(
+            "BLOCKED: 'eval' is a shell-eval escape hatch. \
+             Use separate Bash tool calls per command. \
+             See .claude/rules/no-escape-hatches.md."
+                .to_string(),
+        ),
+        "xargs" => Some(
+            "BLOCKED: 'xargs' is a command-wrapper escape hatch. \
+             Issue separate Bash calls per argument. \
+             See .claude/rules/no-escape-hatches.md."
+                .to_string(),
+        ),
+        "perl" => {
+            if rest.contains(&"-e") || rest.contains(&"-E") {
+                Some(
+                    "BLOCKED: 'perl -e'/'perl -E' is an interpreter-eval escape hatch. \
+                     Use the Read tool to view files and the Write tool to create files. \
+                     See .claude/rules/no-escape-hatches.md."
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        "python" | "python3" => {
+            if rest.contains(&"-c") {
+                Some(format!(
+                    "BLOCKED: '{} -c' is an interpreter-eval escape hatch. \
+                     Use the Read tool to view files and the Write tool to create files. \
+                     See .claude/rules/no-escape-hatches.md.",
+                    basename
+                ))
+            } else {
+                None
+            }
+        }
+        "ruby" => {
+            if rest.contains(&"-e") {
+                Some(
+                    "BLOCKED: 'ruby -e' is an interpreter-eval escape hatch. \
+                     Use the Read tool to view files and the Write tool to create files. \
+                     See .claude/rules/no-escape-hatches.md."
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        "node" => {
+            if rest.contains(&"-e") || rest.contains(&"-p") {
+                Some(
+                    "BLOCKED: 'node -e'/'node -p' is an interpreter-eval escape hatch. \
+                     Use the Read tool to view files and the Write tool to create files. \
+                     See .claude/rules/no-escape-hatches.md."
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        "nc" => Some(
+            "BLOCKED: 'nc' is a network-bridge escape hatch. \
+             Use the dedicated network tool surface. \
+             See .claude/rules/no-escape-hatches.md."
+                .to_string(),
+        ),
+        "ssh" => Some(
+            "BLOCKED: 'ssh' is a network-bridge escape hatch. \
+             Use the approved ssh wrapper script when remote access is required. \
+             See .claude/rules/no-escape-hatches.md."
+                .to_string(),
+        ),
+        "tmux" => {
+            if rest.first() == Some(&"send-keys") {
+                Some(
+                    "BLOCKED: 'tmux send-keys' is an inter-process escape hatch. \
+                     Use direct Bash invocations, not multiplexer key injection. \
+                     See .claude/rules/no-escape-hatches.md."
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        "screen" => {
+            if rest.contains(&"-X") {
+                Some(
+                    "BLOCKED: 'screen -X' is an inter-process escape hatch. \
+                     Use direct Bash invocations, not multiplexer key injection. \
+                     See .claude/rules/no-escape-hatches.md."
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        "rtk" => {
+            if rest.first() == Some(&"proxy") {
+                Some(
+                    "BLOCKED: 'rtk proxy' is a command-wrapper escape hatch. \
+                     Use the underlying command directly through the sanctioned allow list. \
+                     See .claude/rules/no-escape-hatches.md."
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
 }
 
 /// Walk `tokens` skipping git-level flags that take an argument
@@ -457,13 +643,14 @@ fn extract_dash_c_path(stripped: &str) -> Option<&str> {
 /// when the effective cwd is on the integration branch. v1 matches:
 /// `git ... commit` (skipping `-c k=v` and `-C path` between `git`
 /// and the subcommand), `bin/flow ... finalize-commit` (matched by
-/// `bin/flow` exact or `*/bin/flow` suffix), `'git' commit` /
-/// `"git" commit` (with the first token dequoted), and `bash -c
-/// '<inner>'` / `sh -c '<inner>'` (re-evaluating the inner script).
+/// `bin/flow` exact or `*/bin/flow` suffix), and `'git' commit` /
+/// `"git" commit` (with the first token dequoted). `bash -c
+/// '<inner>'` and `sh -c '<inner>'` wrappers do NOT need to be
+/// unwrapped here because Layer 7.5 in `validate` blocks every
+/// shell-eval shape (`bash -c`, `sh -c`, `zsh -c`, `eval`) before
+/// Layer 9 runs — the wrapper itself is a structural escape hatch
+/// per `.claude/rules/no-escape-hatches.md`.
 fn is_commit_invocation(stripped: &str) -> bool {
-    if let Some(inner) = unwrap_bash_c(stripped) {
-        return is_commit_invocation_inner(&inner);
-    }
     is_commit_invocation_inner(stripped)
 }
 
@@ -636,18 +823,19 @@ fn check_active_flow_at(command: &str, path: &Path) -> Option<String> {
 /// Recognize a `bin/flow ... finalize-commit` invocation specifically.
 /// Mirrors the `bin/flow` arm of `is_commit_invocation_inner`: handles
 /// the bare `bin/flow` token and the `*/bin/flow` suffix form via
-/// `is_bin_flow_token`, dequotes the first token, unwraps one level
-/// of `bash -c`/`sh -c`, and matches `finalize-commit` as any
-/// subsequent token (so future global flags between launcher and
-/// subcommand cannot defeat the matcher).
+/// `is_bin_flow_token`, dequotes the first token, and matches
+/// `finalize-commit` as any subsequent token (so future global flags
+/// between launcher and subcommand cannot defeat the matcher).
+///
+/// `bash -c '<inner>'` and `sh -c '<inner>'` wrappers do NOT need to
+/// be unwrapped here because Layer 7.5 in `validate` blocks every
+/// shell-eval shape before Layer 9 runs — the wrapper itself is a
+/// structural escape hatch per `.claude/rules/no-escape-hatches.md`.
 ///
 /// Returns false for `git commit` in any form. The skill carve-out
 /// is finalize-commit-only — raw `git commit` is never legitimate
 /// during a flow even when the state marker is set.
 fn is_finalize_commit_invocation(stripped: &str) -> bool {
-    if let Some(inner) = unwrap_bash_c(stripped) {
-        return is_finalize_commit_inner(&inner);
-    }
     is_finalize_commit_inner(stripped)
 }
 

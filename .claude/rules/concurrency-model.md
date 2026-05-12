@@ -112,12 +112,12 @@ by basename suffix so absolute paths like
 - **`git -c key=value commit ...`** and **`git -C path commit ...`** —
   the matcher walks past these flag pairs to find the effective
   subcommand.
-- **`bash -c '<inner>'` and `sh -c '<inner>'`** — one level of
-  shell wrapping is unwrapped, and the inner script is
-  re-evaluated through the same matcher. The `unwrap_bash_c`
-  helper stays in place as the structural backup for the
-  pre-prime window, where `.claude/settings.json` may not yet
-  carry the matching `FLOW_DENY` entries.
+- **Shell-eval wrappers** (`bash -c '<inner>'`, `sh -c '<inner>'`,
+  `zsh -c '<inner>'`, `eval '<inner>'`) — Layer 7.5 in `validate`
+  (`.claude/rules/no-escape-hatches.md` Layer B) blocks every
+  shell-eval shape BEFORE Layer 9 runs, regardless of the wrapped
+  inner command. The wrapper itself is the escape hatch — Layer 9
+  never needs to unwrap it.
 
 ### Active-Flow Trigger
 
@@ -211,16 +211,18 @@ rather than an accident:
 - **User-defined git aliases.** `git ci -m x` (with
   `alias.ci = commit` configured) shows `ci` to the matcher, not
   `commit`.
-- **Command-construction launchers.** `xargs git commit`,
-  `node finalize-commit`, and similar shapes hide the commit
-  invocation behind another binary.
-- **Nested shell wrappers.** `bash -c 'bash -c "..."'` is
-  unwrapped at most one level.
-- **Bash with flags before `-c`.** `bash --norc -c '...'` does
-  not match the literal `bash -c ` prefix.
 - **Repos with no configured `origin/HEAD`.** `default_branch_in`
   falls back to `"main"` when `git symbolic-ref --short
   refs/remotes/origin/HEAD` fails.
+
+Shell-eval wrappers (`bash -c`, `sh -c`, `zsh -c`, `eval`),
+command-construction launchers (`xargs git commit`,
+`node finalize-commit`), and inter-process injection
+(`tmux send-keys`, `screen -X`) are blocked structurally by
+Layer 7.5 BEFORE Layer 9 runs, so the wrapped invocations never
+reach the commit-invocation matcher. See
+`.claude/rules/no-escape-hatches.md` for the canonical
+program/flag table.
 
 These limitations are documented v1 boundaries, not security
 holes. The default-no-edit-on-the-base-branch discipline

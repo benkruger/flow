@@ -536,6 +536,347 @@ fn test_layer4_skips_non_find_command() {
     assert!(allowed);
 }
 
+// --- Layer 7.5: structural escape-hatch program/flag block ---
+//
+// Layer 7.5 in src/hooks/validate_pretool.rs::validate strips env-var
+// prefixes (KEY=VAL ...), strips the path prefix to a basename, and
+// matches the basename against the escape-hatch program set from
+// `.claude/rules/no-escape-hatches.md` "Canonical Escape-Hatch Shapes"
+// with trigger-flag awareness. The block fires regardless of
+// `settings` content or `flow_active` state so the protection holds
+// during the pre-prime upgrade window AND outside FLOW phases.
+//
+// Each test passes None for settings and false for flow_active so the
+// block is provably independent of those surfaces. Block messages
+// must cite `.claude/rules/no-escape-hatches.md` so retrofit drift
+// fails the citation contract test.
+
+// Shell-eval direct-form rejections.
+
+#[test]
+fn test_blocks_bash_dash_c() {
+    let (allowed, msg) = validate("bash -c 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("bash"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_sh_dash_c() {
+    let (allowed, msg) = validate("sh -c 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_zsh_dash_c() {
+    let (allowed, msg) = validate("zsh -c 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_eval_command() {
+    let (allowed, msg) = validate("eval 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+// Command-wrapper direct-form rejections.
+
+#[test]
+fn test_blocks_xargs_command() {
+    let (allowed, msg) = validate("xargs ls", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_rtk_proxy() {
+    let (allowed, msg) = validate("rtk proxy ls", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+// Interpreter-eval direct-form rejections.
+
+#[test]
+fn test_blocks_perl_dash_e_lowercase() {
+    let (allowed, msg) = validate("perl -e 'print 1'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_perl_dash_e_uppercase() {
+    let (allowed, msg) = validate("perl -E 'say 1'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_python_dash_c() {
+    let (allowed, msg) = validate("python -c 'print(1)'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_python3_dash_c() {
+    let (allowed, msg) = validate("python3 -c 'print(1)'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_ruby_dash_e() {
+    let (allowed, msg) = validate("ruby -e 'puts 1'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_node_dash_e() {
+    let (allowed, msg) = validate("node -e 'console.log(1)'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_node_dash_p() {
+    let (allowed, msg) = validate("node -p '1+1'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+// Network-bridge direct-form rejections.
+
+#[test]
+fn test_blocks_nc_command() {
+    let (allowed, msg) = validate("nc 1.2.3.4 80", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_ssh_command() {
+    let (allowed, msg) = validate("ssh host", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+// Inter-process direct-form rejections.
+
+#[test]
+fn test_blocks_tmux_send_keys() {
+    let (allowed, msg) = validate("tmux send-keys 'cmd'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_screen_capital_x() {
+    let (allowed, msg) = validate("screen -X stuff cmd", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+// --- Layer 7.5: indirect-form rejections ---
+//
+// Glob deny patterns require the exact first-token spelling; these
+// indirect shapes (absolute path prefix, env-var prefix, flags
+// before the trigger) route around Layer 7's settings-driven check.
+// Layer 7.5's structural tokenization catches them.
+
+#[test]
+fn test_blocks_absolute_path_bash_dash_c() {
+    let (allowed, msg) = validate("/usr/bin/bash -c 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_absolute_path_sh_dash_c() {
+    let (allowed, msg) = validate("/bin/sh -c 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_env_prefix_bash_dash_c() {
+    let (allowed, msg) = validate("FOO=bar bash -c 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_multiple_env_prefix_bash_dash_c() {
+    let (allowed, msg) = validate("A=1 B=2 bash -c 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+#[test]
+fn test_blocks_bash_norc_dash_c() {
+    let (allowed, msg) = validate("bash --norc -c 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+    assert!(msg.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn test_blocks_bash_login_dash_c() {
+    let (allowed, msg) = validate("bash --login -c 'ls'", None, false);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"));
+}
+
+// --- Layer 7.5: pass-through cases ---
+//
+// `bash -n script.sh` (syntax check, no eval) is in UNIVERSAL_ALLOW
+// and must pass Layer 7.5 untouched. `ssh-keygen` has the basename
+// `ssh-keygen` rather than `ssh` and must NOT trip the ssh-class
+// block — basename matching is exact, not prefix-based.
+
+#[test]
+fn test_layer_7_5_passes_bash_dash_n() {
+    let (allowed, msg) = validate("bash -n script.sh", None, false);
+    assert!(allowed, "bash -n must pass Layer 7.5; msg={msg:?}");
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn test_layer_7_5_passes_ssh_keygen() {
+    // Pass settings=None so we skip Layer 8's whitelist; the test is
+    // that Layer 7.5 doesn't fire on `ssh-keygen`.
+    let (allowed, _msg) = validate("ssh-keygen -t rsa", None, false);
+    assert!(
+        allowed,
+        "ssh-keygen basename must not match ssh-class block"
+    );
+}
+
+#[test]
+fn test_layer_7_5_passes_python_without_dash_c() {
+    // `python script.py` is a script execution, not a -c eval — the
+    // shell-eval class doesn't apply. Falls through to other layers.
+    let (allowed, _msg) = validate("python script.py", None, false);
+    assert!(allowed);
+}
+
+#[test]
+fn test_layer_7_5_passes_node_without_eval_flag() {
+    let (allowed, _msg) = validate("node script.js", None, false);
+    assert!(allowed);
+}
+
+#[test]
+fn test_layer_7_5_passes_perl_script_invocation() {
+    let (allowed, _msg) = validate("perl script.pl", None, false);
+    assert!(allowed);
+}
+
+#[test]
+fn test_layer_7_5_passes_rtk_subcommand_other_than_proxy() {
+    let (allowed, _msg) = validate("rtk discover", None, false);
+    assert!(allowed, "rtk subcommands other than proxy must pass");
+}
+
+#[test]
+fn test_layer_7_5_passes_ruby_script_invocation() {
+    // `ruby script.rb` is a script run, not a `-e` eval — falls
+    // through to subsequent layers.
+    let (allowed, _msg) = validate("ruby script.rb", None, false);
+    assert!(allowed);
+}
+
+#[test]
+fn test_layer_7_5_passes_tmux_ls() {
+    // `tmux ls` lists sessions — not the `send-keys` injection
+    // shape, so Layer 7.5 must let it through.
+    let (allowed, _msg) = validate("tmux ls", None, false);
+    assert!(allowed, "tmux without send-keys subcommand must pass");
+}
+
+#[test]
+fn test_layer_7_5_passes_screen_ls() {
+    // `screen -ls` lists sessions — not the `-X` stuff-key shape, so
+    // Layer 7.5 must let it through.
+    let (allowed, _msg) = validate("screen -ls", None, false);
+    assert!(allowed, "screen without -X flag must pass");
+}
+
+#[test]
+fn test_layer_7_5_passes_bare_env_assignment() {
+    // A `KEY=VAL` assignment with no trailing whitespace and no
+    // following command is structurally an env-var set;
+    // `strip_env_prefix` does not strip the final segment because
+    // there is no whitespace boundary proving a following command
+    // exists. The tokenized basename is `KEY=VAL`, which matches no
+    // escape-hatch program — Layer 7.5 returns None and the call
+    // passes through.
+    let (allowed, _msg) = validate("FOO=BAR", None, false);
+    assert!(allowed);
+}
+
+// --- Layer 7.5: block message sanctioned-alternative content ---
+
+#[test]
+fn test_bash_block_message_names_sanctioned_alternative() {
+    let (_, msg) = validate("bash -c 'ls'", None, false);
+    assert!(
+        msg.contains("separate Bash"),
+        "bash -c block must name the sanctioned alternative; msg={msg:?}"
+    );
+}
+
+#[test]
+fn test_python_block_message_names_sanctioned_alternative() {
+    let (_, msg) = validate("python -c 'x'", None, false);
+    assert!(
+        msg.contains("Read tool") || msg.contains("Write tool"),
+        "python -c block must name the sanctioned alternative; msg={msg:?}"
+    );
+}
+
+#[test]
+fn test_xargs_block_message_names_sanctioned_alternative() {
+    let (_, msg) = validate("xargs ls", None, false);
+    assert!(
+        msg.contains("separate Bash"),
+        "xargs block must name the sanctioned alternative; msg={msg:?}"
+    );
+}
+
+#[test]
+fn test_ssh_block_message_names_sanctioned_alternative() {
+    let (_, msg) = validate("ssh host", None, false);
+    assert!(
+        msg.contains("ssh wrapper") || msg.contains("approved ssh"),
+        "ssh block must name the sanctioned alternative; msg={msg:?}"
+    );
+}
+
 // --- Read-only file commands pass with active flow + standard allow list ---
 //
 // UNIVERSAL_ALLOW carries `Bash(cat *)`, `Bash(grep *)`, `Bash(find *)`,
@@ -1786,14 +2127,22 @@ fn t19_git_ci_alias_on_main_allows_in_v1() {
 
 #[test]
 fn t20_xargs_git_commit_on_main_allows_in_v1() {
-    // Documented v1 gap: `xargs git commit` hides commit behind
-    // another binary. is_commit_invocation matches only when the
-    // FIRST token is `git` (later tasks add `bin/flow`). With
-    // `xargs` as the first token, the matcher returns false → allow.
+    // The `xargs git commit` shape is now blocked structurally by
+    // Layer 7.5 (`.claude/rules/no-escape-hatches.md` "Canonical
+    // Escape-Hatch Shapes"). Layer 9's commit-invocation matcher
+    // never sees the wrapped `git commit` because Layer 7.5 fires
+    // first on the `xargs` first-token basename — the wrapper itself
+    // is the escape hatch regardless of what is being wrapped.
     let (_dir, root) = setup_repo_on_branch("main");
     let input = r#"{"tool_input": {"command": "xargs git commit"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
-    assert_eq!(code, 0, "xargs git commit allows in v1; stderr={stderr}");
+    assert_eq!(
+        code, 2,
+        "xargs is now blocked at Layer 7.5; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("xargs"));
+    assert!(stderr.contains("escape hatch"));
 }
 
 #[test]
@@ -1971,12 +2320,15 @@ fn t15_quoted_git_commit_on_main_blocks() {
 
 #[test]
 fn t16_bash_dash_c_git_commit_on_main_blocks() {
-    // `bash -c '<inner>'` runs `<inner>` as a shell script. The
-    // matcher must unwrap the `-c` argument and re-evaluate the
-    // inner command. The inner is `git commit -m "x"` → matches.
+    // `bash -c '<inner>'` is a shell-eval escape hatch regardless
+    // of the inner content. Layer 7.5
+    // (`.claude/rules/no-escape-hatches.md`) fires before Layer 9's
+    // integration-branch matcher unwraps the `-c` argument, so the
+    // block message is the escape-hatch citation rather than the
+    // integration-branch citation. The intent of the original test
+    // — `bash -c 'git commit ...'` is rejected on main — is preserved
+    // by the earlier and stronger Layer 7.5 block.
     let (_dir, root) = setup_repo_on_branch("main");
-    // Outer JSON encodes a shell command whose `-c` argument is a
-    // single-quoted shell string containing `git commit -m "x"`.
     let input = r#"{"tool_input": {"command": "bash -c 'git commit -m \"x\"'"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
     assert_eq!(
@@ -1988,8 +2340,8 @@ fn t16_bash_dash_c_git_commit_on_main_blocks() {
         "stderr should contain BLOCKED; got: {stderr}"
     );
     assert!(
-        stderr.contains("main"),
-        "stderr should name 'main'; got: {stderr}"
+        stderr.contains("escape hatch") || stderr.contains("main"),
+        "stderr should cite the escape-hatch class or name the integration branch; got: {stderr}"
     );
 }
 
@@ -2200,7 +2552,14 @@ fn layer_10_blocks_bash_dash_c_git_commit_on_active_flow_worktree() {
         "bash -c 'git commit ...' during active flow must block; stderr={stderr}"
     );
     assert!(stderr.contains("BLOCKED"));
-    assert!(stderr.contains("active flow"));
+    // Layer 7.5's structural escape-hatch block fires before Layer 10's
+    // commit-during-flow gate because `bash -c` is itself a shell-eval
+    // escape hatch regardless of what's wrapped inside it. The block
+    // still fires; the message is the no-escape-hatches.md citation
+    // rather than the active-flow citation. The test's intent —
+    // `bash -c 'git commit ...'` is rejected during an active flow —
+    // is preserved by the earlier and stronger Layer 7.5 block.
+    assert!(stderr.contains("escape hatch") || stderr.contains("active flow"));
 }
 
 #[test]
@@ -2594,19 +2953,28 @@ fn layer_10_carveout_blocks_finalize_commit_when_state_file_is_unreadable() {
 
 #[test]
 fn layer_10_carveout_allows_bash_c_wrapped_finalize_commit() {
-    // A `bash -c 'bin/flow finalize-commit ...'` wrapping must be
-    // recognized by the carve-out. `is_finalize_commit_invocation`
-    // calls `unwrap_bash_c` first to descend one level before
-    // matching the bin/flow shape, mirroring the integration-branch
-    // matcher.
+    // Layer 7.5 (`.claude/rules/no-escape-hatches.md`) blocks
+    // `bash -c '...'` as a shell-eval escape hatch regardless of the
+    // wrapped inner command. The active-flow carve-out at Layer 10
+    // recognizes a `bash -c`-wrapped finalize-commit shape only for
+    // callers that bypass Layer 7.5 — and during an active flow no
+    // such caller exists, because /flow:flow-commit invokes
+    // `bin/flow finalize-commit` directly via the Bash tool (no
+    // bash -c wrapper). The skill-commit carve-out is therefore
+    // unreachable from the active-flow path when the wrapper is
+    // bash -c. The legitimate skill commit path bypasses Layer 7.5
+    // because it does not pass through bash -c at all.
     let (_dir, _root, cwd) =
         setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
     let input = r#"{"tool_input": {"command": "bash -c 'bin/flow finalize-commit msg.txt feat'"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
     assert_eq!(
-        code, 0,
-        "bash -c wrapped skill finalize-commit must pass; stderr={stderr}"
+        code, 2,
+        "bash -c wrapper is itself a shell-eval escape hatch and must block at Layer 7.5; stderr={stderr}"
     );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("escape hatch"));
+    assert!(stderr.contains("no-escape-hatches.md"));
 }
 
 #[test]
