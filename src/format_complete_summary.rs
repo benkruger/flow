@@ -314,27 +314,45 @@ fn token_cost_section(state: &Value) -> Vec<String> {
 /// `src/render_pr_body.rs` to produce the `## Review Findings` and
 /// `## Learn Findings` sections.
 ///
-/// Filters `findings` by `f["phase"] == Some(phase_key)`. Returns
-/// `String::new()` when no entries match so the caller can omit the
-/// section entirely.
+/// Filters `findings` by `phase` against `phase_key` per
+/// `.claude/rules/security-gates.md` "Normalize Before Comparing":
+/// the state-derived phase value is NUL-stripped, trimmed, and
+/// ASCII-lowercased before equality. `phase_key` is expected to be
+/// pre-normalized (the only callers pass `"flow-review"` /
+/// `"flow-learn"` literals); the asymmetric normalization is
+/// documented at this comment.
+///
+/// Returns `String::new()` when no entries match so the caller can
+/// omit the section entirely.
 ///
 /// Each matching finding renders as two lines: a top-level item
 /// `- <marker> **<finding>**` and a nested item
-/// `  - <label> — <reason>`. Embedded `\n` and `\r` in the finding
-/// or reason text are replaced with a single space — a raw newline
-/// would break the nested-list structure on GitHub.
+/// `  - <label> — <reason>`. `finding` and `reason` are passed
+/// through `escape_markdown_list_value` per
+/// `.claude/rules/subprocess-argument-escaping.md` so structural
+/// characters (`\`, `*`, `` ` ``, `<`, `>`) and whitespace
+/// characters (`\r`, `\n`, `\t`, CRLF as one) cannot break the
+/// nested-list rendering on GitHub.
 pub fn format_findings_markdown(findings: &[Value], phase_key: &str) -> String {
     let matched: Vec<&Value> = findings
         .iter()
-        .filter(|f| f.get("phase").and_then(|p| p.as_str()) == Some(phase_key))
+        .filter(|f| {
+            f.get("phase")
+                .and_then(|p| p.as_str())
+                .map(normalize_phase_string)
+                .as_deref()
+                == Some(phase_key)
+        })
         .collect();
     if matched.is_empty() {
         return String::new();
     }
     let mut lines = Vec::with_capacity(matched.len() * 2);
     for f in &matched {
-        let finding = sanitize_md_line(f.get("finding").and_then(|v| v.as_str()).unwrap_or(""));
-        let reason = sanitize_md_line(f.get("reason").and_then(|v| v.as_str()).unwrap_or(""));
+        let finding =
+            escape_markdown_list_value(f.get("finding").and_then(|v| v.as_str()).unwrap_or(""));
+        let reason =
+            escape_markdown_list_value(f.get("reason").and_then(|v| v.as_str()).unwrap_or(""));
         let outcome = f.get("outcome").and_then(|v| v.as_str()).unwrap_or("");
         let marker = outcome_marker(outcome);
         let label = outcome_label(outcome);
@@ -344,12 +362,50 @@ pub fn format_findings_markdown(findings: &[Value], phase_key: &str) -> String {
     lines.join("\n")
 }
 
-/// Replace `\n` and `\r` with a single space so the value can sit on
-/// one line of a nested markdown list without breaking the structure.
-fn sanitize_md_line(s: &str) -> String {
-    s.chars()
-        .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
-        .collect()
+/// Normalize a state-derived phase string for equality comparison
+/// per `.claude/rules/security-gates.md` "Normalize Before
+/// Comparing": strip embedded NULs, trim surrounding whitespace,
+/// and lowercase with ASCII semantics. A hand-edited state file
+/// can carry uppercase or whitespace-padded phase values that the
+/// raw byte-equality filter would silently drop.
+fn normalize_phase_string(s: &str) -> String {
+    s.replace('\0', "").trim().to_ascii_lowercase()
+}
+
+/// Escape a value that flows into a nested GitHub Markdown list
+/// item — either the bold `**<value>**` finding span or the
+/// indented `  - <label> — <value>` reason line.
+///
+/// Per `.claude/rules/subprocess-argument-escaping.md`, external
+/// strings interpolated into a structural-syntax target must be
+/// escaped. Nested markdown list items treat `*` and `` ` `` as
+/// emphasis/code markers, `<` and `>` as raw HTML, and any of
+/// `\r`/`\n`/`\t` as line terminators that break the
+/// single-line-per-item contract. `\\` is escaped first so a
+/// trailing backslash cannot escape the closing markdown marker.
+/// CRLF collapses to a single space (not two) so Windows-encoded
+/// values do not produce double-space gaps.
+fn escape_markdown_list_value(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\r' => {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                out.push(' ');
+            }
+            '\n' | '\t' => out.push(' '),
+            '\\' => out.push_str("\\\\"),
+            '*' => out.push_str("\\*"),
+            '`' => out.push_str("\\`"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// Render a findings section for a single phase.

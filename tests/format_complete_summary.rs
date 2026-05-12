@@ -1618,6 +1618,187 @@ fn format_findings_markdown_handles_missing_outcome_field() {
     assert!(out.contains("Unknown"));
 }
 
+#[test]
+fn format_findings_markdown_normalizes_uppercase_phase() {
+    let findings = vec![json!({
+        "finding": "Uppercase phase finding",
+        "reason": "Phase value was FLOW-REVIEW",
+        "outcome": "fixed",
+        "phase": "FLOW-REVIEW",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("**Uppercase phase finding**"),
+        "uppercase phase value must normalize to lowercase before filter equality; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_normalizes_whitespace_padded_phase() {
+    let findings = vec![json!({
+        "finding": "Padded phase finding",
+        "reason": "Phase value carried surrounding whitespace",
+        "outcome": "fixed",
+        "phase": " flow-review ",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("**Padded phase finding**"),
+        "whitespace-padded phase value must trim before filter equality; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_normalizes_phase_with_embedded_nul() {
+    let findings = vec![json!({
+        "finding": "NUL phase finding",
+        "reason": "Phase value carried an embedded NUL",
+        "outcome": "fixed",
+        "phase": "flow-review\u{0}",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("**NUL phase finding**"),
+        "NUL-bearing phase value must strip NUL before filter equality; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_collapses_crlf_to_single_space() {
+    let findings = vec![json!({
+        "finding": "line1\r\nline2",
+        "reason": "r1",
+        "outcome": "fixed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("**line1 line2**"),
+        "CRLF must collapse to a single space; got:\n{}",
+        out
+    );
+    assert!(
+        !out.contains("line1  line2"),
+        "CRLF must not leave a double-space gap; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_collapses_lone_cr_to_single_space() {
+    // Lone `\r` without a following `\n` (classic Mac line ending,
+    // or a corrupted CRLF where the LF was stripped) exercises the
+    // false branch of the CRLF-peek inside escape_markdown_list_value.
+    let findings = vec![json!({
+        "finding": "line1\rline2",
+        "reason": "r1",
+        "outcome": "fixed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("**line1 line2**"),
+        "lone CR must collapse to a single space; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_sanitizes_tab_in_reason() {
+    let findings = vec![json!({
+        "finding": "f1",
+        "reason": "before\tafter",
+        "outcome": "fixed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("Fixed — before after"),
+        "tab in reason must become a single space; got:\n{}",
+        out
+    );
+    assert!(
+        !out.contains("before\tafter"),
+        "raw tab in reason must be replaced; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_escapes_bold_markers_in_finding() {
+    let findings = vec![json!({
+        "finding": "Inner **bold** marker",
+        "reason": "r1",
+        "outcome": "fixed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("**Inner \\*\\*bold\\*\\* marker**"),
+        "asterisks in finding must be backslash-escaped; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_escapes_backtick_in_reason() {
+    let findings = vec![json!({
+        "finding": "f1",
+        "reason": "Run `bin/flow ci` before commit",
+        "outcome": "fixed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("Fixed — Run \\`bin/flow ci\\` before commit"),
+        "backticks in reason must be backslash-escaped; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_escapes_html_angle_brackets() {
+    let findings = vec![json!({
+        "finding": "Renders <script>alert(1)</script>",
+        "reason": "Untrusted HTML must not pass through",
+        "outcome": "dismissed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    assert!(
+        out.contains("&lt;script&gt;"),
+        "`<` and `>` must be HTML-entity escaped; got:\n{}",
+        out
+    );
+    assert!(
+        !out.contains("<script>"),
+        "raw `<script>` must NOT appear in output; got:\n{}",
+        out
+    );
+}
+
+#[test]
+fn format_findings_markdown_escapes_backslash_first() {
+    let findings = vec![json!({
+        "finding": "trailing backslash\\",
+        "reason": "r1",
+        "outcome": "fixed",
+        "phase": "flow-review",
+    })];
+    let out = format_findings_markdown(&findings, "flow-review");
+    // A trailing single backslash would otherwise escape the
+    // closing `**` markdown marker. The escape pass doubles each
+    // backslash so the value cannot escape the closing wrapper.
+    assert!(
+        out.contains("**trailing backslash\\\\**"),
+        "backslash must be doubled to neutralize trailing-escape on closing markers; got:\n{}",
+        out
+    );
+}
+
 // --- run_impl_main ---
 
 #[test]
