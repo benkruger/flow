@@ -46,7 +46,7 @@ discussion-mode skill is running.
 
 Multiple `/flow:flow-plan` sessions on the same machine in
 different terminal windows are independent — each has its own
-session id, its own marker, its own conversation context.
+session id, its own conversation context.
 
 ## Announce
 
@@ -82,7 +82,6 @@ signals "ready" or "file it" (Step 6) or selects Cancel from the
 Step 1 Conversation Gate or the Step 6 filing AskUserQuestion.
 Every skill-exit boundary clears the marker so the Stop hook
 releases turn-end after the skill completes.
-
 ---
 
 ## Step 1 — Conversation Gate

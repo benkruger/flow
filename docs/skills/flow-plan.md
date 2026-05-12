@@ -25,14 +25,14 @@ The output is a decomposed issue ready for `/flow-start #M`. The vanilla issue s
 | Step | Name | Gate |
 |------|------|------|
 | 1 | Conversation Gate | HARD-GATE: `#N` argument required (regex `^#[1-9][0-9]*$`); bare-topic invocations rejected with migration message naming `/flow-explore` |
-| 2 | Fetch Vanilla Issue | HARD-GATE: `gh issue view --json title,body,number,labels`; rejects issues already carrying `decomposed` label or in closed state |
+| 2 | Fetch Vanilla Issue | HARD-GATE: `gh issue view --json title,body,number,labels,state`; rejects issues already carrying `decomposed` label or in closed state |
 | 3 | Role Read | Reads `.flow.json` `role` field; Tech Lead is the default voice |
 | 4 | Discussion Mode | HARD-GATE: codebase reads permitted; no inline draft Implementation Plan; no `AskUserQuestion` self-prompts; no auto-dispatch to a planning sub-agent |
 | 5 | Persona Dispatch | HARD-GATE: render `## SCOPE REFUSAL` verbatim, no auto-escalation |
 | 6 | Wrap-up | `decompose:decompose` invocation, transform to Implementation Plan wrapped in FLOW-PLAN sentinels, validate with `--mode decomposed`, file with `--label decomposed`, link via `bin/flow link-blocked-by`, clear marker |
 
 1. **Step 1 — Conversation Gate:** Verifies the argument matches `#N`. Without an argument or with a bare-topic value, the gate clears the utility-in-progress marker and stops with migration guidance directing the user to `/flow-explore` for problem-statement filing first.
-2. **Step 2 — Fetch Vanilla Issue:** Calls `gh issue view <N> --json title,body,number,labels`. Rejects already-`decomposed` issues (re-planning would file a sibling decomposed issue against an already-decomposed parent) and closed issues (require explicit reopen).
+2. **Step 2 — Fetch Vanilla Issue:** Calls `gh issue view <N> --json title,body,number,labels,state`. Rejects already-`decomposed` issues (re-planning would file a sibling decomposed issue against an already-decomposed parent) and closed issues (require explicit reopen).
 3. **Step 3 — Role Read:** Reads `.flow.json` for the optional `role` field. Tech Lead is the default voice; the role only adjusts a one-line conversational note.
 4. **Step 4 — Discussion Mode:** The default posture. Surfaces clarifying questions, reads source code via Read/Glob/Grep (unlike `/flow-explore` where source reads are forbidden), identifies risks and edge cases, iterates with the user. Composing inline draft Implementation Plan sections is forbidden — the wrap-up step builds the plan from the decompose pass.
 5. **Step 5 — Persona Dispatch:** On explicit user request ("PM view?", "Tech Lead view?", "CTO view?"), summarizes the discussion as `PARENT_ISSUE` + `CONVERSATION_SUMMARY` + `PROPOSED_APPROACH` and invokes the named sub-agent (`flow:pm`, `flow:tech-lead`, or `flow:cto`) via the Skill tool.
