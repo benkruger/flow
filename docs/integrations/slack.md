@@ -59,7 +59,6 @@ The thread is the complete narrative of the feature from start to merge:
 | Phase | Thread Message |
 |-------|---------------|
 | Start | Initial message (creates thread): feature name, PR link |
-| Plan | Reply: task count, plan summary |
 | Code | Reply: phase complete |
 | Review | Reply: review findings summary |
 | Learn | Reply: rules filed, changes made |

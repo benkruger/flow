@@ -140,23 +140,27 @@ against `.claude/settings.json` allow patterns. Commands not matching any
 use supported keys — unsupported keys like `hooks` can cause loading failures.
 
 Start and Complete use ci-fixer for CI failure diagnosis and fix.
-Plan invokes the `decompose` plugin for DAG-based task decomposition.
+The `/flow-plan` utility skill invokes the `decompose` plugin for
+DAG-based task decomposition before a feature reaches `/flow-start`.
 Review launches four agents in parallel — reviewer, pre-mortem,
 adversarial, and documentation — for cognitively isolated analysis.
 The parent session gathers context, triages findings, and fixes.
 Code has no sub-agents.
 Learn uses learn-analyst (cognitively isolated compliance audit).
 
-**Code phase rationale:** By the time Code starts, the plan file contains
-thorough exploration, a validated approach, identified risks, and ordered
-tasks — all produced during Plan phase. Code trusts the plan. It reads
-the plan file and the specific file it's modifying — nothing more.
+**Code phase rationale:** By the time Code starts, the plan file already
+contains thorough exploration, a validated approach, identified risks,
+and ordered tasks — produced by `/flow-plan` (decompose) ahead of
+`/flow-start` and extracted into `.flow-states/<branch>/plan.md` at
+Phase 1 Step 5 by `bin/flow plan-from-issue`. Code trusts the plan.
+It reads the plan file and the specific file it's modifying — nothing
+more.
 
 ---
 
 ## Note Capture at Transitions
 
-Every phase transition (Phases 1-6) includes a third option:
+Every phase transition (Phases 1-5) includes a third option:
 
 ```text
 "Phase X: Name is complete. Ready to begin Phase X+1?"

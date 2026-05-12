@@ -104,11 +104,10 @@ transition to Learn until `bin/flow ci` is green.
 ## Back Navigation
 
 - **Go back to Code** — revert to Code phase
-- **Go back to Plan** — revert to Plan phase
 
 ---
 
 ## What Comes Next
 
-Phase 5: Learn (`/flow-learn`) — audit rule compliance and identify
+Phase 4: Learn (`/flow-learn`) — audit rule compliance and identify
 process gaps before the PR is merged.

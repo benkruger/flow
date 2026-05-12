@@ -55,7 +55,6 @@ The chosen configuration is stored in `.flow.json` under a `skills` key:
   "flow_version": "1.1.0",
   "skills": {
     "flow-start": {"continue": "manual"},
-    "flow-plan": {"continue": "auto"},
     "flow-code": {"commit": "manual", "continue": "manual"},
     "flow-review": {"commit": "auto", "continue": "auto"},
     "flow-learn": {"commit": "auto", "continue": "auto"},
@@ -65,7 +64,7 @@ The chosen configuration is stored in `.flow.json` under a `skills` key:
 }
 ```
 
-Phase skills that commit (Code, Review, Learn) have both axes as a nested object. Phase skills that don't commit (Start, Plan) have only the continue axis. Utility skills (Abort, Complete) have a single string value.
+Phase skills that commit (Code, Review, Learn) have both axes as a nested object. Phase skills that don't commit (Start) have only the continue axis. Utility skills (Abort, Complete) have a single string value.
 
 Phase skills can be overridden at invocation time with `--auto` or `--manual` flags, regardless of the `.flow.json` configuration.
 
@@ -74,7 +73,7 @@ Phase skills can be overridden at invocation time with `--auto` or `--manual` fl
 ## Gates
 
 - Must be in a git repository
-- Must be on the main branch (setup runs against main before branching)
+- Must be on the integration branch (`main`, `staging`, or whatever the repo's default branch is) — setup runs against the integration branch before branching
 
 ---
 

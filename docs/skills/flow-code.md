@@ -6,7 +6,7 @@ parent: Skills
 
 # /flow-code
 
-**Phase:** 3 — Code
+**Phase:** 2 — Code
 
 **Usage:** `/flow-code`, `/flow-code --auto`, `/flow-code --manual`, or `/flow-code --continue-step`
 
@@ -77,7 +77,7 @@ Architecture checks are defined by the project's CLAUDE.md. Each project documen
 
 - **During TDD**: targeted test command via `bin/test --file <path>` — fast feedback
 - **Before commit**: `bin/flow ci` — full suite, must be green
-- **End of phase**: `coverage/uncovered.txt` must be empty
+- **End of phase**: 100% coverage enforced by `bin/flow ci`'s `--fail-under-lines/regions/functions 100` gate
 
 ---
 

@@ -1,8 +1,8 @@
 # FLOW — Software Development Lifecycle for Claude Code
 
-An opinionated 6-phase development plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that enforces plan-first, TDD discipline on every feature. Supports Rails, Python, iOS, Go, and Rust.
+An opinionated 5-phase development plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that enforces issue-driven, TDD discipline on every feature. Supports Rails, Python, iOS, Go, and Rust.
 
-**Every feature. Same 6 phases. Same order. No shortcuts.**
+**Every feature. Same 5 phases. Same order. No shortcuts.**
 
 **Documentation:** [benkruger.github.io/flow](https://benkruger.github.io/flow)
 
@@ -126,10 +126,10 @@ Then initialize in your project (once per project, and again after each FLOW upg
 Start a new Claude Code session so permissions take effect, then start a feature:
 
 ```bash
-/flow-start invoice pdf export
+/flow-start #309
 ```
 
-This acquires a start lock (serializing concurrent starts), pulls the integration branch (`main`/`staging`/whatever your repo's default branch is), runs `bin/ci` for a clean baseline, upgrades dependencies on the integration branch, runs `bin/ci` again to catch dep-induced breakage, commits everything to the integration branch, then creates branch `invoice-pdf-export` with a worktree at `.worktrees/invoice-pdf-export` and opens a GitHub PR. You land in Phase 2: Plan.
+The argument must match `^#[1-9][0-9]*$` — a pre-decomposed GitHub issue number prepared via `/flow-explore` + `/flow-plan`. This acquires a start lock (serializing concurrent starts), pulls the integration branch (`main`/`staging`/whatever your repo's default branch is), runs `bin/ci` for a clean baseline, upgrades dependencies on the integration branch, runs `bin/ci` again to catch dep-induced breakage, commits everything to the integration branch, then fetches the issue title to derive the branch name, creates a worktree at `.worktrees/<branch>`, and opens a GitHub PR. You land in Phase 2: Code.
 
 ---
 
@@ -203,7 +203,7 @@ The skill walks through 6 steps: DAG decomposition with codebase exploration, is
 
 ### Batch Orchestration
 
-Feed the issue graph into `/flow-orchestrate` and let FLOW process them overnight. It fetches open issues labeled "Decomposed", filters out any marked "Flow In-Progress", and runs each sequentially through all 6 phases via `flow-start --auto`.
+Feed the issue graph into `/flow-orchestrate` and let FLOW process them overnight. It fetches open issues labeled "Decomposed", filters out any marked "Flow In-Progress", and runs each sequentially through all 5 phases via `flow-start --auto`.
 
 The next time you open a Claude Code session, the session-start hook delivers a morning report: which issues completed (with PR links), which failed (with reasons), and total elapsed time. One command to start, zero intervention overnight, full accountability in the morning.
 
@@ -213,7 +213,7 @@ The next time you open a Claude Code session, the session-start hook delivers a 
 
 ### Sub-Agent Architecture
 
-Start and Complete use a ci-fixer sub-agent for CI failures. Plan invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition. Review launches four cognitively isolated agents in parallel: `reviewer` (context-rich — receives diff + plan + CLAUDE.md + rules, covers architecture, simplicity, and correctness including security), `pre-mortem` (context-sparse — receives only the diff, investigates failure modes including security), `adversarial` (context-sparse — writes tests designed to break the implementation), and `documentation` (context-sparse — assesses maintainability and documentation accuracy). The parent session gathers context, triages findings, and fixes. Code has no sub-agent. Learn uses `learn-analyst` (cognitively isolated compliance audit).
+Start and Complete use a ci-fixer sub-agent for CI failures. The `/flow-plan` utility skill invokes the `decompose` plugin (`decompose:decompose`) for DAG-based task decomposition before a feature reaches `/flow-start`. Review launches four cognitively isolated agents in parallel: `reviewer` (context-rich — receives diff + plan + CLAUDE.md + rules, covers architecture, simplicity, and correctness including security), `pre-mortem` (context-sparse — receives only the diff, investigates failure modes including security), `adversarial` (context-sparse — writes tests designed to break the implementation), and `documentation` (context-sparse — assesses maintainability and documentation accuracy). The parent session gathers context, triages findings, and fixes. Code has no sub-agent. Learn uses `learn-analyst` (cognitively isolated compliance audit).
 
 ```text
 Main conversation          Sub-agent (custom plugin)
@@ -276,7 +276,7 @@ Every correction and observation has a path to becoming a permanent, reusable pa
 User corrects Claude → /flow-note captures it in state["notes"]
 Claude writes observations → auto-memory (shared across worktrees)
        ↓
-Learn reads three sources in Phase 5 (CLAUDE.md rules, learn-analyst agent, state/plan data)
+Learn reads three sources in Phase 4 (CLAUDE.md rules, learn-analyst agent, state/plan data)
        ↓
 Each learning is routed to the right repo-local destination:
     → Project CLAUDE.md   (process rules and architecture — committed via PR)
@@ -325,9 +325,9 @@ Every completed feature produces:
 
 ## Instructions Are Advisory. Gates Aren't
 
-Most agent workflows put enforcement in instructions: "always run bin/ci", "never skip Plan". Instructions work until they don't. FLOW's phase enforcement is layered and deterministic. There is no instruction path from an incomplete phase to the next one running.
+Most agent workflows put enforcement in instructions: "always run bin/ci", "never skip Review". Instructions work until they don't. FLOW's phase enforcement is layered and deterministic. There is no instruction path from an incomplete phase to the next one running.
 
-Three independent mechanisms enforce this:
+Four independent mechanisms enforce this:
 
 - **Inline phase guard** — every phase skill opens with a tool-based gate (HARD-GATE) or a Rust command that reads the state file and exits immediately with `BLOCKED` if the previous phase isn't complete. The skill doesn't run — there's nothing for Claude to interpret or override.
 

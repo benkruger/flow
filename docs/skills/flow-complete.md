@@ -6,12 +6,13 @@ parent: Skills
 
 # /flow-complete
 
-**Phase:** 6 — Complete
+**Phase:** 5 — Complete
 
 **Usage:** `/flow-complete`, `/flow-complete --auto`, `/flow-complete --manual`, or `/flow-complete --continue-step`
 
-The final phase. Merges the PR into main, removes the git worktree,
-and deletes the state file. Mode is configurable via `.flow.json`
+The final phase. Merges the PR into the integration branch (`base_branch`),
+removes the git worktree, and deletes the state file. Mode is configurable
+via `.flow.json`
 (default: auto, skips confirmation). Use `--manual` to prompt for
 confirmation before the irreversible merge. The `--continue-step`
 flag is used for self-invocation after mid-phase commits (merge
@@ -23,8 +24,8 @@ SOFT-GATE and dispatches via the Resume Check.
 ## What It Does
 
 1. **Run complete-fast** — consolidates phase entry, state detection, PR
-   status check, merge main, local CI dirty check, GitHub CI check, and
-   squash merge into a single call. Returns a `path` field for dispatch:
+   status check, merge of the integration branch into the feature branch,
+   local CI dirty check, GitHub CI check, and squash merge into a single call. Returns a `path` field for dispatch:
    `"merged"` (auto happy path), `"already_merged"`, `"confirm"` (manual
    mode), `"ci_stale"`, `"ci_drift"`, `"ci_failed"`, `"ci_pending"`,
    `"conflict"`, or `"max_retries"`. `ci_drift` fires when local CI
@@ -33,15 +34,16 @@ SOFT-GATE and dispatches via the Resume Check.
    invalidates the sentinel via `bin/flow ci --force`, commits auto-fixes,
    and self-invokes. If the PR is already merged, skips to finalize (step 6)
 2. **Local CI gate** — `bin/flow ci` catches test failures after merging
-   main. If it fails, ci-fixer commits a fix and self-invokes to re-check
+   the integration branch into the feature branch. If it fails, ci-fixer
+   commits a fix and self-invokes to re-check
 3. **GitHub CI check** — `gh pr checks` waits for checks to pass. If pending,
    invokes `/loop` to auto-retry. If failed, ci-fixer commits a fix
 4. **Confirm** (manual mode only) — explicit confirmation before the
    irreversible merge. Offers approve, decline, or feedback options. Skipped
    by default
 5. **Merge** — `complete-merge` handles the freshness check and squash merge.
-   If main moved, loops back through CI. Detects branch protection policy
-   blocks and merge conflicts
+   If the integration branch moved, loops back through CI. Detects branch
+   protection policy blocks and merge conflicts
 6. **Finalize** — `complete-finalize` handles phase completion, PR body
    rendering, issues summary, closing referenced issues, summary generation,
    label removal, auto-close parent issues, Slack notification, worktree
@@ -74,8 +76,8 @@ file and exits cleanly.
 
 | Scenario | Behavior |
 |---|---|
-| State file exists, Phase 5 complete | Normal merge and cleanup — no warnings |
-| State file exists, Phase 5 incomplete | Warns, proceeds (confirms if `--manual`) |
+| State file exists, Learn (Phase 4) complete | Normal merge and cleanup — no warnings |
+| State file exists, Learn (Phase 4) incomplete | Warns, proceeds (confirms if `--manual`) |
 | State file missing | Warns, infers from git state, proceeds (confirms if `--manual`) |
 | PR closed but not merged | Hard block, does not proceed |
 
@@ -89,7 +91,7 @@ state file doesn't exist, it notes that and finishes.
 
 - PR must be open or already merged — hard block if closed
 - CI must pass before merge
-- Phase 5 complete is a warning, not a hard block
+- Learn (Phase 4) complete is a warning, not a hard block
 - Missing state file is a warning, not a hard block
 - Confirmation only when mode is manual (via `--manual` or `.flow.json`)
 - Steps 1-5 run from the worktree; Step 6 (finalize) runs from the project root
