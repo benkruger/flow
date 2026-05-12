@@ -1370,6 +1370,22 @@ fn is_bg_truthy_object_allows() {
 // discovery, Agent-tool dispatch, and the validate() exit-2 fall-through.
 
 fn run_hook_with_input(input: &str, cwd: Option<&std::path::Path>) -> (i32, String, String) {
+    run_hook_with_input_and_home(input, cwd, None)
+}
+
+/// Subprocess test helper that lets the caller override the child
+/// process's HOME env var. Used by tests that include a
+/// `transcript_path` in the hook input — the walker validates the
+/// path is rooted under `<home>/.claude/projects/`, so HOME must
+/// point at the tempdir that holds the transcript fixture for the
+/// validator to accept the path. Tests that don't pass a
+/// transcript_path can continue using `run_hook_with_input` and
+/// inherit the test runner's HOME unchanged.
+fn run_hook_with_input_and_home(
+    input: &str,
+    cwd: Option<&std::path::Path>,
+    home: Option<&std::path::Path>,
+) -> (i32, String, String) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
     cmd.args(["hook", "validate-pretool"])
         .env_remove("FLOW_CI_RUNNING")
@@ -1378,6 +1394,9 @@ fn run_hook_with_input(input: &str, cwd: Option<&std::path::Path>) -> (i32, Stri
         .stderr(Stdio::piped());
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
+    }
+    if let Some(h) = home {
+        cmd.env("HOME", h);
     }
     let mut child = cmd.spawn().expect("spawn flow-rs");
     {
@@ -1389,6 +1408,29 @@ fn run_hook_with_input(input: &str, cwd: Option<&std::path::Path>) -> (i32, Stri
         output.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&output.stdout).to_string(),
         String::from_utf8_lossy(&output.stderr).to_string(),
+    )
+}
+
+/// Build a JSONL transcript line representing an assistant turn
+/// with a Skill tool_use whose `input.skill` is the given name. Used
+/// by the skill-commit carve-out tests to build controlled
+/// transcript fixtures that drive the walker's
+/// `most_recent_skill_since_user` predicate.
+fn assistant_skill_jsonl(skill: &str) -> String {
+    format!(
+        "{{\"type\":\"assistant\",\"message\":{{\"role\":\"assistant\",\"content\":[{{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{{\"skill\":\"{}\"}}}}]}}}}\n",
+        skill
+    )
+}
+
+/// Build a JSONL user-turn line with the given content string. The
+/// walker's `most_recent_skill_since_user` stops at the most recent
+/// user turn going backward, so a user turn after a Skill call
+/// invalidates the walker's view of that Skill.
+fn user_jsonl(content: &str) -> String {
+    format!(
+        "{{\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":\"{}\"}}}}\n",
+        content
     )
 }
 
@@ -2791,15 +2833,21 @@ fn setup_active_flow_worktree_with_state(
 
 #[test]
 fn layer_10_carveout_allows_bin_flow_finalize_commit_when_continue_pending_is_commit() {
-    // Skill choreography: flow-code (or sibling) wrote
-    // _continue_pending=commit, then dispatched
-    // bin/flow finalize-commit via /flow:flow-commit. Layer 9 must
-    // pass through so CI can run inside finalize-commit and the
-    // commit can land.
-    let (_dir, _root, cwd) =
+    // Skill choreography: /flow:flow-commit fires (most recent
+    // assistant Skill in the transcript) AND flow-code (or sibling)
+    // wrote _continue_pending=commit, AND the command shape is
+    // bin/flow finalize-commit. All three carve-out conditions hold,
+    // so Layer 9 passes through. CI runs inside finalize-commit and
+    // the commit lands.
+    let (_dir, root, cwd) =
         setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
-    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    let jsonl = assistant_skill_jsonl("flow:flow-commit");
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
     assert_eq!(
         code, 0,
         "skill-invoked finalize-commit must pass; stderr={stderr}"
@@ -2811,11 +2859,18 @@ fn layer_10_carveout_allows_absolute_bin_flow_finalize_commit_when_marker_set() 
     // Skill bash blocks invoke `${CLAUDE_PLUGIN_ROOT}/bin/flow
     // finalize-commit ...` which expands to an absolute-path form.
     // The carve-out's command-shape predicate uses `is_bin_flow_token`
-    // which accepts both bare and `*/bin/flow` suffix forms.
-    let (_dir, _root, cwd) =
+    // which accepts both bare and `*/bin/flow` suffix forms. All
+    // three carve-out conditions are exercised here so the
+    // absolute-path shape also passes.
+    let (_dir, root, cwd) =
         setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
-    let input = r#"{"tool_input": {"command": "/Users/me/code/flow/bin/flow finalize-commit msg.txt feat"}}"#;
-    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    let jsonl = assistant_skill_jsonl("flow:flow-commit");
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "/Users/me/code/flow/bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
     assert_eq!(
         code, 0,
         "absolute-path skill-invoked finalize-commit must pass; stderr={stderr}"
@@ -3007,4 +3062,178 @@ fn layer_10_carveout_does_not_apply_on_integration_branch() {
         stderr.contains("integration branch"),
         "stderr should name integration-branch context; got: {stderr}"
     );
+}
+
+// --- skill_commit_closure: transcript-walker carve-out condition ---
+//
+// The third AND-combined condition on the skill-commit carve-out
+// (per `.claude/rules/no-escape-hatches.md` Layer C). Each test
+// fixtures the state.json marker, builds a transcript JSONL that
+// exercises the walker's most_recent_skill_since_user semantics,
+// and asserts the gate behavior.
+
+#[test]
+fn layer_10_closure_blocks_when_transcript_shows_different_skill() {
+    // Marker present AND finalize-commit shape, but the most recent
+    // assistant Skill call is `decompose:decompose` (not
+    // flow:flow-commit). The walker's third condition fails so the
+    // carve-out does not apply.
+    let (_dir, root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    let jsonl = assistant_skill_jsonl("decompose:decompose");
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
+    assert_eq!(
+        code, 2,
+        "finalize-commit with non-flow-commit Skill in transcript must block; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("active flow"));
+    assert!(stderr.contains("no-escape-hatches.md"));
+}
+
+#[test]
+fn layer_10_closure_blocks_when_no_skill_since_user_turn() {
+    // The user turn appears AFTER the Skill call, so the walker
+    // returns None (no Skill call since the most recent user turn).
+    // The third condition fails → block.
+    let (_dir, root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    let jsonl = format!(
+        "{}{}",
+        assistant_skill_jsonl("flow:flow-commit"),
+        user_jsonl("follow-up prompt")
+    );
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
+    assert_eq!(
+        code, 2,
+        "user turn after the Skill call invalidates the carve-out; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("active flow"));
+}
+
+#[test]
+fn layer_10_closure_blocks_when_marker_absent_but_transcript_shows_flow_commit() {
+    // Belt-and-suspenders: even though the walker would return
+    // Some("flow:flow-commit"), the second condition
+    // (_continue_pending == "commit") fails because the state has
+    // a different value. The marker is preserved as a precondition.
+    let (_dir, root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "review"}"#);
+    let jsonl = assistant_skill_jsonl("flow:flow-commit");
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
+    assert_eq!(
+        code, 2,
+        "missing marker must block even when transcript shows flow:flow-commit; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("active flow"));
+}
+
+#[test]
+fn layer_10_closure_blocks_when_transcript_path_missing() {
+    // hook input omits transcript_path entirely. The walker check
+    // sees None and returns false, so the third condition fails
+    // even though the marker is set. Fail-closed: missing transcript
+    // means the surrounding skill choreography cannot be verified.
+    let (_dir, _root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 2,
+        "missing transcript_path must block even with marker set; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("active flow"));
+}
+
+#[test]
+fn layer_10_closure_blocks_when_transcript_path_invalid() {
+    // transcript_path supplied but rooted outside <home>/.claude/projects/.
+    // is_safe_transcript_path rejects, the walker returns None, the
+    // third condition fails. Block.
+    let (_dir, root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    // Write a JSONL file outside the safe prefix.
+    let bad_path = root.join("not-in-projects.jsonl");
+    std::fs::write(&bad_path, assistant_skill_jsonl("flow:flow-commit")).unwrap();
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        bad_path.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
+    assert_eq!(
+        code, 2,
+        "transcript_path outside ~/.claude/projects/ must be rejected; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+}
+
+#[test]
+fn layer_10_closure_integration_branch_message_wins_over_active_flow() {
+    // When the resolved branch IS the integration branch AND a state
+    // file exists, match_branch_at fires first inside
+    // check_commit_during_flow, so the integration-branch message
+    // wins over the active-flow message. Even with all three
+    // carve-out conditions met, the integration-branch context is
+    // never carved out.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let states_dir = root.join(".flow-states").join("main");
+    std::fs::create_dir_all(&states_dir).unwrap();
+    std::fs::write(
+        states_dir.join("state.json"),
+        r#"{"_continue_pending": "commit"}"#,
+    )
+    .unwrap();
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = assistant_skill_jsonl("flow:flow-commit");
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 2,
+        "integration-branch must block even when all carve-out conditions hold; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("integration branch"),
+        "stderr should name the integration-branch context; got: {stderr}"
+    );
+}
+
+#[test]
+fn layer_10_closure_block_message_cites_no_escape_hatches_rule() {
+    // The active-flow block message must cite
+    // .claude/rules/no-escape-hatches.md (the citation contract test
+    // in Task 11 enforces this forward). Exercise the block path
+    // and check the message content.
+    let (_dir, root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    // No transcript fixture → carve-out fails → block.
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(input, Some(&cwd), Some(&root));
+    assert_eq!(code, 2);
+    assert!(stderr.contains("/flow:flow-commit"));
+    assert!(stderr.contains("no-escape-hatches.md"));
 }

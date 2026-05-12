@@ -10,17 +10,19 @@
 //! Exit 0 — allow (command passes through to normal permission system)
 //! Exit 2 — block (error message on stderr is fed back to the sub-agent)
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use regex::Regex;
 use serde_json::Value;
 
+use super::transcript_walker::most_recent_skill_since_user;
 use super::{
     build_permission_regexes, detect_branch_from_path, find_settings_and_root_from, is_flow_active,
     read_hook_input, resolve_main_root,
 };
 use crate::flow_paths::FlowPaths;
 use crate::git::{current_branch_in, default_branch_in};
+use crate::session_metrics::home_dir_or_empty;
 
 /// Validate a Bash command string.
 ///
@@ -684,7 +686,7 @@ fn commit_block_message(branch: &str) -> String {
     format!(
         "BLOCKED: direct commits on the integration branch '{}' are not allowed. \
          Run /flow:flow-commit from a feature worktree instead. \
-         This block is mechanical (Layer 9).",
+         This block is mechanical (Layer 9). See .claude/rules/no-escape-hatches.md.",
         branch
     )
 }
@@ -698,8 +700,9 @@ fn commit_block_message(branch: &str) -> String {
 fn commit_block_message_active_flow(branch: &str) -> String {
     format!(
         "BLOCKED: direct commits during an active flow on '{}' are not allowed. \
-         Run /flow:flow-commit instead so CI runs through the gate. \
-         This block is mechanical (Layer 9).",
+         Run /flow:flow-commit instead so CI and the skill's diff review run through \
+         the gate. This block is mechanical (Layer 9). \
+         See .claude/rules/no-escape-hatches.md.",
         branch
     )
 }
@@ -725,14 +728,19 @@ fn commit_block_message_active_flow(branch: &str) -> String {
 /// the rare case where both apply (the integration branch itself
 /// has an active flow). Across candidates: process cwd is checked
 /// before the `-C` target.
-fn check_commit_during_flow(command: &str, cwd: &Path) -> Option<String> {
+fn check_commit_during_flow(
+    command: &str,
+    cwd: &Path,
+    transcript_path: Option<&Path>,
+    home: &Path,
+) -> Option<String> {
     if !is_commit_invocation(command) {
         return None;
     }
     if let Some(msg) = match_branch_at(cwd) {
         return Some(msg);
     }
-    if let Some(msg) = check_active_flow_at(command, cwd) {
+    if let Some(msg) = check_active_flow_at(command, cwd, transcript_path, home) {
         return Some(msg);
     }
     if let Some(p) = extract_dash_c_path(command) {
@@ -740,7 +748,7 @@ fn check_commit_during_flow(command: &str, cwd: &Path) -> Option<String> {
         if let Some(msg) = match_branch_at(target) {
             return Some(msg);
         }
-        if let Some(msg) = check_active_flow_at(command, target) {
+        if let Some(msg) = check_active_flow_at(command, target, transcript_path, home) {
             return Some(msg);
         }
     }
@@ -804,7 +812,12 @@ fn match_branch_at(path: &Path) -> Option<String> {
 /// every invocation regardless of how the carve-out is reached. A
 /// stronger one-shot-token design is on the table if the marker-only
 /// gate proves insufficient in practice.
-fn check_active_flow_at(command: &str, path: &Path) -> Option<String> {
+fn check_active_flow_at(
+    command: &str,
+    path: &Path,
+    transcript_path: Option<&Path>,
+    home: &Path,
+) -> Option<String> {
     let branch = detect_branch_from_path(path)?;
     let (_, project_root) = find_settings_and_root_from(path);
     let root = project_root?;
@@ -814,10 +827,34 @@ fn check_active_flow_at(command: &str, path: &Path) -> Option<String> {
     }
     if is_finalize_commit_invocation(command)
         && state_continue_pending_is_commit(&branch, &main_root)
+        && transcript_shows_flow_commit(transcript_path, home)
     {
         return None;
     }
     Some(commit_block_message_active_flow(&branch))
+}
+
+/// Walker check for the skill-commit carve-out's third AND-combined
+/// condition. Returns true iff the most recent assistant Skill
+/// tool_use call since the most recent user turn in the persisted
+/// transcript at `transcript_path` names `flow:flow-commit`. Returns
+/// false when transcript_path is None, when the walker cannot read
+/// the file, or when the most recent Skill call is something other
+/// than `flow:flow-commit`.
+///
+/// The walker is the load-bearing predicate that proves the
+/// surrounding skill choreography (diff review, commit-message
+/// review) actually ran. The `_continue_pending` marker on its own
+/// is belt-and-suspenders for a fresh-session resume window; the
+/// walker closes the bypass-shortcut surface where a model could
+/// write the marker directly and invoke `bin/flow finalize-commit`
+/// without going through `/flow:flow-commit`. See
+/// `.claude/rules/no-escape-hatches.md` Layer C for the design.
+fn transcript_shows_flow_commit(transcript_path: Option<&Path>, home: &Path) -> bool {
+    let Some(path) = transcript_path else {
+        return false;
+    };
+    most_recent_skill_since_user(path, home).as_deref() == Some("flow:flow-commit")
 }
 
 /// Recognize a `bin/flow ... finalize-commit` invocation specifically.
@@ -1018,6 +1055,12 @@ pub fn run() {
         .cloned()
         .unwrap_or(Value::Object(Default::default()));
 
+    let transcript_path: Option<PathBuf> = hook_input
+        .get("transcript_path")
+        .and_then(|v| v.as_str())
+        .map(PathBuf::from);
+    let home = home_dir_or_empty();
+
     let command = tool_input
         .get("command")
         .and_then(|v| v.as_str())
@@ -1061,7 +1104,9 @@ pub fn run() {
     // structural gates AND is a commit invocation routed through one
     // of the two trigger contexts.
     if let Some(cwd_path) = cwd.as_deref() {
-        if let Some(msg) = check_commit_during_flow(command, cwd_path) {
+        if let Some(msg) =
+            check_commit_during_flow(command, cwd_path, transcript_path.as_deref(), &home)
+        {
             eprintln!("{}", msg);
             std::process::exit(2);
         }
