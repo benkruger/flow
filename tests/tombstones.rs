@@ -1804,6 +1804,66 @@ fn test_skills_no_flow_create_issue_references() {
     );
 }
 
+// --- flow-create-issue prose corpus protection (PR #1486) ---
+
+/// Tombstone: removed in PR #1486. Must not return.
+///
+/// PR #1477 retired the `flow-create-issue` skill, and PR #1486
+/// completed the prose sweep across CLAUDE.md, `.claude/rules/*.md`,
+/// and `.claude/skills/<name>/SKILL.md`. The sibling tombstone
+/// `test_skills_no_flow_create_issue_references` covers
+/// `skills/<name>/SKILL.md` (the public skill directory); this
+/// tombstone covers the three other prose surfaces where the
+/// identifier could resurface via merge conflict: the project
+/// CLAUDE.md, the rules corpus, and the maintainer-skill corpus.
+///
+/// Stability: byte-substring check against the kebab-case skill
+/// name `flow-create-issue`. The string is a stable identifier
+/// embedded in markdown prose. Cannot be assembled by `concat!`
+/// or `format!` (markdown is inert text, not Rust code). Cannot
+/// be a Rust constant (the files are markdown). Cannot be split
+/// into multiple `.arg()` calls (not a CLI invocation). The
+/// four-question stability checklist passes for all three
+/// corpora.
+#[test]
+fn test_prose_corpus_no_flow_create_issue_references() {
+    let root = common::repo_root();
+    let mut violations: Vec<String> = Vec::new();
+
+    // CLAUDE.md (single file).
+    let claude_md = root.join("CLAUDE.md");
+    if let Ok(content) = std::fs::read_to_string(&claude_md) {
+        if content.contains("flow-create-issue") {
+            violations.push("CLAUDE.md".to_string());
+        }
+    }
+
+    // .claude/rules/*.md (rules corpus — flat directory of markdown).
+    let rules_dir = root.join(".claude").join("rules");
+    for (rel, content) in common::collect_md_files(&rules_dir) {
+        if content.contains("flow-create-issue") {
+            violations.push(format!(".claude/rules/{}", rel));
+        }
+    }
+
+    // .claude/skills/<name>/SKILL.md (maintainer-skill corpus —
+    // each subdirectory carries one SKILL.md).
+    let claude_skills_dir = root.join(".claude").join("skills");
+    for (rel, content) in common::collect_md_files(&claude_skills_dir) {
+        if content.contains("flow-create-issue") {
+            violations.push(format!(".claude/skills/{}", rel));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "CLAUDE.md, .claude/rules/*.md, and .claude/skills/<name>/SKILL.md \
+         must not reference `flow-create-issue` (skill retired in \
+         PR #1477; prose corpus swept in PR #1486). Offending files:\n  {}",
+        violations.join("\n  ")
+    );
+}
+
 // --- acquire_with_wait_impl Rust seam citation removal (PR #1486) ---
 
 /// Tombstone: removed in PR #1486. Must not return.
@@ -1814,29 +1874,44 @@ fn test_skills_no_flow_create_issue_references() {
 /// production function no longer carries that signature and the
 /// `_impl` variant does not exist. The prose was rewritten to
 /// describe the retry/timeout pattern without naming a stale
-/// reference.
+/// reference. The scan covers the full rule corpus plus
+/// CLAUDE.md so a future edit that reintroduces the identifier
+/// in any prose surface fails CI.
 ///
 /// Stability: byte-substring check against the literal identifier
 /// `acquire_with_wait_impl`. The string is a Rust function name
 /// embedded in markdown prose, cannot be assembled by `concat!`
 /// or `format!` (markdown is inert text, not Rust code), cannot
-/// be a constant (the file is markdown, not Rust source), and
+/// be a constant (the files are markdown, not Rust source), and
 /// cannot be split into multiple `.arg()` calls (not a CLI
 /// invocation). The four-question stability checklist passes.
 #[test]
 fn test_rules_no_acquire_with_wait_impl() {
-    let path = common::repo_root()
-        .join(".claude")
-        .join("rules")
-        .join("testing-gotchas.md");
-    let content =
-        std::fs::read_to_string(&path).expect(".claude/rules/testing-gotchas.md must exist");
+    let root = common::repo_root();
+    let mut violations: Vec<String> = Vec::new();
+
+    let claude_md = root.join("CLAUDE.md");
+    if let Ok(content) = std::fs::read_to_string(&claude_md) {
+        if content.contains("acquire_with_wait_impl") {
+            violations.push("CLAUDE.md".to_string());
+        }
+    }
+
+    let rules_dir = root.join(".claude").join("rules");
+    for (rel, content) in common::collect_md_files(&rules_dir) {
+        if content.contains("acquire_with_wait_impl") {
+            violations.push(format!(".claude/rules/{}", rel));
+        }
+    }
+
     assert!(
-        !content.contains("acquire_with_wait_impl"),
-        ".claude/rules/testing-gotchas.md must not reference \
+        violations.is_empty(),
+        "CLAUDE.md and .claude/rules/*.md must not reference \
          `acquire_with_wait_impl` — the production function no \
          longer exposes that `_impl` seam; describe the \
-         retry/timeout pattern without naming a stale identifier."
+         retry/timeout pattern without naming a stale identifier. \
+         Offending files:\n  {}",
+        violations.join("\n  ")
     );
 }
 
@@ -1848,33 +1923,87 @@ fn test_rules_no_acquire_with_wait_impl() {
 /// `run_tui_arm_impl(is_tty_fn, run_terminal_fn, root)` as the
 /// canonical closure-injection seam. That signature was
 /// collapsed: `run_tui_arm_impl` is intentionally non-generic
-/// today and `run_terminal_body<B, C, E>` is the actual
-/// closure-injection seam. The substring `is_tty_fn` uniquely
-/// identifies the obsolete closure-pair shape — `run_tui_arm_impl`
-/// itself remains a legitimate identifier in the rewritten prose
-/// (as the named non-generic layer above `run_terminal`).
+/// today (single `root: &Path` parameter) and
+/// `run_terminal_body<B, C, E>` is the actual closure-injection
+/// seam. The function name itself remains legitimate prose (the
+/// rule cites it as the named non-generic layer above
+/// `run_terminal`), so the tombstone forbids the obsolete
+/// invocation SHAPE — any `run_tui_arm_impl(...)` call site in
+/// prose with a comma inside the argument list. A single-arg
+/// `run_tui_arm_impl(root)` call has no comma between parens and
+/// is allowed.
 ///
-/// Stability: byte-substring check against the literal identifier
-/// `is_tty_fn`. The string is a Rust parameter name embedded in
-/// markdown prose, cannot be assembled by `concat!` or `format!`
-/// (markdown is inert text, not Rust code), cannot be a constant
-/// (the file is markdown, not Rust source), and cannot be split
-/// into multiple `.arg()` calls. The four-question stability
-/// checklist passes.
+/// Stability: structural check on the multi-arg call shape (per
+/// `tombstone-tests.md` "Two kinds of tombstone" — when in
+/// doubt, assume #2 structural). A literal byte-substring on
+/// any single parameter name (e.g., `is_tty_fn`) would bypass
+/// the tombstone whenever a regression renamed the closure
+/// parameter (`tty_check_fn`, `tty_predicate`, etc.) — the
+/// architectural construct is "multi-arg call to
+/// `run_tui_arm_impl` in prose," not "the specific identifier
+/// `is_tty_fn`." Macro forms `concat!` and `format!` are
+/// inapplicable here (markdown is inert text, not Rust code);
+/// Rust constants are inapplicable (markdown files cannot host
+/// constant declarations). The forbidden shape — a function
+/// call with multiple comma-separated args — is captured by the
+/// structural scan, independent of parameter names.
 #[test]
 fn test_rules_no_run_tui_arm_impl_closure_pair() {
-    let path = common::repo_root()
-        .join(".claude")
-        .join("rules")
-        .join("rust-patterns.md");
-    let content =
-        std::fs::read_to_string(&path).expect(".claude/rules/rust-patterns.md must exist");
+    let root = common::repo_root();
+    let rules_dir = root.join(".claude").join("rules");
+    let mut violations: Vec<String> = Vec::new();
+
+    // For each .md file in .claude/rules/, find every occurrence
+    // of "run_tui_arm_impl(" and check whether the argument list
+    // (bytes between the matching parens) contains a comma. The
+    // current single-arg form has no comma inside the parens; any
+    // multi-arg form (the obsolete closure-pair shape) does.
+    const NEEDLE: &str = "run_tui_arm_impl(";
+    for (rel, content) in common::collect_md_files(&rules_dir) {
+        let bytes = content.as_bytes();
+        let mut search_from = 0;
+        while let Some(idx) = content[search_from..].find(NEEDLE) {
+            let open_paren = search_from + idx + NEEDLE.len() - 1;
+            // Walk forward from the opening paren, tracking nesting,
+            // until the matching closing paren. Bail at newline so a
+            // multi-line code block doesn't fold into a single
+            // argument list.
+            let mut depth = 1usize;
+            let mut found_comma = false;
+            let mut cursor = open_paren + 1;
+            while cursor < bytes.len() {
+                let b = bytes[cursor];
+                if b == b'\n' {
+                    break;
+                }
+                if b == b'(' {
+                    depth += 1;
+                } else if b == b')' {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                } else if b == b',' && depth == 1 {
+                    found_comma = true;
+                }
+                cursor += 1;
+            }
+            if found_comma {
+                let snippet_end = (open_paren + 60).min(content.len());
+                let snippet = &content[search_from + idx..snippet_end];
+                violations.push(format!(".claude/rules/{}: {}", rel, snippet));
+            }
+            search_from = open_paren + 1;
+        }
+    }
+
     assert!(
-        !content.contains("is_tty_fn"),
-        ".claude/rules/rust-patterns.md must not reference \
-         `is_tty_fn` — the closure-pair seam at the \
-         `run_tui_arm_impl` layer was collapsed; describe the \
-         seam at `run_terminal_body` without resurrecting the \
-         stale closure parameter."
+        violations.is_empty(),
+        ".claude/rules/*.md must not reference `run_tui_arm_impl` \
+         with a multi-arg call shape (the obsolete closure-pair seam \
+         at the `run_tui_arm_impl` layer). The single-arg form \
+         `run_tui_arm_impl(root)` is allowed; any call with a comma \
+         inside the parens is the obsolete shape. Offending sites:\n  {}",
+        violations.join("\n  ")
     );
 }
