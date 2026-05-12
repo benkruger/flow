@@ -5315,6 +5315,59 @@ fn flow_plan_skill_uses_utility_in_progress_marker() {
     );
 }
 
+#[test]
+fn flow_plan_has_no_wrap_up_ask_user_question() {
+    // Regression: a future edit re-introduces a wrap-up
+    // AskUserQuestion gate into the Step 6 filing path. Per
+    // AC#4 of issue #1488, the user's readiness signal from
+    // Step 4 (Discussion Mode) is the single authorization to
+    // file. The decompose pass + transform that precede Step 6
+    // are unattended infrastructure; a second confirmation
+    // question between the signal and the success banner breaks
+    // the single-signal contract. The specific phrasing the
+    // obsolete gate used was "Review the draft above. Ready to
+    // file?"; catching that exact prompt locks in the
+    // discipline against accidental resurrection.
+    let c = common::read_skill("flow-plan");
+    assert!(
+        !c.contains("Review the draft above. Ready to file?"),
+        "skills/flow-plan/SKILL.md must not contain the wrap-up AskUserQuestion prompt — Step 6 files directly after the decompose + transform pipeline"
+    );
+}
+
+#[test]
+fn flow_plan_validator_auto_fix_loop() {
+    // Regression: a future edit drops the bounded auto-fix loop
+    // on validator failure and replaces it with either an
+    // unbounded loop (would silently file a malformed body if
+    // the validator passes after many retries) or a prompt-the-
+    // user gate (breaks the single-signal contract). The
+    // `validator_max_retries` reason is the contract the
+    // COMPLETE-FAILED banner depends on.
+    let c = common::read_skill("flow-plan");
+    assert!(
+        c.contains("validator_max_retries"),
+        "skills/flow-plan/SKILL.md must name the `validator_max_retries` error reason so the structured-error contract is locked in"
+    );
+}
+
+#[test]
+fn flow_plan_validator_retry_cap_is_five() {
+    // Regression: a future edit raises or lowers the retry cap.
+    // Five attempts is the documented bound chosen so the
+    // skill can iterate through every reasonable mechanical fix
+    // class (sentinel placement, missing subsection, heading
+    // level) but cannot loop indefinitely on a body the
+    // validator will never accept. Lowering the cap would
+    // prematurely fail on legitimate fix sequences; raising it
+    // would mask validator bugs as productive retries.
+    let c = common::read_skill("flow-plan");
+    assert!(
+        c.contains("5 attempts") || c.contains("5 retries"),
+        "skills/flow-plan/SKILL.md must name the 5-attempt cap so the bounded-loop contract is locked in"
+    );
+}
+
 // --- flow-plan rewrite contract tests ---
 //
 // `/flow:flow-plan #N` consumes a vanilla problem-statement issue

@@ -1846,3 +1846,24 @@ fn test_flow_explore_no_wrap_up_ask_user_question() {
         forbidden,
     );
 }
+
+/// Tombstone: removed in PR #1489. `skills/flow-plan/SKILL.md` no
+/// longer carries a wrap-up AskUserQuestion gate before filing the
+/// decomposed issue. Per AC#4 of issue #1488, the user's readiness
+/// signal from the Step 4 discussion is the single authorization
+/// to file; the decompose + transform pipeline that precedes Step 6
+/// is unattended infrastructure, not a second decision point. The
+/// forbidden phrasing is the exact verbatim prompt the removed
+/// gate used; this is a stable source literal (a full English
+/// sentence appearing in the SKILL prose), not assembled via
+/// `concat!`, `format!`, or constant composition.
+#[test]
+fn test_flow_plan_no_wrap_up_ask_user_question() {
+    let content = common::read_skill("flow-plan");
+    let forbidden = "Review the draft above. Ready to file?";
+    assert!(
+        !content.contains(forbidden),
+        "skills/flow-plan/SKILL.md must not contain the wrap-up AskUserQuestion prompt `{}` (removed in PR #1489: Step 6 files directly after the decompose + transform pipeline)",
+        forbidden,
+    );
+}

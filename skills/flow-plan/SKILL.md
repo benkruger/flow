@@ -77,11 +77,12 @@ If the marker-write call returns `status: error` with
 The Stop hook treats a missing marker as a non-block, so the skill
 runs without protection but does not break.
 
-The marker is held across the entire pipeline until the user
-signals "ready" or "file it" (Step 6) or selects Cancel from the
-Step 1 Conversation Gate or the Step 6 filing AskUserQuestion.
-Every skill-exit boundary clears the marker so the Stop hook
-releases turn-end after the skill completes.
+The marker is held across the entire pipeline. Every skill-exit
+boundary clears the marker so the Stop hook releases turn-end
+after the skill completes: the Step 1 Conversation Gate when the
+argument is missing or malformed, the Step 6 validator-max-retries
+halt, and the Step 6 success path after the decomposed issue is
+filed and linked.
 ---
 
 ## Step 1 — Conversation Gate
@@ -552,50 +553,6 @@ Present the full draft inline in the response — both title and
 body. Do not tell the user to look at a file. Render it as a
 formatted markdown block so the user can review every detail.
 
-### File AskUserQuestion Gate
-
-<HARD-GATE>
-
-After presenting the draft, ask the user to confirm via
-AskUserQuestion with structured parameters:
-
-- **question**: "Review the draft above. Ready to file?"
-- **header**: "File Plan"
-- **options**:
-  - label: "File issue", description: "File the decomposed issue and link it as blocked-by #N"
-  - label: "Revise draft", description: "Edit the draft based on your feedback"
-  - label: "Cancel", description: "Stop without filing the decomposed issue"
-
-Do not file the issue, propose direct edits, commit changes, or
-take any action outside this skill without explicit user approval
-via AskUserQuestion — even if the answer appears obvious from
-context.
-
-**If "File issue"** → proceed to Validate + File + Link below.
-
-**If "Revise draft"** → revise based on the user's feedback. If
-the feedback is substantial (changes the implementation
-approach), re-run `decompose:decompose` with the updated
-understanding and re-transform. If the feedback is editorial
-(wording, scope adjustments), edit the draft directly. **When in
-doubt, treat the feedback as substantial and re-run
-`decompose:decompose`** — the safe default is the conservative
-action; editing a draft built on a misaligned decompose ships an
-incorrect Implementation Plan. After revising, re-present the
-draft and ask the same AskUserQuestion. Iterate as many times as
-needed.
-
-**If "Cancel"** → clear the utility-in-progress marker so the
-Stop hook does not refuse turn-end after cancellation, then stop
-without filing. Do not write the body file. Do not output the
-COMPLETE banner. Do not edit issue #N.
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-plan
-```
-
-</HARD-GATE>
-
 ### Validate + File + Link
 
 Write the issue body to `.flow-issue-body-<id>` using the Write
@@ -618,11 +575,44 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow validate-issue-body --mode decomposed --body-file
 ```
 
 Parse the JSON output. If `status` is `ok`, proceed to the filer
-invocation below. If `status` is `error`, do NOT file the issue.
-Show the validator's `message` field to the user, return to the
-Revise loop in the File AskUserQuestion Gate above with the user's
-feedback set to the validator's `message`, and re-present the
-corrected draft. Iterate until the validator returns `ok`.
+invocation below. If `status` is `error`, run the bounded auto-fix
+loop:
+
+#### Validator Auto-Fix Loop (max 5 attempts)
+
+When the validator returns `status: error`, the skill must NOT
+prompt the user. The validator's `message` names a concrete defect
+(missing FLOW-PLAN sentinel pair, missing required subsection,
+`## Implementation Plan` heading on the wrong nesting level, etc.).
+Apply a mechanical fix that addresses the named defect — adjust
+the sentinel placement, add the missing subsection, normalize the
+heading — rewrite the body file with the Write tool, and re-run
+the validator. Track the attempt count mentally — the cap is
+**5 attempts** including the first failure.
+
+After 5 failed validator runs, clear the utility-in-progress
+marker, halt the skill with the structured error envelope, and
+print the COMPLETE-FAILED banner. Do NOT file the issue. Do NOT
+edit issue #N. Do NOT loop further.
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-plan
+```
+
+````markdown
+```json
+{"status":"error","reason":"validator_max_retries","attempts":5}
+```
+````
+
+````markdown
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✗ FLOW v1.1.0 — flow:flow-plan — COMPLETE-FAILED
+  Validator rejected the body 5 times. Issue not filed.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+````
 
 Once the validator returns `ok`, file the issue against the
 current repo (no `--repo` flag — `flow-plan` always files where
@@ -725,8 +715,11 @@ slash command directly.
   the refused analysis personally when a sub-agent returns a
   `## SCOPE REFUSAL` block. Render the refusal verbatim and wait
   for explicit user direction on the next move.
-- Never file the decomposed issue without explicit user approval —
-  the AskUserQuestion in Step 6 is the mandatory gate.
+- Never use `AskUserQuestion` in the Step 6 wrap-up. The user's
+  readiness signal from the discussion phase is the single
+  authorization to file; a second confirmation gate would break
+  the single-signal contract that drives the unattended-flow
+  promise.
 - Never tell the user to "look at" a file — render all content
   inline.
 - Never use Bash to print banners — output them as text in your
