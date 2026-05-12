@@ -354,7 +354,16 @@ All universal permissions written to `.claude/settings.json` for reference:
       "Read(//tmp/*.patch)",
       "Read(//tmp/*.md)",
       "Read(//tmp/*.json)",
+      "Agent(flow:adversarial)",
       "Agent(flow:ci-fixer)",
+      "Agent(flow:cto)",
+      "Agent(flow:documentation)",
+      "Agent(flow:issue-triage)",
+      "Agent(flow:learn-analyst)",
+      "Agent(flow:pm)",
+      "Agent(flow:pre-mortem)",
+      "Agent(flow:reviewer)",
+      "Agent(flow:tech-lead)",
       "Skill(decompose:decompose)"
     ],
     "deny": [
