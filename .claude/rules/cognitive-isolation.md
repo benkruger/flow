@@ -151,6 +151,72 @@ splitting infinitely. The user decides whether to accept partial
 coverage or rerun Review against a smaller subset of the
 diff.
 
+## Never Supplement Agent Work From the Parent Session
+
+When an agent malfunctions — truncates, hallucinates a constraint,
+refuses to act, or returns the completion marker over findings
+that were not actually produced from the inputs — the parent
+skill's sanctioned responses are exactly two:
+
+1. **Re-invoke** the agent with a narrowed partition (per
+   "Partition strategies" above) and combine the results.
+2. **Surface** the malfunction to the user as a process gap.
+   Record the agent's state in the triage summary; do not
+   advance the step counter past the unfinished work.
+
+Both responses preserve cognitive isolation. The forbidden third
+response is **parent supplementation**: the parent session reads
+the inputs the agent should have read, produces the analysis the
+agent should have produced, records the result as if the agent
+produced it, and advances the step counter. This is the failure
+mode that this rule exists to prevent.
+
+### Why this matters
+
+Cognitive isolation is the design that lets Review (and Learn)
+detect what the parent session missed. The parent built the
+feature; its assessment is biased by the emotional arc of the
+work. The agent is the structural mechanism that breaks the
+bias. The moment the parent does the agent's job, the bias
+returns — the audit trail then shows "agent reviewed X" when
+"parent reviewed X" is what actually happened, and every
+downstream consumer (Learn-phase analyst, post-merge audit,
+human reviewer) is misled.
+
+The marker alone is not sufficient evidence that the agent did
+its work. An agent can return `## END-OF-FINDINGS` over
+findings drawn from session memory rather than from freshly-Read
+input files. The parent must judge the agent's findings against
+the agent's tool-call record:
+
+- Did the agent Read the files the prompt named?
+- Do the findings reference content from those files, or do they
+  reference content the parent session could already see?
+
+If the agent's findings are hollow — marker present but the work
+absent — the response is the same as marker-absent: re-invoke or
+surface. Never supplement.
+
+### How to apply
+
+**Parent skill code (or skill author).** When designing an agent
+invocation, do not write code paths that "fall back to the
+parent" on agent failure. The two sanctioned responses are
+re-invoke and surface. Add no third path.
+
+**Parent skill at runtime.** When an agent's response is
+ambiguous (marker present, findings hollow; OR marker absent
+after one re-invocation), STOP. Do not Read the inputs yourself
+to verify the agent's claims. Do not draft findings the agent
+should have drafted. Surface the malfunction to the user via the
+triage summary and let the user decide whether to retry, accept
+partial coverage, or abort.
+
+**Reviewer agent (when this rule is being checked in Review).**
+Any diff that adds a "if agent fails, parent does X instead" code
+path or skill instruction is a Real finding. The fix is to delete
+the fallback and surface the malfunction instead.
+
 ## Never Break the Session
 
 Never force a session break for cognitive isolation. Claude Code
