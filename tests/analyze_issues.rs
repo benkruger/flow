@@ -586,6 +586,49 @@ fn detects_in_progress_label_lib() {
 }
 
 #[test]
+fn detects_vanilla_label_canonical_case_lib() {
+    let labels = vec![json!({"name": "Vanilla"})];
+    assert!(detect_labels(&labels).vanilla);
+}
+
+#[test]
+fn detects_vanilla_label_lowercase_lib() {
+    let labels = vec![json!({"name": "vanilla"})];
+    assert!(detect_labels(&labels).vanilla);
+}
+
+#[test]
+fn detects_vanilla_label_uppercase_lib() {
+    let labels = vec![json!({"name": "VANILLA"})];
+    assert!(detect_labels(&labels).vanilla);
+}
+
+#[test]
+fn detects_flow_in_progress_exact_match_lib() {
+    let labels = vec![json!({"name": "Flow In-Progress"})];
+    let result = detect_labels(&labels);
+    assert!(result.flow_in_progress);
+    assert!(!result.triage_in_progress);
+}
+
+#[test]
+fn detects_triage_in_progress_exact_match_lib() {
+    let labels = vec![json!({"name": "Triage In-Progress"})];
+    let result = detect_labels(&labels);
+    assert!(result.triage_in_progress);
+    assert!(!result.flow_in_progress);
+}
+
+#[test]
+fn no_vanilla_no_flow_no_triage_in_progress_lib() {
+    let labels = vec![json!({"name": "Bug"})];
+    let result = detect_labels(&labels);
+    assert!(!result.vanilla);
+    assert!(!result.flow_in_progress);
+    assert!(!result.triage_in_progress);
+}
+
+#[test]
 fn detects_decomposed_label_lib() {
     let labels = vec![json!({"name": "decomposed"})];
     let result = detect_labels(&labels);

@@ -82,23 +82,38 @@ pub struct LabelFlags {
     pub in_progress: bool,
     pub decomposed: bool,
     pub blocked: bool,
+    pub vanilla: bool,
+    pub flow_in_progress: bool,
+    pub triage_in_progress: bool,
 }
 
-/// Check for Flow In-Progress, Decomposed, and Blocked labels.
+/// Check for canonical FLOW labels. `Flow In-Progress` and
+/// `Triage In-Progress` require exact-string matches against their
+/// canonical label-registry names; `decomposed`, `blocked`, and
+/// `vanilla` match case-insensitively because GitHub's label
+/// registry is case-preserving and historic data may use mixed case.
 pub fn detect_labels(labels: &[Value]) -> LabelFlags {
     let label_names: HashSet<String> = labels
         .iter()
         .filter_map(|l| l.get("name")?.as_str().map(String::from))
         .collect();
 
+    let flow_in_progress = label_names.contains("Flow In-Progress");
+    let triage_in_progress = label_names.contains("Triage In-Progress");
+
     LabelFlags {
-        in_progress: label_names.contains("Flow In-Progress"),
+        in_progress: flow_in_progress,
         decomposed: label_names
             .iter()
             .any(|n| n.eq_ignore_ascii_case("decomposed")),
         blocked: label_names
             .iter()
             .any(|n| n.eq_ignore_ascii_case("blocked")),
+        vanilla: label_names
+            .iter()
+            .any(|n| n.eq_ignore_ascii_case("vanilla")),
+        flow_in_progress,
+        triage_in_progress,
     }
 }
 
