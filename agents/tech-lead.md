@@ -1,6 +1,7 @@
 ---
 name: tech-lead
 description: "Tech Lead-lens planning for changes adhering to current architecture and design patterns. Refuses out-of-scope requests and escalates to CTO."
+# Sonnet: Pattern-match against existing architecture with refusal escape to CTO — refusal lifts hard cases.
 model: sonnet
 tools: Read, Glob, Grep, Bash
 disallowedTools: Edit, Write

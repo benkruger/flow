@@ -1,6 +1,7 @@
 ---
 name: pm
 description: "PM-lens planning for copy, content, and small changes that introduce no new functionality or complexity. Refuses out-of-scope requests and escalates to Tech Lead."
+# Haiku: Copy and content scope-check with hard refusal escape to Tech Lead — light work; refusal protects under-tiering.
 model: haiku
 tools: Read, Glob, Grep, Bash
 disallowedTools: Edit, Write
