@@ -226,7 +226,7 @@ The script handles everything in a single call:
 - Merging FLOW universal permissions (additive only — preserves existing entries)
 - Setting `defaultMode` to `acceptEdits` (overrides existing values — FLOW requires this for state file writes without prompts)
 - Writing `.flow.json` with version marker, config hash, skills config, and commit format
-- Adding `.flow-states/`, `.worktrees/`, `.flow.json`, `.claude/cost/`, and `.claude/scheduled_tasks.lock` to `.git/info/exclude`
+- Adding `.flow-states/`, `.worktrees/`, `.flow.json`, `.claude/cost/`, `.claude/scheduled_tasks.lock`, `test_adversarial_flow.*`, `adversarial_flow_test.go`, `adversarial_flow_test.rb`, `adversarial_flow_spec.rb`, and `AdversarialFlowTests.swift` to `.git/info/exclude`
 - Installing a pre-commit hook at `.git/hooks/pre-commit` that blocks direct `git commit` during active FLOW features and requires commits to go through `/flow:flow-commit`
 - Installing a global `flow` launcher at `~/.local/bin/flow` that delegates to the plugin cache, and warning if `~/.local/bin` is not in PATH
 - Installing the bin/* delegation stubs (`bin/format`, `bin/lint`, `bin/build`, `bin/test`) into `<project_root>/bin/` from the FLOW asset templates. Pre-existing `bin/*` scripts are never overwritten — the stubs only fill in the gaps so `bin/flow ci` always has something to call.
@@ -522,11 +522,11 @@ Report:
 
 - Settings written to `.claude/settings.json`
 - Version marker written to `.flow.json` (git-excluded)
-- Git excludes configured for `.flow-states/`, `.worktrees/`, `.flow.json`, `.claude/cost/`, and `.claude/scheduled_tasks.lock`
+- Git excludes configured for `.flow-states/`, `.worktrees/`, `.flow.json`, `.claude/cost/`, `.claude/scheduled_tasks.lock`, `test_adversarial_flow.*`, `adversarial_flow_test.go`, `adversarial_flow_test.rb`, `adversarial_flow_spec.rb`, and `AdversarialFlowTests.swift`
 - Pre-commit hook installed — blocks direct `git commit`, requires `/flow:flow-commit`
 - Global launcher installed at `~/.local/bin/flow` — run `flow tui` from any primed project
 - bin/* stubs installed (list whichever names appear in `stubs_installed` from Step 4); remind the user to edit each one to wire it to their actual toolchain
-- Slack notifications: configured via plugin userConfig (token in system keychain)
+- Decompose plugin installed (or already present) — DAG planning support from the `matt-k-wong/mkw-DAG-architect` marketplace
 - Generated files committed and pushed
 
 Display the skills configuration as a pipe-delimited markdown table with exactly this format (not a bullet list):
@@ -535,7 +535,6 @@ Display the skills configuration as a pipe-delimited markdown table with exactly
 | Skill     | Commit | Continue |
 |-----------|--------|----------|
 | start       | —      | manual   |
-| plan        | —      | auto     |
 | code        | manual | manual   |
 | review | auto   | auto     |
 | learning    | auto   | auto     |
@@ -544,5 +543,3 @@ Display the skills configuration as a pipe-delimited markdown table with exactly
 ```
 
 Use the actual values from `skills_dict` (Step 1). The table above is just an example. Show `—` for axes that don't apply to a skill. The table must use pipe `|` delimiters — never render as a bullet list.
-
-Tell the user to start a new Claude Code session so the permissions take effect, then run `/flow-start <feature name>`.
