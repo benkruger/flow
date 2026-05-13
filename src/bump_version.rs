@@ -89,6 +89,29 @@ pub fn bump_skill(path: &Path, old: &str, new: &str) -> Result<bool, String> {
     Ok(true)
 }
 
+/// Replace `flow-marketplace/flow/<old>/bin/setup` with the new-version
+/// form in a file (README.md and docs/index.html). Returns true if any
+/// replacement was made. The pattern is bounded by
+/// `flow-marketplace/flow/` on the left and `/bin/setup` on the right
+/// so the version segment cannot collide with other version-like
+/// substrings in the file.
+pub fn bump_install_path(path: &Path, old: &str, new: &str) -> Result<bool, String> {
+    let text = match fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) => return Err(format!("Failed to read {}: {}", path.display(), e)),
+    };
+    let old_pattern = format!("flow-marketplace/flow/{}/bin/setup", old);
+    let new_pattern = format!("flow-marketplace/flow/{}/bin/setup", new);
+    let updated = text.replace(&old_pattern, &new_pattern);
+    if updated == text {
+        return Ok(false);
+    }
+    if let Err(e) = fs::write(path, &updated) {
+        return Err(format!("Failed to write {}: {}", path.display(), e));
+    }
+    Ok(true)
+}
+
 /// Orchestrate the full version bump across all files.
 ///
 /// Returns Ok(summary_text) on success, Err(error_text) on failure.
@@ -161,6 +184,18 @@ pub fn run_impl(version: Option<&str>, repo_root: &Path) -> Result<String, Strin
         .join("SKILL.md");
     if release_skill.exists() && bump_skill(&release_skill, &old_version, new_version)? {
         changed.push(".claude/skills/flow-release/SKILL.md".to_string());
+    }
+
+    // 5. README.md install-path version segment.
+    let readme = repo_root.join("README.md");
+    if readme.exists() && bump_install_path(&readme, &old_version, new_version)? {
+        changed.push("README.md".to_string());
+    }
+
+    // 6. docs/index.html install-path version segment.
+    let docs_index = repo_root.join("docs").join("index.html");
+    if docs_index.exists() && bump_install_path(&docs_index, &old_version, new_version)? {
+        changed.push("docs/index.html".to_string());
     }
 
     let mut output = format!("Bumped {} -> {}\n", old_version, new_version);

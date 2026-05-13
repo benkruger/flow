@@ -6,7 +6,8 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use flow_rs::bump_version::{
-    bump_json, bump_skill, read_current_version, run_impl, run_impl_main, validate_version,
+    bump_install_path, bump_json, bump_skill, read_current_version, run_impl, run_impl_main,
+    validate_version,
 };
 
 /// Build a fake plugin root with `flow-phases.json` so `plugin_root()`
@@ -336,6 +337,64 @@ fn bump_skill_missing_file_errors() {
     assert!(err.contains("Failed to read"));
 }
 
+// --- bump_install_path ---
+
+#[test]
+fn bump_install_path_replaces_version_segment() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("README.md");
+    fs::write(
+        &path,
+        "prereqs\nbash ~/.claude/plugins/cache/flow-marketplace/flow/1.0.0/bin/setup\nmore\n",
+    )
+    .unwrap();
+    let changed = bump_install_path(&path, "1.0.0", "2.0.0").unwrap();
+    assert!(changed);
+    let contents = fs::read_to_string(&path).unwrap();
+    assert!(contents.contains("flow-marketplace/flow/2.0.0/bin/setup"));
+    assert!(!contents.contains("flow-marketplace/flow/1.0.0/bin/setup"));
+}
+
+#[test]
+fn bump_install_path_no_change_when_segment_absent() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("README.md");
+    fs::write(&path, "no install path here\n").unwrap();
+    let changed = bump_install_path(&path, "1.0.0", "2.0.0").unwrap();
+    assert!(!changed);
+}
+
+#[test]
+fn bump_install_path_missing_file_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let err = bump_install_path(&dir.path().join("nonexistent.md"), "1.0.0", "2.0.0").unwrap_err();
+    assert!(err.contains("Failed to read"));
+}
+
+#[test]
+fn bump_install_path_write_failure_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let readonly = dir.path().join("readonly");
+    fs::create_dir_all(&readonly).unwrap();
+    let path = readonly.join("README.md");
+    fs::write(
+        &path,
+        "bash ~/.claude/plugins/cache/flow-marketplace/flow/1.0.0/bin/setup\n",
+    )
+    .unwrap();
+    let mut perms = fs::metadata(&path).unwrap().permissions();
+    perms.set_readonly(true);
+    fs::set_permissions(&path, perms).unwrap();
+
+    let err = bump_install_path(&path, "1.0.0", "2.0.0").unwrap_err();
+    assert!(err.contains("Failed to write"));
+
+    let mut perms = fs::metadata(&path).unwrap().permissions();
+    #[allow(clippy::permissions_set_readonly_false)]
+    perms.set_readonly(false);
+    fs::set_permissions(&path, perms).unwrap();
+}
+
 #[test]
 fn run_impl_skills_dir_is_file_errors() {
     let (_dir, root) = setup_repo("1.0.0");
@@ -467,4 +526,100 @@ fn run_impl_propagates_bump_skill_err_on_release_skill() {
     #[allow(clippy::permissions_set_readonly_false)]
     perms.set_readonly(false);
     fs::set_permissions(&release_skill, perms).unwrap();
+}
+
+// --- run_impl install-path wiring ---
+
+#[test]
+fn run_impl_bumps_install_path_in_readme_when_present() {
+    let (_dir, root) = setup_repo("1.0.0");
+    fs::write(
+        root.join("README.md"),
+        "prereqs\nbash ~/.claude/plugins/cache/flow-marketplace/flow/1.0.0/bin/setup\n",
+    )
+    .unwrap();
+    let output = run_impl(Some("2.0.0"), &root).unwrap();
+    assert!(output.contains("README.md"));
+    let contents = fs::read_to_string(root.join("README.md")).unwrap();
+    assert!(contents.contains("flow-marketplace/flow/2.0.0/bin/setup"));
+    assert!(!contents.contains("flow-marketplace/flow/1.0.0/bin/setup"));
+}
+
+#[test]
+fn run_impl_bumps_install_path_in_docs_index_html_when_present() {
+    let (_dir, root) = setup_repo("1.0.0");
+    let docs_dir = root.join("docs");
+    fs::create_dir_all(&docs_dir).unwrap();
+    fs::write(
+        docs_dir.join("index.html"),
+        "<div>bash ~/.claude/plugins/cache/flow-marketplace/flow/1.0.0/bin/setup</div>\n",
+    )
+    .unwrap();
+    let output = run_impl(Some("2.0.0"), &root).unwrap();
+    assert!(output.contains("docs/index.html"));
+    let contents = fs::read_to_string(docs_dir.join("index.html")).unwrap();
+    assert!(contents.contains("flow-marketplace/flow/2.0.0/bin/setup"));
+    assert!(!contents.contains("flow-marketplace/flow/1.0.0/bin/setup"));
+}
+
+#[test]
+fn run_impl_readme_no_match_skips_push() {
+    let (_dir, root) = setup_repo("1.0.0");
+    fs::write(root.join("README.md"), "no install path here\n").unwrap();
+    let output = run_impl(Some("2.0.0"), &root).unwrap();
+    assert!(!output.contains("README.md"));
+}
+
+#[test]
+fn run_impl_docs_index_html_no_match_skips_push() {
+    let (_dir, root) = setup_repo("1.0.0");
+    let docs_dir = root.join("docs");
+    fs::create_dir_all(&docs_dir).unwrap();
+    fs::write(docs_dir.join("index.html"), "<div>no install path</div>\n").unwrap();
+    let output = run_impl(Some("2.0.0"), &root).unwrap();
+    assert!(!output.contains("docs/index.html"));
+}
+
+#[test]
+fn run_impl_propagates_bump_install_path_err_on_readme() {
+    let (_dir, root) = setup_repo("1.0.0");
+    let readme = root.join("README.md");
+    fs::write(
+        &readme,
+        "bash ~/.claude/plugins/cache/flow-marketplace/flow/1.0.0/bin/setup\n",
+    )
+    .unwrap();
+    let mut perms = fs::metadata(&readme).unwrap().permissions();
+    perms.set_readonly(true);
+    fs::set_permissions(&readme, perms).unwrap();
+    let err = run_impl(Some("2.0.0"), &root).unwrap_err();
+    assert!(err.contains("Failed to write"));
+
+    let mut perms = fs::metadata(&readme).unwrap().permissions();
+    #[allow(clippy::permissions_set_readonly_false)]
+    perms.set_readonly(false);
+    fs::set_permissions(&readme, perms).unwrap();
+}
+
+#[test]
+fn run_impl_propagates_bump_install_path_err_on_docs_index_html() {
+    let (_dir, root) = setup_repo("1.0.0");
+    let docs_dir = root.join("docs");
+    fs::create_dir_all(&docs_dir).unwrap();
+    let docs_index = docs_dir.join("index.html");
+    fs::write(
+        &docs_index,
+        "<div>bash ~/.claude/plugins/cache/flow-marketplace/flow/1.0.0/bin/setup</div>\n",
+    )
+    .unwrap();
+    let mut perms = fs::metadata(&docs_index).unwrap().permissions();
+    perms.set_readonly(true);
+    fs::set_permissions(&docs_index, perms).unwrap();
+    let err = run_impl(Some("2.0.0"), &root).unwrap_err();
+    assert!(err.contains("Failed to write"));
+
+    let mut perms = fs::metadata(&docs_index).unwrap().permissions();
+    #[allow(clippy::permissions_set_readonly_false)]
+    perms.set_readonly(false);
+    fs::set_permissions(&docs_index, perms).unwrap();
 }
