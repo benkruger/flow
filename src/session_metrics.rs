@@ -134,7 +134,67 @@ pub fn is_safe_session_id(s: &str) -> bool {
 /// Per `.claude/rules/external-input-path-construction.md`, the same
 /// validator runs at every state-derived path-construction site so
 /// the prefix-containment contract is enforced once.
+///
+/// Composes [`is_safe_transcript_path_structural`] for the stateless
+/// shape checks then performs the canonicalize step. Read-time
+/// callers (transcript walkers, anything that will `File::open` the
+/// path) use this wrapper so symlink-escape is closed at the
+/// open boundary. Write-time-shape callers (the SessionStart
+/// capture hook and the flow-start round-trip reader) use
+/// `is_safe_transcript_path_structural` directly because the file
+/// is not guaranteed to exist yet at write time and canonicalize
+/// would fail-closed on the missing file.
 pub fn is_safe_transcript_path(path: &Path, home: &Path) -> bool {
+    if !is_safe_transcript_path_structural(path, home) {
+        return false;
+    }
+    // Canonicalize and compare against the canonicalized prefix.
+    // `Path::starts_with` on raw paths cannot detect symlinks: a
+    // symlink at `<home>/.claude/projects/p/session.jsonl` pointing
+    // to `/tmp/evil.jsonl` passes the raw check, then `File::open`
+    // follows the link and reads attacker-controlled content.
+    // `canonicalize` resolves every component's symlinks AND `..`
+    // segments before the prefix check, closing both traversal
+    // vectors. The structural lexical-prefix check above guarantees
+    // `expected_prefix` is a strict ancestor of `path`, so when
+    // `path.canonicalize()` succeeds the prefix canonicalizes too
+    // — both Err arms are folded into one branch via tuple
+    // destructuring so the unreachable prefix-only-fail case does
+    // not surface as an uncovered region. Any Err returns false
+    // — fail-closed per `.claude/rules/security-gates.md`.
+    let expected_prefix = home.join(".claude").join("projects");
+    let (Ok(canonical_path), Ok(canonical_prefix)) =
+        (path.canonicalize(), expected_prefix.canonicalize())
+    else {
+        return false;
+    };
+    canonical_path.starts_with(&canonical_prefix)
+}
+
+/// Structural-shape validator for `transcript_path` strings that
+/// run BEFORE the file is guaranteed to exist. Rejects empty
+/// paths, paths containing a NUL byte, relative paths, paths with
+/// any `..` (ParentDir) component, and paths whose lexical prefix
+/// is not `<home>/.claude/projects/`. Performs NO syscalls — no
+/// `canonicalize`, no `File::open`, no `metadata` — so it returns
+/// true for shape-valid paths even when the JSONL file has not
+/// yet been created.
+///
+/// Production consumers: SessionStart capture (`run` in
+/// `src/hooks/capture_session.rs`) and the flow-start round-trip
+/// reader (`read_captured_session` in the same module). Both
+/// receive a path from Claude Code BEFORE the transcript JSONL is
+/// guaranteed to exist; the structural shape is the strongest
+/// invariant they can enforce at write time.
+///
+/// Symlink-escape is intentionally not addressed here. Defense
+/// happens at every read-time callsite via the canonical wrapper
+/// `is_safe_transcript_path`, which adds the `canonicalize` +
+/// canonical-prefix match before any `File::open`. Storing a
+/// symlink-shaped string in the capture file is inert until a
+/// read-time consumer opens the path, and every such consumer
+/// re-validates.
+pub fn is_safe_transcript_path_structural(path: &Path, home: &Path) -> bool {
     if path.as_os_str().is_empty() {
         return false;
     }
@@ -145,35 +205,21 @@ pub fn is_safe_transcript_path(path: &Path, home: &Path) -> bool {
         return false;
     }
     // Reject any ParentDir (`..`) component as a fast-path lexical
-    // check before the canonicalize syscall. `Path::starts_with` is
-    // a lexical component-wise prefix check that does NOT resolve
-    // `..` segments, so `<home>/.claude/projects/../../etc/passwd`
-    // would pass a raw prefix check.
+    // check. The `starts_with` prefix check below is component-wise
+    // and does NOT resolve `..` segments, so
+    // `<home>/.claude/projects/../../etc/passwd` would otherwise
+    // pass the prefix check.
     for component in path.components() {
         if matches!(component, std::path::Component::ParentDir) {
             return false;
         }
     }
-    // Canonicalize and compare against the canonicalized prefix.
-    // `Path::starts_with` on raw paths cannot detect symlinks: a
-    // symlink at `<home>/.claude/projects/p/session.jsonl` pointing
-    // to `/tmp/evil.jsonl` passes the raw check, then `File::open`
-    // follows the link and reads attacker-controlled content.
-    // `canonicalize` resolves every component's symlinks AND `..`
-    // segments before the prefix check, closing both traversal
-    // vectors. Failure to canonicalize (missing file, permission
-    // error, broken symlink) returns false — fail-closed per
-    // `.claude/rules/security-gates.md`.
-    let canonical_path = match path.canonicalize() {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
+    // Lexical prefix containment. The canonical wrapper redoes
+    // this with canonicalized paths so symlink-shaped escapes
+    // cannot defeat the read-time gate; the structural variant
+    // accepts the lexical match alone because no syscall follows.
     let expected_prefix = home.join(".claude").join("projects");
-    let canonical_prefix = match expected_prefix.canonicalize() {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
-    canonical_path.starts_with(&canonical_prefix)
+    path.starts_with(&expected_prefix)
 }
 
 /// Write a `WindowSnapshot` into the named top-level field of a

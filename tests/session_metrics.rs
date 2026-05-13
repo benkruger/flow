@@ -15,7 +15,8 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 use flow_rs::session_metrics::{
-    append_step_snapshot, capture, home_dir_or_empty, write_snapshot_into_state,
+    append_step_snapshot, capture, home_dir_or_empty, is_safe_transcript_path,
+    is_safe_transcript_path_structural, write_snapshot_into_state,
 };
 use serde_json::{json, Value};
 
@@ -569,4 +570,139 @@ fn home_dir_or_empty_returns_path_when_home_set() {
     // Empty acceptable when HOME unset; function's contract is
     // "no panic" rather than "non-empty".
     let _ = home.as_os_str();
+}
+
+// --- is_safe_transcript_path_structural ---
+
+/// The regression case for issue #1525: the structural validator
+/// accepts a path that is shape-valid (absolute, under
+/// `<home>/.claude/projects/`, no NUL, no ParentDir component)
+/// even when the underlying JSONL file does not yet exist on
+/// disk. SessionStart hooks receive a transcript_path before
+/// Claude Code creates the file; the canonical validator's
+/// `canonicalize()` call fails on the missing file and rejects
+/// the path, causing transcript_path to persist as null and
+/// downstream `record-agent-return` to report
+/// `phase_marker_not_found`.
+#[test]
+fn is_safe_transcript_path_structural_accepts_nonexistent_path_under_projects() {
+    let tmp = TempDir::new().expect("tempdir");
+    let home = tmp.path().canonicalize().expect("canonicalize");
+    let projects = home.join(".claude").join("projects").join("proj");
+    fs::create_dir_all(&projects).expect("mkdir projects");
+    let transcript = projects.join("session.jsonl");
+    assert!(!transcript.exists(), "fixture must not create the JSONL");
+
+    assert!(
+        is_safe_transcript_path_structural(&transcript, &home),
+        "structural validator must accept a non-existent path under <home>/.claude/projects/"
+    );
+}
+
+/// Empty path fails the structural validator. Same first guard
+/// as the canonical validator; rejection-class parity.
+#[test]
+fn is_safe_transcript_path_structural_rejects_empty() {
+    let tmp = TempDir::new().expect("tempdir");
+    let home = tmp.path().canonicalize().expect("canonicalize");
+    let empty = PathBuf::from("");
+    assert!(!is_safe_transcript_path_structural(&empty, &home));
+}
+
+/// Path containing a NUL byte fails the structural validator.
+/// Defends against `format!`/path-construction shapes where a
+/// NUL truncates syscall semantics in implementation-defined
+/// ways.
+#[test]
+fn is_safe_transcript_path_structural_rejects_nul_byte() {
+    let tmp = TempDir::new().expect("tempdir");
+    let home = tmp.path().canonicalize().expect("canonicalize");
+    let path = PathBuf::from("/tmp/contains\0nul.jsonl");
+    assert!(!is_safe_transcript_path_structural(&path, &home));
+}
+
+/// Relative path fails the structural validator. Production
+/// callers must pass absolute paths so prefix-containment is
+/// well-defined.
+#[test]
+fn is_safe_transcript_path_structural_rejects_relative() {
+    let tmp = TempDir::new().expect("tempdir");
+    let home = tmp.path().canonicalize().expect("canonicalize");
+    let rel = PathBuf::from("relative/session.jsonl");
+    assert!(!is_safe_transcript_path_structural(&rel, &home));
+}
+
+/// Path containing a `..` ParentDir component fails the
+/// structural validator. The lexical `starts_with` check below
+/// does not resolve `..`, so `<home>/.claude/projects/../../etc/passwd`
+/// would otherwise pass the prefix check and reach a file open.
+#[test]
+fn is_safe_transcript_path_structural_rejects_parent_dir_component() {
+    let tmp = TempDir::new().expect("tempdir");
+    let home = tmp.path().canonicalize().expect("canonicalize");
+    let escape = home
+        .join(".claude")
+        .join("projects")
+        .join("..")
+        .join("..")
+        .join("etc")
+        .join("passwd");
+    assert!(!is_safe_transcript_path_structural(&escape, &home));
+}
+
+/// Absolute path that does not sit under `<home>/.claude/projects/`
+/// fails the structural validator. The lexical prefix check
+/// must reject paths outside the expected directory tree even
+/// when canonicalize would have produced the same rejection
+/// for an existing file.
+#[test]
+fn is_safe_transcript_path_structural_rejects_path_outside_projects_prefix() {
+    let tmp = TempDir::new().expect("tempdir");
+    let home = tmp.path().canonicalize().expect("canonicalize");
+    let outside = PathBuf::from("/etc/passwd");
+    assert!(!is_safe_transcript_path_structural(&outside, &home));
+}
+
+// --- is_safe_transcript_path (canonical wrapper) ---
+
+/// The canonical wrapper short-circuits when the structural check
+/// rejects the input. Exercises the `if !structural { return false }`
+/// branch with a path that fails structural validation so neither
+/// canonicalize syscall runs.
+#[test]
+fn is_safe_transcript_path_rejects_when_structural_fails() {
+    let tmp = TempDir::new().expect("tempdir");
+    let home = tmp.path().canonicalize().expect("canonicalize");
+    let empty = PathBuf::from("");
+    assert!(!is_safe_transcript_path(&empty, &home));
+}
+
+/// The canonical wrapper accepts a path that is shape-valid AND
+/// exists on disk under `<home>/.claude/projects/`. Exercises the
+/// success path through both canonicalize calls and the final
+/// `starts_with` check.
+#[test]
+fn is_safe_transcript_path_accepts_existing_path_under_projects() {
+    let tmp = TempDir::new().expect("tempdir");
+    let home = tmp.path().canonicalize().expect("canonicalize");
+    let projects = home.join(".claude").join("projects").join("proj");
+    fs::create_dir_all(&projects).expect("mkdir projects");
+    let transcript = projects.join("session.jsonl");
+    fs::write(&transcript, b"").expect("write transcript");
+    assert!(is_safe_transcript_path(&transcript, &home));
+}
+
+/// The canonical wrapper rejects a shape-valid path whose
+/// underlying file does not exist on disk — `canonicalize` on the
+/// path fails. Exercises the `Err(_) => return false` arm of the
+/// first canonicalize match.
+#[test]
+fn is_safe_transcript_path_rejects_when_path_canonicalize_fails() {
+    let tmp = TempDir::new().expect("tempdir");
+    let home = tmp.path().canonicalize().expect("canonicalize");
+    let projects = home.join(".claude").join("projects").join("proj");
+    fs::create_dir_all(&projects).expect("mkdir projects");
+    let transcript = projects.join("session.jsonl");
+    assert!(!transcript.exists());
+    assert!(!is_safe_transcript_path(&transcript, &home));
 }
