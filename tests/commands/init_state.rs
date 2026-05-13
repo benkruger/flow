@@ -570,6 +570,52 @@ fn captured_session_with_transcript_path_seeds_both_fields() {
     assert_eq!(state["transcript_path"], transcript_str);
 }
 
+/// Regression for issue #1525 (read-time half): `read_captured_session`
+/// must accept a `transcript_path` whose underlying JSONL file does
+/// not yet exist, so the round-trip through `seed_session_id_from_capture`
+/// seeds it into the new state file. The write side already produced
+/// the capture file with the non-existent path (see
+/// `tests/hooks/capture_session.rs::run_persists_transcript_path_when_jsonl_does_not_exist`);
+/// this test pins the symmetric reader contract so a future "tighten
+/// the read-time filter" attempt re-introduces the bug it would
+/// silently. Drives the read path through the `init-state` subcommand
+/// because `read_captured_session` is `pub(crate)` and inaccessible
+/// from integration tests; the subcommand persists the function's
+/// transcript_path output into the state file, which the test then
+/// observes directly.
+#[test]
+fn captured_session_with_nonexistent_transcript_path_still_seeds_both_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path(), "rails", None);
+    let claude_dir = dir.path().join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    // Build an absolute transcript path under HOME/.claude/projects/
+    // BUT do not create the JSONL file. The structural validator
+    // accepts the shape; the canonical validator (used at read-time
+    // hook callsites) still rejects via canonicalize when those hooks
+    // later try to open the file. This test pins the structural
+    // accept side of the split.
+    let projects = claude_dir.join("projects").join("-test-missing");
+    fs::create_dir_all(&projects).unwrap();
+    let transcript = projects.join("not-yet-created.jsonl");
+    assert!(!transcript.exists(), "fixture must not create the JSONL");
+    let transcript_str = transcript.to_string_lossy().to_string();
+    let payload = json!({
+        "session_id": "sid-missing-jsonl",
+        "transcript_path": transcript_str,
+    });
+    fs::write(
+        claude_dir.join("flow-current-session.json"),
+        payload.to_string(),
+    )
+    .unwrap();
+
+    run_init_state(dir.path(), &["seed missing transcript test"]);
+    let state = read_state_file(dir.path(), "seed-missing-transcript-test");
+    assert_eq!(state["session_id"], "sid-missing-jsonl");
+    assert_eq!(state["transcript_path"], transcript_str);
+}
+
 // --- Issue-title naming and duplicate detection (PR #823) ---
 
 #[test]

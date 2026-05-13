@@ -21,7 +21,9 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
-use crate::session_metrics::{home_dir_or_empty, is_safe_session_id, is_safe_transcript_path};
+use crate::session_metrics::{
+    home_dir_or_empty, is_safe_session_id, is_safe_transcript_path_structural,
+};
 
 /// Capture-file payload byte cap per
 /// `.claude/rules/external-input-path-construction.md` "Enforce a
@@ -57,11 +59,14 @@ pub(crate) fn capture_file_path(home: &Path) -> PathBuf {
 ///    and parses as JSON.
 /// 3. `session_id` matches [`is_safe_session_id`].
 /// 4. `transcript_path` is either absent OR matches
-///    [`is_safe_transcript_path`] against `home`.
-///
-/// Returns `None` on any failure path — fail-open semantics so a
-/// malformed or missing capture file leaves the caller's state
-/// untouched.
+///    [`is_safe_transcript_path_structural`] against `home`. The
+///    structural variant accepts shape-valid paths whose JSONL file
+///    does not yet exist on disk, so flow-start at SessionStart time
+///    seeds a real `transcript_path` into the state file instead of
+///    leaving it null (issue #1525). Symlink-escape is closed by
+///    every read-time consumer (transcript walkers) via
+///    `is_safe_transcript_path`'s canonicalize step before any
+///    `File::open`.
 pub(crate) fn read_captured_session(home: &Path) -> Option<(String, Option<String>)> {
     if home.as_os_str().is_empty() || !home.is_absolute() {
         return None;
@@ -82,7 +87,7 @@ pub(crate) fn read_captured_session(home: &Path) -> Option<(String, Option<Strin
         .get("transcript_path")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
-        .filter(|tp| is_safe_transcript_path(Path::new(tp), home));
+        .filter(|tp| is_safe_transcript_path_structural(Path::new(tp), home));
     Some((session_id, transcript_path))
 }
 
@@ -107,7 +112,7 @@ pub fn run() {
         .get("transcript_path")
         .and_then(|v| v.as_str())
         .map(PathBuf::from)
-        .filter(|p| is_safe_transcript_path(p, &home))
+        .filter(|p| is_safe_transcript_path_structural(p, &home))
         .map(|p| p.to_string_lossy().to_string());
     let payload = json!({
         "session_id": session_id,

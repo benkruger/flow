@@ -449,23 +449,32 @@ fn capture_session_replaces_existing_symlink_at_capture_path() {
     assert_eq!(parsed["session_id"], "abc-123");
 }
 
-/// Regression: at SessionStart the transcript JSONL typically does
-/// not yet exist on disk — `is_safe_transcript_path` runs
-/// `canonicalize()` to defeat symlink traversal, and that syscall
-/// fails on missing files. The hook must store `transcript_path`
-/// as null in that case (not weaken the validator). Self-healing
-/// happens later in `capture_for_active_state` once the file
-/// exists. This test guards the strict-validator contract so a
-/// future "loosen the validator" attempt does not silently weaken
-/// symlink-escape defense.
+/// Regression for issue #1525: SessionStart hooks receive a
+/// `transcript_path` from Claude Code BEFORE the JSONL file is
+/// created on disk. The capture must persist the path so the
+/// flow-start round-trip can seed `transcript_path` into the new
+/// state file; downstream `record-agent-return` then has a real
+/// path to verify the agent's tool_use/tool_result pair against.
+/// Without this, `transcript_path` stays null at state init and
+/// `record-agent-return` reports `transcript_path_invalid` (which
+/// the failure-classifier maps to `phase_marker_not_found`,
+/// silently skipping every Review and Learn agent).
+///
+/// Replaces the prior `capture_session_stores_null_when_transcript_file_does_not_exist_yet`
+/// test, which asserted the inverse (null storage) — that
+/// assertion locked in the bug this fix removes. The Plan-phase
+/// Risk #3 accepts the trade-off: read-time hooks still canonicalize
+/// before opening, so storing a symlink-shaped path string here is
+/// inert until a consumer opens it (and every consumer re-validates).
 #[test]
-fn capture_session_stores_null_when_transcript_file_does_not_exist_yet() {
+fn run_persists_transcript_path_when_jsonl_does_not_exist() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().canonicalize().unwrap();
     // Build a transcript_path that is shape-valid (absolute, under
-    // ~/.claude/projects/, no `..` components) but the file does not
-    // exist on disk. canonicalize() fails → validator returns false
-    // → hook stores null.
+    // ~/.claude/projects/, no `..` components) but the JSONL file
+    // does not exist on disk yet. The structural validator must
+    // accept the path so the hook persists it; self-healing through
+    // canonicalize happens later at read-time hook callsites.
     let projects_dir = home.join(".claude").join("projects").join("-tmp-abc");
     fs::create_dir_all(&projects_dir).unwrap();
     let transcript = projects_dir.join("nonexistent-session.jsonl");
@@ -480,9 +489,10 @@ fn capture_session_stores_null_when_transcript_file_does_not_exist_yet() {
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(parsed["session_id"], "valid-sid");
-    assert!(
-        parsed["transcript_path"].is_null(),
-        "missing-file transcript_path must serialize as null; got: {}",
+    assert_eq!(
+        parsed["transcript_path"].as_str(),
+        Some(transcript.to_string_lossy().as_ref()),
+        "structural-validator-accepted path must be persisted verbatim; got: {}",
         parsed["transcript_path"]
     );
 }
