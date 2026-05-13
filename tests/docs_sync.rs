@@ -85,6 +85,13 @@ fn assert_covers_key_features(content: &str, source_label: &str) {
 /// `plugins[0].version` so a release that bumps the version without
 /// updating these doc literals fails CI. The two prereq lines guard
 /// against accidental removal of the macOS toolchain hints.
+///
+/// In addition to asserting the current version's literal appears, the
+/// test rejects ANY `flow-marketplace/flow/<seg>/bin/setup` where
+/// `<seg>` is not the current `plugins[0].version` — so a stale
+/// previous-version reference left behind by `bump_install_path` (which
+/// only rewrites the exact prior version it was passed) is caught at
+/// CI time rather than shipping silently to the docs site.
 #[test]
 fn install_docs_contain_setup_step() {
     let marketplace: Value = serde_json::from_str(
@@ -101,6 +108,8 @@ fn install_docs_contain_setup_step() {
         "xcode-select --install",
         expected_path.as_str(),
     ];
+    let stale_version_re =
+        Regex::new(r"flow-marketplace/flow/([^/]+)/bin/setup").expect("compile install-path regex");
     let sources = [
         ("README.md", common::repo_root().join("README.md")),
         ("docs/index.html", common::docs_dir().join("index.html")),
@@ -113,6 +122,15 @@ fn install_docs_contain_setup_step() {
                 "{} must contain '{}' (install-flow docs sync)",
                 label,
                 snippet
+            );
+        }
+        for cap in stale_version_re.captures_iter(&content) {
+            let seg = &cap[1];
+            assert_eq!(
+                seg, version,
+                "{} contains stale install path with version segment '{}'; expected '{}' \
+                 (run `make bump NEW=<v>` to refresh, or remove the stale reference)",
+                label, seg, version
             );
         }
     }
