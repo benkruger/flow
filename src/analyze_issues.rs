@@ -192,11 +192,20 @@ pub fn build_blocker_query(issue_numbers: &[i64]) -> String {
 
 /// Parse a GraphQL response for blocker details.
 ///
-/// Extracts `blockedBy.nodes` for each issue number.
-/// Returns HashMap mapping issue number to list of open blocker issue numbers.
-/// Only includes blockers where `state == "OPEN"` — closed blockers are resolved.
-/// Handles null values at any level gracefully (defaults to empty vec).
-pub fn parse_blocker_response(json_str: &str, issue_numbers: &[i64]) -> HashMap<i64, Vec<i64>> {
+/// Extracts `blockedBy.nodes` for each issue number. Returns a HashMap
+/// mapping issue number to a list of open blocker entries; each entry
+/// is a JSON object `{"number": N, "url": "https://github.com/<repo>/issues/N"}`
+/// so consumers can render linked blocker references without
+/// re-constructing URLs. `repo` is the `owner/name` slug; URL knowledge
+/// stays at the blocker-fetch layer rather than leaking into the
+/// dashboard renderer. Only blockers where `state == "OPEN"` are
+/// included — closed blockers are resolved. Handles null values at any
+/// level gracefully (defaults to empty vec).
+pub fn parse_blocker_response(
+    json_str: &str,
+    issue_numbers: &[i64],
+    repo: &str,
+) -> HashMap<i64, Vec<Value>> {
     let data: Value = match serde_json::from_str(json_str) {
         Ok(v) => v,
         Err(_) => return HashMap::new(),
@@ -220,7 +229,7 @@ pub fn parse_blocker_response(json_str: &str, issue_numbers: &[i64]) -> HashMap<
             .and_then(|blocked_by| blocked_by.get("nodes"))
             .and_then(|n| n.as_array());
 
-        let blocker_numbers: Vec<i64> = match nodes {
+        let blocker_entries: Vec<Value> = match nodes {
             Some(arr) => arr
                 .iter()
                 .filter(|node| {
@@ -229,11 +238,17 @@ pub fn parse_blocker_response(json_str: &str, issue_numbers: &[i64]) -> HashMap<
                         .map(|s| s == "OPEN")
                         .unwrap_or(false)
                 })
-                .filter_map(|node| node.get("number").and_then(|n| n.as_i64()))
+                .filter_map(|node| {
+                    let n = node.get("number").and_then(|n| n.as_i64())?;
+                    Some(serde_json::json!({
+                        "number": n,
+                        "url": format!("https://github.com/{}/issues/{}", repo, n),
+                    }))
+                })
                 .collect(),
             None => Vec::new(),
         };
-        blockers.insert(number, blocker_numbers);
+        blockers.insert(number, blocker_entries);
     }
 
     blockers
@@ -316,7 +331,7 @@ pub fn run_gh(args: &[&str], command_label: &str) -> Result<String, String> {
 /// Timeout: 30 seconds — long enough for the GraphQL endpoint to respond
 /// on a slow link, short enough to keep the analyze step from hanging
 /// the calling skill.
-pub fn fetch_blockers(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, Vec<i64>> {
+pub fn fetch_blockers(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, Vec<Value>> {
     if issue_numbers.is_empty() {
         return HashMap::new();
     }
@@ -340,18 +355,20 @@ pub fn fetch_blockers(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, Vec<i64
         ],
         "gh api graphql",
     );
-    blocker_result_to_map(issue_numbers, result)
+    blocker_result_to_map(issue_numbers, repo, result)
 }
 
 /// Convert a run_gh result into a blocker map. Split out so the
 /// `Ok(stdout) => parse_blocker_response` branch is directly
-/// testable without a live gh subprocess.
+/// testable without a live gh subprocess. `repo` is threaded through
+/// so each blocker entry carries its GitHub URL.
 pub fn blocker_result_to_map(
     issue_numbers: &[i64],
+    repo: &str,
     result: Result<String, String>,
-) -> HashMap<i64, Vec<i64>> {
+) -> HashMap<i64, Vec<Value>> {
     match result {
-        Ok(stdout) => parse_blocker_response(&stdout, issue_numbers),
+        Ok(stdout) => parse_blocker_response(&stdout, issue_numbers, repo),
         Err(msg) => {
             eprintln!(
                 "warning: blocker fetch failed, treating all issues as unblocked ({})",
@@ -370,7 +387,7 @@ pub fn blocker_result_to_map(
 /// signal the consumer dispatches on; no top-level `in_progress`
 /// partition. The `blocker_map` maps issue numbers to open blocker
 /// numbers; native_blocked rows fold into `blocked`.
-pub fn analyze_issues(issues: &[Value], blocker_map: &HashMap<i64, Vec<i64>>) -> Value {
+pub fn analyze_issues(issues: &[Value], blocker_map: &HashMap<i64, Vec<Value>>) -> Value {
     if issues.is_empty() {
         return serde_json::json!({
             "status": "ok",

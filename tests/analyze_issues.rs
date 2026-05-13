@@ -811,51 +811,77 @@ fn parse_blocker_response_happy_path_lib() {
         (20, vec![]),
         (30, vec![(200, "OPEN")]),
     ]);
-    let result = parse_blocker_response(&response, &[10, 20, 30]);
-    assert_eq!(result[&10], vec![100, 101]);
+    let result = parse_blocker_response(&response, &[10, 20, 30], "owner/repo");
+    let nums_10: Vec<i64> = result[&10]
+        .iter()
+        .map(|v| v["number"].as_i64().unwrap())
+        .collect();
+    assert_eq!(nums_10, vec![100, 101]);
     assert!(result[&20].is_empty());
-    assert_eq!(result[&30], vec![200]);
+    let nums_30: Vec<i64> = result[&30]
+        .iter()
+        .map(|v| v["number"].as_i64().unwrap())
+        .collect();
+    assert_eq!(nums_30, vec![200]);
+    assert_eq!(
+        result[&10][0]["url"],
+        "https://github.com/owner/repo/issues/100"
+    );
 }
 
 #[test]
 fn parse_blocker_response_filters_closed_lib() {
     let response = graphql_response(&[(10, vec![(100, "OPEN"), (101, "CLOSED")])]);
-    let result = parse_blocker_response(&response, &[10]);
-    assert_eq!(result[&10], vec![100]);
+    let result = parse_blocker_response(&response, &[10], "owner/repo");
+    assert_eq!(result[&10].len(), 1);
+    assert_eq!(result[&10][0]["number"], 100);
 }
 
 #[test]
 fn parse_blocker_response_all_closed_returns_empty_lib() {
     let response = graphql_response(&[(10, vec![(100, "CLOSED"), (101, "CLOSED")])]);
-    let result = parse_blocker_response(&response, &[10]);
+    let result = parse_blocker_response(&response, &[10], "owner/repo");
     assert!(result[&10].is_empty());
 }
 
 #[test]
 fn parse_blocker_response_malformed_json_lib() {
-    let result = parse_blocker_response("{corrupt", &[10]);
+    let result = parse_blocker_response("{corrupt", &[10], "owner/repo");
     assert!(result.is_empty());
 }
 
 #[test]
 fn parse_blocker_response_null_repository_lib() {
     let response = r#"{"data":{"repository":null}}"#;
-    let result = parse_blocker_response(response, &[10]);
+    let result = parse_blocker_response(response, &[10], "owner/repo");
     assert!(result[&10].is_empty());
 }
 
 #[test]
 fn parse_blocker_response_null_blocked_by_lib() {
     let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":null}}}}"#;
-    let result = parse_blocker_response(response, &[10]);
+    let result = parse_blocker_response(response, &[10], "owner/repo");
     assert!(result[&10].is_empty());
 }
 
 #[test]
 fn parse_blocker_response_null_nodes_lib() {
     let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":null}}}}}"#;
-    let result = parse_blocker_response(response, &[10]);
+    let result = parse_blocker_response(response, &[10], "owner/repo");
     assert!(result[&10].is_empty());
+}
+
+#[test]
+fn parse_blocker_response_open_node_missing_number_filtered_lib() {
+    // OPEN node with no `number` field exercises the
+    // `.and_then(|n| n.as_i64())?` short-circuit in the filter_map.
+    let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[
+        {"state":"OPEN"},
+        {"number":50,"state":"OPEN"}
+    ]}}}}}"#;
+    let result = parse_blocker_response(response, &[10], "owner/repo");
+    assert_eq!(result[&10].len(), 1);
+    assert_eq!(result[&10][0]["number"], 50);
 }
 
 #[test]
@@ -1096,13 +1122,13 @@ fn run_gh_executes_body_lib() {
 #[test]
 fn blocker_result_to_map_ok_parses_response_lib() {
     let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[]}}}}}"#;
-    let map = blocker_result_to_map(&[10], Ok(response.to_string()));
+    let map = blocker_result_to_map(&[10], "owner/repo", Ok(response.to_string()));
     assert!(map.contains_key(&10));
 }
 
 #[test]
 fn blocker_result_to_map_err_logs_and_returns_empty_lib() {
-    let map = blocker_result_to_map(&[10], Err("gh failed".to_string()));
+    let map = blocker_result_to_map(&[10], "owner/repo", Err("gh failed".to_string()));
     assert!(map.is_empty());
 }
 
@@ -1302,8 +1328,14 @@ fn analyze_native_blocked_without_label_lib() {
         &[],
         &now_iso_lib(),
     )];
-    let mut blocker_map: HashMap<i64, Vec<i64>> = HashMap::new();
-    blocker_map.insert(10, vec![100, 200]);
+    let mut blocker_map: HashMap<i64, Vec<Value>> = HashMap::new();
+    blocker_map.insert(
+        10,
+        vec![
+            json!({"number": 100, "url": "https://github.com/test/repo/issues/100"}),
+            json!({"number": 200, "url": "https://github.com/test/repo/issues/200"}),
+        ],
+    );
     let result = analyze_issues(&issues, &blocker_map);
     let issue = &result["issues"][0];
     assert!(issue["blocked"].as_bool().unwrap());
@@ -1485,4 +1517,31 @@ fn analyze_total_equals_issues_len_after_collapse_lib() {
     let result = analyze_issues(&issues, &HashMap::new());
     let issues_len = result["issues"].as_array().unwrap().len();
     assert_eq!(result["total"].as_u64().unwrap() as usize, issues_len);
+}
+
+#[test]
+fn analyze_blocked_by_entries_carry_number_and_url_lib() {
+    let issues = vec![make_issue_lib(
+        1547,
+        "Blocked by another",
+        "",
+        &[],
+        &now_iso_lib(),
+    )];
+    let mut blocker_map: HashMap<i64, Vec<Value>> = HashMap::new();
+    blocker_map.insert(
+        1547,
+        vec![json!({
+            "number": 1525,
+            "url": "https://github.com/benkruger/flow/issues/1525",
+        })],
+    );
+    let result = analyze_issues(&issues, &blocker_map);
+    let blocked_by = result["issues"][0]["blocked_by"].as_array().unwrap();
+    assert_eq!(blocked_by.len(), 1);
+    assert_eq!(blocked_by[0]["number"], 1525);
+    assert_eq!(
+        blocked_by[0]["url"],
+        "https://github.com/benkruger/flow/issues/1525"
+    );
 }
