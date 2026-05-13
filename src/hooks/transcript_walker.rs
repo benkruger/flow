@@ -84,12 +84,20 @@
 //! tool_result-wrapped user turns. Lines that fail to parse as
 //! JSON are skipped silently.
 //!
-//! Tests live at `tests/transcript_walker.rs` (top-level rather
-//! than the mirror `tests/hooks/transcript_walker.rs`) per the
-//! deviation log entry on this branch — adding a `[[test]]`
-//! stanza for the subdirectory test was blocked by the
-//! validate-worktree-paths shared-config hook in autonomous mode.
-
+//! ## Real vs synthetic user turns
+//!
+//! Claude Code emits two shapes of synthetic user turns alongside
+//! the user-typed prose: tool_result-wrapped turns (array content)
+//! and hook-injected feedback turns (string content with
+//! `isMeta:true`). Walkers that need to find the most recent REAL
+//! user turn must call `is_real_user_turn` and `continue` past
+//! synthetic turns rather than stop at them. A walker that stops
+//! at any user turn — or filters only on array content — silently
+//! fails the moment a Stop-hook refusal lands ahead of the real
+//! invocation. See `.claude/rules/transcript-shape.md` for the
+//! catalog of synthetic shapes and the mechanical contract each
+//! walker must satisfy.
+//!
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
@@ -148,6 +156,48 @@ pub fn normalize_gate_input(s: &str) -> String {
     s.replace('\0', "").trim().to_ascii_lowercase()
 }
 
+/// Returns `true` when `turn` is a real user-role turn — one the
+/// user themselves typed — and `false` when the turn is synthetic
+/// (tool_result wrappers, slash-command expansions, hook-injected
+/// feedback, or any other system-generated turn).
+///
+/// Discrimination rules:
+/// - `message.content` must be a string. Array-content turns are
+///   synthetic by construction (they carry tool_result blocks).
+/// - `isMeta` must NOT be `true`. Claude Code marks every
+///   system-generated turn with `isMeta:true` even when the
+///   content shape is a string — most notably, Stop-hook refusal
+///   feedback ("Stop hook feedback:\n...").
+///
+/// Both checks must pass. A missing `message`, missing `content`,
+/// or non-string `content` returns `false`. A missing `isMeta`
+/// is treated as `false` (real user turn — older Claude Code
+/// transcripts that lack the field carry real user turns with
+/// no `isMeta`).
+///
+/// Caller contract: walkers that need to find the most recent
+/// real user turn must consult this helper and `continue` past
+/// synthetic turns rather than stopping at them. A per-walker
+/// inline `content.as_str()` check only filters the array-content
+/// shape; this helper additionally filters the string-content +
+/// `isMeta:true` shape that hook-feedback turns take, closing the
+/// bypass surface where a Stop-hook refusal silently masks every
+/// downstream walker's view of the real user invocation.
+///
+/// See `.claude/rules/transcript-shape.md` for the platform-fact
+/// rationale, the closed catalog of `isMeta:true` shapes, and the
+/// mechanical contract that every walker MUST call this helper
+/// rather than inlining the check.
+fn is_real_user_turn(turn: &Value) -> bool {
+    let content_is_string = turn
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .is_some();
+    let is_meta = turn.get("isMeta").and_then(|v| v.as_bool()) == Some(true);
+    content_is_string && !is_meta
+}
+
 /// Return `true` when the most recent user-role turn in the
 /// transcript at `path` invokes `skill` as a Claude Code slash
 /// command. Returns `false` on any read, parse, or validation
@@ -193,19 +243,19 @@ pub fn last_user_message_invokes_skill(path: &Path, skill: &str, home: &Path) ->
         if turn_type != "user" {
             continue;
         }
-        // Stop at the most recent user turn. Older user turns are
-        // invisible regardless of what they contain.
-        let content = match turn.get("message").and_then(|m| m.get("content")) {
-            Some(c) => c,
-            None => return false,
-        };
-        // Only string content authorizes — tool_result-wrapped user
-        // turns (content as array) carry assistant-generated text
-        // that must not be treated as user intent.
-        let content_str = match content.as_str() {
-            Some(s) => s,
-            None => return false,
-        };
+        // Synthetic user turns (array content, or string content
+        // with `isMeta:true`) are skipped — the walker keeps
+        // looking backward for the most recent REAL user turn.
+        // This is the only branch where the predicate stops: at
+        // the first real user-typed message.
+        if !is_real_user_turn(&turn) {
+            continue;
+        }
+        let content_str = turn
+            .get("message")
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+            .expect("is_real_user_turn verified string content above");
         let content_norm = content_str.trim_start().to_ascii_lowercase();
         return content_norm.starts_with(&needle);
     }
@@ -249,6 +299,16 @@ pub fn most_recent_skill_in_user_only_set(path: &Path, home: &Path) -> bool {
         let turn_type =
             normalize_gate_input(turn.get("type").and_then(|v| v.as_str()).unwrap_or(""));
         if turn_type == "user" {
+            // Stop only at a real user-typed message. Synthetic
+            // user turns (tool_result wrappers, hook-injected
+            // feedback with `isMeta:true`) interleave between the
+            // user's real prompt and the assistant Skill response
+            // — treating them as a boundary would mask the
+            // user-only-skill carve-out the moment a Stop-hook
+            // refusal lands ahead of the assistant turn.
+            if !is_real_user_turn(&turn) {
+                continue;
+            }
             return false;
         }
         if turn_type != "assistant" {
@@ -316,15 +376,13 @@ pub fn most_recent_skill_since_user(path: &Path, home: &Path) -> Option<String> 
         let turn_type =
             normalize_gate_input(turn.get("type").and_then(|v| v.as_str()).unwrap_or(""));
         if turn_type == "user" {
-            // Real user turns have string `content`. Synthetic
-            // tool_result-wrapped user turns have array `content` —
-            // skip those and keep walking backward.
-            let is_real = turn
-                .get("message")
-                .and_then(|m| m.get("content"))
-                .and_then(|c| c.as_str())
-                .is_some();
-            if is_real {
+            // Stop only at a real user-typed message. Synthetic
+            // user turns (tool_result wrappers AND hook-injected
+            // feedback with `isMeta:true`) are skipped — without
+            // the `isMeta` filter, a single Stop-hook refusal turn
+            // halts the walker and the predicate fails open on
+            // every subsequent Stop event mid-utility-skill.
+            if is_real_user_turn(&turn) {
                 return last_skill;
             }
             continue;
@@ -978,12 +1036,30 @@ pub fn recent_edit_blocked_on_shared_config(transcript_path: &Path, home: &Path)
         if turn_type != "user" {
             continue;
         }
-        // Most recent user-role turn reached. Examine its content
-        // and RETURN — do not continue walking backward to older
-        // turns. Scoping the carve-out to the immediately preceding
-        // user-role event keeps stale shared-config blocks from
-        // authorizing unrelated AskUserQuestions later in the
-        // session.
+        // Skip hook-injected feedback turns (string content with
+        // `isMeta:true`). Tool_result-wrapped user turns (array
+        // content) are the legitimate carrier of the shared-config
+        // block and must NOT be skipped — `user_turn_carries_shared
+        // _config_block` examines the array content for the block.
+        // Only the string-content-with-`isMeta:true` shape is
+        // synthetic-and-irrelevant here, since the shared-config
+        // signal lives inside tool_result blocks, never inside
+        // string-content user turns.
+        let is_string_content = turn
+            .get("message")
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+            .is_some();
+        let is_meta = turn.get("isMeta").and_then(|v| v.as_bool()) == Some(true);
+        if is_string_content && is_meta {
+            continue;
+        }
+        // Most recent non-hook-feedback user-role turn reached.
+        // Examine its content and RETURN — do not continue walking
+        // backward to older turns. Scoping the carve-out to the
+        // immediately preceding non-synthetic user-role event keeps
+        // stale shared-config blocks from authorizing unrelated
+        // AskUserQuestions later in the session.
         return user_turn_carries_shared_config_block(&turn);
     }
     false

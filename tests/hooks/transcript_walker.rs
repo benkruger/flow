@@ -2198,3 +2198,160 @@ fn user_message_contains_continue_token_two_word_word_boundary_via_right_side() 
     // non-word.
     assert!(user_message_contains_continue_token("please go ahead"));
 }
+
+// --- is_real_user_turn discriminator ---
+//
+// Claude Code emits two shapes of synthetic user turns alongside
+// user-typed prose: tool_result-wrapped turns (array content) and
+// hook-injected feedback turns (string content with `isMeta:true`).
+// Every walker that needs to find the most recent REAL user turn
+// must skip both shapes — without the `isMeta:true` filter, a
+// single Stop-hook refusal silently halts the walker on every
+// subsequent Stop event mid-utility-skill.
+//
+// The tests below drive each walker through hook-feedback fixtures
+// to lock in the synthetic-turn-skip contract per
+// `.claude/rules/transcript-shape.md`. Each fixture places a
+// hook-feedback user turn (string content, `isMeta:true`) AT THE
+// TAIL of the JSONL so the walker hits it first while iterating
+// backward — the configuration that reproduces the real
+// autonomous-flow-halt failure.
+
+#[test]
+fn last_user_message_invokes_skill_skips_hook_feedback_string_content_ismeta_true() {
+    // Hook-feedback string-content turn with `isMeta:true` follows
+    // an assistant turn that follows the real user invocation of
+    // `/flow:flow-abort`. The walker must skip the hook-feedback
+    // turn (synthetic) and stop at the real user turn (string
+    // content, no `isMeta`), then match the slash-command marker.
+    //
+    // Regression guard: a future edit deletes the `isMeta:true`
+    // filter from `is_real_user_turn` (or inlines a string-only
+    // check inside the walker), causing Layer 1's user-invocation
+    // detection to fail open whenever a Stop-hook refusal precedes
+    // the assistant Skill call. The named consumer is the user-
+    // only-skill enforcement chain (`validate-skill` Layer 1).
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-abort\"}}]}}\n\
+{\"type\":\"user\",\"isMeta\":true,\"message\":{\"role\":\"user\",\"content\":\"Stop hook feedback:\\nStop Refused: Continue, you can do it.\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(last_user_message_invokes_skill(
+        &path,
+        "flow:flow-abort",
+        home,
+    ));
+}
+
+#[test]
+fn last_user_message_invokes_skill_accepts_user_turn_without_ismeta_field() {
+    // A real user turn (string content, no `isMeta` field at all)
+    // must still register as a real user turn. Older Claude Code
+    // transcripts that pre-date the `isMeta` field carry user
+    // turns with no such key, and treating those as synthetic
+    // would break every flow against an older transcript.
+    //
+    // Regression guard: a future edit changes the `isMeta`
+    // default from "false when missing" to "treat missing as
+    // truthy", which would silently mask every legitimate user
+    // turn in older transcripts. The named consumer is
+    // `is_real_user_turn`'s doc-comment contract that absent
+    // `isMeta` means "real user turn."
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(last_user_message_invokes_skill(
+        &path,
+        "flow:flow-abort",
+        home,
+    ));
+}
+
+#[test]
+fn most_recent_skill_in_user_only_set_skips_hook_feedback_string_content_ismeta_true() {
+    // Real user turn → assistant Skill tool_use for `flow:flow-abort`
+    // → hook-feedback string-content user turn with `isMeta:true`.
+    // The walker iterates backward from the tail. With the
+    // hook-feedback filter, the walker skips the synthetic user
+    // turn at the tail, reaches the assistant Skill call, and
+    // returns true (carve-out fires). Without the filter, the
+    // walker would stop at the hook-feedback turn and return
+    // false (carve-out fails to fire, abort-during-autonomous-
+    // flow deadlocks).
+    //
+    // Regression guard: a future edit reintroduces a bare
+    // `turn_type == "user" → return false` check without
+    // `is_real_user_turn` gating. The named consumer is the
+    // shared-config + user-only-skill carve-out path in
+    // `validate-ask-user`.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"abort the flow\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-abort\"}}]}}\n\
+{\"type\":\"user\",\"isMeta\":true,\"message\":{\"role\":\"user\",\"content\":\"Stop hook feedback:\\nStop Refused: Continue, you can do it.\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(most_recent_skill_in_user_only_set(&path, home));
+}
+
+#[test]
+fn most_recent_skill_since_user_skips_hook_feedback_string_content_ismeta_true() {
+    // The canonical #1507 transcript shape: real user → assistant
+    // Skill call (`decompose:decompose`) → synthetic tool_result-
+    // wrapped user turn → assistant text-only synthesis → hook-
+    // feedback string-content user turn with `isMeta:true`. The
+    // walker must skip the hook-feedback turn (synthetic) and the
+    // tool_result-wrapped user turn (synthetic) to find the real
+    // user turn, returning `Some("decompose:decompose")` for the
+    // most recent Skill since that real boundary. Without the
+    // `isMeta` filter, the walker stops at the hook-feedback turn
+    // and returns `None` — the predicate fails open and the Stop
+    // hook lets the turn end mid-utility-skill.
+    //
+    // Regression guard: a future edit removes the `is_real_user_turn`
+    // call from `most_recent_skill_since_user`. The named consumer
+    // is `stop_continue::check_in_progress_utility_skill`, which
+    // gates the multi-step utility-skill Stop refusal.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"sounds good. proceed\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"decompose:decompose\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_d1\",\"content\":\"decompose output\"}]}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"synthesis prose\"}]}}\n\
+{\"type\":\"user\",\"isMeta\":true,\"message\":{\"role\":\"user\",\"content\":\"Stop hook feedback:\\nStop Refused: Continue, you can do it.\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_skill_since_user(&path, home),
+        Some("decompose:decompose".to_string()),
+    );
+}
+
+#[test]
+fn recent_edit_blocked_on_shared_config_skips_hook_feedback_string_content_ismeta_true() {
+    // Real user prose → assistant Edit tool_use on a shared-config
+    // path → tool_result-wrapped user turn carrying the
+    // shared-config BLOCKED message → hook-feedback string-content
+    // user turn with `isMeta:true` (e.g., the Stop hook fires
+    // because autonomous-mode discipline saw an `AskUserQuestion`
+    // candidate but the carve-out hadn't decided yet). The walker
+    // must skip the hook-feedback turn at the tail and reach the
+    // tool_result-wrapped user turn (legitimately array-content) to
+    // detect the shared-config block. Without the filter, the
+    // walker stops at the hook-feedback turn, finds no
+    // shared-config block, and the carve-out fails to fire,
+    // deadlocking the system-initiated `AskUserQuestion`.
+    //
+    // Regression guard: a future edit removes the hook-feedback
+    // skip from `recent_edit_blocked_on_shared_config`. The named
+    // consumer is the shared-config carve-out in
+    // `validate-ask-user::run_impl_main`.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"please update reqs\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Edit\",\"id\":\"toolu_01\",\"input\":{\"file_path\":\"/p/requirements.txt\",\"old_string\":\"a\",\"new_string\":\"b\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_01\",\"content\":\"BLOCKED: requirements.txt is a shared configuration file that affects every engineer in the repository.\",\"is_error\":true}]}}\n\
+{\"type\":\"user\",\"isMeta\":true,\"message\":{\"role\":\"user\",\"content\":\"Stop hook feedback:\\nStop Refused: Continue, you can do it.\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(recent_edit_blocked_on_shared_config(&path, home));
+}
