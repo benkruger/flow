@@ -1792,6 +1792,54 @@ fn verify_agent_returned_accepts_phase_equals_value_syntax() {
     );
 }
 
+#[test]
+fn verify_agent_returned_accepts_minimal_three_token_phase_equals_form() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    // The minimum legitimate phase-enter invocation has 3 tokens:
+    // `bin/flow phase-enter --phase=flow-review`. Earlier P5 fix
+    // included a `tokens.len() < 4` check that rejected this 3-token
+    // form. cmd_invokes_phase_enter now requires only >= 3 tokens
+    // (tokens[0] = bin/flow, tokens[1] = phase-enter, tokens[2..] =
+    // phase flag scan).
+    let marker = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"id\":\"toolu_b1\",\"input\":{\"command\":\"bin/flow phase-enter --phase=flow-review\"}}]}}\n";
+    let agent_block = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Agent\",\"id\":\"toolu_a1\",\"input\":{\"subagent_type\":\"flow:reviewer\"}}]}}\n";
+    let result_block = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_a1\",\"content\":\"ok\"}]}}\n";
+    let mut jsonl = String::new();
+    jsonl.push_str(marker);
+    jsonl.push_str(agent_block);
+    jsonl.push_str(result_block);
+    let path = crate::common::transcript_fixture(home, "p", &jsonl);
+    assert_eq!(
+        verify_agent_returned_in_phase(&path, home, "reviewer", "flow-review"),
+        Ok(())
+    );
+}
+
+#[test]
+fn verify_agent_returned_walks_past_id_less_agent_block_to_valid_sibling() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    // An assistant turn contains TWO Agent tool_use blocks for the
+    // same subagent: the first is malformed (no `id` field), the
+    // second is well-formed with id `toolu_a2`. find_agent_tool_use_id
+    // continues past the id-less block (instead of returning None on
+    // the first match) so the well-formed sibling is found. The
+    // tool_result for `toolu_a2` then completes the verification.
+    let marker = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"id\":\"toolu_b1\",\"input\":{\"command\":\"bin/flow phase-enter --phase flow-review\"}}]}}\n";
+    let dual_agent_turn = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Agent\",\"input\":{\"subagent_type\":\"flow:reviewer\"}},{\"type\":\"tool_use\",\"name\":\"Agent\",\"id\":\"toolu_a2\",\"input\":{\"subagent_type\":\"flow:reviewer\"}}]}}\n";
+    let result_block = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_a2\",\"content\":\"ok\"}]}}\n";
+    let mut jsonl = String::new();
+    jsonl.push_str(marker);
+    jsonl.push_str(dual_agent_turn);
+    jsonl.push_str(result_block);
+    let path = crate::common::transcript_fixture(home, "p", &jsonl);
+    assert_eq!(
+        verify_agent_returned_in_phase(&path, home, "reviewer", "flow-review"),
+        Ok(())
+    );
+}
+
 // --- most_recent_user_message_since_skill_action ---
 //
 // The `check_halt_pending` predicate in `stop_continue.rs` consults

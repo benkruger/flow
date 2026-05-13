@@ -531,7 +531,14 @@ fn assistant_turn_runs_phase_enter(turn: &Value, phase: &str) -> bool {
 /// why the comment names what the match excludes.
 fn cmd_invokes_phase_enter(cmd: &str, phase: &str) -> bool {
     let tokens: Vec<&str> = cmd.split_whitespace().collect();
-    if tokens.len() < 4 {
+    // The 3-token form `bin/flow phase-enter --phase=value` collapses
+    // the phase flag and value into a single token; the 4-token form
+    // `bin/flow phase-enter --phase value` keeps them separated. Both
+    // are valid clap invocations, so the minimum token count is 3 —
+    // tokens[0] and tokens[1] are the safe-indexed checks below, and
+    // the loop at skip(2) walks any remaining tokens for the phase
+    // value (= form or space form).
+    if tokens.len() < 3 {
         return false;
     }
     let first = tokens[0];
@@ -584,10 +591,16 @@ fn find_agent_tool_use_id(turn: &Value, subagent_needle: &str) -> Option<String>
             .and_then(|v| v.as_str())
             .unwrap_or("");
         if normalize_gate_input(sa) == subagent_needle {
-            return block
-                .get("id")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+            // A matching subagent block without an `id` field is
+            // malformed — continue the loop so a later well-formed
+            // sibling block in the same turn's content array still
+            // contributes its id. Returning None here would skip
+            // valid siblings and force the caller's retry loop
+            // (`verify_agent_returned_in_phase`) to falsely conclude
+            // `tool_use_missing`.
+            if let Some(id) = block.get("id").and_then(|v| v.as_str()) {
+                return Some(id.to_string());
+            }
         }
     }
     None
