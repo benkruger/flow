@@ -4441,7 +4441,11 @@ fn flow_skills_admin_and_maintainer_match_user_only() {
 
     for entry in &user_only_entries {
         let bare = entry.strip_prefix("flow:").unwrap_or(entry.as_str());
-        if entry == "flow:flow-release" {
+        // The project-local maintainer skill at
+        // `.claude/skills/flow-release/` emits the bare name; every
+        // other user-only skill lives at `skills/<name>/` and emits
+        // the namespaced `flow:<name>` form.
+        if entry == "flow-release" {
             assert!(
                 maintainer_section.contains(bare),
                 "Maintainer section of skills/flow-skills/SKILL.md must reference `{}`",

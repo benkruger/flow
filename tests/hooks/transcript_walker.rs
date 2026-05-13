@@ -202,7 +202,10 @@ fn user_only_skills_constant_lists_four_skills() {
     let names: Vec<&str> = USER_ONLY_SKILLS.to_vec();
     assert!(names.contains(&"flow:flow-abort"));
     assert!(names.contains(&"flow:flow-reset"));
-    assert!(names.contains(&"flow:flow-release"));
+    // flow-release is a project-local maintainer skill at
+    // `.claude/skills/flow-release/`, so Claude Code emits the bare
+    // name (no `flow:` prefix) when the user types `/flow-release`.
+    assert!(names.contains(&"flow-release"));
     assert!(names.contains(&"flow:flow-prime"));
     assert_eq!(names.len(), 4);
 }

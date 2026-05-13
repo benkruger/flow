@@ -105,7 +105,7 @@ fn validate_user_only_skill_flow_reset_is_in_set() {
 
 #[test]
 fn validate_user_only_skill_flow_release_is_in_set() {
-    assert!(USER_ONLY_SKILLS.contains(&"flow:flow-release"));
+    assert!(USER_ONLY_SKILLS.contains(&"flow-release"));
 }
 
 #[test]

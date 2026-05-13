@@ -15,7 +15,9 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 use serde_json::Value;
 
-use super::transcript_walker::{any_skill_in_set_since_user, most_recent_skill_since_user};
+use super::transcript_walker::{
+    any_skill_in_set_since_user, most_recent_skill_since_user, normalize_gate_input,
+};
 use super::{
     build_permission_regexes, detect_branch_from_path, find_settings_and_root_from, is_flow_active,
     read_hook_input, resolve_main_root,
@@ -904,13 +906,23 @@ fn check_commit_during_flow(
 /// - `flow:flow-prime` Step 6 invokes `/flow:flow-commit` to land
 ///   permission and stub-script setup that must reach `origin/<base>`
 ///   before any flow starts.
-/// - `flow:flow-release` publishes a version-bump commit on the
+/// - `flow-release` publishes a version-bump commit on the
 ///   integration trunk; there is no feature branch where a release
 ///   tag could live, and the skill calls `bin/flow finalize-commit`
 ///   directly rather than delegating to `/flow:flow-commit`. It is
 ///   both the initiating skill AND its own most-recent-skill walker
 ///   match — the per-skill trust contract is described on
 ///   `transcript_shows_commit_window_skill`.
+///
+/// Namespacing asymmetry: the first two entries carry the `flow:`
+/// prefix because `skills/flow-start/SKILL.md` and
+/// `skills/flow-prime/SKILL.md` are plugin-marketplace skills —
+/// Claude Code emits the namespaced name when the user types
+/// `/flow:flow-start` or `/flow:flow-prime`. `flow-release` is a
+/// project-local maintainer skill at `.claude/skills/flow-release/`
+/// (not under `skills/`), so Claude Code emits the bare name when
+/// the user types `/flow-release`. The constant reflects the
+/// literal `input.skill` values the transcript walker observes.
 ///
 /// Without a carve-out, Layer 9's integration-branch context blocks
 /// every such commit and all three skills are unusable.
@@ -920,7 +932,7 @@ fn check_commit_during_flow(
 /// the reason the bootstrap path cannot work on a feature branch.
 /// See `.claude/rules/concurrency-model.md` "Editing Source on the
 /// Base Branch".
-const BOOTSTRAP_SKILLS: &[&str] = &["flow:flow-start", "flow:flow-prime", "flow:flow-release"];
+const BOOTSTRAP_SKILLS: &[&str] = &["flow:flow-start", "flow:flow-prime", "flow-release"];
 
 /// Three AND-combined conditions on the bootstrap-skill carve-out
 /// for Layer 9's integration-branch context. The carve-out fires
@@ -934,13 +946,13 @@ const BOOTSTRAP_SKILLS: &[&str] = &["flow:flow-start", "flow:flow-prime", "flow:
 ///    true — the most recent assistant Skill since the most recent
 ///    user turn names one of the two sanctioned commit-window
 ///    skills, `flow:flow-commit` (the delegated commit path used by
-///    `flow:flow-start` and `flow:flow-prime`) or `flow:flow-release`
+///    `flow:flow-start` and `flow:flow-prime`) or `flow-release`
 ///    (the direct commit path that calls `bin/flow finalize-commit`
 ///    without delegating to `/flow:flow-commit`). The per-skill
 ///    trust contract is described on the predicate.
 /// 3. `any_skill_in_set_since_user(path, home, BOOTSTRAP_SKILLS)`
 ///    returns true — a sanctioned bootstrap parent
-///    (`flow:flow-start`, `flow:flow-prime`, or `flow:flow-release`)
+///    (`flow:flow-start`, `flow:flow-prime`, or `flow-release`)
 ///    appears in the same post-user-turn window. The active-flow
 ///    carve-out's `_continue_pending=commit` state marker is
 ///    unavailable on the integration branch, so this second walker
@@ -1057,14 +1069,16 @@ fn check_active_flow_at(
 ///   bootstrap. The trust is the standard
 ///   `/flow:flow-commit` choreography: diff review, commit-message
 ///   review, user approval.
-/// - `flow:flow-release` — the direct commit path used by
-///   `flow:flow-release`. The release skill calls
+/// - `flow-release` — the direct commit path used by
+///   `flow-release`. The release skill calls
 ///   `bin/flow finalize-commit` directly rather than delegating to
 ///   `/flow:flow-commit`; its trust comes from its own internal
 ///   review window: Step 3 displays `git log <last_tag>..HEAD`, Step
 ///   4 drafts release notes against that list, and Step 7 writes
 ///   an explicit "Release v<new_version>" commit-message file
-///   before `finalize-commit` reads it.
+///   before `finalize-commit` reads it. The bare name (no `flow:`
+///   prefix) reflects the literal `input.skill` value Claude Code
+///   emits for the project-local skill at `.claude/skills/flow-release/`.
 ///
 /// Returns false when `transcript_path` is None, when the walker
 /// cannot read the file, or when the most recent Skill call is
@@ -1086,10 +1100,18 @@ fn transcript_shows_commit_window_skill(transcript_path: Option<&Path>, home: &P
     let Some(path) = transcript_path else {
         return false;
     };
-    matches!(
-        most_recent_skill_since_user(path, home).as_deref(),
-        Some("flow:flow-commit") | Some("flow:flow-release")
-    )
+    let Some(skill) = most_recent_skill_since_user(path, home) else {
+        return false;
+    };
+    // Normalize before comparing per `.claude/rules/security-gates.md`
+    // "Normalize Before Comparing". The sibling
+    // `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` walker normalizes
+    // its candidate strings; this predicate must apply the same
+    // discipline so the two AND-combined conditions in
+    // `bootstrap_carveout_applies` cannot drift on case- or
+    // whitespace-variant transcript emissions.
+    let norm = normalize_gate_input(&skill);
+    matches!(norm.as_str(), "flow:flow-commit" | "flow-release")
 }
 
 /// Recognize a `bin/flow ... finalize-commit` invocation specifically.

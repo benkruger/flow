@@ -182,7 +182,7 @@ ran.
 3. `transcript_shows_commit_window_skill(transcript_path, home)`
    returns true — the most recent assistant Skill since the most
    recent user turn names a sanctioned commit-window skill
-   (`flow:flow-commit` or `flow:flow-release`). In practice every
+   (`flow:flow-commit` or `flow-release`). In practice every
    active-flow commit names `flow:flow-commit`; the release path
    runs on the integration trunk under the bootstrap carve-out.
 
@@ -199,7 +199,7 @@ the `-C` target — see "cwd-only scope" below):
    returns true — the shared two-arm predicate accepts either
    `flow:flow-commit` (delegated commit path used by
    `/flow:flow-start` and `/flow:flow-prime`) or
-   `flow:flow-release` (direct commit path that calls
+   `flow-release` (direct commit path that calls
    `bin/flow finalize-commit` without delegating to
    `/flow:flow-commit`). See
    `.claude/rules/concurrency-model.md` "Bootstrap-skill
@@ -208,7 +208,12 @@ the `-C` target — see "cwd-only scope" below):
 3. `any_skill_in_set_since_user(transcript_path, home,
    BOOTSTRAP_SKILLS)` returns true, where `BOOTSTRAP_SKILLS` is
    the closed set `{"flow:flow-start", "flow:flow-prime",
-   "flow:flow-release"}`.
+   "flow-release"}`. The third entry is the bare name because
+   `flow-release` is a project-local maintainer skill at
+   `.claude/skills/flow-release/`; Claude Code emits the bare
+   form when the user types `/flow-release`, while the first
+   two stay namespaced because the corresponding skills live at
+   `skills/<name>/`.
 
 `BOOTSTRAP_SKILLS` is exactly these three skills because they are
 the only FLOW skills that commit on the integration branch by
@@ -216,7 +221,7 @@ design: `flow:flow-start` Step 2 lands a `ci-fixer`
 dependency-repair commit before the user's feature work begins;
 `flow:flow-prime` Step 6 lands permission and stub-script setup
 that must reach the integration branch before any flow can
-start; and `flow:flow-release` publishes a version-bump commit
+start; and `flow-release` publishes a version-bump commit
 on the integration trunk (there is no feature branch where a
 release tag could live). Every other FLOW skill commits from a
 feature-branch worktree, where the active-flow carve-out applies
@@ -253,7 +258,7 @@ production consumer cost while preserving cross-repo safety.
 
 Window closure: the walker stops at the most recent real user
 turn going backward. A user message after `/flow:flow-prime` (or
-`/flow:flow-start` or `/flow:flow-release`) completes — followed
+`/flow:flow-start` or `/flow-release`) completes — followed
 by a direct `/flow:flow-commit` invocation — puts the
 sanctioned-parent Skill OUTSIDE the carve-out window, so
 `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` returns false

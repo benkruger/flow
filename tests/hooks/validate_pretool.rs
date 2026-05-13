@@ -3519,19 +3519,22 @@ fn layer_10_bootstrap_carveout_allows_for_flow_prime() {
 
 #[test]
 fn layer_10_bootstrap_carveout_allows_for_flow_release() {
-    // Third sanctioned-parent entry: Skill(flow:flow-release) is
-    // both the initiating skill AND the most-recent skill, because
-    // flow-release calls `bin/flow finalize-commit` directly rather
-    // than delegating to `/flow:flow-commit`. The transcript chain
-    // is a single Skill(flow:flow-release) — no separate flow-commit
-    // invocation.
+    // Third sanctioned-parent entry: Skill(flow-release) is both the
+    // initiating skill AND the most-recent skill, because flow-release
+    // calls `bin/flow finalize-commit` directly rather than delegating
+    // to `/flow:flow-commit`. The transcript chain is a single
+    // Skill(flow-release) — no separate flow-commit invocation. The
+    // bare name (no `flow:` prefix) reflects the literal `input.skill`
+    // value Claude Code emits for the project-local maintainer skill
+    // at `.claude/skills/flow-release/`.
     //
     // The most-recent-skill predicate is two-arm: it accepts either
     // `flow:flow-commit` (delegated commit path used by flow-start
-    // and flow-prime) or `flow:flow-release` (direct commit path).
-    // The bootstrap-parent walker scans `BOOTSTRAP_SKILLS` for
-    // `flow:flow-release` and finds it as a sanctioned parent of
-    // itself.
+    // and flow-prime, both plugin-marketplace skills at
+    // `skills/<name>/`) or `flow-release` (direct commit path; the
+    // skill is project-local). The bootstrap-parent walker scans
+    // `BOOTSTRAP_SKILLS` for `flow-release` and finds it as a
+    // sanctioned parent of itself.
     //
     // Per-skill trust contract: when most-recent is flow-commit,
     // the trust is the standard diff-review choreography. When
@@ -3546,7 +3549,7 @@ fn layer_10_bootstrap_carveout_allows_for_flow_release() {
     std::fs::create_dir_all(&claude_dir).unwrap();
     std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
 
-    let jsonl = assistant_skill_jsonl("flow:flow-release");
+    let jsonl = assistant_skill_jsonl("flow-release");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
         r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
@@ -3556,6 +3559,58 @@ fn layer_10_bootstrap_carveout_allows_for_flow_release() {
     assert_eq!(
         code, 0,
         "bootstrap-skill carve-out must pass on main with flow-release chain; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_10_bootstrap_carveout_normalizes_flow_release_uppercase() {
+    // `transcript_shows_commit_window_skill` must normalize the skill
+    // string from `most_recent_skill_since_user` before the byte
+    // comparison so case- and whitespace-variant emissions cannot
+    // drift past the gate. Sibling
+    // `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` already
+    // normalizes via `normalize_gate_input`; this test pins the
+    // symmetry property required by
+    // `.claude/rules/security-gates.md` "Normalize Before Comparing".
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = assistant_skill_jsonl("FLOW-RELEASE");
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 0,
+        "uppercase FLOW-RELEASE must normalize and pass the carve-out; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_10_bootstrap_carveout_normalizes_flow_release_trailing_whitespace() {
+    // Trailing whitespace on the emitted skill string must be
+    // tolerated by the normalize-before-comparing discipline. This
+    // test pairs with the uppercase variant above to lock in the
+    // symmetry with `any_skill_in_set_since_user`.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = assistant_skill_jsonl("flow-release  ");
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 0,
+        "trailing-whitespace flow-release must normalize and pass; stderr={stderr}"
     );
 }
 
