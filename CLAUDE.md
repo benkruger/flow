@@ -229,7 +229,12 @@ Block-first ordering: when the current phase's `phases.<current_phase>.status ==
 
 Every bash block in every skill must run without triggering a permission prompt. `tests/permissions.rs` enforces at test time; `bin/flow hook validate-pretool` enforces at runtime via global PreToolUse hook (compound commands, command substitution, redirection blocked; whitelist enforced when a flow is active; `general-purpose` sub-agents blocked during active phases).
 
-Layer 9 mechanically blocks direct commit invocations (`git ... commit`, `bin/flow ... finalize-commit`) when the effective cwd resolves to the integration branch OR to a feature branch with an active state file. The active-flow context carries a skill-commit carve-out: `bin/flow ... finalize-commit` (only that shape, never `git commit`) passes through when the state file has `_continue_pending == "commit"`. The integration-branch context is NOT carved out.
+Layer 9 mechanically blocks direct commit invocations (`git ... commit`, `bin/flow ... finalize-commit`) when the effective cwd resolves to the integration branch OR to a feature branch with an active state file. Each context carries its own carve-out:
+
+- **Active-flow context** — `bin/flow ... finalize-commit` (only that shape, never `git commit`) passes when the state file has `_continue_pending == "commit"` AND the persisted transcript shows the most recent assistant Skill is `flow:flow-commit`.
+- **Integration-branch context** — `bin/flow ... finalize-commit` (only that shape) passes when the persisted transcript shows BOTH `flow:flow-commit` as the most recent assistant Skill AND a sanctioned bootstrap parent (`flow:flow-start` or `flow:flow-prime`) in the post-user-turn chain. The integration-branch context has no per-branch state file, so the second walker condition substitutes for the marker.
+
+Raw `git commit` is never carved out in either context.
 
 `validate-ask-user` blocks `AskUserQuestion` calls with exit 2 when the current phase is both in-progress AND autonomous.
 

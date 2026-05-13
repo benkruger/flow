@@ -2357,3 +2357,57 @@ fn test_rules_no_run_tui_arm_impl_closure_pair() {
         violations.join("\n  ")
     );
 }
+
+// --- Layer 9 integration-branch carve-out removal ---
+//
+// PR #1514 added the bootstrap-skill carve-out to Layer 9's
+// integration-branch context (previously uncarved). The old claim
+// "The integration-branch context is NOT carved out — commits on
+// the integration branch are blocked regardless of the marker"
+// appeared in both CLAUDE.md "Permission Invariant" and
+// `.claude/rules/concurrency-model.md`'s "Skill-commit carve-out"
+// subsection. Both occurrences were rewritten to describe the
+// new two-context (active-flow + integration-branch) carve-out
+// structure. A merge resolution that re-introduces the old
+// prose would silently restore a contradictory security claim:
+// the rule files would assert the gate is uncarved while the
+// hook code does carve out the bootstrap window. The tombstone
+// fails CI on either resurrection.
+
+/// Tombstone: removed in PR #1514. The literal phrase
+/// "integration-branch context is NOT carved out" must not
+/// appear in `CLAUDE.md` or `.claude/rules/concurrency-model.md`
+/// — the bootstrap-skill carve-out replaced the unconditional
+/// block on the integration-branch context.
+///
+/// Stability: this is a markdown-prose substring, not Rust code.
+/// `concat!` and `format!` are macros that synthesize Rust string
+/// literals at compile time — they cannot assemble markdown
+/// rendered into a `.md` file. Constants are inapplicable
+/// (markdown files cannot host Rust `const` declarations).
+/// Method-chain splits across `.arg()` calls are inapplicable
+/// for the same reason. A merge-conflict resurrection would
+/// reintroduce the literal phrase verbatim in a markdown file,
+/// which the byte-substring scan catches.
+#[test]
+fn test_rules_no_integration_branch_not_carved_out_claim() {
+    let root = common::repo_root();
+    const FORBIDDEN: &str = "integration-branch context is NOT carved out";
+    for rel in ["CLAUDE.md", ".claude/rules/concurrency-model.md"] {
+        let path = root.join(rel);
+        let content = fs::read_to_string(&path).unwrap_or_else(|_| {
+            panic!("{} must exist for tombstone scan", rel);
+        });
+        assert!(
+            !content.contains(FORBIDDEN),
+            "{} must not contain '{}' — the bootstrap-skill carve-out \
+             on Layer 9's integration-branch context was added in \
+             PR #1514, replacing the uncarved block. A merge \
+             resurrection that brings back this phrase would create \
+             a contradiction between the rule prose and the hook \
+             code in `src/hooks/validate_pretool.rs::bootstrap_carveout_applies`.",
+            rel,
+            FORBIDDEN
+        );
+    }
+}

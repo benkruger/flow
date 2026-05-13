@@ -168,9 +168,14 @@ in the same file is the canonical structural-check shape.
 
 ### Layer C — Transcript-walker gate (closes bypass shortcuts)
 
-The skill-commit carve-out at
-`src/hooks/validate_pretool.rs::check_active_flow_at` AND-combines
-three conditions:
+The Layer 9 commit gate carries two carve-outs for legitimate
+skill-driven commit paths. Each carve-out AND-combines three
+conditions; the third condition in both is a transcript-walker
+check that proves the surrounding skill choreography actually
+ran.
+
+**Active-flow carve-out** at
+`src/hooks/validate_pretool.rs::check_active_flow_at`:
 
 1. The command shape is `bin/flow ... finalize-commit`.
 2. The state file has `_continue_pending == "commit"`.
@@ -178,10 +183,75 @@ three conditions:
    `Some("flow:flow-commit")`.
 
 Only when all three hold does the active-flow gate allow the
-invocation through. The transcript walker is shared infrastructure
-with `validate-skill` and `validate-ask-user`; reads are capped at
-the documented `TRANSCRIPT_BYTE_CAP` per
-`.claude/rules/external-input-path-construction.md`.
+invocation through.
+
+**Bootstrap-skill carve-out** at
+`src/hooks/validate_pretool.rs::bootstrap_carveout_applies`,
+wired into the cwd's `match_branch_at` call site only (NOT
+the `-C` target — see "cwd-only scope" below):
+
+1. The command shape is `bin/flow ... finalize-commit`.
+2. `most_recent_skill_since_user(transcript_path, home)` returns
+   `Some("flow:flow-commit")`.
+3. `any_skill_in_set_since_user(transcript_path, home,
+   BOOTSTRAP_SKILLS)` returns true, where `BOOTSTRAP_SKILLS` is
+   the closed set `{"flow:flow-start", "flow:flow-prime"}`.
+
+`BOOTSTRAP_SKILLS` is exactly these two skills because they are
+the only FLOW skills that invoke `/flow:flow-commit` while cwd
+is on the integration branch by design: `flow:flow-start` Step 2
+lands a `ci-fixer` dependency-repair commit before the user's
+feature work begins, and `flow:flow-prime` Step 6 lands
+permission and stub-script setup that must reach the integration
+branch before any flow can start. Every other FLOW skill commits
+from a feature-branch worktree, where the active-flow carve-out
+applies instead. Extending the set requires naming a new skill
+that legitimately needs to commit on the integration branch.
+
+The integration-branch context has no per-branch state file at
+the integration trunk, so the bootstrap carve-out uses a SECOND
+walker condition in place of the state-file marker — both walker
+conditions are load-bearing. The active-flow carve-out's marker
+is belt-and-suspenders for a fresh-session resume window; the
+bootstrap carve-out has no analogous marker because there is
+nothing on the integration trunk to write to.
+
+The carve-out names no branch — `default_branch_in()` resolves
+the actual integration branch from `git symbolic-ref --short
+refs/remotes/origin/HEAD` (fallback `"main"`), so the carve-out
+applies identically to `main`, `staging`, `master`, `develop`,
+and any other configured trunk.
+
+cwd-only scope: `check_commit_during_flow` does NOT consult
+`bootstrap_carveout_applies` at the `-C` target's
+`match_branch_at(target)` callsite. The transcript walker is
+session-scoped (the persisted transcript records all session
+activity regardless of which repo the work targeted), so a
+bootstrap chain accrued in one repo's session could otherwise
+authorize a commit redirected via `git -C <other-repo>` to a
+different repo's integration branch. Both legitimate bootstrap
+windows run with cwd ON the integration branch by design —
+neither uses `-C` to shift git's effective cwd — so restricting
+the carve-out to the cwd callsite has no production consumer
+cost while preserving cross-repo safety.
+
+Window closure: the walker stops at the most recent real user
+turn going backward. A user message after `/flow:flow-prime`
+completes — followed by a direct `/flow:flow-commit` invocation —
+puts the sanctioned-parent Skill OUTSIDE the carve-out window,
+so `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` returns false
+and the block fires. Historical authorization cannot carry
+forward.
+
+Both walker checks share infrastructure with `validate-skill`
+and `validate-ask-user`; reads are capped at the documented
+`TRANSCRIPT_BYTE_CAP` per
+`.claude/rules/external-input-path-construction.md`. See
+`.claude/rules/concurrency-model.md` "Skill-commit carve-out
+(active-flow context)" and "Bootstrap-skill carve-out
+(integration-branch context)" for the full
+substitution-of-trust analysis and the sanctioned-parent
+enumeration.
 
 ## How to Apply
 
@@ -213,9 +283,9 @@ is legitimate.
 
 - `.claude/rules/permissions.md` — the deny-list and allow-list
   discipline that Layer A operationalizes.
-- `.claude/rules/concurrency-model.md` — the active-flow commit
-  gate and its skill-commit carve-out (Layer 9 in
-  `validate-pretool`).
+- `.claude/rules/concurrency-model.md` — the active-flow and
+  integration-branch commit gates plus their carve-outs (Layer 9
+  in `validate-pretool`).
 - `.claude/rules/user-only-skills.md` — the sibling enforcement
   pattern for direct user invocation; the transcript walker is
   shared infrastructure.

@@ -54,15 +54,31 @@ insufficient:
   invocations whose effective cwd (or any `git -C` target)
   resolves to the integration branch named by
   `default_branch_in` OR to a feature branch with an active
-  FLOW state file at `.flow-states/<branch>/state.json`. The
-  active-flow context carries a skill-commit carve-out:
-  `bin/flow ... finalize-commit` passes through when the state
-  file has `_continue_pending == "commit"` (the marker the
-  commit-invoking skills set before invoking
-  `/flow:flow-commit`); raw `git commit` is never carved out.
-  See `.claude/rules/concurrency-model.md` "Mechanical
-  Enforcement" for the bypass surface, the carve-out's trust
-  contract, and the documented v1 gaps.
+  FLOW state file at `.flow-states/<branch>/state.json`. Two
+  context-specific carve-outs cover the legitimate skill-
+  driven commit paths; raw `git commit` is never carved out
+  in either context. The active-flow context's skill-commit
+  carve-out passes `bin/flow ... finalize-commit` when the
+  state file has `_continue_pending == "commit"` AND the
+  persisted transcript shows the most recent assistant Skill
+  since the most recent user turn is `flow:flow-commit`. The
+  integration-branch context's bootstrap-skill carve-out
+  passes `bin/flow ... finalize-commit` when the transcript
+  shows `flow:flow-commit` as the most recent assistant Skill
+  AND a sanctioned bootstrap parent (`flow:flow-start` or
+  `flow:flow-prime`) in the post-user-turn chain. The
+  sanctioned-parent set is `BOOTSTRAP_SKILLS` in
+  `validate_pretool.rs`. The carve-out is branch-agnostic —
+  `default_branch_in` resolves the actual integration trunk so
+  the carve-out applies identically to `main`, `staging`,
+  `master`, etc. The integration-branch context has no per-
+  branch state file at the trunk, so the bootstrap carve-out
+  uses a SECOND walker condition where the active-flow
+  carve-out uses a state-file marker — both walker conditions
+  are load-bearing. See
+  `.claude/rules/concurrency-model.md` "Mechanical
+  Enforcement" for the bypass surface, the carve-out trust-
+  contract analyses, and the documented v1 gaps.
 - **`run_in_background` on `bin/flow` and `bin/ci`** — the
   pre-validation path in `validate-pretool` rejects any
   background invocation of `bin/flow` (any subcommand) and

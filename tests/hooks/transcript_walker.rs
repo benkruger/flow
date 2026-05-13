@@ -12,11 +12,11 @@
 use std::fs;
 
 use flow_rs::hooks::transcript_walker::{
-    last_user_message_invokes_skill, most_recent_skill_in_user_only_set,
-    most_recent_skill_since_user, most_recent_user_message_since_skill_action,
-    recent_edit_blocked_on_shared_config, user_message_contains_continue_token,
-    verify_agent_returned_in_phase, SHARED_CONFIG_BLOCK_BYTE_CAP, TRANSCRIPT_BYTE_CAP,
-    USER_ONLY_SKILLS,
+    any_skill_in_set_since_user, last_user_message_invokes_skill,
+    most_recent_skill_in_user_only_set, most_recent_skill_since_user,
+    most_recent_user_message_since_skill_action, recent_edit_blocked_on_shared_config,
+    user_message_contains_continue_token, verify_agent_returned_in_phase,
+    SHARED_CONFIG_BLOCK_BYTE_CAP, TRANSCRIPT_BYTE_CAP, USER_ONLY_SKILLS,
 };
 
 // --- last_user_message_invokes_skill ---
@@ -2197,6 +2197,314 @@ fn user_message_contains_continue_token_two_word_word_boundary_via_right_side() 
     // accepts mid-string matches when the preceding character is
     // non-word.
     assert!(user_message_contains_continue_token("please go ahead"));
+}
+
+// --- any_skill_in_set_since_user ---
+//
+// `validate_pretool::bootstrap_carveout_applies` consults this helper
+// to verify a sanctioned bootstrap parent (`flow:flow-start` or
+// `flow:flow-prime`) appears in the assistant Skill chain since the
+// most recent real user turn. The helper mirrors
+// `most_recent_skill_since_user`'s backward walk but answers a
+// membership question over a caller-supplied set rather than
+// returning the most recent name.
+
+#[test]
+fn any_skill_returns_false_on_unsafe_transcript_path() {
+    // Path outside `<home>/.claude/projects/` fails
+    // `is_safe_transcript_path` validation. Helper returns false
+    // (fail-open).
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let stray = home.join("malicious").join("session.jsonl");
+    fs::create_dir_all(stray.parent().unwrap()).unwrap();
+    let jsonl = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-start\"}}]}}\n";
+    fs::write(&stray, jsonl).unwrap();
+    assert!(!any_skill_in_set_since_user(
+        &stray,
+        home,
+        &["flow:flow-start", "flow:flow-prime"],
+    ));
+}
+
+#[test]
+fn any_skill_returns_false_on_non_utf8_file() {
+    // File exists at a valid prefix path — `is_safe_transcript_path`
+    // canonicalize succeeds — but the bytes don't form valid UTF-8.
+    // `File::open` succeeds, then `read_to_string` fails with
+    // InvalidData and `read_capped` returns None. The walker fails
+    // open via the `None => return false` branch.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let proj = home.join(".claude").join("projects").join("p");
+    fs::create_dir_all(&proj).unwrap();
+    let path = proj.join("invalid.jsonl");
+    // 0xC3 starts a 2-byte UTF-8 sequence; 0x28 is `(` (not a valid
+    // continuation byte), so the pair is invalid UTF-8.
+    fs::write(&path, [0xC3u8, 0x28u8]).unwrap();
+    assert!(!any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime"],
+    ));
+}
+
+#[test]
+fn any_skill_skips_empty_lines() {
+    // Transcript has blank lines interleaved with valid turns.
+    // The walker's `trimmed.is_empty()` branch skips the blank
+    // lines and finds the sanctioned skill in the assistant turn.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"start it\"}}\n\
+\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-start\"}}]}}\n\
+\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime"],
+    ));
+}
+
+#[test]
+fn any_skill_skips_malformed_json_lines() {
+    // A line that fails `serde_json::from_str` is silently skipped
+    // by the `Err(_) => continue` branch. File order places the
+    // malformed line AFTER the matching assistant skill so the
+    // backward walker hits the malformed line FIRST and exercises
+    // the continue branch before finding the sanctioned skill.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"start it\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-prime\"}}]}}\n\
+this is not json at all\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime"],
+    ));
+}
+
+#[test]
+fn any_skill_returns_false_at_user_turn_boundary() {
+    // Sanctioned-parent Skill appears BEFORE the most recent real
+    // user turn. The walker stops at the user turn going backward,
+    // so the older Skill is invisible. Returns false.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-start\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"now do something else\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-commit\"}}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(!any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime"],
+    ));
+}
+
+#[test]
+fn any_skill_skips_synthetic_user_turn() {
+    // Synthetic user turn (content is an array of blocks — a
+    // tool_result wrapper carrying assistant output back to the
+    // model) does NOT count as a real boundary. The walker
+    // continues past it backward and finds the sanctioned skill in
+    // an older assistant turn within the same window.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    // File order: real user, sanctioned-parent Skill,
+    // synthetic-user tool_result, finalize Skill. The walker
+    // (backward) sees finalize, then synthetic-user (array content
+    // → skip), then sanctioned-parent (match), then real user
+    // (boundary). Returns true because the sanctioned parent was
+    // found before the real user boundary.
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"start it\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-start\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"x\",\"content\":\"ok\"}]}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-commit\"}}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime"],
+    ));
+}
+
+#[test]
+fn any_skill_skips_unknown_turn_type() {
+    // A turn with `type: "system"` does not match `assistant` or
+    // `user`. The walker's `turn_type != "assistant"` branch falls
+    // through and continues past it. File order places the system
+    // turn AFTER the matching assistant skill so the backward walker
+    // hits the system turn FIRST and exercises the continue branch.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"start it\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-prime\"}}]}}\n\
+{\"type\":\"system\",\"message\":{\"role\":\"system\",\"content\":\"reminder\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime"],
+    ));
+}
+
+#[test]
+fn any_skill_skips_assistant_turn_with_no_skills() {
+    // An assistant turn carrying only a Bash tool_use produces an
+    // empty `extract_skill_invocations` result. The walker keeps
+    // walking backward and either finds a sanctioned Skill in an
+    // older assistant turn or hits the user boundary. Here, a
+    // sanctioned Skill appears in an older assistant turn — true.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"prime first\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-prime\"}}]}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"ls\"}}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime"],
+    ));
+}
+
+#[test]
+fn any_skill_returns_true_when_flow_start_in_chain() {
+    // Window contains a Skill(flow:flow-start) followed by an
+    // unrelated assistant text-only turn. The walker, scanning
+    // backward, sees the text-only turn (no Skills → continue),
+    // then the flow:flow-start Skill (match → true).
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"start it\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-start\"}}]}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"started\"}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime"],
+    ));
+}
+
+#[test]
+fn any_skill_returns_true_when_flow_prime_in_chain() {
+    // Window contains a Skill(flow:flow-prime). The walker matches
+    // the second sanctioned-parent entry in the set.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"prime\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-prime\"}}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime"],
+    ));
+}
+
+#[test]
+fn any_skill_skips_assistant_turn_with_unrelated_skill() {
+    // Window contains only Skill(flow:flow-commit) and
+    // Skill(decompose:decompose) — neither is in the sanctioned
+    // set. Walker returns false.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"commit\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"decompose:decompose\"}}]}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-commit\"}}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(!any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime"],
+    ));
+}
+
+#[test]
+fn any_skill_returns_false_at_eof_without_user_turn() {
+    // No user turn anywhere in the transcript and no sanctioned
+    // parent. The walker exhausts the buffer and returns false via
+    // the post-loop fall-through.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-commit\"}}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(!any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime"],
+    ));
+}
+
+#[test]
+fn any_skill_returns_false_on_empty_sanctioned_set() {
+    // Caller passes an empty slice. The membership check cannot
+    // match anything → the walker returns false unconditionally
+    // regardless of what Skills appear in the transcript.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"start it\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-start\"}}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(!any_skill_in_set_since_user(&path, home, &[]));
+}
+
+#[test]
+fn any_skill_normalizes_input_before_match() {
+    // Transcript records the skill name as UPPERCASE
+    // `FLOW:FLOW-START`. The sanctioned set is lowercase. The
+    // walker normalizes via `normalize_gate_input` (NUL strip +
+    // trim + ASCII lowercase) before the membership check, so the
+    // mismatch in casing is bridged. Returns true.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"start it\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"FLOW:FLOW-START\"}}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime"],
+    ));
+}
+
+#[test]
+fn any_skill_in_set_since_user_skips_hook_feedback_string_content_ismeta_true() {
+    // Real user turn → assistant Skill tool_use for `flow:flow-start`
+    // → hook-feedback string-content user turn with `isMeta:true`.
+    // The walker iterates backward from the tail. With the
+    // hook-feedback filter (per .claude/rules/transcript-shape.md
+    // and the `is_real_user_turn` discriminator), the walker skips
+    // the synthetic user turn at the tail, reaches the assistant
+    // Skill call, and returns true (bootstrap carve-out fires).
+    // Without the filter, the walker would stop at the hook-feedback
+    // turn and return false (bootstrap carve-out fails to fire,
+    // legitimate flow-start commits on the integration branch are
+    // blocked once a Stop-hook refusal lands in the transcript).
+    //
+    // Regression guard: a future edit reintroduces the bare
+    // `content.as_str().is_some()` check into
+    // `any_skill_in_set_since_user`. The named consumer is the
+    // Layer 9 bootstrap carve-out in
+    // `validate_pretool::bootstrap_carveout_applies`.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"start it\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-start\"}}]}}\n\
+{\"type\":\"user\",\"isMeta\":true,\"message\":{\"role\":\"user\",\"content\":\"Stop hook feedback:\\nStop Refused: Continue, you can do it.\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime"],
+    ));
 }
 
 // --- is_real_user_turn discriminator ---

@@ -3436,3 +3436,422 @@ fn layer_10_closure_block_message_cites_no_escape_hatches_rule() {
     assert!(stderr.contains("/flow:flow-commit"));
     assert!(stderr.contains("no-escape-hatches.md"));
 }
+
+// --- layer_10_bootstrap_carveout ---
+//
+// The bootstrap-skill carve-out on Layer 9's integration-branch
+// context. The flow-start Step 2 (deps repair commit) and flow-prime
+// Step 6 (setup writes commit) skills invoke `/flow:flow-commit`
+// while cwd is on the integration branch. Without a carve-out, the
+// integration-branch context blocks every such commit. The
+// integration-branch context has no per-branch state file, so the
+// carve-out cannot mirror the active-flow carve-out's
+// `_continue_pending=commit` marker. Instead it uses two
+// AND-combined walker conditions:
+//
+//   1. `is_finalize_commit_invocation(command)` (the command shape)
+//   2. `most_recent_skill_since_user(path, home)` returns
+//      `Some("flow:flow-commit")` — the most recent assistant Skill
+//      since the most recent user turn is `flow:flow-commit`
+//   3. `any_skill_in_set_since_user(path, home, BOOTSTRAP_SKILLS)`
+//      returns true — a sanctioned bootstrap parent
+//      (`flow:flow-start` or `flow:flow-prime`) appears in the
+//      assistant Skill chain since the most recent user turn
+//
+// Raw `git commit` is never carved out; the carve-out's shape
+// predicate matches `bin/flow finalize-commit` only.
+
+#[test]
+fn layer_10_bootstrap_carveout_allows_on_main_when_flow_start_chain() {
+    // Bootstrap window: cwd is the integration branch (`main`), the
+    // transcript shows Skill(flow:flow-start) followed by
+    // Skill(flow:flow-commit) since the most recent user turn, and
+    // the command shape is `bin/flow finalize-commit`. All three
+    // bootstrap-carveout conditions hold → Layer 9 passes through.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = format!(
+        "{}{}",
+        assistant_skill_jsonl("flow:flow-start"),
+        assistant_skill_jsonl("flow:flow-commit"),
+    );
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 0,
+        "bootstrap-skill carve-out must pass on main with flow-start chain; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_10_bootstrap_carveout_allows_for_flow_prime() {
+    // Second sanctioned-parent entry: Skill(flow:flow-prime) plus
+    // Skill(flow:flow-commit) on the integration branch. The
+    // bootstrap carve-out fires for either sanctioned parent.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = format!(
+        "{}{}",
+        assistant_skill_jsonl("flow:flow-prime"),
+        assistant_skill_jsonl("flow:flow-commit"),
+    );
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 0,
+        "bootstrap-skill carve-out must pass on main with flow-prime chain; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_10_bootstrap_carveout_allows_finalize_commit_on_staging_during_flow_start() {
+    // Configure `origin/HEAD` to `origin/staging` so
+    // `default_branch_in` returns "staging". The carve-out names no
+    // branch — it gates on `is_finalize_commit_invocation` +
+    // `most_recent_skill_since_user == Some("flow:flow-commit")` +
+    // `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` regardless of
+    // which branch the integration trunk is. Mirrors
+    // `t4_git_commit_on_staging_default_repo_blocks` to pin the
+    // branch-agnostic property.
+    let (_dir, root) = setup_repo_on_branch("staging");
+    let _ = Command::new("git")
+        .args(["remote", "add", "origin", root.to_str().unwrap()])
+        .current_dir(&root)
+        .output()
+        .expect("git remote add");
+    let _ = Command::new("git")
+        .args(["update-ref", "refs/remotes/origin/staging", "HEAD"])
+        .current_dir(&root)
+        .output()
+        .expect("git update-ref");
+    let _ = Command::new("git")
+        .args([
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/staging",
+        ])
+        .current_dir(&root)
+        .output()
+        .expect("git symbolic-ref");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = format!(
+        "{}{}",
+        assistant_skill_jsonl("flow:flow-start"),
+        assistant_skill_jsonl("flow:flow-commit"),
+    );
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt staging"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 0,
+        "bootstrap-skill carve-out must pass on staging integration branch; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_10_bootstrap_carveout_blocks_dash_c_target_with_git_commit() {
+    // `is_finalize_commit_invocation` only matches
+    // `bin/flow finalize-commit`, not `git -C ... commit`. When a
+    // command targets the integration branch via `git -C` AND
+    // the transcript shows the bootstrap chain, the carve-out's
+    // command-shape predicate fails, so the block fires. Pins that
+    // the carve-out is finalize-commit-only by design — there is
+    // no git-prefixed escape hatch.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = format!(
+        "{}{}",
+        assistant_skill_jsonl("flow:flow-start"),
+        assistant_skill_jsonl("flow:flow-commit"),
+    );
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "git -C {} commit -m \"x\""}}, "transcript_path": "{}"}}"#,
+        root.to_string_lossy(),
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 2,
+        "git -C <main> commit must block even with bootstrap chain; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("integration branch"));
+}
+
+#[test]
+fn layer_10_bootstrap_carveout_blocks_for_flow_orchestrate_parent() {
+    // Sanctioned-parent set is closed: {flow:flow-start,
+    // flow:flow-prime}. Skill(flow:flow-orchestrate) is NOT a
+    // sanctioned parent. The walker's
+    // `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` returns
+    // false even though `most_recent_skill_since_user` would match
+    // `flow:flow-commit`; the AND fails and the block fires.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = format!(
+        "{}{}",
+        assistant_skill_jsonl("flow:flow-orchestrate"),
+        assistant_skill_jsonl("flow:flow-commit"),
+    );
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 2,
+        "flow-orchestrate is not a sanctioned bootstrap parent — block; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("integration branch"));
+}
+
+#[test]
+fn layer_10_bootstrap_carveout_blocks_raw_git_commit_even_with_chain() {
+    // The bootstrap carve-out's first AND-combined condition is
+    // `is_finalize_commit_invocation`, which matches
+    // `bin/flow finalize-commit` only. A raw `git commit` invocation
+    // — even with the sanctioned-parent chain AND a flow-commit Skill
+    // in the transcript — fails the shape predicate, so the block
+    // fires.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = format!(
+        "{}{}",
+        assistant_skill_jsonl("flow:flow-start"),
+        assistant_skill_jsonl("flow:flow-commit"),
+    );
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "git commit -m \"x\""}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 2,
+        "raw git commit must block even with bootstrap chain; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("integration branch"));
+}
+
+#[test]
+fn layer_10_bootstrap_carveout_blocks_after_user_turn_closes_window() {
+    // After the user types another message, the walker stops at
+    // that user turn going backward, so the older sanctioned parent
+    // is invisible. Specifically: User → Skill(flow:flow-prime) →
+    // Skill(flow:flow-commit) → User: "/flow:flow-commit" →
+    // Skill(flow:flow-commit). The walker scans the second
+    // bash invocation backward, hits the second flow-commit Skill,
+    // hits the most recent real user turn, and stops without
+    // finding the sanctioned parent → block fires.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = format!(
+        "{}{}{}{}{}",
+        user_jsonl("prime my project"),
+        assistant_skill_jsonl("flow:flow-prime"),
+        assistant_skill_jsonl("flow:flow-commit"),
+        user_jsonl("now commit directly"),
+        assistant_skill_jsonl("flow:flow-commit"),
+    );
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 2,
+        "user turn after sanctioned parent closes the carve-out window; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("integration branch"));
+}
+
+#[test]
+fn layer_10_bootstrap_carveout_blocks_when_transcript_path_missing() {
+    // Hook input omits `transcript_path`.
+    // `bootstrap_carveout_applies` early-returns false on the None
+    // arm of `let Some(path) = transcript_path else`; the carve-out
+    // cannot fire without a transcript. Block fires.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt main"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 2,
+        "missing transcript_path must block the bootstrap carve-out; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("integration branch"));
+}
+
+#[test]
+fn layer_10_bootstrap_carveout_blocks_when_transcript_path_invalid() {
+    // `transcript_path` exists but is rooted outside
+    // `<home>/.claude/projects/`. `is_safe_transcript_path` rejects
+    // it, the walker returns false, and the AND fails → block.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let bad_path = root.join("not-in-projects.jsonl");
+    let jsonl = format!(
+        "{}{}",
+        assistant_skill_jsonl("flow:flow-start"),
+        assistant_skill_jsonl("flow:flow-commit"),
+    );
+    std::fs::write(&bad_path, jsonl).unwrap();
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        bad_path.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 2,
+        "transcript_path outside ~/.claude/projects/ must block; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+}
+
+#[test]
+fn layer_10_bootstrap_carveout_blocks_user_direct_flow_commit_on_main() {
+    // User types `/flow:flow-commit` directly on the integration
+    // branch — the transcript shows ONLY Skill(flow:flow-commit) and
+    // no sanctioned bootstrap parent.
+    // `most_recent_skill_since_user` returns Some("flow:flow-commit"),
+    // but `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` returns
+    // false. The AND fails → block fires. Pins that the carve-out
+    // is for skill-driven bootstrap windows, not arbitrary user-
+    // initiated commits on the integration branch.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = assistant_skill_jsonl("flow:flow-commit");
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 2,
+        "user-direct /flow:flow-commit on main without bootstrap parent must block; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("integration branch"));
+}
+
+#[test]
+fn layer_10_bootstrap_carveout_does_not_apply_via_dash_c_target_for_cross_repo_safety() {
+    // Cwd is a feature-branch tempdir (NOT the integration branch),
+    // but the command carries a `-C <main_root>` token that shifts
+    // git's effective cwd onto the integration branch. The matcher
+    // checks BOTH candidate cwds: the hook's process cwd and any
+    // `-C` target. The first match_branch_at(cwd) returns None for
+    // the feature branch; the -C target's match_branch_at fires.
+    // The bootstrap carve-out is intentionally NOT applied at the
+    // -C target callsite (cwd-only design) because the transcript
+    // walker is session-scoped: a bootstrap chain in session
+    // activity for one repo could otherwise authorize a commit
+    // redirected via -C to another repo's integration branch.
+    // Legitimate bootstrap windows always run with cwd ON the
+    // integration branch, so this tightening has no production
+    // consumer cost.
+    let (_main_dir, main_root) = setup_repo_on_branch("main");
+    let (_feat_dir, feat_root) = setup_repo_on_branch("feat-x");
+    let main_path = main_root.to_str().expect("utf-8 main path");
+
+    let jsonl = format!(
+        "{}{}",
+        assistant_skill_jsonl("flow:flow-start"),
+        assistant_skill_jsonl("flow:flow-commit"),
+    );
+    let transcript = crate::common::transcript_fixture(&main_root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit -C {} msg.txt main"}}, "transcript_path": "{}"}}"#,
+        main_path,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) =
+        run_hook_with_input_and_home(&input, Some(&feat_root), Some(&main_root));
+    assert_eq!(
+        code, 2,
+        "bootstrap carve-out must NOT fire via -C target (cross-repo safety); stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("integration branch"));
+}
+
+#[test]
+fn layer_10_bootstrap_carveout_unaffected_by_active_flow_carveout() {
+    // Feature-branch worktree (not integration branch) with
+    // `_continue_pending=commit` AND a flow:flow-prime Skill in the
+    // chain. Cwd is the feature-branch worktree, so `match_branch_at`
+    // returns None and the integration-branch context (where the
+    // bootstrap carve-out applies) is never consulted. The active-
+    // flow carve-out's three conditions
+    // (`is_finalize_commit_invocation` + marker == "commit" +
+    // `transcript_shows_flow_commit`) gate the active-flow path
+    // independently. The bootstrap carve-out's branch-agnostic
+    // shape means a stray sanctioned-parent Skill in the chain
+    // never weakens the active-flow path either.
+    let (_dir, root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    let jsonl = format!(
+        "{}{}",
+        assistant_skill_jsonl("flow:flow-prime"),
+        assistant_skill_jsonl("flow:flow-commit"),
+    );
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
+    assert_eq!(
+        code, 0,
+        "feature-branch active-flow carve-out path is independent of bootstrap chain; stderr={stderr}"
+    );
+}

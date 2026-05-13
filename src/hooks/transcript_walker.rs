@@ -1,5 +1,5 @@
 //! Shared backward walker over the persisted Claude Code transcript
-//! JSONL. Three consumers share this module:
+//! JSONL. Four consumers share this module:
 //!
 //! 1. `src/hooks/validate_skill.rs` — Layer 1 of the user-only skill
 //!    enforcement chain. Calls
@@ -21,13 +21,23 @@
 //!    block. The shared-config block's BLOCKED message itself
 //!    instructs the model to call `AskUserQuestion` to confirm — the
 //!    carve-out lets the prompt fire instead of deadlocking.
+//! 4. `src/hooks/validate_pretool.rs` — Layer 9 bootstrap-skill
+//!    carve-out for the integration-branch commit gate. Calls
+//!    `any_skill_in_set_since_user(transcript_path, home, &[
+//!    "flow:flow-start", "flow:flow-prime"])` to recognize the
+//!    bootstrap commit windows where `/flow:flow-commit` runs while
+//!    cwd is on the integration branch — flow-start Step 2 (deps
+//!    repair) and flow-prime Step 6 (setup writes). The sanctioned
+//!    parent must appear in the assistant Skill chain since the most
+//!    recent real user turn for the carve-out to fire.
 //!
-//! Both helpers are read-only over a JSONL transcript file. They
+//! All helpers are read-only over a JSONL transcript file. They
 //! never mutate state, never spawn subprocesses, and fail-open
-//! (return `false`) on any I/O, parse, or validation error. The
-//! `false` return surfaces as "no match" at every consumer, which
-//! routes through to the consumer's safe default (block for Layer
-//! 1, fall through to existing autonomous block for Layer 2).
+//! (return `false` / `None`) on any I/O, parse, or validation error.
+//! The fail-open return surfaces as "no match" at every consumer,
+//! which routes through to the consumer's safe default (block for
+//! Layer 1, fall through to existing autonomous block for Layer 2,
+//! block for Layer 9 commit-gate carve-outs).
 //!
 //! ## Validation contract
 //!
@@ -335,6 +345,89 @@ pub fn most_recent_skill_in_user_only_set(path: &Path, home: &Path) -> bool {
             .iter()
             .map(|s| normalize_gate_input(s))
             .any(|s| USER_ONLY_SKILLS.contains(&s.as_str()));
+    }
+    false
+}
+
+/// Return `true` when any assistant Skill `tool_use` whose
+/// `input.skill` (after `normalize_gate_input`) is a member of
+/// `sanctioned` appears in the transcript at `path` between the file
+/// tail and the most recent user-role turn. Returns `false` when no
+/// such Skill call appears, when the most recent turn is the user
+/// boundary itself, when `sanctioned` is empty, or on any read /
+/// parse / validation failure (fail-open).
+///
+/// The walker is the load-bearing predicate for the Layer 9 bootstrap
+/// carve-out in `validate_pretool::bootstrap_carveout_applies`. Layer
+/// 9's integration-branch context has no per-branch state file, so
+/// the carve-out cannot use the `_continue_pending=commit` marker
+/// that the active-flow context uses. This walker substitutes for
+/// the marker: when the persisted transcript shows a sanctioned
+/// bootstrap parent (`flow:flow-start`, `flow:flow-prime`) AND a
+/// `flow:flow-commit` Skill since the most recent real user turn,
+/// the surrounding skill choreography is verified by replay against
+/// the transcript itself.
+///
+/// Walking backward from the file's tail, the walker stops at the
+/// first user turn (real or synthetic discrimination: real user
+/// turns have string `content`; synthetic turns carry a content
+/// array of tool_result blocks and are skipped). Older turns beyond
+/// the real-user boundary are invisible. Multi-tool assistant turns
+/// are scanned in full via `extract_skill_invocations`, so a
+/// sanctioned Skill appearing alongside other tool calls in the same
+/// turn still satisfies the check.
+///
+/// `home` is passed in for the same testability reason as
+/// `last_user_message_invokes_skill`.
+pub fn any_skill_in_set_since_user(path: &Path, home: &Path, sanctioned: &[&str]) -> bool {
+    if !is_safe_transcript_path(path, home) {
+        return false;
+    }
+    if sanctioned.is_empty() {
+        return false;
+    }
+    let lines = match read_capped(path, TRANSCRIPT_BYTE_CAP) {
+        Some(s) => s,
+        None => return false,
+    };
+    for line in lines.lines().rev() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let turn: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let turn_type =
+            normalize_gate_input(turn.get("type").and_then(|v| v.as_str()).unwrap_or(""));
+        if turn_type == "user" {
+            // Stop only at a real user-typed message. Synthetic
+            // user turns (tool_result wrappers with array
+            // `message.content`, hook-injected feedback with
+            // `isMeta:true` and string content) are skipped per
+            // `.claude/rules/transcript-shape.md` — without this
+            // filter, a Stop-hook refusal turn between the user's
+            // real prompt and the bootstrap-parent Skill would
+            // close the carve-out window prematurely.
+            if !is_real_user_turn(&turn) {
+                continue;
+            }
+            return false;
+        }
+        if turn_type != "assistant" {
+            continue;
+        }
+        let skills = extract_skill_invocations(&turn);
+        if skills.is_empty() {
+            continue;
+        }
+        for skill in &skills {
+            let norm = normalize_gate_input(skill);
+            if sanctioned.iter().any(|s| s == &norm.as_str()) {
+                return true;
+            }
+        }
     }
     false
 }

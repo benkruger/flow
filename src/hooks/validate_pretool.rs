@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 use serde_json::Value;
 
-use super::transcript_walker::most_recent_skill_since_user;
+use super::transcript_walker::{any_skill_in_set_since_user, most_recent_skill_since_user};
 use super::{
     build_permission_regexes, detect_branch_from_path, find_settings_and_root_from, is_flow_active,
     read_hook_input, resolve_main_root,
@@ -863,13 +863,27 @@ fn check_commit_during_flow(
         return None;
     }
     if let Some(msg) = match_branch_at(cwd) {
-        return Some(msg);
+        if !bootstrap_carveout_applies(command, transcript_path, home) {
+            return Some(msg);
+        }
     }
     if let Some(msg) = check_active_flow_at(command, cwd, transcript_path, home) {
         return Some(msg);
     }
     if let Some(p) = extract_dash_c_path(command) {
         let target = Path::new(p);
+        // The bootstrap-skill carve-out is intentionally NOT applied
+        // to the `-C` target path. The transcript walker is session-
+        // scoped (not per-repo), so a bootstrap chain accrued in
+        // session activity for repo A could otherwise authorize a
+        // commit redirected via `-C <repo-B>` to repo B's
+        // integration branch. The legitimate bootstrap windows
+        // (flow-start Step 2, flow-prime Step 6) always run with
+        // cwd ON the integration branch — neither uses `-C` to
+        // shift git's effective cwd — so blocking the carve-out at
+        // this callsite has no production consumer. See
+        // `.claude/rules/concurrency-model.md` "Bootstrap-skill
+        // carve-out" for the cwd-only design.
         if let Some(msg) = match_branch_at(target) {
             return Some(msg);
         }
@@ -878,6 +892,66 @@ fn check_commit_during_flow(
         }
     }
     None
+}
+
+/// The closed set of sanctioned bootstrap-parent Skill names. Each
+/// names a /flow:flow-commit window where cwd is the integration
+/// branch by design: `flow:flow-start` Step 2 invokes
+/// `/flow:flow-commit` to land a `ci-fixer` dependency-repair commit
+/// before the user's feature work begins; `flow:flow-prime` Step 6
+/// invokes `/flow:flow-commit` to land permission and stub-script
+/// setup that must reach `origin/main` before any flow starts.
+/// Without a carve-out, Layer 9's integration-branch context blocks
+/// every such commit and both skills are unusable.
+///
+/// Extending this set is a Plan-phase decision: each new entry must
+/// document the integration-branch commit window it sanctions and
+/// the reason the bootstrap path cannot work on a feature branch.
+/// See `.claude/rules/concurrency-model.md` "Editing Source on the
+/// Base Branch".
+const BOOTSTRAP_SKILLS: &[&str] = &["flow:flow-start", "flow:flow-prime"];
+
+/// Three AND-combined conditions on the bootstrap-skill carve-out
+/// for Layer 9's integration-branch context. The carve-out fires
+/// (suppresses the integration-branch block) iff:
+///
+/// 1. `is_finalize_commit_invocation(command)` — the command shape
+///    is `bin/flow ... finalize-commit`. Raw `git commit` is never
+///    carved out; `git -C ... commit` matches `is_commit_invocation`
+///    but not this finalize-commit-only predicate.
+/// 2. `most_recent_skill_since_user(path, home)` returns
+///    `Some("flow:flow-commit")` — the most recent assistant Skill
+///    since the most recent user turn is `flow:flow-commit`. The
+///    legitimate skill commit path is `/flow:flow-commit` →
+///    `bin/flow finalize-commit`; the walker proves the skill
+///    actually ran.
+/// 3. `any_skill_in_set_since_user(path, home, BOOTSTRAP_SKILLS)`
+///    returns true — a sanctioned bootstrap parent
+///    (`flow:flow-start` or `flow:flow-prime`) appears in the
+///    same post-user-turn window. The active-flow carve-out's
+///    `_continue_pending=commit` state marker is unavailable on
+///    the integration branch, so this second walker substitutes
+///    for the marker — the choreography is verified entirely
+///    from the transcript.
+///
+/// Trust contract substitution: where the active-flow carve-out
+/// uses (shape + marker + walker), the bootstrap carve-out uses
+/// (shape + walker + walker). Both walker conditions are
+/// load-bearing because the integration-branch context lacks the
+/// belt-and-suspenders state-file marker.
+///
+/// `transcript_path` is unwrapped once at function entry — a
+/// missing path fails the carve-out before either walker runs, so
+/// both walkers see a known-Some `&Path`.
+fn bootstrap_carveout_applies(command: &str, transcript_path: Option<&Path>, home: &Path) -> bool {
+    if !is_finalize_commit_invocation(command) {
+        return false;
+    }
+    let Some(path) = transcript_path else {
+        return false;
+    };
+    most_recent_skill_since_user(path, home).as_deref() == Some("flow:flow-commit")
+        && any_skill_in_set_since_user(path, home, BOOTSTRAP_SKILLS)
 }
 
 /// Resolve the current branch and integration branch from the given
