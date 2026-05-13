@@ -2411,3 +2411,103 @@ fn test_rules_no_integration_branch_not_carved_out_claim() {
         );
     }
 }
+
+// --- Stop hook predicate stack rewrite (PR #1543) ---
+//
+// `src/hooks/stop_continue.rs` previously composed six predicates —
+// `check_discussion_mode`, `check_first_stop`, `check_halt_pending`,
+// `check_autonomous_in_progress`, `check_prose_pause_at_task_entry`,
+// and three private helpers (`format_conditional_continue_reason`,
+// `body_has_question_outside_code`, `last_assistant_text_and_tool_use`)
+// plus two block-reason constants (`DISCUSSION_BLOCK_REASON`,
+// `HALT_PAUSE_BLOCK_REASON`). The unified `check_autonomous_stop`
+// gate consolidates these into a single three-rule predicate; the
+// transcript-walker continue-token grammar (`user_message_contains_continue_token`,
+// `find_token_with_boundary`, `find_two_word_token`) is replaced by
+// the `/flow:flow-continue` slash-command exit path. A merge conflict
+// or accidental edit that re-introduces any of these names would
+// resurrect the pre-rewrite stack alongside the new predicate,
+// producing contradictory behavior.
+
+/// Deleted symbol names from the Stop hook rewrite (PR #1543).
+/// Each must not appear in its previous home module.
+const STOP_CONTINUE_REMOVED_NAMES: &[&str] = &[
+    "check_discussion_mode",
+    "check_first_stop",
+    "check_halt_pending",
+    "check_autonomous_in_progress",
+    "check_prose_pause_at_task_entry",
+    "format_conditional_continue_reason",
+    "body_has_question_outside_code",
+    "last_assistant_text_and_tool_use",
+    "DISCUSSION_BLOCK_REASON",
+    "HALT_PAUSE_BLOCK_REASON",
+];
+
+const TRANSCRIPT_WALKER_REMOVED_NAMES: &[&str] = &[
+    "user_message_contains_continue_token",
+    "find_token_with_boundary",
+    "find_two_word_token",
+];
+
+/// Tombstone: removed in PR #1543. The six Stop-hook predicates
+/// and their helper functions and constants listed in
+/// `STOP_CONTINUE_REMOVED_NAMES` were consolidated into the
+/// unified `check_autonomous_stop` predicate. None of the deleted
+/// names may appear in `src/hooks/stop_continue.rs`.
+///
+/// Stability argument: each entry is a Rust identifier. Rust
+/// identifiers cannot be assembled via `concat!` or `format!` at
+/// definition sites — a function or constant declaration requires
+/// the literal name in source. A merge-conflict resurrection
+/// would land the exact bytes, which this scanner catches.
+#[test]
+fn test_stop_continue_no_removed_predicate_names() {
+    let root = common::repo_root();
+    let path = root.join("src").join("hooks").join("stop_continue.rs");
+    let content = fs::read_to_string(&path).expect("stop_continue.rs must exist");
+    let mut violations: Vec<&str> = Vec::new();
+    for name in STOP_CONTINUE_REMOVED_NAMES {
+        if content.contains(name) {
+            violations.push(name);
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "src/hooks/stop_continue.rs must not contain the deleted \
+         predicates/helpers/constants: {:?}. The Stop hook rewrite \
+         (PR #1543) replaced the pre-rewrite stack with the \
+         unified `check_autonomous_stop` predicate.",
+        violations
+    );
+}
+
+/// Tombstone: removed in PR #1543. The continue-token grammar
+/// helpers in `src/hooks/transcript_walker.rs` were removed when
+/// `/flow:flow-continue` replaced the prose continue-token exit
+/// path. None of the deleted names may appear in
+/// `src/hooks/transcript_walker.rs`.
+///
+/// Stability argument: same as the Stop-hook tombstone above —
+/// Rust identifier definitions require the literal name in source
+/// and cannot be assembled via `concat!` or `format!`.
+#[test]
+fn test_transcript_walker_no_removed_continue_token_helpers() {
+    let root = common::repo_root();
+    let path = root.join("src").join("hooks").join("transcript_walker.rs");
+    let content = fs::read_to_string(&path).expect("transcript_walker.rs must exist");
+    let mut violations: Vec<&str> = Vec::new();
+    for name in TRANSCRIPT_WALKER_REMOVED_NAMES {
+        if content.contains(name) {
+            violations.push(name);
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "src/hooks/transcript_walker.rs must not contain the deleted \
+         continue-token helpers: {:?}. PR #1543 replaced the prose \
+         continue-token exit path with the `/flow:flow-continue` \
+         slash command, making these helpers dead code.",
+        violations
+    );
+}
