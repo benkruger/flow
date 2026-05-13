@@ -232,7 +232,7 @@ Every bash block in every skill must run without triggering a permission prompt.
 
 Layer 9 mechanically blocks direct commit invocations (`git ... commit`, `bin/flow ... finalize-commit`) when the effective cwd resolves to the integration branch OR to a feature branch with an active state file. Each context carries its own carve-out:
 
-- **Active-flow context** — `bin/flow ... finalize-commit` (only that shape, never `git commit`) passes when the state file has `_continue_pending == "commit"` AND the persisted transcript shows the most recent assistant Skill is `flow:flow-commit`.
+- **Active-flow context** — `bin/flow ... finalize-commit` (only that shape, never `git commit`) passes when the state file has `_continue_pending == "commit"` AND the persisted transcript shows the most recent assistant Skill is one of `flow:flow-commit` or `flow:flow-release` (the shared two-arm `transcript_shows_commit_window_skill` predicate; in practice every active-flow commit names `flow:flow-commit` because the release path runs on the integration trunk, not under an active flow).
 - **Integration-branch context** — `bin/flow ... finalize-commit` (only that shape) passes when the persisted transcript shows BOTH the most recent assistant Skill is one of `flow:flow-commit` (delegated commit path) or `flow:flow-release` (direct commit path) AND a sanctioned bootstrap parent (`flow:flow-start`, `flow:flow-prime`, or `flow:flow-release`) in the post-user-turn chain. The integration-branch context has no per-branch state file, so the second walker condition substitutes for the marker.
 
 Raw `git commit` is never carved out in either context.
