@@ -116,11 +116,12 @@ use serde_json::Value;
 
 use crate::session_metrics::is_safe_transcript_path;
 
-/// The four FLOW skills the model must never invoke. Each requires
+/// The five FLOW skills the model must never invoke. Each requires
 /// explicit user initiative — the user types the slash command
 /// directly — because the action is destructive (`flow-abort`,
-/// `flow-reset`), resource-shipping (`flow-release`), or
-/// environment-mutating (`flow-prime`).
+/// `flow-reset`), resource-shipping (`flow-release`),
+/// environment-mutating (`flow-prime`), or autonomy-resuming
+/// (`flow-continue`).
 ///
 /// Re-exported by `validate_skill` and `validate_ask_user` so a
 /// single authoritative list governs both Layer 1 (block model
@@ -129,21 +130,23 @@ use crate::session_metrics::is_safe_transcript_path;
 /// caller input through `normalize_gate_input` before checking
 /// membership.
 ///
-/// Namespacing asymmetry: `flow-abort`, `flow-reset`, and
-/// `flow-prime` are plugin-marketplace skills at
-/// `skills/<name>/SKILL.md`, so Claude Code emits the namespaced
-/// `flow:<name>` form when the user types `/flow:<name>`.
-/// `flow-release` is a project-local maintainer skill at
-/// `.claude/skills/flow-release/`, so Claude Code emits the bare
-/// name `flow-release` when the user types `/flow-release`. The
-/// constant reflects the literal `input.skill` values the
-/// `validate-skill` PreToolUse hook observes; mixing the two shapes
-/// is intentional and load-bearing.
+/// Namespacing asymmetry: `flow-abort`, `flow-reset`,
+/// `flow-prime`, and `flow-continue` are plugin-marketplace skills
+/// at `skills/<name>/SKILL.md`, so Claude Code emits the
+/// namespaced `flow:<name>` form when the user types
+/// `/flow:<name>`. `flow-release` is a project-local maintainer
+/// skill at `.claude/skills/flow-release/`, so Claude Code emits
+/// the bare name `flow-release` when the user types
+/// `/flow-release`. The constant reflects the literal
+/// `input.skill` values the `validate-skill` PreToolUse hook
+/// observes; mixing the two shapes is intentional and load-
+/// bearing.
 pub const USER_ONLY_SKILLS: &[&str] = &[
     "flow:flow-abort",
     "flow:flow-reset",
     "flow-release",
     "flow:flow-prime",
+    "flow:flow-continue",
 ];
 
 /// Maximum bytes read from the transcript file (50 MB). Bounds I/O

@@ -198,7 +198,7 @@ fn most_recent_skill_in_user_only_set_stops_at_user_turn() {
 }
 
 #[test]
-fn user_only_skills_constant_lists_four_skills() {
+fn user_only_skills_constant_lists_five_skills() {
     let names: Vec<&str> = USER_ONLY_SKILLS.to_vec();
     assert!(names.contains(&"flow:flow-abort"));
     assert!(names.contains(&"flow:flow-reset"));
@@ -207,7 +207,23 @@ fn user_only_skills_constant_lists_four_skills() {
     // name (no `flow:` prefix) when the user types `/flow-release`.
     assert!(names.contains(&"flow-release"));
     assert!(names.contains(&"flow:flow-prime"));
-    assert_eq!(names.len(), 4);
+    assert!(names.contains(&"flow:flow-continue"));
+    assert_eq!(names.len(), 5);
+}
+
+#[test]
+fn user_only_skills_contains_flow_continue() {
+    // `flow:flow-continue` joins USER_ONLY_SKILLS so the
+    // `validate-skill` Layer 1 gate rejects model invocations of
+    // `/flow:flow-continue` — only a user typing the slash command
+    // can clear `_halt_pending`. The `bin/flow clear-halt`
+    // subcommand independently self-gates on the same skill name
+    // via `last_user_message_invokes_skill`.
+    let names: Vec<&str> = USER_ONLY_SKILLS.to_vec();
+    assert!(
+        names.contains(&"flow:flow-continue"),
+        "USER_ONLY_SKILLS must include flow:flow-continue so validate-skill blocks model invocation"
+    );
 }
 
 #[test]
