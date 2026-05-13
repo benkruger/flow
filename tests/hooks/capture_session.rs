@@ -449,23 +449,26 @@ fn capture_session_replaces_existing_symlink_at_capture_path() {
     assert_eq!(parsed["session_id"], "abc-123");
 }
 
-/// Regression for issue #1525: SessionStart hooks receive a
-/// `transcript_path` from Claude Code BEFORE the JSONL file is
-/// created on disk. The capture must persist the path so the
-/// flow-start round-trip can seed `transcript_path` into the new
-/// state file; downstream `record-agent-return` then has a real
-/// path to verify the agent's tool_use/tool_result pair against.
-/// Without this, `transcript_path` stays null at state init and
-/// `record-agent-return` reports `transcript_path_invalid` (which
-/// the failure-classifier maps to `phase_marker_not_found`,
-/// silently skipping every Review and Learn agent).
+/// Asserts that `capture_session::run` persists `transcript_path`
+/// verbatim when the JSONL file the path references does not yet
+/// exist on disk. SessionStart hooks receive `transcript_path` from
+/// Claude Code before the JSONL is created; the structural
+/// validator accepts shape-valid paths regardless of file existence
+/// so the round-trip through `seed_session_id_from_capture` seeds a
+/// real path into the new state file. Downstream
+/// `record-agent-return` then has a transcript_path to verify agent
+/// invocations against — if `transcript_path` were null at state
+/// init, `record-agent-return` would report
+/// `transcript_path_invalid`, the failure-classifier would map that
+/// to `phase_marker_not_found`, and every Review and Learn agent
+/// invocation would silently skip phase-finalize accounting.
 ///
-/// Replaces the prior `capture_session_stores_null_when_transcript_file_does_not_exist_yet`
-/// test, which asserted the inverse (null storage) — that
-/// assertion locked in the bug this fix removes. The Plan-phase
-/// Risk #3 accepts the trade-off: read-time hooks still canonicalize
-/// before opening, so storing a symlink-shaped path string here is
-/// inert until a consumer opens it (and every consumer re-validates).
+/// Symlink-escape stays closed at every read-time consumer: the
+/// transcript walkers in `src/hooks/transcript_walker.rs` and the
+/// `record_agent_return::resolve_transcript_path` callsite
+/// re-validate via the canonical wrapper before any `File::open`.
+/// Storing a shape-valid path string in the capture file is inert
+/// until one of those read-time consumers opens it.
 #[test]
 fn run_persists_transcript_path_when_jsonl_does_not_exist() {
     let dir = tempfile::tempdir().unwrap();
