@@ -74,6 +74,7 @@ Plan handoff happens at flow-start: `bin/flow plan-from-issue --issue <N> --bran
 - `bin/{format,lint,build,test}` — FLOW's own dogfood scripts
 - `assets/bin-stubs/` — self-documenting bash stubs that prime copies into target projects when absent
 - `.claude-plugin/marketplace.json` — marketplace registry (version must match plugin.json)
+- `hello.sh` — smoke-test artifact exercising the full FLOW lifecycle on a low-risk file; no Rust code, no coverage impact
 
 ## Development Environment
 
