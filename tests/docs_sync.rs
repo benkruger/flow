@@ -75,6 +75,37 @@ fn assert_covers_key_features(content: &str, source_label: &str) {
     }
 }
 
+// --- Install-flow docs sync ---
+
+/// README.md and docs/index.html must both reference the install-flow
+/// prerequisites and the bin/setup invocation. Guards against the two
+/// docs drifting (one updated, the other not) and against accidental
+/// removal of a prereq line or the setup-script reference.
+#[test]
+fn install_docs_contain_setup_step() {
+    let required = [
+        "brew install rust",
+        "xcode-select --install",
+        "bin/setup",
+        ".claude/plugins/cache",
+    ];
+    let sources = [
+        ("README.md", common::repo_root().join("README.md")),
+        ("docs/index.html", common::docs_dir().join("index.html")),
+    ];
+    for (label, path) in &sources {
+        let content = fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {}", label, e));
+        for snippet in required {
+            assert!(
+                content.contains(snippet),
+                "{} must contain '{}' (install-flow docs sync)",
+                label,
+                snippet
+            );
+        }
+    }
+}
+
 // --- Skill docs existence (bidirectional) ---
 
 /// Every skills/<name>/ must have a docs/skills/<name>.md.
