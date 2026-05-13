@@ -1,6 +1,7 @@
 ---
 name: adversarial
 description: "Adversarial test generation. Writes tests designed to break the implementation, runs them, and reports failures as findings."
+# Opus: Constructs failing-test inputs from execution-path reasoning — reasoning depth is the job.
 model: opus
 tools: Read, Glob, Grep, Write, Bash
 maxTurns: 100

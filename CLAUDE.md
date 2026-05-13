@@ -152,7 +152,7 @@ The base branch's `target/` is a long-lived build surface across many source gen
 
 Ten custom plugin sub-agents in `agents/*.md`, split across two tiers. Agent frontmatter must only use supported keys (`name`, `description`, `model`, `effort`, `maxTurns`, `tools`, `disallowedTools`, `skills`, `memory`, `background`, `isolation`) — `test_agent_frontmatter_only_supported_keys` enforces this. The global `PreToolUse` hook (`bin/flow hook validate-pretool`) enforces Bash and Agent tool restrictions across all agents. See `.claude/rules/cognitive-isolation.md`.
 
-**Review tier (7):** ci-fixer (opus), reviewer (sonnet), pre-mortem (sonnet), adversarial (opus), learn-analyst (haiku), documentation (haiku), issue-triage (sonnet). Tiered by task complexity. Invoked by Review and Learn phase skills.
+**Review tier (7):** ci-fixer (opus), reviewer (opus), pre-mortem (opus), adversarial (opus), learn-analyst (haiku), documentation (sonnet), issue-triage (sonnet). Tiered by task complexity. Invoked by Review and Learn phase skills.
 
 **Planning tier (3):** pm (haiku), tech-lead (sonnet), cto (opus). Designed for invocation by a future planning skill during design discussions. Scope authority escalates PM → Tech Lead → CTO via structured `## SCOPE REFUSAL` outputs; CTO is the escalation terminus and has no refusal block. The agents land first so the consuming skill can be authored against a stable contract.
 

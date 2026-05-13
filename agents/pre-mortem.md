@@ -1,7 +1,8 @@
 ---
 name: pre-mortem
 description: "Pre-mortem incident analysis. Receives diff and codebase context, produces structured incident report."
-model: sonnet
+# Opus: Trajectory reasoning for incident analysis on every Review — weak inference produces shallow incident reports.
+model: opus
 tools: Read, Glob, Grep, Bash
 maxTurns: 40
 ---

@@ -1,6 +1,7 @@
 ---
 name: issue-triage
 description: "PM-lens issue triage. Receives an issue number, fetches via gh, reads referenced code (or searches for behavior when unreferenced), checks for already-shipped work, and produces a verdict in {close, decompose} with confidence and a flip-condition."
+# Sonnet: Reads code to judge close/decompose verdicts — bridges PM language and code reality.
 model: sonnet
 tools: Read, Glob, Grep, Bash
 disallowedTools: Edit, Write

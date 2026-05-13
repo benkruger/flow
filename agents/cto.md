@@ -1,6 +1,7 @@
 ---
 name: cto
 description: "CTO-lens planning for novel, around-the-corner, outside-the-box work. Escalation terminus — no scope refusal."
+# Opus: Escalation terminus with no refusal — handles novel architecture, the hardest planning job.
 model: opus
 tools: Read, Glob, Grep, Bash
 disallowedTools: Edit, Write
