@@ -1356,3 +1356,41 @@ fn analyze_milestone_empty_string_is_null_lib() {
     let result = analyze_issues(&[issue], &HashMap::new());
     assert!(result["issues"][0]["milestone"].is_null());
 }
+
+#[test]
+fn analyze_surfaces_assignees_logins_lib() {
+    let issue = json!({
+        "number": 1,
+        "title": "Has assignees",
+        "body": "",
+        "labels": [],
+        "createdAt": now_iso_lib(),
+        "url": "https://github.com/test/repo/issues/1",
+        "milestone": Value::Null,
+        "assignees": [
+            {"login": "alice"},
+            {"login": "bob"},
+        ],
+    });
+    let result = analyze_issues(&[issue], &HashMap::new());
+    let assignees = result["issues"][0]["assignees"].as_array().unwrap();
+    let logins: Vec<&str> = assignees.iter().filter_map(|v| v.as_str()).collect();
+    assert_eq!(logins, vec!["alice", "bob"]);
+}
+
+#[test]
+fn analyze_empty_assignees_yields_empty_array_lib() {
+    let issue = json!({
+        "number": 1,
+        "title": "No assignees",
+        "body": "",
+        "labels": [],
+        "createdAt": now_iso_lib(),
+        "url": "https://github.com/test/repo/issues/1",
+        "milestone": Value::Null,
+        "assignees": [],
+    });
+    let result = analyze_issues(&[issue], &HashMap::new());
+    let assignees = result["issues"][0]["assignees"].as_array().unwrap();
+    assert!(assignees.is_empty());
+}

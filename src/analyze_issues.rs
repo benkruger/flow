@@ -425,6 +425,16 @@ pub fn analyze_issues(issues: &[Value], blocker_map: &HashMap<i64, Vec<i64>>) ->
             .map(|s| Value::String(s.to_string()))
             .unwrap_or(Value::Null);
 
+        let assignees: Vec<String> = issue
+            .get("assignees")
+            .and_then(|a| a.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|a| a.get("login").and_then(|l| l.as_str()).map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
         available.push(serde_json::json!({
             "number": number,
             "title": issue["title"],
@@ -441,6 +451,7 @@ pub fn analyze_issues(issues: &[Value], blocker_map: &HashMap<i64, Vec<i64>>) ->
             "file_paths": file_paths,
             "brief": truncate_body(body, 200),
             "milestone": milestone,
+            "assignees": assignees,
         }));
     }
 
