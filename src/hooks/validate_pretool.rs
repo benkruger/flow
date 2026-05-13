@@ -895,21 +895,32 @@ fn check_commit_during_flow(
 }
 
 /// The closed set of sanctioned bootstrap-parent Skill names. Each
-/// names a /flow:flow-commit window where cwd is the integration
-/// branch by design: `flow:flow-start` Step 2 invokes
-/// `/flow:flow-commit` to land a `ci-fixer` dependency-repair commit
-/// before the user's feature work begins; `flow:flow-prime` Step 6
-/// invokes `/flow:flow-commit` to land permission and stub-script
-/// setup that must reach `origin/main` before any flow starts.
+/// names a commit window where cwd is the integration branch by
+/// design:
+///
+/// - `flow:flow-start` Step 2 invokes `/flow:flow-commit` to land a
+///   `ci-fixer` dependency-repair commit before the user's feature
+///   work begins.
+/// - `flow:flow-prime` Step 6 invokes `/flow:flow-commit` to land
+///   permission and stub-script setup that must reach `origin/<base>`
+///   before any flow starts.
+/// - `flow:flow-release` publishes a version-bump commit on the
+///   integration trunk; there is no feature branch where a release
+///   tag could live, and the skill calls `bin/flow finalize-commit`
+///   directly rather than delegating to `/flow:flow-commit`. It is
+///   both the initiating skill AND its own most-recent-skill walker
+///   match — the per-skill trust contract is described on
+///   `transcript_shows_commit_window_skill`.
+///
 /// Without a carve-out, Layer 9's integration-branch context blocks
-/// every such commit and both skills are unusable.
+/// every such commit and all three skills are unusable.
 ///
 /// Extending this set is a Plan-phase decision: each new entry must
 /// document the integration-branch commit window it sanctions and
 /// the reason the bootstrap path cannot work on a feature branch.
 /// See `.claude/rules/concurrency-model.md` "Editing Source on the
 /// Base Branch".
-const BOOTSTRAP_SKILLS: &[&str] = &["flow:flow-start", "flow:flow-prime"];
+const BOOTSTRAP_SKILLS: &[&str] = &["flow:flow-start", "flow:flow-prime", "flow:flow-release"];
 
 /// Three AND-combined conditions on the bootstrap-skill carve-out
 /// for Layer 9's integration-branch context. The carve-out fires
@@ -919,20 +930,22 @@ const BOOTSTRAP_SKILLS: &[&str] = &["flow:flow-start", "flow:flow-prime"];
 ///    is `bin/flow ... finalize-commit`. Raw `git commit` is never
 ///    carved out; `git -C ... commit` matches `is_commit_invocation`
 ///    but not this finalize-commit-only predicate.
-/// 2. `most_recent_skill_since_user(path, home)` returns
-///    `Some("flow:flow-commit")` — the most recent assistant Skill
-///    since the most recent user turn is `flow:flow-commit`. The
-///    legitimate skill commit path is `/flow:flow-commit` →
-///    `bin/flow finalize-commit`; the walker proves the skill
-///    actually ran.
+/// 2. `transcript_shows_commit_window_skill(path, home)` returns
+///    true — the most recent assistant Skill since the most recent
+///    user turn names one of the two sanctioned commit-window
+///    skills, `flow:flow-commit` (the delegated commit path used by
+///    `flow:flow-start` and `flow:flow-prime`) or `flow:flow-release`
+///    (the direct commit path that calls `bin/flow finalize-commit`
+///    without delegating to `/flow:flow-commit`). The per-skill
+///    trust contract is described on the predicate.
 /// 3. `any_skill_in_set_since_user(path, home, BOOTSTRAP_SKILLS)`
 ///    returns true — a sanctioned bootstrap parent
-///    (`flow:flow-start` or `flow:flow-prime`) appears in the
-///    same post-user-turn window. The active-flow carve-out's
-///    `_continue_pending=commit` state marker is unavailable on
-///    the integration branch, so this second walker substitutes
-///    for the marker — the choreography is verified entirely
-///    from the transcript.
+///    (`flow:flow-start`, `flow:flow-prime`, or `flow:flow-release`)
+///    appears in the same post-user-turn window. The active-flow
+///    carve-out's `_continue_pending=commit` state marker is
+///    unavailable on the integration branch, so this second walker
+///    substitutes for the marker — the choreography is verified
+///    entirely from the transcript.
 ///
 /// Trust contract substitution: where the active-flow carve-out
 /// uses (shape + marker + walker), the bootstrap carve-out uses
@@ -950,7 +963,7 @@ fn bootstrap_carveout_applies(command: &str, transcript_path: Option<&Path>, hom
     let Some(path) = transcript_path else {
         return false;
     };
-    most_recent_skill_since_user(path, home).as_deref() == Some("flow:flow-commit")
+    transcript_shows_commit_window_skill(Some(path), home)
         && any_skill_in_set_since_user(path, home, BOOTSTRAP_SKILLS)
 }
 
@@ -1026,34 +1039,57 @@ fn check_active_flow_at(
     }
     if is_finalize_commit_invocation(command)
         && state_continue_pending_is_commit(&branch, &main_root)
-        && transcript_shows_flow_commit(transcript_path, home)
+        && transcript_shows_commit_window_skill(transcript_path, home)
     {
         return None;
     }
     Some(commit_block_message_active_flow(&branch))
 }
 
-/// Walker check for the skill-commit carve-out's third AND-combined
-/// condition. Returns true iff the most recent assistant Skill
-/// tool_use call since the most recent user turn in the persisted
-/// transcript at `transcript_path` names `flow:flow-commit`. Returns
-/// false when transcript_path is None, when the walker cannot read
-/// the file, or when the most recent Skill call is something other
-/// than `flow:flow-commit`.
+/// Walker check for the third AND-combined condition shared by Layer
+/// 9's two carve-outs (active-flow and bootstrap-skill). Returns true
+/// iff the most recent assistant Skill tool_use call since the most
+/// recent user turn in the persisted transcript at `transcript_path`
+/// names one of the two sanctioned commit-window skills:
+///
+/// - `flow:flow-commit` — the delegated commit path used by every
+///   phase skill and by `flow:flow-start` / `flow:flow-prime` during
+///   bootstrap. The trust is the standard
+///   `/flow:flow-commit` choreography: diff review, commit-message
+///   review, user approval.
+/// - `flow:flow-release` — the direct commit path used by
+///   `flow:flow-release`. The release skill calls
+///   `bin/flow finalize-commit` directly rather than delegating to
+///   `/flow:flow-commit`; its trust comes from its own internal
+///   review window: Step 3 displays `git log <last_tag>..HEAD`, Step
+///   4 drafts release notes against that list, and Step 7 writes
+///   an explicit "Release v<new_version>" commit-message file
+///   before `finalize-commit` reads it.
+///
+/// Returns false when `transcript_path` is None, when the walker
+/// cannot read the file, or when the most recent Skill call is
+/// neither of the two sanctioned skills.
 ///
 /// The walker is the load-bearing predicate that proves the
-/// surrounding skill choreography (diff review, commit-message
-/// review) actually ran. The `_continue_pending` marker on its own
-/// is belt-and-suspenders for a fresh-session resume window; the
-/// walker closes the bypass-shortcut surface where a model could
-/// write the marker directly and invoke `bin/flow finalize-commit`
-/// without going through `/flow:flow-commit`. See
+/// surrounding skill choreography actually ran. For the active-flow
+/// carve-out, the `_continue_pending=commit` marker on its own is
+/// belt-and-suspenders for a fresh-session resume window; the walker
+/// closes the bypass-shortcut surface where a model could write the
+/// marker directly and invoke `bin/flow finalize-commit` without
+/// going through `/flow:flow-commit`. For the bootstrap carve-out,
+/// there is no analogous marker — both walker checks
+/// (`transcript_shows_commit_window_skill` here and
+/// `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` in
+/// `bootstrap_carveout_applies`) are load-bearing. See
 /// `.claude/rules/no-escape-hatches.md` Layer C for the design.
-fn transcript_shows_flow_commit(transcript_path: Option<&Path>, home: &Path) -> bool {
+fn transcript_shows_commit_window_skill(transcript_path: Option<&Path>, home: &Path) -> bool {
     let Some(path) = transcript_path else {
         return false;
     };
-    most_recent_skill_since_user(path, home).as_deref() == Some("flow:flow-commit")
+    matches!(
+        most_recent_skill_since_user(path, home).as_deref(),
+        Some("flow:flow-commit") | Some("flow:flow-release")
+    )
 }
 
 /// Recognize a `bin/flow ... finalize-commit` invocation specifically.

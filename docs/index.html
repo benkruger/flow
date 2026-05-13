@@ -1147,17 +1147,23 @@
       <div class="meta-right">11 · install</div>
     </div>
     <div class="window-body">
-      <h2>Three steps.<br/><span class="amber">One plugin.</span></h2>
+      <h2>Four steps.<br/><span class="amber">One plugin.</span></h2>
       <p>Five phase skills plus the full planning and health catalog, state file infrastructure, session hooks, and reference documentation — one plugin. Marketplace-distributed; updates ship automatically.</p>
 
       <div class="step-label">step 01 — install in claude code</div>
       <div class="install-block"><span class="prompt">$ </span>/plugin marketplace add benkruger/flow
 <span class="prompt">$ </span>/plugin install flow@flow-marketplace</div>
 
-      <div class="step-label">step 02 — initialize in your project</div>
+      <div class="step-label">step 02 — install prereqs and build the binary (one-time, from your terminal)</div>
+      <p>The FLOW binary is built from source on first use. Install Rust and a C compiler once per machine, then run the bundled setup script to compile the release binary. The commands below assume macOS; Linux and WSL support are not yet implemented.</p>
+      <div class="install-block"><span class="prompt">$ </span>brew install rust
+<span class="prompt">$ </span>xcode-select --install
+<span class="prompt">$ </span>bash ~/.claude/plugins/cache/benkruger/flow/flow/bin/setup</div>
+
+      <div class="step-label">step 03 — initialize in your project</div>
       <div class="install-block"><span class="prompt">$ </span>/flow-prime</div>
 
-      <div class="step-label">step 03 — start a feature</div>
+      <div class="step-label">step 04 — start a feature</div>
       <div class="install-block"><span class="prompt">$ </span>/flow-explore add a per-flow budget cap
 <span class="prompt">$ </span>/flow-plan #1234
 <span class="prompt">$ </span>/flow-start #1235</div>

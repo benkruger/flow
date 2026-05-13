@@ -179,8 +179,12 @@ ran.
 
 1. The command shape is `bin/flow ... finalize-commit`.
 2. The state file has `_continue_pending == "commit"`.
-3. `most_recent_skill_since_user(transcript_path, home)` returns
-   `Some("flow:flow-commit")`.
+3. `transcript_shows_commit_window_skill(transcript_path, home)`
+   returns true — the most recent assistant Skill since the most
+   recent user turn names a sanctioned commit-window skill
+   (`flow:flow-commit` or `flow:flow-release`). In practice every
+   active-flow commit names `flow:flow-commit`; the release path
+   runs on the integration trunk under the bootstrap carve-out.
 
 Only when all three hold does the active-flow gate allow the
 invocation through.
@@ -191,22 +195,33 @@ wired into the cwd's `match_branch_at` call site only (NOT
 the `-C` target — see "cwd-only scope" below):
 
 1. The command shape is `bin/flow ... finalize-commit`.
-2. `most_recent_skill_since_user(transcript_path, home)` returns
-   `Some("flow:flow-commit")`.
+2. `transcript_shows_commit_window_skill(transcript_path, home)`
+   returns true — the shared two-arm predicate accepts either
+   `flow:flow-commit` (delegated commit path used by
+   `/flow:flow-start` and `/flow:flow-prime`) or
+   `flow:flow-release` (direct commit path that calls
+   `bin/flow finalize-commit` without delegating to
+   `/flow:flow-commit`). See
+   `.claude/rules/concurrency-model.md` "Bootstrap-skill
+   carve-out (integration-branch context)" for the per-skill
+   trust contract.
 3. `any_skill_in_set_since_user(transcript_path, home,
    BOOTSTRAP_SKILLS)` returns true, where `BOOTSTRAP_SKILLS` is
-   the closed set `{"flow:flow-start", "flow:flow-prime"}`.
+   the closed set `{"flow:flow-start", "flow:flow-prime",
+   "flow:flow-release"}`.
 
-`BOOTSTRAP_SKILLS` is exactly these two skills because they are
-the only FLOW skills that invoke `/flow:flow-commit` while cwd
-is on the integration branch by design: `flow:flow-start` Step 2
-lands a `ci-fixer` dependency-repair commit before the user's
-feature work begins, and `flow:flow-prime` Step 6 lands
-permission and stub-script setup that must reach the integration
-branch before any flow can start. Every other FLOW skill commits
-from a feature-branch worktree, where the active-flow carve-out
-applies instead. Extending the set requires naming a new skill
-that legitimately needs to commit on the integration branch.
+`BOOTSTRAP_SKILLS` is exactly these three skills because they are
+the only FLOW skills that commit on the integration branch by
+design: `flow:flow-start` Step 2 lands a `ci-fixer`
+dependency-repair commit before the user's feature work begins;
+`flow:flow-prime` Step 6 lands permission and stub-script setup
+that must reach the integration branch before any flow can
+start; and `flow:flow-release` publishes a version-bump commit
+on the integration trunk (there is no feature branch where a
+release tag could live). Every other FLOW skill commits from a
+feature-branch worktree, where the active-flow carve-out applies
+instead. Extending the set requires naming a new skill that
+legitimately needs to commit on the integration branch.
 
 The integration-branch context has no per-branch state file at
 the integration trunk, so the bootstrap carve-out uses a SECOND
@@ -229,17 +244,19 @@ session-scoped (the persisted transcript records all session
 activity regardless of which repo the work targeted), so a
 bootstrap chain accrued in one repo's session could otherwise
 authorize a commit redirected via `git -C <other-repo>` to a
-different repo's integration branch. Both legitimate bootstrap
-windows run with cwd ON the integration branch by design —
-neither uses `-C` to shift git's effective cwd — so restricting
-the carve-out to the cwd callsite has no production consumer
-cost while preserving cross-repo safety.
+different repo's integration branch. All three legitimate
+bootstrap windows (flow-start Step 2, flow-prime Step 6, and
+flow-release's commit step) run with cwd ON the integration
+branch by design — none uses `-C` to shift git's effective cwd
+— so restricting the carve-out to the cwd callsite has no
+production consumer cost while preserving cross-repo safety.
 
 Window closure: the walker stops at the most recent real user
-turn going backward. A user message after `/flow:flow-prime`
-completes — followed by a direct `/flow:flow-commit` invocation —
-puts the sanctioned-parent Skill OUTSIDE the carve-out window,
-so `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` returns false
+turn going backward. A user message after `/flow:flow-prime` (or
+`/flow:flow-start` or `/flow:flow-release`) completes — followed
+by a direct `/flow:flow-commit` invocation — puts the
+sanctioned-parent Skill OUTSIDE the carve-out window, so
+`any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` returns false
 and the block fires. Historical authorization cannot carry
 forward.
 

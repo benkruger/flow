@@ -71,6 +71,7 @@ Plan handoff happens at flow-start: `bin/flow plan-from-issue --issue <N> --bran
 - `src/session_cost.rs` — per-session cost-file reads (`<project_root>/.claude/cost/<YYYY-MM>/<session_id>`) and monthly aggregation used by the TUI header.
 - `src/per_flow_capture.rs` — orchestrator. Reads `session_id` and `transcript_path` from state, validates them, and bundles `session_metrics::capture` with `session_cost::read_cost_file` into a final `WindowSnapshot`.
 - `bin/flow` — Rust dispatcher (auto-rebuilds when source is newer than binary)
+- `bin/setup` — one-time install-flow script bundled with the plugin; checks for `cargo` and `cc` prerequisites (printing `brew install rust` / `xcode-select --install` hints when missing), then runs `cargo build --release` to compile the FLOW binary. Users invoke it from a plain terminal after `/plugin install` and before `/flow-prime`. Covered by `tests/bin_setup.rs` per the project's `tests/bin_<stem>.rs` convention.
 - `bin/{format,lint,build,test}` — FLOW's own dogfood scripts
 - `assets/bin-stubs/` — self-documenting bash stubs that prime copies into target projects when absent
 - `.claude-plugin/marketplace.json` — marketplace registry (version must match plugin.json)
@@ -232,8 +233,8 @@ Every bash block in every skill must run without triggering a permission prompt.
 
 Layer 9 mechanically blocks direct commit invocations (`git ... commit`, `bin/flow ... finalize-commit`) when the effective cwd resolves to the integration branch OR to a feature branch with an active state file. Each context carries its own carve-out:
 
-- **Active-flow context** — `bin/flow ... finalize-commit` (only that shape, never `git commit`) passes when the state file has `_continue_pending == "commit"` AND the persisted transcript shows the most recent assistant Skill is `flow:flow-commit`.
-- **Integration-branch context** — `bin/flow ... finalize-commit` (only that shape) passes when the persisted transcript shows BOTH `flow:flow-commit` as the most recent assistant Skill AND a sanctioned bootstrap parent (`flow:flow-start` or `flow:flow-prime`) in the post-user-turn chain. The integration-branch context has no per-branch state file, so the second walker condition substitutes for the marker.
+- **Active-flow context** — `bin/flow ... finalize-commit` (only that shape, never `git commit`) passes when the state file has `_continue_pending == "commit"` AND the persisted transcript shows the most recent assistant Skill is one of `flow:flow-commit` or `flow:flow-release` (the shared two-arm `transcript_shows_commit_window_skill` predicate; in practice every active-flow commit names `flow:flow-commit` because the release path runs on the integration trunk, not under an active flow).
+- **Integration-branch context** — `bin/flow ... finalize-commit` (only that shape) passes when the persisted transcript shows BOTH the most recent assistant Skill is one of `flow:flow-commit` (delegated commit path) or `flow:flow-release` (direct commit path) AND a sanctioned bootstrap parent (`flow:flow-start`, `flow:flow-prime`, or `flow:flow-release`) in the post-user-turn chain. The integration-branch context has no per-branch state file, so the second walker condition substitutes for the marker.
 
 Raw `git commit` is never carved out in either context.
 
