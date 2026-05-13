@@ -75,17 +75,32 @@ on main" — edit on the base branch is permitted. The default
 protects against drive-by edits the model rationalizes on its own;
 explicit user direction is a different category.
 
-Bootstrap exception: `/flow:flow-start` Step 2 lands a `ci-fixer`
-dependency-repair commit, and `/flow:flow-prime` Step 6 lands
-permission and stub-script setup. Both run while cwd is on the
+Bootstrap exception: three FLOW skills land commits on the
 integration branch by design — there is no feature branch to
-relocate to during bootstrap. The bootstrap-skill carve-out in
-Layer 9 (see "Mechanical Enforcement" below) sanctions these two
-windows specifically.
+relocate to for any of them:
 
-The commit itself ALWAYS goes through `/flow:flow-commit`. The
-exception unlocks where the diff lives, never how it lands.
-Flow-commit runs CI and is never bypassed regardless of phrasing.
+- `/flow:flow-start` Step 2 lands a `ci-fixer` dependency-repair
+  commit before the user's feature work begins.
+- `/flow:flow-prime` Step 6 lands permission and stub-script setup
+  that must reach the integration branch before any flow can start.
+- `/flow:flow-release` publishes a version-bump commit on the
+  integration trunk; there is no feature branch where a release
+  tag could live.
+
+The bootstrap-skill carve-out in Layer 9 (see "Mechanical
+Enforcement" below) sanctions all three windows specifically.
+
+The bootstrap commits land on the integration branch through one of
+two surfaces. `/flow:flow-start` and `/flow:flow-prime` route their
+commits through `/flow:flow-commit` — the standard delegated commit
+path with its diff review, commit-message review, and user-approval
+choreography. `/flow:flow-release` calls `bin/flow finalize-commit`
+directly because the release skill composes its own explicit
+"Release v<new_version>" commit message and uses its own internal
+review window: Step 3 displays `git log <last_tag>..HEAD`, Step 4
+drafts release notes against that list, and Step 7 writes the
+explicit commit-message file. Each path's choreography substitutes
+for the other; both run the CI gate inside `finalize-commit`.
 
 The exception above is rule-level. The hook described in
 "Mechanical Enforcement" below is stricter: Layer 9 mechanically
@@ -176,16 +191,22 @@ iff ALL THREE conditions hold for the candidate cwd:
 3. The most recent assistant Skill tool_use call since the most
    recent user turn — resolved by
    `transcript_walker::most_recent_skill_since_user(transcript_path, home)`
-   — is `flow:flow-commit`. The walker is the load-bearing
-   predicate that proves the surrounding skill choreography
-   (diff review, commit-message review) actually ran; the
-   `_continue_pending` marker on its own is belt-and-suspenders
-   for a fresh-session resume window. The transcript-walker
-   check is the AND-combined condition per
+   — names a sanctioned commit-window skill (`flow:flow-commit`
+   or `flow:flow-release`). The predicate is the shared
+   `transcript_shows_commit_window_skill` two-arm match; see
+   "Bootstrap-skill carve-out" below for the per-skill trust
+   contract. The walker is the load-bearing predicate that
+   proves the surrounding skill choreography (diff review,
+   commit-message review) actually ran; the `_continue_pending`
+   marker on its own is belt-and-suspenders for a fresh-session
+   resume window. The transcript-walker check is the
+   AND-combined condition per
    `.claude/rules/no-escape-hatches.md` Layer C, which closes
    the bypass-shortcut surface where a model could write the
    marker directly and invoke `bin/flow finalize-commit` without
-   going through `/flow:flow-commit`.
+   going through `/flow:flow-commit`. In practice every active-
+   flow commit names `flow:flow-commit` because the release path
+   runs on the integration trunk, not under an active flow.
 
 Trust contract: the `_continue_pending` field is writable by
 the model (the same `bin/flow set-timestamp` call that the
@@ -203,15 +224,17 @@ surrounding choreography is now upheld by the hook, not by rule
 discipline alone.
 
 **Bootstrap-skill carve-out (integration-branch context).**
-The integration-branch gate would otherwise block the two
+The integration-branch gate would otherwise block the three
 sanctioned skill commit windows that run while cwd is on the
 integration branch by design: `/flow:flow-start` Step 2 lands
 a `ci-fixer` dependency-repair commit before the user's feature
-work begins, and `/flow:flow-prime` Step 6 lands permission and
-stub-script setup that must reach `origin/main` (or the
-configured integration branch) before any flow can start. The
-carve-out passes the invocation through iff ALL THREE conditions
-hold:
+work begins; `/flow:flow-prime` Step 6 lands permission and
+stub-script setup that must reach the integration branch before
+any flow can start; and `/flow:flow-release` publishes a
+version-bump commit on the integration trunk and calls
+`bin/flow finalize-commit` directly rather than delegating to
+`/flow:flow-commit`. The carve-out passes the invocation
+through iff ALL THREE conditions hold:
 
 1. The command shape is `bin/flow ... finalize-commit`.
    Raw `git commit` is never carved out — `git -C ... commit`
@@ -221,12 +244,28 @@ hold:
 2. The most recent assistant Skill tool_use call since the most
    recent user turn — resolved by
    `transcript_walker::most_recent_skill_since_user(transcript_path, home)`
-   — is `flow:flow-commit`. Same predicate the active-flow
-   carve-out uses; same proof that `/flow:flow-commit` is the
-   surrounding skill.
-3. A sanctioned bootstrap parent — `flow:flow-start` or
-   `flow:flow-prime` — appears in the assistant Skill chain
-   since the most recent real user turn, resolved by
+   — names a sanctioned commit-window skill. The shared
+   `transcript_shows_commit_window_skill` predicate accepts
+   either:
+   - `flow:flow-commit` — the delegated commit path used by
+     `/flow:flow-start` and `/flow:flow-prime`. The trust is the
+     standard `/flow:flow-commit` choreography: diff review,
+     commit-message review, user approval.
+   - `flow:flow-release` — the direct commit path used by
+     `/flow:flow-release`. The release skill calls
+     `bin/flow finalize-commit` directly rather than delegating
+     to `/flow:flow-commit`. Its trust comes from its own
+     internal review window: Step 3 displays
+     `git log <last_tag>..HEAD`, Step 4 drafts release notes
+     against that list, and Step 7 writes an explicit
+     "Release v<new_version>" commit-message file before
+     `finalize-commit` reads it.
+
+   Each path's internal choreography substitutes for the other.
+3. A sanctioned bootstrap parent — `flow:flow-start`,
+   `flow:flow-prime`, or `flow:flow-release` — appears in the
+   assistant Skill chain since the most recent real user turn,
+   resolved by
    `transcript_walker::any_skill_in_set_since_user(transcript_path, home, BOOTSTRAP_SKILLS)`.
    The sanctioned-parent set is the module-level `const
    BOOTSTRAP_SKILLS` in `validate_pretool.rs`; extending the
@@ -246,11 +285,12 @@ session activity regardless of which repo the work targets), so
 a bootstrap chain accrued in one repo's session activity could
 otherwise authorize a commit redirected via
 `git -C <other-repo>` to a different repo's integration branch.
-Both legitimate bootstrap windows (flow-start Step 2 and
-flow-prime Step 6) run with cwd ON the integration branch by
-design — neither uses `-C` to shift git's effective cwd — so
-restricting the carve-out to the cwd callsite has no production
-consumer cost. Restricting it preserves cross-repo safety: a
+All three legitimate bootstrap windows (flow-start Step 2,
+flow-prime Step 6, and flow-release's commit step) run with
+cwd ON the integration branch by design — none uses `-C` to
+shift git's effective cwd — so restricting the carve-out to
+the cwd callsite has no production consumer cost. Restricting
+it preserves cross-repo safety: a
 `git -C <integration-branch-target> commit` from any cwd
 remains blocked at the `-C` target's `match_branch_at` even
 when the session's transcript carries a valid bootstrap chain
@@ -267,20 +307,20 @@ because there is no analogous marker to write.
 
 Window closure: the walker stops at the most recent real user
 turn going backward. If the user types another message after
-`/flow:flow-prime` completes and then directly invokes
-`/flow:flow-commit`, the sanctioned-parent Skill call is OUTSIDE
-the carve-out window and
-`any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` returns false.
-Historical authorization cannot carry forward past the next
-user turn.
+`/flow:flow-prime` (or `/flow:flow-start` or `/flow:flow-release`)
+completes and then directly invokes `/flow:flow-commit`, the
+sanctioned-parent Skill call is OUTSIDE the carve-out window
+and `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` returns
+false. Historical authorization cannot carry forward past the
+next user turn.
 
 Threat-model bound: the carve-out's authorization window
 remains open until the user's next prose message. Within that
 window, a model that has the user-authorized invocation of
-`/flow:flow-start` or `/flow:flow-prime` could in principle
-direct additional integration-branch commits after the
-bootstrap skill's own commit lands. This is bounded by:
-(a) the cwd-only scope above, which prevents cross-repo
+`/flow:flow-start`, `/flow:flow-prime`, or `/flow:flow-release`
+could in principle direct additional integration-branch commits
+after the bootstrap skill's own commit lands. This is bounded
+by: (a) the cwd-only scope above, which prevents cross-repo
 redirection; (b) the CI gate inside `finalize-commit`, which
 runs unconditionally regardless of the carve-out; and (c) the
 FLOW threat model, which targets accidental commits (the
@@ -288,9 +328,9 @@ sanctioned parents have legitimate commit needs) rather than
 adversarial model behavior (an actively-malicious model with
 user-granted bootstrap authority is outside scope). Tightening
 the window further — e.g., adding a per-machine
-`bootstrap-pending` marker that flow-start/flow-prime set and
-finalize-commit clears — is a future design conversation, not a
-defect in v1.
+`bootstrap-pending` marker that flow-start/flow-prime/flow-release
+set and finalize-commit clears — is a future design conversation,
+not a defect in v1.
 
 ### Known Limitations
 

@@ -61,12 +61,14 @@ insufficient:
   carve-out passes `bin/flow ... finalize-commit` when the
   state file has `_continue_pending == "commit"` AND the
   persisted transcript shows the most recent assistant Skill
-  since the most recent user turn is `flow:flow-commit`. The
+  since the most recent user turn is one of `flow:flow-commit`
+  or `flow:flow-release` (the shared two-arm
+  `transcript_shows_commit_window_skill` predicate). The
   integration-branch context's bootstrap-skill carve-out
   passes `bin/flow ... finalize-commit` when the transcript
-  shows `flow:flow-commit` as the most recent assistant Skill
-  AND a sanctioned bootstrap parent (`flow:flow-start` or
-  `flow:flow-prime`) in the post-user-turn chain. The
+  shows the same two-arm match AND a sanctioned bootstrap
+  parent (`flow:flow-start`, `flow:flow-prime`, or
+  `flow:flow-release`) in the post-user-turn chain. The
   sanctioned-parent set is `BOOTSTRAP_SKILLS` in
   `validate_pretool.rs`. The carve-out is branch-agnostic —
   `default_branch_in` resolves the actual integration trunk so

@@ -3518,6 +3518,48 @@ fn layer_10_bootstrap_carveout_allows_for_flow_prime() {
 }
 
 #[test]
+fn layer_10_bootstrap_carveout_allows_for_flow_release() {
+    // Third sanctioned-parent entry: Skill(flow:flow-release) is
+    // both the initiating skill AND the most-recent skill, because
+    // flow-release calls `bin/flow finalize-commit` directly rather
+    // than delegating to `/flow:flow-commit`. The transcript chain
+    // is a single Skill(flow:flow-release) — no separate flow-commit
+    // invocation.
+    //
+    // The most-recent-skill predicate is two-arm: it accepts either
+    // `flow:flow-commit` (delegated commit path used by flow-start
+    // and flow-prime) or `flow:flow-release` (direct commit path).
+    // The bootstrap-parent walker scans `BOOTSTRAP_SKILLS` for
+    // `flow:flow-release` and finds it as a sanctioned parent of
+    // itself.
+    //
+    // Per-skill trust contract: when most-recent is flow-commit,
+    // the trust is the standard diff-review choreography. When
+    // most-recent is flow-release, the trust is the release skill's
+    // own internal review window: Step 3 displays
+    // `git log <last_tag>..HEAD`, Step 4 drafts release notes
+    // against that list, and Step 7 writes an explicit
+    // "Release v<new_version>" commit message file before
+    // finalize-commit reads it.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = assistant_skill_jsonl("flow:flow-release");
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 0,
+        "bootstrap-skill carve-out must pass on main with flow-release chain; stderr={stderr}"
+    );
+}
+
+#[test]
 fn layer_10_bootstrap_carveout_allows_finalize_commit_on_staging_during_flow_start() {
     // Configure `origin/HEAD` to `origin/staging` so
     // `default_branch_in` returns "staging". The carve-out names no
