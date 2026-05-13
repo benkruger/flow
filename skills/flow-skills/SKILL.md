@@ -116,6 +116,7 @@ plugin source.
 |-------|---------|
 | `/flow:flow-prime` | One-time project setup — configure permissions, install bin/* stubs, write the version marker |
 | `/flow:flow-abort` | Abort the current feature — close the PR, delete the remote branch, remove the worktree, delete the state file |
+| `/flow:flow-continue` | Resume a halted autonomous flow — clears `_halt_pending` so the next assistant turn proceeds |
 | `/flow:flow-reset` | Reset all FLOW artifacts on this machine — close PRs, remove worktrees, delete branches, clear state files |
 
 The Admin skills above are user-only: the model never invokes them

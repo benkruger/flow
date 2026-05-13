@@ -3027,11 +3027,81 @@ fn decompose_project_no_depends_on_text() {
     );
 }
 
+// --- flow-continue skill contract ---
+//
+// `/flow:flow-continue` is the user-typed slash command that clears
+// `_halt_pending` so an autonomous flow resumes. The four tests
+// below guard distinct regressions per
+// `.claude/rules/tests-guard-real-regressions.md`:
+//
+// - `flow_continue_skill_exists` — accidental deletion of
+//   `skills/flow-continue/SKILL.md`. Consumer: users typing
+//   `/flow:flow-continue` to resume a halted autonomous flow.
+// - `flow_continue_skill_has_starting_banner` /
+//   `flow_continue_skill_has_complete_banner` — drift in the
+//   skill's user-facing banners away from the FLOW convention.
+//   Consumer: visual consistency across every FLOW skill the user
+//   invokes.
+// - `flow_continue_skill_invokes_clear_halt` — silent removal of
+//   the `bin/flow clear-halt` invocation, which would leave the
+//   skill a no-op while still appearing to run. Consumer: the
+//   user-typed slash command must mutate state.
+// - `flow_continue_skill_has_description_frontmatter` — drift in
+//   the YAML frontmatter that Claude Code reads to discover the
+//   skill. Consumer: Claude Code skill discovery.
+
 #[test]
-fn no_flow_continue_skill() {
+fn flow_continue_skill_exists() {
     assert!(
-        !common::skills_dir().join("flow-continue").exists(),
-        "Tombstone: flow-continue skill removed"
+        common::skills_dir()
+            .join("flow-continue")
+            .join("SKILL.md")
+            .exists(),
+        "skills/flow-continue/SKILL.md must exist"
+    );
+}
+
+#[test]
+fn flow_continue_skill_has_starting_banner() {
+    let c = common::read_skill("flow-continue");
+    assert!(
+        c.contains("flow:flow-continue") && c.contains("STARTING"),
+        "flow-continue SKILL.md must include the STARTING announce banner naming flow:flow-continue"
+    );
+}
+
+#[test]
+fn flow_continue_skill_has_complete_banner() {
+    let c = common::read_skill("flow-continue");
+    assert!(
+        c.contains("flow:flow-continue") && c.contains("COMPLETE"),
+        "flow-continue SKILL.md must include the COMPLETE banner naming flow:flow-continue"
+    );
+}
+
+#[test]
+fn flow_continue_skill_invokes_clear_halt() {
+    let c = common::read_skill("flow-continue");
+    assert!(
+        c.contains("bin/flow clear-halt"),
+        "flow-continue SKILL.md must invoke `bin/flow clear-halt` as its only step"
+    );
+}
+
+#[test]
+fn flow_continue_skill_has_description_frontmatter() {
+    let c = common::read_skill("flow-continue");
+    // Claude Code reads `description:` from the YAML frontmatter
+    // for skill discovery. The frontmatter sits between `---`
+    // delimiters at the top of the file.
+    let frontmatter = c
+        .split_once("---\n")
+        .and_then(|(_, tail)| tail.split_once("\n---"))
+        .map(|(fm, _)| fm)
+        .unwrap_or("");
+    assert!(
+        frontmatter.contains("description:"),
+        "flow-continue SKILL.md frontmatter must carry a `description:` field"
     );
 }
 
