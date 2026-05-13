@@ -3546,7 +3546,7 @@ fn layer_10_bootstrap_carveout_allows_for_flow_release() {
     std::fs::create_dir_all(&claude_dir).unwrap();
     std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
 
-    let jsonl = assistant_skill_jsonl("flow:flow-release");
+    let jsonl = assistant_skill_jsonl("flow-release");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
         r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
