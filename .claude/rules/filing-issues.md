@@ -126,6 +126,62 @@ what the code actually does — not a guess about what it might
 do. A cold-start session should be able to act on the issue
 without re-doing the investigation.
 
+## Mechanical Blocks Are Presumptively Intentional
+
+When the bug under investigation is "a hook, gate, or guard
+blocked an action," the default assumption is that the block is
+intentional. Hooks and gates in this codebase are the
+enforcement layer for rules the project has chosen — they are
+designed user-handoff surfaces, not defects. A working
+enforcement mechanism is not a bug.
+
+Before filing an issue that describes a block as broken, do
+four things:
+
+1. **Read the hook's module doc.** The Rust file that emits the
+   block (typically `src/hooks/<name>.rs`) names what failure
+   mode the block prevents.
+2. **Read the rule that authorizes the block.** The rule file
+   in `.claude/rules/` cited by the module doc describes the
+   design intent in prose.
+3. **Read the test that locks the block in.** The test file at
+   `tests/hooks/<name>.rs` shows the canonical block cases and
+   their authorized inputs.
+4. **Name the case that falls outside that intent.** The
+   filable issue must point to a specific input the block fires
+   on that the rule and tests do NOT authorize as a target.
+
+The following framings are NOT valid grounds for filing:
+
+- "The block was inconvenient."
+- "The model couldn't proceed autonomously."
+- "I wanted it to ask the user instead of blocking."
+- "The recovery path requires user intervention."
+- "The flow stalled until the user typed a continue token."
+
+Each of these describes the block doing its job. A user-handoff
+IS the designed recovery path for the situations these blocks
+catch — the human reading the conversation is the authorized
+recovery channel, not an `AskUserQuestion` carve-out the model
+can take on its own.
+
+A genuine block-related defect looks like one of:
+
+- The block fires on an input the rule and tests explicitly
+  authorize as a safe case (false positive against documented
+  scope).
+- The block message points the user at a recovery action that
+  no longer exists or never worked.
+- Two hooks emit contradictory directives that produce a
+  genuine deadlock — one hook demands an action, another hook
+  blocks the same action — AND no existing carve-out resolves
+  the contradiction.
+
+When in doubt, do not file. A working block surfaced as an
+issue costs triage time on every future session that opens the
+issue list; a real block-related defect will be filed again the
+next time it fires with the right framing.
+
 ## Value Test Before Filing
 
 Before filing any issue derived from a FLOW phase finding,

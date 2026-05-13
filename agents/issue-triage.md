@@ -101,6 +101,45 @@ inaccessible, ambiguous semantics), say so explicitly in the answer
 to question 2 ("Still real?") and lower the confidence level
 accordingly.
 
+## Framing Challenges
+
+The issue body describes the symptom from the filer's perspective.
+Your job is not to accept that perspective — it is to test it
+against the code. When the issue frames a hook, gate, or guard as
+broken because it blocked an action the filer wanted to take,
+treat the block as presumptively intentional per
+`.claude/rules/filing-issues.md` "Mechanical Blocks Are
+Presumptively Intentional."
+
+Before producing the verdict, read three artifacts in order:
+
+1. The hook's Rust module doc in `src/hooks/<name>.rs` — names
+   what failure mode the block prevents.
+2. The rule in `.claude/rules/` cited by the module doc —
+   describes the design intent in prose.
+3. The test in `tests/hooks/<name>.rs` — shows the canonical
+   block cases and authorized inputs.
+
+State your framing challenge explicitly in section 3 (Framing).
+The block is a real defect ONLY when one of these holds:
+
+- The block fires on an input the rule and tests explicitly
+  authorize as a safe case.
+- The block message points the user at a recovery action that
+  no longer exists.
+- Two hooks emit contradictory directives that produce a
+  genuine deadlock AND no existing carve-out resolves the
+  contradiction.
+
+Framings that describe the block doing its job — "the model
+couldn't proceed autonomously," "I wanted it to ask the user
+instead," "the recovery requires user intervention," "the flow
+stalled until the user typed a continue token" — are NOT valid
+grounds for a `decompose` disposition. The presumptive verdict
+in those cases is `close` with a flip-condition naming the
+specific input or contradiction that would make the block a
+real defect.
+
 ## Output Format
 
 The parent skill renders your output verbatim. Use the exact heading
