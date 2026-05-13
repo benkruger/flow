@@ -3365,13 +3365,16 @@ fn subprocess_check_in_progress_utility_skill_refuses_stop_after_hook_feedback_t
     // Regression guard for the autonomous-flow-halt class of bugs
     // (#1507 transcript shape): a Stop-hook refusal during a multi-
     // step utility skill injects a `type:"user"` turn carrying string
-    // content AND `isMeta:true`. Before `is_real_user_turn`, the
-    // `most_recent_skill_since_user` walker treated that injected
-    // turn as the most recent real user message, stopped its
-    // backward scan, returned `None`, and
-    // `check_in_progress_utility_skill` decided "no Skill since the
-    // user spoke" — failing open on every subsequent Stop event so
-    // the flow halted mid-pipeline.
+    // content AND `isMeta:true`. The
+    // `most_recent_skill_since_user` walker must treat that injected
+    // turn as synthetic — skipping it and continuing backward to the
+    // real user turn. When the walker correctly skips, it returns
+    // `Some("decompose:decompose")` and
+    // `check_in_progress_utility_skill` refuses the Stop event with
+    // the verbatim encouraging message. A future regression that
+    // removes the `is_real_user_turn` filter — or weakens the
+    // `isMeta` discriminator to miss non-bool truthy values — would
+    // re-introduce the failure mode this test guards against.
     //
     // The fixture mirrors the canonical failing transcript in
     // topological order:

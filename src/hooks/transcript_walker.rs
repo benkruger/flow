@@ -194,7 +194,17 @@ fn is_real_user_turn(turn: &Value) -> bool {
         .and_then(|m| m.get("content"))
         .and_then(|c| c.as_str())
         .is_some();
-    let is_meta = turn.get("isMeta").and_then(|v| v.as_bool()) == Some(true);
+    // `isMeta` arrives over the JSONL wire as a JSON value whose
+    // type Claude Code does not contractually pin to `bool`. Older
+    // captures, hand-edited transcripts, and external tools can
+    // emit truthy `isMeta` values as `"true"`, `"1"`, or non-zero
+    // numbers. `is_truthy` accepts every truthy form the security-
+    // enforcement hooks already tolerate elsewhere in this module
+    // (per `.claude/rules/rust-patterns.md` "Hook Input Boolean
+    // Field Tolerance"). A raw `as_bool()` would silently
+    // misclassify non-bool truthy values as synthetic=false,
+    // re-opening the autonomous-flow-halt bypass surface.
+    let is_meta = is_truthy(turn.get("isMeta"));
     content_is_string && !is_meta
 }
 
@@ -1050,7 +1060,12 @@ pub fn recent_edit_blocked_on_shared_config(transcript_path: &Path, home: &Path)
             .and_then(|m| m.get("content"))
             .and_then(|c| c.as_str())
             .is_some();
-        let is_meta = turn.get("isMeta").and_then(|v| v.as_bool()) == Some(true);
+        // `is_truthy` accepts bool, `"true"`/`"1"` strings, and
+        // non-zero numbers per `.claude/rules/rust-patterns.md`
+        // "Hook Input Boolean Field Tolerance" — matching the
+        // discriminator in `is_real_user_turn` so the two
+        // walkers cannot diverge on non-bool `isMeta` shapes.
+        let is_meta = is_truthy(turn.get("isMeta"));
         if is_string_content && is_meta {
             continue;
         }
