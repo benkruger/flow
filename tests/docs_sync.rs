@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::fs;
 
 use regex::Regex;
+use serde_json::Value;
 
 /// Returns a map of phase_key → 1-indexed phase number.
 fn phase_number() -> HashMap<String, usize> {
@@ -78,16 +79,27 @@ fn assert_covers_key_features(content: &str, source_label: &str) {
 // --- Install-flow docs sync ---
 
 /// README.md and docs/index.html must both reference the install-flow
-/// prerequisites and the bin/setup invocation. Guards against the two
-/// docs drifting (one updated, the other not) and against accidental
-/// removal of a prereq line or the setup-script reference.
+/// prerequisites and the bin/setup invocation under the exact cache
+/// path Claude Code emits: `flow-marketplace/<plugin>/<version>/bin/setup`.
+/// The version segment is read from `.claude-plugin/marketplace.json`
+/// `plugins[0].version` so a release that bumps the version without
+/// updating these doc literals fails CI. The two prereq lines guard
+/// against accidental removal of the macOS toolchain hints.
 #[test]
 fn install_docs_contain_setup_step() {
+    let marketplace: Value = serde_json::from_str(
+        &fs::read_to_string(common::repo_root().join(".claude-plugin/marketplace.json"))
+            .expect("read marketplace.json"),
+    )
+    .expect("parse marketplace.json");
+    let version = marketplace["plugins"][0]["version"]
+        .as_str()
+        .expect("marketplace.json plugins[0].version");
+    let expected_path = format!("flow-marketplace/flow/{}/bin/setup", version);
     let required = [
         "brew install rust",
         "xcode-select --install",
-        "bin/setup",
-        ".claude/plugins/cache",
+        expected_path.as_str(),
     ];
     let sources = [
         ("README.md", common::repo_root().join("README.md")),

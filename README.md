@@ -142,7 +142,7 @@ The FLOW binary is built from source on first use. From your terminal — not Cl
 ```bash
 brew install rust
 xcode-select --install
-bash ~/.claude/plugins/cache/benkruger/flow/flow/bin/setup
+bash ~/.claude/plugins/cache/flow-marketplace/flow/2.0.1/bin/setup
 ```
 
 Then initialize in your project (once per project, and again after each FLOW upgrade):
