@@ -1137,7 +1137,11 @@ fn user_turn_carries_shared_config_block(turn: &Value) -> bool {
 /// `"true"` / `"1"` (case-insensitive), and any non-zero number.
 /// Everything else (including `null`, `false`, empty string,
 /// non-truthy strings, and `0`) is `false`.
-fn is_truthy(v: Option<&Value>) -> bool {
+///
+/// Public because `validate_skill` and `validate_pretool` halt
+/// gates read state-file `_halt_pending` and must tolerate the same
+/// truthy shapes the walker tolerates for `isMeta` discrimination.
+pub fn is_truthy(v: Option<&Value>) -> bool {
     match v {
         Some(Value::Bool(b)) => *b,
         Some(Value::String(s)) => {

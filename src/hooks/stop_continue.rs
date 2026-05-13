@@ -342,7 +342,7 @@ pub fn format_block_output(skill: &str, context: Option<&str>) -> Value {
 /// entries) and an unbounded read at every Stop event would scale
 /// O(turns × file_size). 4 MB is comfortably above the largest
 /// observed legitimate state file and bounds adversarial input.
-const STATE_FILE_BYTE_CAP: u64 = 4 * 1024 * 1024;
+pub const STATE_FILE_BYTE_CAP: u64 = 4 * 1024 * 1024;
 
 /// Normalize a state-file string before comparing in a gate per
 /// `.claude/rules/security-gates.md` "Normalize Before Comparing":

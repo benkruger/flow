@@ -13,7 +13,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use flow_rs::hooks::transcript_walker::USER_ONLY_SKILLS;
-use flow_rs::hooks::validate_skill::validate;
+use flow_rs::hooks::validate_skill::{run_impl_main, validate};
 use serde_json::json;
 
 // --- validate (decision core) ---
@@ -23,7 +23,7 @@ fn validate_allows_when_skill_not_in_user_only_set() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let tool_input = json!({"skill": "flow:flow-status"});
-    let (allowed, msg) = validate(&tool_input, None, home);
+    let (allowed, msg) = validate(&tool_input, None, None, home);
     assert!(allowed);
     assert!(msg.is_empty());
 }
@@ -38,7 +38,7 @@ fn validate_allows_when_skill_not_in_user_only_set_even_if_transcript_missing() 
         .join("p")
         .join("nonexistent.jsonl");
     let tool_input = json!({"skill": "flow:flow-status"});
-    let (allowed, msg) = validate(&tool_input, Some(&missing), home);
+    let (allowed, msg) = validate(&tool_input, Some(&missing), None, home);
     assert!(allowed);
     assert!(msg.is_empty());
 }
@@ -53,7 +53,7 @@ fn validate_blocks_when_user_only_skill_lacks_user_invocation() {
         "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"unrelated message\"}}\n";
     let path = crate::common::transcript_fixture(home, "p", jsonl);
     let tool_input = json!({"skill": "flow:flow-abort"});
-    let (allowed, msg) = validate(&tool_input, Some(&path), home);
+    let (allowed, msg) = validate(&tool_input, Some(&path), None, home);
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
 }
@@ -65,7 +65,7 @@ fn validate_allows_when_user_only_skill_has_user_invocation() {
     let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}}\n";
     let path = crate::common::transcript_fixture(home, "p", jsonl);
     let tool_input = json!({"skill": "flow:flow-abort"});
-    let (allowed, msg) = validate(&tool_input, Some(&path), home);
+    let (allowed, msg) = validate(&tool_input, Some(&path), None, home);
     assert!(allowed);
     assert!(msg.is_empty());
 }
@@ -77,7 +77,7 @@ fn validate_block_message_names_skill() {
     let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"unrelated\"}}\n";
     let path = crate::common::transcript_fixture(home, "p", jsonl);
     let tool_input = json!({"skill": "flow:flow-abort"});
-    let (_, msg) = validate(&tool_input, Some(&path), home);
+    let (_, msg) = validate(&tool_input, Some(&path), None, home);
     assert!(msg.contains("`flow:flow-abort`"));
 }
 
@@ -88,7 +88,7 @@ fn validate_block_message_references_rule_file() {
     let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"unrelated\"}}\n";
     let path = crate::common::transcript_fixture(home, "p", jsonl);
     let tool_input = json!({"skill": "flow:flow-abort"});
-    let (_, msg) = validate(&tool_input, Some(&path), home);
+    let (_, msg) = validate(&tool_input, Some(&path), None, home);
     assert!(msg.contains(".claude/rules/user-only-skills.md"));
 }
 
@@ -121,7 +121,7 @@ fn validate_fail_open_when_tool_input_missing_skill_field() {
     // allow. Defense in depth: the absent field is not a synthetic
     // block trigger.
     let tool_input = json!({});
-    let (allowed, msg) = validate(&tool_input, None, home);
+    let (allowed, msg) = validate(&tool_input, None, None, home);
     assert!(allowed);
     assert!(msg.is_empty());
 }
@@ -133,7 +133,7 @@ fn validate_blocks_when_user_only_skill_and_no_transcript_path() {
     // No transcript path — walker can't verify user invocation, so
     // the user-only skill is blocked by default.
     let tool_input = json!({"skill": "flow:flow-abort"});
-    let (allowed, msg) = validate(&tool_input, None, home);
+    let (allowed, msg) = validate(&tool_input, None, None, home);
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
 }
@@ -153,7 +153,7 @@ fn validate_blocks_case_variant_user_only_skill_name() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let tool_input = json!({"skill": "Flow:Flow-Abort"});
-    let (allowed, msg) = validate(&tool_input, None, home);
+    let (allowed, msg) = validate(&tool_input, None, None, home);
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
 }
@@ -165,7 +165,7 @@ fn validate_blocks_whitespace_padded_user_only_skill_name() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let tool_input = json!({"skill": "  flow:flow-abort  "});
-    let (allowed, msg) = validate(&tool_input, None, home);
+    let (allowed, msg) = validate(&tool_input, None, None, home);
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
 }
@@ -177,7 +177,7 @@ fn validate_blocks_nul_padded_user_only_skill_name() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let tool_input = json!({"skill": "flow:flow-abort\0"});
-    let (allowed, msg) = validate(&tool_input, None, home);
+    let (allowed, msg) = validate(&tool_input, None, None, home);
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
 }
@@ -190,7 +190,7 @@ fn validate_block_message_uses_normalized_skill_name() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let tool_input = json!({"skill": "  Flow:FLOW-Abort\0"});
-    let (allowed, msg) = validate(&tool_input, None, home);
+    let (allowed, msg) = validate(&tool_input, None, None, home);
     assert!(!allowed);
     assert!(msg.contains("`flow:flow-abort`"));
 }
@@ -207,9 +207,262 @@ fn validate_blocks_user_prose_mention_of_command_marker() {
     let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"can you describe what <command-name>/flow:flow-abort</command-name> does?\"}}\n";
     let path = crate::common::transcript_fixture(home, "p", jsonl);
     let tool_input = json!({"skill": "flow:flow-abort"});
-    let (allowed, msg) = validate(&tool_input, Some(&path), home);
+    let (allowed, msg) = validate(&tool_input, Some(&path), None, home);
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
+}
+
+// --- halt-pending gate ---
+//
+// Layer 2 in `validate`: when `_halt_pending=true` in the state
+// file, every Skill call is blocked except user-only-skill exits
+// the user has already typed. The block message names the two
+// sanctioned exits (`/flow:flow-continue`, `/flow:flow-abort`) so
+// the model surfaces the recovery instruction to the user.
+
+/// Write a minimal state file with `_halt_pending=<halt>` at
+/// `<home>/state.json` and return its path. Tests use this to
+/// drive the halt-gate branches without needing a full FlowPaths
+/// fixture — `validate` accepts an opaque `state_path` and reads it
+/// directly.
+fn state_with_halt(home: &Path, halt: bool) -> std::path::PathBuf {
+    let path = home.join("state.json");
+    let content = json!({"_halt_pending": halt}).to_string();
+    std::fs::write(&path, content).expect("write state fixture");
+    path
+}
+
+#[test]
+fn validate_skill_blocks_model_initiated_skill_during_halt() {
+    // Non-user-only skill that would pass Layer 1 cleanly. With
+    // halt set in the state file, the halt gate blocks it and the
+    // message names the two exits the user has.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let state = state_with_halt(home, true);
+    let tool_input = json!({"skill": "flow:flow-status"});
+    let (allowed, msg) = validate(&tool_input, None, Some(&state), home);
+    assert!(!allowed);
+    assert!(msg.contains("BLOCKED"), "message: {}", msg);
+    assert!(
+        msg.contains("/flow:flow-continue"),
+        "message must name /flow:flow-continue: {}",
+        msg
+    );
+    assert!(
+        msg.contains("/flow:flow-abort"),
+        "message must name /flow:flow-abort: {}",
+        msg
+    );
+}
+
+#[test]
+fn validate_skill_allows_user_only_skill_during_halt_when_user_typed_it() {
+    // User-only skill with a matching user invocation in the
+    // transcript: Layer 1 allows. The halt gate must NOT fire —
+    // the user-only exits are the sanctioned halt-window exits.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let state = state_with_halt(home, true);
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-continue</command-name>\"}}\n";
+    let transcript = crate::common::transcript_fixture(home, "p", jsonl);
+    let tool_input = json!({"skill": "flow:flow-continue"});
+    let (allowed, msg) = validate(&tool_input, Some(&transcript), Some(&state), home);
+    assert!(allowed, "user-typed exit must pass: {}", msg);
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn validate_skill_allows_skill_when_halt_not_set() {
+    // Halt is false. Non-user-only skills pass through Layer 1
+    // cleanly with no halt-gate interference.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let state = state_with_halt(home, false);
+    let tool_input = json!({"skill": "flow:flow-status"});
+    let (allowed, msg) = validate(&tool_input, None, Some(&state), home);
+    assert!(allowed);
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn validate_skill_halt_state_path_missing_passes_through() {
+    // State path points to a nonexistent file. `File::open` Err
+    // arm returns false (no halt), the gate stays silent, and the
+    // non-user-only skill passes through.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let missing = home.join("nonexistent-state.json");
+    let tool_input = json!({"skill": "flow:flow-status"});
+    let (allowed, msg) = validate(&tool_input, None, Some(&missing), home);
+    assert!(allowed, "missing state file must fail-open: {}", msg);
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn validate_skill_halt_state_path_non_json_passes_through() {
+    // State file exists but contains non-JSON content. `serde_json`
+    // Err arm returns false (no halt), the gate stays silent, and
+    // the non-user-only skill passes through.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let path = home.join("garbage.json");
+    std::fs::write(&path, "this is not JSON").unwrap();
+    let tool_input = json!({"skill": "flow:flow-status"});
+    let (allowed, msg) = validate(&tool_input, None, Some(&path), home);
+    assert!(allowed, "non-JSON state file must fail-open: {}", msg);
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn validate_skill_halt_state_path_missing_field_passes_through() {
+    // State file is well-formed JSON but lacks `_halt_pending`.
+    // `value.get(...)` returns None, `is_truthy(None)` is false,
+    // the gate stays silent.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let path = home.join("no-halt.json");
+    std::fs::write(&path, r#"{"current_phase":"flow-code"}"#).unwrap();
+    let tool_input = json!({"skill": "flow:flow-status"});
+    let (allowed, msg) = validate(&tool_input, None, Some(&path), home);
+    assert!(allowed);
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn validate_skill_normalizes_halt_field_type() {
+    // `_halt_pending` arrives over JSON as a value Claude Code
+    // does not contractually pin to bool. Per
+    // `.claude/rules/rust-patterns.md` "Hook Input Boolean Field
+    // Tolerance", every truthy form must trigger the halt block on
+    // a non-user-only skill: bool true, string "true", string "1",
+    // non-zero number.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let truthy_values = vec![json!(true), json!("true"), json!("1"), json!(1)];
+    for (idx, halt_value) in truthy_values.into_iter().enumerate() {
+        let state_path = home.join(format!("state-{}.json", idx));
+        let state = json!({"_halt_pending": halt_value.clone()});
+        std::fs::write(&state_path, state.to_string()).unwrap();
+        let tool_input = json!({"skill": "flow:flow-status"});
+        let (allowed, msg) = validate(&tool_input, None, Some(&state_path), home);
+        assert!(
+            !allowed,
+            "halt value {} must block (msg: {})",
+            halt_value, msg
+        );
+        assert!(
+            msg.contains("/flow:flow-continue"),
+            "halt value {} block message must name /flow:flow-continue: {}",
+            halt_value,
+            msg
+        );
+    }
+}
+
+// --- run_impl_main: state-path resolution ---
+//
+// `run_impl_main` derives the state path from cwd → project_root →
+// branch → FlowPaths. Each step has an early-return arm when the
+// upstream lookup fails. These tests drive `run_impl_main` directly
+// to cover every Option::? branch in the cwd-resolution closure.
+
+#[test]
+fn run_impl_main_returns_zero_when_hook_input_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let (code, msg) = run_impl_main(None, None, home);
+    assert_eq!(code, 0);
+    assert!(msg.is_none());
+}
+
+#[test]
+fn run_impl_main_passes_through_when_cwd_none() {
+    // No cwd → state_path stays None → halt gate sees false →
+    // non-user-only skill passes through.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let payload = json!({"tool_input": {"skill": "flow:flow-status"}});
+    let (code, msg) = run_impl_main(Some(payload), None, home);
+    assert_eq!(code, 0);
+    assert!(msg.is_none());
+}
+
+#[test]
+fn run_impl_main_passes_through_when_cwd_outside_worktree() {
+    // cwd points at a tempdir with no `.worktrees/` ancestor and no
+    // `.git`. `detect_branch_from_path` falls back to `git
+    // branch --show-current`; in a non-git tempdir this fails and
+    // returns None. The `?` short-circuits the closure, state_path
+    // stays None, the halt gate passes through.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let cwd = dir.path();
+    let payload = json!({"tool_input": {"skill": "flow:flow-status"}});
+    let (code, msg) = run_impl_main(Some(payload), Some(cwd), home);
+    assert_eq!(code, 0);
+    assert!(msg.is_none());
+}
+
+#[test]
+fn run_impl_main_passes_through_when_no_settings_ancestor() {
+    // cwd has a `.worktrees/<branch>` marker so
+    // `detect_branch_from_path` returns Some, but no `.claude/settings.json`
+    // ancestor exists so `project_root` resolves to None. The `?`
+    // on `project_root.map(...)` short-circuits the closure;
+    // state_path stays None; halt gate passes through.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let worktree = root.join(".worktrees").join("feat");
+    std::fs::create_dir_all(&worktree).unwrap();
+    // `.git` marker as a file (worktree convention) so
+    // detect_branch_from_path picks it up without falling back to
+    // the git subprocess.
+    std::fs::write(worktree.join(".git"), "gitdir: ../../.git/worktrees/feat\n").unwrap();
+    let payload = json!({"tool_input": {"skill": "flow:flow-status"}});
+    let (code, msg) = run_impl_main(Some(payload), Some(&worktree), &root);
+    assert_eq!(code, 0);
+    assert!(msg.is_none());
+}
+
+#[test]
+fn run_impl_main_passes_through_when_branch_invalid() {
+    // cwd resolves to a slash-containing "branch" because the
+    // worktree dir has an internal subdirectory under
+    // `.worktrees/foo/bar/`. `FlowPaths::try_new` rejects slash-
+    // containing branches and returns None; the `?` short-circuits;
+    // state_path stays None; halt gate passes through.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    // `.claude/settings.json` at root so project_root resolves.
+    std::fs::create_dir_all(root.join(".claude")).unwrap();
+    std::fs::write(root.join(".claude").join("settings.json"), "{}").unwrap();
+    let worktree = root.join(".worktrees").join("foo").join("bar");
+    std::fs::create_dir_all(&worktree).unwrap();
+    // Place the `.git` marker file under the nested path so the
+    // walker returns the slash-containing relative path as the
+    // branch.
+    std::fs::write(
+        worktree.join(".git"),
+        "gitdir: ../../../.git/worktrees/foo-bar\n",
+    )
+    .unwrap();
+    let payload = json!({"tool_input": {"skill": "flow:flow-status"}});
+    let (code, msg) = run_impl_main(Some(payload), Some(&worktree), &root);
+    assert_eq!(code, 0);
+    assert!(msg.is_none());
+}
+
+#[test]
+fn run_impl_main_blocks_user_only_skill_via_validate() {
+    // Wire validate's block path through run_impl_main: user-only
+    // skill with no transcript triggers the Layer 1 block.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let payload = json!({"tool_input": {"skill": "flow:flow-abort"}});
+    let (code, msg) = run_impl_main(Some(payload), None, home);
+    assert_eq!(code, 2);
+    assert!(msg.as_deref().is_some_and(|m| m.contains("BLOCKED")));
 }
 
 // --- subprocess integration tests ---
