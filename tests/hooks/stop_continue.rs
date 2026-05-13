@@ -3360,6 +3360,120 @@ fn utility_marker_orphan_from_different_session_subprocess() {
     }
 }
 
+#[test]
+fn subprocess_check_in_progress_utility_skill_refuses_stop_after_hook_feedback_turn() {
+    // Regression guard for the autonomous-flow-halt class of bugs
+    // (#1507 transcript shape): a Stop-hook refusal during a multi-
+    // step utility skill injects a `type:"user"` turn carrying string
+    // content AND `isMeta:true`. The
+    // `most_recent_skill_since_user` walker must treat that injected
+    // turn as synthetic — skipping it and continuing backward to the
+    // real user turn. When the walker correctly skips, it returns
+    // `Some("decompose:decompose")` and
+    // `check_in_progress_utility_skill` refuses the Stop event with
+    // the verbatim encouraging message. A future regression that
+    // removes the `is_real_user_turn` filter — or weakens the
+    // `isMeta` discriminator to miss non-bool truthy values — would
+    // re-introduce the failure mode this test guards against.
+    //
+    // The fixture mirrors the canonical failing transcript in
+    // topological order:
+    //
+    //   1. real user turn: "sounds good. proceed" (NO isMeta)
+    //   2. assistant turn fires Skill(decompose:decompose)
+    //   3. synthetic user turn: array content (tool_result)
+    //   4. assistant turn: text-only synthesis prose
+    //   5. hook-injected user turn: string content + isMeta:true
+    //   6. assistant turn: text-only end-of-turn
+    //
+    // Combined with a `flow:flow-plan` utility marker for the same
+    // session_id, the predicate must refuse the Stop with the
+    // verbatim encouraging message. Without the fix the walker
+    // stops at line 5 and the predicate fails open.
+    //
+    // Test environment per `.claude/rules/subprocess-test-hygiene.md`:
+    // `run_hook_with_home` already neutralizes `FLOW_CI_RUNNING` and
+    // sets `HOME` to the fixture's tempdir; the Stop hook is a
+    // pure-Rust path that reads only filesystem state, so no
+    // additional credential neutralizers are required.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_main_repo(&root);
+    let session_id = "halt12345";
+
+    // Write the utility marker for flow:flow-plan with the
+    // matching session_id. flow:flow-plan is in
+    // MULTI_STEP_UTILITY_SKILLS so the Stop hook predicate honors
+    // the marker.
+    let marker_dir = root.join(".claude").join("flow");
+    fs::create_dir_all(&marker_dir).unwrap();
+    let payload = json!({
+        "skill": "flow:flow-plan",
+        "session_id": session_id,
+        "started_at": "2026-05-12T17:00:00-07:00",
+    });
+    fs::write(
+        marker_dir.join(format!("utility-in-progress-{}.json", session_id)),
+        serde_json::to_string(&payload).unwrap(),
+    )
+    .unwrap();
+
+    // Build the 6-line failing transcript verbatim. Lines 3 and 5
+    // are the synthetic user turns that previously masked the
+    // assistant Skill call on line 2.
+    let jsonl = concat!(
+        // 1. Real user prose — no isMeta.
+        "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"sounds good. proceed\"}}\n",
+        // 2. Assistant fires Skill(decompose:decompose).
+        "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[",
+        "{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"decompose:decompose\"}}",
+        "]}}\n",
+        // 3. Synthetic tool_result-wrapped user turn (array content).
+        "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[",
+        "{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_d1\",\"content\":\"decompose output\"}",
+        "]}}\n",
+        // 4. Assistant text-only synthesis.
+        "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[",
+        "{\"type\":\"text\",\"text\":\"synthesis prose\"}",
+        "]}}\n",
+        // 5. Hook-injected user turn: string content + isMeta:true.
+        "{\"type\":\"user\",\"isMeta\":true,\"message\":{\"role\":\"user\",\"content\":\"Stop hook feedback:\\nStop Refused: Continue, you can do it.\"}}\n",
+        // 6. Assistant text-only end-of-turn.
+        "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[",
+        "{\"type\":\"text\",\"text\":\"acknowledging\"}",
+        "]}}\n",
+    );
+    let transcript = crate::common::transcript_fixture(&root, "p", jsonl);
+
+    let stdin_input = format!(
+        r#"{{"session_id": "{}", "transcript_path": "{}"}}"#,
+        session_id,
+        transcript.display(),
+    );
+    let (code, stdout, stderr) = run_hook_with_home(&root, &stdin_input, &root);
+    assert_eq!(
+        code, 0,
+        "Stop hook exits 0 even when blocking: stderr={}",
+        stderr,
+    );
+    let parsed: Value = serde_json::from_str(&stdout).unwrap_or_else(|e| {
+        panic!(
+            "Stop hook must emit JSON when blocking — parse failed ({}): stdout={}",
+            e, stdout,
+        )
+    });
+    assert_eq!(
+        parsed["decision"], "block",
+        "must refuse turn-end after hook-feedback synthetic turn: stdout={}",
+        stdout,
+    );
+    assert_eq!(
+        parsed["reason"].as_str().unwrap_or(""),
+        "Stop Refused: Continue, you can do it. Don't give up, you got this! No excuses!",
+        "block reason must be the verbatim encouraging message",
+    );
+}
+
 // --- check_halt_pending ---
 //
 // `check_halt_pending` is the Stop-hook predicate that detects user

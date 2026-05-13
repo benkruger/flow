@@ -153,3 +153,11 @@ and asserts the hook exits 0 / returns early without panicking.
 CLI subcommands that accept `--branch` must include a regression
 test that exercises the slash-branch path and asserts a structured
 error (not a panic).
+
+## Cross-References
+
+- `.claude/rules/transcript-shape.md` — the sibling discipline
+  for walkers that read caller-controlled transcript JSON. The
+  `is_real_user_turn` discriminator is the canonical validator
+  that runs at the JSON boundary before invariant-bearing
+  branches act on the parsed value.
