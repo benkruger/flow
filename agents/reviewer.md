@@ -1,7 +1,8 @@
 ---
 name: reviewer
 description: "Context-isolated code review. Receives diff and project conventions, produces structured findings for architecture, simplicity, and correctness."
-model: sonnet
+# Opus: Premise → Trace → Conclude across six tenants on every Review — missed correctness or architecture findings ship as bugs.
+model: opus
 tools: Read, Glob, Grep, Bash
 maxTurns: 40
 ---

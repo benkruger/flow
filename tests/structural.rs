@@ -639,10 +639,10 @@ fn test_all_agents_specify_model() {
     let expected_models: std::collections::HashMap<&str, &str> = [
         ("ci-fixer.md", "opus"),
         ("adversarial.md", "opus"),
-        ("reviewer.md", "sonnet"),
-        ("pre-mortem.md", "sonnet"),
+        ("reviewer.md", "opus"),
+        ("pre-mortem.md", "opus"),
         ("learn-analyst.md", "haiku"),
-        ("documentation.md", "haiku"),
+        ("documentation.md", "sonnet"),
         ("issue-triage.md", "sonnet"),
         ("pm.md", "haiku"),
         ("tech-lead.md", "sonnet"),

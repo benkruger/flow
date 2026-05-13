@@ -372,6 +372,61 @@ fn learn_analyst_agent_has_design_note() {
     );
 }
 
+#[test]
+fn test_each_agent_frontmatter_has_rationale_comment() {
+    // The `model:` value in every agent's frontmatter must be preceded
+    // by a YAML comment line that names the tier and a one-sentence
+    // rationale (e.g. `# Opus: Reasoning depth is the job.`). The tier
+    // name in the comment must match the `model:` value so a future
+    // edit that changes one half without the other is caught at CI.
+    //
+    // The scan is bounded to the YAML frontmatter (lines between the
+    // opening `---` on line 0 and the next `---` line) so a `model:`
+    // line in the agent's body prose cannot mask its actual
+    // frontmatter value.
+    let model_re = Regex::new(r"^model: (opus|sonnet|haiku)\s*$").unwrap();
+    let comment_re = Regex::new(r"^# (Opus|Sonnet|Haiku): .+\.$").unwrap();
+    for filename in agent_files() {
+        let content = common::read_agent(&filename);
+        let lines: Vec<&str> = content.lines().collect();
+        assert!(
+            lines.first() == Some(&"---"),
+            "{} must open with YAML frontmatter delimiter '---'",
+            filename
+        );
+        let frontmatter_end = lines
+            .iter()
+            .enumerate()
+            .skip(1)
+            .find(|(_, line)| **line == "---")
+            .map(|(i, _)| i)
+            .unwrap_or_else(|| panic!("{} missing closing '---' frontmatter delimiter", filename));
+        let (model_idx, model_value) = lines[1..frontmatter_end]
+            .iter()
+            .enumerate()
+            .find_map(|(i, line)| model_re.captures(line).map(|c| (i + 1, c[1].to_string())))
+            .unwrap_or_else(|| panic!("{} missing 'model: <tier>' line in frontmatter", filename));
+        assert!(
+            model_idx > 1,
+            "{} has 'model:' immediately after opening '---' — no preceding line for rationale comment",
+            filename
+        );
+        let prev = lines[model_idx - 1];
+        let cap = comment_re.captures(prev).unwrap_or_else(|| {
+            panic!(
+                "{} line preceding 'model:' must be '# <Tier>: <sentence>.' — got: {:?}",
+                filename, prev
+            )
+        });
+        let comment_tier = cap[1].to_ascii_lowercase();
+        assert_eq!(
+            comment_tier, model_value,
+            "{} rationale comment tier ({}) does not match model value ({})",
+            filename, &cap[1], model_value
+        );
+    }
+}
+
 // --- Agent Output Format subsection extractor ---
 //
 // Both the END-OF-FINDINGS marker contract and the code_read field
