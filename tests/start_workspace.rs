@@ -1003,7 +1003,7 @@ fn test_no_state_file_skips_backfill() {
     assert!(!flow_states_dir(&repo).join("no-state-branch.json").exists());
 }
 
-// --- Universal venv-mirroring (find_dep_parents + relative_dep_target + link_deps with `.venv` target) ---
+// --- find_dep_parents walker (.venv target) ---
 
 /// Count `.venv` symlinks under `dir`, walking the directory tree but
 /// NOT following symlinks during recursion. Used to verify the walker
@@ -1404,13 +1404,13 @@ fn walker_does_not_recurse_into_found_venv() {
     );
 }
 
-// --- link_deps orchestration (.venv target) + relative_dep_target depth math ---
+// --- link_deps orchestration (.venv target) ---
 
 /// L1: An empty source tree (no `.venv` anywhere) yields no
 /// symlinks. Walker returns empty; `link_deps` iterates nothing.
 #[cfg(unix)]
 #[test]
-fn link_venvs_no_venvs_creates_nothing() {
+fn link_deps_venv_no_venvs_creates_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -1443,7 +1443,7 @@ fn link_venvs_no_venvs_creates_nothing() {
 /// components escape `.worktrees/<branch>/` back to project_root.
 #[cfg(unix)]
 #[test]
-fn link_venvs_root_only_preserves_existing() {
+fn link_deps_venv_root_only_preserves_existing() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -1477,7 +1477,7 @@ fn link_venvs_root_only_preserves_existing() {
 /// the cortex segment itself.
 #[cfg(unix)]
 #[test]
-fn link_venvs_single_subdir_cortex_shape() {
+fn link_deps_venv_single_subdir_cortex_shape() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -1509,7 +1509,7 @@ fn link_venvs_single_subdir_cortex_shape() {
 /// symlink at `<wt>/<name>/.venv`. Mono-repo full-harvest shape.
 #[cfg(unix)]
 #[test]
-fn link_venvs_multi_subdir_full_harvest_shape() {
+fn link_deps_venv_multi_subdir_full_harvest_shape() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -1555,7 +1555,7 @@ fn link_venvs_multi_subdir_full_harvest_shape() {
 /// and the real directory is preserved (not replaced by a symlink).
 #[cfg(unix)]
 #[test]
-fn link_venvs_skips_pre_existing_target() {
+fn link_deps_venv_skips_pre_existing_target() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -1613,7 +1613,7 @@ fn link_venvs_skips_pre_existing_target() {
 /// components: depth+2 (2+2=4) escapes `.worktrees/<branch>/packages/api/`.
 #[cfg(unix)]
 #[test]
-fn link_venvs_packages_api_depth_2_link_correct() {
+fn link_deps_venv_packages_api_depth_2_link_correct() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -1654,7 +1654,7 @@ fn link_venvs_packages_api_depth_2_link_correct() {
 /// continues past the failure.
 #[cfg(unix)]
 #[test]
-fn link_venvs_silently_swallows_symlink_errors() {
+fn link_deps_venv_silently_swallows_symlink_errors() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -1724,7 +1724,7 @@ fn link_venvs_silently_swallows_symlink_errors() {
     );
 }
 
-// --- Universal node_modules-mirroring (find_dep_parents + relative_dep_target + link_deps) ---
+// --- find_dep_parents walker (node_modules target) ---
 
 /// Count `node_modules` symlinks under `dir`, walking the directory
 /// tree but NOT following symlinks during recursion. Used to verify

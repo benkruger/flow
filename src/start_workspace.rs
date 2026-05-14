@@ -69,15 +69,27 @@ fn extract_pr_number(pr_url: &str) -> u32 {
 
 /// Recursively scan `root` for directories named `target` and return
 /// each one's root-relative parent path. An empty `PathBuf` represents
-/// a root-level match. Skips: directory symlinks (cycle protection),
-/// dotted directories other than `.venv` itself (`.git`, `.next`,
-/// `.gradle`, `.pytest_cache`, `.tox`, etc.), and a small named-skip
-/// list (`node_modules`, `target`, `vendor`, `build`, `dist`) that
-/// would bloat the walk. The target-name match runs BEFORE the
-/// skip filter, so a target like `node_modules` is mechanically safe
-/// to mirror even though the same name appears in the skip list —
-/// the match arm fires and `continue`s before the skip check is
-/// reached. Does not recurse INTO a found target directory.
+/// a root-level match. Skips, on the recursive-descent branch:
+/// directory symlinks (cycle protection), dotted directories other
+/// than the `target` itself (`.git`, `.next`, `.gradle`,
+/// `.pytest_cache`, `.tox`, etc.), and a small named-skip list
+/// (`node_modules`, `target`, `vendor`, `build`, `dist`) that would
+/// bloat the walk. The target-name match runs BEFORE the skip
+/// filter, so a target like `node_modules` is mechanically safe to
+/// mirror even though the same name appears in the skip list — the
+/// match arm fires and `continue`s before the skip check is reached.
+/// Does not recurse INTO a found target directory.
+///
+/// Symlink handling is asymmetric by design: the recursive descent
+/// guard `!path.is_symlink()` prevents the walker from following
+/// directory symlinks (cycle protection), but the target-detection
+/// branch uses `path.is_dir()` which DOES follow symlinks. A
+/// `target` entry that is itself a symlink to a real directory is
+/// therefore discovered and mirrored — pnpm/yarn-workspace setups
+/// where `node_modules` is a symlink to a shared store get the same
+/// mirroring as inline directories. The symlink guard scopes only
+/// to recursive descent; target detection at the current entry
+/// always follows.
 fn find_dep_parents(root: &Path, target: &str) -> Vec<PathBuf> {
     const SKIP_NAMED: &[&str] = &["node_modules", "target", "vendor", "build", "dist"];
     let mut out = Vec::new();
@@ -129,6 +141,12 @@ fn find_dep_parents(root: &Path, target: &str) -> Vec<PathBuf> {
 /// - depth 0 (`parent_relpath` empty, root-level `.venv`): `../../.venv`
 /// - depth 1 (`cortex`): `../../../cortex/.venv`
 /// - depth 2 (`packages/api`): `../../../../packages/api/.venv`
+///
+/// Examples by depth (target = `node_modules`):
+///
+/// - depth 0 (root-level `node_modules`): `../../node_modules`
+/// - depth 1 (`web`): `../../../web/node_modules`
+/// - depth 2 (`cortex/frontend`): `../../../../cortex/frontend/node_modules`
 fn relative_dep_target(parent_relpath: &Path, target: &str) -> PathBuf {
     let depth = parent_relpath.components().count();
     let mut up = PathBuf::new();
