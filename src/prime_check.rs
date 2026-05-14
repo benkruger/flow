@@ -160,6 +160,7 @@ pub const UNIVERSAL_ALLOW: &[&str] = &[
     "Agent(flow:reviewer)",
     "Agent(flow:tech-lead)",
     "Skill(decompose:decompose)",
+    "Skill(flow:*)",
 ];
 
 /// FLOW deny list — canonical source for deny permissions.

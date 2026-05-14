@@ -358,7 +358,8 @@ All universal permissions written to `.claude/settings.json` for reference:
       "Agent(flow:pre-mortem)",
       "Agent(flow:reviewer)",
       "Agent(flow:tech-lead)",
-      "Skill(decompose:decompose)"
+      "Skill(decompose:decompose)",
+      "Skill(flow:*)"
     ],
     "deny": [
       "Bash(git rebase *)",
