@@ -6508,3 +6508,75 @@ fn required_agents_matches_skill_invocations() {
         );
     }
 }
+
+// --- flow-review Step 2 cross-launch-window prohibition ---
+
+/// flow-review Step 2's first `<HARD-GATE>` must forbid tool calls
+/// between the first agent's launch and the fourth agent's return.
+///
+/// Regression guarded: a future Step 2 edit reorders, removes, or
+/// rewords the cross-launch-window prohibition, letting the model
+/// interleave per-agent `record-agent-return` /
+/// `set-timestamp --set agent_retry_counts` / `add-skipped-agent`
+/// Bash calls between agent launches. The `### Per-agent accounting`
+/// subsection (introduced by PR #1509) reads as a per-agent
+/// narrative, so without the explicit gate the model's most
+/// mechanical reading of Step 2 is launch-wait-classify-record per
+/// agent — serializing four launches that are designed to run
+/// concurrently.
+///
+/// Code path: a refactor of Step 2 that reorders, removes, or
+/// rewords the HARD-GATE's protective phrases.
+///
+/// Named consumer: the parallel-isolation invariant in
+/// `.claude/rules/cognitive-isolation.md` and the wall-clock budget
+/// Review pays per flow — four sequential agent runs instead of one
+/// concurrent batch.
+#[test]
+fn flow_review_step_2_hard_gate_forbids_per_agent_bash_during_launch() {
+    let c = common::read_skill("flow-review");
+
+    // Bounded slice: Step 2 only, then the first <HARD-GATE> block
+    // within it (per .claude/rules/testing-gotchas.md
+    // "Subsection-Local Assertions in Contract Tests").
+    let step2 = c
+        .split_once("## Step 2 — Launch agents")
+        .map(|(_, t)| t)
+        .expect("flow-review SKILL.md must contain `## Step 2 — Launch agents`");
+    let step2 = step2
+        .split_once("## Step 3 — Triage")
+        .map(|(s, _)| s)
+        .unwrap_or(step2);
+    let hard_gate = step2
+        .split_once("<HARD-GATE>")
+        .map(|(_, t)| t)
+        .expect("flow-review Step 2 must contain a <HARD-GATE> block");
+    let hard_gate = hard_gate
+        .split_once("</HARD-GATE>")
+        .map(|(s, _)| s)
+        .expect("flow-review Step 2 <HARD-GATE> must be closed with </HARD-GATE>");
+
+    assert!(
+        hard_gate.contains("between the first agent"),
+        "flow-review Step 2 <HARD-GATE> must name the launch-window opening \
+         (`between the first agent` ...) so the model cannot interleave \
+         per-agent Bash calls between agent launches — see \
+         .claude/rules/cognitive-isolation.md"
+    );
+    assert!(
+        hard_gate.contains("fourth agent"),
+        "flow-review Step 2 <HARD-GATE> must name the launch-window close \
+         (`... fourth agent` ...) so classify-and-record work is treated as \
+         post-launch, not interleaved — see \
+         .claude/rules/cognitive-isolation.md"
+    );
+    assert!(
+        hard_gate.contains("record-agent-return")
+            || hard_gate.contains("Bash")
+            || hard_gate.contains("tool call"),
+        "flow-review Step 2 <HARD-GATE> must name the forbidden launch-window \
+         action (`record-agent-return`, `Bash`, or `tool call`) so the \
+         prohibition is concrete, not abstract — see \
+         .claude/rules/cognitive-isolation.md"
+    );
+}
