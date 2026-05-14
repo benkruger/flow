@@ -578,6 +578,125 @@ fn issue_create_api_failure_records_none_id() {
     assert!(data["id"].is_null());
 }
 
+#[test]
+fn issue_create_with_assignee_passes_flag_to_gh() {
+    // The --assignee flag must reach `gh issue create`. The gh stub
+    // logs every invocation's args; the issue-create call must carry
+    // `--assignee @me`. Exercises the create_issue Some(assignee) branch.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let log = dir.path().join(".args.log");
+    let stub_dir = create_gh_stub(
+        &repo,
+        &format!(
+            "#!/bin/bash\n\
+             LOG=\"{}\"\n\
+             echo \"$@\" >> \"$LOG\"\n\
+             if [ \"$1\" = \"api\" ]; then echo 50; exit 0; fi\n\
+             echo 'https://github.com/o/r/issues/50'\n\
+             exit 0\n",
+            log.display()
+        ),
+    );
+
+    let output = run_cmd(
+        &repo,
+        &["--repo", "o/r", "--title", "T", "--assignee", "@me"],
+        &stub_dir,
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let contents = fs::read_to_string(&log).unwrap();
+    let issue_create_line = contents
+        .lines()
+        .find(|l| l.starts_with("issue create"))
+        .expect("issue create call must be logged");
+    assert!(
+        issue_create_line.contains("--assignee @me"),
+        "issue create call missing --assignee, got:\n{}",
+        contents
+    );
+}
+
+#[test]
+fn issue_create_label_not_found_retry_carries_assignee() {
+    // When the first issue-create fails with "label not found", the
+    // retry must still carry --assignee. Exercises the
+    // retry_with_label Some(assignee) branch.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let counter = dir.path().join(".counter");
+    let log = dir.path().join(".args.log");
+    let stub_dir = create_gh_stub(
+        &repo,
+        &format!(
+            "#!/bin/bash\n\
+             COUNTER=\"{}\"\n\
+             LOG=\"{}\"\n\
+             echo \"$@\" >> \"$LOG\"\n\
+             if [ ! -f \"$COUNTER\" ]; then echo 0 > \"$COUNTER\"; fi\n\
+             if [ \"$1\" = \"api\" ]; then echo 51; exit 0; fi\n\
+             if [ \"$1\" = \"label\" ] && [ \"$2\" = \"create\" ]; then\n\
+               exit 0\n\
+             fi\n\
+             N=$(cat \"$COUNTER\")\n\
+             N=$((N + 1))\n\
+             echo $N > \"$COUNTER\"\n\
+             if [ \"$N\" -eq 1 ]; then\n\
+               echo 'label not found' >&2\n\
+               exit 1\n\
+             fi\n\
+             echo 'https://github.com/o/r/issues/51'\n\
+             exit 0\n",
+            counter.display(),
+            log.display()
+        ),
+    );
+
+    let output = run_cmd(
+        &repo,
+        &[
+            "--repo",
+            "o/r",
+            "--title",
+            "T",
+            "--label",
+            "new-label",
+            "--assignee",
+            "@me",
+        ],
+        &stub_dir,
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let contents = fs::read_to_string(&log).unwrap();
+    let issue_create_lines: Vec<&str> = contents
+        .lines()
+        .filter(|l| l.starts_with("issue create"))
+        .collect();
+    assert_eq!(
+        issue_create_lines.len(),
+        2,
+        "expected first + retry issue create calls, got:\n{}",
+        contents
+    );
+    assert!(
+        issue_create_lines[1].contains("--assignee @me"),
+        "retry issue create call missing --assignee, got:\n{}",
+        contents
+    );
+}
+
 // --- read_body_file ---
 
 #[test]

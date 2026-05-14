@@ -1,7 +1,7 @@
 //! GitHub issue creation wrapper.
 //!
 //! Usage:
-//!   bin/flow issue --title <title> [--repo <repo>] [--label <label>] [--body-file <path>]
+//!   bin/flow issue --title <title> [--repo <repo>] [--label <label>] [--body-file <path>] [--assignee <login>]
 //!
 //! Body text is always passed via a file to avoid shell escaping issues
 //! with special characters (|, &&, ;) that trigger the Bash hook validator.
@@ -215,6 +215,7 @@ fn create_issue(
     title: &str,
     label: Option<&str>,
     body: Option<&str>,
+    assignee: Option<&str>,
 ) -> Result<IssueResult, String> {
     let title_owned = title.to_string();
     let mut cmd_args: Vec<String> = vec![
@@ -234,6 +235,10 @@ fn create_issue(
         cmd_args.push("--body".into());
         cmd_args.push(b.into());
     }
+    if let Some(a) = assignee {
+        cmd_args.push("--assignee".into());
+        cmd_args.push(a.into());
+    }
 
     let cmd_refs: Vec<&str> = cmd_args.iter().map(|s| s.as_str()).collect();
     match run_gh_cmd(&cmd_refs) {
@@ -242,7 +247,7 @@ fn create_issue(
             if let Some(l) = label {
                 let err_lower = error.to_lowercase();
                 if err_lower.contains("label") && err_lower.contains("not found") {
-                    return retry_with_label(repo, title, l, body);
+                    return retry_with_label(repo, title, l, body, assignee);
                 }
             }
             Err(error)
@@ -255,6 +260,7 @@ fn retry_with_label(
     title: &str,
     label: &str,
     body: Option<&str>,
+    assignee: Option<&str>,
 ) -> Result<IssueResult, String> {
     let label_created = run_gh_cmd(&["gh", "label", "create", label, "--repo", repo]).is_ok();
 
@@ -274,6 +280,10 @@ fn retry_with_label(
     if let Some(b) = body {
         retry_args.push("--body".into());
         retry_args.push(b.into());
+    }
+    if let Some(a) = assignee {
+        retry_args.push("--assignee".into());
+        retry_args.push(a.into());
     }
 
     let retry_refs: Vec<&str> = retry_args.iter().map(|s| s.as_str()).collect();
@@ -379,7 +389,13 @@ pub fn run_impl_main(
         None
     };
 
-    match create_issue(&repo, &args.title, args.label.as_deref(), body.as_deref()) {
+    match create_issue(
+        &repo,
+        &args.title,
+        args.label.as_deref(),
+        body.as_deref(),
+        args.assignee.as_deref(),
+    ) {
         Ok(result) => (
             json!({
                 "status": "ok",
