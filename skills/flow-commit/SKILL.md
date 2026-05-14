@@ -47,7 +47,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v2.1.0 — flow:flow-commit — STARTING
+  FLOW v2.1.1 — flow:flow-commit — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -69,7 +69,7 @@ On completion (whether nothing to commit or committed successfully), print the s
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v2.1.0 — flow:flow-commit — COMPLETE
+  ✓ FLOW v2.1.1 — flow:flow-commit — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````

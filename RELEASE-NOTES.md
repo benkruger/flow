@@ -1,5 +1,14 @@
 # Release Notes
 
+## v2.1.1 — Mirror JavaScript dependencies into worktrees
+
+### Improvements
+
+- **node_modules mirroring** — worktree creation now mirrors
+  `node_modules` directories (alongside `.venv`) into the new
+  worktree as relative symlinks, so JavaScript projects get a
+  working dependency tree without a reinstall (#1561).
+
 ## v2.1.0 — Halt model, per-agent models, walker shape parity
 
 ### New features

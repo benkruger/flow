@@ -64,7 +64,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v2.1.0 — flow:flow-issues — STARTING
+  FLOW v2.1.1 — flow:flow-issues — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -268,7 +268,7 @@ After the sections are rendered, output the following banner in your response (n
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v2.1.0 — flow:flow-issues — COMPLETE
+  ✓ FLOW v2.1.1 — flow:flow-issues — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````

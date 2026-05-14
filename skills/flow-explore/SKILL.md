@@ -46,7 +46,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v2.1.0 — flow:flow-explore — STARTING
+  FLOW v2.1.1 — flow:flow-explore — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -398,7 +398,7 @@ issue. Do NOT loop further.
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✗ FLOW v2.1.0 — flow:flow-explore — COMPLETE-FAILED
+  ✗ FLOW v2.1.1 — flow:flow-explore — COMPLETE-FAILED
   Validator rejected the body 5 times. Issue not filed.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -428,7 +428,7 @@ in your response (not via Bash) inside a fenced code block:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v2.1.0 — flow:flow-explore — COMPLETE
+  ✓ FLOW v2.1.1 — flow:flow-explore — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
