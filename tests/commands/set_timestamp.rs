@@ -123,11 +123,18 @@ fn test_set_nested_list_intermediate_out_of_range() {
 }
 
 #[test]
-fn test_set_nested_dict_key_not_found() {
+fn test_set_nested_vivifies_missing_intermediate() {
     let mut obj = json!({"a": {"b": 1}});
-    let result = set_nested(&mut obj, &["a", "missing", "x"], json!("val"));
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("not found"));
+    set_nested(&mut obj, &["a", "missing", "x"], json!("val")).unwrap();
+    assert_eq!(obj["a"]["missing"]["x"], "val");
+    assert_eq!(obj["a"]["b"], 1);
+}
+
+#[test]
+fn test_set_nested_vivifies_consecutive_missing_intermediates() {
+    let mut obj = json!({});
+    set_nested(&mut obj, &["a", "b", "c", "d"], json!(7)).unwrap();
+    assert_eq!(obj["a"]["b"]["c"]["d"], 7);
 }
 
 #[test]
@@ -807,16 +814,26 @@ fn test_cli_error_no_state_file() {
         .contains("No state file"));
 }
 
+/// A path that navigates *through* a wrong-type intermediate (a
+/// string value where an object is expected) still errors at the CLI
+/// layer with exit 1 + a structured message. Missing intermediate
+/// keys are auto-vivified, but present-but-wrong-type intermediates
+/// are not — `set_nested` cannot navigate into a string.
 #[test]
 fn test_cli_error_invalid_path() {
     let dir = tempfile::tempdir().unwrap();
     let state = make_cli_state();
     setup_cli_state(dir.path(), "test-feature", &state);
 
-    let (code, output) = run_cli(dir.path(), &["--set", "nonexistent.field=NOW"]);
+    // `current_phase` is the string "flow-code" in make_cli_state();
+    // navigating through it to reach `.deep.sub` is unrepresentable.
+    let (code, output) = run_cli(dir.path(), &["--set", "current_phase.deep.sub=NOW"]);
     assert_eq!(code, 1);
     assert_eq!(output["status"], "error");
-    assert!(output["message"].as_str().unwrap().contains("not found"));
+    assert!(output["message"]
+        .as_str()
+        .unwrap()
+        .contains("Cannot navigate into"));
 }
 
 #[test]
@@ -960,4 +977,48 @@ fn run_impl_main_with_slash_branch_returns_structured_error_no_panic() {
         .as_str()
         .unwrap_or("")
         .contains("Invalid branch name"));
+}
+
+/// Auto-vivification end-to-end: a `set-timestamp` invocation whose
+/// dot-path includes a missing intermediate object key
+/// (`phases.flow-review.agent_retry_counts`) succeeds and creates the
+/// nesting. Guards the per-agent retry counter increment that
+/// otherwise fails on first use because `agent_retry_counts` is absent
+/// until first write.
+#[test]
+fn test_cli_set_nested_vivifies_missing_intermediate() {
+    let parent = tempfile::tempdir().unwrap();
+    let repo = crate::common::create_git_repo_with_remote(parent.path());
+    let root = repo.canonicalize().unwrap();
+
+    let branch_dir = flow_states_dir(&root).join("main");
+    fs::create_dir_all(&branch_dir).unwrap();
+    let state_path = branch_dir.join("state.json");
+    fs::write(
+        &state_path,
+        r#"{"branch":"main","phases":{"flow-review":{"status":"in_progress"}}}"#,
+    )
+    .unwrap();
+
+    let mut cmd = flow_rs();
+    cmd.arg("set-timestamp")
+        .arg("--set")
+        .arg("phases.flow-review.agent_retry_counts.reviewer=1")
+        .env_remove("FLOW_CI_RUNNING")
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env("HOME", &root)
+        .current_dir(&root);
+
+    let output = cmd.output().unwrap();
+    let exit_code = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let parsed: Value = serde_json::from_str(&stdout).unwrap_or(json!({"raw": stdout}));
+    assert_eq!(exit_code, 0, "stdout={}", stdout);
+    assert_eq!(parsed["status"], "ok");
+
+    let on_disk: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
+    assert_eq!(
+        on_disk["phases"]["flow-review"]["agent_retry_counts"]["reviewer"],
+        1
+    );
 }

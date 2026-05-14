@@ -31,6 +31,11 @@ pub fn is_step_counter_field(field: &str) -> bool {
 /// Navigate a nested JSON Value by dot-path parts and set the final value.
 ///
 /// Numeric path segments are treated as array indexes (0-based).
+/// Missing intermediate object keys are auto-vivified as empty
+/// objects, so a dot-path can create the nesting it needs.
+/// Present-but-wrong-type intermediates (a string, number, bool, or
+/// null where an object or array is expected) and out-of-range array
+/// indices still error.
 pub fn set_nested(obj: &mut Value, path_parts: &[&str], value: Value) -> Result<(), String> {
     if path_parts.is_empty() {
         return Err("Empty path".to_string());
@@ -57,9 +62,7 @@ pub fn set_nested(obj: &mut Value, path_parts: &[&str], value: Value) -> Result<
                 }
                 &mut arr[index]
             }
-            Value::Object(map) => map
-                .get_mut(*part)
-                .ok_or_else(|| format!("Key '{}' not found", part))?,
+            Value::Object(map) => map.entry(part.to_string()).or_insert_with(|| json!({})),
             Value::Null => {
                 return Err(format!("Cannot navigate into NoneType with key '{}'", part))
             }
