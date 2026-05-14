@@ -16,7 +16,7 @@ description: "Phase 5: Complete — merge the PR, remove the worktree, and delet
 /flow:flow-complete --continue-step --manual
 ```
 
-- `/flow:flow-complete` — uses configured mode from the state file (default: auto)
+- `/flow:flow-complete` — uses configured mode from the state file (default: manual)
 - `/flow:flow-complete --auto` — skips confirmation and proceeds directly
 - `/flow:flow-complete --manual` — prompts for user confirmation before merge
 - `/flow:flow-complete --continue-step` — self-invocation: skip Announce and SOFT-GATE, dispatch to the next step via Resume Check
@@ -35,8 +35,7 @@ shared state must be idempotent.
 
 1. If `--auto` was passed → mode is **auto**
 2. If `--manual` was passed → mode is **manual**
-3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>/state.json`. Use `skills.flow-complete` value.
-4. If the state file has no `skills` key → use built-in default: **auto**
+3. Otherwise, run `${CLAUDE_PLUGIN_ROOT}/bin/flow resolve-skill-mode --skill flow-complete --branch <branch>` — it reads `skills.flow-complete` from the state file, tolerates every config shape (bare string, object with `continue`, missing/null/wrong-type entry), and falls back to **manual** when the config is missing or unparseable. Use the `mode` field from its JSON output. The SOFT-GATE entry check below runs this command after resolving `<branch>`.
 
 ## Self-Invocation Check
 
@@ -86,7 +85,14 @@ or re-run git commands to gather the same information.
 
 Carry any warnings forward to the confirmation step in Step 4.
 
-Resolve the mode using the Mode Resolution rules above.
+Resolve the mode using the Mode Resolution rules above. When neither
+`--auto` nor `--manual` was passed, run the resolution command —
+`<branch>` is the value resolved in step 1 — and use the `mode` field
+from its JSON output:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow resolve-skill-mode --skill flow-complete --branch <branch>
+```
 
 </SOFT-GATE>
 

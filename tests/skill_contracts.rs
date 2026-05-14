@@ -1856,6 +1856,27 @@ fn mode_resolution_references_config_source() {
 }
 
 #[test]
+fn flow_complete_mode_resolution_invokes_resolve_skill_mode() {
+    // The flow-complete `## Mode Resolution` section must resolve the
+    // configured mode through `bin/flow resolve-skill-mode` rather than
+    // hand-rolling the `skills.flow-complete` state-file read. Regression:
+    // a future SKILL.md edit reverts the section to the hand-rolled prose,
+    // reintroducing the bare-string-vs-object shape ambiguity.
+    let c = common::read_skill("flow-complete");
+    let re = Regex::new(r"(?s)## Mode Resolution\n(.*?)(?:\n## |\z)").unwrap();
+    let cap = re.captures(&c);
+    assert!(
+        cap.is_some(),
+        "flow-complete has no Mode Resolution section"
+    );
+    let section = &cap.unwrap()[1];
+    assert!(
+        section.contains("bin/flow resolve-skill-mode --skill flow-complete"),
+        "flow-complete Mode Resolution must invoke `bin/flow resolve-skill-mode --skill flow-complete`"
+    );
+}
+
+#[test]
 fn prime_presets_cover_all_configurable_skills() {
     let c = common::read_skill("flow-prime");
     let re = Regex::new(r"```json\n(\{[\s\S]*?\})\n```").unwrap();

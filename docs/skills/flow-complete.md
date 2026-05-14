@@ -13,8 +13,8 @@ parent: Skills
 The final phase. Merges the PR into the integration branch (`base_branch`),
 removes the git worktree, and deletes the state file. Mode is configurable
 via `.flow.json`
-(default: auto, skips confirmation). Use `--manual` to prompt for
-confirmation before the irreversible merge. The `--continue-step`
+(default: manual, prompts for confirmation before the irreversible
+merge). Use `--auto` to skip confirmation and merge directly. The `--continue-step`
 flag is used for self-invocation after mid-phase commits (merge
 conflict resolution or CI fix) — it skips the Announce banner and
 SOFT-GATE and dispatches via the Resume Check.
