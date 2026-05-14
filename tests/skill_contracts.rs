@@ -1877,6 +1877,24 @@ fn flow_complete_mode_resolution_invokes_resolve_skill_mode() {
 }
 
 #[test]
+fn flow_abort_mode_resolution_invokes_resolve_skill_mode() {
+    // The flow-abort `## Mode Resolution` section must resolve the
+    // configured mode through `bin/flow resolve-skill-mode` rather than
+    // hand-rolling the `skills.flow-abort` state-file read. Regression:
+    // a future SKILL.md edit reverts the section to the hand-rolled prose,
+    // reintroducing the bare-string-vs-object shape ambiguity.
+    let c = common::read_skill("flow-abort");
+    let re = Regex::new(r"(?s)## Mode Resolution\n(.*?)(?:\n## |\z)").unwrap();
+    let cap = re.captures(&c);
+    assert!(cap.is_some(), "flow-abort has no Mode Resolution section");
+    let section = &cap.unwrap()[1];
+    assert!(
+        section.contains("bin/flow resolve-skill-mode --skill flow-abort"),
+        "flow-abort Mode Resolution must invoke `bin/flow resolve-skill-mode --skill flow-abort`"
+    );
+}
+
+#[test]
 fn prime_presets_cover_all_configurable_skills() {
     let c = common::read_skill("flow-prime");
     let re = Regex::new(r"```json\n(\{[\s\S]*?\})\n```").unwrap();
