@@ -3959,17 +3959,19 @@ fn layer_10_bootstrap_carveout_allows_for_flow_release_user_typed_slash_command(
     // typing `/flow-release` as a user-role turn, never as an
     // assistant Skill tool_use. The transcript here is a single
     // user-typed `<command-name>/flow-release</command-name>` turn
-    // with no assistant Skill. The bootstrap carve-out fires because
-    // `transcript_shows_commit_window_skill` recognizes the
-    // `/flow-release` user turn as a commit-window skill AND
-    // `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` recognizes it as
-    // the sanctioned bootstrap parent. Layer 9 passes through.
+    // with no assistant Skill. The bootstrap carve-out fires:
+    // `bootstrap_carveout_applies`'s `commit_window` expression
+    // recognizes the `/flow-release` user turn through its
+    // `last_user_message_invokes_skill(path, "flow-release", home)`
+    // OR-arm, and `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)`
+    // recognizes the same user turn as the sanctioned bootstrap
+    // parent. Layer 9 passes through.
     //
-    // Regression guard: a future edit drops the `flow-release`
-    // user-turn recognition from
-    // `transcript_shows_commit_window_skill`, so a maintainer typing
-    // `/flow-release` on the integration branch is blocked from
-    // running the release version-bump commit.
+    // Regression guard: a future edit drops the
+    // `last_user_message_invokes_skill` OR-arm from
+    // `bootstrap_carveout_applies`'s `commit_window` expression, so a
+    // maintainer typing `/flow-release` on the integration branch is
+    // blocked from running the release version-bump commit.
     let (_dir, root) = setup_repo_on_branch("main");
     let claude_dir = root.join(".claude");
     std::fs::create_dir_all(&claude_dir).unwrap();
@@ -4030,18 +4032,21 @@ fn layer_10_bootstrap_carveout_allows_for_flow_prime_user_typed_slash_command() 
 #[test]
 fn layer_10_bootstrap_carveout_blocks_when_no_bootstrap_skill_in_transcript() {
     // The transcript is a single plain user turn — no slash command,
-    // no assistant Skill anywhere. `transcript_shows_commit_window_skill`
-    // returns false (neither the `/flow-release` user-turn recognition
-    // nor `most_recent_skill_since_user` finds a commit-window skill)
-    // and `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` returns
-    // false. The carve-out cannot fire and Layer 9 blocks the commit
+    // no assistant Skill anywhere. `bootstrap_carveout_applies`'s
+    // `commit_window` expression is a two-arm OR and both arms are
+    // false: `transcript_shows_commit_window_skill` (assistant-Skill-
+    // only, via `most_recent_skill_since_user`) finds no commit-window
+    // skill, and `last_user_message_invokes_skill(path, "flow-release",
+    // home)` finds no `/flow-release` user turn. With `commit_window`
+    // false and `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` also
+    // false, the carve-out cannot fire and Layer 9 blocks the commit
     // on the integration branch.
     //
-    // Regression guard: a future edit makes
-    // `transcript_shows_commit_window_skill`'s new `/flow-release`
-    // user-turn arm match any user turn rather than only a
-    // `/flow-release` slash command, over-firing the carve-out for an
-    // arbitrary integration-branch commit.
+    // Regression guard: a future edit makes the
+    // `last_user_message_invokes_skill` OR-arm in
+    // `bootstrap_carveout_applies` match any user turn rather than
+    // only a `/flow-release` slash command, over-firing the carve-out
+    // for an arbitrary integration-branch commit.
     let (_dir, root) = setup_repo_on_branch("main");
     let claude_dir = root.join(".claude");
     std::fs::create_dir_all(&claude_dir).unwrap();
