@@ -1003,7 +1003,7 @@ fn test_no_state_file_skips_backfill() {
     assert!(!flow_states_dir(&repo).join("no-state-branch.json").exists());
 }
 
-// --- Universal venv-mirroring (find_venv_parents + relative_venv_target + link_venvs) ---
+// --- find_dep_parents walker (.venv target) ---
 
 /// Count `.venv` symlinks under `dir`, walking the directory tree but
 /// NOT following symlinks during recursion. Used to verify the walker
@@ -1404,13 +1404,13 @@ fn walker_does_not_recurse_into_found_venv() {
     );
 }
 
-// --- link_venvs orchestration + relative_venv_target depth math ---
+// --- link_deps orchestration (.venv target) ---
 
 /// L1: An empty source tree (no `.venv` anywhere) yields no
-/// symlinks. Walker returns empty; `link_venvs` iterates nothing.
+/// symlinks. Walker returns empty; `link_deps` iterates nothing.
 #[cfg(unix)]
 #[test]
-fn link_venvs_no_venvs_creates_nothing() {
+fn link_deps_venv_no_venvs_creates_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -1443,7 +1443,7 @@ fn link_venvs_no_venvs_creates_nothing() {
 /// components escape `.worktrees/<branch>/` back to project_root.
 #[cfg(unix)]
 #[test]
-fn link_venvs_root_only_preserves_existing() {
+fn link_deps_venv_root_only_preserves_existing() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -1477,7 +1477,7 @@ fn link_venvs_root_only_preserves_existing() {
 /// the cortex segment itself.
 #[cfg(unix)]
 #[test]
-fn link_venvs_single_subdir_cortex_shape() {
+fn link_deps_venv_single_subdir_cortex_shape() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -1509,7 +1509,7 @@ fn link_venvs_single_subdir_cortex_shape() {
 /// symlink at `<wt>/<name>/.venv`. Mono-repo full-harvest shape.
 #[cfg(unix)]
 #[test]
-fn link_venvs_multi_subdir_full_harvest_shape() {
+fn link_deps_venv_multi_subdir_full_harvest_shape() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -1555,7 +1555,7 @@ fn link_venvs_multi_subdir_full_harvest_shape() {
 /// and the real directory is preserved (not replaced by a symlink).
 #[cfg(unix)]
 #[test]
-fn link_venvs_skips_pre_existing_target() {
+fn link_deps_venv_skips_pre_existing_target() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -1593,14 +1593,14 @@ fn link_venvs_skips_pre_existing_target() {
     let wt = repo.join(".worktrees").join("pre-existing");
     let link = wt.join("cortex").join(".venv");
     // The path exists as the committed real directory, NOT as a
-    // symlink — proving link_venvs hit the skip-existing branch.
+    // symlink — proving link_deps hit the skip-existing branch.
     assert!(
         link.is_dir(),
         "<wt>/cortex/.venv must exist (from checkout)"
     );
     assert!(
         !link.is_symlink(),
-        "<wt>/cortex/.venv must NOT be a symlink — link_venvs preserved the existing real dir"
+        "<wt>/cortex/.venv must NOT be a symlink — link_deps preserved the existing real dir"
     );
     assert!(
         link.join("bin").join("python").exists(),
@@ -1613,7 +1613,7 @@ fn link_venvs_skips_pre_existing_target() {
 /// components: depth+2 (2+2=4) escapes `.worktrees/<branch>/packages/api/`.
 #[cfg(unix)]
 #[test]
-fn link_venvs_packages_api_depth_2_link_correct() {
+fn link_deps_venv_packages_api_depth_2_link_correct() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -1644,7 +1644,7 @@ fn link_venvs_packages_api_depth_2_link_correct() {
     );
 }
 
-/// L7: link_venvs handles a mixed-success scenario without
+/// L7: link_deps handles a mixed-success scenario without
 /// panicking. One venv is committed (so its worktree parent
 /// pre-exists as a checked-out file colliding with the symlink
 /// path); another is uncommitted (so it links normally). The
@@ -1654,7 +1654,7 @@ fn link_venvs_packages_api_depth_2_link_correct() {
 /// continues past the failure.
 #[cfg(unix)]
 #[test]
-fn link_venvs_silently_swallows_symlink_errors() {
+fn link_deps_venv_silently_swallows_symlink_errors() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -1721,5 +1721,529 @@ fn link_venvs_silently_swallows_symlink_errors() {
     assert!(
         wt.join("block_parent").is_file(),
         "committed file preserved in worktree"
+    );
+}
+
+// --- find_dep_parents walker (node_modules target) ---
+
+/// Count `node_modules` symlinks under `dir`, walking the directory
+/// tree but NOT following symlinks during recursion. Used to verify
+/// the walker emits exactly one symlink per discovered source
+/// `node_modules` and does not duplicate-emit through symlink loops.
+#[cfg(unix)]
+fn count_node_modules_symlinks(dir: &Path) -> usize {
+    let mut count = 0;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let entries = match fs::read_dir(&d) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name();
+            if name == "node_modules" {
+                if path.is_symlink() {
+                    count += 1;
+                }
+                continue;
+            }
+            if !path.is_symlink() && path.is_dir() {
+                stack.push(path);
+            }
+        }
+    }
+    count
+}
+
+/// Root-level `node_modules` is discovered and linked into the
+/// worktree at the same root-relative position.
+#[cfg(unix)]
+#[test]
+fn walker_finds_node_modules_at_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    create_state_file(&repo, "nm-at-root");
+    create_lock_entry(&repo, "nm-at-root");
+
+    fs::create_dir_all(repo.join("node_modules").join("foo")).unwrap();
+
+    let output = run_start_workspace(&repo, "Nm Root", "nm-at-root", &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let wt = repo.join(".worktrees").join("nm-at-root");
+    assert!(
+        wt.join("node_modules").is_symlink(),
+        "root-level node_modules must be linked"
+    );
+}
+
+/// A single subdir `node_modules` (e.g. `cortex/node_modules`) is
+/// discovered at depth 1 and linked.
+#[cfg(unix)]
+#[test]
+fn walker_finds_node_modules_at_depth_1() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    create_state_file(&repo, "nm-depth-1");
+    create_lock_entry(&repo, "nm-depth-1");
+
+    fs::create_dir_all(repo.join("cortex").join("node_modules").join("react")).unwrap();
+
+    let output = run_start_workspace(&repo, "Nm Depth1", "nm-depth-1", &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let wt = repo.join(".worktrees").join("nm-depth-1");
+    assert!(
+        wt.join("cortex").join("node_modules").is_symlink(),
+        "cortex/node_modules must be linked"
+    );
+}
+
+/// A deeply nested `node_modules` (e.g. `packages/api/node_modules`)
+/// is discovered at depth 2 and linked.
+#[cfg(unix)]
+#[test]
+fn walker_finds_node_modules_at_depth_2() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    create_state_file(&repo, "nm-depth-2");
+    create_lock_entry(&repo, "nm-depth-2");
+
+    fs::create_dir_all(
+        repo.join("packages")
+            .join("api")
+            .join("node_modules")
+            .join("express"),
+    )
+    .unwrap();
+
+    let output = run_start_workspace(&repo, "Nm Depth2", "nm-depth-2", &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let wt = repo.join(".worktrees").join("nm-depth-2");
+    assert!(
+        wt.join("packages")
+            .join("api")
+            .join("node_modules")
+            .is_symlink(),
+        "packages/api/node_modules must be linked"
+    );
+}
+
+/// Mono-repo with multiple `node_modules` directories under different
+/// app subdirs — each is discovered and linked at its source-relative
+/// position.
+#[cfg(unix)]
+#[test]
+fn walker_finds_multiple_node_modules_in_mono_repo() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    create_state_file(&repo, "nm-mono-repo");
+    create_lock_entry(&repo, "nm-mono-repo");
+
+    fs::create_dir_all(
+        repo.join("cortex")
+            .join("frontend")
+            .join("node_modules")
+            .join("a"),
+    )
+    .unwrap();
+    fs::create_dir_all(
+        repo.join("synapse")
+            .join("frontend")
+            .join("node_modules")
+            .join("b"),
+    )
+    .unwrap();
+
+    let output = run_start_workspace(&repo, "Nm Mono", "nm-mono-repo", &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let wt = repo.join(".worktrees").join("nm-mono-repo");
+    assert!(
+        wt.join("cortex")
+            .join("frontend")
+            .join("node_modules")
+            .is_symlink(),
+        "cortex/frontend/node_modules must be linked"
+    );
+    assert!(
+        wt.join("synapse")
+            .join("frontend")
+            .join("node_modules")
+            .is_symlink(),
+        "synapse/frontend/node_modules must be linked"
+    );
+    assert_eq!(
+        count_node_modules_symlinks(&wt),
+        2,
+        "exactly two node_modules symlinks across mono-repo"
+    );
+}
+
+/// A regular file named `node_modules` (e.g. a stale marker) is not
+/// linked — `path.is_dir()` returns false. A sibling valid
+/// `node_modules` directory IS linked, proving the loop continues.
+#[cfg(unix)]
+#[test]
+fn walker_skips_non_dir_node_modules_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    create_state_file(&repo, "nm-non-dir");
+    create_lock_entry(&repo, "nm-non-dir");
+
+    // cortex/node_modules is a regular file (e.g., an editor leftover).
+    fs::create_dir_all(repo.join("cortex")).unwrap();
+    fs::write(repo.join("cortex").join("node_modules"), "not a dir").unwrap();
+    // Sibling valid node_modules proves walker continues past the skip.
+    fs::create_dir_all(repo.join("synapse").join("node_modules").join("foo")).unwrap();
+
+    let output = run_start_workspace(&repo, "Nm NonDir", "nm-non-dir", &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let wt = repo.join(".worktrees").join("nm-non-dir");
+    assert!(
+        !wt.join("cortex").join("node_modules").is_symlink(),
+        "regular-file node_modules must not be linked"
+    );
+    assert!(
+        wt.join("synapse").join("node_modules").is_symlink(),
+        "sibling valid node_modules must be linked"
+    );
+}
+
+/// A `node_modules` entry that is itself a symlink to a real
+/// directory IS recorded — `path.is_dir()` follows the symlink and
+/// returns true. Workspace patterns that symlink shared
+/// `node_modules` (pnpm, yarn workspaces) get the same mirroring as
+/// inline ones.
+#[cfg(unix)]
+#[test]
+fn walker_handles_symlinked_node_modules_to_real_dir() {
+    use std::os::unix::fs::symlink;
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    create_state_file(&repo, "nm-symlink-dir");
+    create_lock_entry(&repo, "nm-symlink-dir");
+
+    // A real node_modules at a side location; cortex/node_modules -> it.
+    fs::create_dir_all(repo.join("shared-nm").join("react")).unwrap();
+    fs::create_dir_all(repo.join("cortex")).unwrap();
+    symlink(
+        repo.join("shared-nm"),
+        repo.join("cortex").join("node_modules"),
+    )
+    .unwrap();
+
+    let output = run_start_workspace(&repo, "Nm Symlink", "nm-symlink-dir", &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let wt = repo.join(".worktrees").join("nm-symlink-dir");
+    let cortex_nm = wt.join("cortex").join("node_modules");
+    assert!(
+        cortex_nm.is_symlink(),
+        "symlink-to-dir node_modules must be linked"
+    );
+}
+
+/// A `node_modules` discovery does not recurse into the discovered
+/// dir — `continue` after recording the parent skips the stack push.
+/// A nested `node_modules` inside the discovered one is not
+/// separately emitted; only the outer one is linked.
+#[cfg(unix)]
+#[test]
+fn walker_does_not_recurse_into_node_modules() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    create_state_file(&repo, "nm-no-recurse");
+    create_lock_entry(&repo, "nm-no-recurse");
+
+    // Deeply nested node_modules inside cortex/node_modules. Walker
+    // must record only the outer parent ("cortex") and not recurse
+    // to find the inner one.
+    fs::create_dir_all(
+        repo.join("cortex")
+            .join("node_modules")
+            .join("pkg")
+            .join("node_modules"),
+    )
+    .unwrap();
+
+    let output = run_start_workspace(&repo, "Nm NoRecurse", "nm-no-recurse", &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let wt = repo.join(".worktrees").join("nm-no-recurse");
+    assert!(
+        wt.join("cortex").join("node_modules").is_symlink(),
+        "outer cortex/node_modules must be linked"
+    );
+    assert_eq!(
+        count_node_modules_symlinks(&wt),
+        1,
+        "walker must emit exactly one node_modules parent (no inside-found-node_modules recursion)"
+    );
+}
+
+/// An empty source tree yields no `node_modules` symlinks AND no
+/// `.venv` symlinks. Both walkers return empty parents; both
+/// orchestrators iterate nothing.
+#[cfg(unix)]
+#[test]
+fn walker_empty_tree_yields_no_dep_parents() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    create_state_file(&repo, "nm-empty");
+    create_lock_entry(&repo, "nm-empty");
+
+    // Plain tree: regular dirs without any deps.
+    fs::create_dir_all(repo.join("src").join("module")).unwrap();
+    fs::create_dir_all(repo.join("docs")).unwrap();
+
+    let output = run_start_workspace(&repo, "Nm Empty", "nm-empty", &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let wt = repo.join(".worktrees").join("nm-empty");
+    assert_eq!(
+        count_node_modules_symlinks(&wt),
+        0,
+        "no source node_modules => no worktree symlinks"
+    );
+    assert_eq!(
+        count_venv_symlinks(&wt),
+        0,
+        "no source .venv => no worktree symlinks"
+    );
+}
+
+// --- create_worktree end-to-end (both .venv and node_modules) ---
+
+/// E1: A repo with a root-level `node_modules` produces a worktree
+/// symlink at `.worktrees/<branch>/node_modules`. Drives the full
+/// `flow-start` path through the binary subprocess.
+#[cfg(unix)]
+#[test]
+fn start_workspace_links_node_modules_at_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    create_state_file(&repo, "e2e-nm-root");
+    create_lock_entry(&repo, "e2e-nm-root");
+
+    fs::create_dir_all(repo.join("node_modules").join("foo")).unwrap();
+
+    let output = run_start_workspace(&repo, "E2E Nm Root", "e2e-nm-root", &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let wt = repo.join(".worktrees").join("e2e-nm-root");
+    assert!(
+        wt.join("node_modules").is_symlink(),
+        "root-level node_modules must be linked end-to-end"
+    );
+    let target = fs::read_link(wt.join("node_modules")).unwrap();
+    assert_eq!(
+        target,
+        PathBuf::from("../..").join("node_modules"),
+        "root depth=0 target must be ../../node_modules"
+    );
+}
+
+/// E2: Mono-repo with multiple frontend `node_modules` produces a
+/// matching symlink for each.
+#[cfg(unix)]
+#[test]
+fn start_workspace_links_node_modules_in_mono_repo() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    create_state_file(&repo, "e2e-nm-mono");
+    create_lock_entry(&repo, "e2e-nm-mono");
+
+    fs::create_dir_all(
+        repo.join("cortex")
+            .join("frontend")
+            .join("node_modules")
+            .join("a"),
+    )
+    .unwrap();
+    fs::create_dir_all(
+        repo.join("synapse")
+            .join("frontend")
+            .join("node_modules")
+            .join("b"),
+    )
+    .unwrap();
+
+    let output = run_start_workspace(&repo, "E2E Nm Mono", "e2e-nm-mono", &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let wt = repo.join(".worktrees").join("e2e-nm-mono");
+    for app in ["cortex", "synapse"] {
+        let link = wt.join(app).join("frontend").join("node_modules");
+        assert!(
+            link.is_symlink(),
+            "{}/frontend/node_modules must be linked",
+            app
+        );
+        let target = fs::read_link(&link).unwrap();
+        assert_eq!(
+            target,
+            PathBuf::from("../../../..")
+                .join(app)
+                .join("frontend")
+                .join("node_modules"),
+            "depth=2 target for {}/frontend must be ../../../../{}/frontend/node_modules",
+            app,
+            app
+        );
+    }
+}
+
+/// E3: A repo with both `.venv` and `node_modules` directories gets
+/// both mirrored into the worktree on the same `flow-start` run.
+/// Proves the two `link_deps` calls in `create_worktree` are
+/// independent and both fire.
+#[cfg(unix)]
+#[test]
+fn start_workspace_links_both_venv_and_node_modules() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    create_state_file(&repo, "e2e-both-deps");
+    create_lock_entry(&repo, "e2e-both-deps");
+
+    fs::create_dir_all(repo.join("api").join(".venv").join("bin")).unwrap();
+    fs::create_dir_all(repo.join("web").join("node_modules").join("react")).unwrap();
+
+    let output = run_start_workspace(&repo, "E2E Both", "e2e-both-deps", &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let wt = repo.join(".worktrees").join("e2e-both-deps");
+    assert!(
+        wt.join("api").join(".venv").is_symlink(),
+        "api/.venv must be linked"
+    );
+    assert!(
+        wt.join("web").join("node_modules").is_symlink(),
+        "web/node_modules must be linked"
+    );
+}
+
+/// E4: A pre-existing `node_modules` at the worktree path (from a
+/// committed real directory on the branch) is preserved, not
+/// overwritten by a symlink. Mirrors the L5 contract for `.venv`.
+#[cfg(unix)]
+#[test]
+fn start_workspace_preserves_existing_worktree_node_modules() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+    create_state_file(&repo, "e2e-nm-preserve");
+    create_lock_entry(&repo, "e2e-nm-preserve");
+
+    // Commit cortex/node_modules as a real directory on main. The
+    // new branch worktree starts with this committed content.
+    fs::create_dir_all(repo.join("cortex").join("node_modules").join("react")).unwrap();
+    fs::write(
+        repo.join("cortex")
+            .join("node_modules")
+            .join("react")
+            .join("index.js"),
+        "module.exports = {};",
+    )
+    .unwrap();
+    Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "Add cortex node_modules"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+
+    let output = run_start_workspace(&repo, "E2E Nm Preserve", "e2e-nm-preserve", &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let wt = repo.join(".worktrees").join("e2e-nm-preserve");
+    let link = wt.join("cortex").join("node_modules");
+    assert!(link.is_dir(), "<wt>/cortex/node_modules must exist");
+    assert!(
+        !link.is_symlink(),
+        "<wt>/cortex/node_modules must NOT be a symlink — link_deps preserved the existing real dir"
+    );
+    assert!(
+        link.join("react").join("index.js").exists(),
+        "committed contents must be preserved"
     );
 }
