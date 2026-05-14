@@ -3,7 +3,10 @@
 //! The script is invoked by users from their plain terminal after
 //! `/plugin install` and before `/flow:flow-prime`. It checks for
 //! `cargo` and `cc` prereqs and runs `cargo build --release` when
-//! both are present. The first three tests assert structural
+//! both are present. Passed `--stage-binary`, it additionally copies
+//! the fresh release binary to `bin/flow-rs-darwin-arm64` so the
+//! committed prebuilt binary never lags the source.
+//! The first three tests assert structural
 //! contracts (existence, executable bit, bash syntax, content
 //! snippets, shebang, strict-mode preamble, active success echo)
 //! so an accidental edit that drops a prereq check, the build
@@ -54,8 +57,9 @@ fn script_is_valid_bash() {
 }
 
 /// bin/setup must contain the prereq checks, install hints, build
-/// invocation, and success message that the install-flow docs
-/// reference. Guards against accidental edits that drop any of these.
+/// invocation, success message, and the `--stage-binary` staging
+/// logic that flow-release Step 6 depends on. Guards against
+/// accidental edits that drop any of these.
 #[test]
 fn script_contains_expected_install_flow() {
     let script = script_path();
@@ -67,6 +71,8 @@ fn script_contains_expected_install_flow() {
         "xcode-select --install",
         "cargo build --release",
         "Setup complete",
+        "--stage-binary",
+        "bin/flow-rs-darwin-arm64",
     ];
     for snippet in required {
         assert!(

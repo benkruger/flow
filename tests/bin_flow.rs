@@ -510,3 +510,162 @@ fn dispatcher_falls_through_to_auto_rebuild_when_no_binaries_present() {
         stdout
     );
 }
+
+// --- Committed-binary auto-rebuild interaction ---
+
+/// Writes an executable `cargo` mock at `<dir>/mock_bin/cargo` with the
+/// given script body and returns a PATH value that puts the mock first.
+/// Callers vary `body` to simulate a cargo that succeeds-but-builds-
+/// nothing, a cargo that records its invocation, or a cargo that fails.
+fn mock_cargo_path(dir: &std::path::Path, body: &str) -> String {
+    let mock_bin_dir = dir.join("mock_bin");
+    fs::create_dir_all(&mock_bin_dir).unwrap();
+    let mock_cargo = mock_bin_dir.join("cargo");
+    fs::write(&mock_cargo, body).unwrap();
+    let mut perms = fs::metadata(&mock_cargo).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&mock_cargo, perms).unwrap();
+    format!(
+        "{}:{}",
+        mock_bin_dir.display(),
+        std::env::var("PATH").unwrap()
+    )
+}
+
+/// When the committed binary resolves AND Cargo.toml + src/ are present
+/// with src/ newer than the committed binary, the auto-rebuild fires.
+/// If `cargo build` exits 0 without producing a target/* binary (the
+/// marketplace-cache layout — source ships beside the committed binary,
+/// no target/ tree), the post-build re-resolution must still fall back
+/// to the committed binary instead of dropping it.
+#[test]
+fn committed_binary_survives_when_rebuild_produces_no_target_binary() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path());
+    fake_binary(
+        &dir.path().join("bin/flow-rs-darwin-arm64"),
+        "committed-binary",
+    );
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"flow-rs\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    // src/main.rs newer than the committed binary → staleness check fires.
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+
+    let path = mock_cargo_path(dir.path(), "#!/usr/bin/env bash\nexit 0\n");
+    let output = run_dispatcher(dir.path(), &["noop"], Some(&path));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() && stdout.contains("committed-binary"),
+        "dispatcher dropped the still-present committed binary after a \
+         no-op rebuild: status={:?} stdout={:?}",
+        output.status.code(),
+        stdout
+    );
+}
+
+/// A committed binary newer than src/ must NOT trigger a rebuild — the
+/// `find ... -newer "$RUST_BIN"` staleness anchor treats the resolved
+/// committed binary as a valid staleness reference.
+#[test]
+fn fresh_committed_binary_does_not_trigger_rebuild() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path());
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"flow-rs\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+    // Committed binary created AFTER src/ → it is fresh.
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    fake_binary(
+        &dir.path().join("bin/flow-rs-darwin-arm64"),
+        "committed-binary",
+    );
+
+    let sentinel = dir.path().join("cargo_was_called");
+    let path = mock_cargo_path(
+        dir.path(),
+        &format!("#!/usr/bin/env bash\ntouch \"{}\"\n", sentinel.display()),
+    );
+    let output = run_dispatcher(dir.path(), &["noop"], Some(&path));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() && stdout.contains("committed-binary"),
+        "dispatcher did not resolve the fresh committed binary: stdout={:?}",
+        stdout
+    );
+    assert!(
+        !sentinel.exists(),
+        "cargo was invoked even though the committed binary is newer than src/"
+    );
+}
+
+/// When the committed binary resolves, src/ is newer, AND `cargo build`
+/// fails, the dispatcher must keep the present, runnable committed
+/// binary — the failed-build path leaves RUST_BIN untouched.
+#[test]
+fn committed_binary_survives_failed_rebuild() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path());
+    fake_binary(
+        &dir.path().join("bin/flow-rs-darwin-arm64"),
+        "committed-binary",
+    );
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"flow-rs\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+
+    let path = mock_cargo_path(dir.path(), "#!/usr/bin/env bash\nexit 1\n");
+    let output = run_dispatcher(dir.path(), &["noop"], Some(&path));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() && stdout.contains("committed-binary"),
+        "dispatcher errored despite a present committed binary after a \
+         failed rebuild: status={:?} stdout={:?}",
+        output.status.code(),
+        stdout
+    );
+}
+
+/// The `hook` subcommand must also survive a failed rebuild when the
+/// committed binary is present — otherwise every PreToolUse hook fails
+/// closed (exit 2) on a contributor checkout whose committed binary is
+/// stale relative to src/ and whose cargo build fails.
+#[test]
+fn committed_binary_hook_survives_failed_rebuild() {
+    let dir = tempfile::tempdir().unwrap();
+    setup_project(dir.path());
+    fake_binary(
+        &dir.path().join("bin/flow-rs-darwin-arm64"),
+        "committed-hook-handled",
+    );
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"flow-rs\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+
+    let path = mock_cargo_path(dir.path(), "#!/usr/bin/env bash\nexit 1\n");
+    let output = run_dispatcher(dir.path(), &["hook", "validate-pretool"], Some(&path));
+    assert!(
+        output.status.success(),
+        "hook subcommand failed (status={:?}) despite a present, runnable \
+         committed binary after a failed rebuild",
+        output.status.code()
+    );
+}

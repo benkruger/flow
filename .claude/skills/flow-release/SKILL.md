@@ -152,38 +152,21 @@ a fresh install needs no build step. It must be regenerated from source
 at every release so its bytes match the tagged source generation; a
 stale binary would run an older FLOW than the release claims.
 
-Build the release binary through `bin/setup`. The compiler runs inside
-that script, which keeps the build on the FLOW allow-list — invoking the
-Rust toolchain directly is permission-denied. `bin/setup` writes the
-release binary to `target/release/flow-rs`. Use a 10-minute Bash tool
-timeout (`timeout: 600000`) — a cold release build can take several
-minutes and the default 2-minute timeout would background the process.
+`bin/setup --stage-binary` builds the release binary and copies it to
+the committed path in one step. The compiler and the copy both run
+inside that script, which keeps them off the FLOW Bash allow-list
+surface — invoking the Rust toolchain or `cp` directly is
+permission-denied. Use a 10-minute Bash tool timeout
+(`timeout: 600000`) — a cold release build can take several minutes
+and the default 2-minute timeout would background the process.
 
 ```bash
-bin/setup
+bin/setup --stage-binary
 ```
 
-Stage the freshly built binary at the committed path with git plumbing.
-A plain file copy is not on the FLOW allow-list, but `git -C *` is. Run
-the three commands in order, carrying the blob SHA that `hash-object`
-prints into the `update-index` call:
-
-```bash
-git -C . hash-object -w target/release/flow-rs
-```
-
-```bash
-git -C . update-index --add --cacheinfo 100755,<sha>,bin/flow-rs-darwin-arm64
-```
-
-```bash
-git -C . checkout-index -f -- bin/flow-rs-darwin-arm64
-```
-
-Substitute `<sha>` with the blob SHA printed by `hash-object`. After
-`checkout-index`, `bin/flow-rs-darwin-arm64` is staged at mode `100755`
-and refreshed in the working tree, so the `git add -A` in Step 7 is a
-no-op for it and `finalize-commit` commits the fresh bytes.
+After `bin/setup --stage-binary`, `bin/flow-rs-darwin-arm64` is
+refreshed in the working tree with the executable bit set, so the
+`git add -A` in Step 7 stages the fresh bytes at mode `100755`.
 
 ## Step 7 — Stage all changes
 

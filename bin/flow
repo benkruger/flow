@@ -43,12 +43,17 @@ if [ -f "$REPO_ROOT/Cargo.toml" ] && [ -d "$REPO_ROOT/src" ]; then
   fi
   if [ "$needs_build" = true ]; then
     if cargo build --manifest-path "$REPO_ROOT/Cargo.toml" 2>/dev/null; then
-      # Re-resolve after successful build
+      # Re-resolve after successful build. Mirrors the initial
+      # resolution above: a build that exits 0 without producing a
+      # target/* binary must still fall back to the committed binary
+      # rather than dropping it.
       RUST_BIN=""
       if [ -x "$REPO_ROOT/target/release/flow-rs" ]; then
         RUST_BIN="$REPO_ROOT/target/release/flow-rs"
       elif [ -x "$REPO_ROOT/target/debug/flow-rs" ]; then
         RUST_BIN="$REPO_ROOT/target/debug/flow-rs"
+      elif [ -x "$REPO_ROOT/bin/flow-rs-darwin-arm64" ]; then
+        RUST_BIN="$REPO_ROOT/bin/flow-rs-darwin-arm64"
       fi
     fi
   fi

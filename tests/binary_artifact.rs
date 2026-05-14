@@ -6,6 +6,12 @@
 //! any hook fires. These tests guard three properties of the
 //! committed artifact: it exists, git tracks it as executable
 //! (`100755`), and it is a macOS Apple Silicon Mach-O binary.
+//!
+//! These tests do NOT verify the committed binary's bytes match the
+//! current `src/` generation — there is no mechanical source-vs-binary
+//! drift gate. Coherence is maintained by the `/flow-release` Step 6
+//! rebuild-and-stage discipline (`bin/setup --stage-binary`), which is
+//! exercised end-to-end only when a maintainer runs `/flow-release`.
 
 mod common;
 

@@ -15,4 +15,14 @@ if ! command -v cc >/dev/null 2>&1; then
 fi
 
 cargo build --release --manifest-path "$REPO_ROOT/Cargo.toml"
+
+# --stage-binary additionally refreshes the committed prebuilt binary
+# from the fresh release build, so bin/flow-rs-darwin-arm64 never lags
+# the source it ships alongside. The copy runs inside this script,
+# keeping it off the FLOW Bash allow-list surface.
+if [ "${1:-}" = "--stage-binary" ]; then
+  cp "$REPO_ROOT/target/release/flow-rs" "$REPO_ROOT/bin/flow-rs-darwin-arm64"
+  chmod 755 "$REPO_ROOT/bin/flow-rs-darwin-arm64"
+fi
+
 echo "Setup complete — run /flow:flow-prime in your project to initialize."
