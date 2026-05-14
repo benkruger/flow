@@ -1766,6 +1766,42 @@ fn skills_record_issues_via_add_issue() {
 }
 
 #[test]
+fn flow_plan_step_6_files_decomposed_issue_with_assignee_me() {
+    // The flow-plan Step 6 "Validate + File + Link" subsection files
+    // the decomposed issue via `bin/flow issue`. That invocation must
+    // carry `--label decomposed` (so flow-issues / flow-orchestrate
+    // recognize it as ready-for-flow-start work) AND `--assignee @me`
+    // (so the decomposed issue is assigned to the planner who ran
+    // flow-plan). The assertion is scoped to the `bin/flow issue`
+    // invocation line itself — not the whole subsection — because the
+    // subsection also contains a `bin/flow add-issue --label decomposed`
+    // call, so a subsection-wide `--label decomposed` check would still
+    // pass even if the filing invocation dropped the flag.
+    let c = common::read_skill("flow-plan");
+    let tail = c
+        .split_once("### Validate + File + Link")
+        .map(|(_, t)| t)
+        .expect("flow-plan must have a `Validate + File + Link` subsection");
+    let subsection = tail
+        .split_once("\n## ")
+        .map(|(section, _)| section)
+        .unwrap_or(tail);
+    let issue_invocation = subsection
+        .lines()
+        .find(|l| l.contains("bin/flow issue --title"))
+        .expect("flow-plan Step 6 must contain a `bin/flow issue --title` filing invocation");
+    assert!(
+        issue_invocation.contains("--label decomposed"),
+        "flow-plan Step 6 bin/flow issue invocation must carry --label decomposed"
+    );
+    assert!(
+        issue_invocation.contains("--assignee @me"),
+        "flow-plan Step 6 bin/flow issue invocation must carry --assignee @me \
+         so the decomposed issue is assigned to its planner"
+    );
+}
+
+#[test]
 fn generic_skills_have_no_language_conditionals() {
     // Generic skills (the always-available utility skills) must stay
     // language-agnostic. They never branch on "If Rails", "If Python",
