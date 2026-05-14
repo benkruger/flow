@@ -180,11 +180,15 @@ ran.
 1. The command shape is `bin/flow ... finalize-commit`.
 2. The state file has `_continue_pending == "commit"`.
 3. `transcript_shows_commit_window_skill(transcript_path, home)`
-   returns true — the most recent assistant Skill since the most
-   recent user turn names a sanctioned commit-window skill
-   (`flow:flow-commit` or `flow-release`). In practice every
-   active-flow commit names `flow:flow-commit`; the release path
-   runs on the integration trunk under the bootstrap carve-out.
+   returns true — EITHER the most recent user-role turn typed
+   `/flow-release` as a slash command, OR the most recent
+   assistant Skill since the most recent user turn names
+   `flow:flow-commit`. In practice every active-flow commit names
+   `flow:flow-commit` via an assistant Skill; the `/flow-release`
+   user-turn arm has no production effect here because the
+   release path runs on the integration trunk under the bootstrap
+   carve-out, not in a feature-branch worktree with an active
+   flow.
 
 Only when all three hold does the active-flow gate allow the
 invocation through.
@@ -196,20 +200,27 @@ the `-C` target — see "cwd-only scope" below):
 
 1. The command shape is `bin/flow ... finalize-commit`.
 2. `transcript_shows_commit_window_skill(transcript_path, home)`
-   returns true — the shared two-arm predicate accepts either
-   `flow:flow-commit` (delegated commit path used by
-   `/flow:flow-start` and `/flow:flow-prime`) or
-   `flow-release` (direct commit path that calls
-   `bin/flow finalize-commit` without delegating to
-   `/flow:flow-commit`). See
+   returns true — EITHER the most recent user-role turn typed
+   `/flow-release` as a slash command (the production recognition
+   path for the user-only `flow-release` skill, which calls
+   `bin/flow finalize-commit` directly without delegating to
+   `/flow:flow-commit`), OR the most recent assistant Skill since
+   the most recent user turn names `flow:flow-commit` (the
+   delegated commit path used by `/flow:flow-start` and
+   `/flow:flow-prime`). See
    `.claude/rules/concurrency-model.md` "Bootstrap-skill
    carve-out (integration-branch context)" for the per-skill
    trust contract.
 3. `any_skill_in_set_since_user(transcript_path, home,
    BOOTSTRAP_SKILLS)` returns true, where `BOOTSTRAP_SKILLS` is
    the closed set `{"flow:flow-start", "flow:flow-prime",
-   "flow-release"}`. The third entry is the bare name because
-   `flow-release` is a project-local maintainer skill at
+   "flow-release"}`. The walker recognizes a sanctioned parent
+   either as an assistant `Skill` tool_use OR as the user-typed
+   slash-command boundary turn — the latter is required because
+   `flow:flow-prime` and `flow-release` are user-only skills
+   Claude Code records only as user-role turns, never as
+   assistant `Skill` tool_use. The third entry is the bare name
+   because `flow-release` is a project-local maintainer skill at
    `.claude/skills/flow-release/`; Claude Code emits the bare
    form when the user types `/flow-release`, while the first
    two stay namespaced because the corresponding skills live at

@@ -189,25 +189,27 @@ iff ALL THREE conditions hold for the candidate cwd:
    `bin/flow set-timestamp` immediately before invoking
    `/flow:flow-commit`, and `phase_enter()` clears it on phase
    advance.
-3. The most recent assistant Skill tool_use call since the most
-   recent user turn — resolved by
-   `transcript_walker::most_recent_skill_since_user(transcript_path, home)`
-   — names a sanctioned commit-window skill (`flow:flow-commit`
-   or `flow-release`). The predicate is the shared
-   `transcript_shows_commit_window_skill` two-arm match; see
-   "Bootstrap-skill carve-out" below for the per-skill trust
-   contract. The walker is the load-bearing predicate that
-   proves the surrounding skill choreography (diff review,
-   commit-message review) actually ran; the `_continue_pending`
-   marker on its own is belt-and-suspenders for a fresh-session
-   resume window. The transcript-walker check is the
-   AND-combined condition per
+3. `transcript_shows_commit_window_skill(transcript_path, home)`
+   returns true — the shared predicate matches when EITHER the
+   most recent user-role turn typed `/flow-release` as a slash
+   command, OR the most recent assistant Skill tool_use call
+   since the most recent user turn (resolved by
+   `transcript_walker::most_recent_skill_since_user`) names
+   `flow:flow-commit`. See "Bootstrap-skill carve-out" below for
+   the per-skill trust contract. The walker is the load-bearing
+   predicate that proves the surrounding skill choreography
+   (diff review, commit-message review) actually ran; the
+   `_continue_pending` marker on its own is belt-and-suspenders
+   for a fresh-session resume window. The transcript-walker
+   check is the AND-combined condition per
    `.claude/rules/no-escape-hatches.md` Layer C, which closes
    the bypass-shortcut surface where a model could write the
    marker directly and invoke `bin/flow finalize-commit` without
    going through `/flow:flow-commit`. In practice every active-
-   flow commit names `flow:flow-commit` because the release path
-   runs on the integration trunk, not under an active flow.
+   flow commit names `flow:flow-commit` via an assistant Skill
+   because the release path runs on the integration trunk, not
+   under an active flow — so the `/flow-release` user-turn arm
+   has no production effect on the active-flow context.
 
 Trust contract: the `_continue_pending` field is writable by
 the model (the same `bin/flow set-timestamp` call that the
@@ -242,21 +244,20 @@ through iff ALL THREE conditions hold:
    matches `is_commit_invocation` but not the finalize-commit-
    only predicate. The carve-out is finalize-commit-only by
    design.
-2. The most recent assistant Skill tool_use call since the most
-   recent user turn — resolved by
-   `transcript_walker::most_recent_skill_since_user(transcript_path, home)`
-   — names a sanctioned commit-window skill. The shared
-   `transcript_shows_commit_window_skill` predicate accepts
-   either:
-   - `flow:flow-commit` — the delegated commit path used by
-     `/flow:flow-start` and `/flow:flow-prime`. The trust is the
-     standard `/flow:flow-commit` choreography: diff review,
-     commit-message review, user approval.
-   - `flow-release` — the direct commit path used by
-     `/flow-release`. The release skill calls
-     `bin/flow finalize-commit` directly rather than delegating
-     to `/flow:flow-commit`. Its trust comes from its own
-     internal review window: Step 3 displays
+2. `transcript_shows_commit_window_skill(transcript_path, home)`
+   returns true. The shared predicate matches a sanctioned
+   commit-window skill through EITHER of two recognition paths:
+   - `/flow-release` typed by the user as a slash command — the
+     most recent user-role turn carries the
+     `<command-name>/flow-release</command-name>` marker
+     (resolved by
+     `transcript_walker::last_user_message_invokes_skill`).
+     `flow-release` is a user-only skill recorded only as a
+     user-role turn, never as an assistant `Skill` tool_use, so
+     this is its production recognition path. The release skill
+     calls `bin/flow finalize-commit` directly rather than
+     delegating to `/flow:flow-commit`. Its trust comes from its
+     own internal review window: Step 3 displays
      `git log <last_tag>..HEAD`, Step 4 drafts release notes
      against that list, and Step 7 writes an explicit
      "Release v<new_version>" commit-message file before
@@ -264,16 +265,27 @@ through iff ALL THREE conditions hold:
      prefix) reflects the literal `input.skill` value Claude
      Code emits for the project-local skill at
      `.claude/skills/flow-release/`.
+   - `flow:flow-commit` as the most recent assistant Skill
+     tool_use call since the most recent user turn (resolved by
+     `transcript_walker::most_recent_skill_since_user`) — the
+     delegated commit path used by `/flow:flow-start` and
+     `/flow:flow-prime`. The trust is the standard
+     `/flow:flow-commit` choreography: diff review,
+     commit-message review, user approval.
 
    Each path's internal choreography substitutes for the other.
 3. A sanctioned bootstrap parent — `flow:flow-start`,
-   `flow:flow-prime`, or `flow-release` — appears in the
-   assistant Skill chain since the most recent real user turn,
-   resolved by
+   `flow:flow-prime`, or `flow-release` — is recognized since
+   the most recent real user turn, resolved by
    `transcript_walker::any_skill_in_set_since_user(transcript_path, home, BOOTSTRAP_SKILLS)`.
-   The sanctioned-parent set is the module-level `const
-   BOOTSTRAP_SKILLS` in `validate_pretool.rs`; extending the
-   set is a Plan-phase decision documented in a new flow.
+   The walker recognizes the parent either as an assistant
+   `Skill` tool_use OR as the user-typed slash-command boundary
+   turn itself — the latter is required because `flow:flow-prime`
+   and `flow-release` are user-only skills Claude Code records
+   only as user-role turns, never as assistant `Skill`
+   tool_use. The sanctioned-parent set is the module-level
+   `const BOOTSTRAP_SKILLS` in `validate_pretool.rs`; extending
+   the set is a Plan-phase decision documented in a new flow.
 
 The carve-out names no branch — `default_branch_in()` resolves
 the actual integration branch from `git symbolic-ref --short
