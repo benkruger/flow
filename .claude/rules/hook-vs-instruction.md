@@ -85,6 +85,19 @@ insufficient:
   `.claude/rules/concurrency-model.md` "Mechanical
   Enforcement" for the bypass surface, the carve-out trust-
   contract analyses, and the documented v1 gaps.
+- **Halt gate on Bash commands** — `validate-pretool` blocks
+  flow-advancing Bash commands when the active flow's state
+  file has `_halt_pending=true`. The closed allowlist is the
+  set of `bin/flow` subcommands that progress the flow:
+  `phase-enter`, `phase-finalize`, `phase-transition`,
+  `finalize-commit`, `set-utility-in-progress`, and
+  `set-timestamp --set code_task=*`. Other `bin/flow`
+  subcommands (logging, status, `set-timestamp` on non-counter
+  fields, `clear-halt` itself) pass through. The block message
+  names `/flow:flow-continue` (resume) and `/flow:flow-abort`
+  (give up) as the only sanctioned exits. See
+  `.claude/rules/autonomous-phase-discipline.md` "Defense in
+  depth — halt gates on Skill and Bash".
 - **`run_in_background` on `bin/flow` and `bin/ci`** — the
   pre-validation path in `validate-pretool` rejects any
   background invocation of `bin/flow` (any subcommand) and
@@ -116,26 +129,45 @@ insufficient:
       checked first. See
       `.claude/rules/autonomous-phase-discipline.md`
       "Shared-Config Carve-Out".
-- **Explicit user pause directives during autonomous phases** —
-  `stop_continue::check_halt_pending` refuses the Stop event
-  with `{"decision":"block"}` and a conversation-preserving
-  reason naming the closed continue-token grammar (`continue`,
-  `resume`, `proceed`, `go ahead`, `keep going`) when the user
-  has typed a prose message after the model's most recent Skill
-  action AND the message contains no continue token AND the
-  current phase is in-progress + auto. Sets state field
-  `_halt_pending=true` so the block persists across multiple
-  Stop events until a continue token arrives. When the user
-  types a continue token, `_halt_pending` AND `_stop_instructed`
-  are both cleared in the same `mutate_state` call so halt
-  residue does not bleed forward into subsequent phases.
-  `_continue_pending` is preserved across every halt set/clear
-  so the multi-child-skill resume path picks up where it
-  paused. Composed FIRST in `stop_continue::run` — BEFORE
-  `check_first_stop` — so an explicit user pause directive
-  cannot be misclassified as generic discussion mode. See
-  `.claude/rules/autonomous-phase-discipline.md` "Mechanical
-  halt-pause contract".
+- **Autonomous Stop refusal** — `stop_continue::run` composes
+  three predicates in order: `check_in_progress_utility_skill`
+  (refuses turn-end when a multi-step utility skill marker
+  exists and `decompose:decompose` is the most recent Skill in
+  the transcript), `check_continue` (forces continuation when
+  `_continue_pending=<skill>` is set, supporting multi-child-
+  skill chains), and `check_autonomous_stop` (the unified
+  autonomous-mode gate). `check_autonomous_stop` applies three
+  rules when the current phase is in-progress + auto:
+    - **Rule 1** — no halt and no new user message: refuse the
+      Stop with the encouraging message `"Stop Refused:
+      Continue, you can do it. Don't give up, you got this!
+      No excuses!"`. The autonomous flow must keep going.
+    - **Rule 2** — `_halt_pending=true` and no new user
+      message: refuse the Stop with a message naming the two
+      exits `/flow:flow-continue` (resume) and
+      `/flow:flow-abort` (close the flow). Persists across
+      every subsequent Stop until the user invokes
+      `/flow:flow-continue`.
+    - **Conversation pass-through** — a real user message
+      appeared since the model's most recent Skill action
+      (detected via
+      `transcript_walker::most_recent_user_message_since_skill_action`,
+      which filters synthetic `isMeta:true` turns per
+      `.claude/rules/transcript-shape.md`): set
+      `_halt_pending=true` and allow the Stop so the model can
+      answer. The next Stop without a new user message fires
+      Rule 2.
+  See `.claude/rules/autonomous-phase-discipline.md` "The
+  Two-Exit Halt Model" for the full design and the lifecycle
+  of `_halt_pending`.
+- **Halt gate on Skill calls** — `validate-skill` Layer 2
+  blocks any Skill tool call when `_halt_pending=true` unless
+  the skill is in `USER_ONLY_SKILLS` AND the user typed the
+  matching slash command. The user-only allow-path runs
+  BEFORE the halt check so `/flow:flow-continue` and
+  `/flow:flow-abort` pass cleanly. See
+  `.claude/rules/autonomous-phase-discipline.md` "Defense in
+  depth — halt gates on Skill and Bash".
 - **Decompose-return turn-end during a multi-step utility skill** —
   `stop_continue::check_in_progress_utility_skill` refuses the Stop
   event with `{"decision":"block"}` and the verbatim encouraging
@@ -151,43 +183,15 @@ insufficient:
   distinguishes "decompose just returned mid-pipeline" (block) from
   "model just sent a normal conversational reply" (no block) — so
   discussion-mode replies during these utility skills end the turn
-  cleanly. Composed AFTER `check_continue` and BEFORE
-  `check_prose_pause_at_task_entry`.
-- **Voluntary turn-end during autonomous in-progress phases** —
-  `stop_continue::check_autonomous_in_progress` refuses the Stop
-  event with `{"decision":"block"}` and an autonomous-mode reason
-  when the current phase is in-progress AND configured `auto` AND
-  `_continue_pending` is empty. Closes the text-only-stop hole
-  that PreToolUse hooks cannot reach: a model that ends the turn
-  with prose alone (no tool call) is invisible to PreToolUse, but
-  the Stop hook fires and refuses the turn-end. The block runs
-  AFTER `check_first_stop` and `check_continue` so discussion
-  mode and multi-child-skill chains keep their semantics.
-- **Prose-based pauses at Code-phase task-entry boundaries** —
-  `stop_continue::check_prose_pause_at_task_entry` refuses the
-  Stop event with `{"decision":"block"}` and a prose-pause reason
-  when ALL seven guards hold: `current_phase == "flow-code"`,
-  `phases.flow-code.status == "in_progress"`,
-  `skills.flow-code.continue == "auto"`, `code_task == 0`,
-  `_continue_pending` is empty, the most recent assistant
-  transcript turn contains a `?` outside fenced code blocks and
-  inline code spans, and the most recent assistant turn
-  contains no `tool_use` block. Composed BEFORE
-  `check_autonomous_in_progress` so its more specific message
-  (citing `.claude/rules/autonomous-flow-self-recovery.md`) wins
-  for the prose-pause shape; other text-only stops fall through
-  to the generic predicate. Closes the AskUserQuestion-bypass
-  surface where a model emits a prose question and ends the turn
-  without any tool call (validate-ask-user only fires on
-  `AskUserQuestion` tool calls). See
-  `.claude/rules/autonomous-phase-discipline.md` "Prose-Based
-  Pauses Bypass AskUserQuestion".
+  cleanly. Composed FIRST in `stop_continue::run`, BEFORE
+  `check_continue` and `check_autonomous_stop`.
 - **Model invocation of user-only skills** —
-  `validate-skill` rejects Skill tool calls naming user-only
-  skills when the most recent user-role turn in the persisted
-  transcript does NOT contain a matching slash-command marker.
-  See `.claude/rules/user-only-skills.md` for the full set and
-  Layer 1 details.
+  `validate-skill` Layer 1 rejects Skill tool calls naming
+  user-only skills when the most recent user-role turn in the
+  persisted transcript does NOT contain a matching slash-
+  command marker. See `.claude/rules/user-only-skills.md` for
+  the full set (including `/flow:flow-continue`) and Layer 1
+  details.
 - **Edit/Write on `.claude/` paths during a flow** —
   `validate-claude-paths` redirects to
   `bin/flow write-rule` for `CLAUDE.md`,

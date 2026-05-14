@@ -1,6 +1,6 @@
 # User-Only Skills
 
-Four FLOW skills are reserved for direct user invocation. The model
+Five FLOW skills are reserved for direct user invocation. The model
 must never invoke them — neither via the Skill tool, nor by
 suggesting that an `AskUserQuestion` answer should be "yes, run
 `/flow:flow-X`". Each skill performs an action whose authorization
@@ -15,6 +15,7 @@ command) rather than from inferred context.
 | `/flow:flow-reset` | Same destructive shape but applied across every active flow on the machine. | Destructive — losing in-flight work across multiple flows. |
 | `/flow:flow-release` | Bumps version, tags, pushes, and creates a public GitHub Release. | Resource-shipping — visible to plugin marketplace consumers. |
 | `/flow:flow-prime` | Writes `.claude/settings.json` and the four `bin/*` stubs into the project. | Environment-mutating — modifies shared config the project has not yet reviewed. |
+| `/flow:flow-continue` | Clears `_halt_pending` so the paused autonomous flow resumes. | Authorization to resume must come from explicit user intent — the user typing the slash command — rather than from model inference. The matching `bin/flow clear-halt` subcommand self-gates on the same transcript marker, so even a model that bypasses Layer 1 cannot clear the halt. |
 
 The criterion is "model must never propose." This is stricter than
 the sibling "ask-first" pattern (`/flow:flow-explore`,
@@ -26,7 +27,7 @@ command directly.
 
 ## Three-Layer Enforcement Chain
 
-The four skills are protected by three independent mechanical
+The five skills are protected by three independent mechanical
 gates so a single bypass does not defeat the discipline.
 
 ### Layer threat mapping
@@ -89,6 +90,15 @@ regardless of total transcript size. Per
 `crate::session_metrics::is_safe_transcript_path` — which rejects
 empty, NUL-byte, relative, ParentDir-component, and
 prefix-escaping paths.
+
+Layer 1 also enforces the halt gate (see
+`.claude/rules/autonomous-phase-discipline.md` "Defense in
+depth — halt gates on Skill and Bash"): when `_halt_pending=true`
+in the state file, every Skill call is blocked except the
+user-only exits the user has already typed. The user-only
+allow-path runs BEFORE the halt check so a user-typed
+`/flow:flow-continue` or `/flow:flow-abort` passes the gate
+cleanly.
 
 ### Layer 2: `validate-ask-user` carve-out
 
