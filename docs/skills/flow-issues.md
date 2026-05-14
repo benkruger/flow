@@ -22,49 +22,69 @@ parent: Skills
 /flow-issues --label Bug --ready
 ```
 
-Fetches all open issues for the current repository, analyzes them via `bin/flow analyze-issues` (file paths, labels, stale detection), ranks by impact using LLM judgment, and displays a dashboard with a recommended work order. Supports optional readiness filters and server-side narrowing filters (`--label`, `--milestone`) to focus results. Read-only — never creates, edits, or closes issues.
+Groups every open issue in the current repository into four
+label-bucketed tables — Blocked, Other, Vanilla, Decomposed — with
+mechanical sort and a copy-pasteable slash command per row. Supports
+filter flags to drop or restrict sections, plus server-side narrowing
+filters (`--label`, `--milestone`). Read-only — never creates, edits,
+or closes issues.
 
 ---
 
 ## What It Does
 
-1. Runs `bin/flow analyze-issues` which calls `gh issue list` internally, parses the JSON, extracts file paths from issue bodies, detects "Flow In-Progress", "Decomposed", and "Blocked" labels, queries native GitHub blocked-by relationships via GraphQL, categorizes issues, and checks for stale issues (older than 60 days with missing file references)
-2. Reads the condensed per-issue briefs and ranks by impact using LLM judgment — considering what unblocks the most work, what has the broadest effect, and what is urgent
-3. Displays a summary line with total issue count
-4. Prints an In Progress table for WIP issues (linked `[#N](url)`, Title columns)
-5. Prints a single Recommended Work Order table with columns: Order, Status, Impact, Labels, # (linked), Title, Rationale — excluding in-progress issues. Status shows `Ready` or `Blocked` based on the "Blocked" label or native GitHub blocked-by dependencies. Ready issues appear first, blocked issues at the end. Sorting is by impact ranking. A Start Commands table follows the work order with only ready issues — blocked issues are excluded from start commands
+1. Runs `bin/flow analyze-issues` which calls `gh issue list`
+   internally, parses the JSON, detects FLOW labels (`Decomposed`,
+   `Blocked`, `Vanilla`, `Flow In-Progress`, `Triage In-Progress`),
+   collects per-row `assignees`, and resolves native GitHub
+   `blocked_by` entries to `[{number, url}]` pairs.
+2. Walks the flat `issues` array and assigns each row to the first
+   matching bucket: **Blocked** (`blocked == true`), then
+   **Decomposed** (`decomposed == true`), then **Vanilla**
+   (`vanilla == true`), then **Other**.
+3. Renders four markdown tables in order. The Blocked section has
+   five columns (Issue #, Title, Assignee, Blocked By, Command);
+   the other three sections have four (Issue #, Title, Assignee,
+   Command). Issue # cells render as `[#N](url)` markdown links;
+   `Blocked By` cells render the same way for each blocker entry.
+4. Bucket-specific Command cells render copy-pasteable slash
+   commands: Other → `/flow:flow-explore work on issue #N`,
+   Vanilla → `/flow:flow-plan #N`, Decomposed →
+   `/flow:flow-start #N`. The Blocked section's Command cell is
+   suppressed. Rows with `flow_in_progress == true` (🟡, Decomposed
+   section) and `triage_in_progress == true` (🔍, Other section)
+   carry a colored prefix on the bold Title cell and suppress the
+   Command cell — the row signals "someone else owns this".
+5. Sort within sections: Blocked and Vanilla by issue number
+   descending; Other and Decomposed cluster colored rows first
+   (🔍 / 🟡), then sort by issue number descending within each
+   cluster. Empty cells render as `—`.
 
 ---
 
-## Readiness Filters
+## Filter Flags
 
-Optional flags filter the issue list by readiness. Flags are mutually exclusive — pass at most one.
+Filtering happens at the Rust layer — `bin/flow analyze-issues`
+returns a pre-filtered `issues` array and the renderer buckets
+whatever it receives. Flags are mutually exclusive within each
+family.
 
-| Flag | Shows |
-|------|-------|
-| `--ready` | Issues that are not blocked — can start immediately |
-| `--blocked` | Issues that are blocked — waiting on other work |
-| `--decomposed` | Issues with the "Decomposed" label — work-ready with prior analysis |
-| `--quick-start` | Decomposed issues that are not blocked — best candidates for autonomous execution |
+| Flag | Effect |
+|------|--------|
+| `--ready` | Rust drops blocked rows; no Blocked section appears in output. |
+| `--blocked` | Rust keeps only blocked rows; only Blocked section appears. |
+| `--decomposed` | Rust keeps only decomposed rows; only Decomposed section appears. |
+| `--quick-start` | Rust keeps decomposed + non-blocked + non-Flow-In-Progress rows; no 🟡 cluster. |
+| `--label <name>` | Server-side filter passed to `gh issue list` (repeatable; AND logic). |
+| `--milestone <title>` | Server-side milestone filter (single value; by title or number). |
 
-No flag returns all issues (default behavior).
-
----
-
-## Narrowing Filters
-
-Server-side filters passed directly to `gh issue list` that reduce the issue set before analysis.
-
-| Flag | Shows |
-|------|-------|
-| `--label <name>` | Issues with the specified GitHub label (repeatable; multiple labels use AND logic) |
-| `--milestone <title>` | Issues in the specified milestone (by title or number; single value only) |
-
-Narrowing filters compose with readiness filters. For example, `--label Bug --ready` fetches only "Bug"-labeled issues, then shows only the non-blocked ones.
+`--label` and `--milestone` compose with the section flags. No flag
+renders all four sections in order.
 
 ---
 
 ## Gates
 
-- Read-only — never creates, edits, or closes issues
-- Display-only — no AskUserQuestion prompts
+- Read-only — never creates, edits, or closes issues.
+- Display-only — no AskUserQuestion prompts.
+- Bucketing and sort are mechanical — no LLM judgment.

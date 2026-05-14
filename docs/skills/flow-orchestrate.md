@@ -17,7 +17,7 @@ Processes decomposed issues sequentially overnight via `flow-start --auto`. Fetc
 ## What It Does
 
 1. Fetches open issues with the "Decomposed" label, excludes those with "Flow In-Progress"
-2. Displays a prioritized queue table (same format as `flow-issues`) and creates an orchestration state file at `.flow-states/orchestrate.json`
+2. Displays a queue table with `Order`, `Issue #`, and `Title` columns sorted by issue number descending, and creates an orchestration state file at `.flow-states/orchestrate.json`
 3. For each issue in the queue:
    - Invokes `flow-start --auto` with the issue title and number
    - The full 5-phase lifecycle runs autonomously

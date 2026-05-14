@@ -3158,12 +3158,32 @@ fn done_hard_gates_auto_path_has_final_action_language() {
 
 // --- Flow issues skill ---
 
-#[test]
-fn flow_issues_has_work_order_section() {
+/// Bounded slice helper: return the Step-2 ("Render the four
+/// sections") subsection of flow-issues SKILL.md. Used by the
+/// four-section contract tests so assertions can't be satisfied
+/// by content in unrelated subsections.
+fn flow_issues_step_2_subsection() -> String {
     let c = common::read_skill("flow-issues");
+    let tail = c
+        .split_once("## Step 2 — Render the four sections")
+        .map(|(_, t)| t)
+        .expect("flow-issues SKILL.md must have a Step 2 — Render the four sections section");
+    let body = tail.split_once("\n## ").map(|(b, _)| b).unwrap_or(tail);
+    body.to_string()
+}
+
+#[test]
+fn flow_issues_has_four_sections_in_order() {
+    let body = flow_issues_step_2_subsection();
+    let blocked_idx = body.find("**Blocked**").expect("Blocked section name");
+    let other_idx = body.find("**Other**").expect("Other section name");
+    let vanilla_idx = body.find("**Vanilla**").expect("Vanilla section name");
+    let decomposed_idx = body
+        .find("**Decomposed**")
+        .expect("Decomposed section name");
     assert!(
-        c.contains("Work Order") || c.contains("work order"),
-        "flow-issues must have Work Order section"
+        blocked_idx < other_idx && other_idx < vanilla_idx && vanilla_idx < decomposed_idx,
+        "flow-issues Step 2 must name Blocked, Other, Vanilla, Decomposed in that order"
     );
 }
 
@@ -3195,11 +3215,20 @@ fn flow_issues_has_blocked_label_detection() {
 }
 
 #[test]
-fn flow_issues_has_stale_detection() {
+fn flow_issues_has_triage_in_progress_detection() {
     let c = common::read_skill("flow-issues");
     assert!(
-        c.contains("stale") || c.contains("Stale"),
-        "flow-issues must have stale issue detection"
+        c.contains("Triage In-Progress") || c.contains("triage_in_progress"),
+        "flow-issues must reference the Triage In-Progress signal"
+    );
+}
+
+#[test]
+fn flow_issues_has_vanilla_detection() {
+    let c = common::read_skill("flow-issues");
+    assert!(
+        c.contains("Vanilla") || c.contains("vanilla"),
+        "flow-issues must reference the Vanilla bucket"
     );
 }
 
@@ -3208,49 +3237,184 @@ fn flow_issues_has_start_commands() {
     let c = common::read_skill("flow-issues");
     assert!(
         c.contains("flow-start") || c.contains("flow:flow-start"),
-        "flow-issues must include flow-start commands"
+        "flow-issues Decomposed section must include flow-start commands"
     );
 }
 
 #[test]
-fn flow_issues_start_commands_include_title() {
-    let c = common::read_skill("flow-issues");
+fn flow_issues_has_explore_command_for_other_bucket() {
+    let body = flow_issues_step_2_subsection();
     assert!(
-        c.contains("title") || c.contains("Title"),
-        "flow-issues must instruct to add issue title comments"
+        body.contains("flow-explore") || body.contains("flow:flow-explore"),
+        "flow-issues Other section must include flow-explore commands"
     );
 }
 
 #[test]
-fn flow_issues_has_impact_ranking() {
-    let c = common::read_skill("flow-issues");
+fn flow_issues_has_plan_command_for_vanilla_bucket() {
+    let body = flow_issues_step_2_subsection();
     assert!(
-        c.contains("impact") || c.contains("Impact"),
-        "flow-issues must have impact ranking"
+        body.contains("flow-plan") || body.contains("flow:flow-plan"),
+        "flow-issues Vanilla section must include flow-plan commands"
     );
 }
 
 #[test]
-fn flow_issues_has_status_column() {
-    let c = common::read_skill("flow-issues");
-    assert!(c.contains("Status"), "flow-issues must have Status column");
-}
-
-#[test]
-fn flow_issues_has_ready_and_blocked_values() {
-    let c = common::read_skill("flow-issues");
+fn flow_issues_names_canonical_columns() {
+    let body = flow_issues_step_2_subsection();
+    for col in ["Issue #", "Title", "Assignee", "Command"] {
+        assert!(
+            body.contains(col),
+            "flow-issues Step 2 must name the `{}` column",
+            col,
+        );
+    }
     assert!(
-        c.contains("Ready") && c.contains("Blocked"),
-        "flow-issues must define Ready and Blocked values"
+        body.contains("Blocked By"),
+        "flow-issues Step 2 must name the `Blocked By` column for the Blocked section"
     );
 }
 
 #[test]
-fn flow_issues_start_commands_exclude_blocked() {
+fn flow_issues_names_color_prefixes() {
+    let body = flow_issues_step_2_subsection();
+    assert!(
+        body.contains("🟡"),
+        "flow-issues Step 2 must name the 🟡 prefix for Flow-In-Progress rows"
+    );
+    assert!(
+        body.contains("🔍"),
+        "flow-issues Step 2 must name the 🔍 prefix for Triage-In-Progress rows"
+    );
+    assert!(
+        body.contains("Bold") || body.contains("bold"),
+        "flow-issues Step 2 must instruct bold Title for colored rows"
+    );
+}
+
+#[test]
+fn flow_issues_names_link_format() {
+    let body = flow_issues_step_2_subsection();
+    assert!(
+        body.contains("[#N](url)"),
+        "flow-issues Step 2 must render Issue # cells as `[#N](url)` markdown links"
+    );
+}
+
+#[test]
+fn flow_issues_names_empty_cell_convention() {
+    let body = flow_issues_step_2_subsection();
+    assert!(
+        body.contains("`—`"),
+        "flow-issues Step 2 must name `—` as the empty-cell convention"
+    );
+}
+
+#[test]
+fn flow_issues_names_sort_rules() {
+    let body = flow_issues_step_2_subsection();
+    assert!(
+        body.contains("number") && body.contains("descending"),
+        "flow-issues Step 2 must name issue-number descending as the sort rule"
+    );
+    assert!(
+        body.contains("colored rows first") || body.contains("colored first"),
+        "flow-issues Step 2 must instruct colored-first sort for Other and Decomposed"
+    );
+}
+
+/// Tombstone: removed in PR #1549. Stability argument:
+/// `Recommended Work Order`, `Start Commands`, and the
+/// `### In Progress` heading are distinctive multi-word strings
+/// that cannot be assembled by `concat!`/`format!` or split
+/// across method-chained `.arg()` calls — they appear as
+/// Markdown headings in prose, not as shell-tool arguments. The
+/// summary-line directive includes the literal token "in
+/// progress, " from the rendered template, which is also
+/// non-reassemblable. Bypasses considered and rejected: macro
+/// concat (Markdown headings cannot be runtime-assembled),
+/// constant ref (would still leave the string on a source line),
+/// hex escapes (would still appear in source).
+#[test]
+fn test_flow_issues_no_recommended_work_order_heading() {
     let c = common::read_skill("flow-issues");
     assert!(
-        c.contains("blocked") || c.contains("Blocked"),
-        "flow-issues must exclude blocked issues from start commands"
+        !c.contains("Recommended Work Order"),
+        "flow-issues SKILL.md must not contain `Recommended Work Order` — \
+         the four-section dashboard in PR #1549 replaces the work-order table."
+    );
+}
+
+/// Tombstone: removed in PR #1549. Stability argument: the
+/// `Start Commands` heading is a distinctive two-word phrase
+/// with no `concat!`/`format!`/constant reassembly path; it
+/// appears as a Markdown heading in prose, not as a shell-tool
+/// argument that could split across method chains.
+#[test]
+fn test_flow_issues_no_start_commands_heading() {
+    let c = common::read_skill("flow-issues");
+    assert!(
+        !c.contains("Start Commands"),
+        "flow-issues SKILL.md must not contain `Start Commands` — \
+         the four-section dashboard in PR #1549 surfaces commands per row in the Command cell."
+    );
+}
+
+/// Tombstone: removed in PR #1549. Stability argument: the
+/// `### In Progress` heading is a distinctive Markdown-level-3
+/// heading string with no `concat!`/`format!`/constant
+/// reassembly path. The substring is unique to the subsection
+/// heading; the `Flow In-Progress` label name remains valid
+/// elsewhere because it includes the hyphenated suffix.
+#[test]
+fn test_flow_issues_no_in_progress_subsection_heading() {
+    let c = common::read_skill("flow-issues");
+    assert!(
+        !c.contains("### In Progress"),
+        "flow-issues SKILL.md must not contain `### In Progress` — \
+         Flow-In-Progress rows are bucketed into the Decomposed section in PR #1549."
+    );
+}
+
+/// Tombstone: removed in PR #1549. Stability argument: the
+/// `Impact` and `Rationale` column headers are common English
+/// words; the assertion is bounded to the Step 2 subsection
+/// (the table-rendering region) so prose mentions of the words
+/// elsewhere remain valid. No `concat!`/`format!`/constant
+/// reassembly path produces a column header at runtime.
+#[test]
+fn test_flow_issues_no_impact_or_rationale_column_in_step_2() {
+    let body = flow_issues_step_2_subsection();
+    assert!(
+        !body.contains("Impact"),
+        "flow-issues Step 2 must not name an `Impact` column — \
+         impact ranking was dropped in PR #1549."
+    );
+    assert!(
+        !body.contains("Rationale"),
+        "flow-issues Step 2 must not name a `Rationale` column — \
+         rationale ranking was dropped in PR #1549."
+    );
+}
+
+/// Tombstone: removed in PR #1549. Stability argument: the
+/// summary-line directive includes the literal token sequence
+/// "in progress, " (lowercase, with comma) from the rendered
+/// template prose. The exact phrase has no
+/// `concat!`/`format!`/constant reassembly path and does not
+/// collide with the `Flow In-Progress` capitalized label name.
+#[test]
+fn test_flow_issues_no_summary_line_directive() {
+    let c = common::read_skill("flow-issues");
+    assert!(
+        !c.contains("in progress, "),
+        "flow-issues SKILL.md must not contain the summary-line `in progress,` template — \
+         the four-section dashboard in PR #1549 replaces the summary line."
+    );
+    assert!(
+        !c.contains("available for work"),
+        "flow-issues SKILL.md must not contain `available for work` — \
+         the summary-line template was dropped in PR #1549."
     );
 }
 

@@ -6,16 +6,15 @@
 mod common;
 
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
 use common::{create_gh_stub, create_git_repo_with_remote};
 use flow_rs::analyze_issues::{
-    analyze_issues, blocker_result_to_map, build_blocker_query, categorize, check_stale,
-    detect_labels, extract_file_paths, fetch_blockers, filter_issues, gh_output_to_result,
-    normalize_error_payload, parse_blocker_response, run_gh, run_impl_main, truncate_body, Args,
+    analyze_issues, blocker_result_to_map, build_blocker_query, detect_labels, fetch_blockers,
+    filter_issues, gh_output_to_result, normalize_error_payload, parse_blocker_response, run_gh,
+    run_impl_main, Args,
 };
 use serde_json::{json, Value};
 
@@ -56,53 +55,6 @@ fn fake_issue(number: i64, title: &str, labels: Vec<&str>) -> serde_json::Value 
         "labels": label_objs,
         "milestone": null,
     })
-}
-
-/// Covers the `check_stale` body path in this integration test
-/// binary's flow-rs subprocess — exercises the case where
-/// `age_days >= 60` AND `file_paths` is non-empty. Without this,
-/// every other integration test uses recent createdAt dates and
-/// check_stale always early-returns in the main bin instance.
-#[test]
-fn analyze_issues_stale_detection_via_subprocess() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = create_git_repo_with_remote(dir.path());
-    // createdAt 90 days ago; body references a nonexistent file so
-    // check_stale's filter finds 1 missing path.
-    let old_date = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
-    let issue = json!({
-        "number": 77,
-        "title": "Stale",
-        "body": "See /definitely/nonexistent/stale_ref.py",
-        "url": "https://github.com/o/r/issues/77",
-        "createdAt": old_date,
-        "labels": [],
-        "milestone": null,
-    });
-    let issues = vec![issue];
-    let issues_path = dir.path().join("issues.json");
-    fs::write(&issues_path, serde_json::to_string(&issues).unwrap()).unwrap();
-    let stub_dir = create_gh_stub(&repo, "#!/bin/bash\necho '{\"data\":{}}'\nexit 0\n");
-
-    let output = run_analyze(
-        &repo,
-        &["--issues-json", issues_path.to_str().unwrap()],
-        &stub_dir,
-    );
-
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let data = parse_full_stdout(&output);
-    assert_eq!(data["status"], "ok");
-    // Verify the stale fields are populated — confirms check_stale
-    // body executed (not the early-return path).
-    let first = &data["issues"][0];
-    assert_eq!(first["stale"], true);
-    assert!(first["stale_missing"].as_i64().unwrap() >= 1);
 }
 
 /// Covers the per-binary instantiation's None branch of
@@ -262,7 +214,7 @@ fn analyze_issues_reads_json_file() {
 }
 
 #[test]
-fn analyze_issues_partitions_in_progress() {
+fn analyze_issues_collapse_flags_in_progress_row_in_issues_array() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     let issues = vec![
@@ -281,9 +233,13 @@ fn analyze_issues_partitions_in_progress() {
 
     assert_eq!(output.status.code(), Some(0));
     let data = parse_full_stdout(&output);
-    let in_progress = data["in_progress"].as_array().unwrap();
-    assert_eq!(in_progress.len(), 1);
-    assert_eq!(in_progress[0]["number"], 1);
+    assert!(data.get("in_progress").is_none());
+    let issues_arr = data["issues"].as_array().unwrap();
+    assert_eq!(issues_arr.len(), 2);
+    let row1 = issues_arr.iter().find(|i| i["number"] == 1).unwrap();
+    assert_eq!(row1["flow_in_progress"], true);
+    let row2 = issues_arr.iter().find(|i| i["number"] == 2).unwrap();
+    assert_eq!(row2["flow_in_progress"], false);
 }
 
 #[test]
@@ -466,6 +422,45 @@ fn analyze_issues_gh_failure_errors() {
 }
 
 #[test]
+fn analyze_issues_gh_json_field_list_includes_assignees() {
+    // Drive the gh path (no --issues-json) with a stub that captures
+    // its argv to a file. Assert the `--json <field-list>` argument
+    // contains `assignees` so the analyzer can surface per-row
+    // assignees logins.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let log_path = repo.join("gh_args.log");
+    let stub_script = format!(
+        "#!/bin/bash\nprintf '%s\\n' \"$@\" > {}\necho '[]'\nexit 0\n",
+        log_path.to_string_lossy(),
+    );
+    let stub_dir = create_gh_stub(&repo, &stub_script);
+
+    let output = run_analyze(&repo, &[], &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    let logged = fs::read_to_string(&log_path).expect("gh stub should have logged args");
+    let lines: Vec<&str> = logged.lines().collect();
+    let json_idx = lines
+        .iter()
+        .position(|l| *l == "--json")
+        .expect("gh args should include --json");
+    let field_list = lines
+        .get(json_idx + 1)
+        .expect("--json should be followed by a value");
+    assert!(
+        field_list.split(',').any(|f| f == "assignees"),
+        "expected --json field list to include `assignees`; got `{}`",
+        field_list,
+    );
+}
+
+#[test]
 fn analyze_issues_label_and_milestone_args_forwarded_to_gh() {
     // --label and --milestone args are pushed into the gh command. With a
     // stub that returns a valid issue list, the run() succeeds and exit 0.
@@ -502,48 +497,55 @@ fn analyze_issues_label_and_milestone_args_forwarded_to_gh() {
 // --- Library-level tests (migrated from inline `#[cfg(test)]`) ---
 
 #[test]
-fn extracts_directory_prefixed_paths_lib() {
-    let body = "Check lib/foo.py and skills/bar/SKILL.md for details.";
-    let result = extract_file_paths(body);
-    assert!(result.contains(&"lib/foo.py".to_string()));
-    assert!(result.contains(&"skills/bar/SKILL.md".to_string()));
-}
-
-#[test]
-fn extracts_paths_with_file_extensions_lib() {
-    let body = "See config/setup.json and src/main.sh";
-    let result = extract_file_paths(body);
-    assert!(result.contains(&"config/setup.json".to_string()));
-    assert!(result.contains(&"src/main.sh".to_string()));
-}
-
-#[test]
-fn no_file_paths_lib() {
-    let result = extract_file_paths("This is a plain description.");
-    assert!(result.is_empty());
-}
-
-#[test]
-fn deduplicates_file_paths_lib() {
-    let body = "Check lib/foo.py and also lib/foo.py again";
-    let result = extract_file_paths(body);
-    assert_eq!(result.iter().filter(|p| *p == "lib/foo.py").count(), 1);
-}
-
-#[test]
-fn extracts_dotprefix_paths_lib() {
-    let body = "Edit .claude/rules/testing.md";
-    let result = extract_file_paths(body);
-    assert!(result.contains(&".claude/rules/testing.md".to_string()));
-}
-
-#[test]
 fn detects_in_progress_label_lib() {
     let labels = vec![json!({"name": "Flow In-Progress"}), json!({"name": "Bug"})];
     let result = detect_labels(&labels);
-    assert!(result.in_progress);
+    assert!(result.flow_in_progress);
     assert!(!result.decomposed);
     assert!(!result.blocked);
+}
+
+#[test]
+fn detects_vanilla_label_canonical_case_lib() {
+    let labels = vec![json!({"name": "Vanilla"})];
+    assert!(detect_labels(&labels).vanilla);
+}
+
+#[test]
+fn detects_vanilla_label_lowercase_lib() {
+    let labels = vec![json!({"name": "vanilla"})];
+    assert!(detect_labels(&labels).vanilla);
+}
+
+#[test]
+fn detects_vanilla_label_uppercase_lib() {
+    let labels = vec![json!({"name": "VANILLA"})];
+    assert!(detect_labels(&labels).vanilla);
+}
+
+#[test]
+fn detects_flow_in_progress_exact_match_lib() {
+    let labels = vec![json!({"name": "Flow In-Progress"})];
+    let result = detect_labels(&labels);
+    assert!(result.flow_in_progress);
+    assert!(!result.triage_in_progress);
+}
+
+#[test]
+fn detects_triage_in_progress_exact_match_lib() {
+    let labels = vec![json!({"name": "Triage In-Progress"})];
+    let result = detect_labels(&labels);
+    assert!(result.triage_in_progress);
+    assert!(!result.flow_in_progress);
+}
+
+#[test]
+fn no_vanilla_no_flow_no_triage_in_progress_lib() {
+    let labels = vec![json!({"name": "Bug"})];
+    let result = detect_labels(&labels);
+    assert!(!result.vanilla);
+    assert!(!result.flow_in_progress);
+    assert!(!result.triage_in_progress);
 }
 
 #[test]
@@ -583,7 +585,7 @@ fn no_blocked_label_lib() {
 fn no_special_labels_lib() {
     let labels = vec![json!({"name": "Bug"})];
     let result = detect_labels(&labels);
-    assert!(!result.in_progress);
+    assert!(!result.flow_in_progress);
     assert!(!result.decomposed);
     assert!(!result.blocked);
 }
@@ -591,91 +593,9 @@ fn no_special_labels_lib() {
 #[test]
 fn empty_labels_lib() {
     let result = detect_labels(&[]);
-    assert!(!result.in_progress);
+    assert!(!result.flow_in_progress);
     assert!(!result.decomposed);
     assert!(!result.blocked);
-}
-
-#[test]
-fn categorize_rule_label_lib() {
-    let labels: HashSet<String> = ["Rule".to_string()].into();
-    assert_eq!(categorize(&labels, "title", "body"), "Rule");
-}
-
-#[test]
-fn categorize_tech_debt_label_lib() {
-    let labels: HashSet<String> = ["Tech Debt".to_string()].into();
-    assert_eq!(categorize(&labels, "title", "body"), "Tech Debt");
-}
-
-#[test]
-fn categorize_documentation_drift_label_lib() {
-    let labels: HashSet<String> = ["Documentation Drift".to_string()].into();
-    assert_eq!(categorize(&labels, "title", "body"), "Documentation Drift");
-}
-
-#[test]
-fn categorize_bug_by_content_lib() {
-    let labels: HashSet<String> = HashSet::new();
-    assert_eq!(
-        categorize(&labels, "Fix crash on login", "error when"),
-        "Bug"
-    );
-}
-
-#[test]
-fn categorize_enhancement_by_content_lib() {
-    let labels: HashSet<String> = HashSet::new();
-    assert_eq!(
-        categorize(&labels, "Add dark mode", "new feature"),
-        "Enhancement"
-    );
-}
-
-#[test]
-fn categorize_other_fallback_lib() {
-    let labels: HashSet<String> = HashSet::new();
-    assert_eq!(categorize(&labels, "Misc cleanup", "tidy up"), "Other");
-}
-
-#[test]
-fn stale_issue_with_missing_files_lib() {
-    let paths = vec!["/nonexistent/path/lib/missing.py".to_string()];
-    let result = check_stale(&paths, 90);
-    assert!(result.stale);
-    assert_eq!(result.stale_missing, 1);
-}
-
-#[test]
-fn not_stale_when_files_exist_lib() {
-    let paths = vec!["Cargo.toml".to_string()];
-    let result = check_stale(&paths, 90);
-    assert!(!result.stale);
-    assert_eq!(result.stale_missing, 0);
-}
-
-#[test]
-fn not_stale_when_recent_lib() {
-    let paths = vec!["/nonexistent/lib/missing.py".to_string()];
-    assert!(!check_stale(&paths, 10).stale);
-}
-
-#[test]
-fn not_stale_when_no_file_paths_lib() {
-    assert!(!check_stale(&[], 90).stale);
-}
-
-#[test]
-fn truncate_body_short_lib() {
-    assert_eq!(truncate_body("short text", 200), "short text");
-}
-
-#[test]
-fn truncate_body_long_lib() {
-    let body: String = "x".repeat(300);
-    let result = truncate_body(&body, 200);
-    assert!(result.chars().count() <= 203);
-    assert!(result.ends_with("..."));
 }
 
 #[test]
@@ -725,51 +645,155 @@ fn parse_blocker_response_happy_path_lib() {
         (20, vec![]),
         (30, vec![(200, "OPEN")]),
     ]);
-    let result = parse_blocker_response(&response, &[10, 20, 30]);
-    assert_eq!(result[&10], vec![100, 101]);
+    let result = parse_blocker_response(&response, &[10, 20, 30], "owner/repo");
+    let nums_10: Vec<i64> = result[&10]
+        .iter()
+        .map(|v| v["number"].as_i64().unwrap())
+        .collect();
+    assert_eq!(nums_10, vec![100, 101]);
     assert!(result[&20].is_empty());
-    assert_eq!(result[&30], vec![200]);
+    let nums_30: Vec<i64> = result[&30]
+        .iter()
+        .map(|v| v["number"].as_i64().unwrap())
+        .collect();
+    assert_eq!(nums_30, vec![200]);
+    assert_eq!(
+        result[&10][0]["url"],
+        "https://github.com/owner/repo/issues/100"
+    );
 }
 
 #[test]
 fn parse_blocker_response_filters_closed_lib() {
     let response = graphql_response(&[(10, vec![(100, "OPEN"), (101, "CLOSED")])]);
-    let result = parse_blocker_response(&response, &[10]);
-    assert_eq!(result[&10], vec![100]);
+    let result = parse_blocker_response(&response, &[10], "owner/repo");
+    assert_eq!(result[&10].len(), 1);
+    assert_eq!(result[&10][0]["number"], 100);
 }
 
 #[test]
 fn parse_blocker_response_all_closed_returns_empty_lib() {
     let response = graphql_response(&[(10, vec![(100, "CLOSED"), (101, "CLOSED")])]);
-    let result = parse_blocker_response(&response, &[10]);
+    let result = parse_blocker_response(&response, &[10], "owner/repo");
     assert!(result[&10].is_empty());
 }
 
 #[test]
 fn parse_blocker_response_malformed_json_lib() {
-    let result = parse_blocker_response("{corrupt", &[10]);
+    let result = parse_blocker_response("{corrupt", &[10], "owner/repo");
     assert!(result.is_empty());
 }
 
 #[test]
 fn parse_blocker_response_null_repository_lib() {
     let response = r#"{"data":{"repository":null}}"#;
-    let result = parse_blocker_response(response, &[10]);
+    let result = parse_blocker_response(response, &[10], "owner/repo");
     assert!(result[&10].is_empty());
 }
 
 #[test]
 fn parse_blocker_response_null_blocked_by_lib() {
     let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":null}}}}"#;
-    let result = parse_blocker_response(response, &[10]);
+    let result = parse_blocker_response(response, &[10], "owner/repo");
     assert!(result[&10].is_empty());
 }
 
 #[test]
 fn parse_blocker_response_null_nodes_lib() {
     let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":null}}}}}"#;
-    let result = parse_blocker_response(response, &[10]);
+    let result = parse_blocker_response(response, &[10], "owner/repo");
     assert!(result[&10].is_empty());
+}
+
+#[test]
+fn parse_blocker_response_open_node_missing_number_filtered_lib() {
+    // OPEN node with no `number` field exercises the
+    // `.and_then(|n| n.as_i64())?` short-circuit in the filter_map.
+    let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[
+        {"state":"OPEN"},
+        {"number":50,"state":"OPEN"}
+    ]}}}}}"#;
+    let result = parse_blocker_response(response, &[10], "owner/repo");
+    assert_eq!(result[&10].len(), 1);
+    assert_eq!(result[&10][0]["number"], 50);
+}
+
+#[test]
+fn parse_blocker_response_invalid_repo_empty_owner_rejected_lib() {
+    let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[
+        {"number": 50, "state": "OPEN"}
+    ]}}}}}"#;
+    let result = parse_blocker_response(response, &[10], "/repo");
+    assert!(result.is_empty());
+}
+
+#[test]
+fn parse_blocker_response_invalid_repo_dot_segment_rejected_lib() {
+    let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[
+        {"number": 50, "state": "OPEN"}
+    ]}}}}}"#;
+    let result = parse_blocker_response(response, &[10], "./repo");
+    assert!(result.is_empty());
+}
+
+#[test]
+fn parse_blocker_response_invalid_repo_too_many_slashes_rejected_lib() {
+    let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[
+        {"number": 50, "state": "OPEN"}
+    ]}}}}}"#;
+    let result = parse_blocker_response(response, &[10], "owner/repo/extra");
+    assert!(result.is_empty());
+}
+
+#[test]
+fn parse_blocker_response_invalid_repo_empty_name_rejected_lib() {
+    let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[
+        {"number": 50, "state": "OPEN"}
+    ]}}}}}"#;
+    let result = parse_blocker_response(response, &[10], "owner/");
+    assert!(result.is_empty());
+}
+
+#[test]
+fn parse_blocker_response_invalid_repo_no_slash_rejected_lib() {
+    let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[
+        {"number": 50, "state": "OPEN"}
+    ]}}}}}"#;
+    let result = parse_blocker_response(response, &[10], "owner");
+    assert!(result.is_empty());
+}
+
+#[test]
+fn parse_blocker_response_invalid_repo_path_traversal_rejected_lib() {
+    let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[
+        {"number": 50, "state": "OPEN"}
+    ]}}}}}"#;
+    let result = parse_blocker_response(response, &[10], "owner/..");
+    assert!(result.is_empty());
+}
+
+#[test]
+fn parse_blocker_response_invalid_repo_with_pipe_rejected_lib() {
+    let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[
+        {"number": 50, "state": "OPEN"}
+    ]}}}}}"#;
+    let result = parse_blocker_response(response, &[10], "owner|evil/repo");
+    assert!(result.is_empty());
+}
+
+#[test]
+fn parse_blocker_response_valid_repo_with_dash_underscore_dot_accepted_lib() {
+    // Exercises the `c == '-'`, `c == '_'`, `c == '.'` branches in the
+    // is_safe_repo_slug character whitelist.
+    let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[
+        {"number": 50, "state": "OPEN"}
+    ]}}}}}"#;
+    let result = parse_blocker_response(response, &[10], "my-org_name/repo.v1");
+    assert_eq!(result[&10].len(), 1);
+    assert_eq!(
+        result[&10][0]["url"],
+        "https://github.com/my-org_name/repo.v1/issues/50"
+    );
 }
 
 #[test]
@@ -1010,13 +1034,13 @@ fn run_gh_executes_body_lib() {
 #[test]
 fn blocker_result_to_map_ok_parses_response_lib() {
     let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[]}}}}}"#;
-    let map = blocker_result_to_map(&[10], Ok(response.to_string()));
+    let map = blocker_result_to_map(&[10], "owner/repo", Ok(response.to_string()));
     assert!(map.contains_key(&10));
 }
 
 #[test]
 fn blocker_result_to_map_err_logs_and_returns_empty_lib() {
-    let map = blocker_result_to_map(&[10], Err("gh failed".to_string()));
+    let map = blocker_result_to_map(&[10], "owner/repo", Err("gh failed".to_string()));
     assert!(map.is_empty());
 }
 
@@ -1117,14 +1141,17 @@ fn analyze_empty_list_lib() {
 }
 
 #[test]
-fn analyze_separates_in_progress_lib() {
+fn analyze_routes_flow_in_progress_into_issues_lib() {
     let issues = vec![
         make_issue_lib(1, "Active", "", &["Flow In-Progress"], &now_iso_lib()),
         make_issue_lib(2, "Available", "", &[], &now_iso_lib()),
     ];
     let result = analyze_issues(&issues, &HashMap::new());
-    assert_eq!(result["in_progress"].as_array().unwrap().len(), 1);
-    assert_eq!(result["issues"].as_array().unwrap().len(), 1);
+    assert!(result.get("in_progress").is_none());
+    let arr = result["issues"].as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+    let row1 = arr.iter().find(|i| i["number"] == 1).unwrap();
+    assert_eq!(row1["flow_in_progress"], true);
 }
 
 #[test]
@@ -1139,7 +1166,7 @@ fn analyze_issue_fields_lib() {
     let result = analyze_issues(&issues, &HashMap::new());
     let issue = &result["issues"][0];
     assert!(issue["decomposed"].as_bool().unwrap());
-    assert!(issue.get("file_paths").is_some());
+    assert_eq!(issue["number"], 1);
 }
 
 #[test]
@@ -1168,43 +1195,6 @@ fn analyze_total_includes_all_lib() {
 }
 
 #[test]
-fn analyze_age_days_z_suffix_parses_natively_lib() {
-    let issues = vec![make_issue_lib(
-        42,
-        "z-suffix issue",
-        "",
-        &[],
-        "2023-06-15T12:00:00Z",
-    )];
-    let result = analyze_issues(&issues, &HashMap::new());
-    let issue = &result["issues"][0];
-    assert!(issue["age_days"].as_i64().unwrap() > 0);
-}
-
-#[test]
-fn analyze_age_days_unparseable_date_returns_zero_lib() {
-    let issues = vec![make_issue_lib(7, "unparseable date", "", &[], "not-a-date")];
-    let result = analyze_issues(&issues, &HashMap::new());
-    assert_eq!(result["issues"][0]["age_days"].as_i64().unwrap(), 0);
-}
-
-#[test]
-fn analyze_stale_detection_lib() {
-    let old_date = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
-    let issues = vec![make_issue_lib(
-        1,
-        "Old issue",
-        "Check /nonexistent/gone.py",
-        &[],
-        &old_date,
-    )];
-    let result = analyze_issues(&issues, &HashMap::new());
-    let issue = &result["issues"][0];
-    assert!(issue["stale"].as_bool().unwrap());
-    assert!(issue["stale_missing"].as_i64().unwrap() >= 1);
-}
-
-#[test]
 fn analyze_native_blocked_without_label_lib() {
     let issues = vec![make_issue_lib(
         10,
@@ -1213,8 +1203,14 @@ fn analyze_native_blocked_without_label_lib() {
         &[],
         &now_iso_lib(),
     )];
-    let mut blocker_map: HashMap<i64, Vec<i64>> = HashMap::new();
-    blocker_map.insert(10, vec![100, 200]);
+    let mut blocker_map: HashMap<i64, Vec<Value>> = HashMap::new();
+    blocker_map.insert(
+        10,
+        vec![
+            json!({"number": 100, "url": "https://github.com/test/repo/issues/100"}),
+            json!({"number": 200, "url": "https://github.com/test/repo/issues/200"}),
+        ],
+    );
     let result = analyze_issues(&issues, &blocker_map);
     let issue = &result["issues"][0];
     assert!(issue["blocked"].as_bool().unwrap());
@@ -1275,7 +1271,173 @@ fn filter_unknown_raises_lib() {
 }
 
 #[test]
-fn analyze_milestone_present_lib() {
+fn analyze_surfaces_assignees_logins_lib() {
+    let issue = json!({
+        "number": 1,
+        "title": "Has assignees",
+        "body": "",
+        "labels": [],
+        "createdAt": now_iso_lib(),
+        "url": "https://github.com/test/repo/issues/1",
+        "milestone": Value::Null,
+        "assignees": [
+            {"login": "alice"},
+            {"login": "bob"},
+        ],
+    });
+    let result = analyze_issues(&[issue], &HashMap::new());
+    let assignees = result["issues"][0]["assignees"].as_array().unwrap();
+    let logins: Vec<&str> = assignees.iter().filter_map(|v| v.as_str()).collect();
+    assert_eq!(logins, vec!["alice", "bob"]);
+}
+
+#[test]
+fn analyze_empty_assignees_yields_empty_array_lib() {
+    let issue = json!({
+        "number": 1,
+        "title": "No assignees",
+        "body": "",
+        "labels": [],
+        "createdAt": now_iso_lib(),
+        "url": "https://github.com/test/repo/issues/1",
+        "milestone": Value::Null,
+        "assignees": [],
+    });
+    let result = analyze_issues(&[issue], &HashMap::new());
+    let assignees = result["issues"][0]["assignees"].as_array().unwrap();
+    assert!(assignees.is_empty());
+}
+
+#[test]
+fn analyze_no_top_level_in_progress_key_lib() {
+    let issues = vec![
+        make_issue_lib(1, "Active", "", &["Flow In-Progress"], &now_iso_lib()),
+        make_issue_lib(2, "Available", "", &[], &now_iso_lib()),
+    ];
+    let result = analyze_issues(&issues, &HashMap::new());
+    assert!(
+        result.get("in_progress").is_none(),
+        "output must not carry a top-level in_progress key; got {}",
+        result,
+    );
+}
+
+#[test]
+fn analyze_flow_in_progress_row_in_issues_array_lib() {
+    let issues = vec![make_issue_lib(
+        1,
+        "Active",
+        "",
+        &["Flow In-Progress"],
+        &now_iso_lib(),
+    )];
+    let result = analyze_issues(&issues, &HashMap::new());
+    let arr = result["issues"].as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["number"], 1);
+    assert_eq!(arr[0]["flow_in_progress"], true);
+}
+
+#[test]
+fn analyze_total_equals_issues_len_after_collapse_lib() {
+    let issues = vec![
+        make_issue_lib(1, "Active", "", &["Flow In-Progress"], &now_iso_lib()),
+        make_issue_lib(2, "Available", "", &[], &now_iso_lib()),
+        make_issue_lib(3, "Another", "", &[], &now_iso_lib()),
+    ];
+    let result = analyze_issues(&issues, &HashMap::new());
+    let issues_len = result["issues"].as_array().unwrap().len();
+    assert_eq!(result["total"].as_u64().unwrap() as usize, issues_len);
+}
+
+#[test]
+fn analyze_blocked_by_entries_carry_number_and_url_lib() {
+    let issues = vec![make_issue_lib(
+        1547,
+        "Blocked by another",
+        "",
+        &[],
+        &now_iso_lib(),
+    )];
+    let mut blocker_map: HashMap<i64, Vec<Value>> = HashMap::new();
+    blocker_map.insert(
+        1547,
+        vec![json!({
+            "number": 1525,
+            "url": "https://github.com/benkruger/flow/issues/1525",
+        })],
+    );
+    let result = analyze_issues(&issues, &blocker_map);
+    let blocked_by = result["issues"][0]["blocked_by"].as_array().unwrap();
+    assert_eq!(blocked_by.len(), 1);
+    assert_eq!(blocked_by[0]["number"], 1525);
+    assert_eq!(
+        blocked_by[0]["url"],
+        "https://github.com/benkruger/flow/issues/1525"
+    );
+}
+
+#[test]
+fn analyze_no_category_key_lib() {
+    let issues = vec![make_issue_lib(
+        1,
+        "Categorizable",
+        "Fix crash on login",
+        &["Rule"],
+        &now_iso_lib(),
+    )];
+    let result = analyze_issues(&issues, &HashMap::new());
+    let row = &result["issues"][0];
+    assert!(
+        row.get("category").is_none(),
+        "expected no `category` key on output row; got {}",
+        row,
+    );
+}
+
+#[test]
+fn analyze_no_stale_or_file_path_keys_lib() {
+    let old_date = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
+    let issues = vec![make_issue_lib(
+        1,
+        "Old issue",
+        "See /nonexistent/foo.py",
+        &[],
+        &old_date,
+    )];
+    let result = analyze_issues(&issues, &HashMap::new());
+    let row = &result["issues"][0];
+    for key in ["stale", "stale_missing", "age_days", "file_paths"] {
+        assert!(
+            row.get(key).is_none(),
+            "expected no `{}` key on output row; got {}",
+            key,
+            row,
+        );
+    }
+}
+
+#[test]
+fn analyze_no_brief_key_lib() {
+    let long_body: String = "x".repeat(500);
+    let issues = vec![make_issue_lib(
+        1,
+        "Long body",
+        &long_body,
+        &[],
+        &now_iso_lib(),
+    )];
+    let result = analyze_issues(&issues, &HashMap::new());
+    let row = &result["issues"][0];
+    assert!(
+        row.get("brief").is_none(),
+        "expected no `brief` key on output row; got {}",
+        row,
+    );
+}
+
+#[test]
+fn analyze_no_milestone_key_lib() {
     let issues = vec![make_issue_opt_lib(
         1,
         "Milestone issue",
@@ -1285,35 +1447,134 @@ fn analyze_milestone_present_lib() {
         Some("v1.2.0"),
     )];
     let result = analyze_issues(&issues, &HashMap::new());
-    assert_eq!(result["issues"][0]["milestone"], "v1.2.0");
+    let row = &result["issues"][0];
+    assert!(
+        row.get("milestone").is_none(),
+        "expected no `milestone` key on output row; got {}",
+        row,
+    );
 }
 
 #[test]
-fn analyze_milestone_null_lib() {
-    let issues = vec![make_issue_opt_lib(
-        1,
-        "No milestone",
-        "",
-        &[],
-        &now_iso_lib(),
-        None,
-    )];
-    let result = analyze_issues(&issues, &HashMap::new());
-    assert!(result["issues"][0]["milestone"].is_null());
+fn analyze_issues_filters_against_collapsed_schema_subprocess() {
+    // End-to-end regression: --ready, --blocked, --decomposed, and
+    // --quick-start each behave correctly when every input issue
+    // flows into the single `issues` array (no top-level partition).
+    // A Flow-In-Progress row is included or excluded purely on its
+    // own `blocked`/`decomposed` flags, not on a partition.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let issues = vec![
+        fake_issue(
+            1,
+            "In progress and decomposed",
+            vec!["Flow In-Progress", "decomposed"],
+        ),
+        fake_issue(2, "Decomposed", vec!["decomposed"]),
+        fake_issue(3, "Blocked", vec!["Blocked"]),
+        fake_issue(4, "Plain", vec![]),
+    ];
+    let issues_path = dir.path().join("issues.json");
+    fs::write(&issues_path, serde_json::to_string(&issues).unwrap()).unwrap();
+    let stub_dir = create_gh_stub(&repo, "#!/bin/bash\necho '{\"data\":{}}'\nexit 0\n");
+
+    let issues_arg = issues_path.to_str().unwrap();
+
+    let ready = run_analyze(&repo, &["--issues-json", issues_arg, "--ready"], &stub_dir);
+    assert_eq!(ready.status.code(), Some(0));
+    let ready_data = parse_full_stdout(&ready);
+    let ready_arr = ready_data["issues"].as_array().unwrap();
+    let ready_nums: Vec<i64> = ready_arr
+        .iter()
+        .map(|i| i["number"].as_i64().unwrap())
+        .collect();
+    assert!(
+        !ready_nums.contains(&3),
+        "--ready must exclude blocked issue 3"
+    );
+    assert!(ready_nums.contains(&1));
+    assert!(ready_nums.contains(&2));
+    assert!(ready_nums.contains(&4));
+
+    let blocked = run_analyze(
+        &repo,
+        &["--issues-json", issues_arg, "--blocked"],
+        &stub_dir,
+    );
+    assert_eq!(blocked.status.code(), Some(0));
+    let blocked_data = parse_full_stdout(&blocked);
+    let blocked_arr = blocked_data["issues"].as_array().unwrap();
+    let blocked_nums: Vec<i64> = blocked_arr
+        .iter()
+        .map(|i| i["number"].as_i64().unwrap())
+        .collect();
+    assert_eq!(blocked_nums, vec![3]);
+
+    let decomposed = run_analyze(
+        &repo,
+        &["--issues-json", issues_arg, "--decomposed"],
+        &stub_dir,
+    );
+    assert_eq!(decomposed.status.code(), Some(0));
+    let decomposed_data = parse_full_stdout(&decomposed);
+    let decomposed_nums: Vec<i64> = decomposed_data["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["number"].as_i64().unwrap())
+        .collect();
+    assert!(decomposed_nums.contains(&1));
+    assert!(decomposed_nums.contains(&2));
+    assert!(!decomposed_nums.contains(&3));
+    assert!(!decomposed_nums.contains(&4));
+
+    let qs = run_analyze(
+        &repo,
+        &["--issues-json", issues_arg, "--quick-start"],
+        &stub_dir,
+    );
+    assert_eq!(qs.status.code(), Some(0));
+    let qs_data = parse_full_stdout(&qs);
+    let qs_nums: Vec<i64> = qs_data["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["number"].as_i64().unwrap())
+        .collect();
+    // --quick-start excludes Flow-In-Progress rows so a `/flow:flow-start`
+    // command isn't surfaced for in-flight work (issue 1 has Flow In-Progress).
+    assert!(!qs_nums.contains(&1));
+    assert!(qs_nums.contains(&2));
+    assert!(!qs_nums.contains(&3));
+    assert!(!qs_nums.contains(&4));
 }
 
 #[test]
-fn analyze_milestone_empty_string_is_null_lib() {
-    let label_arr: Vec<Value> = vec![];
-    let issue = json!({
-        "number": 1,
-        "title": "Empty milestone title",
-        "body": "",
-        "labels": label_arr,
-        "createdAt": now_iso_lib(),
-        "url": "https://github.com/test/repo/issues/1",
-        "milestone": {"title": "", "number": 1},
-    });
-    let result = analyze_issues(&[issue], &HashMap::new());
-    assert!(result["issues"][0]["milestone"].is_null());
+fn analyze_issues_milestone_cli_flag_still_forwarded_to_gh() {
+    // Per-row milestone is gone but the server-side --milestone CLI
+    // flag still passes through to gh, so users can filter by
+    // milestone server-side.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let log_path = repo.join("gh_args.log");
+    let stub_script = format!(
+        "#!/bin/bash\nprintf '%s\\n' \"$@\" > {}\necho '[]'\nexit 0\n",
+        log_path.to_string_lossy(),
+    );
+    let stub_dir = create_gh_stub(&repo, &stub_script);
+
+    let output = run_analyze(&repo, &["--milestone", "v1.2"], &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let logged = fs::read_to_string(&log_path).expect("gh stub should have logged args");
+    let lines: Vec<&str> = logged.lines().collect();
+    let m_idx = lines
+        .iter()
+        .position(|l| *l == "--milestone")
+        .expect("--milestone should appear in gh argv");
+    assert_eq!(lines.get(m_idx + 1), Some(&"v1.2"));
 }

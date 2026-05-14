@@ -88,7 +88,7 @@ plugin source.
 
 | Skill | Purpose |
 |-------|---------|
-| `/flow:flow-issues` | Fetch open issues, rank by impact, and display a dashboard with recommended work order |
+| `/flow:flow-issues` | Group open issues by label into four sections (Blocked, Other, Vanilla, Decomposed) with mechanical sort and a copy-pasteable command per row |
 | `/flow:flow-triage-issue` | PM-lens triage of a single open issue — verdict in {close, decompose} |
 | `/flow:flow-explore` | Open a problem-statement conversation (PM voice) — discussion-mode by default, files a vanilla `## What` / `## Why` / `## Acceptance Criteria` issue on user signal |
 | `/flow:flow-plan` | Decompose a vanilla problem-statement issue into a linked decomposed issue ready for the start phase. Tech Lead voice, mandatory `decompose:decompose` pass, files with `--label decomposed` and `bin/flow link-blocked-by` |

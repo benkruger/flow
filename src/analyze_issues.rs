@@ -1,90 +1,39 @@
 //! Analyze open GitHub issues for the flow-issues skill.
 //!
-//! Handles mechanical work: JSON parsing, file path extraction,
-//! label detection, stale detection. Outputs condensed per-issue
-//! briefs so the LLM only needs to rank by impact.
+//! Produces a flat `issues` array enriched with per-row label flags
+//! (`decomposed`, `blocked`, `vanilla`, `flow_in_progress`,
+//! `triage_in_progress`), assignees, and resolved `blocked_by`
+//! entries that carry both `number` and a fully-constructed
+//! GitHub URL. The dashboard renderer reads one stream and
+//! dispatches by label.
 //!
 //! Tests live at `tests/analyze_issues.rs` per
 //! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]` in
 //! this file.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
-use std::sync::LazyLock;
 
-use regex::Regex;
 use serde_json::Value;
 
-/// Pre-compiled regexes for extracting file paths with known directory prefixes.
-static DIR_PREFIX_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
-    DIR_PREFIXES
-        .iter()
-        .map(|prefix| {
-            let escaped = regex::escape(prefix);
-            let pattern = format!("{}{}", escaped, r"[\w./\-]+");
-            Regex::new(&pattern).unwrap()
-        })
-        .collect()
-});
-
-/// Pre-compiled regex for file paths with recognized extensions.
-/// Uses non-word character boundaries (`(?:^|[^\w])` / `(?:$|[^\w])`) instead of
-/// lookahead/lookbehind because the `regex` crate does not support lookaround.
-static FILE_EXT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?:^|[^\w])([\w./\-]+/[\w.\-]+\.(?:py|md|json|sh|yml|yaml|rb|js|ts|html|css|toml))(?:$|[^\w])",
-    )
-    .unwrap()
-});
-
-/// Pre-compiled regex for bug-related keywords in issue content.
-static BUG_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(bug|fix|crash|error|broken|fail|wrong|incorrect)\b").unwrap()
-});
-
-/// Pre-compiled regex for enhancement-related keywords in issue content.
-static ENHANCEMENT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(add|new|feature|enhance|improve|support|implement)\b").unwrap()
-});
-
-/// Known directory prefixes for file path extraction.
-const DIR_PREFIXES: &[&str] = &[
-    "lib/", "skills/", "tests/", "docs/", "hooks/", ".claude/", "bin/", "agents/", "src/",
-    "config/", "app/",
-];
-
-/// Extract file paths from issue body text.
-///
-/// Recognizes paths with known directory prefixes and paths containing
-/// slashes with recognized file extensions. Returns deduplicated sorted list.
-pub fn extract_file_paths(body: &str) -> Vec<String> {
-    let mut paths: HashSet<String> = HashSet::new();
-
-    // Match paths with known directory prefixes
-    for re in DIR_PREFIX_REGEXES.iter() {
-        for mat in re.find_iter(body) {
-            paths.insert(mat.as_str().to_string());
-        }
-    }
-
-    // Match paths with file extensions (must contain /)
-    for cap in FILE_EXT_RE.captures_iter(body) {
-        paths.insert(cap[1].to_string());
-    }
-
-    let mut result: Vec<String> = paths.into_iter().collect();
-    result.sort();
-    result
-}
-
-/// Label detection result.
+/// Per-issue label detection result. The booleans drive bucket
+/// assignment and color treatment in the four-section dashboard:
+/// `decomposed` and `blocked` choose the section, `vanilla` marks
+/// the Vanilla bucket, and `flow_in_progress` / `triage_in_progress`
+/// flag rows that the renderer prefixes (🟡 / 🔍) with bold title
+/// and a suppressed Command cell.
 pub struct LabelFlags {
-    pub in_progress: bool,
     pub decomposed: bool,
     pub blocked: bool,
+    pub vanilla: bool,
+    pub flow_in_progress: bool,
+    pub triage_in_progress: bool,
 }
 
-/// Check for Flow In-Progress, Decomposed, and Blocked labels.
+/// Check for canonical FLOW labels. All five labels match
+/// case-insensitively because GitHub's label registry is
+/// case-preserving and historic data may use mixed case. A repo
+/// that records `flow in-progress` as the label string still
+/// surfaces under the `flow_in_progress` boolean.
 pub fn detect_labels(labels: &[Value]) -> LabelFlags {
     let label_names: HashSet<String> = labels
         .iter()
@@ -92,71 +41,22 @@ pub fn detect_labels(labels: &[Value]) -> LabelFlags {
         .collect();
 
     LabelFlags {
-        in_progress: label_names.contains("Flow In-Progress"),
         decomposed: label_names
             .iter()
             .any(|n| n.eq_ignore_ascii_case("decomposed")),
         blocked: label_names
             .iter()
             .any(|n| n.eq_ignore_ascii_case("blocked")),
+        vanilla: label_names
+            .iter()
+            .any(|n| n.eq_ignore_ascii_case("vanilla")),
+        flow_in_progress: label_names
+            .iter()
+            .any(|n| n.eq_ignore_ascii_case("Flow In-Progress")),
+        triage_in_progress: label_names
+            .iter()
+            .any(|n| n.eq_ignore_ascii_case("Triage In-Progress")),
     }
-}
-
-/// Label categories checked in order.
-const LABEL_CATEGORIES: &[&str] = &["Rule", "Tech Debt", "Documentation Drift"];
-
-/// Assign a category based on label names first, then content fallback.
-pub fn categorize(label_names: &HashSet<String>, title: &str, body: &str) -> String {
-    for &label in LABEL_CATEGORIES {
-        if label_names.contains(label) {
-            return label.to_string();
-        }
-    }
-
-    let combined = format!("{} {}", title, body);
-
-    if BUG_RE.is_match(&combined) {
-        return "Bug".to_string();
-    }
-    if ENHANCEMENT_RE.is_match(&combined) {
-        return "Enhancement".to_string();
-    }
-    "Other".to_string()
-}
-
-/// Stale check result.
-pub struct StaleInfo {
-    pub stale: bool,
-    pub stale_missing: usize,
-}
-
-/// Check if an issue is stale (>60 days old with missing file refs).
-pub fn check_stale(file_paths: &[String], age_days: i64) -> StaleInfo {
-    if age_days < 60 || file_paths.is_empty() {
-        return StaleInfo {
-            stale: false,
-            stale_missing: 0,
-        };
-    }
-
-    let missing = file_paths
-        .iter()
-        .filter(|fp| !Path::new(fp).exists())
-        .count();
-    StaleInfo {
-        stale: missing > 0,
-        stale_missing: missing,
-    }
-}
-
-/// Truncate body to max_length, adding ellipsis if needed.
-/// Uses char count (not byte count) to avoid panicking on multi-byte UTF-8 boundaries.
-pub fn truncate_body(body: &str, max_length: usize) -> String {
-    if body.chars().count() <= max_length {
-        return body.to_string();
-    }
-    let truncated: String = body.chars().take(max_length).collect();
-    format!("{}...", truncated)
 }
 
 /// Build the GraphQL query for fetching blocker details.
@@ -180,13 +80,68 @@ pub fn build_blocker_query(issue_numbers: &[i64]) -> String {
     )
 }
 
+/// Validate a GitHub `owner/name` slug for safe interpolation into
+/// a markdown-rendered URL. Accepts exactly one `/` separator and
+/// rejects any segment containing characters outside GitHub's
+/// canonical owner/repo grammar — alphanumeric, hyphen, underscore,
+/// and period. Rejects `..` segments specifically so path-traversal
+/// attempts via a poisoned remote (`owner/repo/../../evil`) cannot
+/// inject extra path components into the blocker URL.
+///
+/// Per `.claude/rules/external-input-path-construction.md`: the
+/// `repo` string is state-derived (sourced from
+/// `git remote get-url origin` via `crate::github::detect_repo`)
+/// and reaches a `format!`-interpolated URL that is rendered as
+/// `[#N](url)` markdown by the consumer. A repo with structural
+/// characters (`|`, `<`, `(`, `[`, `\n`, `..`) breaks the markdown
+/// surface or redirects the link target. The validator runs at the
+/// boundary so the URL construction itself can assume a safe value.
+fn is_safe_repo_slug(repo: &str) -> bool {
+    let mut parts = repo.split('/');
+    let owner = match parts.next() {
+        Some(s) if !s.is_empty() => s,
+        _ => return false,
+    };
+    let name = match parts.next() {
+        Some(s) if !s.is_empty() => s,
+        _ => return false,
+    };
+    if parts.next().is_some() {
+        return false;
+    }
+    let safe = |s: &str| {
+        s != ".."
+            && s != "."
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+    };
+    safe(owner) && safe(name)
+}
+
 /// Parse a GraphQL response for blocker details.
 ///
-/// Extracts `blockedBy.nodes` for each issue number.
-/// Returns HashMap mapping issue number to list of open blocker issue numbers.
-/// Only includes blockers where `state == "OPEN"` — closed blockers are resolved.
-/// Handles null values at any level gracefully (defaults to empty vec).
-pub fn parse_blocker_response(json_str: &str, issue_numbers: &[i64]) -> HashMap<i64, Vec<i64>> {
+/// Extracts `blockedBy.nodes` for each issue number. Returns a HashMap
+/// mapping issue number to a list of open blocker entries; each entry
+/// is a JSON object `{"number": N, "url": "https://github.com/<repo>/issues/N"}`
+/// so consumers can render linked blocker references without
+/// re-constructing URLs. `repo` is the `owner/name` slug; URL knowledge
+/// stays at the blocker-fetch layer rather than leaking into the
+/// dashboard renderer. `repo` is validated through
+/// [`is_safe_repo_slug`] before interpolation — an unsafe value
+/// short-circuits to an empty map so a poisoned remote cannot inject
+/// path-traversal or markdown-structural characters into the
+/// rendered URL. Only blockers where `state == "OPEN"` are included
+/// — closed blockers are resolved. Handles null values at any
+/// level gracefully (defaults to empty vec).
+pub fn parse_blocker_response(
+    json_str: &str,
+    issue_numbers: &[i64],
+    repo: &str,
+) -> HashMap<i64, Vec<Value>> {
+    if !is_safe_repo_slug(repo) {
+        return HashMap::new();
+    }
+
     let data: Value = match serde_json::from_str(json_str) {
         Ok(v) => v,
         Err(_) => return HashMap::new(),
@@ -210,7 +165,7 @@ pub fn parse_blocker_response(json_str: &str, issue_numbers: &[i64]) -> HashMap<
             .and_then(|blocked_by| blocked_by.get("nodes"))
             .and_then(|n| n.as_array());
 
-        let blocker_numbers: Vec<i64> = match nodes {
+        let blocker_entries: Vec<Value> = match nodes {
             Some(arr) => arr
                 .iter()
                 .filter(|node| {
@@ -219,11 +174,17 @@ pub fn parse_blocker_response(json_str: &str, issue_numbers: &[i64]) -> HashMap<
                         .map(|s| s == "OPEN")
                         .unwrap_or(false)
                 })
-                .filter_map(|node| node.get("number").and_then(|n| n.as_i64()))
+                .filter_map(|node| {
+                    let n = node.get("number").and_then(|n| n.as_i64())?;
+                    Some(serde_json::json!({
+                        "number": n,
+                        "url": format!("https://github.com/{}/issues/{}", repo, n),
+                    }))
+                })
                 .collect(),
             None => Vec::new(),
         };
-        blockers.insert(number, blocker_numbers);
+        blockers.insert(number, blocker_entries);
     }
 
     blockers
@@ -306,7 +267,7 @@ pub fn run_gh(args: &[&str], command_label: &str) -> Result<String, String> {
 /// Timeout: 30 seconds — long enough for the GraphQL endpoint to respond
 /// on a slow link, short enough to keep the analyze step from hanging
 /// the calling skill.
-pub fn fetch_blockers(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, Vec<i64>> {
+pub fn fetch_blockers(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, Vec<Value>> {
     if issue_numbers.is_empty() {
         return HashMap::new();
     }
@@ -330,18 +291,20 @@ pub fn fetch_blockers(repo: &str, issue_numbers: &[i64]) -> HashMap<i64, Vec<i64
         ],
         "gh api graphql",
     );
-    blocker_result_to_map(issue_numbers, result)
+    blocker_result_to_map(issue_numbers, repo, result)
 }
 
 /// Convert a run_gh result into a blocker map. Split out so the
 /// `Ok(stdout) => parse_blocker_response` branch is directly
-/// testable without a live gh subprocess.
+/// testable without a live gh subprocess. `repo` is threaded through
+/// so each blocker entry carries its GitHub URL.
 pub fn blocker_result_to_map(
     issue_numbers: &[i64],
+    repo: &str,
     result: Result<String, String>,
-) -> HashMap<i64, Vec<i64>> {
+) -> HashMap<i64, Vec<Value>> {
     match result {
-        Ok(stdout) => parse_blocker_response(&stdout, issue_numbers),
+        Ok(stdout) => parse_blocker_response(&stdout, issue_numbers, repo),
         Err(msg) => {
             eprintln!(
                 "warning: blocker fetch failed, treating all issues as unblocked ({})",
@@ -354,25 +317,25 @@ pub fn blocker_result_to_map(
 
 /// Analyze a list of issues from gh issue list JSON.
 ///
-/// Separates in-progress issues from available issues and enriches
-/// each available issue with labels, category, age, stale info, etc.
-/// The `blocker_map` maps issue numbers to lists of open blocker issue numbers.
-pub fn analyze_issues(issues: &[Value], blocker_map: &HashMap<i64, Vec<i64>>) -> Value {
+/// Every input issue flows into a single `issues` array on the output
+/// envelope. Per-row label flags (`decomposed`, `blocked`,
+/// `flow_in_progress`, `triage_in_progress`, `vanilla`) carry the
+/// signal the consumer dispatches on; no top-level `in_progress`
+/// partition. The `blocker_map` maps issue numbers to open blocker
+/// numbers; native_blocked rows fold into `blocked`.
+pub fn analyze_issues(issues: &[Value], blocker_map: &HashMap<i64, Vec<Value>>) -> Value {
     if issues.is_empty() {
         return serde_json::json!({
             "status": "ok",
             "total": 0,
-            "in_progress": [],
             "issues": [],
         });
     }
 
-    let mut in_progress = Vec::new();
     let mut available = Vec::new();
 
     for issue in issues {
         let number = issue["number"].as_i64().unwrap_or(0);
-        let body = issue.get("body").and_then(|b| b.as_str()).unwrap_or("");
         let labels_arr = issue.get("labels").and_then(|l| l.as_array());
         let labels_vec: Vec<Value> = labels_arr.cloned().unwrap_or_default();
 
@@ -385,69 +348,49 @@ pub fn analyze_issues(issues: &[Value], blocker_map: &HashMap<i64, Vec<i64>>) ->
 
         let label_flags = detect_labels(&labels_vec);
 
-        if label_flags.in_progress {
-            in_progress.push(serde_json::json!({
-                "number": number,
-                "title": issue["title"],
-                "url": issue.get("url").cloned().unwrap_or(Value::String(String::new())),
-            }));
-            continue;
-        }
-
-        let file_paths = extract_file_paths(body);
-
-        let created_at_str = issue
-            .get("createdAt")
-            .and_then(|c| c.as_str())
-            .unwrap_or("");
-        // chrono::DateTime::parse_from_rfc3339 accepts both `Z` and
-        // `±HH:MM` offsets, so a Z-suffix fallback would be dead code.
-        // Empirically: every input that fails this strict parse also
-        // fails after a `Z` → `+00:00` substitution (verified by
-        // coverage instrumentation showing the fallback's success arm
-        // hit 0 times across the test corpus). Treat unparseable
-        // dates as age 0.
-        let age_days = chrono::DateTime::parse_from_rfc3339(created_at_str)
-            .map(|created| (chrono::Utc::now() - created.with_timezone(&chrono::Utc)).num_days())
-            .unwrap_or(0);
-
-        let stale_info = check_stale(&file_paths, age_days);
-        let category = categorize(&label_names, issue["title"].as_str().unwrap_or(""), body);
-
         let blocked_by = blocker_map.get(&number).cloned().unwrap_or_default();
         let native_blocked = !blocked_by.is_empty();
 
-        let milestone = issue
-            .get("milestone")
-            .and_then(|m| m.get("title"))
-            .and_then(|t| t.as_str())
-            .filter(|s| !s.is_empty())
-            .map(|s| Value::String(s.to_string()))
-            .unwrap_or(Value::Null);
+        let assignees: Vec<String> = issue
+            .get("assignees")
+            .and_then(|a| a.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|a| {
+                        a.get("login")
+                            .and_then(|l| l.as_str())
+                            .filter(|s| !s.is_empty())
+                            .map(String::from)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
 
+        // `blocked` collapses both label-driven and native-GitHub-
+        // blocked-by sources into one bucket signal. `native_blocked`
+        // is surfaced separately so the consumer can distinguish the
+        // source when composing the `Blocked By` cell (label-only
+        // blocks render `—`; native blocks render the linked blocker
+        // numbers from `blocked_by`).
         available.push(serde_json::json!({
             "number": number,
             "title": issue["title"],
             "url": issue.get("url").cloned().unwrap_or(Value::String(String::new())),
             "labels": label_list,
-            "category": category,
-            "age_days": age_days,
             "decomposed": label_flags.decomposed,
             "blocked": label_flags.blocked || native_blocked,
             "native_blocked": native_blocked,
             "blocked_by": blocked_by,
-            "stale": stale_info.stale,
-            "stale_missing": stale_info.stale_missing,
-            "file_paths": file_paths,
-            "brief": truncate_body(body, 200),
-            "milestone": milestone,
+            "assignees": assignees,
+            "vanilla": label_flags.vanilla,
+            "flow_in_progress": label_flags.flow_in_progress,
+            "triage_in_progress": label_flags.triage_in_progress,
         }));
     }
 
     serde_json::json!({
         "status": "ok",
-        "total": issues.len(),
-        "in_progress": in_progress,
+        "total": available.len(),
         "issues": available,
     })
 }
@@ -462,7 +405,9 @@ pub fn filter_issues(issues: &[Value], filter_name: &str) -> Result<Vec<Value>, 
         "blocked" => Box::new(|i: &Value| i["blocked"].as_bool().unwrap_or(false)),
         "decomposed" => Box::new(|i: &Value| i["decomposed"].as_bool().unwrap_or(false)),
         "quick-start" => Box::new(|i: &Value| {
-            i["decomposed"].as_bool().unwrap_or(false) && !i["blocked"].as_bool().unwrap_or(false)
+            i["decomposed"].as_bool().unwrap_or(false)
+                && !i["blocked"].as_bool().unwrap_or(false)
+                && !i["flow_in_progress"].as_bool().unwrap_or(false)
         }),
         _ => return Err(format!("Unknown filter: {}", filter_name)),
     };
@@ -555,11 +500,7 @@ pub fn run_impl_main(args: Args) -> (Value, i32) {
             .expect("analyze_issues always writes issues as an array");
         let filtered = filter_issues(issues_arr, name)
             .expect("internal filter name is always one of the four known values");
-        let in_progress_count = output["in_progress"]
-            .as_array()
-            .expect("analyze_issues always writes in_progress as an array")
-            .len();
-        let count = in_progress_count + filtered.len();
+        let count = filtered.len();
         output["issues"] = Value::Array(filtered);
         output["total"] = serde_json::json!(count);
     }
@@ -584,7 +525,7 @@ fn read_issues_json(args: &Args) -> Result<String, Value> {
         "--state".to_string(),
         "open".to_string(),
         "--json".to_string(),
-        "number,title,labels,createdAt,body,url,milestone".to_string(),
+        "number,title,labels,createdAt,body,url,milestone,assignees".to_string(),
         "--limit".to_string(),
         "100".to_string(),
     ];
