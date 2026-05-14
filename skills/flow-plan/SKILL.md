@@ -618,10 +618,12 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-plan
 Once the validator returns `ok`, file the issue against the
 current repo (no `--repo` flag — `flow-plan` always files where
 the user is) WITH the `decomposed` label so `flow-issues` and
-`flow-orchestrate` recognize it as ready-for-flow-start work:
+`flow-orchestrate` recognize it as ready-for-flow-start work, and
+WITH `--assignee @me` so the decomposed issue is assigned to the
+planner who ran `flow-plan`:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<issue_title>" --body-file .flow-issue-body-<id> --label decomposed
+${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<issue_title>" --body-file .flow-issue-body-<id> --label decomposed --assignee @me
 ```
 
 Capture the new issue's number from the URL in the filer's output
