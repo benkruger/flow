@@ -16,7 +16,12 @@
 //!   no active flow (state file absent).
 //! - `{"status":"error","reason":"unauthorized","message":...}` —
 //!   the persisted transcript's most recent real user turn does
-//!   NOT carry `<command-name>/flow:flow-continue</command-name>`.
+//!   NOT start with either emission shape Claude Code uses for
+//!   `/flow:flow-continue`: the two-line shape
+//!   `<command-message>flow:flow-continue</command-message>\n<command-name>/flow:flow-continue</command-name>`
+//!   (Claude Code 2.1.140+) or the legacy one-line shape
+//!   `<command-name>/flow:flow-continue</command-name>`. The walker
+//!   accepts either via `starts_with` disjunction.
 //! - `{"status":"error","reason":"invalid_branch"}` — branch
 //!   fails `FlowPaths::is_valid_branch`.
 //! - `{"status":"error","reason":"no_transcript_path"}` — state
@@ -42,9 +47,13 @@ use crate::per_flow_capture::derive_transcript_path;
 use crate::session_metrics::{is_safe_session_id, is_safe_transcript_path};
 
 /// Skill name the transcript walker checks for. The user types
-/// `/flow:flow-continue` and Claude Code emits
-/// `<command-name>/flow:flow-continue</command-name>` at the start
-/// of the user-role turn's `message.content`.
+/// `/flow:flow-continue` and Claude Code emits the slash-command
+/// marker at the start of the user-role turn's `message.content`
+/// in one of two shapes — the two-line
+/// `<command-message>flow:flow-continue</command-message>\n<command-name>/flow:flow-continue</command-name>`
+/// (Claude Code 2.1.140+) or the legacy
+/// `<command-name>/flow:flow-continue</command-name>`. The walker
+/// accepts either as the `starts_with` anchor.
 const CONTINUE_SKILL: &str = "flow:flow-continue";
 
 #[derive(Parser, Debug)]
@@ -146,7 +155,7 @@ pub fn run_impl_main(args: &Args, root: &Path, home: &Path) -> (Value, i32) {
             *failure.borrow_mut() = Some(json!({
                 "status": "error",
                 "reason": "unauthorized",
-                "message": "transcript shows the most recent user turn did not invoke /flow:flow-continue",
+                "message": "transcript shows the most recent user turn did not invoke /flow:flow-continue; expected content to start with either <command-message>flow:flow-continue</command-message>\\n<command-name>/flow:flow-continue</command-name> (Claude Code 2.1.140+) or <command-name>/flow:flow-continue</command-name>",
             }));
             return;
         }

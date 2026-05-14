@@ -66,21 +66,30 @@ extend the protection but do not replace it.
 
 `src/hooks/validate_skill.rs` runs on every Skill tool call. When
 `tool_input.skill` (after normalization) is in the user-only set
-AND the persisted transcript at `transcript_path` does NOT carry
-a matching `<command-name>/<skill></command-name>` substring AT
-THE START of the most recent user-role turn's `message.content`
-string, the hook exits 2 and Claude Code rejects the tool call.
-The block message names the skill (in canonical lowercased form)
-and points to this rule file.
+AND the most recent user-role turn's `message.content` string in
+the persisted transcript at `transcript_path` does NOT begin with
+either emission shape Claude Code uses for the matching slash
+command — the two-line
+`<command-message><skill></command-message>\n<command-name>/<skill></command-name>`
+(Claude Code 2.1.140+) or the legacy
+`<command-name>/<skill></command-name>` — the hook exits 2 and
+Claude Code rejects the tool call. The block message names the
+skill (in canonical lowercased form) and points to this rule
+file.
 
 The walker
 (`src/hooks/transcript_walker.rs::last_user_message_invokes_skill`)
 scans backward through the transcript JSONL, stops at the first
-user-role turn, and requires the marker at the START of trimmed
-content (slash-command anchoring). User prose mentioning the
-literal marker mid-text, and tool_result-wrapped user turns whose
-content is an array of blocks (carrying assistant-echoed text),
-are explicitly rejected.
+user-role turn, and requires the trimmed content to START with
+one of the two emission shapes above. The check is a
+`starts_with` disjunction (slash-command anchoring on both
+shapes): user prose mentioning either marker substring mid-text
+fails because the prose's leading bytes are neither
+`<command-message>` nor `<command-name>`. Tool_result-wrapped
+user turns whose content is an array of blocks (carrying
+assistant-echoed text) are explicitly rejected because
+`is_real_user_turn` discards array-content turns before the
+`starts_with` comparison runs.
 
 The walker reads the LAST `TRANSCRIPT_BYTE_CAP` bytes of the
 file (50 MB) so the most recent turns are always visible

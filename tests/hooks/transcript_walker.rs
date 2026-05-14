@@ -554,6 +554,110 @@ fn last_user_invokes_rejects_empty_skill_after_normalization() {
 }
 
 #[test]
+fn last_user_message_invokes_skill_recognizes_two_line_shape_for_flow_continue() {
+    // Claude Code 2.1.140+ emits user-typed slash commands as a
+    // two-line content string: `<command-message>flow:flow-continue
+    // </command-message>\n<command-name>/flow:flow-continue
+    // </command-name>`. The walker must accept this shape AND the
+    // legacy one-line shape via `starts_with` disjunction. This test
+    // exercises the new shape for `flow:flow-continue` — the user-only
+    // skill whose bug originally surfaced this regression (clear-halt
+    // rejected as unauthorized because the legacy-only check failed
+    // on the two-line emission).
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-message>flow:flow-continue</command-message>\\n<command-name>/flow:flow-continue</command-name>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(last_user_message_invokes_skill(
+        &path,
+        "flow:flow-continue",
+        home
+    ));
+}
+
+#[test]
+fn last_user_message_invokes_skill_recognizes_two_line_shape_for_flow_abort() {
+    // Per-skill coverage for the two-line emission shape — `flow:flow
+    // -abort` is one of the five user-only skills the walker gates;
+    // each must independently round-trip through the new shape.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-message>flow:flow-abort</command-message>\\n<command-name>/flow:flow-abort</command-name>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(last_user_message_invokes_skill(
+        &path,
+        "flow:flow-abort",
+        home
+    ));
+}
+
+#[test]
+fn last_user_message_invokes_skill_recognizes_two_line_shape_for_flow_reset() {
+    // Per-skill coverage for the two-line emission shape — `flow:flow
+    // -reset` is one of the five user-only skills the walker gates.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-message>flow:flow-reset</command-message>\\n<command-name>/flow:flow-reset</command-name>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(last_user_message_invokes_skill(
+        &path,
+        "flow:flow-reset",
+        home
+    ));
+}
+
+#[test]
+fn last_user_message_invokes_skill_recognizes_two_line_shape_for_flow_release() {
+    // Per-skill coverage for the two-line emission shape. The
+    // `flow-release` skill is a project-local maintainer skill at
+    // `.claude/skills/flow-release/`, so Claude Code emits the bare
+    // skill name (no `flow:` namespace) in both the `<command-message>`
+    // and `<command-name>` markers. See `USER_ONLY_SKILLS` doc comment
+    // for the namespacing asymmetry.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-message>flow-release</command-message>\\n<command-name>/flow-release</command-name>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(last_user_message_invokes_skill(&path, "flow-release", home));
+}
+
+#[test]
+fn last_user_message_invokes_skill_recognizes_two_line_shape_for_flow_prime() {
+    // Per-skill coverage for the two-line emission shape — `flow:flow
+    // -prime` is one of the five user-only skills the walker gates.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-message>flow:flow-prime</command-message>\\n<command-name>/flow:flow-prime</command-name>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(last_user_message_invokes_skill(
+        &path,
+        "flow:flow-prime",
+        home
+    ));
+}
+
+#[test]
+fn last_user_message_invokes_skill_rejects_two_line_marker_mid_prose_anchoring_preserved() {
+    // The walker's `starts_with` disjunction must preserve the slash-
+    // command-anchoring property on BOTH shapes. A user typing prose
+    // that mentions the literal marker substring mid-text does not
+    // satisfy either anchor: the new-shape arm requires
+    // `<command-message>...` as the literal first bytes of trimmed
+    // content; the legacy-shape arm requires `<command-name>...` as
+    // the literal first bytes. Prose like "I want to discuss..."
+    // starts with neither, so the walker returns false.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"I want to discuss the /flow:flow-continue marker. The walker checks <command-name>/flow:flow-continue</command-name> at the start.\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(!last_user_message_invokes_skill(
+        &path,
+        "flow:flow-continue",
+        home
+    ));
+}
+
+#[test]
 fn most_recent_skill_walker_finds_user_only_in_multi_skill_turn() {
     // Assistant turn fires multiple Skill tool_use calls in the same
     // content array — first a non-user-only skill, then a user-only

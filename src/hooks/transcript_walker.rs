@@ -73,15 +73,22 @@
 //! ## Slash-command anchoring
 //!
 //! Layer 1's user-turn check parses `message.content` as a string
-//! and requires the `<command-name>/<skill></command-name>`
-//! marker at the START of the trimmed content. A user typing
+//! and requires the trimmed content to START with one of two
+//! emission shapes Claude Code uses for user-typed slash commands:
+//! the two-line shape
+//! `<command-message><skill></command-message>\n<command-name>/<skill></command-name>`
+//! (Claude Code 2.1.140+) OR the legacy one-line shape
+//! `<command-name>/<skill></command-name>`. Both shapes are
+//! checked via `starts_with` disjunction. A user typing
 //! "what does <command-name>/flow:flow-abort</command-name> do?"
 //! produces a content string where the marker appears mid-text —
 //! that is prose mention, not a slash-command invocation, and is
-//! rejected. Tool-result-wrapped user turns (where `content` is an
-//! array of blocks rather than a string) are also rejected
-//! because echoed assistant text in a tool_result would otherwise
-//! authorize invocation of a user-only skill.
+//! rejected because the prose's leading bytes are neither
+//! `<command-message>` nor `<command-name>`. Tool-result-wrapped
+//! user turns (where `content` is an array of blocks rather than
+//! a string) are also rejected because echoed assistant text in a
+//! tool_result would otherwise authorize invocation of a
+//! user-only skill.
 //!
 //! ## JSONL turn shape
 //!
@@ -268,12 +275,24 @@ fn is_meta_marker_present(v: Option<&Value>) -> bool {
 /// command. Returns `false` on any read, parse, or validation
 /// failure (fail-open).
 ///
-/// Slash-command anchoring: the marker
-/// `<command-name>/<skill></command-name>` must appear at the
-/// START of the trimmed `message.content` string. A user typing
-/// the marker mid-prose, or a tool_result-wrapped user turn whose
-/// content is an array of blocks (containing assistant-echoed
-/// text), does NOT satisfy the check.
+/// Slash-command anchoring: the trimmed `message.content` string
+/// must START with one of two emission shapes Claude Code uses
+/// for user-typed slash commands. The walker checks both via
+/// `starts_with` disjunction:
+///
+/// - Two-line shape (Claude Code 2.1.140+):
+///   `<command-message><skill></command-message>\n<command-name>/<skill></command-name>`
+/// - Legacy one-line shape:
+///   `<command-name>/<skill></command-name>`
+///
+/// Both shapes are anchored: a user typing prose that mentions
+/// either marker substring mid-text does NOT satisfy the check,
+/// because the prose's leading bytes are neither
+/// `<command-message>` nor `<command-name>`. Tool_result-wrapped
+/// user turns (where `content` is an array of blocks containing
+/// assistant-echoed text) also fail the check because
+/// `is_real_user_turn` discards array-content turns before the
+/// `starts_with` comparison runs.
 ///
 /// `home` is passed in (rather than read from `$HOME` internally)
 /// so the validator can run against a fixture-controlled prefix in
@@ -293,7 +312,11 @@ pub fn last_user_message_invokes_skill(path: &Path, skill: &str, home: &Path) ->
         Some(s) => s,
         None => return false,
     };
-    let needle = format!("<command-name>/{}</command-name>", skill_norm);
+    let legacy_shape = format!("<command-name>/{}</command-name>", skill_norm);
+    let new_shape = format!(
+        "<command-message>{}</command-message>\n<command-name>/{}</command-name>",
+        skill_norm, skill_norm
+    );
     for line in lines.lines().rev() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -322,7 +345,7 @@ pub fn last_user_message_invokes_skill(path: &Path, skill: &str, home: &Path) ->
             .and_then(|c| c.as_str())
             .expect("is_real_user_turn verified string content above");
         let content_norm = content_str.trim_start().to_ascii_lowercase();
-        return content_norm.starts_with(&needle);
+        return content_norm.starts_with(&new_shape) || content_norm.starts_with(&legacy_shape);
     }
     false
 }
