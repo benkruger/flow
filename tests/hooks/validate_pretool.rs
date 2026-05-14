@@ -3953,6 +3953,228 @@ fn layer_10_bootstrap_carveout_unaffected_by_active_flow_carveout() {
     );
 }
 
+#[test]
+fn layer_10_bootstrap_carveout_allows_for_flow_release_user_typed_slash_command() {
+    // flow-release is a user-only skill: Claude Code records the user
+    // typing `/flow-release` as a user-role turn, never as an
+    // assistant Skill tool_use. The transcript here is a single
+    // user-typed `<command-name>/flow-release</command-name>` turn
+    // with no assistant Skill. The bootstrap carve-out fires because
+    // `transcript_shows_commit_window_skill` recognizes the
+    // `/flow-release` user turn as a commit-window skill AND
+    // `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` recognizes it as
+    // the sanctioned bootstrap parent. Layer 9 passes through.
+    //
+    // Regression guard: a future edit drops the `flow-release`
+    // user-turn recognition from
+    // `transcript_shows_commit_window_skill`, so a maintainer typing
+    // `/flow-release` on the integration branch is blocked from
+    // running the release version-bump commit.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = user_jsonl("<command-name>/flow-release</command-name>");
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 0,
+        "user-typed /flow-release must satisfy the bootstrap carve-out on the integration branch; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_10_bootstrap_carveout_allows_for_flow_prime_user_typed_slash_command() {
+    // flow-prime is a user-only skill recorded as a user-role turn,
+    // never an assistant Skill tool_use. The realistic flow-prime
+    // bootstrap transcript is: user types `/flow:flow-prime`, then the
+    // skill delegates the commit to `/flow:flow-commit` (an assistant
+    // Skill). The bootstrap carve-out fires:
+    // `transcript_shows_commit_window_skill` matches the
+    // flow:flow-commit assistant Skill, and
+    // `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` recognizes the
+    // `/flow:flow-prime` user-typed turn as the sanctioned parent.
+    //
+    // Regression guard: a future edit drops the user-turn recognition
+    // from `any_skill_in_set_since_user`, so the realistic flow-prime
+    // bootstrap window (user-typed parent + delegated flow-commit) no
+    // longer satisfies condition 3 of the carve-out and flow-prime
+    // setup commits on the integration branch are blocked.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = format!(
+        "{}{}",
+        user_jsonl("<command-name>/flow:flow-prime</command-name>"),
+        assistant_skill_jsonl("flow:flow-commit"),
+    );
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 0,
+        "user-typed /flow:flow-prime parent + delegated flow-commit must satisfy the bootstrap carve-out; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_10_bootstrap_carveout_blocks_when_no_bootstrap_skill_in_transcript() {
+    // The transcript is a single plain user turn — no slash command,
+    // no assistant Skill anywhere. `transcript_shows_commit_window_skill`
+    // returns false (neither the `/flow-release` user-turn recognition
+    // nor `most_recent_skill_since_user` finds a commit-window skill)
+    // and `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` returns
+    // false. The carve-out cannot fire and Layer 9 blocks the commit
+    // on the integration branch.
+    //
+    // Regression guard: a future edit makes
+    // `transcript_shows_commit_window_skill`'s new `/flow-release`
+    // user-turn arm match any user turn rather than only a
+    // `/flow-release` slash command, over-firing the carve-out for an
+    // arbitrary integration-branch commit.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = user_jsonl("please commit the release for me");
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 2,
+        "no bootstrap skill in transcript must block the integration-branch commit; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+    assert!(stderr.contains("integration branch"));
+}
+
+#[test]
+fn layer_10_active_flow_carveout_does_not_fire_on_flow_release_user_turn() {
+    // The `/flow-release` user-turn recognition is scoped to the
+    // integration-branch bootstrap carve-out
+    // (`bootstrap_carveout_applies`), NOT the shared
+    // `transcript_shows_commit_window_skill` predicate. The active-flow
+    // carve-out (`check_active_flow_at`) consumes that shared predicate
+    // for its third AND-condition; the predicate is assistant-Skill-
+    // only. So a feature-branch active flow with
+    // `_continue_pending=commit` and a most-recent-user-turn
+    // `/flow-release` does NOT satisfy the active-flow carve-out — no
+    // `flow:flow-commit` assistant Skill ran, so the choreography the
+    // carve-out exists to require was skipped. Layer 9 blocks.
+    //
+    // Regression guard: a future edit moves the `/flow-release`
+    // user-turn arm back into the shared
+    // `transcript_shows_commit_window_skill` predicate, widening the
+    // active-flow gate so a raw `bin/flow finalize-commit` lands on a
+    // feature branch without `/flow:flow-commit` ever running.
+    let (_dir, root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    let jsonl = user_jsonl("<command-name>/flow-release</command-name>");
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
+    assert_eq!(
+        code, 2,
+        "active-flow carve-out must NOT fire on a /flow-release user turn — no flow:flow-commit Skill ran; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+}
+
+#[test]
+fn layer_10_active_flow_carveout_does_not_fire_when_flow_release_precedes_unrelated_skill() {
+    // Same scoping property as the test above, with an intervening
+    // non-commit assistant Skill after the `/flow-release` user turn.
+    // `transcript_shows_commit_window_skill` resolves the most recent
+    // assistant Skill (`flow:flow-explore`), which is not a
+    // commit-window skill, so the assistant-Skill-only predicate
+    // returns false and the active-flow carve-out blocks. The
+    // `/flow-release` user turn is invisible to the active-flow
+    // context because its recognition lives only in
+    // `bootstrap_carveout_applies`.
+    //
+    // Regression guard: a future edit re-introduces a `/flow-release`
+    // user-turn short-circuit into `transcript_shows_commit_window_skill`
+    // ahead of the `most_recent_skill_since_user` check, so the
+    // active-flow carve-out fires even though the model's most recent
+    // action was an unrelated skill.
+    let (_dir, root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    let jsonl = format!(
+        "{}{}",
+        user_jsonl("<command-name>/flow-release</command-name>"),
+        assistant_skill_jsonl("flow:flow-explore"),
+    );
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
+    assert_eq!(
+        code, 2,
+        "active-flow carve-out must NOT fire when the most recent action is a non-commit Skill, even if an older user turn typed /flow-release; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+}
+
+#[test]
+fn layer_10_bootstrap_carveout_fires_for_flow_release_with_intervening_non_commit_skill() {
+    // The caller-scoped counterpart to the two active-flow tests
+    // above: the SAME transcript shape (`/flow-release` user turn
+    // followed by an unrelated `flow:flow-explore` Skill) FIRES the
+    // integration-branch bootstrap carve-out, because
+    // `bootstrap_carveout_applies` recognizes the `/flow-release`
+    // user turn via its `last_user_message_invokes_skill` OR-arm even
+    // when `transcript_shows_commit_window_skill` returns false (the
+    // most recent assistant Skill is non-commit). The bootstrap
+    // window is bounded by the next real user turn, not by assistant
+    // actions — so an intervening non-commit Skill during
+    // `/flow-release`'s multi-step execution does not close it.
+    //
+    // Regression guard: a future edit drops the
+    // `last_user_message_invokes_skill` OR-arm from
+    // `bootstrap_carveout_applies` condition 2, so a `/flow-release`
+    // bootstrap commit is blocked the moment the release skill
+    // invokes any non-commit Skill before its `finalize-commit`.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = format!(
+        "{}{}",
+        user_jsonl("<command-name>/flow-release</command-name>"),
+        assistant_skill_jsonl("flow:flow-explore"),
+    );
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 0,
+        "bootstrap carve-out must fire for /flow-release even with an intervening non-commit Skill; stderr={stderr}"
+    );
+}
+
 // --- halt gate ---
 //
 // `_halt_pending=true` in the state file refuses every model-

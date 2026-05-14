@@ -24,12 +24,17 @@
 //! 4. `src/hooks/validate_pretool.rs` — Layer 9 bootstrap-skill
 //!    carve-out for the integration-branch commit gate. Calls
 //!    `any_skill_in_set_since_user(transcript_path, home, &[
-//!    "flow:flow-start", "flow:flow-prime"])` to recognize the
-//!    bootstrap commit windows where `/flow:flow-commit` runs while
-//!    cwd is on the integration branch — flow-start Step 2 (deps
-//!    repair) and flow-prime Step 6 (setup writes). The sanctioned
-//!    parent must appear in the assistant Skill chain since the most
-//!    recent real user turn for the carve-out to fire.
+//!    "flow:flow-start", "flow:flow-prime", "flow-release"])` to
+//!    recognize the bootstrap commit windows where the commit runs
+//!    while cwd is on the integration branch — flow-start Step 2
+//!    (deps repair), flow-prime Step 6 (setup writes), and
+//!    flow-release's version-bump commit. The sanctioned parent is
+//!    recognized either as an assistant `Skill` tool_use OR as the
+//!    user-typed slash-command boundary turn since the most recent
+//!    real user turn — `flow:flow-prime` and `flow-release` are
+//!    user-only skills that Claude Code records only as user-role
+//!    turns, never as assistant `Skill` tool_use, so the user-turn
+//!    recognition is required for those two.
 //!
 //! All helpers are read-only over a JSONL transcript file. They
 //! never mutate state, never spawn subprocesses, and fail-open
@@ -270,6 +275,36 @@ fn is_meta_marker_present(v: Option<&Value>) -> bool {
     }
 }
 
+/// Return `true` when `content_norm` — a user turn's
+/// `message.content` already trimmed-start and ASCII-lowercased by
+/// the caller — begins with one of the two emission shapes Claude
+/// Code uses for the user-typed slash command `/{skill_norm}`:
+///
+/// - Two-line shape (Claude Code 2.1.140+):
+///   `<command-message>{skill}</command-message>\n<command-name>/{skill}</command-name>`
+/// - Legacy one-line shape:
+///   `<command-name>/{skill}</command-name>`
+///
+/// Both arms anchor via `starts_with`, so a user typing prose that
+/// mentions either marker substring mid-text does NOT satisfy the
+/// check. The caller normalizes both arguments — the content via
+/// `trim_start().to_ascii_lowercase()` and the skill name via
+/// `normalize_gate_input` — so this helper performs only the shape
+/// match.
+///
+/// Shared by `last_user_message_invokes_skill` (Layer 1 user-only-
+/// skill enforcement) and `any_skill_in_set_since_user` (Layer 9
+/// bootstrap carve-out), so a future change to the slash-command
+/// emission shapes updates a single point.
+fn content_invokes_skill(content_norm: &str, skill_norm: &str) -> bool {
+    let legacy_shape = format!("<command-name>/{}</command-name>", skill_norm);
+    let new_shape = format!(
+        "<command-message>{}</command-message>\n<command-name>/{}</command-name>",
+        skill_norm, skill_norm
+    );
+    content_norm.starts_with(&new_shape) || content_norm.starts_with(&legacy_shape)
+}
+
 /// Return `true` when the most recent user-role turn in the
 /// transcript at `path` invokes `skill` as a Claude Code slash
 /// command. Returns `false` on any read, parse, or validation
@@ -312,11 +347,6 @@ pub fn last_user_message_invokes_skill(path: &Path, skill: &str, home: &Path) ->
         Some(s) => s,
         None => return false,
     };
-    let legacy_shape = format!("<command-name>/{}</command-name>", skill_norm);
-    let new_shape = format!(
-        "<command-message>{}</command-message>\n<command-name>/{}</command-name>",
-        skill_norm, skill_norm
-    );
     for line in lines.lines().rev() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -345,7 +375,7 @@ pub fn last_user_message_invokes_skill(path: &Path, skill: &str, home: &Path) ->
             .and_then(|c| c.as_str())
             .expect("is_real_user_turn verified string content above");
         let content_norm = content_str.trim_start().to_ascii_lowercase();
-        return content_norm.starts_with(&new_shape) || content_norm.starts_with(&legacy_shape);
+        return content_invokes_skill(&content_norm, &skill_norm);
     }
     false
 }
@@ -417,13 +447,21 @@ pub fn most_recent_skill_in_user_only_set(path: &Path, home: &Path) -> bool {
     false
 }
 
-/// Return `true` when any assistant Skill `tool_use` whose
-/// `input.skill` (after `normalize_gate_input`) is a member of
-/// `sanctioned` appears in the transcript at `path` between the file
-/// tail and the most recent user-role turn. Returns `false` when no
-/// such Skill call appears, when the most recent turn is the user
-/// boundary itself, when `sanctioned` is empty, or on any read /
-/// parse / validation failure (fail-open).
+/// Return `true` when a sanctioned skill — one whose name (after
+/// `normalize_gate_input`) is a member of `sanctioned` — appears in
+/// the transcript at `path` between the file tail and the most
+/// recent real user-role turn, recognized through EITHER of two
+/// shapes:
+///
+/// - An assistant Skill `tool_use` whose `input.skill` is in
+///   `sanctioned`, OR
+/// - The most recent real user turn ITSELF typed a sanctioned skill
+///   as a slash command — the two-line or legacy `<command-name>`
+///   emission shapes, checked via `content_invokes_skill`.
+///
+/// Returns `false` when neither shape matches before the real-user
+/// boundary, when `sanctioned` is empty, or on any read / parse /
+/// validation failure (fail-open).
 ///
 /// The walker is the load-bearing predicate for the Layer 9 bootstrap
 /// carve-out in `validate_pretool::bootstrap_carveout_applies`. Layer
@@ -431,19 +469,25 @@ pub fn most_recent_skill_in_user_only_set(path: &Path, home: &Path) -> bool {
 /// the carve-out cannot use the `_continue_pending=commit` marker
 /// that the active-flow context uses. This walker substitutes for
 /// the marker: when the persisted transcript shows a sanctioned
-/// bootstrap parent (`flow:flow-start`, `flow:flow-prime`) AND a
-/// `flow:flow-commit` Skill since the most recent real user turn,
-/// the surrounding skill choreography is verified by replay against
-/// the transcript itself.
+/// bootstrap parent (`flow:flow-start`, `flow:flow-prime`, or
+/// `flow-release`) AND a sanctioned commit-window skill since the
+/// most recent real user turn, the surrounding skill choreography is
+/// verified by replay against the transcript itself. The user-turn
+/// recognition is required because `flow:flow-prime` and
+/// `flow-release` are user-only skills — Claude Code records them
+/// only as user-role turns, never as assistant `Skill` tool_use.
 ///
-/// Walking backward from the file's tail, the walker stops at the
-/// first user turn (real or synthetic discrimination: real user
-/// turns have string `content`; synthetic turns carry a content
-/// array of tool_result blocks and are skipped). Older turns beyond
-/// the real-user boundary are invisible. Multi-tool assistant turns
-/// are scanned in full via `extract_skill_invocations`, so a
-/// sanctioned Skill appearing alongside other tool calls in the same
-/// turn still satisfies the check.
+/// Walking backward from the file's tail, the walker checks each
+/// assistant turn's Skill `tool_use` blocks and stops at the first
+/// REAL user turn (synthetic turns — tool_result-wrapped array
+/// content and hook-injected `isMeta:true` feedback — are skipped
+/// via `is_real_user_turn`). At the real-user boundary the
+/// user-typed-slash-command check runs AFTER the `is_real_user_turn`
+/// guard, then the walker returns. Older turns beyond the real-user
+/// boundary are invisible. Multi-tool assistant turns are scanned in
+/// full via `extract_skill_invocations`, so a sanctioned Skill
+/// appearing alongside other tool calls in the same turn still
+/// satisfies the check.
 ///
 /// `home` is passed in for the same testability reason as
 /// `last_user_message_invokes_skill`.
@@ -480,6 +524,35 @@ pub fn any_skill_in_set_since_user(path: &Path, home: &Path, sanctioned: &[&str]
             // close the carve-out window prematurely.
             if !is_real_user_turn(&turn) {
                 continue;
+            }
+            // The real user turn is the carve-out window boundary.
+            // Before treating it as "no sanctioned parent found",
+            // check whether the user TYPED a sanctioned skill as a
+            // slash command. The loop below checks every entry in
+            // `sanctioned`: `flow:flow-prime` and `flow-release` are
+            // user-only skills Claude Code records ONLY as user-role
+            // turns (never as assistant `Skill` tool_use), so the
+            // assistant-Skill scan above can never see them; and
+            // `flow:flow-start` is also user-typed in the common
+            // case (the user types `/flow:flow-start` to begin a
+            // flow). The branch runs AFTER the `is_real_user_turn`
+            // guard so a synthetic `isMeta:true` turn echoing a
+            // `<command-name>` marker is skipped, not matched.
+            // `is_real_user_turn` guarantees string `content`.
+            let content_str = turn
+                .get("message")
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_str())
+                .expect("is_real_user_turn verified string content above");
+            let content_norm = content_str.trim_start().to_ascii_lowercase();
+            for skill in sanctioned {
+                let skill_norm = normalize_gate_input(skill);
+                if skill_norm.is_empty() {
+                    continue;
+                }
+                if content_invokes_skill(&content_norm, &skill_norm) {
+                    return true;
+                }
             }
             return false;
         }

@@ -2449,6 +2449,176 @@ fn any_skill_in_set_since_user_skips_hook_feedback_string_content_ismeta_true() 
     ));
 }
 
+#[test]
+fn any_skill_recognizes_legacy_command_name_user_turn_for_flow_prime() {
+    // The most recent real user turn is a user-typed slash command in
+    // the legacy `<command-name>/flow:flow-prime</command-name>` shape.
+    // `flow:flow-prime` is a user-only skill — Claude Code records the
+    // user typing `/flow:flow-prime` as a user-role turn, never as an
+    // assistant `Skill` tool_use — so the assistant-Skill scan never
+    // sees it. The walker must recognize the user-typed slash command
+    // at the boundary and return true.
+    //
+    // Regression guard: a future edit removes the user-turn
+    // boundary-recognition branch from `any_skill_in_set_since_user`,
+    // so `flow:flow-prime` no longer satisfies the Layer 9 bootstrap
+    // carve-out (`validate_pretool::bootstrap_carveout_applies`) and
+    // legitimate flow-prime commits on the integration branch are
+    // blocked.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-prime</command-name>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime", "flow-release"],
+    ));
+}
+
+#[test]
+fn any_skill_recognizes_two_line_command_message_user_turn_for_flow_release() {
+    // The most recent real user turn is a user-typed slash command in
+    // the Claude Code 2.1.140+ two-line
+    // `<command-message>flow-release</command-message>\n<command-name>
+    // /flow-release</command-name>` shape. `flow-release` is a
+    // project-local user-only skill — it is never an assistant `Skill`
+    // tool_use — so the assistant-Skill scan never sees it. The walker
+    // must recognize the two-line user-typed slash command at the
+    // boundary and return true.
+    //
+    // Regression guard: a future edit drops the two-line shape from
+    // the user-turn boundary recognition, so `/flow-release` typed on
+    // Claude Code 2.1.140+ no longer satisfies the Layer 9 bootstrap
+    // carve-out and legitimate release commits on the integration
+    // branch are blocked.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-message>flow-release</command-message>\\n<command-name>/flow-release</command-name>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime", "flow-release"],
+    ));
+}
+
+#[test]
+fn any_skill_recognizes_legacy_command_name_user_turn_for_flow_release() {
+    // The most recent real user turn is a user-typed slash command in
+    // the legacy `<command-name>/flow-release</command-name>` shape.
+    // The walker must recognize the legacy shape for `flow-release`
+    // (bare name, no `flow:` namespace) at the boundary and return
+    // true.
+    //
+    // Regression guard: a future edit drops the legacy shape from the
+    // user-turn boundary recognition, so `/flow-release` typed on
+    // pre-2.1.140 Claude Code no longer satisfies the Layer 9
+    // bootstrap carve-out.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow-release</command-name>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime", "flow-release"],
+    ));
+}
+
+#[test]
+fn any_skill_rejects_user_turn_naming_non_sanctioned_user_only_skill() {
+    // The most recent real user turn is a user-typed slash command
+    // for `/flow:flow-abort` — a user-only skill, but NOT a member of
+    // the sanctioned bootstrap set. The user-turn boundary recognition
+    // loops the caller's `sanctioned` slice; `flow:flow-abort` is
+    // absent, so no entry matches and the walker returns false.
+    //
+    // Regression guard: a future edit makes the user-turn recognition
+    // accept ANY user-only skill rather than only the sanctioned set,
+    // over-firing the Layer 9 bootstrap carve-out for an abort.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(!any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime", "flow-release"],
+    ));
+}
+
+#[test]
+fn any_skill_rejects_user_turn_with_mid_prose_command_marker() {
+    // The most recent real user turn is prose that MENTIONS the
+    // `<command-name>/flow-release</command-name>` marker mid-text
+    // rather than starting with it. The user-turn boundary
+    // recognition anchors via `starts_with` on the normalized
+    // content, so a mid-prose mention does not satisfy the check —
+    // the walker returns false.
+    //
+    // Regression guard: a future edit replaces the `starts_with`
+    // anchor with a `contains` check, letting a user discussing the
+    // marker in prose spuriously satisfy the Layer 9 bootstrap
+    // carve-out.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"what does <command-name>/flow-release</command-name> do\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(!any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime", "flow-release"],
+    ));
+}
+
+#[test]
+fn any_skill_skips_synthetic_ismeta_user_turn_before_boundary_recognition() {
+    // The only turn is a synthetic hook-feedback user turn — string
+    // content carrying a `<command-name>/flow-release</command-name>`
+    // marker AND `isMeta:true`. The user-turn boundary recognition
+    // runs only AFTER the `is_real_user_turn` guard, so the synthetic
+    // turn is skipped and never reaches the recognition branch. The
+    // walker exhausts the buffer and returns false.
+    //
+    // Regression guard: a future edit moves the user-turn boundary
+    // recognition ahead of the `is_real_user_turn` guard, so a
+    // hook-injected feedback turn that happens to echo a
+    // `<command-name>` marker spuriously satisfies the Layer 9
+    // bootstrap carve-out.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"isMeta\":true,\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow-release</command-name>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(!any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime", "flow-release"],
+    ));
+}
+
+#[test]
+fn any_skill_skips_empty_normalized_sanctioned_entry() {
+    // A `sanctioned` slice whose only entry normalizes to an empty
+    // string. The per-entry `skill_norm.is_empty()` guard skips it
+    // BEFORE `content_invokes_skill` runs — without the skip, an
+    // empty skill name builds the degenerate shape
+    // `<command-name>/</command-name>`, and a user turn whose content
+    // is exactly that string would spuriously match. The walker skips
+    // the empty entry, finds no match, and returns false.
+    //
+    // Regression guard: a future edit removes the
+    // `skill_norm.is_empty()` skip, so an empty `sanctioned` entry
+    // builds the degenerate `<command-name>/</command-name>` shape and
+    // spuriously satisfies the Layer 9 bootstrap carve-out for a user
+    // turn carrying that exact marker.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/</command-name>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(!any_skill_in_set_since_user(&path, home, &[""]));
+}
+
 // --- is_real_user_turn discriminator ---
 //
 // Claude Code emits two shapes of synthetic user turns alongside
