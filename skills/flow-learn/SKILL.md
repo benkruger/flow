@@ -418,7 +418,12 @@ file or `CLAUDE.md` — using the `### Apply CLAUDE.md changes` and
 destination. Those mechanics record the write via
 `bin/flow add-finding`, which is the audit trail proving the
 directive was honored. The zero-artifact default does not apply to
-correction notes — each one always produces an artifact.
+correction notes — each one must reach a durable home. Routing is
+idempotent: "mandatory" means the directive lands durably, not that
+every run writes a fresh artifact. If a correction note's directive
+is already captured by an existing rule or `CLAUDE.md` entry —
+including one written by an interrupted earlier run of this step —
+that already satisfies the mandate, so do not duplicate it.
 
 **Tenant 1 findings (process gaps)** — skip this step. Process gaps go
 to Step 6 (GitHub issues).

@@ -575,8 +575,8 @@ pub fn format_complete_summary(state: &Value, closed_issues: Option<&[Value]>) -
     let skipped_lines = skipped_agents_section(state);
     lines.extend(skipped_lines);
 
-    // Token Cost section (between Findings and Artifacts) — empty
-    // when no phase carries window snapshot data per
+    // Token Cost section (between Skipped Agents and Artifacts) —
+    // empty when no phase carries window snapshot data per
     // `docs/reference/flow-state-schema.md` "Window Snapshot".
     let token_lines = token_cost_section(state);
     lines.extend(token_lines);
