@@ -1435,23 +1435,6 @@ fn test_filing_no_flow_label() {
             );
         }
     }
-
-    // LABEL_CATEGORIES must not list "Flow" as a category.
-    let analyze_path = root.join("src").join("analyze_issues.rs");
-    let analyze = fs::read_to_string(&analyze_path).expect("src/analyze_issues.rs must exist");
-    let tail_at_const = analyze
-        .split_once("LABEL_CATEGORIES: &[&str] = &[")
-        .map(|(_, t)| t)
-        .expect("LABEL_CATEGORIES const must exist in src/analyze_issues.rs");
-    let const_block = tail_at_const
-        .split_once("];")
-        .map(|(b, _)| b)
-        .unwrap_or(tail_at_const);
-    assert!(
-        !const_block.contains("\"Flow\""),
-        "src/analyze_issues.rs::LABEL_CATEGORIES must not contain `\"Flow\"` — \
-         the redundant Flow label was removed in PR #1408."
-    );
 }
 
 /// Recursively scans `dir` for files with the given extension and

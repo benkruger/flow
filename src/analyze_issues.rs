@@ -1,81 +1,19 @@
 //! Analyze open GitHub issues for the flow-issues skill.
 //!
-//! Handles mechanical work: JSON parsing, file path extraction,
-//! label detection, stale detection. Outputs condensed per-issue
-//! briefs so the LLM only needs to rank by impact.
+//! Produces a flat `issues` array enriched with per-row label flags
+//! (`decomposed`, `blocked`, `vanilla`, `flow_in_progress`,
+//! `triage_in_progress`), assignees, and resolved `blocked_by`
+//! entries that carry both `number` and a fully-constructed
+//! GitHub URL. The dashboard renderer reads one stream and
+//! dispatches by label.
 //!
 //! Tests live at `tests/analyze_issues.rs` per
 //! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]` in
 //! this file.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
-use std::sync::LazyLock;
 
-use regex::Regex;
 use serde_json::Value;
-
-/// Pre-compiled regexes for extracting file paths with known directory prefixes.
-static DIR_PREFIX_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
-    DIR_PREFIXES
-        .iter()
-        .map(|prefix| {
-            let escaped = regex::escape(prefix);
-            let pattern = format!("{}{}", escaped, r"[\w./\-]+");
-            Regex::new(&pattern).unwrap()
-        })
-        .collect()
-});
-
-/// Pre-compiled regex for file paths with recognized extensions.
-/// Uses non-word character boundaries (`(?:^|[^\w])` / `(?:$|[^\w])`) instead of
-/// lookahead/lookbehind because the `regex` crate does not support lookaround.
-static FILE_EXT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?:^|[^\w])([\w./\-]+/[\w.\-]+\.(?:py|md|json|sh|yml|yaml|rb|js|ts|html|css|toml))(?:$|[^\w])",
-    )
-    .unwrap()
-});
-
-/// Pre-compiled regex for bug-related keywords in issue content.
-static BUG_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(bug|fix|crash|error|broken|fail|wrong|incorrect)\b").unwrap()
-});
-
-/// Pre-compiled regex for enhancement-related keywords in issue content.
-static ENHANCEMENT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(add|new|feature|enhance|improve|support|implement)\b").unwrap()
-});
-
-/// Known directory prefixes for file path extraction.
-const DIR_PREFIXES: &[&str] = &[
-    "lib/", "skills/", "tests/", "docs/", "hooks/", ".claude/", "bin/", "agents/", "src/",
-    "config/", "app/",
-];
-
-/// Extract file paths from issue body text.
-///
-/// Recognizes paths with known directory prefixes and paths containing
-/// slashes with recognized file extensions. Returns deduplicated sorted list.
-pub fn extract_file_paths(body: &str) -> Vec<String> {
-    let mut paths: HashSet<String> = HashSet::new();
-
-    // Match paths with known directory prefixes
-    for re in DIR_PREFIX_REGEXES.iter() {
-        for mat in re.find_iter(body) {
-            paths.insert(mat.as_str().to_string());
-        }
-    }
-
-    // Match paths with file extensions (must contain /)
-    for cap in FILE_EXT_RE.captures_iter(body) {
-        paths.insert(cap[1].to_string());
-    }
-
-    let mut result: Vec<String> = paths.into_iter().collect();
-    result.sort();
-    result
-}
 
 /// Label detection result.
 pub struct LabelFlags {
@@ -110,63 +48,6 @@ pub fn detect_labels(labels: &[Value]) -> LabelFlags {
         flow_in_progress: label_names.contains("Flow In-Progress"),
         triage_in_progress: label_names.contains("Triage In-Progress"),
     }
-}
-
-/// Label categories checked in order.
-const LABEL_CATEGORIES: &[&str] = &["Rule", "Tech Debt", "Documentation Drift"];
-
-/// Assign a category based on label names first, then content fallback.
-pub fn categorize(label_names: &HashSet<String>, title: &str, body: &str) -> String {
-    for &label in LABEL_CATEGORIES {
-        if label_names.contains(label) {
-            return label.to_string();
-        }
-    }
-
-    let combined = format!("{} {}", title, body);
-
-    if BUG_RE.is_match(&combined) {
-        return "Bug".to_string();
-    }
-    if ENHANCEMENT_RE.is_match(&combined) {
-        return "Enhancement".to_string();
-    }
-    "Other".to_string()
-}
-
-/// Stale check result.
-pub struct StaleInfo {
-    pub stale: bool,
-    pub stale_missing: usize,
-}
-
-/// Check if an issue is stale (>60 days old with missing file refs).
-pub fn check_stale(file_paths: &[String], age_days: i64) -> StaleInfo {
-    if age_days < 60 || file_paths.is_empty() {
-        return StaleInfo {
-            stale: false,
-            stale_missing: 0,
-        };
-    }
-
-    let missing = file_paths
-        .iter()
-        .filter(|fp| !Path::new(fp).exists())
-        .count();
-    StaleInfo {
-        stale: missing > 0,
-        stale_missing: missing,
-    }
-}
-
-/// Truncate body to max_length, adding ellipsis if needed.
-/// Uses char count (not byte count) to avoid panicking on multi-byte UTF-8 boundaries.
-pub fn truncate_body(body: &str, max_length: usize) -> String {
-    if body.chars().count() <= max_length {
-        return body.to_string();
-    }
-    let truncated: String = body.chars().take(max_length).collect();
-    format!("{}...", truncated)
 }
 
 /// Build the GraphQL query for fetching blocker details.
@@ -400,7 +281,6 @@ pub fn analyze_issues(issues: &[Value], blocker_map: &HashMap<i64, Vec<Value>>) 
 
     for issue in issues {
         let number = issue["number"].as_i64().unwrap_or(0);
-        let body = issue.get("body").and_then(|b| b.as_str()).unwrap_or("");
         let labels_arr = issue.get("labels").and_then(|l| l.as_array());
         let labels_vec: Vec<Value> = labels_arr.cloned().unwrap_or_default();
 
@@ -413,36 +293,8 @@ pub fn analyze_issues(issues: &[Value], blocker_map: &HashMap<i64, Vec<Value>>) 
 
         let label_flags = detect_labels(&labels_vec);
 
-        let file_paths = extract_file_paths(body);
-
-        let created_at_str = issue
-            .get("createdAt")
-            .and_then(|c| c.as_str())
-            .unwrap_or("");
-        // chrono::DateTime::parse_from_rfc3339 accepts both `Z` and
-        // `±HH:MM` offsets, so a Z-suffix fallback would be dead code.
-        // Empirically: every input that fails this strict parse also
-        // fails after a `Z` → `+00:00` substitution (verified by
-        // coverage instrumentation showing the fallback's success arm
-        // hit 0 times across the test corpus). Treat unparseable
-        // dates as age 0.
-        let age_days = chrono::DateTime::parse_from_rfc3339(created_at_str)
-            .map(|created| (chrono::Utc::now() - created.with_timezone(&chrono::Utc)).num_days())
-            .unwrap_or(0);
-
-        let stale_info = check_stale(&file_paths, age_days);
-        let category = categorize(&label_names, issue["title"].as_str().unwrap_or(""), body);
-
         let blocked_by = blocker_map.get(&number).cloned().unwrap_or_default();
         let native_blocked = !blocked_by.is_empty();
-
-        let milestone = issue
-            .get("milestone")
-            .and_then(|m| m.get("title"))
-            .and_then(|t| t.as_str())
-            .filter(|s| !s.is_empty())
-            .map(|s| Value::String(s.to_string()))
-            .unwrap_or(Value::Null);
 
         let assignees: Vec<String> = issue
             .get("assignees")
@@ -459,17 +311,10 @@ pub fn analyze_issues(issues: &[Value], blocker_map: &HashMap<i64, Vec<Value>>) 
             "title": issue["title"],
             "url": issue.get("url").cloned().unwrap_or(Value::String(String::new())),
             "labels": label_list,
-            "category": category,
-            "age_days": age_days,
             "decomposed": label_flags.decomposed,
             "blocked": label_flags.blocked || native_blocked,
             "native_blocked": native_blocked,
             "blocked_by": blocked_by,
-            "stale": stale_info.stale,
-            "stale_missing": stale_info.stale_missing,
-            "file_paths": file_paths,
-            "brief": truncate_body(body, 200),
-            "milestone": milestone,
             "assignees": assignees,
             "vanilla": label_flags.vanilla,
             "flow_in_progress": label_flags.flow_in_progress,

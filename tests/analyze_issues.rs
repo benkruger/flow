@@ -6,16 +6,15 @@
 mod common;
 
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
 use common::{create_gh_stub, create_git_repo_with_remote};
 use flow_rs::analyze_issues::{
-    analyze_issues, blocker_result_to_map, build_blocker_query, categorize, check_stale,
-    detect_labels, extract_file_paths, fetch_blockers, filter_issues, gh_output_to_result,
-    normalize_error_payload, parse_blocker_response, run_gh, run_impl_main, truncate_body, Args,
+    analyze_issues, blocker_result_to_map, build_blocker_query, detect_labels, fetch_blockers,
+    filter_issues, gh_output_to_result, normalize_error_payload, parse_blocker_response, run_gh,
+    run_impl_main, Args,
 };
 use serde_json::{json, Value};
 
@@ -56,53 +55,6 @@ fn fake_issue(number: i64, title: &str, labels: Vec<&str>) -> serde_json::Value 
         "labels": label_objs,
         "milestone": null,
     })
-}
-
-/// Covers the `check_stale` body path in this integration test
-/// binary's flow-rs subprocess — exercises the case where
-/// `age_days >= 60` AND `file_paths` is non-empty. Without this,
-/// every other integration test uses recent createdAt dates and
-/// check_stale always early-returns in the main bin instance.
-#[test]
-fn analyze_issues_stale_detection_via_subprocess() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = create_git_repo_with_remote(dir.path());
-    // createdAt 90 days ago; body references a nonexistent file so
-    // check_stale's filter finds 1 missing path.
-    let old_date = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
-    let issue = json!({
-        "number": 77,
-        "title": "Stale",
-        "body": "See /definitely/nonexistent/stale_ref.py",
-        "url": "https://github.com/o/r/issues/77",
-        "createdAt": old_date,
-        "labels": [],
-        "milestone": null,
-    });
-    let issues = vec![issue];
-    let issues_path = dir.path().join("issues.json");
-    fs::write(&issues_path, serde_json::to_string(&issues).unwrap()).unwrap();
-    let stub_dir = create_gh_stub(&repo, "#!/bin/bash\necho '{\"data\":{}}'\nexit 0\n");
-
-    let output = run_analyze(
-        &repo,
-        &["--issues-json", issues_path.to_str().unwrap()],
-        &stub_dir,
-    );
-
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let data = parse_full_stdout(&output);
-    assert_eq!(data["status"], "ok");
-    // Verify the stale fields are populated — confirms check_stale
-    // body executed (not the early-return path).
-    let first = &data["issues"][0];
-    assert_eq!(first["stale"], true);
-    assert!(first["stale_missing"].as_i64().unwrap() >= 1);
 }
 
 /// Covers the per-binary instantiation's None branch of
@@ -545,42 +497,6 @@ fn analyze_issues_label_and_milestone_args_forwarded_to_gh() {
 // --- Library-level tests (migrated from inline `#[cfg(test)]`) ---
 
 #[test]
-fn extracts_directory_prefixed_paths_lib() {
-    let body = "Check lib/foo.py and skills/bar/SKILL.md for details.";
-    let result = extract_file_paths(body);
-    assert!(result.contains(&"lib/foo.py".to_string()));
-    assert!(result.contains(&"skills/bar/SKILL.md".to_string()));
-}
-
-#[test]
-fn extracts_paths_with_file_extensions_lib() {
-    let body = "See config/setup.json and src/main.sh";
-    let result = extract_file_paths(body);
-    assert!(result.contains(&"config/setup.json".to_string()));
-    assert!(result.contains(&"src/main.sh".to_string()));
-}
-
-#[test]
-fn no_file_paths_lib() {
-    let result = extract_file_paths("This is a plain description.");
-    assert!(result.is_empty());
-}
-
-#[test]
-fn deduplicates_file_paths_lib() {
-    let body = "Check lib/foo.py and also lib/foo.py again";
-    let result = extract_file_paths(body);
-    assert_eq!(result.iter().filter(|p| *p == "lib/foo.py").count(), 1);
-}
-
-#[test]
-fn extracts_dotprefix_paths_lib() {
-    let body = "Edit .claude/rules/testing.md";
-    let result = extract_file_paths(body);
-    assert!(result.contains(&".claude/rules/testing.md".to_string()));
-}
-
-#[test]
 fn detects_in_progress_label_lib() {
     let labels = vec![json!({"name": "Flow In-Progress"}), json!({"name": "Bug"})];
     let result = detect_labels(&labels);
@@ -680,88 +596,6 @@ fn empty_labels_lib() {
     assert!(!result.flow_in_progress);
     assert!(!result.decomposed);
     assert!(!result.blocked);
-}
-
-#[test]
-fn categorize_rule_label_lib() {
-    let labels: HashSet<String> = ["Rule".to_string()].into();
-    assert_eq!(categorize(&labels, "title", "body"), "Rule");
-}
-
-#[test]
-fn categorize_tech_debt_label_lib() {
-    let labels: HashSet<String> = ["Tech Debt".to_string()].into();
-    assert_eq!(categorize(&labels, "title", "body"), "Tech Debt");
-}
-
-#[test]
-fn categorize_documentation_drift_label_lib() {
-    let labels: HashSet<String> = ["Documentation Drift".to_string()].into();
-    assert_eq!(categorize(&labels, "title", "body"), "Documentation Drift");
-}
-
-#[test]
-fn categorize_bug_by_content_lib() {
-    let labels: HashSet<String> = HashSet::new();
-    assert_eq!(
-        categorize(&labels, "Fix crash on login", "error when"),
-        "Bug"
-    );
-}
-
-#[test]
-fn categorize_enhancement_by_content_lib() {
-    let labels: HashSet<String> = HashSet::new();
-    assert_eq!(
-        categorize(&labels, "Add dark mode", "new feature"),
-        "Enhancement"
-    );
-}
-
-#[test]
-fn categorize_other_fallback_lib() {
-    let labels: HashSet<String> = HashSet::new();
-    assert_eq!(categorize(&labels, "Misc cleanup", "tidy up"), "Other");
-}
-
-#[test]
-fn stale_issue_with_missing_files_lib() {
-    let paths = vec!["/nonexistent/path/lib/missing.py".to_string()];
-    let result = check_stale(&paths, 90);
-    assert!(result.stale);
-    assert_eq!(result.stale_missing, 1);
-}
-
-#[test]
-fn not_stale_when_files_exist_lib() {
-    let paths = vec!["Cargo.toml".to_string()];
-    let result = check_stale(&paths, 90);
-    assert!(!result.stale);
-    assert_eq!(result.stale_missing, 0);
-}
-
-#[test]
-fn not_stale_when_recent_lib() {
-    let paths = vec!["/nonexistent/lib/missing.py".to_string()];
-    assert!(!check_stale(&paths, 10).stale);
-}
-
-#[test]
-fn not_stale_when_no_file_paths_lib() {
-    assert!(!check_stale(&[], 90).stale);
-}
-
-#[test]
-fn truncate_body_short_lib() {
-    assert_eq!(truncate_body("short text", 200), "short text");
-}
-
-#[test]
-fn truncate_body_long_lib() {
-    let body: String = "x".repeat(300);
-    let result = truncate_body(&body, 200);
-    assert!(result.chars().count() <= 203);
-    assert!(result.ends_with("..."));
 }
 
 #[test]
@@ -1254,7 +1088,7 @@ fn analyze_issue_fields_lib() {
     let result = analyze_issues(&issues, &HashMap::new());
     let issue = &result["issues"][0];
     assert!(issue["decomposed"].as_bool().unwrap());
-    assert!(issue.get("file_paths").is_some());
+    assert_eq!(issue["number"], 1);
 }
 
 #[test]
@@ -1280,43 +1114,6 @@ fn analyze_total_includes_all_lib() {
     ];
     let result = analyze_issues(&issues, &HashMap::new());
     assert_eq!(result["total"], 3);
-}
-
-#[test]
-fn analyze_age_days_z_suffix_parses_natively_lib() {
-    let issues = vec![make_issue_lib(
-        42,
-        "z-suffix issue",
-        "",
-        &[],
-        "2023-06-15T12:00:00Z",
-    )];
-    let result = analyze_issues(&issues, &HashMap::new());
-    let issue = &result["issues"][0];
-    assert!(issue["age_days"].as_i64().unwrap() > 0);
-}
-
-#[test]
-fn analyze_age_days_unparseable_date_returns_zero_lib() {
-    let issues = vec![make_issue_lib(7, "unparseable date", "", &[], "not-a-date")];
-    let result = analyze_issues(&issues, &HashMap::new());
-    assert_eq!(result["issues"][0]["age_days"].as_i64().unwrap(), 0);
-}
-
-#[test]
-fn analyze_stale_detection_lib() {
-    let old_date = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
-    let issues = vec![make_issue_lib(
-        1,
-        "Old issue",
-        "Check /nonexistent/gone.py",
-        &[],
-        &old_date,
-    )];
-    let result = analyze_issues(&issues, &HashMap::new());
-    let issue = &result["issues"][0];
-    assert!(issue["stale"].as_bool().unwrap());
-    assert!(issue["stale_missing"].as_i64().unwrap() >= 1);
 }
 
 #[test]
@@ -1393,50 +1190,6 @@ fn filter_quick_start_lib() {
 #[test]
 fn filter_unknown_raises_lib() {
     assert!(filter_issues(&[], "invalid").is_err());
-}
-
-#[test]
-fn analyze_milestone_present_lib() {
-    let issues = vec![make_issue_opt_lib(
-        1,
-        "Milestone issue",
-        "",
-        &[],
-        &now_iso_lib(),
-        Some("v1.2.0"),
-    )];
-    let result = analyze_issues(&issues, &HashMap::new());
-    assert_eq!(result["issues"][0]["milestone"], "v1.2.0");
-}
-
-#[test]
-fn analyze_milestone_null_lib() {
-    let issues = vec![make_issue_opt_lib(
-        1,
-        "No milestone",
-        "",
-        &[],
-        &now_iso_lib(),
-        None,
-    )];
-    let result = analyze_issues(&issues, &HashMap::new());
-    assert!(result["issues"][0]["milestone"].is_null());
-}
-
-#[test]
-fn analyze_milestone_empty_string_is_null_lib() {
-    let label_arr: Vec<Value> = vec![];
-    let issue = json!({
-        "number": 1,
-        "title": "Empty milestone title",
-        "body": "",
-        "labels": label_arr,
-        "createdAt": now_iso_lib(),
-        "url": "https://github.com/test/repo/issues/1",
-        "milestone": {"title": "", "number": 1},
-    });
-    let result = analyze_issues(&[issue], &HashMap::new());
-    assert!(result["issues"][0]["milestone"].is_null());
 }
 
 #[test]
@@ -1544,4 +1297,112 @@ fn analyze_blocked_by_entries_carry_number_and_url_lib() {
         blocked_by[0]["url"],
         "https://github.com/benkruger/flow/issues/1525"
     );
+}
+
+#[test]
+fn analyze_no_category_key_lib() {
+    let issues = vec![make_issue_lib(
+        1,
+        "Categorizable",
+        "Fix crash on login",
+        &["Rule"],
+        &now_iso_lib(),
+    )];
+    let result = analyze_issues(&issues, &HashMap::new());
+    let row = &result["issues"][0];
+    assert!(
+        row.get("category").is_none(),
+        "expected no `category` key on output row; got {}",
+        row,
+    );
+}
+
+#[test]
+fn analyze_no_stale_or_file_path_keys_lib() {
+    let old_date = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
+    let issues = vec![make_issue_lib(
+        1,
+        "Old issue",
+        "See /nonexistent/foo.py",
+        &[],
+        &old_date,
+    )];
+    let result = analyze_issues(&issues, &HashMap::new());
+    let row = &result["issues"][0];
+    for key in ["stale", "stale_missing", "age_days", "file_paths"] {
+        assert!(
+            row.get(key).is_none(),
+            "expected no `{}` key on output row; got {}",
+            key,
+            row,
+        );
+    }
+}
+
+#[test]
+fn analyze_no_brief_key_lib() {
+    let long_body: String = "x".repeat(500);
+    let issues = vec![make_issue_lib(
+        1,
+        "Long body",
+        &long_body,
+        &[],
+        &now_iso_lib(),
+    )];
+    let result = analyze_issues(&issues, &HashMap::new());
+    let row = &result["issues"][0];
+    assert!(
+        row.get("brief").is_none(),
+        "expected no `brief` key on output row; got {}",
+        row,
+    );
+}
+
+#[test]
+fn analyze_no_milestone_key_lib() {
+    let issues = vec![make_issue_opt_lib(
+        1,
+        "Milestone issue",
+        "",
+        &[],
+        &now_iso_lib(),
+        Some("v1.2.0"),
+    )];
+    let result = analyze_issues(&issues, &HashMap::new());
+    let row = &result["issues"][0];
+    assert!(
+        row.get("milestone").is_none(),
+        "expected no `milestone` key on output row; got {}",
+        row,
+    );
+}
+
+#[test]
+fn analyze_issues_milestone_cli_flag_still_forwarded_to_gh() {
+    // Per-row milestone is gone but the server-side --milestone CLI
+    // flag still passes through to gh, so users can filter by
+    // milestone server-side.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let log_path = repo.join("gh_args.log");
+    let stub_script = format!(
+        "#!/bin/bash\nprintf '%s\\n' \"$@\" > {}\necho '[]'\nexit 0\n",
+        log_path.to_string_lossy(),
+    );
+    let stub_dir = create_gh_stub(&repo, &stub_script);
+
+    let output = run_analyze(&repo, &["--milestone", "v1.2"], &stub_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let logged = fs::read_to_string(&log_path).expect("gh stub should have logged args");
+    let lines: Vec<&str> = logged.lines().collect();
+    let m_idx = lines
+        .iter()
+        .position(|l| *l == "--milestone")
+        .expect("--milestone should appear in gh argv");
+    assert_eq!(lines.get(m_idx + 1), Some(&"v1.2"));
 }
