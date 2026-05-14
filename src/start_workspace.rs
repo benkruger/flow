@@ -6,15 +6,19 @@
 //! closing the race condition where another flow could commit to main
 //! between lock release and worktree creation.
 //!
-//! Worktree creation also mirrors every `.venv` directory found under
-//! the project root into the new worktree as a relative symlink. The
-//! walker discovers `.venv` at any depth (root, mono-repo subdirs like
-//! `cortex/.venv`, deeply-nested layouts like `packages/api/.venv`),
-//! skips dotted directories other than `.venv` itself plus a small
-//! named-skip list (`node_modules`, `target`, `vendor`, `build`,
-//! `dist`), does not follow directory symlinks (cycle protection),
-//! and never overwrites pre-existing committed content at a link
-//! path.
+//! Worktree creation also mirrors every `.venv` and `node_modules`
+//! directory found under the project root into the new worktree as
+//! relative symlinks. The walker discovers each target at any depth
+//! (root, mono-repo subdirs like `cortex/.venv` or
+//! `cortex/frontend/node_modules`, deeply-nested layouts like
+//! `packages/api/.venv`), skips dotted directories other than the
+//! target itself plus a small named-skip list (`node_modules`,
+//! `target`, `vendor`, `build`, `dist`), does not follow directory
+//! symlinks (cycle protection), and never overwrites pre-existing
+//! committed content at a link path. The target-name match runs
+//! BEFORE the skip filter, so mirroring `node_modules` is safe even
+//! though the same name appears in the skip list — the match arm
+//! fires and `continue`s before the skip check is reached.
 
 use std::path::{Path, PathBuf};
 
@@ -63,15 +67,18 @@ fn extract_pr_number(pr_url: &str) -> u32 {
         .unwrap_or(0)
 }
 
-/// Recursively scan `root` for `.venv` directories and return each
-/// one's root-relative parent path. An empty `PathBuf` represents a
-/// root-level `.venv`. Skips: directory symlinks (cycle protection),
+/// Recursively scan `root` for directories named `target` and return
+/// each one's root-relative parent path. An empty `PathBuf` represents
+/// a root-level match. Skips: directory symlinks (cycle protection),
 /// dotted directories other than `.venv` itself (`.git`, `.next`,
 /// `.gradle`, `.pytest_cache`, `.tox`, etc.), and a small named-skip
 /// list (`node_modules`, `target`, `vendor`, `build`, `dist`) that
-/// never contains Python venvs but would bloat the walk. Does not
-/// recurse INTO a found `.venv`.
-fn find_venv_parents(root: &Path) -> Vec<PathBuf> {
+/// would bloat the walk. The target-name match runs BEFORE the
+/// skip filter, so a target like `node_modules` is mechanically safe
+/// to mirror even though the same name appears in the skip list —
+/// the match arm fires and `continue`s before the skip check is
+/// reached. Does not recurse INTO a found target directory.
+fn find_dep_parents(root: &Path, target: &str) -> Vec<PathBuf> {
     const SKIP_NAMED: &[&str] = &["node_modules", "target", "vendor", "build", "dist"];
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
@@ -85,7 +92,7 @@ fn find_venv_parents(root: &Path) -> Vec<PathBuf> {
             let name_owned = entry.file_name();
             let name = name_owned.to_string_lossy();
             let name_ref: &str = name.as_ref();
-            if name_ref == ".venv" {
+            if name_ref == target {
                 if path.is_dir() {
                     let parent = path
                         .parent()
@@ -108,67 +115,67 @@ fn find_venv_parents(root: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// Build the relative symlink target a worktree-side `.venv` should
-/// point at, given the source-side parent's root-relative path.
-/// The worktree lives at `<root>/.worktrees/<branch>/`, and the
-/// link sits at `<root>/.worktrees/<branch>/<parent>/.venv`. The
-/// target uses `..` components to escape
-/// `.worktrees/<branch>/<parent>/` back to `<root>/<parent>/.venv` —
-/// `depth + 2` components: two for `.worktrees/<branch>/`, one per
-/// segment of `parent`.
+/// Build the relative symlink target a worktree-side `target` link
+/// (e.g. `.venv` or `node_modules`) should point at, given the
+/// source-side parent's root-relative path. The worktree lives at
+/// `<root>/.worktrees/<branch>/`, and the link sits at
+/// `<root>/.worktrees/<branch>/<parent>/<target>`. The target uses
+/// `..` components to escape `.worktrees/<branch>/<parent>/` back to
+/// `<root>/<parent>/<target>` — `depth + 2` components: two for
+/// `.worktrees/<branch>/`, one per segment of `parent`.
 ///
-/// Examples by depth:
+/// Examples by depth (target = `.venv`):
 ///
 /// - depth 0 (`parent_relpath` empty, root-level `.venv`): `../../.venv`
 /// - depth 1 (`cortex`): `../../../cortex/.venv`
 /// - depth 2 (`packages/api`): `../../../../packages/api/.venv`
-fn relative_venv_target(parent_relpath: &Path) -> PathBuf {
+fn relative_dep_target(parent_relpath: &Path, target: &str) -> PathBuf {
     let depth = parent_relpath.components().count();
     let mut up = PathBuf::new();
     for _ in 0..(depth + 2) {
         up.push("..");
     }
     if parent_relpath.as_os_str().is_empty() {
-        up.join(".venv")
+        up.join(target)
     } else {
-        up.join(parent_relpath).join(".venv")
+        up.join(parent_relpath).join(target)
     }
 }
 
 /// Walk the source tree under `root` and create relative symlinks
-/// at the corresponding paths under `wt_path` for every `.venv`
-/// discovered. Best-effort: every IO error in the loop is swallowed
-/// so a single partial failure (permission error, filesystem
-/// conflict) does not abort the whole worktree-creation step.
-/// Pre-existing entries at the link path are skipped via
-/// `fs::symlink_metadata().is_ok()` per
-/// `.claude/rules/rust-patterns.md` "Symlink-Safe Existence Checks
-/// Before Writes" — committed content the worktree's branch
+/// at the corresponding paths under `wt_path` for every directory
+/// named `target` discovered (e.g. `.venv` or `node_modules`).
+/// Best-effort: every IO error in the loop is swallowed so a single
+/// partial failure (permission error, filesystem conflict) does not
+/// abort the whole worktree-creation step. Pre-existing entries at
+/// the link path are skipped via `fs::symlink_metadata().is_ok()`
+/// per `.claude/rules/rust-patterns.md` "Symlink-Safe Existence
+/// Checks Before Writes" — committed content the worktree's branch
 /// already carries is preserved, never overwritten.
-fn link_venvs(root: &Path, wt_path: &Path) {
+fn link_deps(root: &Path, wt_path: &Path, target: &str) {
     #[cfg(unix)]
     {
         use std::os::unix::fs::symlink;
-        for parent in find_venv_parents(root) {
-            let link = wt_path.join(&parent).join(".venv");
+        for parent in find_dep_parents(root, target) {
+            let link = wt_path.join(&parent).join(target);
             if std::fs::symlink_metadata(&link).is_ok() {
                 continue;
             }
             let link_parent = link
                 .parent()
-                .expect("link path is wt/<parent>/.venv; parent always exists");
+                .expect("link path is wt/<parent>/<target>; parent always exists");
             let _ = std::fs::create_dir_all(link_parent);
-            let target = relative_venv_target(&parent);
-            let _ = symlink(&target, &link);
+            let target_path = relative_dep_target(&parent, target);
+            let _ = symlink(&target_path, &link);
         }
     }
 }
 
 /// Create a git worktree for the feature branch and mirror every
-/// `.venv` directory discovered under the project root into the
-/// worktree as a relative symlink. Mirroring is best-effort and
-/// preserves any pre-existing committed content at a link path —
-/// see [`link_venvs`] for the policy.
+/// `.venv` and `node_modules` directory discovered under the project
+/// root into the worktree as a relative symlink. Mirroring is
+/// best-effort and preserves any pre-existing committed content at a
+/// link path — see [`link_deps`] for the policy.
 pub(crate) fn create_worktree(
     project_root: &std::path::Path,
     branch: &str,
@@ -188,7 +195,8 @@ pub(crate) fn create_worktree(
         None,
     )?;
 
-    link_venvs(project_root, &wt_path);
+    link_deps(project_root, &wt_path, ".venv");
+    link_deps(project_root, &wt_path, "node_modules");
 
     Ok(wt_path)
 }
