@@ -62,6 +62,14 @@ single response:
   and doc paths, investigates the codebase. Covers maintainability
   (T3) and documentation accuracy (T6).
 
+All four `Agent` launches go in that single response with no
+intervening tool call — no Bash, Read, Grep, Skill, or fifth `Agent`
+call — between the first agent's launch and the fourth agent's
+return. Per-agent classify-and-record calls (`record-agent-return`,
+`add-skipped-agent`) run only after all four agents have returned;
+interleaving them between launches serializes the four agents instead
+of running them as one concurrent batch.
+
 After agents return, each response is classified in priority order:
 truncation first (re-invoke with narrower partition), external
 failure second (record via `bin/flow add-skipped-agent` with one of

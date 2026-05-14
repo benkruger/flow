@@ -6508,3 +6508,105 @@ fn required_agents_matches_skill_invocations() {
         );
     }
 }
+
+// --- flow-review Step 2 cross-launch-window prohibition ---
+
+/// flow-review Step 2's launch HARD-GATE must forbid tool calls
+/// between the first agent's launch and the fourth agent's return,
+/// and Step 2 must keep the post-launch anchor that marks where
+/// classify-and-record work resumes.
+///
+/// Regression guarded: a future Step 2 edit reorders, removes,
+/// rewords, inverts, or fragments the cross-launch-window
+/// prohibition, letting the model interleave per-agent
+/// `record-agent-return` / `set-timestamp --set agent_retry_counts`
+/// / `add-skipped-agent` calls between agent launches. Step 2's
+/// `### Per-agent accounting` subsection reads as a per-agent
+/// narrative, so without the explicit gate the model's most
+/// mechanical reading of Step 2 is launch-wait-classify-record per
+/// agent — serializing four launches that are designed to run
+/// concurrently.
+///
+/// Code path: a refactor of Step 2 that reorders, removes, or
+/// rewords the launch HARD-GATE's protective phrases, or that
+/// deletes the post-launch anchor.
+///
+/// Named consumer: the parallel-isolation invariant in
+/// `.claude/rules/cognitive-isolation.md` and the wall-clock budget
+/// Review pays per flow — four sequential agent runs instead of one
+/// concurrent batch.
+///
+/// Assertion strength: substring-presence checks alone are
+/// bypassable — a permissive reword keeps the substrings, and
+/// fragmented incidental mentions of the endpoints keep them too.
+/// The assertions below pin a prohibition keyword, the contiguous
+/// launch-window phrase, and the concrete `record-agent-return`
+/// call name — and anchor the gate slice to the launch directive
+/// rather than gate position, so reordering Step 2's two HARD-GATE
+/// blocks cannot redirect the assertions onto the wrong block.
+#[test]
+fn flow_review_step_2_hard_gate_forbids_per_agent_bash_during_launch() {
+    let c = common::read_skill("flow-review");
+
+    // Bounded slice: Step 2 only (per .claude/rules/testing-gotchas.md
+    // "Subsection-Local Assertions in Contract Tests").
+    let step2 = c
+        .split_once("## Step 2 — Launch agents")
+        .map(|(_, t)| t)
+        .expect("flow-review SKILL.md must contain `## Step 2 — Launch agents`");
+    let step2 = step2
+        .split_once("## Step 3 — Triage")
+        .map(|(s, _)| s)
+        .unwrap_or(step2);
+
+    // Step 2 contains more than one <HARD-GATE> block. Anchor to the
+    // LAUNCH gate by content (the block mandating single-response
+    // launch of all agents), not by position — reordering the two
+    // HARD-GATE blocks must not redirect the assertions.
+    let launch_gate = step2
+        .split("<HARD-GATE>")
+        .filter_map(|tail| tail.split_once("</HARD-GATE>").map(|(block, _)| block))
+        .find(|block| block.contains("launch ALL applicable agents"))
+        .expect(
+            "flow-review Step 2 must contain a <HARD-GATE> block that mandates \
+             launching ALL applicable agents in a single response",
+        );
+
+    // The launch-window constraint must read as an explicit
+    // prohibition — an inverted permissive reword must not pass.
+    assert!(
+        launch_gate.contains("Issue NO other tool call")
+            || launch_gate.contains("MUST NOT run during this launch window"),
+        "flow-review Step 2 launch HARD-GATE must state the launch-window \
+         constraint as an explicit prohibition (`Issue NO other tool call` or \
+         `MUST NOT run during this launch window`) — a permissive reword must \
+         not pass — see .claude/rules/cognitive-isolation.md"
+    );
+    // The launch window must be named as a single contiguous phrase
+    // so fragmented incidental mentions of the two endpoints cannot
+    // satisfy the gate.
+    assert!(
+        launch_gate.contains("between the first agent's launch and the fourth agent's return"),
+        "flow-review Step 2 launch HARD-GATE must name the launch window as the \
+         contiguous phrase `between the first agent's launch and the fourth \
+         agent's return` — see .claude/rules/cognitive-isolation.md"
+    );
+    // The concrete forbidden-action name pins the prohibition to a
+    // specific call rather than a generic `Bash` mention.
+    assert!(
+        launch_gate.contains("record-agent-return"),
+        "flow-review Step 2 launch HARD-GATE must name `record-agent-return` as \
+         a classify-and-record call forbidden during the launch window — see \
+         .claude/rules/cognitive-isolation.md"
+    );
+    // The protective change has a second part: the post-launch
+    // anchor marking where classify-and-record work resumes. It
+    // lives below the launch HARD-GATE, so assert it against the
+    // full Step 2 slice.
+    assert!(
+        step2.contains("**After all four agents have returned.**"),
+        "flow-review Step 2 must keep the `**After all four agents have \
+         returned.**` post-launch anchor that marks where classify-and-record \
+         work resumes — see .claude/rules/cognitive-isolation.md"
+    );
+}

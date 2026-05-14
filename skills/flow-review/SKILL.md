@@ -345,6 +345,21 @@ Never skip an agent because another agent already returned findings.
 Each agent surfaces independent risk categories that other agents miss —
 skipping one defeats cognitive isolation. Do not proceed past this step
 until every applicable agent has been launched and returned.
+
+The four agent launches go in ONE response — the four `Agent` tool
+calls themselves, and nothing else. Issue NO other tool call (no Bash,
+no Read, no Grep, no Skill, no fifth `Agent` call) between the first agent's launch and the fourth agent's return.
+The `record-agent-return`, `set-timestamp --set agent_retry_counts`,
+and `add-skipped-agent` calls MUST NOT run during this launch window;
+every classify-and-record call runs ONLY after all four agents have
+returned — never interleaved between launches, whether in the Class
+1/2/3 classification block or the `### Per-agent accounting` subsection
+below. Interleaving a per-agent tool call between launches forces the
+agents into sequential launch-wait-classify-record runs instead of one
+concurrent batch — quadrupling Review's wall-clock cost — and reading
+one agent's findings before launching the next re-introduces the
+cross-agent bias that cognitive isolation exists to break
+(`.claude/rules/cognitive-isolation.md`).
 </HARD-GATE>
 
 Launch all applicable agents in a single response using multiple Agent
@@ -548,6 +563,9 @@ retry/accept/abort choice once all agents have been classified.
 `END-OF-FINDINGS` marker (high-investigation agents) or has
 exited cleanly (other agents). Findings flow to Step 3 triage
 unchanged.
+
+**After all four agents have returned.** The classify-and-record work below
+runs ONLY now — never before all four `tool_result` blocks have landed.
 
 ### Per-agent accounting (record + retry-3-then-note)
 
