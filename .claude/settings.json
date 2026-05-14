@@ -68,6 +68,7 @@
       "Agent(flow:reviewer)",
       "Agent(flow:tech-lead)",
       "Skill(decompose:decompose)",
+      "Skill(flow:)",
       "Bash(test -f *)",
       "Bash(jq *)",
       "Bash(awk *)",
