@@ -297,6 +297,24 @@ Work From the Parent Session".
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=1
 ```
 
+**Correction notes are mandatory user directives.** This paragraph
+exists so a correction the user captured mid-flow via
+`/flow:flow-note` always reaches a durable home — even when the
+learn-analyst produced nothing. Enumerate every `state.notes` entry
+whose `type` field equals `correction`.
+Every `correction` note is a non-negotiable user directive: it MUST be routed to a durable rule and never dropped.
+A correction note is exempt from the two-gate filter below and from
+the zero-artifact default — those govern learn-analyst candidate
+findings, not directives the user typed. Do NOT drop a correction
+note and do NOT defer it to a separate flow; each one is routed in
+Step 3. The parent reads `state.notes` directly here, so the
+routing survives learn-analyst truncation or retry exhaustion — and
+reading `state.notes` directly is directive-execution, not
+agent-analysis fabrication, so it does not violate
+`.claude/rules/cognitive-isolation.md` "Never Supplement Agent Work
+From the Parent Session" (that rule forbids inventing a missing
+agent's findings, not executing a directive the user typed).
+
 **Read exhausted-retry notes first.** Before triaging
 learn-analyst findings, read `state.notes` and filter entries
 whose `kind` field equals `agent_exhausted_retries`. Each
@@ -409,6 +427,16 @@ This step is fully autonomous — decide destinations and apply all
 changes without asking the user.
 
 ### Routing
+
+**Correction notes (mandatory).** Each `correction` note enumerated
+in Step 2 MUST be routed to a durable home — a `.claude/rules/`
+file or `CLAUDE.md` — using the `### Apply CLAUDE.md changes` and
+`### Apply rules changes` mechanics below. Apply the
+`.claude/rules/persistence-routing.md` decision tree to choose the
+destination. Those mechanics record the write via
+`bin/flow add-finding`, which is the audit trail proving the
+directive was honored. The zero-artifact default does not apply to
+correction notes — each one always produces an artifact.
 
 **Tenant 1 findings (process gaps)** — skip this step. Process gaps go
 to Step 6 (GitHub issues).

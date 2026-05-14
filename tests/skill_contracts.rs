@@ -1720,6 +1720,19 @@ fn learn_step3_excludes_flow_process_gaps() {
     );
 }
 
+/// flow-learn Step 2 declares `correction` notes mandatory user
+/// directives that always route to a durable rule. Regression guard:
+/// an edit removing the mandatory-routing instruction would let a
+/// session silently drop a user's `/flow:flow-note` correction.
+#[test]
+fn learn_routes_correction_notes_as_mandatory_directives() {
+    let c = common::read_skill("flow-learn");
+    assert!(
+        c.contains("Every `correction` note is a non-negotiable user directive: it MUST be routed to a durable rule and never dropped"),
+        "flow-learn must declare correction notes mandatory user directives"
+    );
+}
+
 // --- Issue filing ---
 
 #[test]
