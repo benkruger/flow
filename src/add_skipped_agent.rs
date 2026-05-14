@@ -45,13 +45,12 @@ use crate::utils::now;
 /// model that calls `add-skipped-agent --reason exhausted_retries`
 /// without having actually retried three times satisfies the
 /// `agents_skipped` gate the same way a legitimate `api_error`
-/// entry does. The audit closure runs at Learn: each
-/// `exhausted_retries` entry is paired with a
-/// `state.notes` entry of kind `agent_exhausted_retries`
-/// (carrying attempt count + evidence pointer), which Learn
-/// surfaces in its "Missing analyses" report. Procedural
-/// enforcement of the retry cap lives in the calling SKILL.md's
-/// retry-3-then-note loop; a future PR may mechanically gate
+/// entry does. Exhausted and skipped agents surface to the user
+/// in the Complete Done banner's Skipped Agents section
+/// (`format_complete_summary::skipped_agents_section`), sourced
+/// from `phases.<phase>.agents_skipped`. Procedural enforcement of
+/// the retry cap lives in the calling SKILL.md's retry-3-then-skip
+/// loop; a future PR may mechanically gate
 /// `exhausted_retries` against
 /// `phases.<phase>.agent_retry_counts.<agent> >= 3`, but that
 /// tightening is out of scope for v1.
@@ -73,7 +72,8 @@ pub struct Args {
     #[arg(long)]
     pub agent: String,
     /// Reason the agent was skipped. Must normalize to one of
-    /// `rate_limit`, `api_error`, or `other` per `ALLOWED_REASONS`.
+    /// `rate_limit`, `api_error`, `other`, or `exhausted_retries`
+    /// per `ALLOWED_REASONS`.
     #[arg(long)]
     pub reason: String,
     /// Phase the agent belongs to. Defaults to `flow-review` since

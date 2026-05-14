@@ -231,7 +231,7 @@ markers, the agent exhausted its turn budget without producing structured
 output. Note for the Step 2 synthesis: "Learn-analyst agent exhausted
 turn budget without producing structured findings."
 
-### Per-agent accounting (record + retry-3-then-note)
+### Per-agent accounting (record + retry-3-then-skip)
 
 Account for the learn-analyst agent in state so the
 `phase-finalize` required-agents gate can confirm it ran.
@@ -267,22 +267,18 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set phases.flow-learn.agent_retry
 ```
 
 If the count has reached 3, the agent has exhausted its retries.
-Record the skip and append a state note:
+Record the skip:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-skipped-agent --branch <branch> --agent learn-analyst --reason exhausted_retries --phase flow-learn
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow append-note <branch> agent_exhausted_retries "learn-analyst exhausted 3 retries during flow-learn"
 ```
 
 <HARD-GATE>
 When the learn-analyst agent has exhausted retries, you MUST NOT
 synthesize its findings inline. The agent's analysis is
 unavailable for this Learn pass — record the skip via
-`add-skipped-agent` and the note via `append-note`, then proceed
-to Step 2 with the explicit acknowledgment that Tenant 1/2/3
+`add-skipped-agent`, then proceed to Step 2 with the explicit
+acknowledgment that Tenant 1/2/3
 findings were not produced for this PR. Fabricating an agent's
 analysis from session memory defeats cognitive isolation per
 `.claude/rules/cognitive-isolation.md` "Never Supplement Agent
@@ -314,20 +310,6 @@ agent-analysis fabrication, so it does not violate
 `.claude/rules/cognitive-isolation.md` "Never Supplement Agent Work
 From the Parent Session" (that rule forbids inventing a missing
 agent's findings, not executing a directive the user typed).
-
-**Read exhausted-retry notes first.** Before triaging
-learn-analyst findings, read `state.notes` and filter entries
-whose `kind` field equals `agent_exhausted_retries`. Each
-matching entry names an agent (this phase or Review) whose
-recording subcommand reached the retry cap (3 attempts) without
-verifying a clean return — the agent's analysis is unavailable
-for this Learn pass. Treat the exhausted-retry entries as
-"missing analyses" context for synthesis, NOT as findings the
-model attributes to the missing agent. Per
-`.claude/rules/cognitive-isolation.md` "Never Supplement Agent
-Work From the Parent Session", do not fabricate the missing
-agent's findings inline; the entries flow into the Step 7 report
-banner so the user sees which agents were unavailable.
 
 Take the learn-analyst findings (when present) and sort them
 into three buckets matching the three tenants.
@@ -731,11 +713,6 @@ Present the full report to the user:
   ⚠ learn-analyst — partial findings (N of 3 categories
     completed)
 
-  Missing analyses
-  ----------------
-  ⚠ reviewer — exhausted 3 retries during flow-review
-  ⚠ learn-analyst — exhausted 3 retries during flow-learn
-
   Changes applied
   ---------------
   .claude/rules/testing-gotchas.md: 1 addition (committed)
@@ -752,11 +729,8 @@ Present the full report to the user:
 ````
 
 Omit "Truncated agent" if the learn-analyst was not flagged as truncated
-in Step 1. Populate "Missing analyses" from the
-`agent_exhausted_retries` entries in `state.notes` filtered in Step 2;
-each line names the agent and the phase that exhausted retries. Omit
-the section entirely when no such notes exist. Omit "Changes applied"
-if no changes were made. Omit "Issues filed" if no issues were filed.
+in Step 1. Omit "Changes applied" if no changes were made. Omit
+"Issues filed" if no issues were filed.
 
 In the "Changes applied" section, show "(committed)" or "(uncommitted)"
 next to each file to indicate whether Step 5 committed it. Show
@@ -815,13 +789,6 @@ Three recovery shapes apply, ordered cheapest first:
 
   ```bash
   ${CLAUDE_PLUGIN_ROOT}/bin/flow add-skipped-agent --branch <branch> --agent learn-analyst --reason exhausted_retries --phase flow-learn
-  ```
-
-  Append a state note so the "Missing analyses" report surfaces
-  the gap:
-
-  ```bash
-  ${CLAUDE_PLUGIN_ROOT}/bin/flow append-note --branch <branch> --kind agent_exhausted_retries --agent learn-analyst --phase flow-learn --attempts 3 --evidence "missing from agents_returned at finalize time"
   ```
 
   Then re-run `phase-finalize` with `--accept-skipped-agents`.
