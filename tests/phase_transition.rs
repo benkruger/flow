@@ -669,13 +669,22 @@ fn enter_clears_auto_continue() {
 }
 
 #[test]
-fn enter_clears_stop_instructed() {
+fn phase_complete_clears_halt_pending_on_phase_advance() {
+    // When the previous phase set `_halt_pending=true` (user paused
+    // the autonomous flow), entering the next phase clears the flag
+    // so the new autonomous window starts fresh. Entering a phase
+    // is itself a re-authorization — the user already approved the
+    // transition (or the autonomous configuration did) and the halt
+    // window does not bleed forward.
     let mut state = make_state_value("flow-start", &[("flow-start", "complete")]);
-    state["_stop_instructed"] = json!(true);
+    state["_halt_pending"] = json!(true);
 
     phase_enter(&mut state, "flow-code", None);
 
-    assert!(state.get("_stop_instructed").is_none());
+    assert!(
+        state.get("_halt_pending").is_none(),
+        "_halt_pending must be cleared on phase advance; state: {state:?}"
+    );
 }
 
 #[test]

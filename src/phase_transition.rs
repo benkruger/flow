@@ -76,16 +76,19 @@ pub fn phase_enter(state: &mut Value, phase: &str, reason: Option<&str>) -> Valu
         .unwrap()
         .push(transition);
 
-    // Clear auto-continue, discussion-mode, and stale continuation flags
-    // from previous phase. State is guaranteed to be an object here —
-    // earlier `state["phases"][phase]` IndexMut accesses would have
-    // panicked on any non-object input. `.expect` covers the truly-
-    // unreachable None arm per `.claude/rules/testability-means-simplicity.md`.
+    // Clear auto-continue, halt-pending, and stale continuation flags
+    // from the previous phase. `_halt_pending` from the just-completed
+    // phase must NOT bleed forward into the new phase — entering a
+    // new autonomous phase is itself a fresh authorization signal.
+    // State is guaranteed to be an object here — earlier
+    // `state["phases"][phase]` IndexMut accesses would have panicked
+    // on any non-object input. `.expect` covers the truly-unreachable
+    // None arm per `.claude/rules/testability-means-simplicity.md`.
     let obj = state
         .as_object_mut()
         .expect("phase_enter requires object state");
     obj.remove("_auto_continue");
-    obj.remove("_stop_instructed");
+    obj.remove("_halt_pending");
     obj.remove("_continue_pending");
     obj.remove("_continue_context");
 
