@@ -161,15 +161,9 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow complete-fast --branch <branch> --auto
 ${CLAUDE_PLUGIN_ROOT}/bin/flow complete-fast --branch <branch> --manual
 ```
 
-**State-file default.** Use a 10-minute Bash tool timeout (`timeout: 600000`).
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow complete-fast --branch <branch>
-```
-
-Use the first form when mode is **auto**, the second when **manual**,
-the third when no flag was resolved (lets the script decide from the
-state file).
+Use the first form when mode is **auto**, the second when **manual**.
+Mode Resolution always resolves a definitive flag, so one of the two
+forms always applies.
 
 Parse the JSON output and dispatch on the `path` field:
 

@@ -1,7 +1,7 @@
 //! Tests for `bin/flow resolve-skill-mode`. Mirrors
 //! `src/resolve_skill_mode.rs`.
 //!
-//! Library-level tests drive the pure `normalize_skill` / `resolve`
+//! Library-level tests drive the pure `normalize_gate_input` / `resolve`
 //! seams and the `run_impl` / `run_impl_main` entry points with a
 //! `TempDir` root and a `--branch` override, so they never collide
 //! with the host worktree. Subprocess tests spawn the compiled
@@ -21,7 +21,7 @@ use std::process::{Command, Output};
 
 use serde_json::{json, Value};
 
-use flow_rs::resolve_skill_mode::{normalize_skill, resolve, run_impl, run_impl_main, Args};
+use flow_rs::resolve_skill_mode::{normalize_gate_input, resolve, run_impl, run_impl_main, Args};
 
 /// Build an `Args` for `skill` with an explicit `--branch` override so
 /// `resolve_branch` returns the override without consulting host git.
@@ -73,21 +73,21 @@ fn run_subcommand(repo: &Path, skill: &str, branch_override: Option<&str>) -> Ou
         .expect("spawn flow-rs resolve-skill-mode")
 }
 
-// --- normalize_skill ---
+// --- normalize_gate_input ---
 
 #[test]
-fn normalize_skill_strips_nul() {
-    assert_eq!(normalize_skill("flow-complete\0"), "flow-complete");
+fn normalize_gate_input_strips_nul() {
+    assert_eq!(normalize_gate_input("flow-complete\0"), "flow-complete");
 }
 
 #[test]
-fn normalize_skill_trims_whitespace() {
-    assert_eq!(normalize_skill("  flow-abort  "), "flow-abort");
+fn normalize_gate_input_trims_whitespace() {
+    assert_eq!(normalize_gate_input("  flow-abort  "), "flow-abort");
 }
 
 #[test]
-fn normalize_skill_lowercases() {
-    assert_eq!(normalize_skill("FLOW-COMPLETE"), "flow-complete");
+fn normalize_gate_input_lowercases() {
+    assert_eq!(normalize_gate_input("FLOW-COMPLETE"), "flow-complete");
 }
 
 // --- resolve ---
@@ -174,6 +174,55 @@ fn resolve_falls_back_for_flow_abort() {
 fn resolve_flow_abort_bare_string() {
     let state = json!({"skills": {"flow-abort": "auto"}});
     assert_eq!(resolve(&state, "flow-abort"), "auto");
+}
+
+/// A bare-string config value outside `{auto, manual}` clamps to the
+/// fallback — guards the documented `mode ∈ {auto, manual}` contract
+/// against a typo'd or hand-edited config value reaching a terminal
+/// skill's mode branch verbatim.
+#[test]
+fn resolve_garbage_bare_string_clamps_to_fallback() {
+    let state = json!({"skills": {"flow-complete": "xyzzy"}});
+    assert_eq!(resolve(&state, "flow-complete"), "manual");
+}
+
+/// The same clamp applies to a garbage value on the object `continue`
+/// axis — `{"continue": "banana"}` is not a verbatim passthrough.
+#[test]
+fn resolve_garbage_continue_axis_clamps_to_fallback() {
+    let state = json!({"skills": {"flow-complete": {"continue": "banana"}}});
+    assert_eq!(resolve(&state, "flow-complete"), "manual");
+}
+
+/// A case-variant value normalizes — `"AUTO"` resolves to `"auto"`
+/// rather than passing through with original casing.
+#[test]
+fn resolve_uppercase_value_normalized() {
+    let state = json!({"skills": {"flow-complete": "AUTO"}});
+    assert_eq!(resolve(&state, "flow-complete"), "auto");
+}
+
+/// A case-variant `"MANUAL"` normalizes to `"manual"`.
+#[test]
+fn resolve_uppercase_manual_value_normalized() {
+    let state = json!({"skills": {"flow-complete": "MANUAL"}});
+    assert_eq!(resolve(&state, "flow-complete"), "manual");
+}
+
+/// A whitespace-padded value is trimmed before the allowlist check —
+/// `" auto "` resolves to `"auto"`.
+#[test]
+fn resolve_whitespace_padded_value_normalized() {
+    let state = json!({"skills": {"flow-complete": " auto "}});
+    assert_eq!(resolve(&state, "flow-complete"), "auto");
+}
+
+/// A NUL byte in the config value is stripped before the allowlist
+/// check — `"auto\0"` resolves to `"auto"`.
+#[test]
+fn resolve_nul_in_value_normalized() {
+    let state = json!({"skills": {"flow-complete": "auto\0"}});
+    assert_eq!(resolve(&state, "flow-complete"), "auto");
 }
 
 // --- run_impl ---

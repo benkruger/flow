@@ -2,15 +2,14 @@
 //! for resolving the autonomy mode of the two terminal skills
 //! `flow-complete` and `flow-abort`.
 //!
-//! Those skills' `## Mode Resolution` sections previously hand-rolled
-//! the `skills.<name>` state-file read in SKILL.md prose, with no
-//! handling for the bare-string-vs-object shape distinction, the
-//! null/missing-entry cases, or which axis (`commit` vs `continue`)
-//! to read. This subcommand collapses that logic into one place:
-//! given `--skill {flow-complete|flow-abort}` and an optional
-//! `--branch` override, it reads `skills.<name>` from the state file,
-//! tolerates every config shape that occurs in a real `.flow.json`-
-//! seeded state file, and returns a deterministic
+//! Both terminal skills' `## Mode Resolution` sections call this
+//! subcommand as the single place that reads `skills.<name>` from the
+//! state file. Given `--skill {flow-complete|flow-abort}` and an
+//! optional `--branch` override, it tolerates every config shape a
+//! real `.flow.json`-seeded state file can carry (bare string,
+//! object with a `continue` axis, missing/null/wrong-type entry),
+//! normalizes the resolved value, clamps it to the `{auto, manual}`
+//! set, and returns a deterministic
 //! `{"status":"ok","mode":"manual"|"auto"}`.
 //!
 //! The fallback for both skills is `manual` — the conservative
@@ -24,9 +23,11 @@
 //! untrusted shell input and routes through `FlowPaths::try_new` so a
 //! slash-containing, empty, or traversal branch surfaces as a
 //! structured error rather than a panic. Per
-//! `.claude/rules/security-gates.md`, `--skill` is normalized
-//! (NUL-stripped, trimmed, ASCII-lowercased) and checked against the
-//! positive [`ALLOWED_SKILLS`] allowlist.
+//! `.claude/rules/security-gates.md`, both `--skill` and the resolved
+//! `skills.<name>` value are normalized (NUL-stripped, trimmed,
+//! ASCII-lowercased via `normalize_gate_input`) and checked against a
+//! positive allowlist — `--skill` against [`ALLOWED_SKILLS`], the
+//! resolved mode against `MODE_VALUES`.
 //!
 //! `run_impl` returns `Value` unconditionally — every failure mode is
 //! a structured `{"status":"error",...}` payload or a fallback, so
@@ -73,30 +74,45 @@ pub const ALLOWED_SKILLS: &[&str] = &["flow-complete", "flow-abort"];
 /// environment-mutating action the terminal skills perform.
 pub const FALLBACK_MODE: &str = "manual";
 
-/// Normalize a `--skill` value before the allowlist comparison: strip
-/// NUL bytes, trim surrounding whitespace, lowercase with ASCII
+/// Normalize a gate input before an allowlist comparison: strip NUL
+/// bytes, trim surrounding whitespace, lowercase with ASCII
 /// semantics. Per `.claude/rules/security-gates.md` "Normalize Before
-/// Comparing" — [`ALLOWED_SKILLS`] entries are already lowercase and
+/// Comparing". Shared by both gates in this module: `--skill` against
+/// [`ALLOWED_SKILLS`], and the resolved `skills.<name>` value against
+/// `MODE_VALUES`. The allowlist entries are already lowercase and
 /// trimmed, so normalization runs on the caller side only.
-pub fn normalize_skill(s: &str) -> String {
+pub fn normalize_gate_input(s: &str) -> String {
     s.replace('\0', "").trim().to_ascii_lowercase()
 }
+
+/// Valid resolved modes. [`resolve`] normalizes the `skills.<skill>`
+/// config value and clamps anything outside this set to
+/// [`FALLBACK_MODE`], so callers can rely on the result being exactly
+/// `"auto"` or `"manual"`.
+const MODE_VALUES: &[&str] = &["auto", "manual"];
 
 /// Resolve the continue-mode for `skill` from a parsed state file
 /// value.
 ///
-/// Tolerates every `skills.<skill>` shape a real `.flow.json`-seeded
-/// state file can carry:
+/// Extracts a raw value from every `skills.<skill>` shape a real
+/// `.flow.json`-seeded state file can carry:
 ///
-/// - bare string (`"auto"`) → that value
+/// - bare string (`"auto"`) → that string
 /// - object (`{"continue": "auto"}` or
 ///   `{"commit": .., "continue": ..}`) → the `continue` axis value
 /// - missing `skills` key, non-object root, missing entry,
 ///   `null`/number/array/bool entry, object with no `continue` (or a
-///   non-string `continue`), or any empty resolved value →
-///   [`FALLBACK_MODE`]
+///   non-string `continue`) → the empty string
+///
+/// The raw value is then normalized via [`normalize_gate_input`]
+/// (NUL-strip, trim, ASCII-lowercase) and checked against the
+/// positive `MODE_VALUES` allowlist. Anything outside the set — the
+/// empty string, a typo like `"xyzzy"`, or a value that does not
+/// normalize to a member — resolves to [`FALLBACK_MODE`]. The
+/// returned value is therefore always exactly `"auto"` or
+/// `"manual"`, matching the documented `mode` contract.
 pub fn resolve(state: &Value, skill: &str) -> String {
-    let value = match state.get("skills").and_then(|s| s.get(skill)) {
+    let raw = match state.get("skills").and_then(|s| s.get(skill)) {
         Some(entry) => {
             if let Some(s) = entry.as_str() {
                 s
@@ -108,10 +124,11 @@ pub fn resolve(state: &Value, skill: &str) -> String {
         }
         None => "",
     };
-    if value.is_empty() {
-        FALLBACK_MODE.to_string()
+    let normalized = normalize_gate_input(raw);
+    if MODE_VALUES.contains(&normalized.as_str()) {
+        normalized
     } else {
-        value.to_string()
+        FALLBACK_MODE.to_string()
     }
 }
 
@@ -132,7 +149,7 @@ pub fn resolve(state: &Value, skill: &str) -> String {
 /// - state file parses → `{"status":"ok","mode":<resolved>}` via
 ///   [`resolve`]
 pub fn run_impl(args: &Args, root: &Path) -> Value {
-    let skill = normalize_skill(&args.skill);
+    let skill = normalize_gate_input(&args.skill);
     if !ALLOWED_SKILLS.contains(&skill.as_str()) {
         return json!({
             "status": "error",
