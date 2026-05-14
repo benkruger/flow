@@ -313,6 +313,37 @@ fn test_src_no_window_snapshot_file() {
     );
 }
 
+/// Tombstone: removed in PR #1567. The `bump_install_path` function and
+/// its two `run_impl` callsites are deleted from `src/bump_version.rs` —
+/// the `flow-marketplace/flow/<version>/bin/setup` install-path
+/// references it rewrote at version-bump time were dropped from
+/// README.md and docs/index.html when the marketplace install stopped
+/// requiring a build step. Must not return.
+///
+/// Asserts `src/bump_version.rs` does NOT contain the identifier
+/// `bump_install_path`. The byte-substring shape holds because:
+///   1. `concat!` reassembly: a Rust function name cannot be assembled
+///      by `concat!` — re-introducing the function requires the literal
+///      `fn bump_install_path` in source.
+///   2. `format!` reassembly: function declarations are not produced by
+///      `format!` interpolation.
+///   3. Named constant reference: a `const` aliasing the string would
+///      still place the literal `bump_install_path` in source, and the
+///      function declaration itself trips the byte check regardless.
+///   4. Method chains / split args: not applicable — the target is a
+///      function identifier, not a CLI argument passed via `.arg()`.
+#[test]
+fn test_src_no_bump_install_path() {
+    let path = common::repo_root().join("src/bump_version.rs");
+    let content = fs::read_to_string(&path).expect("src/bump_version.rs must exist");
+    assert!(
+        !content.contains("bump_install_path"),
+        "src/bump_version.rs must not contain `bump_install_path` — the \
+         function and its run_impl callsites were deleted when the \
+         marketplace install-path doc references were removed."
+    );
+}
+
 // --- flow-plan parent-issue closure ---
 //
 // The decomposed-child issue supersedes the vanilla parent's
