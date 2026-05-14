@@ -1378,6 +1378,81 @@ fn analyze_no_milestone_key_lib() {
 }
 
 #[test]
+fn analyze_issues_filters_against_collapsed_schema_subprocess() {
+    // End-to-end regression: --ready, --blocked, --decomposed, and
+    // --quick-start each behave correctly when every input issue
+    // flows into the single `issues` array (no top-level partition).
+    // A Flow-In-Progress row is included or excluded purely on its
+    // own `blocked`/`decomposed` flags, not on a partition.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let issues = vec![
+        fake_issue(1, "In progress and decomposed", vec!["Flow In-Progress", "decomposed"]),
+        fake_issue(2, "Decomposed", vec!["decomposed"]),
+        fake_issue(3, "Blocked", vec!["Blocked"]),
+        fake_issue(4, "Plain", vec![]),
+    ];
+    let issues_path = dir.path().join("issues.json");
+    fs::write(&issues_path, serde_json::to_string(&issues).unwrap()).unwrap();
+    let stub_dir = create_gh_stub(&repo, "#!/bin/bash\necho '{\"data\":{}}'\nexit 0\n");
+
+    let issues_arg = issues_path.to_str().unwrap();
+
+    let ready = run_analyze(&repo, &["--issues-json", issues_arg, "--ready"], &stub_dir);
+    assert_eq!(ready.status.code(), Some(0));
+    let ready_data = parse_full_stdout(&ready);
+    let ready_arr = ready_data["issues"].as_array().unwrap();
+    let ready_nums: Vec<i64> = ready_arr.iter().map(|i| i["number"].as_i64().unwrap()).collect();
+    assert!(!ready_nums.contains(&3), "--ready must exclude blocked issue 3");
+    assert!(ready_nums.contains(&1));
+    assert!(ready_nums.contains(&2));
+    assert!(ready_nums.contains(&4));
+
+    let blocked = run_analyze(&repo, &["--issues-json", issues_arg, "--blocked"], &stub_dir);
+    assert_eq!(blocked.status.code(), Some(0));
+    let blocked_data = parse_full_stdout(&blocked);
+    let blocked_arr = blocked_data["issues"].as_array().unwrap();
+    let blocked_nums: Vec<i64> = blocked_arr.iter().map(|i| i["number"].as_i64().unwrap()).collect();
+    assert_eq!(blocked_nums, vec![3]);
+
+    let decomposed = run_analyze(
+        &repo,
+        &["--issues-json", issues_arg, "--decomposed"],
+        &stub_dir,
+    );
+    assert_eq!(decomposed.status.code(), Some(0));
+    let decomposed_data = parse_full_stdout(&decomposed);
+    let decomposed_nums: Vec<i64> = decomposed_data["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["number"].as_i64().unwrap())
+        .collect();
+    assert!(decomposed_nums.contains(&1));
+    assert!(decomposed_nums.contains(&2));
+    assert!(!decomposed_nums.contains(&3));
+    assert!(!decomposed_nums.contains(&4));
+
+    let qs = run_analyze(
+        &repo,
+        &["--issues-json", issues_arg, "--quick-start"],
+        &stub_dir,
+    );
+    assert_eq!(qs.status.code(), Some(0));
+    let qs_data = parse_full_stdout(&qs);
+    let qs_nums: Vec<i64> = qs_data["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["number"].as_i64().unwrap())
+        .collect();
+    assert!(qs_nums.contains(&1));
+    assert!(qs_nums.contains(&2));
+    assert!(!qs_nums.contains(&3));
+    assert!(!qs_nums.contains(&4));
+}
+
+#[test]
 fn analyze_issues_milestone_cli_flag_still_forwarded_to_gh() {
     // Per-row milestone is gone but the server-side --milestone CLI
     // flag still passes through to gh, so users can filter by

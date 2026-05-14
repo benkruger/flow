@@ -223,6 +223,36 @@ fn test_root_no_test_coverage_md_file() {
     );
 }
 
+/// Tombstone: removed in PR #1549. Stability argument: the
+/// `"in_progress"` literal was a JSON object key inside
+/// `serde_json::json!({...})` in `analyze_issues` — a stable
+/// source-string with no `concat!`/`format!`/constant
+/// reassembly path that would produce the same runtime JSON
+/// key without the literal appearing in source. Bypasses
+/// considered and rejected: macro-concatenation (would
+/// produce a different runtime expression shape that
+/// `serde_json::json!` cannot accept as a key); split-string
+/// reassembly (json! requires identifier-shaped or
+/// string-literal keys, not runtime String concatenation);
+/// hex escapes (`"\x69n_progress"` still appears in
+/// source). The byte-substring check uses
+/// `concat!("in_pro", "gress")` so this test file does not
+/// self-trip when reading itself.
+#[test]
+fn test_analyze_issues_no_in_progress_json_key() {
+    let root = common::repo_root();
+    let path = root.join("src").join("analyze_issues.rs");
+    let content = fs::read_to_string(&path).expect("src/analyze_issues.rs must exist");
+    let forbidden = concat!("\"in_pro", "gress\"");
+    assert!(
+        !content.contains(forbidden),
+        "src/analyze_issues.rs must not emit the {} JSON key — \
+         the schema collapse in PR #1549 routes Flow-In-Progress rows \
+         into the single `issues` array with per-row `flow_in_progress`.",
+        forbidden,
+    );
+}
+
 #[test]
 fn test_docs_with_behavior_no_waiver_discipline_section() {
     let root = common::repo_root();

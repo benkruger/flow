@@ -15,7 +15,12 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 
-/// Label detection result.
+/// Per-issue label detection result. The booleans drive bucket
+/// assignment and color treatment in the four-section dashboard:
+/// `decomposed` and `blocked` choose the section, `vanilla` marks
+/// the Vanilla bucket, and `flow_in_progress` / `triage_in_progress`
+/// flag rows that the renderer prefixes (🟡 / 🔍) with bold title
+/// and a suppressed Command cell.
 pub struct LabelFlags {
     pub decomposed: bool,
     pub blocked: bool,
