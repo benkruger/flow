@@ -16,7 +16,7 @@ deletes the remote branch, removes the worktree, and deletes the state file.
 Available from any phase, no prerequisites. Best-effort — warns if the state
 file is missing.
 
-- `/flow-abort` — uses configured mode from `.flow.json` (default: auto)
+- `/flow-abort` — uses configured mode from `.flow.json` (default: manual)
 - `/flow-abort --auto` — skips confirmation and proceeds directly
 - `/flow-abort --manual` — prompts for user confirmation before any destructive action
 

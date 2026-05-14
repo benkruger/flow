@@ -50,6 +50,7 @@ use flow_rs::prime_setup;
 use flow_rs::promote_permissions;
 use flow_rs::record_agent_return;
 use flow_rs::render_pr_body;
+use flow_rs::resolve_skill_mode;
 use flow_rs::start_finalize;
 use flow_rs::start_gate;
 use flow_rs::start_init;
@@ -407,6 +408,11 @@ enum Commands {
         #[arg(long)]
         branch: Option<String>,
     },
+
+    /// Resolve the configured autonomy mode of a terminal skill
+    /// (flow-complete / flow-abort) from the state file.
+    #[command(name = "resolve-skill-mode")]
+    ResolveSkillMode(resolve_skill_mode::Args),
 
     /// Build SessionStart hook context from state files.
     #[command(name = "session-context")]
@@ -879,6 +885,11 @@ fn main() {
                     process::exit(code);
                 }
             }
+        }
+        Some(Commands::ResolveSkillMode(args)) => {
+            let root = project_root();
+            let (value, code) = resolve_skill_mode::run_impl_main(&args, &root);
+            flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::SessionContext) => {
             commands::session_context::run();

@@ -16,7 +16,7 @@ from any phase, no prerequisites.
 /flow:flow-abort --manual
 ```
 
-- `/flow:flow-abort` — uses configured mode from the state file (default: auto)
+- `/flow:flow-abort` — uses configured mode from the state file (default: manual)
 - `/flow:flow-abort --auto` — skips confirmation and proceeds directly to cleanup
 - `/flow:flow-abort --manual` — prompts for user confirmation before any destructive action
 
@@ -34,8 +34,7 @@ shared state must be idempotent.
 
 1. If `--auto` was passed → mode is **auto**
 2. If `--manual` was passed → mode is **manual**
-3. Otherwise, read the state file at `<project_root>/.flow-states/<branch>/state.json`. Use `skills.flow-abort` value.
-4. If the state file has no `skills` key → use built-in default: **auto**
+3. Otherwise, run `${CLAUDE_PLUGIN_ROOT}/bin/flow resolve-skill-mode --skill flow-abort --branch <branch>` — it reads `skills.flow-abort` from the state file, tolerates every config shape (bare string, object with `continue`, missing/null/wrong-type entry), and falls back to **manual** when the config is missing or unparseable. Use the `mode` field from its JSON output. The Entry Check below runs this command after resolving `<branch>`.
 
 ## Entry Check
 
@@ -64,7 +63,14 @@ If the Read tool fails for any other reason, stop and show the error.
 Use these values for all subsequent steps — do not re-read the state file
 or re-run git commands to gather the same information.
 
-Resolve the mode using the Mode Resolution rules above.
+Resolve the mode using the Mode Resolution rules above. When neither
+`--auto` nor `--manual` was passed, run the resolution command —
+`<branch>` is the value resolved in step 1 — and use the `mode` field
+from its JSON output:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow resolve-skill-mode --skill flow-abort --branch <branch>
+```
 
 ## Announce
 

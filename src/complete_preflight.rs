@@ -117,7 +117,13 @@ pub fn run_cmd_with_timeout(args: &[&str], timeout_secs: u64) -> CmdResult {
 
 /// Resolve mode from flags and state file.
 ///
-/// Priority: --auto > --manual > state.skills.flow-complete > "auto".
+/// Priority: `--auto` > `--manual` > the state file's
+/// `skills.flow-complete` entry > the conservative fallback. The
+/// state-file read delegates to [`crate::resolve_skill_mode::resolve`],
+/// which tolerates every config shape, normalizes the value, and
+/// clamps it to `{auto, manual}`. When no state file was found, the
+/// same `FALLBACK_MODE` ("manual") applies — the safe default the
+/// terminal skills use before the irreversible Complete merge.
 pub fn resolve_mode(auto: bool, manual: bool, state: Option<&Value>) -> String {
     if auto {
         return "auto".to_string();
@@ -125,21 +131,10 @@ pub fn resolve_mode(auto: bool, manual: bool, state: Option<&Value>) -> String {
     if manual {
         return "manual".to_string();
     }
-    if let Some(st) = state {
-        if let Some(skill_config) = st.get("skills").and_then(|s| s.get("flow-complete")) {
-            if let Some(s) = skill_config.as_str() {
-                return s.to_string();
-            }
-            if skill_config.is_object() {
-                return skill_config
-                    .get("continue")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("auto")
-                    .to_string();
-            }
-        }
+    match state {
+        Some(st) => crate::resolve_skill_mode::resolve(st, "flow-complete"),
+        None => crate::resolve_skill_mode::FALLBACK_MODE.to_string(),
     }
-    "auto".to_string()
 }
 
 /// Check if Learn phase is complete. Returns list of warning strings.

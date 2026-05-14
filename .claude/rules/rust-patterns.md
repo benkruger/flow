@@ -428,6 +428,9 @@ side effects. The current exempt set is:
 - `bin/flow format-status` (`src/format_status.rs`)
 - `bin/flow status` (`src/status.rs`)
 - `bin/flow tombstone-audit` (`src/tombstone_audit.rs`)
+- `bin/flow base-branch` (`src/base_branch_cmd.rs`)
+- `bin/flow validate-issue-body` (`src/validate_issue_body.rs`)
+- `bin/flow resolve-skill-mode` (`src/resolve_skill_mode.rs`)
 
 When adding a new read-only subcommand, add it to this list AND
 to the corresponding list in CLAUDE.md's Subdirectory Context

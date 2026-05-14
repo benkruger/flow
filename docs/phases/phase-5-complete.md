@@ -5,7 +5,7 @@ nav_order: 6
 
 # Phase 5: Complete
 
-**Command:** `/flow-complete` or `/flow-complete --manual`
+**Command:** `/flow-complete` or `/flow-complete --auto`
 
 The final phase. Merges the PR into the integration branch (the
 `base_branch` captured at flow-start — `main` for standard repos,
@@ -13,8 +13,8 @@ The final phase. Merges the PR into the integration branch (the
 worktree, and deletes the state file and log file. This is what fully
 closes out a feature and resets the environment for the next one.
 
-By default, skips confirmation and proceeds directly to merge and cleanup.
-Use `--manual` to prompt for confirmation before the irreversible merge.
+By default, prompts for confirmation before the irreversible merge.
+Use `--auto` to skip confirmation and proceed directly to merge and cleanup.
 Best-effort on cleanup steps — warns if the state file is missing or
 Phase 5 is incomplete.
 
@@ -65,11 +65,12 @@ continue to merge. If any are pending, invoke
 `/loop 15s /flow:flow-complete` to auto-retry. If any have failed,
 launch the ci-fixer sub-agent to diagnose and fix.
 
-### 4. Confirm with user (--manual only)
+### 4. Confirm with user (manual mode)
 
-When `--manual` is passed, explicit confirmation is required before
-the irreversible squash merge. Any warnings from the preflight are
-included in the confirmation message. Skipped by default.
+In manual mode (the default), explicit confirmation is required
+before the irreversible squash merge. Any warnings from the preflight
+are included in the confirmation message. Skipped when `--auto` is
+passed.
 
 ### 5. Merge PR
 
@@ -177,5 +178,5 @@ one fails, continue to the next.
 - Learn (Phase 4) complete is a warning, not a hard block
 - Missing state file is a warning, not a hard block
 - CI must pass before merge
-- Confirmation only when `--manual` is passed
+- Confirmation in manual mode (the default); skipped when `--auto` is passed
 - Steps 1-5 run from the worktree; Step 6 (finalize) runs from the project root

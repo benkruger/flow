@@ -218,34 +218,34 @@ fn resolve_mode_skill_object_continue_used() {
 }
 
 #[test]
-fn resolve_mode_skill_object_missing_continue_defaults_auto() {
+fn resolve_mode_skill_object_missing_continue_falls_back_manual() {
     let state = json!({"skills": {"flow-complete": {"other": "x"}}});
-    assert_eq!(resolve_mode(false, false, Some(&state)), "auto");
+    assert_eq!(resolve_mode(false, false, Some(&state)), "manual");
 }
 
 #[test]
-fn resolve_mode_skill_config_number_defaults_auto() {
-    // skill_config is neither string nor object — falls past both
-    // branches and returns the "auto" default.
+fn resolve_mode_skill_config_number_falls_back_manual() {
+    // skill_config is neither string nor object — resolve_skill_mode
+    // extracts an empty raw value, which clamps to the fallback.
     let state = json!({"skills": {"flow-complete": 42}});
-    assert_eq!(resolve_mode(false, false, Some(&state)), "auto");
+    assert_eq!(resolve_mode(false, false, Some(&state)), "manual");
 }
 
 #[test]
-fn resolve_mode_skill_config_array_defaults_auto() {
+fn resolve_mode_skill_config_array_falls_back_manual() {
     let state = json!({"skills": {"flow-complete": ["x"]}});
-    assert_eq!(resolve_mode(false, false, Some(&state)), "auto");
+    assert_eq!(resolve_mode(false, false, Some(&state)), "manual");
 }
 
 #[test]
-fn resolve_mode_no_skill_config_defaults_auto() {
+fn resolve_mode_no_skill_config_falls_back_manual() {
     let state = json!({});
-    assert_eq!(resolve_mode(false, false, Some(&state)), "auto");
+    assert_eq!(resolve_mode(false, false, Some(&state)), "manual");
 }
 
 #[test]
-fn resolve_mode_no_state_defaults_auto() {
-    assert_eq!(resolve_mode(false, false, None), "auto");
+fn resolve_mode_no_state_falls_back_manual() {
+    assert_eq!(resolve_mode(false, false, None), "manual");
 }
 
 #[test]
