@@ -33,6 +33,7 @@ merges.
 |--------|------|---------------------|
 | CLAUDE.md and rules files | Project rules and conventions that should have been followed | Yes |
 | State file and plan data | Visit counts, timing, notes, plan risks | Yes |
+| Correction notes | `state.notes` entries with `type == "correction"`, captured by `/flow:flow-note` — mandatory user directives routed to a durable rule before agent-finding triage | Yes |
 | Branch diff | Full `git diff origin/<base_branch>...HEAD` | Yes |
 | Learn-analyst agent | Categorized findings from cognitively isolated compliance audit | N/A (agent output) |
 

@@ -378,6 +378,77 @@ fn test_flow_plan_skill_no_link_blocked_by() {
     );
 }
 
+// --- exhausted-retry note path ---
+//
+// The `agent_exhausted_retries` state-note path is gone. The
+// flow-review and flow-learn retry loops no longer call
+// `bin/flow append-note` with a `--kind` flag, and the dead
+// `agent_exhausted_retries` note kind no longer exists. Exhausted
+// and skipped agents surface through `phases.<phase>.agents_skipped`
+// and the Complete Done banner's Skipped Agents section. These
+// per-file tombstones catch a merge conflict or accidental edit
+// that re-introduces the dead invocation in either SKILL.md.
+
+/// Tombstone: removed in PR #1584. The `agent_exhausted_retries`
+/// state-note path is gone from `skills/flow-learn/SKILL.md` — the
+/// retry loop and Done-section recovery no longer invoke
+/// `bin/flow append-note` with the dead `--kind` flag or the
+/// `agent_exhausted_retries` note kind. Must not return.
+///
+/// Stability argument: the protected target is Markdown prose, not
+/// Rust source. The byte literals `agent_exhausted_retries` and
+/// `--kind` cannot be reassembled at runtime — Markdown is a flat
+/// byte stream with no `concat!` macro, no `format!` interpolation,
+/// and no named constant references. A merge conflict can only
+/// resurrect the exact bytes, which this scanner catches.
+#[test]
+fn test_flow_learn_skill_no_exhausted_retry_note() {
+    let path = common::skills_dir().join("flow-learn").join("SKILL.md");
+    let content = fs::read_to_string(&path).expect("flow-learn SKILL.md must exist");
+    assert!(
+        !content.contains("agent_exhausted_retries"),
+        "skills/flow-learn/SKILL.md must not reference `agent_exhausted_retries` — \
+         the dead state-note path is replaced by the Complete Done banner's \
+         Skipped Agents section sourced from `phases.<phase>.agents_skipped`."
+    );
+    assert!(
+        !content.contains("--kind"),
+        "skills/flow-learn/SKILL.md must not invoke `bin/flow append-note --kind` — \
+         the real append-note interface is `--note`/`--type`/`--branch`; the \
+         `--kind` flag belonged only to the removed exhausted-retry note path."
+    );
+}
+
+/// Tombstone: removed in PR #1584. The `agent_exhausted_retries`
+/// state-note path is gone from `skills/flow-review/SKILL.md` — the
+/// retry loop and Done-section recovery no longer invoke
+/// `bin/flow append-note` with the dead `--kind` flag or the
+/// `agent_exhausted_retries` note kind. Must not return.
+///
+/// Stability argument: the protected target is Markdown prose, not
+/// Rust source. The byte literals `agent_exhausted_retries` and
+/// `--kind` cannot be reassembled at runtime — Markdown is a flat
+/// byte stream with no `concat!` macro, no `format!` interpolation,
+/// and no named constant references. A merge conflict can only
+/// resurrect the exact bytes, which this scanner catches.
+#[test]
+fn test_flow_review_skill_no_exhausted_retry_note() {
+    let path = common::skills_dir().join("flow-review").join("SKILL.md");
+    let content = fs::read_to_string(&path).expect("flow-review SKILL.md must exist");
+    assert!(
+        !content.contains("agent_exhausted_retries"),
+        "skills/flow-review/SKILL.md must not reference `agent_exhausted_retries` — \
+         the dead state-note path is replaced by the Complete Done banner's \
+         Skipped Agents section sourced from `phases.<phase>.agents_skipped`."
+    );
+    assert!(
+        !content.contains("--kind"),
+        "skills/flow-review/SKILL.md must not invoke `bin/flow append-note --kind` — \
+         the real append-note interface is `--note`/`--type`/`--branch`; the \
+         `--kind` flag belonged only to the removed exhausted-retry note path."
+    );
+}
+
 // --- FLOW_DENY escape-hatch entries ---
 //
 // The deny entries listed below block the canonical escape-hatch

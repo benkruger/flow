@@ -567,7 +567,7 @@ unchanged.
 **After all four agents have returned.** The classify-and-record work below
 runs ONLY now — never before all four `tool_result` blocks have landed.
 
-### Per-agent accounting (record + retry-3-then-note)
+### Per-agent accounting (record + retry-3-then-skip)
 
 For each of the four agents, after classification, account for
 the agent in state so the `phase-finalize` required-agents gate
@@ -604,23 +604,18 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set phases.flow-review.agent_retr
 ```
 
 If the count has reached 3, the agent has exhausted its retries.
-Record the skip and append a state note so Learn surfaces the
-missing analysis:
+Record the skip:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-skipped-agent --branch <branch> --agent <name> --reason exhausted_retries
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow append-note <branch> agent_exhausted_retries "<name> exhausted 3 retries during flow-review"
 ```
 
 <HARD-GATE>
 When an agent has exhausted retries, you MUST NOT synthesize
 that agent's findings inline. The agent's analysis is
 unavailable for this Review pass — record the skip via
-`add-skipped-agent` and the note via `append-note`, then move
-to the next agent. Fabricating an agent's analysis from session
+`add-skipped-agent`, then move to the next agent. Fabricating an
+agent's analysis from session
 memory defeats cognitive isolation per
 `.claude/rules/cognitive-isolation.md` "Never Supplement Agent
 Work From the Parent Session" and produces an audit trail that
@@ -941,13 +936,6 @@ Three recovery shapes apply, ordered cheapest first:
 
   ```bash
   ${CLAUDE_PLUGIN_ROOT}/bin/flow add-skipped-agent --branch <branch> --agent <name> --reason exhausted_retries
-  ```
-
-  Append a state note documenting the cap exhaustion so Learn
-  surfaces the missing analysis:
-
-  ```bash
-  ${CLAUDE_PLUGIN_ROOT}/bin/flow append-note --branch <branch> --kind agent_exhausted_retries --agent <name> --phase flow-review --attempts 3 --evidence "missing from agents_returned at finalize time"
   ```
 
   Then re-run `phase-finalize` (the entry now lands in

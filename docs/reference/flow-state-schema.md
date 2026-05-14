@@ -166,7 +166,7 @@ Each phase entry has identical fields regardless of status.
 | `step_snapshots` | array | Array of [Step Snapshots](#step-snapshot) appended on each step-counter increment (`code_task`, `review_step`, `learn_step`, `complete_step`). Empty until the phase begins incrementing its step counter. Bounded by step count per phase (typically <30 entries; up to ~10 KB for a long Code phase). |
 | `agents_skipped` | array / absent | Review-only and Learn-only. Entries of `{agent: string, reason: string, timestamp: ISO 8601}` appended by `bin/flow add-skipped-agent` when the calling skill's failure classification detects an agent returned an external-failure marker OR exhausted the retry cap. `reason` is a positive allowlist: `rate_limit`, `api_error`, `other`, or `exhausted_retries`. Absent on every phase except `flow-review` / `flow-learn`, and absent on runs that complete with no skipped agents. Consumed by `phase-finalize`'s `agents_skipped` gate AND the required-agents gate — see below. |
 | `agents_returned` | array / absent | Review-only and Learn-only. Entries of `{agent: string, timestamp: ISO 8601}` appended by `bin/flow record-agent-return` after the calling skill's Class 3 (Normal completion) classification. The recording subcommand reads the persisted Claude Code transcript and confirms an Agent tool_use/tool_result pair exists for `subagent_type: "flow:<agent>"` after the most recent `phase-enter --phase <phase>` Bash marker — closing the inline-synthesis bypass where a model could write findings without actually invoking the agent. Consumed by `phase-finalize`'s required-agents gate — see below. |
-| `agent_retry_counts` | object / absent | Review-only and Learn-only. Map of `<agent_name> -> count` (`0..=3`). The calling skill increments this counter via `bin/flow set-timestamp` when an agent's tool_result triggers Class 1 (truncation), Class 2 (external failure), or recording failure. When the counter reaches 3, the skill records the agent in `agents_skipped` with reason `exhausted_retries` and appends an `agent_exhausted_retries` note to `state.notes`. Absent on phases that don't invoke sub-agents. |
+| `agent_retry_counts` | object / absent | Review-only and Learn-only. Map of `<agent_name> -> count` (`0..=3`). The calling skill increments this counter via `bin/flow set-timestamp` when an agent's tool_result triggers Class 1 (truncation), Class 2 (external failure), or recording failure. When the counter reaches 3, the skill records the agent in `agents_skipped` with reason `exhausted_retries`. Absent on phases that don't invoke sub-agents. |
 
 ### Agents-Skipped Gate
 
@@ -222,16 +222,6 @@ required agent to appear in EITHER `agents_returned` OR
 are skipped during the composition; only entries with a valid
 `agent` string contribute to the accounted-for set.
 
-### State Notes — agent_exhausted_retries
-
-A note entry with `kind: "agent_exhausted_retries"` is appended
-to `state.notes` via `bin/flow append-note` when an agent reaches
-the retry cap (3 attempts) during Review or Learn. The entry's
-free-text body names the agent and the phase that exhausted
-retries. Consumed by the Learn-phase Step 2 synthesis and the
-Step 7 report banner's "Missing analyses" section to surface
-unavailable analyses without fabricating findings inline.
-
 ### Required-Agents Gate v1 Boundaries
 
 The required-agents gate is the load-bearing protection against
@@ -245,13 +235,12 @@ when the reason normalizes to one of `rate_limit`, `api_error`,
 `other`, `exhausted_retries`. A model that calls
 `add-skipped-agent --reason exhausted_retries` without actually
 exhausting three retries satisfies the `agents_skipped` half of
-the gate the same way a legitimate `api_error` entry does. The
-closure runs at Learn: every `exhausted_retries` entry is paired
-with an `agent_exhausted_retries` note (carrying attempt count +
-evidence pointer), which Learn's Step 7 banner surfaces in its
-"Missing analyses" section. Procedural enforcement of the retry
-cap lives in the calling SKILL.md's retry-3-then-note loop. A
-future PR may mechanically gate `exhausted_retries` against
+the gate the same way a legitimate `api_error` entry does.
+Exhausted and skipped agents surface to the user in the Complete
+Done banner's Skipped Agents section, sourced from
+`phases.<phase>.agents_skipped`. Procedural enforcement of the
+retry cap lives in the calling SKILL.md's retry-3-then-skip loop.
+A future PR may mechanically gate `exhausted_retries` against
 `phases.<phase>.agent_retry_counts.<agent> >= 3`; that
 tightening is out of scope for v1.
 
