@@ -43,7 +43,57 @@ If `--reprime` was passed:
 
 ## Steps
 
-### Step 1 — Choose autonomy level
+### Step 1 — Choose primary role
+
+The user's primary role sets a default planning persona for future
+planning conversations. PM users get the Tech Lead voice by default,
+Tech Lead users get the PM voice, and founder/solo users wear
+multiple hats — `/flow:flow-explore` opens with the PM voice and
+`/flow:flow-plan` opens with the Tech Lead voice, with the ability
+to invite the other voice mid-conversation.
+
+<HARD-GATE>
+You MUST ask the user with AskUserQuestion below and wait for an
+explicit selection before proceeding. Do NOT infer the answer from
+context, do NOT default to any option, and do NOT skip the prompt
+even when reprime appears to already carry a role. The role choice
+is a user decision per `.claude/rules/skill-authoring.md` "Decision
+Point Gates".
+
+> "What is your primary role? Sets a default planning persona."
+>
+> - **Tech Lead (Recommended)** — Engineering lead role
+> - **PM** — Product / project management role
+> - **Founder / Solo Dev** — Wear multiple hats
+
+</HARD-GATE>
+
+Store the result as `role_value`:
+
+- "Tech Lead" → `"tech-lead"`
+- "PM" → `"pm"`
+- "Founder / Solo Dev" → `"founder-solo"`
+
+### Step 2 — Choose commit message format
+
+FLOW supports two commit message formats:
+
+- **Full** — subject + tl;dr + explanation + file list (detailed seven-element format)
+- **Title only** — subject line + file list (minimal, no tl;dr section)
+
+Ask the user which format to use with AskUserQuestion:
+
+> "What commit message format should FLOW use?"
+>
+> - **Full format (Recommended)** — "Subject + tl;dr + explanation + file list (detailed)"
+> - **Title only** — "Subject line + file list, no tl;dr section"
+
+Store the result as `commit_format`:
+
+- "Full format" → `"full"`
+- "Title only" → `"title-only"`
+
+### Step 3 — Choose autonomy level
 
 FLOW has two independent axes for skills that support them:
 
@@ -70,23 +120,20 @@ Ask the user how much autonomy FLOW should have using AskUserQuestion:
 **Fully manual** — all manual:
 
 ```json
-{"flow-start": {"continue": "manual"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-review": {"commit": "manual", "continue": "manual"}, "flow-learn": {"commit": "manual", "continue": "manual"}, "flow-complete": "manual", "flow-abort": "manual"}
+{"flow-start": {"continue": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-review": {"commit": "manual", "continue": "manual"}, "flow-learn": {"commit": "manual", "continue": "manual"}, "flow-complete": "manual", "flow-abort": "manual"}
 ```
 
 **Recommended** — safe defaults:
 
 ```json
-{"flow-start": {"continue": "manual"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-complete": "auto", "flow-abort": "auto"}
+{"flow-start": {"continue": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-complete": "manual", "flow-abort": "manual"}
 ```
 
-**Customize** — ask per skill, in this order: start, code, review, learn, complete, abort. For each skill, ask about only the applicable axes. List the recommended option first with "(Recommended)" in the label:
+**Customize** — ask per skill, in this order: code, review, learn, complete, abort.
 
-For **start** (continue only), ask one AskUserQuestion:
+Start is exempt from the Customize loop because every preset fixes its continue mode to `auto` — Start has no useful interaction to gate on, so prompting for it would only add friction. Before asking the per-skill questions below, **seed `skills_dict` with `{"flow-start": {"continue": "auto"}}`** so the resulting JSON carries Start's continue mode through to Step 4.
 
-> "Continue mode for /flow:flow-start?"
->
-> - **Manual (Recommended)** — "Prompt before advancing"
-> - **Auto** — "Auto-advance to next phase"
+For each remaining skill, ask about only the applicable axes. List the recommended option first with "(Recommended)" in the label:
 
 For **code** (commit and continue), ask two AskUserQuestions:
 
@@ -94,15 +141,15 @@ First question:
 
 > "Commit mode for /flow:flow-code? (controls per-task review before each commit)"
 >
-> - **Manual (Recommended)** — "Require explicit approval"
-> - **Auto** — "Skip approval prompts"
+> - **Auto (Recommended)** — "Skip approval prompts"
+> - **Manual** — "Require explicit approval"
 
 Second question:
 
 > "Continue mode for /flow:flow-code? (controls phase advancement)"
 >
-> - **Manual (Recommended)** — "Prompt before advancing"
-> - **Auto** — "Auto-advance to next phase"
+> - **Auto (Recommended)** — "Auto-advance to next phase"
+> - **Manual** — "Prompt before advancing"
 
 For **review** (commit and continue), ask two AskUserQuestions:
 
@@ -140,81 +187,28 @@ For **complete** and **abort** (single mode), ask one AskUserQuestion each:
 
 > "Mode for /flow:flow-<skill>?"
 >
-> - **Auto (Recommended)** — "Skip confirmation prompt"
-> - **Manual** — "Require confirmation prompt"
+> - **Manual (Recommended)** — "Require confirmation prompt"
+> - **Auto** — "Skip confirmation prompt"
 
 Store the result as `skills_dict` for Step 4.
 
-### Step 2 — Choose commit message format
-
-FLOW supports two commit message formats:
-
-- **Title only** — subject line + file list (minimal, no tl;dr section)
-- **Full** — subject + tl;dr + explanation + file list (detailed seven-element format)
-
-Ask the user which format to use with AskUserQuestion:
-
-> "What commit message format should FLOW use?"
->
-> - **Title only** — "Subject line + file list, no tl;dr section"
-> - **Full format** — "Subject + tl;dr + explanation + file list (detailed)"
-
-Store the result as `commit_format`:
-
-- "Title only" → `"title-only"`
-- "Full format" → `"full"`
-
-### Step 3 — Choose primary role
-
-The user's primary role sets a default planning persona for future
-planning conversations — a PM user gets the Tech Lead voice by
-default, a Tech Lead user gets the PM voice, founder/solo users wear
-multiple hats and get no default. The field is optional; skipping
-records no default and lets each conversation choose its own persona.
-
-<HARD-GATE>
-You MUST ask the user with AskUserQuestion below and wait for an
-explicit selection before proceeding. Do NOT infer the answer from
-context, do NOT default to any option, and do NOT skip the prompt
-even when reprime appears to already carry a role. The role choice
-is a user decision per `.claude/rules/skill-authoring.md` "Decision
-Point Gates".
-
-> "What is your primary role? (Optional — sets a default planning persona.)"
->
-> - **PM** — Product / project management role
-> - **Tech Lead** — Engineering lead role
-> - **Founder / Solo Dev** — Wear multiple hats
-> - **Skip** — No default; choose per conversation
-
-</HARD-GATE>
-
-Store the result as `role_value`:
-
-- "PM" → `"pm"`
-- "Tech Lead" → `"tech-lead"`
-- "Founder / Solo Dev" → `"founder-solo"`
-- "Skip" → omit `--role` from the setup-script call below
-
 ### Step 4 — Run prime setup script
 
-Serialize `skills_dict` from Step 1 as a JSON string for the `--skills-json` argument.
+Serialize `skills_dict` from Step 3 as a JSON string for the `--skills-json` argument.
 Pass the `commit_format` value from Step 2 via `--commit-format`.
+Pass the concrete `role_value` from Step 1 via `--role`.
 
-The `role_value` from Step 3 maps to one of two invocation shapes
-below. **Do not pass the literal string `<role_value>` or `skip`
-as the flag argument** — the role-selection step either yielded a
-concrete value (pm, tech-lead, founder-solo) OR the user chose
-Skip, and the two shapes diverge.
-
-When the user selected a concrete role (PM, Tech Lead, or Founder /
-Solo Dev), include `--role <role_value>`:
+**Do not pass the literal string `<role_value>` as the flag argument** —
+the role-selection step yielded a concrete value (pm, tech-lead,
+founder-solo) that goes after `--role`.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --skills-json '<skills_dict_json>' --commit-format <commit_format> --role <role_value> --plugin-root ${CLAUDE_PLUGIN_ROOT}
 ```
 
-When the user chose Skip, omit `--role` entirely:
+When the Reprime path carries forward a legacy `.flow.json` that has
+no `role` field (written before role selection existed), omit
+`--role` entirely:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --skills-json '<skills_dict_json>' --commit-format <commit_format> --plugin-root ${CLAUDE_PLUGIN_ROOT}
@@ -534,12 +528,12 @@ Display the skills configuration as a pipe-delimited markdown table with exactly
 ```text
 | Skill     | Commit | Continue |
 |-----------|--------|----------|
-| start       | —      | manual   |
-| code        | manual | manual   |
-| review | auto   | auto     |
+| start       | —      | auto     |
+| code        | auto   | auto     |
+| review      | auto   | auto     |
 | learning    | auto   | auto     |
-| complete    | auto   | —        |
-| abort       | auto   | —        |
+| complete    | manual | —        |
+| abort       | manual | —        |
 ```
 
-Use the actual values from `skills_dict` (Step 1). The table above is just an example. Show `—` for axes that don't apply to a skill. The table must use pipe `|` delimiters — never render as a bullet list.
+Use the actual values from `skills_dict` (Step 3). The table above is just an example. Show `—` for axes that don't apply to a skill. The table must use pipe `|` delimiters — never render as a bullet list.

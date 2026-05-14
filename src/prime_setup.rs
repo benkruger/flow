@@ -28,9 +28,11 @@ use crate::prime_check::{
 };
 use crate::utils::{permission_to_regex, plugin_root, read_version};
 
-/// Accepted values for the `role` field in `.flow.json`. The `Skip`
-/// option in the prime SKILL.md omits `--role` entirely, so the
-/// allowlist covers only the three concrete personas. Future planning
+/// Accepted values for the `role` field in `.flow.json`. The prime
+/// SKILL.md asks the user to pick exactly one of these three concrete
+/// personas; the Reprime path additionally accepts an absent role
+/// (empty after normalization → `None`) so legacy `.flow.json` files
+/// written before role selection still reprime cleanly. Future planning
 /// skills validate read-side against the same set per
 /// `.claude/rules/security-gates.md` "Positive Allowlist, Not Negative
 /// Denylist".

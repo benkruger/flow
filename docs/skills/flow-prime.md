@@ -18,9 +18,9 @@ One-time project setup. Configures workspace permissions in `.claude/settings.js
 
 ## What It Does
 
-1. Asks the user to choose an autonomy level (fully autonomous, fully manual, recommended, or customize per skill)
-2. Asks the user to choose a commit message format (title-only or full)
-3. Asks the user for their primary role — PM, Tech Lead, Founder / Solo Dev, or Skip. The selection is recorded as the optional `role` field in `.flow.json` and sets a default planning persona for future planning conversations. Skipping omits the field entirely.
+1. Asks the user for their primary role — PM, Tech Lead (recommended), or Founder / Solo Dev. The selection is recorded as the `role` field in `.flow.json` and sets a default planning persona for future planning conversations.
+2. Asks the user to choose a commit message format (full or title-only).
+3. Asks the user to choose an autonomy level (fully autonomous, fully manual, recommended, or customize per skill).
 4. Runs a single setup script that handles all configuration in one call:
    - Reads or creates `.claude/settings.json` and merges FLOW universal allow/deny permissions
    - Writes `.flow.json` with version, config hash, commit format, role (when set), and skills configuration
@@ -52,14 +52,14 @@ The chosen configuration is stored in `.flow.json` under a `skills` key:
 
 ```json
 {
-  "flow_version": "1.1.0",
+  "flow_version": "2.0.1",
   "skills": {
-    "flow-start": {"continue": "manual"},
-    "flow-code": {"commit": "manual", "continue": "manual"},
+    "flow-start": {"continue": "auto"},
+    "flow-code": {"commit": "auto", "continue": "auto"},
     "flow-review": {"commit": "auto", "continue": "auto"},
     "flow-learn": {"commit": "auto", "continue": "auto"},
-    "flow-abort": "auto",
-    "flow-complete": "auto"
+    "flow-abort": "manual",
+    "flow-complete": "manual"
   }
 }
 ```
