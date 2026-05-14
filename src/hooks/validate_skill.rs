@@ -7,9 +7,14 @@
 //!    skill in `USER_ONLY_SKILLS` (`flow:flow-abort`,
 //!    `flow:flow-reset`, `flow:flow-release`, `flow:flow-prime`,
 //!    `flow:flow-continue`) unless the most recent user-role turn
-//!    in the persisted transcript carries a matching
-//!    `<command-name>/<skill></command-name>` substring (i.e. the
-//!    user typed the slash command directly).
+//!    in the persisted transcript STARTS with one of the two
+//!    emission shapes Claude Code uses for user-typed slash
+//!    commands: the two-line
+//!    `<command-message><skill></command-message>\n<command-name>/<skill></command-name>`
+//!    (Claude Code 2.1.140+) or the legacy
+//!    `<command-name>/<skill></command-name>`. The walker accepts
+//!    either via `starts_with` disjunction so the user-typed slash
+//!    command is recognized across emission-shape revisions.
 //! 2. **Halt gate.** When the state file has `_halt_pending=true`
 //!    (set by `stop_continue::check_autonomous_stop` after the user
 //!    typed a message during an autonomous flow), every Skill call

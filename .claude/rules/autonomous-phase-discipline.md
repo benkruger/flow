@@ -171,8 +171,13 @@ two writers:
 
 - `bin/flow clear-halt` — invoked by `/flow:flow-continue`. The
   subcommand self-gates on the persisted transcript: it refuses
-  unless the most recent user turn typed the
-  `<command-name>/flow:flow-continue</command-name>` marker.
+  unless the most recent user turn's `message.content` STARTS
+  with either of the two emission shapes Claude Code uses for
+  the slash command — the two-line
+  `<command-message>flow:flow-continue</command-message>\n<command-name>/flow:flow-continue</command-name>`
+  (Claude Code 2.1.140+) or the legacy
+  `<command-name>/flow:flow-continue</command-name>`. The walker
+  accepts either via `starts_with` disjunction.
 - `check_autonomous_stop` itself — when the current phase is no
   longer in-progress OR no longer configured `auto`. This
   prevents a halt set in one phase from bleeding forward into

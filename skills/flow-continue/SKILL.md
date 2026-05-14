@@ -68,10 +68,14 @@ Parse the JSON `status`:
 - `"error"` — print the `message` field verbatim so the user sees
   the failure reason (`unauthorized`, `invalid_branch`,
   `no_transcript_path`, `state_write_failed`). The unauthorized
-  branch fires when the persisted transcript walker fails to find
-  `<command-name>/flow:flow-continue</command-name>` at the start
-  of the most recent real user turn — a Bash-tool bypass attempt
-  that this skill makes impossible by definition.
+  branch fires when the most recent real user turn's
+  `message.content` does not START with either of the two emission
+  shapes Claude Code uses for the slash command — the two-line
+  `<command-message>flow:flow-continue</command-message>\n<command-name>/flow:flow-continue</command-name>`
+  (Claude Code 2.1.140+) or the legacy
+  `<command-name>/flow:flow-continue</command-name>`. The walker
+  accepts either via `starts_with` disjunction. A Bash-tool bypass
+  attempt this skill makes impossible by definition.
 
 ## Done
 

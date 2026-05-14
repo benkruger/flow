@@ -30,7 +30,12 @@ on its own resumes the flow.
 1. Detects the current branch from `git worktree list --porcelain`
 2. Runs `bin/flow clear-halt --branch <branch>`, which:
    - Verifies the persisted transcript's most recent real user turn
-     opens with `<command-name>/flow:flow-continue</command-name>`
+     opens with either of the two emission shapes Claude Code uses
+     for `/flow:flow-continue` — the two-line
+     `<command-message>flow:flow-continue</command-message>\n<command-name>/flow:flow-continue</command-name>`
+     (Claude Code 2.1.140+) or the legacy
+     `<command-name>/flow:flow-continue</command-name>`. The walker
+     accepts either shape via `starts_with` disjunction.
    - Sets `_halt_pending=false` in `.flow-states/<branch>/state.json`
 3. Returns control to the user. The next assistant turn picks up the
    paused flow without re-asking the user what to do next.
