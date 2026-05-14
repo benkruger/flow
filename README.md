@@ -173,7 +173,7 @@ Every planning skill is role-bound: PM, Tech Lead, or CTO voices with their own 
 
 ### Working an existing backlog
 
-- **`/flow-issues`** — Fetch open issues, rank by impact, show a dashboard with recommended work order.
+- **`/flow-issues`** — Group open issues by label into four sections (Blocked, Other, Vanilla, Decomposed) with mechanical sort and a copy-pasteable command per row.
 - **`/flow-triage-issue #N`** — PM-lens triage of a single issue; verdict in `{close, decompose}` with confidence and flip-condition.
 - **`/flow-orchestrate`** — Process every issue labeled "Decomposed" sequentially overnight via `flow-start --auto`. Progress and results land in `flow tui`'s Orchestration tab — completed flows with PR links, failed flows with reasons, total elapsed time.
 
@@ -187,7 +187,7 @@ Run `/flow-skills` anytime to see the live catalog grouped by role.
 
 | Skill | Purpose |
 |-------|---------|
-| `/flow-issues` | Fetch open issues, rank by impact, display a dashboard with recommended work order |
+| `/flow-issues` | Group open issues by label into four sections (Blocked, Other, Vanilla, Decomposed) with mechanical sort and a copy-pasteable command per row |
 | `/flow-triage-issue` | PM-lens triage of a single open issue — verdict in {close, decompose} |
 | `/flow-explore` | Open a problem-statement conversation (PM voice); file a vanilla `## What` / `## Why` / `## Acceptance Criteria` issue on signal |
 | `/flow-plan` | Decompose a vanilla problem-statement issue into a linked decomposed issue ready for the start phase (Tech Lead voice) |

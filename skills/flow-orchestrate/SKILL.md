@@ -95,21 +95,15 @@ Log the queue:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow log orchestrate "[Orchestrate] Started — N issues queued"
 ```
 
-Display the queue as a rich markdown table matching the `flow-issues` format.
-Use the `body` and `labels` fields from Step 1 to categorize, assess impact,
-and prioritize each issue using the same logic as `flow-issues`:
+Display the queue as a rich markdown table. Every queued issue is
+`Decomposed` (filtered server-side), so categorization, impact, and
+priority do not apply. Sort by issue `number` descending (newest
+first), matching the `flow-issues` Decomposed-section sort order.
 
-- **Categorize** by label (Rule, Flow, Tech Debt, Documentation Drift) with
-  content-based fallback (Bug, Enhancement, Other)
-- **Impact** from cross-area scope, force-multiplier keywords, acceptance
-  criteria density, and dependency count (High/Medium/Low)
-- **Priority** from category defaults with impact and blocking modifiers
-- **Sort** by priority (High first), then decomposed before non-decomposed,
-  then oldest first
-
-Output the table inline with columns: `Order`, `Priority`, `Impact`,
-`Labels`, `#`, `Title`, `Rationale`. The `#` column uses a markdown link
-`[#N](issue_url)`.
+Output the table inline with columns: `Order`, `Issue #`, `Title`.
+The `Issue #` column uses a markdown link `[#N](issue_url)`.
+Escape `|`, `\`, `\n`, `\r` in the Title cell before rendering so a
+pipe-containing title cannot break the table for downstream rows.
 
 ---
 

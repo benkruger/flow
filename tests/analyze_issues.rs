@@ -719,6 +719,84 @@ fn parse_blocker_response_open_node_missing_number_filtered_lib() {
 }
 
 #[test]
+fn parse_blocker_response_invalid_repo_empty_owner_rejected_lib() {
+    let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[
+        {"number": 50, "state": "OPEN"}
+    ]}}}}}"#;
+    let result = parse_blocker_response(response, &[10], "/repo");
+    assert!(result.is_empty());
+}
+
+#[test]
+fn parse_blocker_response_invalid_repo_dot_segment_rejected_lib() {
+    let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[
+        {"number": 50, "state": "OPEN"}
+    ]}}}}}"#;
+    let result = parse_blocker_response(response, &[10], "./repo");
+    assert!(result.is_empty());
+}
+
+#[test]
+fn parse_blocker_response_invalid_repo_too_many_slashes_rejected_lib() {
+    let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[
+        {"number": 50, "state": "OPEN"}
+    ]}}}}}"#;
+    let result = parse_blocker_response(response, &[10], "owner/repo/extra");
+    assert!(result.is_empty());
+}
+
+#[test]
+fn parse_blocker_response_invalid_repo_empty_name_rejected_lib() {
+    let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[
+        {"number": 50, "state": "OPEN"}
+    ]}}}}}"#;
+    let result = parse_blocker_response(response, &[10], "owner/");
+    assert!(result.is_empty());
+}
+
+#[test]
+fn parse_blocker_response_invalid_repo_no_slash_rejected_lib() {
+    let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[
+        {"number": 50, "state": "OPEN"}
+    ]}}}}}"#;
+    let result = parse_blocker_response(response, &[10], "owner");
+    assert!(result.is_empty());
+}
+
+#[test]
+fn parse_blocker_response_invalid_repo_path_traversal_rejected_lib() {
+    let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[
+        {"number": 50, "state": "OPEN"}
+    ]}}}}}"#;
+    let result = parse_blocker_response(response, &[10], "owner/..");
+    assert!(result.is_empty());
+}
+
+#[test]
+fn parse_blocker_response_invalid_repo_with_pipe_rejected_lib() {
+    let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[
+        {"number": 50, "state": "OPEN"}
+    ]}}}}}"#;
+    let result = parse_blocker_response(response, &[10], "owner|evil/repo");
+    assert!(result.is_empty());
+}
+
+#[test]
+fn parse_blocker_response_valid_repo_with_dash_underscore_dot_accepted_lib() {
+    // Exercises the `c == '-'`, `c == '_'`, `c == '.'` branches in the
+    // is_safe_repo_slug character whitelist.
+    let response = r#"{"data":{"repository":{"issue_10":{"blockedBy":{"nodes":[
+        {"number": 50, "state": "OPEN"}
+    ]}}}}}"#;
+    let result = parse_blocker_response(response, &[10], "my-org_name/repo.v1");
+    assert_eq!(result[&10].len(), 1);
+    assert_eq!(
+        result[&10][0]["url"],
+        "https://github.com/my-org_name/repo.v1/issues/50"
+    );
+}
+
+#[test]
 fn fetch_blockers_empty_list_lib() {
     assert!(fetch_blockers("owner/repo", &[]).is_empty());
 }
@@ -1463,7 +1541,9 @@ fn analyze_issues_filters_against_collapsed_schema_subprocess() {
         .iter()
         .map(|i| i["number"].as_i64().unwrap())
         .collect();
-    assert!(qs_nums.contains(&1));
+    // --quick-start excludes Flow-In-Progress rows so a `/flow:flow-start`
+    // command isn't surfaced for in-flight work (issue 1 has Flow In-Progress).
+    assert!(!qs_nums.contains(&1));
     assert!(qs_nums.contains(&2));
     assert!(!qs_nums.contains(&3));
     assert!(!qs_nums.contains(&4));

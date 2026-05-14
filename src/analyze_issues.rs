@@ -29,11 +29,11 @@ pub struct LabelFlags {
     pub triage_in_progress: bool,
 }
 
-/// Check for canonical FLOW labels. `Flow In-Progress` and
-/// `Triage In-Progress` require exact-string matches against their
-/// canonical label-registry names; `decomposed`, `blocked`, and
-/// `vanilla` match case-insensitively because GitHub's label
-/// registry is case-preserving and historic data may use mixed case.
+/// Check for canonical FLOW labels. All five labels match
+/// case-insensitively because GitHub's label registry is
+/// case-preserving and historic data may use mixed case. A repo
+/// that records `flow in-progress` as the label string still
+/// surfaces under the `flow_in_progress` boolean.
 pub fn detect_labels(labels: &[Value]) -> LabelFlags {
     let label_names: HashSet<String> = labels
         .iter()
@@ -50,8 +50,12 @@ pub fn detect_labels(labels: &[Value]) -> LabelFlags {
         vanilla: label_names
             .iter()
             .any(|n| n.eq_ignore_ascii_case("vanilla")),
-        flow_in_progress: label_names.contains("Flow In-Progress"),
-        triage_in_progress: label_names.contains("Triage In-Progress"),
+        flow_in_progress: label_names
+            .iter()
+            .any(|n| n.eq_ignore_ascii_case("Flow In-Progress")),
+        triage_in_progress: label_names
+            .iter()
+            .any(|n| n.eq_ignore_ascii_case("Triage In-Progress")),
     }
 }
 
@@ -76,6 +80,44 @@ pub fn build_blocker_query(issue_numbers: &[i64]) -> String {
     )
 }
 
+/// Validate a GitHub `owner/name` slug for safe interpolation into
+/// a markdown-rendered URL. Accepts exactly one `/` separator and
+/// rejects any segment containing characters outside GitHub's
+/// canonical owner/repo grammar — alphanumeric, hyphen, underscore,
+/// and period. Rejects `..` segments specifically so path-traversal
+/// attempts via a poisoned remote (`owner/repo/../../evil`) cannot
+/// inject extra path components into the blocker URL.
+///
+/// Per `.claude/rules/external-input-path-construction.md`: the
+/// `repo` string is state-derived (sourced from
+/// `git remote get-url origin` via `crate::github::detect_repo`)
+/// and reaches a `format!`-interpolated URL that is rendered as
+/// `[#N](url)` markdown by the consumer. A repo with structural
+/// characters (`|`, `<`, `(`, `[`, `\n`, `..`) breaks the markdown
+/// surface or redirects the link target. The validator runs at the
+/// boundary so the URL construction itself can assume a safe value.
+fn is_safe_repo_slug(repo: &str) -> bool {
+    let mut parts = repo.split('/');
+    let owner = match parts.next() {
+        Some(s) if !s.is_empty() => s,
+        _ => return false,
+    };
+    let name = match parts.next() {
+        Some(s) if !s.is_empty() => s,
+        _ => return false,
+    };
+    if parts.next().is_some() {
+        return false;
+    }
+    let safe = |s: &str| {
+        s != ".."
+            && s != "."
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+    };
+    safe(owner) && safe(name)
+}
+
 /// Parse a GraphQL response for blocker details.
 ///
 /// Extracts `blockedBy.nodes` for each issue number. Returns a HashMap
@@ -84,14 +126,22 @@ pub fn build_blocker_query(issue_numbers: &[i64]) -> String {
 /// so consumers can render linked blocker references without
 /// re-constructing URLs. `repo` is the `owner/name` slug; URL knowledge
 /// stays at the blocker-fetch layer rather than leaking into the
-/// dashboard renderer. Only blockers where `state == "OPEN"` are
-/// included — closed blockers are resolved. Handles null values at any
+/// dashboard renderer. `repo` is validated through
+/// [`is_safe_repo_slug`] before interpolation — an unsafe value
+/// short-circuits to an empty map so a poisoned remote cannot inject
+/// path-traversal or markdown-structural characters into the
+/// rendered URL. Only blockers where `state == "OPEN"` are included
+/// — closed blockers are resolved. Handles null values at any
 /// level gracefully (defaults to empty vec).
 pub fn parse_blocker_response(
     json_str: &str,
     issue_numbers: &[i64],
     repo: &str,
 ) -> HashMap<i64, Vec<Value>> {
+    if !is_safe_repo_slug(repo) {
+        return HashMap::new();
+    }
+
     let data: Value = match serde_json::from_str(json_str) {
         Ok(v) => v,
         Err(_) => return HashMap::new(),
@@ -306,11 +356,22 @@ pub fn analyze_issues(issues: &[Value], blocker_map: &HashMap<i64, Vec<Value>>) 
             .and_then(|a| a.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|a| a.get("login").and_then(|l| l.as_str()).map(String::from))
+                    .filter_map(|a| {
+                        a.get("login")
+                            .and_then(|l| l.as_str())
+                            .filter(|s| !s.is_empty())
+                            .map(String::from)
+                    })
                     .collect()
             })
             .unwrap_or_default();
 
+        // `blocked` collapses both label-driven and native-GitHub-
+        // blocked-by sources into one bucket signal. `native_blocked`
+        // is surfaced separately so the consumer can distinguish the
+        // source when composing the `Blocked By` cell (label-only
+        // blocks render `—`; native blocks render the linked blocker
+        // numbers from `blocked_by`).
         available.push(serde_json::json!({
             "number": number,
             "title": issue["title"],
@@ -344,7 +405,9 @@ pub fn filter_issues(issues: &[Value], filter_name: &str) -> Result<Vec<Value>, 
         "blocked" => Box::new(|i: &Value| i["blocked"].as_bool().unwrap_or(false)),
         "decomposed" => Box::new(|i: &Value| i["decomposed"].as_bool().unwrap_or(false)),
         "quick-start" => Box::new(|i: &Value| {
-            i["decomposed"].as_bool().unwrap_or(false) && !i["blocked"].as_bool().unwrap_or(false)
+            i["decomposed"].as_bool().unwrap_or(false)
+                && !i["blocked"].as_bool().unwrap_or(false)
+                && !i["flow_in_progress"].as_bool().unwrap_or(false)
         }),
         _ => return Err(format!("Unknown filter: {}", filter_name)),
     };

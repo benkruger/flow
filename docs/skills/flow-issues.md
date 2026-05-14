@@ -64,15 +64,17 @@ or closes issues.
 
 ## Filter Flags
 
-Filter flags shape which sections render. They are mutually
-exclusive within each family.
+Filtering happens at the Rust layer — `bin/flow analyze-issues`
+returns a pre-filtered `issues` array and the renderer buckets
+whatever it receives. Flags are mutually exclusive within each
+family.
 
 | Flag | Effect |
 |------|--------|
-| `--ready` | Drop the Blocked section. |
-| `--blocked` | Render only the Blocked section. |
-| `--decomposed` | Render only the Decomposed section. |
-| `--quick-start` | Render the Decomposed section without the 🟡 Flow-In-Progress cluster. |
+| `--ready` | Rust drops blocked rows; no Blocked section appears in output. |
+| `--blocked` | Rust keeps only blocked rows; only Blocked section appears. |
+| `--decomposed` | Rust keeps only decomposed rows; only Decomposed section appears. |
+| `--quick-start` | Rust keeps decomposed + non-blocked + non-Flow-In-Progress rows; no 🟡 cluster. |
 | `--label <name>` | Server-side filter passed to `gh issue list` (repeatable; AND logic). |
 | `--milestone <title>` | Server-side milestone filter (single value; by title or number). |
 

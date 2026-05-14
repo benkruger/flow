@@ -24,14 +24,21 @@ and render four tables. Read-only — never create, edit, or close issues.
 
 ## Filter Flags
 
-Filter flags shape which sections render. They are mutually exclusive
-within each family.
+Filter flags shape which issues the Rust subcommand emits. Filtering
+happens at the data layer — `bin/flow analyze-issues` returns a
+pre-filtered `issues` array, and the renderer simply buckets and
+renders whatever it receives. Flags are mutually exclusive within
+each family.
 
-- `--ready` — drop the Blocked section.
-- `--blocked` — render only the Blocked section.
-- `--decomposed` — render only the Decomposed section.
-- `--quick-start` — render the Decomposed section without the colored
-  Flow-In-Progress cluster.
+- `--ready` — Rust drops blocked rows before delivery; no Blocked
+  section appears in the output.
+- `--blocked` — Rust keeps only blocked rows; only the Blocked
+  section appears.
+- `--decomposed` — Rust keeps only decomposed rows; only the
+  Decomposed section appears.
+- `--quick-start` — Rust keeps only decomposed, non-blocked,
+  non-Flow-In-Progress rows; the Decomposed section renders with no
+  🟡 cluster.
 - `--label <name>` — server-side filter passed to `gh issue list`
   (repeatable; multiple labels combine with AND).
 - `--milestone <title>` — server-side milestone filter
@@ -135,7 +142,12 @@ Parse the JSON output. The shape is:
 ```
 
 If `status` is `"error"`, show the error message and stop.
-If `total` is 0, print the COMPLETE banner and stop.
+If `total` is 0 AND a filter flag was passed (`--ready`,
+`--blocked`, `--decomposed`, `--quick-start`, `--label`,
+`--milestone`), print "No issues matched the filter — run
+`/flow:flow-issues` without flags to see every open issue."
+before the COMPLETE banner. If `total` is 0 with no filter flag,
+print the COMPLETE banner and stop.
 
 ## Step 2 — Render the four sections
 
@@ -153,6 +165,13 @@ section whose condition matches:
 3. **Vanilla** — `vanilla == true` AND `decomposed == false` AND
    `blocked == false`.
 4. **Other** — everything else.
+
+The bucket assignment is independent of `flow_in_progress` and
+`triage_in_progress` — in-progress signals are visual treatment
+applied AFTER bucketing (see Color treatment below). A row that is
+in-progress lands in whichever bucket its primary labels select; the
+colored prefix and suppressed Command cell follow regardless of
+which bucket received the row.
 
 ### Columns
 
@@ -177,28 +196,47 @@ The Other, Vanilla, and Decomposed sections render four columns:
 - **Blocked By** (Blocked section only) is a comma-separated list of
   `[#N](url)` entries from `blocked_by`, or `—` when `blocked_by` is
   empty but `blocked == true` (label-only block).
-- **Command** depends on the bucket:
+- **Command** depends on the bucket AND the in-progress signal.
+  When `flow_in_progress == true` OR `triage_in_progress == true`,
+  the Command cell renders `—` REGARDLESS of bucket — the colored
+  prefix signals "someone else owns this" and the empty Command
+  prevents a second engineer from firing a redundant slash command.
+  Otherwise:
   - Blocked section: `—`.
-  - Other section, NOT triage-in-progress: ```/flow:flow-explore work on issue #N```
-  - Other section, triage-in-progress: `—` (a 🔍 row signals work in
-    flight; the Command cell stays empty).
+  - Other section: ```/flow:flow-explore work on issue #N```
   - Vanilla section: ```/flow:flow-plan #N```
-  - Decomposed section, NOT flow-in-progress: ```/flow:flow-start #N```
-  - Decomposed section, flow-in-progress: `—` (a 🟡 row is already
-    being worked; the Command cell stays empty).
+  - Decomposed section: ```/flow:flow-start #N```
 - **Empty-cell convention.** Every empty cell renders as `—`.
+- **Markdown safety.** Issue titles and assignee logins flow from
+  GitHub unescaped. Before rendering, escape `|`, `\`, `\n`, `\r`
+  in every Title and Assignee cell (replace `|` with `\|`, `\` with
+  `\\`, newlines and carriage returns with spaces). Never render
+  HTML from titles — treat angle brackets, `[`, `]`, `(`, `)` as
+  literal characters by wrapping the cell content in backticks for
+  any title that contains them. The same escaping applies to
+  Blocked-By URL link text. Per
+  `.claude/rules/subprocess-argument-escaping.md`, external data
+  must be escaped at the rendering boundary; an unescaped pipe in
+  a title breaks the table for every downstream row, and an
+  unescaped image tag in a title can exfiltrate the viewer's
+  request to a third-party server.
 
 ### Color treatment
 
-Rows carrying the canonical FLOW labels get visual treatment:
+Rows carrying the canonical FLOW labels get visual treatment that
+applies regardless of bucket:
 
-- `flow_in_progress == true` (Flow In-Progress label, Decomposed
-  section only) → 🟡 prefix on the bold Title cell, Command suppressed.
-- `triage_in_progress == true` (Triage In-Progress label, Other
-  section only) → 🔍 prefix on the bold Title cell, Command suppressed.
+- `flow_in_progress == true` (Flow In-Progress label) → 🟡 prefix
+  on the bold Title cell, Command suppressed.
+- `triage_in_progress == true` (Triage In-Progress label) → 🔍
+  prefix on the bold Title cell, Command suppressed.
 
-Both prefixes co-occur with bold Title and a suppressed Command cell
-per the bucket rules above.
+The prefix follows the row into whichever bucket it lands; a
+Flow-In-Progress row in the Vanilla bucket still renders 🟡, a
+Triage-In-Progress row in the Blocked bucket still renders 🔍. The
+cross-engineer WIP signal documented in `CLAUDE.md` "The 'Flow
+In-Progress' label on issues is the cross-engineer WIP detection
+mechanism" is honored from every section.
 
 ### Sort rules
 
@@ -210,13 +248,19 @@ per the bucket rules above.
 
 ### Filter flag effect
 
-- No flag → render all four sections in order.
-- `--ready` → skip the Blocked section.
-- `--blocked` → render only the Blocked section.
-- `--decomposed` → render only the Decomposed section.
-- `--quick-start` → render the Decomposed section without the 🟡 colored
-  cluster.
-- `--label` / `--milestone` → render whichever sections the surviving
+Filtering happens in `bin/flow analyze-issues` at the Rust layer,
+not at the rendering layer — the `issues` array delivered to the
+renderer already reflects the active filter. Empty sections do not
+render. The user-facing effect of each flag:
+
+- No flag → all four sections in order.
+- `--ready` → Blocked section absent (Rust dropped blocked rows).
+- `--blocked` → only Blocked section appears.
+- `--decomposed` → only Decomposed section appears.
+- `--quick-start` → only Decomposed section appears, no 🟡 cluster
+  (Rust dropped both blocked AND flow_in_progress rows before
+  delivery).
+- `--label` / `--milestone` → whichever sections the surviving
   rows populate.
 
 After the sections are rendered, output the following banner in your response (not via Bash) inside a fenced code block:
