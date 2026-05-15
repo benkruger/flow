@@ -2009,7 +2009,7 @@ fn most_recent_user_message_since_skill_action_returns_string_content_user_turn_
 {\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"wait, hold up\"}}\n";
     let path = crate::common::transcript_fixture(home, "p", jsonl);
     assert_eq!(
-        most_recent_user_message_since_skill_action(&path, home, TRANSCRIPT_BYTE_CAP),
+        most_recent_user_message_since_skill_action(&path, home),
         Some("wait, hold up".to_string()),
     );
 }
@@ -2027,7 +2027,7 @@ fn most_recent_user_message_since_skill_action_skips_tool_result_array_wrappers(
 {\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"real prose\"}}\n";
     let path = crate::common::transcript_fixture(home, "p", jsonl);
     assert_eq!(
-        most_recent_user_message_since_skill_action(&path, home, TRANSCRIPT_BYTE_CAP),
+        most_recent_user_message_since_skill_action(&path, home),
         Some("real prose".to_string()),
     );
 }
@@ -2043,7 +2043,7 @@ fn most_recent_user_message_since_skill_action_returns_none_when_no_user_turn_af
 {\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n";
     let path = crate::common::transcript_fixture(home, "p", jsonl);
     assert_eq!(
-        most_recent_user_message_since_skill_action(&path, home, TRANSCRIPT_BYTE_CAP),
+        most_recent_user_message_since_skill_action(&path, home),
         None,
     );
 }
@@ -2061,32 +2061,7 @@ fn most_recent_user_message_since_skill_action_returns_none_when_no_skill_action
 {\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"goodbye\"}}\n";
     let path = crate::common::transcript_fixture(home, "p", jsonl);
     assert_eq!(
-        most_recent_user_message_since_skill_action(&path, home, TRANSCRIPT_BYTE_CAP),
-        None,
-    );
-}
-
-#[test]
-fn most_recent_user_message_since_skill_action_byte_cap_regression() {
-    // A user turn + Skill call sit at the file's HEAD, then padding
-    // pushes them past the tail cap. The capped read sees only the
-    // tail bytes, which have no parseable Skill call — helper
-    // returns `None`. Locks in the byte-cap bound per
-    // `.claude/rules/external-input-path-construction.md`.
-    let dir = tempfile::tempdir().unwrap();
-    let home = dir.path();
-    let proj = home.join(".claude").join("projects").join("p");
-    fs::create_dir_all(&proj).unwrap();
-    let path = proj.join("byte-cap.jsonl");
-    let leading = b"{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n\
-{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"buried\"}}\n";
-    let small_cap: u64 = 1024;
-    let mut content: Vec<u8> = leading.to_vec();
-    let padding_size = (small_cap as usize) + 1024;
-    content.extend(std::iter::repeat_n(b'\n', padding_size));
-    fs::write(&path, &content).unwrap();
-    assert_eq!(
-        most_recent_user_message_since_skill_action(&path, home, small_cap),
+        most_recent_user_message_since_skill_action(&path, home),
         None,
     );
 }
@@ -2104,7 +2079,7 @@ fn most_recent_user_message_since_skill_action_rejects_unsafe_transcript_path() 
     let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n";
     fs::write(&stray, jsonl).unwrap();
     assert_eq!(
-        most_recent_user_message_since_skill_action(&stray, home, TRANSCRIPT_BYTE_CAP),
+        most_recent_user_message_since_skill_action(&stray, home),
         None,
     );
 }
@@ -2124,8 +2099,26 @@ fn most_recent_user_message_since_skill_action_non_utf8_file_returns_none() {
     // continuation byte), so the pair is invalid UTF-8.
     fs::write(&path, [0xC3u8, 0x28u8]).unwrap();
     assert_eq!(
-        most_recent_user_message_since_skill_action(&path, home, TRANSCRIPT_BYTE_CAP),
+        most_recent_user_message_since_skill_action(&path, home),
         None,
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_skips_empty_lines() {
+    // A blank line between the Skill call and the user turn must be
+    // skipped via the `if trimmed.is_empty() { continue; }` branch
+    // without affecting the candidate. JSONL transcripts can carry
+    // blank lines from interrupted writes or hand-edits.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n\
+\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hold up\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home),
+        Some("hold up".to_string()),
     );
 }
 
@@ -2142,7 +2135,7 @@ not valid json at all\n\
 {\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hold up\"}}\n";
     let path = crate::common::transcript_fixture(home, "p", jsonl);
     assert_eq!(
-        most_recent_user_message_since_skill_action(&path, home, TRANSCRIPT_BYTE_CAP),
+        most_recent_user_message_since_skill_action(&path, home),
         Some("hold up".to_string()),
     );
 }
@@ -2161,7 +2154,7 @@ fn most_recent_user_message_since_skill_action_unknown_turn_type_skipped() {
 {\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hold up\"}}\n";
     let path = crate::common::transcript_fixture(home, "p", jsonl);
     assert_eq!(
-        most_recent_user_message_since_skill_action(&path, home, TRANSCRIPT_BYTE_CAP),
+        most_recent_user_message_since_skill_action(&path, home),
         Some("hold up".to_string()),
     );
 }

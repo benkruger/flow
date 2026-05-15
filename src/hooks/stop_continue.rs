@@ -417,7 +417,6 @@ pub fn check_autonomous_stop(
             crate::hooks::transcript_walker::most_recent_user_message_since_skill_action(
                 Path::new(p),
                 home,
-                crate::hooks::transcript_walker::TRANSCRIPT_BYTE_CAP,
             )
         }
         _ => None,
