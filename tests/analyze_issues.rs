@@ -635,6 +635,30 @@ fn empty_labels_lib() {
 }
 
 #[test]
+fn analyze_issues_emits_high_priority_field_lib() {
+    let issues = vec![
+        json!({
+            "number": 1,
+            "title": "Urgent bug",
+            "url": "https://example.com/1",
+            "labels": [{"name": "High Priority"}],
+        }),
+        json!({
+            "number": 2,
+            "title": "Routine bug",
+            "url": "https://example.com/2",
+            "labels": [{"name": "Bug"}],
+        }),
+    ];
+    let result = analyze_issues(&issues, &HashMap::new());
+    let issues_arr = result["issues"].as_array().unwrap();
+    let row1 = issues_arr.iter().find(|i| i["number"] == 1).unwrap();
+    assert_eq!(row1["high_priority"], true);
+    let row2 = issues_arr.iter().find(|i| i["number"] == 2).unwrap();
+    assert_eq!(row2["high_priority"], false);
+}
+
+#[test]
 fn build_blocker_query_single_issue_lib() {
     let query = build_blocker_query(&[10]);
     assert!(query.contains("issue_10: issue(number: 10)"));

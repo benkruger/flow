@@ -392,6 +392,7 @@ pub fn analyze_issues(issues: &[Value], blocker_map: &HashMap<i64, Vec<Value>>) 
             "vanilla": label_flags.vanilla,
             "flow_in_progress": label_flags.flow_in_progress,
             "triage_in_progress": label_flags.triage_in_progress,
+            "high_priority": label_flags.high_priority,
         }));
     }
 
