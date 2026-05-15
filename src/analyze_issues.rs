@@ -2,10 +2,10 @@
 //!
 //! Produces a flat `issues` array enriched with per-row label flags
 //! (`decomposed`, `blocked`, `vanilla`, `flow_in_progress`,
-//! `triage_in_progress`), assignees, and resolved `blocked_by`
-//! entries that carry both `number` and a fully-constructed
-//! GitHub URL. The dashboard renderer reads one stream and
-//! dispatches by label.
+//! `triage_in_progress`, `high_priority`), assignees, and resolved
+//! `blocked_by` entries that carry both `number` and a
+//! fully-constructed GitHub URL. The dashboard renderer reads one
+//! stream and dispatches by label.
 //!
 //! Tests live at `tests/analyze_issues.rs` per
 //! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]` in
@@ -20,16 +20,20 @@ use serde_json::Value;
 /// `decomposed` and `blocked` choose the section, `vanilla` marks
 /// the Vanilla bucket, and `flow_in_progress` / `triage_in_progress`
 /// flag rows that the renderer prefixes (🟡 / 🔍) with bold title
-/// and a suppressed Command cell.
+/// and a suppressed Command cell. `high_priority` flags rows that
+/// the renderer prefixes (🔥) regardless of bucket; the 🔥 prefix
+/// is additive — it does not bold the Title, does not suppress the
+/// Command cell, and does not participate in sort clustering.
 pub struct LabelFlags {
     pub decomposed: bool,
     pub blocked: bool,
     pub vanilla: bool,
     pub flow_in_progress: bool,
     pub triage_in_progress: bool,
+    pub high_priority: bool,
 }
 
-/// Check for canonical FLOW labels. All five labels match
+/// Check for canonical FLOW labels. All six labels match
 /// case-insensitively because GitHub's label registry is
 /// case-preserving and historic data may use mixed case. A repo
 /// that records `flow in-progress` as the label string still
@@ -56,6 +60,9 @@ pub fn detect_labels(labels: &[Value]) -> LabelFlags {
         triage_in_progress: label_names
             .iter()
             .any(|n| n.eq_ignore_ascii_case("Triage In-Progress")),
+        high_priority: label_names
+            .iter()
+            .any(|n| n.eq_ignore_ascii_case("High Priority")),
     }
 }
 

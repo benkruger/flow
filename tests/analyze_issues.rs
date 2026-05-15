@@ -582,6 +582,42 @@ fn no_blocked_label_lib() {
 }
 
 #[test]
+fn detects_high_priority_label_canonical_case_lib() {
+    let labels = vec![json!({"name": "High Priority"})];
+    assert!(detect_labels(&labels).high_priority);
+}
+
+#[test]
+fn detects_high_priority_label_lowercase_lib() {
+    let labels = vec![json!({"name": "high priority"})];
+    assert!(detect_labels(&labels).high_priority);
+}
+
+#[test]
+fn detects_high_priority_label_uppercase_lib() {
+    let labels = vec![json!({"name": "HIGH PRIORITY"})];
+    assert!(detect_labels(&labels).high_priority);
+}
+
+#[test]
+fn detects_high_priority_label_rejects_hyphenated_lib() {
+    let labels = vec![json!({"name": "high-priority"})];
+    assert!(!detect_labels(&labels).high_priority);
+}
+
+#[test]
+fn detects_high_priority_label_rejects_no_space_lib() {
+    let labels = vec![json!({"name": "highpriority"})];
+    assert!(!detect_labels(&labels).high_priority);
+}
+
+#[test]
+fn detects_no_high_priority_label_lib() {
+    let labels = vec![json!({"name": "Bug"})];
+    assert!(!detect_labels(&labels).high_priority);
+}
+
+#[test]
 fn no_special_labels_lib() {
     let labels = vec![json!({"name": "Bug"})];
     let result = detect_labels(&labels);
