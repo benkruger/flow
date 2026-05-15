@@ -139,19 +139,22 @@ In this step, the skill:
   proposed framing, summarizing what has been agreed, asking
   what's still unclear.
 
+Reading source files via the Read tool, grepping, and globbing is
+permitted so the discussion can ground claims in observed behavior.
+The boundary the skill enforces is composition discipline:
+translate code-grounded findings into user-visible prose when
+capturing the problem statement. A claim like "the system rejects
+the operation" belongs in the body; the file path and line where
+the rejection lives does not. The vanilla validator emits soft
+warnings for `src/` paths, `tests/` paths, and
+`identifier::identifier` references that slip into the captured
+sections so Step 5 can revise the body once before filing.
+
 <HARD-GATE>
 
 Discussion mode forbids action AND forbids implementation work.
 While in this step, the skill must NOT:
 
-- **Read source code.** This skill captures problem statements,
-  not designs. Reading `src/` or production code shifts the
-  discussion into Tech Lead territory and produces an issue body
-  that smuggles in implementation details. When the user asks
-  about how a thing works internally, redirect: "That's an
-  implementation question for `/flow:flow-plan #N` after we file
-  the problem statement here." Reading prior GitHub issues via
-  `gh issue view` is fine — those are user-visible artifacts.
 - **Never invoke `decompose:decompose`.** Decomposition is
   implementation work and belongs in `/flow:flow-plan #N`.
 - **Write FLOW-PLAN sentinel markers** (`<!-- FLOW-PLAN-BEGIN -->`
@@ -372,8 +375,25 @@ GitHub:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow validate-issue-body --mode vanilla --body-file .flow-issue-body-<id>
 ```
 
-Parse the JSON output. If `status` is `ok`, proceed to the filer
-invocation below. If `status` is `error`, run the auto-fix loop:
+Parse the JSON output. If `status` is `ok`, run the code-reference
+warnings handler below before proceeding to the filer invocation.
+If `status` is `error`, run the auto-fix loop:
+
+#### Code-Reference Warnings Handler
+
+Parse the `warnings` field on the success envelope. When `warnings`
+is non-empty, render the entries inline so the user sees what was
+flagged (pattern, line number, snippet). Revise the body once in
+working memory to translate the code references into user-visible
+prose, write the revised body to the same temp file, and re-run the
+validator. File whatever the second validation produces — the
+warnings handler is non-blocking and runs at most once.
+
+When `warnings` is empty or absent, file directly.
+
+The 5-attempt auto-fix loop handles `status: error` (structural
+rejections); the warnings handler is a separate, single-pass softer
+mechanism for `status: ok` with code-reference matches.
 
 #### Validator Auto-Fix Loop (max 5 retries)
 
@@ -447,12 +467,6 @@ slash command directly.
 
 ## Hard Rules
 
-- **Never read source code during discussion.** This skill captures
-  problem statements, not designs. Reading `src/`,
-  production code, or repo-tracked implementation files shifts the
-  conversation into Tech Lead territory. Reading prior GitHub
-  issues via `gh issue view` is fine — those are user-visible
-  artifacts.
 - **Never invoke `decompose:decompose`.** Decomposition is
   implementation work and belongs in `/flow:flow-plan #N`.
 - **Never write FLOW-PLAN sentinel markers** in issue bodies or
