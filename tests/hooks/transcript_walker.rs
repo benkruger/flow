@@ -1592,28 +1592,6 @@ fn verify_agent_returned_ignores_malformed_jsonl_lines() {
 }
 
 #[test]
-fn verify_agent_returned_handles_oversized_transcript_via_tail_cap() {
-    use std::fs;
-    let dir = tempfile::tempdir().unwrap();
-    let home = dir.path();
-    let proj = home.join(".claude").join("projects").join("p");
-    fs::create_dir_all(&proj).unwrap();
-    let path = proj.join("oversized.jsonl");
-    let head_marker = b"{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"id\":\"toolu_b1\",\"input\":{\"command\":\"bin/flow phase-enter --phase flow-review\"}}]}}\n";
-    let mut content: Vec<u8> = head_marker.to_vec();
-    let padding_size = (TRANSCRIPT_BYTE_CAP as usize) + 1024;
-    content.extend(std::iter::repeat_n(b'\n', padding_size));
-    fs::write(&path, &content).unwrap();
-    // The marker is at the file's head; the tail-cap means it falls
-    // off the visible window and the verifier reports
-    // phase_marker_not_found.
-    assert_eq!(
-        verify_agent_returned_in_phase(&path, home, "reviewer", "flow-review"),
-        Err("phase_marker_not_found".to_string())
-    );
-}
-
-#[test]
 fn verify_agent_returned_reports_phase_marker_not_found_for_non_utf8_content() {
     use std::fs;
     let dir = tempfile::tempdir().unwrap();
@@ -1731,6 +1709,53 @@ fn verify_agent_returned_skips_non_tool_result_block_in_result_search() {
     jsonl.push_str(agent_block);
     jsonl.push_str(mixed_user_turn);
     let path = crate::common::transcript_fixture(home, "p", &jsonl);
+    assert_eq!(
+        verify_agent_returned_in_phase(&path, home, "reviewer", "flow-review"),
+        Ok(())
+    );
+}
+
+#[test]
+fn verify_agent_returned_finds_phase_marker_in_oversized_transcript() {
+    // Builds a synthetic transcript larger than TRANSCRIPT_BYTE_CAP
+    // (50 MB) with the phase-enter Bash marker at line 1, filler
+    // turns padding the file past the cap, then the Agent tool_use
+    // and its paired tool_result at the tail. A pre-fix verifier
+    // (read_capped(path, TRANSCRIPT_BYTE_CAP)) would have seeked
+    // past the head and missed the marker — returning
+    // Err("phase_marker_not_found"). With the verifier reading
+    // uncapped via read_full, the head marker is visible, the
+    // forward scan finds the Agent tool_use and the matching
+    // tool_result, and the verifier returns Ok(()).
+    //
+    // The fixture is composed as a single String and written via
+    // one fs::write, allocating ~51 MB transiently. Acceptable on
+    // any modern dev machine; the test runtime is roughly 1-2s on
+    // SSD.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let proj = home.join(".claude").join("projects").join("oversized");
+    fs::create_dir_all(&proj).unwrap();
+    let path = proj.join("session.jsonl");
+
+    let marker_turn = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"id\":\"toolu_bash_marker\",\"input\":{\"command\":\"bin/flow phase-enter --phase flow-review\"}}]}}\n";
+    let agent_turn = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Agent\",\"id\":\"test-id-1\",\"input\":{\"subagent_type\":\"flow:reviewer\",\"description\":\"review\",\"prompt\":\"x\"}}]}}\n";
+    let result_turn = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"test-id-1\",\"content\":\"ok\"}]}}\n";
+    let filler = "{\"type\":\"system\",\"message\":{\"role\":\"system\",\"content\":\"filler\"}}\n";
+
+    let padding_target = (TRANSCRIPT_BYTE_CAP as usize) + 1024 * 1024;
+    let filler_count = padding_target / filler.len() + 1;
+    let mut content = String::with_capacity(
+        marker_turn.len() + filler_count * filler.len() + agent_turn.len() + result_turn.len(),
+    );
+    content.push_str(marker_turn);
+    for _ in 0..filler_count {
+        content.push_str(filler);
+    }
+    content.push_str(agent_turn);
+    content.push_str(result_turn);
+    fs::write(&path, content.as_bytes()).unwrap();
+
     assert_eq!(
         verify_agent_returned_in_phase(&path, home, "reviewer", "flow-review"),
         Ok(())

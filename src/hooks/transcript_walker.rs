@@ -681,10 +681,13 @@ pub fn most_recent_skill_since_user(path: &Path, home: &Path) -> Option<String> 
 ///   NUL bytes, relative paths, ParentDir components, and paths that
 ///   do not normalize under `<home>/.claude/projects/`.
 /// - `"phase_marker_not_found"` — no `phase-enter --phase <phase>`
-///   Bash tool_use is visible in the file's tail (read via
-///   `read_capped` with `TRANSCRIPT_BYTE_CAP`), OR `agent`/`phase`
-///   normalize to an empty string, OR the file cannot be read /
-///   parsed at all.
+///   Bash tool_use is visible in the transcript (read uncapped via
+///   `read_full`), OR `agent`/`phase` normalize to an empty string,
+///   OR the file cannot be read / parsed at all. The verifier reads
+///   the full transcript rather than the 50 MB tail because the
+///   `phase-enter` marker for a long-running phase can sit
+///   arbitrarily far back; a tail-bounded read would silently miss
+///   it on autonomous flows whose transcript grows past the cap.
 /// - `"tool_use_missing"` — no Agent tool_use with
 ///   `input.subagent_type == "flow:<agent>"` appears AFTER the most
 ///   recent phase-enter marker.
@@ -719,7 +722,7 @@ pub fn verify_agent_returned_in_phase(
     if agent_norm.is_empty() || phase_norm.is_empty() {
         return Err("phase_marker_not_found".to_string());
     }
-    let lines = match read_capped(path, TRANSCRIPT_BYTE_CAP) {
+    let lines = match read_full(path) {
         Some(s) => s,
         None => return Err("phase_marker_not_found".to_string()),
     };
