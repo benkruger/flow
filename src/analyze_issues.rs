@@ -326,10 +326,11 @@ pub fn blocker_result_to_map(
 ///
 /// Every input issue flows into a single `issues` array on the output
 /// envelope. Per-row label flags (`decomposed`, `blocked`,
-/// `flow_in_progress`, `triage_in_progress`, `vanilla`) carry the
-/// signal the consumer dispatches on; no top-level `in_progress`
-/// partition. The `blocker_map` maps issue numbers to open blocker
-/// numbers; native_blocked rows fold into `blocked`.
+/// `flow_in_progress`, `triage_in_progress`, `vanilla`,
+/// `high_priority`) carry the signal the consumer dispatches on; no
+/// top-level `in_progress` partition. The `blocker_map` maps issue
+/// numbers to open blocker numbers; native_blocked rows fold into
+/// `blocked`.
 pub fn analyze_issues(issues: &[Value], blocker_map: &HashMap<i64, Vec<Value>>) -> Value {
     if issues.is_empty() {
         return serde_json::json!({

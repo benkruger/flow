@@ -135,7 +135,8 @@ Parse the JSON output. The shape is:
       "assignees": ["alice"],
       "vanilla": false,
       "flow_in_progress": false,
-      "triage_in_progress": false
+      "triage_in_progress": false,
+      "high_priority": false
     }
   ]
 }
@@ -231,9 +232,12 @@ applies regardless of bucket:
 - `triage_in_progress == true` (Triage In-Progress label) → 🔍
   prefix on the bold Title cell, Command suppressed.
 - `high_priority == true` (High Priority label) → 🔥 prefix on the
-  Title cell. 🔥 does NOT bold the Title, does NOT suppress the
-  Command cell, and applies regardless of bucket — it is additive,
-  not exclusive with the other prefixes.
+  Title cell. 🔥 itself is not a Title-bolding signal and is not a
+  Command-suppressing signal — bucket-level Cell rules still
+  decide bolding and Command (a 🔥 row in the Blocked bucket
+  still renders Command as `—` per the Blocked bucket's rule).
+  The prefix applies regardless of bucket and is additive, not
+  exclusive with the other prefixes.
 
 The prefix follows the row into whichever bucket it lands; a
 Flow-In-Progress row in the Vanilla bucket still renders 🟡, a
