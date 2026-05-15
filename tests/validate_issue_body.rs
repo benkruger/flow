@@ -676,6 +676,123 @@ fn validate_vanilla_multiple_patterns_produce_multiple_warnings() {
 }
 
 #[test]
+fn validate_vanilla_same_line_multiple_patterns_in_priority_order() {
+    // A single body line containing both an src/ path and a
+    // module::function reference must emit two warnings — first the
+    // src/ match, then the module::function match. Locks the doc
+    // comment's pattern-declaration ordering claim.
+    let body = "## What\n\nProse.\n\n## Why\n\nsrc/foo.rs calls module::function here.\n\n## Acceptance Criteria\n\n- Criterion\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+    let warnings = value["warnings"].as_array().expect("warnings array");
+    assert_eq!(warnings.len(), 2, "expected two warnings, got {value}");
+    assert_eq!(warnings[0]["line"], warnings[1]["line"]);
+    assert_eq!(warnings[0]["pattern"], "src/foo.rs");
+    assert_eq!(warnings[1]["pattern"], "module::function");
+}
+
+#[test]
+fn validate_vanilla_multiple_src_paths_on_one_line_all_reported() {
+    // Both src/ paths on a single line must produce two warnings —
+    // find_iter emits every match per pattern per line.
+    let body = "## What\n\nProse.\n\n## Why\n\nThe handlers in src/foo.rs and src/bar.rs are wrong.\n\n## Acceptance Criteria\n\n- Criterion\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+    let warnings = value["warnings"].as_array().expect("warnings array");
+    assert_eq!(warnings.len(), 2, "expected two warnings, got {value}");
+    assert_eq!(warnings[0]["pattern"], "src/foo.rs");
+    assert_eq!(warnings[1]["pattern"], "src/bar.rs");
+    assert_eq!(warnings[0]["line"], warnings[1]["line"]);
+}
+
+#[test]
+fn validate_vanilla_trims_trailing_period_from_pattern() {
+    // Sentence-ending period adjacent to a path must not bleed into
+    // the reported pattern field.
+    let body = "## What\n\nProse.\n\n## Why\n\nThe file is src/foo.rs.\n\n## Acceptance Criteria\n\n- Criterion\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    let warnings = value["warnings"].as_array().expect("warnings array");
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0]["pattern"], "src/foo.rs");
+}
+
+#[test]
+fn validate_vanilla_trims_trailing_comma_from_pattern() {
+    // Comma in a list of paths must not bleed into the pattern of
+    // the first match.
+    let body = "## What\n\nProse.\n\n## Why\n\nFiles: src/foo.rs, src/bar.rs.\n\n## Acceptance Criteria\n\n- Criterion\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    let warnings = value["warnings"].as_array().expect("warnings array");
+    assert!(!warnings.is_empty());
+    assert_eq!(warnings[0]["pattern"], "src/foo.rs");
+}
+
+#[test]
+fn validate_vanilla_trims_closing_backtick_from_pattern() {
+    // Backtick-wrapped path in Markdown prose must report the clean
+    // path without the trailing backtick.
+    let body = "## What\n\nProse.\n\n## Why\n\nThe handler in `src/foo.rs` misbehaves.\n\n## Acceptance Criteria\n\n- Criterion\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    let warnings = value["warnings"].as_array().expect("warnings array");
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0]["pattern"], "src/foo.rs");
+}
+
+#[test]
+fn validate_vanilla_matches_path_after_non_ascii_letter() {
+    // ASCII-only word boundary keeps the match alive when a non-ASCII
+    // alphabetic character precedes the path. A Unicode-aware \b
+    // would treat both characters as word chars and suppress the
+    // boundary; (?-u:\b) sees the byte transition cleanly.
+    let body = "## What\n\nProse.\n\n## Why\n\nThe behavior αsrc/foo.rs misbehaves.\n\n## Acceptance Criteria\n\n- Criterion\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    let warnings = value["warnings"].as_array().expect("warnings array");
+    assert_eq!(warnings.len(), 1, "expected one warning, got {value}");
+    assert_eq!(warnings[0]["pattern"], "src/foo.rs");
+}
+
+#[test]
+fn validate_vanilla_snippet_preserves_leading_whitespace() {
+    // A code-block-indented line containing a path must keep its
+    // leading whitespace in the snippet field so the user sees the
+    // indentation context. trim_end strips only trailing whitespace.
+    let body =
+        "## What\n\nProse.\n\n## Why\n\n    src/foo.rs\n\n## Acceptance Criteria\n\n- Criterion\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let (value, code) = run_vanilla(&path);
+    assert_eq!(code, 0);
+    let warnings = value["warnings"].as_array().expect("warnings array");
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0]["snippet"], "    src/foo.rs");
+}
+
+#[test]
 fn validate_decomposed_does_not_emit_warnings() {
     // Decomposed mode is untouched by the warnings scan. A valid
     // decomposed body that contains src/foo.rs inside the plan

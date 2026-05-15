@@ -43,14 +43,19 @@
 //! structural triad checks succeed, the vanilla branch walks the
 //! body line-by-line and emits a `warnings` array of
 //! `{pattern, line, snippet}` entries for `src/` paths, `tests/`
-//! paths, and `identifier::identifier` symbol references. The
-//! field is always present on vanilla success envelopes (empty
-//! array when no matches). Decomposed success envelopes never
-//! carry the field. Per
-//! `.claude/rules/gate-consumer-enumeration.md`, the consumer of
-//! the new field is `skills/flow-explore/SKILL.md` Step 5, which
-//! renders entries inline when non-empty, revises the body once in
-//! working memory, and re-validates before filing.
+//! paths, and `identifier::identifier` symbol references. Every
+//! occurrence on a line is emitted (not just the first per
+//! pattern), the matched `pattern` is stripped of trailing prose
+//! punctuation, `snippet` preserves leading indentation, and
+//! word boundaries are ASCII-only so a non-ASCII letter directly
+//! adjacent to a path does not suppress the match. The field is
+//! always present on vanilla success envelopes (empty array when
+//! no matches). Decomposed success envelopes never carry the
+//! field. Per `.claude/rules/gate-consumer-enumeration.md`, the
+//! consumer of the new field is `skills/flow-explore/SKILL.md`
+//! Step 5, which renders entries inline when non-empty, revises
+//! the body once in working memory, and re-validates before
+//! filing.
 //!
 //! Tests live at `tests/validate_issue_body.rs` per
 //! `.claude/rules/test-placement.md`.
@@ -259,17 +264,38 @@ fn validate_vanilla(body: &str) -> (Value, i32) {
     (json!({"status": "ok", "warnings": warnings}), 0)
 }
 
-/// Walk the body line-by-line and return code-reference warnings
-/// in `(line ascending, pattern priority)` order.
+/// Walk the body line-by-line and return code-reference warnings.
 ///
 /// Three regex patterns flag the most common shapes a participant
 /// reaches for when grounding a problem statement in observed code
 /// behavior:
 ///
-/// - `\bsrc/\S+` — `src/foo.rs`-style production-path references
-/// - `\btests/\S+` — `tests/bar.rs`-style test-path references
-/// - `\b[A-Za-z_]\w*::[A-Za-z_]\w*\b` — `module::function` symbol
+/// - `(?-u:\b)src/\S+` — `src/foo.rs`-style production-path
 ///   references
+/// - `(?-u:\b)tests/\S+` — `tests/bar.rs`-style test-path
+///   references
+/// - `(?-u:\b)[A-Za-z_]\w*::[A-Za-z_]\w*(?-u:\b)` —
+///   `module::function` symbol references
+///
+/// Word boundaries are ASCII-only (`(?-u:\b)`) so a non-ASCII
+/// letter directly adjacent to the path does not suppress the
+/// match — a Unicode-aware `\b` would treat α and s as both
+/// alphabetic, masking `αsrc/foo.rs` from the scan.
+///
+/// Emission order: line-ascending; within a single line,
+/// matches appear in pattern-declaration order (`src/` paths
+/// first, `tests/` paths second, `module::function` third); within
+/// a single pattern on a single line, every occurrence is emitted
+/// via `find_iter` so a line like `"see src/foo.rs and src/bar.rs"`
+/// produces two `src/` warnings instead of one.
+///
+/// The matched substring is trimmed of trailing prose punctuation
+/// (`.,;:)"'\`]`) before being recorded in the `pattern` field so a
+/// sentence-terminal period (`"in src/foo.rs."`) is not absorbed
+/// into the reported reference. The `snippet` field trims
+/// trailing-only whitespace via `trim_end`, preserving leading
+/// indentation so a code-block reference is distinguishable from a
+/// flush-left prose reference.
 ///
 /// The scan is intentionally narrow. Config paths (`.flow.json`,
 /// `CLAUDE.md`) and rule-file references do not trigger; backtick
@@ -280,25 +306,39 @@ fn validate_vanilla(body: &str) -> (Value, i32) {
 /// absorbs.
 fn scan_for_code_references(body: &str) -> Vec<Value> {
     let patterns: [Regex; 3] = [
-        Regex::new(r"\bsrc/\S+").expect("static src/ pattern compiles"),
-        Regex::new(r"\btests/\S+").expect("static tests/ pattern compiles"),
-        Regex::new(r"\b[A-Za-z_]\w*::[A-Za-z_]\w*\b")
+        Regex::new(r"(?-u:\b)src/\S+").expect("static src/ pattern compiles"),
+        Regex::new(r"(?-u:\b)tests/\S+").expect("static tests/ pattern compiles"),
+        Regex::new(r"(?-u:\b)[A-Za-z_]\w*::[A-Za-z_]\w*(?-u:\b)")
             .expect("static double-colon pattern compiles"),
     ];
     let mut warnings: Vec<Value> = Vec::new();
     for (idx, line) in body.lines().enumerate() {
         let line_no = idx + 1;
         for pattern in &patterns {
-            if let Some(m) = pattern.find(line) {
+            for m in pattern.find_iter(line) {
                 warnings.push(json!({
-                    "pattern": m.as_str(),
+                    "pattern": trim_trailing_punctuation(m.as_str()),
                     "line": line_no,
-                    "snippet": line.trim(),
+                    "snippet": line.trim_end(),
                 }));
             }
         }
     }
     warnings
+}
+
+/// Strip prose-terminal punctuation from a matched reference so a
+/// sentence-ending period or list-separating comma does not bleed
+/// into the reported pattern.
+///
+/// Trims any trailing `.,;:)"'\`]` characters. The closing bracket
+/// `]` is included so a path inside `[src/foo.rs]` (Markdown link
+/// or array notation) reports the clean path. The set is closed —
+/// no greedy stripping of `?` or `!` because those characters
+/// rarely follow paths in prose and stripping them would obscure
+/// genuine identifier shapes like `traits::Iter!`.
+fn trim_trailing_punctuation(s: &str) -> &str {
+    s.trim_end_matches(['.', ',', ';', ':', ')', '"', '\'', '`', ']'])
 }
 
 /// Returns true when `body` contains a line whose trimmed content

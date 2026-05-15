@@ -145,10 +145,18 @@ The boundary the skill enforces is composition discipline:
 translate code-grounded findings into user-visible prose when
 capturing the problem statement. A claim like "the system rejects
 the operation" belongs in the body; the file path and line where
-the rejection lives does not. The vanilla validator emits soft
-warnings for `src/` paths, `tests/` paths, and
-`identifier::identifier` references that slip into the captured
-sections so Step 5 can revise the body once before filing.
+the rejection lives does not.
+
+Concretely, the vanilla validator flags three classes of
+code-reference shape that must be translated out of the captured
+sections before filing: repository-relative paths beginning with
+`src/` or `tests/`, and fully-qualified symbol names of the form
+`identifier::identifier`. Other implementation-shape leakage
+(function names without `::`, struct names, JSON field names, line
+numbers) is not mechanically flagged — translate those out by the
+same composition-discipline standard while you write. Step 5's
+Code-Reference Warnings Handler surfaces the three flagged shapes
+inline so you can revise the body once before filing.
 
 <HARD-GATE>
 
@@ -388,6 +396,12 @@ working memory to translate the code references into user-visible
 prose, write the revised body to the same temp file, and re-run the
 validator. File whatever the second validation produces — the
 warnings handler is non-blocking and runs at most once.
+
+If the second validation also returns `status: ok` with a non-empty
+`warnings` array, render those residual entries inline before
+filing so the user sees which references the single revision pass
+left behind. Do not loop further; the handler is single-pass by
+design.
 
 When `warnings` is empty or absent, file directly.
 
