@@ -582,6 +582,42 @@ fn no_blocked_label_lib() {
 }
 
 #[test]
+fn detects_high_priority_label_canonical_case_lib() {
+    let labels = vec![json!({"name": "High Priority"})];
+    assert!(detect_labels(&labels).high_priority);
+}
+
+#[test]
+fn detects_high_priority_label_lowercase_lib() {
+    let labels = vec![json!({"name": "high priority"})];
+    assert!(detect_labels(&labels).high_priority);
+}
+
+#[test]
+fn detects_high_priority_label_uppercase_lib() {
+    let labels = vec![json!({"name": "HIGH PRIORITY"})];
+    assert!(detect_labels(&labels).high_priority);
+}
+
+#[test]
+fn detects_high_priority_label_rejects_hyphenated_lib() {
+    let labels = vec![json!({"name": "high-priority"})];
+    assert!(!detect_labels(&labels).high_priority);
+}
+
+#[test]
+fn detects_high_priority_label_rejects_no_space_lib() {
+    let labels = vec![json!({"name": "highpriority"})];
+    assert!(!detect_labels(&labels).high_priority);
+}
+
+#[test]
+fn detects_no_high_priority_label_lib() {
+    let labels = vec![json!({"name": "Bug"})];
+    assert!(!detect_labels(&labels).high_priority);
+}
+
+#[test]
 fn no_special_labels_lib() {
     let labels = vec![json!({"name": "Bug"})];
     let result = detect_labels(&labels);
@@ -596,6 +632,30 @@ fn empty_labels_lib() {
     assert!(!result.flow_in_progress);
     assert!(!result.decomposed);
     assert!(!result.blocked);
+}
+
+#[test]
+fn analyze_issues_emits_high_priority_field_lib() {
+    let issues = vec![
+        json!({
+            "number": 1,
+            "title": "Urgent bug",
+            "url": "https://example.com/1",
+            "labels": [{"name": "High Priority"}],
+        }),
+        json!({
+            "number": 2,
+            "title": "Routine bug",
+            "url": "https://example.com/2",
+            "labels": [{"name": "Bug"}],
+        }),
+    ];
+    let result = analyze_issues(&issues, &HashMap::new());
+    let issues_arr = result["issues"].as_array().unwrap();
+    let row1 = issues_arr.iter().find(|i| i["number"] == 1).unwrap();
+    assert_eq!(row1["high_priority"], true);
+    let row2 = issues_arr.iter().find(|i| i["number"] == 2).unwrap();
+    assert_eq!(row2["high_priority"], false);
 }
 
 #[test]

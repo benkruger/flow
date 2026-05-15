@@ -35,9 +35,9 @@ or closes issues.
 
 1. Runs `bin/flow analyze-issues` which calls `gh issue list`
    internally, parses the JSON, detects FLOW labels (`Decomposed`,
-   `Blocked`, `Vanilla`, `Flow In-Progress`, `Triage In-Progress`),
-   collects per-row `assignees`, and resolves native GitHub
-   `blocked_by` entries to `[{number, url}]` pairs.
+   `Blocked`, `Vanilla`, `Flow In-Progress`, `Triage In-Progress`,
+   `High Priority`), collects per-row `assignees`, and resolves
+   native GitHub `blocked_by` entries to `[{number, url}]` pairs.
 2. Walks the flat `issues` array and assigns each row to the first
    matching bucket: **Blocked** (`blocked == true`), then
    **Decomposed** (`decomposed == true`), then **Vanilla**
@@ -54,11 +54,18 @@ or closes issues.
    suppressed. Rows with `flow_in_progress == true` (🟡, Decomposed
    section) and `triage_in_progress == true` (🔍, Other section)
    carry a colored prefix on the bold Title cell and suppress the
-   Command cell — the row signals "someone else owns this".
+   Command cell — the row signals "someone else owns this". Rows
+   with `high_priority == true` (🔥, any bucket) carry an additive
+   prefix on the Title cell — 🔥 itself does not bold the Title or
+   suppress the Command (bucket-level Cell rules still decide
+   bolding and Command). When 🔥 stacks with 🟡 or 🔍 on the same
+   row, 🔥 leads: `🔥 🟡 **Title**` or `🔥 🔍 **Title**`.
 5. Sort within sections: Blocked and Vanilla by issue number
    descending; Other and Decomposed cluster colored rows first
    (🔍 / 🟡), then sort by issue number descending within each
-   cluster. Empty cells render as `—`.
+   cluster. `high_priority` does not participate in sort
+   clustering — 🔥 rows stay in their bucket's normal
+   number-descending order. Empty cells render as `—`.
 
 ---
 

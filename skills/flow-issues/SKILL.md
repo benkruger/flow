@@ -135,7 +135,8 @@ Parse the JSON output. The shape is:
       "assignees": ["alice"],
       "vanilla": false,
       "flow_in_progress": false,
-      "triage_in_progress": false
+      "triage_in_progress": false,
+      "high_priority": false
     }
   ]
 }
@@ -230,13 +231,26 @@ applies regardless of bucket:
   on the bold Title cell, Command suppressed.
 - `triage_in_progress == true` (Triage In-Progress label) → 🔍
   prefix on the bold Title cell, Command suppressed.
+- `high_priority == true` (High Priority label) → 🔥 prefix on the
+  Title cell. 🔥 itself is not a Title-bolding signal and is not a
+  Command-suppressing signal — bucket-level Cell rules still
+  decide bolding and Command (a 🔥 row in the Blocked bucket
+  still renders Command as `—` per the Blocked bucket's rule).
+  The prefix applies regardless of bucket and is additive, not
+  exclusive with the other prefixes.
 
 The prefix follows the row into whichever bucket it lands; a
 Flow-In-Progress row in the Vanilla bucket still renders 🟡, a
-Triage-In-Progress row in the Blocked bucket still renders 🔍. The
+Triage-In-Progress row in the Blocked bucket still renders 🔍, and
+a High-Priority row in any bucket still renders 🔥. The
 cross-engineer WIP signal documented in `CLAUDE.md` "The 'Flow
 In-Progress' label on issues is the cross-engineer WIP detection
 mechanism" is honored from every section.
+
+When 🔥 stacks with 🟡 or 🔍 on the same row, 🔥 leads:
+`🔥 🟡 **Title**` or `🔥 🔍 **Title**`. The bolding and Command
+suppression still come from the in-progress signal; 🔥 is additive
+and does not change either behavior.
 
 ### Sort rules
 
@@ -245,6 +259,8 @@ mechanism" is honored from every section.
 - **Other** and **Decomposed** sections: sort colored rows first
   (Decomposed section: 🟡 rows; Other section: 🔍 rows), then by issue
   `number` descending within each cluster.
+- `high_priority` does not participate in sort clustering; 🔥 rows
+  stay in their bucket's normal number-descending order.
 
 ### Filter flag effect
 
