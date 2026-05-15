@@ -1717,21 +1717,20 @@ fn verify_agent_returned_skips_non_tool_result_block_in_result_search() {
 
 #[test]
 fn verify_agent_returned_finds_phase_marker_in_oversized_transcript() {
-    // Builds a synthetic transcript larger than TRANSCRIPT_BYTE_CAP
-    // (50 MB) with the phase-enter Bash marker at line 1, filler
-    // turns padding the file past the cap, then the Agent tool_use
-    // and its paired tool_result at the tail. A pre-fix verifier
-    // (read_capped(path, TRANSCRIPT_BYTE_CAP)) would have seeked
-    // past the head and missed the marker — returning
-    // Err("phase_marker_not_found"). With the verifier reading
-    // uncapped via read_full, the head marker is visible, the
-    // forward scan finds the Agent tool_use and the matching
-    // tool_result, and the verifier returns Ok(()).
+    // Guards the invariant that verify_agent_returned_in_phase finds
+    // the phase-enter marker even when the transcript exceeds
+    // TRANSCRIPT_BYTE_CAP. The fixture places the phase-enter Bash
+    // marker at byte 0, pads with filler turns past the cap, and
+    // places the Agent tool_use plus its paired tool_result at the
+    // tail. The verifier must return Ok(()) — a tail-bounded read
+    // would seek past the head marker and return
+    // Err("phase_marker_not_found"), so the test fails the moment
+    // the verifier's read window shrinks below the whole-file scope.
     //
-    // The fixture is composed as a single String and written via
-    // one fs::write, allocating ~51 MB transiently. Acceptable on
-    // any modern dev machine; the test runtime is roughly 1-2s on
-    // SSD.
+    // Memory profile: the fixture is composed as a single String and
+    // written via one fs::write, allocating ~51 MB transiently.
+    // Acceptable on any modern dev machine; test runtime is roughly
+    // 1-2s on SSD.
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let proj = home.join(".claude").join("projects").join("oversized");

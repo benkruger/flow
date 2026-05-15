@@ -1109,6 +1109,7 @@ pub fn read_full(path: &Path) -> Option<String> {
 /// `last_user_message_invokes_skill`,
 /// `most_recent_skill_in_user_only_set`,
 /// `most_recent_user_message_since_skill_action`,
+/// `most_recent_skill_since_user`,
 /// `any_skill_in_set_since_user`. Phase-boundary verifiers that may
 /// need to look further back use `read_full` instead.
 pub fn read_recency_window(path: &Path) -> Option<String> {
