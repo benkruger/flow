@@ -14,9 +14,9 @@ use std::fs;
 use flow_rs::hooks::transcript_walker::{
     any_skill_in_set_since_user, last_user_message_invokes_skill,
     most_recent_skill_in_user_only_set, most_recent_skill_since_user,
-    most_recent_user_message_since_skill_action, recent_edit_blocked_on_shared_config,
-    verify_agent_returned_in_phase, SHARED_CONFIG_BLOCK_BYTE_CAP, TRANSCRIPT_BYTE_CAP,
-    USER_ONLY_SKILLS,
+    most_recent_user_message_since_skill_action, read_full, read_recency_window, read_recent_turns,
+    recent_edit_blocked_on_shared_config, verify_agent_returned_in_phase,
+    SHARED_CONFIG_BLOCK_BYTE_CAP, TRANSCRIPT_BYTE_CAP, USER_ONLY_SKILLS,
 };
 
 // --- last_user_message_invokes_skill ---
@@ -2979,4 +2979,95 @@ fn last_user_message_invokes_skill_skips_user_turn_with_missing_content() {
         "flow:flow-abort",
         home,
     ));
+}
+
+// --- read_full / read_recency_window / read_recent_turns ---
+
+#[test]
+fn read_full_returns_full_file_content() {
+    // Build a file > 50 MB with a unique marker line at byte 0.
+    // `read_full` is uncapped, so the returned String must contain
+    // the marker — proving the read covered the entire file, not
+    // just the tail. The fixture allocates ~51 MB transiently
+    // (one composed String + one fs::write), which is acceptable on
+    // any modern dev machine.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("oversized.txt");
+    let marker = "UNIQUE-MARKER-AT-HEAD\n";
+    let padding_size = (TRANSCRIPT_BYTE_CAP as usize) + 1024;
+    let mut content = String::with_capacity(marker.len() + padding_size);
+    content.push_str(marker);
+    content.extend(std::iter::repeat_n('x', padding_size));
+    fs::write(&path, content.as_bytes()).unwrap();
+    let result = read_full(&path).expect("read_full returns Some on existing readable file");
+    assert!(
+        result.contains(marker),
+        "read_full must cover head bytes, not just tail",
+    );
+}
+
+#[test]
+fn read_full_returns_none_on_missing_file() {
+    // No file at the path. `std::fs::read_to_string` fails with
+    // ENOENT, `.ok()` converts to None. Matches the fail-open
+    // semantics of the underlying `read_capped` error path.
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("does-not-exist.txt");
+    assert_eq!(read_full(&missing), None);
+}
+
+#[test]
+fn read_recency_window_caps_at_50mb() {
+    // File > 50 MB. `read_recency_window` calls
+    // `read_capped(path, TRANSCRIPT_BYTE_CAP)` which seeks to the
+    // file's tail and reads at most `TRANSCRIPT_BYTE_CAP` bytes.
+    // The returned String length must be <= TRANSCRIPT_BYTE_CAP.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("recency.txt");
+    let total_size = (TRANSCRIPT_BYTE_CAP as usize) + 1024;
+    let content: Vec<u8> = std::iter::repeat_n(b'x', total_size).collect();
+    fs::write(&path, &content).unwrap();
+    let result =
+        read_recency_window(&path).expect("read_recency_window returns Some on readable file");
+    assert!(
+        result.len() as u64 <= TRANSCRIPT_BYTE_CAP,
+        "read_recency_window must cap at TRANSCRIPT_BYTE_CAP; got {} bytes",
+        result.len(),
+    );
+}
+
+#[test]
+fn read_recency_window_returns_none_on_missing_file() {
+    // Missing file → File::open fails → `read_capped` returns None.
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("nope.txt");
+    assert_eq!(read_recency_window(&missing), None);
+}
+
+#[test]
+fn read_recent_turns_caps_at_4mb() {
+    // File > 4 MB. `read_recent_turns` calls
+    // `read_capped(path, SHARED_CONFIG_BLOCK_BYTE_CAP)` which seeks
+    // to the file's tail and reads at most
+    // `SHARED_CONFIG_BLOCK_BYTE_CAP` bytes. The returned String
+    // length must be <= SHARED_CONFIG_BLOCK_BYTE_CAP.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("recent.txt");
+    let total_size = (SHARED_CONFIG_BLOCK_BYTE_CAP as usize) + 1024;
+    let content: Vec<u8> = std::iter::repeat_n(b'x', total_size).collect();
+    fs::write(&path, &content).unwrap();
+    let result = read_recent_turns(&path).expect("read_recent_turns returns Some on readable file");
+    assert!(
+        result.len() as u64 <= SHARED_CONFIG_BLOCK_BYTE_CAP,
+        "read_recent_turns must cap at SHARED_CONFIG_BLOCK_BYTE_CAP; got {} bytes",
+        result.len(),
+    );
+}
+
+#[test]
+fn read_recent_turns_returns_none_on_missing_file() {
+    // Missing file → File::open fails → `read_capped` returns None.
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("nope.txt");
+    assert_eq!(read_recent_turns(&missing), None);
 }

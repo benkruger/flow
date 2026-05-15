@@ -1048,6 +1048,65 @@ pub fn most_recent_user_message_since_skill_action(
     candidate
 }
 
+/// Read the entire `path` as a UTF-8 String. Returns `None` on
+/// `File::open` error, non-UTF-8 content, or other I/O failure.
+///
+/// Uncapped read: the entire file content is loaded into memory.
+/// Callers that walk to a phase-boundary marker that may sit
+/// arbitrarily far back in the transcript — `verify_agent_returned_in_phase`
+/// is the canonical consumer — use `read_full` because a tail-bounded
+/// read can hide the marker on long autonomous flows. The trade-off
+/// is memory: a 200 MB transcript loads 200 MB of working memory.
+/// Acceptable for phase-boundary verification because the verifier
+/// runs at most once per agent return (rare) rather than per-turn.
+///
+/// For recency-window reads (per-turn hot path), use
+/// `read_recency_window` instead. For shared-config-block detection,
+/// use `read_recent_turns`. Direct calls to `read_capped` from
+/// production code are forbidden by the contract test in
+/// `tests/hooks/transcript_walker.rs` —
+/// `.claude/rules/transcript-walker-cap.md` documents the API.
+pub fn read_full(path: &Path) -> Option<String> {
+    std::fs::read_to_string(path).ok()
+}
+
+/// Read the LAST `TRANSCRIPT_BYTE_CAP` (50 MB) bytes of `path` as a
+/// UTF-8 String. Returns `None` on `File::open` error, non-UTF-8
+/// content, or other I/O failure.
+///
+/// Recency-window read: the byte cap bounds backward visibility to
+/// the most recent ~10,000 turns. Callers that need to find a marker
+/// in the recent past — most-recent user turn, most-recent assistant
+/// Skill call, paired tool_use/tool_result for the latest
+/// AskUserQuestion — use `read_recency_window` because the cap keeps
+/// the per-turn hot path bounded as transcripts grow past 100 MB.
+///
+/// The canonical consumer class is the per-turn walker family:
+/// `last_user_message_invokes_skill`,
+/// `most_recent_skill_in_user_only_set`,
+/// `most_recent_user_message_since_skill_action`,
+/// `any_skill_in_set_since_user`. Phase-boundary verifiers that may
+/// need to look further back use `read_full` instead.
+pub fn read_recency_window(path: &Path) -> Option<String> {
+    read_capped(path, TRANSCRIPT_BYTE_CAP)
+}
+
+/// Read the LAST `SHARED_CONFIG_BLOCK_BYTE_CAP` (4 MB) bytes of
+/// `path` as a UTF-8 String. Returns `None` on `File::open` error,
+/// non-UTF-8 content, or other I/O failure.
+///
+/// Recent-turns read: the smaller cap reflects that the consumer
+/// (`recent_edit_blocked_on_shared_config`) only needs the most
+/// recent 1-2 turns since the most recent real user turn — the
+/// latest assistant tool call and its paired tool_result. 4 MB
+/// comfortably holds those turns even when they include large file
+/// contents in `tool_use.input` or `tool_result.content`, and the
+/// smaller cap keeps the AskUserQuestion-blocked hot path faster
+/// than `read_recency_window` would.
+pub fn read_recent_turns(path: &Path) -> Option<String> {
+    read_capped(path, SHARED_CONFIG_BLOCK_BYTE_CAP)
+}
+
 /// Read the LAST `cap` bytes of `path` as a UTF-8 String. Returns
 /// `None` on `File::open` error or non-UTF-8 content.
 ///
@@ -1059,15 +1118,14 @@ pub fn most_recent_user_message_since_skill_action(
 /// parse and is silently skipped by the walker's `Err(_) => continue`
 /// branch.
 ///
-/// The `cap` parameter lets callers tune the backward-visibility
-/// window to the recency the walker needs.
-/// `last_user_message_invokes_skill` and
-/// `most_recent_skill_in_user_only_set` pass `TRANSCRIPT_BYTE_CAP`
-/// (50 MB) because user-only-skill detection may need to look past
-/// many recent assistant turns. `recent_edit_blocked_on_shared_config`
-/// passes the smaller `SHARED_CONFIG_BLOCK_BYTE_CAP` (4 MB) because
-/// it only needs the most recent assistant tool call and its paired
-/// tool_result.
+/// Direct calls to `read_capped` from production code outside this
+/// module are forbidden. Three public wrappers carry the lookback
+/// semantics by name: `read_full` (uncapped, phase-boundary
+/// verifiers), `read_recency_window` (50 MB, per-turn recency
+/// walkers), `read_recent_turns` (4 MB, shared-config-block
+/// detection). The contract test
+/// `read_capped_only_called_inside_named_helpers` in
+/// `tests/hooks/transcript_walker.rs` locks the invariant in.
 ///
 /// `metadata()` and `seek()` on a freshly-opened regular file are
 /// genuinely TOCTOU-only failure modes per the
