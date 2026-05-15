@@ -56,7 +56,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v2.1.1 — flow:flow-plan — STARTING
+  FLOW v2.2.0 — flow:flow-plan — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -609,7 +609,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-plan
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✗ FLOW v2.1.1 — flow:flow-plan — COMPLETE-FAILED
+  ✗ FLOW v2.2.0 — flow:flow-plan — COMPLETE-FAILED
   Validator rejected the body 5 times. Issue not filed.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -673,7 +673,7 @@ before the flow can proceed.
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✗ FLOW v2.1.1 — flow:flow-plan — COMPLETE-FAILED
+  ✗ FLOW v2.2.0 — flow:flow-plan — COMPLETE-FAILED
   Decomposed issue filed; parent closure failed.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -701,7 +701,7 @@ code block:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v2.1.1 — flow:flow-plan — COMPLETE
+  ✓ FLOW v2.2.0 — flow:flow-plan — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````

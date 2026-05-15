@@ -57,7 +57,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v2.1.1 — flow:flow-decompose-project — STARTING
+  FLOW v2.2.0 — flow:flow-decompose-project — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -439,7 +439,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-decom
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✗ FLOW v2.1.1 — flow:flow-decompose-project — COMPLETE-FAILED
+  ✗ FLOW v2.2.0 — flow:flow-decompose-project — COMPLETE-FAILED
   Epic validator rejected the body 5 times. Flow halted.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -626,7 +626,7 @@ Output the COMPLETE banner:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v2.1.1 — flow:flow-decompose-project — COMPLETE
+  ✓ FLOW v2.2.0 — flow:flow-decompose-project — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````

@@ -1,5 +1,48 @@
 # Release Notes
 
+## v2.2.0 — Zero-build marketplace install and terminal-skill mode resolution
+
+### New features
+
+- **Prebuilt Apple Silicon binary** — `/plugin install` now ships a
+  committed arm64 binary, so the plugin runs immediately after install
+  with no Rust or C-compiler prerequisite. `flow-release` rebuilds and
+  re-stages it via `bin/setup --stage-binary` on every version bump so
+  it never lags the tagged source (#1567).
+- **`bin/flow resolve-skill-mode`** — a single tested source of truth
+  for resolving `flow-complete` / `flow-abort` autonomy mode from the
+  state file. The default for both terminal skills is now `manual`
+  confirmation (#1578).
+- **`--assignee` for `bin/flow issue`** — decomposed issues filed by
+  `flow-plan` are now assigned to their planner (`@me`) (#1582).
+- **Skipped Agents in the Complete banner** — review agents that could
+  not run (rate limit, API error, exhausted retries) now surface in the
+  final Complete summary (#1584).
+
+### Fixes
+
+- **flow-complete / flow-abort honor `manual`** — the terminal skills no
+  longer bypass their configured `manual` confirmation; the hand-rolled
+  state-file read is replaced by `resolve-skill-mode` (#1577, #1578).
+- **Bootstrap commit carve-out recognizes user-typed slash commands** —
+  `/flow-prime` and `/flow-release` commits on the integration branch
+  are no longer blocked by the Layer 9 commit gate (#1569).
+
+### Improvements
+
+- **flow-review keeps its four agents concurrent** — the Step 2
+  HARD-GATE now forbids interleaving tool calls between agent launches,
+  preserving concurrency and cognitive isolation (#1566).
+- **Prime allow list covers `Skill(flow:<name>)`** — cross-skill
+  invocations no longer trigger permission prompts in primed projects
+  (#1576).
+- **flow-learn routes correction notes durably** — every
+  `/flow:flow-note` correction is treated as a mandatory directive
+  routed to a `.claude/rules/` file or CLAUDE.md (#1584).
+- Removed the dead `agent_exhausted_retries` note path superseded by the
+  Skipped Agents section; added a post-compaction-recovery rule; stale
+  test-comment corrections (#1572, #1584).
+
 ## v2.1.1 — Mirror JavaScript dependencies into worktrees
 
 ### Improvements
