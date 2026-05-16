@@ -487,15 +487,24 @@ For each candidate addition, name the specific behavior the entry
 controls every session — "all timestamps use Pacific Time," "never
 invoke cargo directly," "use bin/flow finalize-commit." If no
 behavior can be named, the finding describes how the system works
-rather than how the model should behave. Route to one of:
+rather than how the model should behave. Route to one of the
+three alternative destinations below — each with its own write
+mechanic and `add-finding` outcome:
 
 - **Module doc comment** in `src/<name>.rs` — Rust code mechanics
-  that future readers find via grep or rustdoc.
+  that future readers find via grep or rustdoc. Use the Edit tool
+  to update the module doc comment directly. Record via
+  `bin/flow add-finding --outcome "rule_written" --path
+  "src/<name>.rs"`.
 - **`docs/` subtree** — long-form architecture, schema reference,
-  public-facing material loaded on demand.
+  public-facing material loaded on demand. Use the Edit tool to
+  update the relevant doc file. Record via
+  `bin/flow add-finding --outcome "rule_written" --path
+  "docs/<relative>"`.
 - **Discard** — when the Discoverability test resolves negatively,
   the next session can derive the content by reading the code or
-  existing rules.
+  existing rules. Record via `bin/flow add-finding --outcome
+  "dismissed"` with rationale citing the Discoverability test.
 
 A description that fails the obey-vs-describe test belongs in a
 module doc comment, the `docs/` subtree, or discard — not
@@ -503,6 +512,14 @@ CLAUDE.md. CLAUDE.md is always loaded into every session's
 context, so every descriptive byte compounds token cost on every
 subsequent turn. Only behavioral instructions the model obeys and
 one-line pointer indexes to rule files belong here.
+
+**Correction notes are imperatives by definition.** A finding that
+originates from a `correction` note enumerated in Step 2 (per the
+"Correction notes (mandatory)" requirement) passes the
+obey-vs-describe test as obey — the user's correction is itself a
+directive. Correction notes always route durably to a
+`.claude/rules/` file or CLAUDE.md; the "discard" branch above
+does not apply.
 
 For each item that passes the obey-vs-describe test (project-wide
 conventions, architecture pointers):
@@ -532,8 +549,23 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<
 
 ### Apply rules changes
 
-For each item routed to `.claude/rules/` (domain-specific gotchas,
-situational instructions):
+Before routing any finding to `.claude/rules/`, apply the
+**obey-vs-describe test** per
+`.claude/rules/persistence-routing.md`. The scope test resolving
+to `.claude/rules/` is not sufficient on its own — rule files
+collect behavioral instructions the model obeys, not architecture
+descriptions, so a descriptive finding compounds token cost
+across every flow that loads the rule.
+
+If no behavior the model OBEYS every session can be named, route
+to one of the three alternative destinations enumerated in `###
+Apply CLAUDE.md changes` above — module doc comment, the `docs/`
+subtree, or discard — with the same `add-finding` outcomes. The
+correction-notes exception applies here too: correction notes are
+imperatives by definition and always route durably.
+
+For each item that passes the obey-vs-describe test (domain-specific
+gotchas, situational instructions):
 
 **Determine** the target file
 (`<worktree_path>/.claude/rules/<topic>.md`) and whether it is a new

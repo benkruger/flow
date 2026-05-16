@@ -6752,6 +6752,14 @@ fn flow_review_step_2_hard_gate_forbids_per_agent_bash_during_launch() {
 /// scope what CLAUDE.md is and is not for. Without the gate, descriptive
 /// project knowledge routes to CLAUDE.md and compounds token cost across
 /// every session.
+///
+/// The destination-name assertions are bounded to the
+/// `## What CLAUDE.md Is Not For` slice via the bounded-slice pattern
+/// from `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions
+/// in Contract Tests". Without the bound, a future edit that guts the
+/// destination bullets from `## What CLAUDE.md Is Not For` would still
+/// pass because the same lowercase phrasing appears in the file's Tests
+/// section bullet.
 #[test]
 fn persistence_routing_has_obey_vs_describe_test() {
     let path = PathBuf::from(".claude/rules/persistence-routing.md");
@@ -6763,22 +6771,6 @@ fn persistence_routing_has_obey_vs_describe_test() {
          gate on CLAUDE.md routing"
     );
     assert!(
-        content.contains("module doc comment"),
-        "persistence-routing.md must name `module doc comment` as a \
-         destination for descriptive content"
-    );
-    assert!(
-        content.contains("`docs/`"),
-        "persistence-routing.md must name the `docs/` subtree as a \
-         destination for descriptive content"
-    );
-    assert!(
-        content.contains("discard"),
-        "persistence-routing.md must name `discard` as a destination for \
-         descriptive content that the Discoverability test resolves \
-         negatively"
-    );
-    assert!(
         content.contains("## What CLAUDE.md Is For"),
         "persistence-routing.md must include a `## What CLAUDE.md Is For` \
          section naming the two acceptable CLAUDE.md content shapes"
@@ -6788,6 +6780,32 @@ fn persistence_routing_has_obey_vs_describe_test() {
         "persistence-routing.md must include a `## What CLAUDE.md Is Not \
          For` section naming the three alternative destinations"
     );
+    // Bound destination-name assertions to the `## What CLAUDE.md Is
+    // Not For` slice so the substring matches only when the destination
+    // section itself names them — not when an unrelated section
+    // mentions the same lowercase phrase. Assertions target the
+    // canonical bullet shapes (`- **<Name>**`) the section uses to
+    // enumerate the three destinations.
+    let tail = content
+        .split_once("\n## What CLAUDE.md Is Not For\n")
+        .map(|(_, t)| t)
+        .expect("persistence-routing.md must contain `## What CLAUDE.md Is Not For` heading");
+    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
+    assert!(
+        section.contains("- **Module doc comment**"),
+        "`## What CLAUDE.md Is Not For` section must list `Module doc \
+         comment` as a bullet destination"
+    );
+    assert!(
+        section.contains("- **`docs/` subtree**"),
+        "`## What CLAUDE.md Is Not For` section must list the `docs/` \
+         subtree as a bullet destination"
+    );
+    assert!(
+        section.contains("- **Discard**"),
+        "`## What CLAUDE.md Is Not For` section must list `Discard` as a \
+         bullet destination"
+    );
 }
 
 // --- flow-learn Step 3 obey-vs-describe gate ---
@@ -6796,14 +6814,23 @@ fn persistence_routing_has_obey_vs_describe_test() {
 /// gate on the obey-vs-describe test before routing any finding into
 /// CLAUDE.md. Without the gate, descriptive findings route into
 /// CLAUDE.md and compound token cost across every session.
+///
+/// The gate must appear BEFORE the `**Compose**` instruction so a
+/// future edit cannot bury the gate after the write-mechanics
+/// instructions. Burying the gate at the bottom of the subsection
+/// would silently break the gating semantics — the model would
+/// execute Compose/Read/Write/Apply before ever consulting the
+/// gate, defeating the protection.
+///
+/// The split anchor `"\n### Apply CLAUDE.md changes\n"` bounds the
+/// match to the heading at column 0 followed by a newline. Without
+/// the heading-shape anchor, inline prose mentioning the
+/// subsection by name in the Routing section's cross-reference
+/// would satisfy the split and produce a sliced subsection that
+/// includes unrelated content from earlier in the file.
 #[test]
 fn flow_learn_step_3_has_obey_vs_describe_gate() {
     let content = common::read_skill("flow-learn");
-    // Anchor on the heading shape (`\n### ... \n`) so that inline
-    // prose mentioning the subsection by name (e.g. the Routing
-    // section's cross-reference at line 415) cannot satisfy the
-    // split. The first match is the heading at column 0 followed
-    // by a newline.
     let tail = content
         .split_once("\n### Apply CLAUDE.md changes\n")
         .map(|(_, t)| t)
@@ -6828,6 +6855,22 @@ fn flow_learn_step_3_has_obey_vs_describe_gate() {
         subsection.contains("discard"),
         "flow-learn Step 3 `### Apply CLAUDE.md changes` must name `discard` \
          as an alternative destination"
+    );
+    // Gate ordering: the obey-vs-describe gate must appear BEFORE
+    // the first `**Compose**` instruction. A future edit that
+    // moves the gate after Compose would silently break the
+    // gating semantics.
+    let gate_pos = subsection
+        .find("obey-vs-describe test")
+        .expect("gate phrase asserted above");
+    let compose_pos = subsection.find("**Compose**").expect(
+        "flow-learn Step 3 `### Apply CLAUDE.md changes` must contain a `**Compose**` instruction",
+    );
+    assert!(
+        gate_pos < compose_pos,
+        "flow-learn Step 3 obey-vs-describe gate must appear BEFORE the \
+         `**Compose**` instruction; burying the gate after Compose defeats \
+         the gating semantics"
     );
 }
 

@@ -45,15 +45,26 @@ exhaustion.
 
 ## Outputs
 
-Findings are routed autonomously by tenant:
+Findings are routed autonomously by tenant. Findings that name
+behavior the model must obey route to CLAUDE.md or `.claude/rules/`;
+findings that describe how the system works route to a module doc
+comment, the `docs/` subtree, or are discarded per the
+**obey-vs-describe test** in `.claude/rules/persistence-routing.md`.
 
-| # | Destination | Path | Method |
-|---|-------------|------|--------|
-| 1 | Project CLAUDE.md | `CLAUDE.md` in worktree | `bin/flow write-rule` |
-| 2 | `.claude/rules/` | `.claude/rules/<topic>.md` in worktree | `bin/flow write-rule` |
+| # | Destination | Path | Method | When |
+|---|-------------|------|--------|------|
+| 1 | Project CLAUDE.md | `CLAUDE.md` in worktree | `bin/flow write-rule` | Behavioral imperative every session must obey, or a one-line pointer index to a rule file |
+| 2 | `.claude/rules/` | `.claude/rules/<topic>.md` in worktree | `bin/flow write-rule` | Domain-specific behavioral instructions the model obeys |
+| 3 | Module doc comment | `src/<name>.rs` in worktree | Edit tool + `add-finding --outcome rule_written --path src/<name>.rs` | Rust code mechanics description (descriptive, not behavioral) |
+| 4 | `docs/` subtree | `docs/<relative>` in worktree | Edit tool + `add-finding --outcome rule_written --path docs/<relative>` | Long-form architecture, schema reference, public-facing material (descriptive) |
+| 5 | Discard | (no write) | `add-finding --outcome dismissed` | Discoverability test resolves negatively — the next session can derive the content from existing code or rules |
 
-Both CLAUDE.md and `.claude/rules/` edits are committed to the feature branch
-via `/flow-commit`. All edits target the project repo — never
+Correction notes (mandatory user directives captured via
+`/flow:flow-note`) are imperatives by definition; they always route
+durably to destination 1 or 2, never to 3, 4, or 5.
+
+All on-main edits are committed to the feature branch via
+`/flow-commit`. All edits target the project repo — never
 user-level `~/.claude/` paths.
 
 **Permission promotion** — session permissions accumulated in

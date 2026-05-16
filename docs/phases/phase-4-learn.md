@@ -43,16 +43,31 @@ findings are preserved.
 
 ## What Gets Captured
 
-Claude routes findings autonomously based on content and tenant:
+Claude routes findings autonomously based on content and tenant.
+The **obey-vs-describe test** (see
+`.claude/rules/persistence-routing.md`) gates every destination
+choice: findings that name behavior the model must obey route to
+CLAUDE.md or `.claude/rules/`; findings that describe how the system
+works route to a module doc comment, the `docs/` subtree, or are
+discarded.
 
 | Destination | What goes here | Write method |
 |---|---|---|
-| Project CLAUDE.md | Process rules and project architecture | `bin/flow write-rule`, committed via PR |
-| `.claude/rules/` | Coding anti-patterns and gotchas | `bin/flow write-rule`, committed via PR |
+| Project CLAUDE.md | Behavioral imperatives every session must obey, plus one-line pointer indexes to rule files | `bin/flow write-rule`, committed via PR |
+| `.claude/rules/` | Domain-specific behavioral instructions the model obeys | `bin/flow write-rule`, committed via PR |
+| Module doc comment in `src/<name>.rs` | Rust code mechanics descriptions | Edit tool + `add-finding --outcome rule_written` |
+| `docs/` subtree | Long-form architecture, schema reference, public-facing material | Edit tool + `add-finding --outcome rule_written` |
+| Discard | Content the Discoverability test marks derivable from existing code or rules | `add-finding --outcome dismissed` |
 
-Both CLAUDE.md and `.claude/rules/` are written via `bin/flow write-rule`
-and committed to the feature branch. All edits target the project repo —
-never user-level `~/.claude/` paths.
+Behavioral writes (CLAUDE.md and `.claude/rules/`) route through
+`bin/flow write-rule`; descriptive writes (module doc comment,
+`docs/`) use the Edit tool directly. All on-main edits are
+committed to the feature branch. All edits target the project repo
+— never user-level `~/.claude/` paths.
+
+Correction notes captured via `/flow:flow-note` are imperatives by
+definition and always route to a CLAUDE.md or `.claude/rules/`
+destination — never to module doc, `docs/`, or discard.
 
 **GitHub issues** — filed during Learn:
 
