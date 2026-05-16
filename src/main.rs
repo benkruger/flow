@@ -671,7 +671,7 @@ fn main() {
             };
             let repo_resolver =
                 move || -> Option<String> { flow_rs::github::detect_repo(Some(&root_for_repo)) };
-            let (value, code) = issue::run_impl_main(args, &root, &state_reader, &repo_resolver);
+            let (value, code) = issue::run_impl_main(args, &state_reader, &repo_resolver);
             flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::CloseIssue(args)) => {
