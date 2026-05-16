@@ -59,6 +59,10 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/bin/flow hook validate-worktree-paths"
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/flow hook validate-claude-paths"
           }
         ]
       },

@@ -14,7 +14,7 @@ use flow_rs::hooks::validate_claude_paths::{run_impl_main, validate};
 
 #[test]
 fn test_blocks_claude_rules_when_flow_active() {
-    let (allowed, msg) = validate("/project/.claude/rules/foo.md", true);
+    let (allowed, msg) = validate("/project/.claude/rules/foo.md", true, "Edit");
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
     assert!(msg.contains("write-rule"));
@@ -22,7 +22,7 @@ fn test_blocks_claude_rules_when_flow_active() {
 
 #[test]
 fn test_blocks_claude_md_when_flow_active() {
-    let (allowed, msg) = validate("/project/CLAUDE.md", true);
+    let (allowed, msg) = validate("/project/CLAUDE.md", true, "Edit");
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
     assert!(msg.contains("write-rule"));
@@ -30,70 +30,74 @@ fn test_blocks_claude_md_when_flow_active() {
 
 #[test]
 fn test_allows_claude_rules_when_no_flow() {
-    let (allowed, msg) = validate("/project/.claude/rules/foo.md", false);
+    let (allowed, msg) = validate("/project/.claude/rules/foo.md", false, "Edit");
     assert!(allowed);
     assert!(msg.is_empty());
 }
 
 #[test]
 fn test_allows_claude_md_when_no_flow() {
-    let (allowed, msg) = validate("/project/CLAUDE.md", false);
+    let (allowed, msg) = validate("/project/CLAUDE.md", false, "Edit");
     assert!(allowed);
     assert!(msg.is_empty());
 }
 
 #[test]
 fn test_allows_unrelated_path_when_flow_active() {
-    let (allowed, msg) = validate("/project/lib/foo.py", true);
+    let (allowed, msg) = validate("/project/lib/foo.py", true, "Edit");
     assert!(allowed);
     assert!(msg.is_empty());
 }
 
 #[test]
 fn test_allows_claude_settings_when_flow_active() {
-    let (allowed, msg) = validate("/project/.claude/settings.json", true);
+    let (allowed, msg) = validate("/project/.claude/settings.json", true, "Edit");
     assert!(allowed);
     assert!(msg.is_empty());
 }
 
 #[test]
 fn test_allows_flow_states_path() {
-    let (allowed, msg) = validate("/project/.flow-states/branch-rule-content.md", true);
+    let (allowed, msg) = validate("/project/.flow-states/branch-rule-content.md", true, "Edit");
     assert!(allowed);
     assert!(msg.is_empty());
 }
 
 #[test]
 fn test_allows_empty_path() {
-    let (allowed, msg) = validate("", true);
+    let (allowed, msg) = validate("", true, "Edit");
     assert!(allowed);
     assert!(msg.is_empty());
 }
 
 #[test]
 fn test_blocks_nested_claude_rules() {
-    let (allowed, msg) = validate("/project/.claude/rules/subdir/deep.md", true);
+    let (allowed, msg) = validate("/project/.claude/rules/subdir/deep.md", true, "Edit");
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
 }
 
 #[test]
 fn test_blocks_worktree_claude_rules() {
-    let (allowed, msg) = validate("/project/.worktrees/feat/.claude/rules/foo.md", true);
+    let (allowed, msg) = validate(
+        "/project/.worktrees/feat/.claude/rules/foo.md",
+        true,
+        "Edit",
+    );
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
 }
 
 #[test]
 fn test_blocks_worktree_claude_md() {
-    let (allowed, msg) = validate("/project/.worktrees/feat/CLAUDE.md", true);
+    let (allowed, msg) = validate("/project/.worktrees/feat/CLAUDE.md", true, "Edit");
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
 }
 
 #[test]
 fn test_blocks_claude_skills_when_flow_active() {
-    let (allowed, msg) = validate("/project/.claude/skills/foo/SKILL.md", true);
+    let (allowed, msg) = validate("/project/.claude/skills/foo/SKILL.md", true, "Edit");
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
     assert!(msg.contains("write-rule"));
@@ -101,34 +105,38 @@ fn test_blocks_claude_skills_when_flow_active() {
 
 #[test]
 fn test_blocks_nested_claude_skills() {
-    let (allowed, msg) = validate("/project/.claude/skills/subdir/deep/SKILL.md", true);
+    let (allowed, msg) = validate("/project/.claude/skills/subdir/deep/SKILL.md", true, "Edit");
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
 }
 
 #[test]
 fn test_blocks_worktree_claude_skills() {
-    let (allowed, msg) = validate("/project/.worktrees/feat/.claude/skills/foo/SKILL.md", true);
+    let (allowed, msg) = validate(
+        "/project/.worktrees/feat/.claude/skills/foo/SKILL.md",
+        true,
+        "Edit",
+    );
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
 }
 
 #[test]
 fn test_allows_claude_skills_when_no_flow() {
-    let (allowed, msg) = validate("/project/.claude/skills/foo/SKILL.md", false);
+    let (allowed, msg) = validate("/project/.claude/skills/foo/SKILL.md", false, "Edit");
     assert!(allowed);
     assert!(msg.is_empty());
 }
 
 #[test]
 fn test_allows_claude_settings_local() {
-    let (allowed, _) = validate("/project/.claude/settings.local.json", true);
+    let (allowed, _) = validate("/project/.claude/settings.local.json", true, "Edit");
     assert!(allowed);
 }
 
 #[test]
 fn test_error_message_mentions_write_rule() {
-    let (_, msg) = validate("/project/.claude/rules/foo.md", true);
+    let (_, msg) = validate("/project/.claude/rules/foo.md", true, "Edit");
     assert!(msg.contains("write-rule"));
     assert!(msg.contains("--path"));
     assert!(msg.contains("--content-file"));
@@ -141,7 +149,11 @@ fn test_error_message_mentions_write_rule() {
 
 #[test]
 fn validate_claude_paths_blocks_edit_in_claude_projects() {
-    let (allowed, msg) = validate("/Users/ben/.claude/projects/abc/session.jsonl", true);
+    let (allowed, msg) = validate(
+        "/Users/ben/.claude/projects/abc/session.jsonl",
+        true,
+        "Edit",
+    );
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
     assert!(msg.contains("transcript"));
@@ -152,7 +164,11 @@ fn validate_claude_paths_blocks_write_in_claude_projects() {
     // Same path family — validate doesn't distinguish Edit vs Write
     // (the hook is registered for both matchers separately in
     // hooks.json). Test asserts the block fires for either tool.
-    let (allowed, msg) = validate("/Users/ben/.claude/projects/abc/session.jsonl", true);
+    let (allowed, msg) = validate(
+        "/Users/ben/.claude/projects/abc/session.jsonl",
+        true,
+        "Edit",
+    );
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
 }
@@ -162,7 +178,11 @@ fn validate_claude_paths_blocks_in_claude_projects_when_no_flow_active() {
     // Distinguishing property: unlike .claude/rules, the transcript
     // block fires even when no flow is active. Pre-flow and
     // post-flow tampering must be blocked too.
-    let (allowed, msg) = validate("/Users/ben/.claude/projects/abc/session.jsonl", false);
+    let (allowed, msg) = validate(
+        "/Users/ben/.claude/projects/abc/session.jsonl",
+        false,
+        "Edit",
+    );
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
     assert!(msg.contains("transcript"));
@@ -172,14 +192,18 @@ fn validate_claude_paths_blocks_in_claude_projects_when_no_flow_active() {
 fn validate_claude_paths_allows_edit_in_other_paths_under_home() {
     // .claude/rules pre-existing behavior preserved — without an
     // active flow, .claude/rules edits pass through.
-    let (allowed, msg) = validate("/Users/ben/.claude/rules/foo.md", false);
+    let (allowed, msg) = validate("/Users/ben/.claude/rules/foo.md", false, "Edit");
     assert!(allowed);
     assert!(msg.is_empty());
 }
 
 #[test]
 fn validate_claude_paths_blocks_nested_claude_projects() {
-    let (allowed, msg) = validate("/Users/ben/.claude/projects/abc/subdir/deep.jsonl", false);
+    let (allowed, msg) = validate(
+        "/Users/ben/.claude/projects/abc/subdir/deep.jsonl",
+        false,
+        "Edit",
+    );
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
 }
@@ -189,7 +213,11 @@ fn validate_claude_paths_case_insensitive_claude_projects_match() {
     // macOS APFS is case-insensitive — `.CLAUDE/Projects/` resolves
     // to the same inode as `.claude/projects/`. The block matches
     // both casings.
-    let (allowed, msg) = validate("/Users/ben/.CLAUDE/Projects/abc/session.jsonl", false);
+    let (allowed, msg) = validate(
+        "/Users/ben/.CLAUDE/Projects/abc/session.jsonl",
+        false,
+        "Edit",
+    );
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
 }
@@ -198,7 +226,7 @@ fn validate_claude_paths_case_insensitive_claude_projects_match() {
 fn validate_claude_paths_allows_claude_projects_substring_in_filename() {
     // `.claude_projects` (no separator) is not the transcript
     // family — must not match.
-    let (allowed, _msg) = validate("/Users/ben/foo/.claude_projects/x", true);
+    let (allowed, _msg) = validate("/Users/ben/foo/.claude_projects/x", true, "Edit");
     assert!(allowed);
 }
 
@@ -208,7 +236,11 @@ fn validate_claude_paths_block_message_includes_write_rule_redirect() {
     // to bin/flow write-rule so the model has a concrete path to
     // route a behavioral constraint into a project rule instead of
     // silently dropping the persistence target.
-    let (_, msg) = validate("/Users/testuser/.claude/projects/abc/session.jsonl", true);
+    let (_, msg) = validate(
+        "/Users/testuser/.claude/projects/abc/session.jsonl",
+        true,
+        "Edit",
+    );
     assert!(msg.contains("write-rule"), "msg: {}", msg);
 }
 
@@ -217,7 +249,11 @@ fn validate_claude_paths_block_message_points_at_persistence_routing_rule() {
     // The transcript-root block message must reference
     // persistence-routing.md so the model can consult the routing
     // decision tree when the block fires.
-    let (_, msg) = validate("/Users/testuser/.claude/projects/abc/session.jsonl", true);
+    let (_, msg) = validate(
+        "/Users/testuser/.claude/projects/abc/session.jsonl",
+        true,
+        "Edit",
+    );
     assert!(msg.contains("persistence-routing.md"), "msg: {}", msg);
 }
 
@@ -392,4 +428,78 @@ fn run_subprocess_exits_2_when_flow_active_and_protected() {
     let (code, _stdout, stderr) = run_hook_subprocess(&worktree, &input.to_string());
     assert_eq!(code, 2);
     assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
+}
+
+// --- Read tool on transcript paths blocks regardless of flow state ---
+
+/// Read tool input on a transcript-root path blocks (exit 2) regardless
+/// of flow-active state. Registering `validate-claude-paths` on the Read
+/// matcher mechanically blocks a model that attempts to read
+/// `~/.claude/projects/` before the path leaves the harness — the
+/// sanctioned recovery surface is `compact_summary` in the state file,
+/// not the persisted transcript JSONL. The walkers in `validate-skill`
+/// and `validate-ask-user` use `fs::read_to_string` from inside Rust
+/// subcommands, not the Read tool, so blocking the Read tool does not
+/// affect them.
+#[test]
+fn read_on_transcript_root_blocks_regardless_of_flow_state() {
+    // Case 1: no active flow.
+    let dir1 = tempfile::tempdir().unwrap();
+    let root1 = dir1.path().canonicalize().unwrap();
+    let input_no_flow = serde_json::json!({
+        "tool_name": "Read",
+        "tool_input": {
+            "file_path": "/Users/example/.claude/projects/abc/session.jsonl"
+        }
+    });
+    let (code, _stdout, stderr) = run_hook_subprocess(&root1, &input_no_flow.to_string());
+    assert_eq!(code, 2, "no-flow Read on transcript path must block");
+    assert!(
+        stderr.contains("BLOCKED") && stderr.contains("transcript"),
+        "stderr: {}",
+        stderr
+    );
+
+    // Case 2: active flow in a worktree.
+    let dir2 = tempfile::tempdir().unwrap();
+    let root2 = dir2.path().canonicalize().unwrap();
+    let worktree = seed_active_flow_fixture(&root2, "feat");
+    let input_active = serde_json::json!({
+        "tool_name": "Read",
+        "tool_input": {
+            "file_path": "/Users/example/.claude/projects/abc/session.jsonl"
+        }
+    });
+    let (code, _stdout, stderr) = run_hook_subprocess(&worktree, &input_active.to_string());
+    assert_eq!(code, 2, "active-flow Read on transcript path must block");
+    assert!(
+        stderr.contains("BLOCKED") && stderr.contains("transcript"),
+        "stderr: {}",
+        stderr
+    );
+}
+
+/// Read tool on a non-transcript protected path during an active flow
+/// is ALLOWED. The model must be able to read rule files during a FLOW
+/// phase (skills routinely reference `.claude/rules/<topic>.md` and Read
+/// is the model's tool to fetch them). The protected-path block applies
+/// only to mutating tools (Edit, Write) — see
+/// `.claude/rules/user-only-skills.md` Layer 3 "Read access is preserved"
+/// invariant.
+#[test]
+fn read_on_protected_non_transcript_path_allows_during_active_flow() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let worktree = seed_active_flow_fixture(&root, "feat");
+    let target = worktree.join(".claude/rules/foo.md");
+    let input = serde_json::json!({
+        "tool_name": "Read",
+        "tool_input": {"file_path": target.to_string_lossy()}
+    });
+    let (code, _stdout, stderr) = run_hook_subprocess(&worktree, &input.to_string());
+    assert_eq!(
+        code, 0,
+        "Read on .claude/rules/ must allow during flow; stderr: {}",
+        stderr
+    );
 }

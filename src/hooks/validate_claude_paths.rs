@@ -1,19 +1,23 @@
-//! PreToolUse hook that blocks Edit/Write on:
+//! PreToolUse hook that blocks Edit/Write/Read on:
 //!
-//! 1. `.claude/rules/`, `.claude/skills/`, and `CLAUDE.md` — only during
-//!    active FLOW phases. Redirects to `bin/flow write-rule`.
+//! 1. `.claude/rules/`, `.claude/skills/`, and `CLAUDE.md` — only Edit
+//!    and Write, only during active FLOW phases. Redirects to
+//!    `bin/flow write-rule`. Read of these paths is preserved so the
+//!    model can read rule and skill files during a flow.
 //! 2. `~/.claude/projects/` (the Claude Code persisted transcript root,
-//!    which also houses the auto-memory directory) — in ALL contexts,
-//!    not just active flows. The matcher walks the path components and
-//!    fires whenever any segment matches `.claude` followed by
-//!    `projects` (case-insensitive), covering the entire subtree —
-//!    transcript JSONLs, memory files, and any future descendant.
-//!    Transcript tampering could subvert `validate-skill`'s user-only
-//!    block by injecting a fake user `<command-name>` line, so the
-//!    block fires regardless of flow state. Reads remain allowed
-//!    because the transcript walkers in `validate-skill` and
-//!    `validate-ask-user` need to scan the file themselves; the hook
-//!    is registered for Edit/Write tools only in `hooks/hooks.json`.
+//!    which also houses the auto-memory directory) — Edit, Write, AND
+//!    Read, in ALL contexts (not just active flows). The matcher walks
+//!    the path components and fires whenever any segment matches
+//!    `.claude` followed by `projects` (case-insensitive), covering the
+//!    entire subtree — transcript JSONLs, memory files, and any future
+//!    descendant. Transcript tampering could subvert
+//!    `validate-skill`'s user-only block by injecting a fake user
+//!    `<command-name>` line; a model Read of the transcript root also
+//!    sits outside the project root and would surface a permission
+//!    prompt mid-flow. The internal walkers in `validate-skill` and
+//!    `validate-ask-user` use `fs::read_to_string` from inside Rust
+//!    subcommands rather than the Read tool, so blocking Read at the
+//!    tool layer does not affect them.
 //!
 //!    The block message leads with a redirect to
 //!    `bin/flow write-rule --path .claude/rules/<topic>.md` so a
@@ -22,10 +26,12 @@
 //!    points at `.claude/rules/persistence-routing.md` as the routing
 //!    decision tree.
 //!
-//! Fires on Edit and Write tool calls.
+//! Fires on Edit, Write, and Read tool calls.
 //!
 //! Exit 0 — allow (path is not protected, or no FLOW phase active and
-//!          path is not in the always-protected transcript root)
+//!          path is not in the always-protected transcript root, or
+//!          the tool is Read and the path is a non-transcript protected
+//!          path)
 //! Exit 2 — block
 
 use std::path::Path;
@@ -62,24 +68,38 @@ fn is_transcript_path(file_path: &str) -> bool {
     false
 }
 
-/// Validate that an Edit/Write on this path is allowed.
+/// Validate that an Edit/Write/Read on this path is allowed.
+///
+/// `tool_name` is the literal name from the hook input (`"Edit"`,
+/// `"Write"`, `"Read"`, …). Transcript-root paths (Layer 2 above) block
+/// for any tool, including Read — tampering and surfacing a permission
+/// prompt are both prevented. Protected paths (Layer 1: `.claude/rules/`,
+/// `.claude/skills/`, `CLAUDE.md`) block only for mutating tools (Edit,
+/// Write); Read of those paths is preserved so the model can read rule
+/// and skill files during a flow. An unrecognized tool_name (empty,
+/// future tool name) falls into the Edit/Write block class — fail-closed
+/// so a new mutating tool surface added by Claude Code doesn't silently
+/// bypass the protected-path gate.
 ///
 /// Returns `(allowed, message)`.
-pub fn validate(file_path: &str, flow_active: bool) -> (bool, String) {
+pub fn validate(file_path: &str, flow_active: bool, tool_name: &str) -> (bool, String) {
     if file_path.is_empty() {
         return (true, String::new());
     }
 
-    // Transcript paths blocked regardless of flow_active. Tampering
-    // with the persisted transcript can subvert validate-skill's
-    // user-only block by injecting a fake user `<command-name>`
-    // line; the block must fire even pre-flow / post-flow.
+    // Transcript paths blocked regardless of flow_active and tool_name.
+    // Tampering with the persisted transcript can subvert
+    // validate-skill's user-only block by injecting a fake user
+    // `<command-name>` line; a model Read of the transcript root also
+    // sits outside the project root and would surface a permission
+    // prompt mid-flow. The block must fire even pre-flow / post-flow
+    // and for any tool that can address the path.
     if is_transcript_path(file_path) {
         return (
             false,
             "BLOCKED: `~/.claude/projects/` is the Claude Code persisted \
-             transcript root and the auto-memory directory. Edit/Write \
-             is forbidden here.\n\n\
+             transcript root and the auto-memory directory. Edit, Write, \
+             and Read are all forbidden here.\n\n\
              To capture a behavioral constraint that every engineer \
              should follow, write a project rule: \
              `${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule \
@@ -87,19 +107,39 @@ pub fn validate(file_path: &str, flow_active: bool) -> (bool, String) {
              To capture a user-specific preference, ask the user to add \
              it to `~/.claude/CLAUDE.md` manually — there is no in-FLOW \
              path for memory writes by design.\n\n\
+             For post-compaction context recovery, read \
+             `compact_summary` from \
+             `.flow-states/<branch>/state.json` instead of the raw \
+             transcript JSONL — see \
+             `.claude/rules/post-compaction-recovery.md`.\n\n\
              Routing question? See \
              `.claude/rules/persistence-routing.md` (Rules are the \
              default; Memory is the exception).\n\n\
-             Read access is preserved for the transcript walkers in \
-             validate-skill and validate-ask-user. Edit/Write is \
-             blocked across all contexts (not just active flows) \
-             because tampering with the transcript can subvert \
-             validate-skill's user-only skill block."
+             The internal transcript walkers in validate-skill and \
+             validate-ask-user use fs::read_to_string from Rust \
+             subprocesses, not the Read tool, so blocking the Read tool \
+             at this layer does not affect them. Edit, Write, and Read \
+             are blocked across all contexts (not just active flows) \
+             because tampering with — or model-tool reading of — the \
+             transcript can subvert validate-skill's user-only skill \
+             block or surface a permission prompt mid-flow."
                 .to_string(),
         );
     }
 
     if !flow_active {
+        return (true, String::new());
+    }
+
+    // Protected-path block (Layer 1) applies only to mutating tools.
+    // Read of `.claude/rules/<x>.md`, `.claude/skills/<x>/SKILL.md`, and
+    // `CLAUDE.md` is preserved so the model can read rule and skill
+    // files during an active flow — `system-reminder` injections cover
+    // the auto-load case, but explicit Read calls remain valid. An
+    // unrecognized tool_name falls into the mutating branch
+    // (fail-closed) so a new mutating tool surface added by Claude Code
+    // doesn't silently bypass the gate.
+    if tool_name == "Read" {
         return (true, String::new());
     }
 
@@ -172,6 +212,11 @@ pub fn run_impl_main(
         return (0, None);
     }
 
+    let tool_name = hook_input
+        .get("tool_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
     // Unresolvable cwd (None) flows through the same branch as
     // "no .flow-states/ ancestor" — project_root ends up None and
     // flow_active stays false, so the hook silently allows the action.
@@ -185,7 +230,7 @@ pub fn run_impl_main(
         _ => false,
     };
 
-    let (allowed, message) = validate(file_path, flow_active);
+    let (allowed, message) = validate(file_path, flow_active, tool_name);
     if !allowed {
         return (2, Some(message));
     }
