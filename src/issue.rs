@@ -168,21 +168,35 @@ struct IssueResult {
 }
 
 /// Read body text from a file and delete the file.
-/// Relative paths are resolved against `root`.
-pub fn read_body_file(path: &str, root: &Path) -> Result<String, String> {
+///
+/// Relative paths resolve against the caller's current working
+/// directory via `std::env::current_dir()`; absolute paths are used as
+/// given. The body file is removed on both the success and failure
+/// arms so a read error does not orphan the temp file in the caller's
+/// directory.
+pub fn read_body_file(path: &str) -> Result<String, String> {
     let resolved: PathBuf = if Path::new(path).is_absolute() {
         PathBuf::from(path)
     } else {
-        root.join(path)
+        let cwd = std::env::current_dir()
+            .map_err(|e| format!("Could not determine current directory: {}", e))?;
+        cwd.join(path)
     };
 
-    let body = fs::read_to_string(&resolved)
-        .map_err(|e| format!("Could not read body file '{}': {}", resolved.display(), e))?;
-
-    // Best-effort cleanup of the temp body file.
-    let _ = fs::remove_file(&resolved);
-
-    Ok(body)
+    match fs::read_to_string(&resolved) {
+        Ok(body) => {
+            let _ = fs::remove_file(&resolved);
+            Ok(body)
+        }
+        Err(e) => {
+            let _ = fs::remove_file(&resolved);
+            Err(format!(
+                "Could not read body file '{}': {}",
+                resolved.display(),
+                e
+            ))
+        }
+    }
 }
 
 /// Extract issue number from a GitHub issue URL.
@@ -342,10 +356,10 @@ pub fn extract_error(stderr: &str, stdout: &str) -> String {
 ///   (or `None` if no flow is active). Production binds it to
 ///   `resolve_branch + read_to_string`.
 /// - `repo_resolver` returns the repo from `git remote` (or `None`).
-///   Production binds it to `detect_repo(Some(root))`.
+///   Production binds it to `detect_repo(Some(&root))` where `root`
+///   is captured by the closure on the main-arm side.
 pub fn run_impl_main(
     args: Args,
-    root: &Path,
     state_reader: &dyn Fn() -> Option<String>,
     repo_resolver: &dyn Fn() -> Option<String>,
 ) -> (serde_json::Value, i32) {
@@ -381,7 +395,7 @@ pub fn run_impl_main(
     };
 
     let body = if let Some(ref bf) = args.body_file {
-        match read_body_file(bf, root) {
+        match read_body_file(bf) {
             Ok(b) => Some(b),
             Err(e) => return (json!({"status": "error", "message": e}), 1),
         }
