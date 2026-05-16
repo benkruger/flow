@@ -38,6 +38,26 @@ Add Read(//tmp/*.diff) permission for review plugin
 This makes the allow list auditable — any pattern can be traced
 back to why it was added and what breaks if it is removed.
 
+## Symmetric R+W /tmp/ Extension Policy
+
+`UNIVERSAL_ALLOW` covers a closed set of `/tmp/` extensions —
+`.txt`, `.diff`, `.patch`, `.md`, `.json`, `.jsonl` — and grants
+Read AND Write for the same extension set symmetrically. Anything
+the model can Read under `/tmp/` it can also Write; extensions
+outside the set continue to require an explicit permission prompt
+by design (per the "Specificity Over Breadth" subsection above, a
+broader `*` pattern would defeat per-extension granularity). The
+symmetric shape is intentional: legitimate user-shared artifacts
+(diffs, patches, JSON dumps, transcript-shaped records) flow in
+both directions, and asymmetric coverage would surface a prompt
+mid-autonomous-flow the moment a Read-only path needed to be
+written. When a model needs a `/tmp/` extension outside the set,
+prefer `.flow-states/<branch>/` — the branch-scoped scratch
+surface that does not race between concurrent flows. See
+`.claude/rules/no-placeholder-anchors.md` for the broader
+concurrency rationale that forbids placeholder-file-then-redirect
+anchoring regardless of destination.
+
 ## Plan-Phase Enumeration of Skill-Added Bash Commands
 
 When a plan modifies a skill (`skills/**/SKILL.md` or
