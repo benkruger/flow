@@ -15,10 +15,11 @@
 //!    blocked the prompt but the persisted transcript shows the most
 //!    recent assistant Skill tool_use targets a skill in
 //!    `crate::hooks::transcript_walker::USER_ONLY_SKILLS`
-//!    (`flow:flow-abort`, `flow:flow-reset`, `flow:flow-release`,
-//!    `flow:flow-prime`). Allows the confirmation prompt to fire so
-//!    user-only skills' destructive-operation gates do not deadlock
-//!    when invoked from inside an in-progress autonomous phase.
+//!    (`flow:flow-abort`, `flow:flow-reset`, `flow-release`,
+//!    `flow:flow-prime`, `flow:flow-continue`). Allows the
+//!    confirmation prompt to fire so user-only skills'
+//!    destructive-operation gates do not deadlock when invoked from
+//!    inside an in-progress autonomous phase.
 //! 3. **Shared-config carve-out** — when `validate` would have
 //!    blocked the prompt but the most recent user-role turn in the
 //!    persisted transcript carries a `validate_worktree_paths`

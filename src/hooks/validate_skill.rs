@@ -5,7 +5,7 @@
 //!
 //! 1. **User-only-skill gate.** Blocks model invocations of any
 //!    skill in `USER_ONLY_SKILLS` (`flow:flow-abort`,
-//!    `flow:flow-reset`, `flow:flow-release`, `flow:flow-prime`,
+//!    `flow:flow-reset`, `flow-release`, `flow:flow-prime`,
 //!    `flow:flow-continue`) unless the most recent user-role turn
 //!    in the persisted transcript STARTS with one of the two
 //!    emission shapes Claude Code uses for user-typed slash
@@ -36,7 +36,7 @@
 //! confirmation, the carve-out allows the prompt to fire even
 //! during in-progress autonomous phases — resolving the
 //! autonomous-deadlock the `--auto` bypass on `/flow:flow-abort`
-//! and `/flow:flow-release` previously worked around.
+//! and `/flow-release` previously worked around.
 
 use std::fs::File;
 use std::io::{BufReader, Read};

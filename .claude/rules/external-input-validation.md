@@ -126,11 +126,12 @@ The CLI subcommand entry inventory that receives a branch via
 `--branch` (and therefore must guard with `FlowPaths::try_new` and
 treat `None` as a structured-error path, OR pre-validate via
 `FlowPaths::is_valid_branch`) includes `src/complete_fast.rs:read_state`,
-`src/start_step.rs`, `src/start_finalize.rs`, `src/start_gate.rs`,
-`src/start_workspace.rs`, `src/finalize_commit.rs`, and
-`src/commands/init_state.rs::create_state` (when `--branch` override
-is supplied). Any new CLI subcommand that accepts `--branch` and
-constructs a `FlowPaths` must follow the same discipline.
+`src/commands/start_step.rs`, `src/start_finalize.rs`,
+`src/start_gate.rs`, `src/start_workspace.rs`,
+`src/finalize_commit.rs`, and `src/commands/init_state.rs::create_state`
+(when `--branch` override is supplied). Any new CLI subcommand that
+accepts `--branch` and constructs a `FlowPaths` must follow the same
+discipline.
 
 ### Review enforcement
 

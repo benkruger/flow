@@ -261,8 +261,8 @@ natural boundaries).
 
 The autonomous-phase block above protects against model-initiated
 prompts. When a user types `/flow:flow-abort`, `/flow:flow-reset`,
-`/flow:flow-release`, `/flow:flow-prime`, or
-`/flow:flow-continue` mid-flow, the resulting skill invocation
+`/flow-release`, `/flow:flow-prime`, or `/flow:flow-continue`
+mid-flow, the resulting skill invocation
 may fire an `AskUserQuestion` (destructive confirmation, version
 bump confirmation, etc.) — and that prompt is user-initiated, not
 model-initiated, so it should fire even during in-progress

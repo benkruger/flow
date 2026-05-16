@@ -13,7 +13,7 @@ command) rather than from inferred context.
 |---|---|---|
 | `/flow:flow-abort` | Closes the PR, deletes the remote branch, removes the worktree, deletes the state file. | Destructive — losing in-flight work. |
 | `/flow:flow-reset` | Same destructive shape but applied across every active flow on the machine. | Destructive — losing in-flight work across multiple flows. |
-| `/flow:flow-release` | Bumps version, tags, pushes, and creates a public GitHub Release. | Resource-shipping — visible to plugin marketplace consumers. |
+| `/flow-release` | Bumps version, tags, pushes, and creates a public GitHub Release. | Resource-shipping — visible to plugin marketplace consumers. Project-local skill at `.claude/skills/flow-release/`; Claude Code emits the bare-namespace form because the skill is not in the `flow:` plugin namespace. |
 | `/flow:flow-prime` | Writes `.claude/settings.json` and the four `bin/*` stubs into the project. | Environment-mutating — modifies shared config the project has not yet reviewed. |
 | `/flow:flow-continue` | Clears `_halt_pending` so the paused autonomous flow resumes. | Authorization to resume must come from explicit user intent — the user typing the slash command — rather than from model inference. The matching `bin/flow clear-halt` subcommand self-gates on the same transcript marker, so even a model that bypasses Layer 1 cannot clear the halt. |
 
@@ -174,7 +174,7 @@ resolves under `~/.claude/projects/`.
 2. Add the skill row to the table in this rule file with action
    description and threat-shape rationale.
 3. Add a `validate_user_only_skill_<name>_is_in_set` test in
-   `tests/validate_skill.rs`.
+   `tests/hooks/validate_skill.rs`.
 4. Confirm the skill's `SKILL.md` has a HARD-GATE that prompts the
    user before performing the destructive / resource-shipping
    action.

@@ -179,21 +179,22 @@ the change removes or renames — not just the obvious one. A
 single PR often touches multiple identifiers simultaneously:
 removing a feature deletes its symbol name AND any prose phrase
 that named the behavior; renumbering a numbered concept (e.g.
-"Layer 8" → "Layer 9") leaves stale references to the description
-("file-read commands") that named the OLD layer's purpose. The
-Plan phase must enumerate every identifier the change touches
-before running the grep sweep.
+"Layer N" → "Layer N+1") leaves stale references to the
+description (the prose name) that identified the OLD layer's
+purpose. The Plan phase must enumerate every identifier the
+change touches before running the grep sweep.
 
 The discipline is two-step:
 
 1. **Identifier inventory.** Before writing the plan, list every
    string the change removes or renames. For a feature removal,
-   that includes: the symbol name (e.g. `FILE_READ_COMMANDS`),
-   the prose name (e.g. "file-read commands"), the layer
-   number/identifier (e.g. "Layer 8"), and any other mnemonic
-   the prose corpus uses for the same concept. For a rename,
-   that includes: the old name AND the OLD prose phrasing that
-   referenced it.
+   that includes: the symbol name (e.g. a removed `&[&str]`
+   constant or a removed pub fn), the prose name (a short
+   phrase the prose corpus uses for the feature), the layer
+   or step number (when the feature was numbered), and any
+   other mnemonic the prose corpus uses for the same concept.
+   For a rename, that includes: the old name AND the OLD prose
+   phrasing that referenced it.
 2. **Per-identifier grep.** Run a separate grep for each
    identifier in the inventory:
 
