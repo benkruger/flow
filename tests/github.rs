@@ -14,7 +14,7 @@ mod common;
 
 use std::process::Command;
 
-use flow_rs::github::{detect_repo, parse_github_url};
+use flow_rs::github::{detect_repo, parse_github_url, validate_gh_repo_output};
 
 // --- parse_github_url ---
 
@@ -75,6 +75,76 @@ fn ssh_alias_url_does_not_match_regex() {
     // resolves aliases. A future edit that loosens the regex to accept
     // aliases must also delete or rewrite this test.
     assert_eq!(parse_github_url("git@github-pt:owner/repo.git"), None);
+}
+
+// --- validate_gh_repo_output ---
+
+#[test]
+fn validate_gh_repo_output_accepts_canonical_owner_repo() {
+    assert_eq!(
+        validate_gh_repo_output("owner/repo"),
+        Some("owner/repo".to_string())
+    );
+}
+
+#[test]
+fn validate_gh_repo_output_accepts_dots_and_hyphens() {
+    // GitHub allows dots, underscores, and hyphens in segment names.
+    assert_eq!(
+        validate_gh_repo_output("acme-corp/my.project_v2"),
+        Some("acme-corp/my.project_v2".to_string())
+    );
+}
+
+#[test]
+fn validate_gh_repo_output_rejects_multiline_output() {
+    // Newline-injection bypass: `gh` stdout with an embedded newline
+    // passes the contains('/') check but corrupts every downstream
+    // consumer (gh args, state file, Markdown URLs).
+    assert_eq!(validate_gh_repo_output("owner/repo\nextra-garbage"), None);
+}
+
+#[test]
+fn validate_gh_repo_output_rejects_bare_slash() {
+    // Empty owner / empty repo segments: a bare `/` is not a valid
+    // GitHub repository slug.
+    assert_eq!(validate_gh_repo_output("/"), None);
+}
+
+#[test]
+fn validate_gh_repo_output_rejects_three_component_path() {
+    // `owner/repo/extra` looks repo-shaped but is not — `gh repo view`
+    // never produces three-segment paths.
+    assert_eq!(validate_gh_repo_output("owner/repo/extra"), None);
+}
+
+#[test]
+fn validate_gh_repo_output_rejects_empty_input() {
+    assert_eq!(validate_gh_repo_output(""), None);
+}
+
+#[test]
+fn validate_gh_repo_output_rejects_whitespace_inside_segment() {
+    assert_eq!(validate_gh_repo_output("owner /repo"), None);
+}
+
+#[test]
+fn validate_gh_repo_output_rejects_owner_only() {
+    assert_eq!(validate_gh_repo_output("owner/"), None);
+}
+
+#[test]
+fn validate_gh_repo_output_rejects_repo_only() {
+    assert_eq!(validate_gh_repo_output("/repo"), None);
+}
+
+#[test]
+fn validate_gh_repo_output_rejects_unsafe_characters() {
+    // Pipes, semicolons, quotes, and other shell metacharacters must
+    // not flow into downstream subprocess args.
+    assert_eq!(validate_gh_repo_output("owner|cat/etc"), None);
+    assert_eq!(validate_gh_repo_output("owner/repo;rm"), None);
+    assert_eq!(validate_gh_repo_output("owner/repo\"injection"), None);
 }
 
 // --- detect_repo (in-process) ---
@@ -231,11 +301,20 @@ fn create_repo_with_custom_remote(
 
 /// `detect_repo` falls back to `gh repo view` when `parse_github_url`
 /// returns None. SSH host aliases (`git@github-pt:owner/repo.git`)
-/// are the canonical case — the regex requires the literal `github.com`
-/// substring, but `gh` resolves the alias via its authenticated session.
-/// The stub touches a marker file when invoked; the marker's existence
-/// is what observably proves the fallback ran (session-context itself
-/// always exits 0 because it swallows detection failures).
+/// are the canonical case — the regex requires the literal
+/// `github.com` substring, but `gh` resolves the alias via its
+/// authenticated session.
+///
+/// Scope of this test: verify that the fallback *is invoked* when the
+/// regex misses an SSH alias. The marker file's existence is the
+/// observable signal — `session-context` is the shallowest entry
+/// point that exercises `detect_repo` and intentionally swallows the
+/// returned value (its `write_tab_sequences` call ignores failures).
+/// The behavior of the validator itself — what counts as a valid
+/// `owner/repo` slug — is covered by the in-process
+/// `validate_gh_repo_output_*` tests above, which do not need PATH
+/// manipulation. `HOME` is set to the tempdir so the child reads no
+/// user dotfiles per `.claude/rules/subprocess-test-hygiene.md`.
 #[test]
 fn gh_fallback_resolves_ssh_alias() {
     use std::fs;
@@ -266,6 +345,7 @@ fn gh_fallback_resolves_ssh_alias() {
         .args(["session-context"])
         .current_dir(&repo)
         .env("PATH", &path_env)
+        .env("HOME", dir.path())
         .output()
         .unwrap();
     assert!(
@@ -280,10 +360,18 @@ fn gh_fallback_resolves_ssh_alias() {
     );
 }
 
-/// `detect_repo`'s gh fallback rejects malformed output that does not
-/// contain `/` — the `s.contains('/')` guard. Stub `gh` to print a
-/// no-slash string and verify the fallback ran AND that
-/// `session-context` still succeeds (detection failure is non-fatal).
+/// `detect_repo`'s gh fallback rejects malformed output via
+/// `validate_gh_repo_output`. Stub `gh` to print a no-slash string
+/// and verify the fallback ran AND that `session-context` still
+/// succeeds (detection failure is non-fatal for `session-context`).
+///
+/// Scope of this test: verify the fallback is invoked and that
+/// malformed gh output does not cause `session-context` to fail. The
+/// rejection behavior itself — multi-line, bare slash, three-segment
+/// paths, etc. — is covered by the in-process
+/// `validate_gh_repo_output_*` tests, which test every rejection
+/// class without PATH manipulation. `HOME` is set to the tempdir per
+/// `.claude/rules/subprocess-test-hygiene.md`.
 #[test]
 fn gh_fallback_rejects_malformed_output() {
     use std::fs;
@@ -314,6 +402,7 @@ fn gh_fallback_rejects_malformed_output() {
         .args(["session-context"])
         .current_dir(&repo)
         .env("PATH", &path_env)
+        .env("HOME", dir.path())
         .output()
         .unwrap();
     assert!(

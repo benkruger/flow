@@ -1626,10 +1626,11 @@ fn analyze_issues_milestone_cli_flag_still_forwarded_to_gh() {
     let log_path = repo.join("gh_args.log");
     // Append (`>>`) because `analyze_issues` invokes gh twice — once for
     // the issue list and once via `detect_repo`'s gh-repo-view fallback.
-    // Only the issue-list call carries `--milestone`, so a whole-log scan
-    // still uniquely locates the argument.
+    // The `---` separator keeps the per-call argv blocks distinguishable
+    // so a future change to either gh invocation doesn't silently
+    // overlap with the milestone-arg search.
     let stub_script = format!(
-        "#!/bin/bash\nprintf '%s\\n' \"$@\" >> {}\necho '[]'\nexit 0\n",
+        "#!/bin/bash\n{{ printf '%s\\n' \"$@\"; echo '---'; }} >> {}\necho '[]'\nexit 0\n",
         log_path.to_string_lossy(),
     );
     let stub_dir = create_gh_stub(&repo, &stub_script);
