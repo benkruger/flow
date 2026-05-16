@@ -163,17 +163,18 @@ use crate::session_metrics::is_safe_transcript_path;
 /// `flow-prime`, and `flow-continue` are plugin-marketplace skills
 /// at `skills/<name>/SKILL.md`, so Claude Code emits the
 /// namespaced `flow:<name>` form when the user types
-/// `/flow:<name>`. `flow-release` is a project-local maintainer
-/// skill at `.claude/skills/flow-release/`, so Claude Code emits
-/// the bare name `flow-release` when the user types
-/// `/flow-release`. The constant reflects the literal
-/// `input.skill` values the `validate-skill` PreToolUse hook
-/// observes; mixing the two shapes is intentional and load-
+/// `/flow:<name>`. `flow-release` and `flow-qa` are project-local
+/// maintainer skills at `.claude/skills/<name>/`, so Claude Code
+/// emits the bare names `flow-release` and `flow-qa` when the user
+/// types `/flow-release` or `/flow-qa`. The constant reflects the
+/// literal `input.skill` values the `validate-skill` PreToolUse
+/// hook observes; mixing the two shapes is intentional and load-
 /// bearing.
 pub const USER_ONLY_SKILLS: &[&str] = &[
     "flow:flow-abort",
     "flow:flow-reset",
     "flow-release",
+    "flow-qa",
     "flow:flow-prime",
     "flow:flow-continue",
 ];

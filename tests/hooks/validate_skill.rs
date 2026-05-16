@@ -114,6 +114,11 @@ fn validate_user_only_skill_flow_prime_is_in_set() {
 }
 
 #[test]
+fn validate_user_only_skill_flow_qa_is_in_set() {
+    assert!(USER_ONLY_SKILLS.contains(&"flow-qa"));
+}
+
+#[test]
 fn validate_fail_open_when_tool_input_missing_skill_field() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();

@@ -131,6 +131,7 @@ and skip to the COMPLETE banner.
 
 | Skill | Purpose |
 |-------|---------|
+| `/flow-qa` | File a pre-decomposed QA issue against the FLOW plugin repo for end-to-end lifecycle regression testing |
 | `/flow-release` | Bump version in plugin.json and marketplace.json, commit, tag, push, and create a GitHub Release |
 | `/flow-changelog-audit` | Audit the Claude Code CHANGELOG.md for plugin-relevant changes; categorize as Adopt/Remove/Adapt and file issues |
 

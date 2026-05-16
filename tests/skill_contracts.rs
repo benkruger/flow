@@ -2248,6 +2248,66 @@ fn flow_release_skill_builds_and_commits_binary() {
     }
 }
 
+/// flow-qa is the project-local maintainer skill that files a
+/// pre-decomposed QA issue for full-lifecycle regression testing
+/// of the FLOW plugin. The SKILL.md must declare valid frontmatter
+/// (name + non-empty description) and emit the canonical announce
+/// banner so the user sees a consistent "STARTING" line when they
+/// type `/flow-qa`.
+///
+/// Regression guarded: a future edit that removes the frontmatter,
+/// changes the `name:` field away from `flow-qa`, drops the
+/// `description:` field, or omits the announce banner string.
+#[test]
+fn flow_qa_skill_exists_with_proper_frontmatter() {
+    let content = fs::read_to_string(
+        common::repo_root()
+            .join(".claude")
+            .join("skills")
+            .join("flow-qa")
+            .join("SKILL.md"),
+    )
+    .expect(".claude/skills/flow-qa/SKILL.md must exist");
+
+    assert!(
+        content.starts_with("---\n"),
+        "flow-qa SKILL.md must open with YAML frontmatter delimiter"
+    );
+
+    let after_open = content
+        .strip_prefix("---\n")
+        .expect("frontmatter open delimiter checked above");
+    let (frontmatter, _body) = after_open
+        .split_once("\n---\n")
+        .expect("flow-qa SKILL.md frontmatter must close with `\\n---\\n`");
+
+    assert!(
+        frontmatter
+            .lines()
+            .any(|line| line.trim() == "name: flow-qa"),
+        "flow-qa SKILL.md frontmatter must declare `name: flow-qa`"
+    );
+
+    let desc_line = frontmatter
+        .lines()
+        .find(|line| line.trim_start().starts_with("description:"))
+        .expect("flow-qa SKILL.md frontmatter must declare a `description:` field");
+    let desc_value = desc_line
+        .trim_start()
+        .strip_prefix("description:")
+        .map(|v| v.trim().trim_matches('"').trim())
+        .unwrap_or("");
+    assert!(
+        !desc_value.is_empty(),
+        "flow-qa SKILL.md `description:` field must be non-empty"
+    );
+
+    assert!(
+        content.contains("FLOW v2.2.0 — flow-qa — STARTING"),
+        "flow-qa SKILL.md must contain the announce banner `FLOW v2.2.0 — flow-qa — STARTING`"
+    );
+}
+
 // --- Logging ---
 
 #[test]
@@ -5103,6 +5163,40 @@ fn flow_skills_admin_and_maintainer_match_user_only() {
             );
         }
     }
+}
+
+/// Named regression: a future edit removes the `/flow-qa` row from
+/// the Maintainer table in `skills/flow-skills/SKILL.md`, so the
+/// catalog of maintainer-invokable skills drifts out of sync with
+/// the project-local `.claude/skills/flow-qa/` resident. Named
+/// consumer: a maintainer typing `/flow:flow-skills` to discover
+/// which maintainer skills they can invoke.
+///
+/// The bare-name regex in `flow_skills_admin_and_maintainer_match_user_only`
+/// captures only `flow:flow-...` prefixed entries from
+/// `USER_ONLY_SKILLS`; `flow-qa` is bare-name and invisible to that
+/// scan. This test provides direct coverage for the `/flow-qa` row.
+#[test]
+fn flow_skills_maintainer_section_references_flow_qa() {
+    let content = common::read_skill("flow-skills");
+    let needle = "\n#### Maintainer\n";
+    let tail = content
+        .split_once(needle)
+        .map(|(_, t)| t)
+        .expect("flow-skills SKILL.md must contain a `#### Maintainer` subsection");
+    let mut end = tail.len();
+    for marker in &["\n## ", "\n### ", "\n#### "] {
+        if let Some((before, _)) = tail.split_once(marker) {
+            if before.len() < end {
+                end = before.len();
+            }
+        }
+    }
+    let section = &tail[..end];
+    assert!(
+        section.contains("/flow-qa"),
+        "Maintainer section of skills/flow-skills/SKILL.md must reference `/flow-qa`"
+    );
 }
 
 // --- no-backwards-reasoning rule + skill scans ---
