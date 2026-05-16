@@ -4520,6 +4520,41 @@ fn skills_no_mkdir_on_claude_paths() {
     );
 }
 
+#[test]
+fn agents_no_transcript_jsonl_reads() {
+    // Forbid references to the per-session transcript file Claude Code
+    // persists at `~/.claude/projects/.../<session>.jsonl` inside any
+    // agent prompt. Reading that file from inside a flow would surface
+    // a permission prompt (the path sits outside the project root) AND
+    // duplicates work — the sanctioned recovery surface is
+    // `compact_summary` in `.flow-states/<branch>/state.json` per
+    // `.claude/rules/post-compaction-recovery.md`. The
+    // `validate-claude-paths` hook mechanically blocks the Read at the
+    // tool layer; the scanner here prevents an agent prompt from
+    // instructing the model to attempt the read in the first place.
+    //
+    // Match pattern: `~/.claude/projects/<non-whitespace>.jsonl`. The
+    // `.jsonl` suffix anchors the match to transcript files
+    // specifically — legitimate `~/.claude/projects/*/memory/*`
+    // references (used by other tooling for auto-memory) do not end
+    // in `.jsonl` and are not flagged.
+    let re = Regex::new(r"~/\.claude/projects/[^\s]*\.jsonl").unwrap();
+    let mut violations = Vec::new();
+    for agent in agent_files() {
+        let content = common::read_agent(&agent);
+        for (i, line) in content.lines().enumerate() {
+            if re.is_match(line) {
+                violations.push(format!("agents/{}:{}: {}", agent, i + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "Agent prompts must not instruct the model to read the persisted transcript file. Use the `compact_summary` field in `.flow-states/<branch>/state.json` per `.claude/rules/post-compaction-recovery.md`. Violations:\n{}",
+        violations.join("\n")
+    );
+}
+
 // --- Prime preset ordering ---
 
 #[test]

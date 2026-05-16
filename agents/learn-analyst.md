@@ -86,6 +86,20 @@ is only meaningful when compared against known process expectations —
 a high visit count signals friction only if you know the expected
 count is one.
 
+## Context recovery — never read the persisted transcript
+
+If a prior conversation was compacted and you need detail beyond
+the inline artifacts, read the `compact_summary` field in
+`.flow-states/<branch>/state.json`. Never attempt to read the
+per-session transcript file Claude Code persists at the user's
+profile — the path sits outside the project root, the read
+surfaces a permission prompt mid-flow, AND the recoverable detail
+already lives in `compact_summary` per
+`.claude/rules/post-compaction-recovery.md`. The
+`validate-claude-paths` hook mechanically blocks the Read tool on
+the transcript root regardless of flow state; treat the block as
+a contract, not a failure to work around.
+
 ## Workflow
 
 **All artifacts are in your prompt.** The diff, state file data, plan,

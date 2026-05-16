@@ -20,7 +20,10 @@ On post-compaction resume during an active flow:
    It sits outside the project root — reads trigger permission
    prompts — and `compact_summary` already holds the recoverable
    detail. The transcript root is also locked down by
-   `validate-claude-paths` Layer 3 for the same reason.
+   `validate-claude-paths` Layer 3 — Edit, Write, AND Read tool
+   calls all block on the transcript root regardless of flow
+   state, so the hook layer mechanically refuses a Read attempt
+   that would otherwise surface a permission prompt mid-flow.
 3. "Lost to compaction" is not a valid conclusion until the state
    file has been read and `compact_summary` confirmed not to hold
    the detail.
