@@ -430,8 +430,12 @@ fn analyze_issues_gh_json_field_list_includes_assignees() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     let log_path = repo.join("gh_args.log");
+    // Append (`>>`) because `analyze_issues` invokes gh twice — once for
+    // the issue list and once via `detect_repo`'s gh-repo-view fallback.
+    // The stub separates calls with a `---` sentinel so the assertion
+    // can scan every invocation's argv.
     let stub_script = format!(
-        "#!/bin/bash\nprintf '%s\\n' \"$@\" > {}\necho '[]'\nexit 0\n",
+        "#!/bin/bash\n{{ printf '%s\\n' \"$@\"; echo '---'; }} >> {}\necho '[]'\nexit 0\n",
         log_path.to_string_lossy(),
     );
     let stub_dir = create_gh_stub(&repo, &stub_script);
@@ -446,17 +450,20 @@ fn analyze_issues_gh_json_field_list_includes_assignees() {
 
     let logged = fs::read_to_string(&log_path).expect("gh stub should have logged args");
     let lines: Vec<&str> = logged.lines().collect();
-    let json_idx = lines
+    let has_assignees = lines
         .iter()
-        .position(|l| *l == "--json")
-        .expect("gh args should include --json");
-    let field_list = lines
-        .get(json_idx + 1)
-        .expect("--json should be followed by a value");
+        .enumerate()
+        .filter(|(_, l)| **l == "--json")
+        .any(|(idx, _)| {
+            lines
+                .get(idx + 1)
+                .map(|fl| fl.split(',').any(|f| f == "assignees"))
+                .unwrap_or(false)
+        });
     assert!(
-        field_list.split(',').any(|f| f == "assignees"),
-        "expected --json field list to include `assignees`; got `{}`",
-        field_list,
+        has_assignees,
+        "expected at least one --json invocation to include `assignees`; got: {}",
+        logged,
     );
 }
 
@@ -1617,8 +1624,12 @@ fn analyze_issues_milestone_cli_flag_still_forwarded_to_gh() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     let log_path = repo.join("gh_args.log");
+    // Append (`>>`) because `analyze_issues` invokes gh twice — once for
+    // the issue list and once via `detect_repo`'s gh-repo-view fallback.
+    // Only the issue-list call carries `--milestone`, so a whole-log scan
+    // still uniquely locates the argument.
     let stub_script = format!(
-        "#!/bin/bash\nprintf '%s\\n' \"$@\" > {}\necho '[]'\nexit 0\n",
+        "#!/bin/bash\nprintf '%s\\n' \"$@\" >> {}\necho '[]'\nexit 0\n",
         log_path.to_string_lossy(),
     );
     let stub_dir = create_gh_stub(&repo, &stub_script);

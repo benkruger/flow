@@ -19,12 +19,23 @@ use common::{
 
 // --- Test helpers ---
 
-/// Create a default gh stub (PR create returns fake URL).
+/// Create a default gh stub.
+///
+/// Dispatches by subcommand so the new `gh repo view` fallback in
+/// `github::detect_repo` (invoked by start-workspace's state backfill
+/// when the origin URL is a bare-path file rather than github.com)
+/// does not silently succeed and pollute the state file with a fake
+/// repo. `pr create` returns the test PR URL; `repo view` exits
+/// non-zero so `detect_repo` returns `None` and the `state["repo"]`
+/// None branch fires.
 fn create_default_gh_stub(repo: &Path) -> PathBuf {
     create_gh_stub(
         repo,
         "#!/bin/bash\n\
-         echo \"https://github.com/test/repo/pull/42\"\n",
+         case \"$1\" in\n  \
+           repo) exit 1 ;;\n  \
+           *) echo \"https://github.com/test/repo/pull/42\" ;;\n\
+         esac\n",
     )
 }
 
