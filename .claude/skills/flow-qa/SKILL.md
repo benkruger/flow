@@ -30,7 +30,7 @@ clock-bearing and clock-free forms. Run all three in parallel via
 the Bash tool:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id
+bin/flow generate-id
 ```
 
 ```bash
@@ -146,16 +146,15 @@ Files: `hello.sh`
 Substitute the literal `<plan_date>` value captured in Step 1 into
 every occurrence inside the body.
 
-## Step 3 — Write, validate, confirm, file, record, report
+## Step 3 — Write, validate, file, record, report
 
 Step 3 lands the issue on GitHub through the standard issue-filing
 choreography. The Write tool persists the body so `bin/flow issue`
 can read it; the validator catches malformed sentinels locally
-before the network call; the HARD-GATE below stops a runaway
-self-invocation from leaking a public issue against the upstream
-plugin repo; `add-issue` records the URL so the maintainer's next
-session can trace the QA pass; the report names the URL and the
-next command so the maintainer can chain into `/flow-start`.
+before the network call; `add-issue` records the URL so the
+maintainer's next session can trace the QA pass; the report names
+the URL and the next command so the maintainer can chain into
+`/flow-start`.
 
 **Write.** Write the composed body to
 `<project_root>/.flow-issue-body-<id>` using the Write tool with the
@@ -168,44 +167,18 @@ QA-pass filings from colliding on a single shared file.
 **Validate.** Validate the body file via the pre-filing checker:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow validate-issue-body --mode decomposed --body-file <project_root>/.flow-issue-body-<id>
+bin/flow validate-issue-body --mode decomposed --body-file <project_root>/.flow-issue-body-<id>
 ```
 
 Parse the last line as JSON. If `status` is `error`, fix the body
 per the named defect, rewrite the file, and re-run the validator
 (max 5 attempts). After 5 failed attempts, halt and report.
 
-<HARD-GATE>
-Once `validate-issue-body` returns `status: ok`, STOP and confirm
-with the user before filing. The skill ships a public GitHub
-issue against the upstream FLOW plugin repo (`benkruger/flow`) on
-the maintainer's behalf — a resource-shipping action the user-only
-gate's design treats as requiring explicit user intent.
-
-Use AskUserQuestion:
-
-> "Ready to file `FLOW QA Pass <title_date>` against `benkruger/flow`?"
->
-> Options:
-> - **Yes, file the QA issue** — proceeds to the `bin/flow issue`
->   invocation below.
-> - **Cancel** — abort filing; the composed body remains at
->   `<project_root>/.flow-issue-body-<id>` for inspection. The
->   maintainer can delete it manually.
-
-This HARD-GATE is the second-line defense paired with the user-only
-Layer 1 block in `validate-skill` (see
-`.claude/rules/user-only-skills.md` "How to Add a Skill to the
-User-Only Set" item 4). Layer 1 fails open on transcript errors —
-this prompt closes the gap so an inadvertent model self-invocation
-of `/flow-qa` cannot silently file a public issue.
-</HARD-GATE>
-
-**File.** When the user approves, file against `benkruger/flow` with
+**File.** File against `benkruger/flow` with
 the `decomposed` label and assignee `@me`:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "FLOW QA Pass <title_date>" --body-file <project_root>/.flow-issue-body-<id> --label decomposed --assignee @me --repo benkruger/flow
+bin/flow issue --title "FLOW QA Pass <title_date>" --body-file <project_root>/.flow-issue-body-<id> --label decomposed --assignee @me --repo benkruger/flow
 ```
 
 Capture the returned issue URL and parse the trailing issue number
@@ -215,7 +188,7 @@ as `<M>`.
 invoked outside an active flow):
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "FLOW QA Pass <title_date>" --url "<issue_url>" --phase flow-qa
+bin/flow add-issue --label decomposed --title "FLOW QA Pass <title_date>" --url "<issue_url>" --phase flow-qa
 ```
 
 **Report.** Print the COMPLETE banner naming the issue URL and the
@@ -248,6 +221,3 @@ code block:
   pre-filing validator catches malformed sentinels, missing
   `## Implementation Plan` heading, or empty task lists before
   the issue lands.
-- Always pause at the Step 3 HARD-GATE before filing — the
-  user-only Layer 1 gate is the primary defense; the HARD-GATE is
-  the explicit-confirmation backstop for runaway self-invocations.

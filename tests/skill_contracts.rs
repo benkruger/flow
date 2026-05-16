@@ -7382,3 +7382,49 @@ fn docs_with_behavior_key_files_bullet_clarifies_shape() {
          of how the artifact works to the `module doc comment`"
     );
 }
+
+/// Project-local skills under `.claude/skills/**/SKILL.md` run only in
+/// the FLOW repo where bare `bin/flow` resolves directly. The
+/// `${CLAUDE_PLUGIN_ROOT}/bin/flow` prefix is for plugin-marketplace
+/// skills under `skills/**/SKILL.md` that need to resolve in target
+/// projects — applying it to a project-local skill triggers Claude
+/// Code's "Contains expansion" permission prompt mid-autonomous-flow
+/// with no benefit. See `.claude/rules/skill-authoring.md` "Plugin
+/// Root for bin/flow".
+#[test]
+fn no_claude_skills_use_plugin_root_expansion() {
+    const FORBIDDEN: &str = "${CLAUDE_PLUGIN_ROOT}/bin/flow";
+    let mut violations = Vec::new();
+
+    let project_skills_dir = common::repo_root().join(".claude").join("skills");
+    if let Ok(entries) = fs::read_dir(&project_skills_dir) {
+        for entry in entries.flatten() {
+            if !entry.path().is_dir() {
+                continue;
+            }
+            let skill_md = entry.path().join("SKILL.md");
+            let Ok(content) = fs::read_to_string(&skill_md) else {
+                continue;
+            };
+            let skill_name = entry.file_name().to_string_lossy().to_string();
+            for block in common::extract_bash_blocks(&content) {
+                for (line_no, line) in block.lines().enumerate() {
+                    if line.contains(FORBIDDEN) {
+                        violations.push(format!(
+                            ".claude/skills/{}/SKILL.md:{} — {}",
+                            skill_name,
+                            line_no + 1,
+                            line.trim()
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "Project-local skills under `.claude/skills/**/SKILL.md` must use bare `bin/flow`, not `${{CLAUDE_PLUGIN_ROOT}}/bin/flow`. Bare `bin/flow` resolves in the FLOW repo where these skills run; the expansion form triggers a permission prompt with no benefit. See `.claude/rules/skill-authoring.md` \"Plugin Root for bin/flow\". Violations:\n{}",
+        violations.join("\n")
+    );
+}
