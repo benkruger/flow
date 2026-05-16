@@ -67,6 +67,70 @@ Plan, Code, Review, Learn, Complete. The `continue: auto`
 configuration is readable in every phase's `phase-enter`
 response.
 
+## System-Initiated Prompts
+
+The model-initiated-pauses rule above forbids prompts the model
+invents. The same principle extends to prompts the SYSTEM raises
+on the model's behalf: when a phase is configured `continue:
+auto`, no permission prompt may reach the user regardless of
+which subsystem raises it. Claude Code platform protections,
+`FLOW_DENY` patterns, `UNIVERSAL_ALLOW` misses, sensitive-path
+heuristics, and any other gate that could surface a prompt are
+all in scope. The user authorized continuous execution by
+choosing autonomous mode; a permission prompt that requires the
+user to type "yes" defeats that authorization just as completely
+as a model-initiated `AskUserQuestion` would.
+
+System-initiated prompts have two response shapes. The right
+shape depends on whether the operation that triggered the prompt
+is legitimate:
+
+- **Legitimate operation reaches a sanctioned-tool gap.** The
+  model is doing exactly what the skill instructs, but the
+  sanctioned tool surface does not cover the underlying need —
+  a directory creation that the Write tool cannot perform under
+  `.claude/`, a state-derived read that the allow list does not
+  cover, an artifact path the permission model does not anticipate.
+  The fix is to extend the sanctioned-tool surface so the
+  operation reaches the user without a prompt: route the write
+  through `bin/flow write-rule` (which creates parent directories
+  internally), add the missing `UNIVERSAL_ALLOW` entry, or build
+  a new subcommand the skill can call. Adding to the sanctioned
+  surface is permanent; the next session inherits the fix.
+- **Model reaches for an unsanctioned operation.** The model
+  invents a shape the sanctioned surface deliberately excludes —
+  reading the persisted transcript JSONL for context recovery,
+  writing a placeholder file to anchor a later redirect, calling
+  an interpreter eval form to batch operations. The fix is to
+  remove the unsanctioned operation at source: rewrite the skill
+  or agent to reach for the documented sanctioned alternative
+  (`compact_summary` in `.flow-states/<branch>/state.json`, the
+  Read tool against persisted command output, sequential Bash
+  calls), and add a mechanical guard so the unsanctioned shape
+  cannot reappear.
+
+Choosing which shape applies is a design decision, not a
+runtime classification. A prompt that surfaces during a flow is
+a signal that the design upstream of the prompt is incomplete —
+either the sanctioned surface needs extending, or the
+unsanctioned operation needs removing at source.
+
+Cross-references:
+
+- `.claude/rules/permissions.md` — the deny-list and allow-list
+  discipline that governs which Bash invocations and tool calls
+  fall through cleanly under autonomous mode.
+- `.claude/rules/skill-authoring.md` "Platform Constraints" —
+  the carve-out for paths Claude Code protects regardless of
+  settings, including the `bin/flow write-rule` redirect for
+  `.claude/` writes.
+- `.claude/rules/post-compaction-recovery.md` — the sanctioned
+  recovery surface (`compact_summary` in the state file)
+  replacing the unsanctioned transcript JSONL read.
+- `.claude/rules/no-placeholder-anchors.md` — the rule that
+  forbids placeholder-file-then-redirect anchoring as an
+  unsanctioned operation, regardless of destination.
+
 ## Enforcement
 
 The prose rule above is backed by two mechanical hooks. The first
