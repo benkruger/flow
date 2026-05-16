@@ -4533,12 +4533,17 @@ fn agents_no_transcript_jsonl_reads() {
     // tool layer; the scanner here prevents an agent prompt from
     // instructing the model to attempt the read in the first place.
     //
-    // Match pattern: `~/.claude/projects/<non-whitespace>.jsonl`. The
+    // Match pattern: any path containing `.claude/projects/` followed by
+    // a non-whitespace path tail ending in `.jsonl`. Anchored to
+    // `.claude/projects/` rather than `~/` so absolute paths
+    // (`/Users/<name>/.claude/projects/...`) and env-var-expanded
+    // forms (`$HOME/.claude/projects/...`) are all caught. The
     // `.jsonl` suffix anchors the match to transcript files
     // specifically — legitimate `~/.claude/projects/*/memory/*`
     // references (used by other tooling for auto-memory) do not end
-    // in `.jsonl` and are not flagged.
-    let re = Regex::new(r"~/\.claude/projects/[^\s]*\.jsonl").unwrap();
+    // in `.jsonl` and are not flagged. Match is case-insensitive on
+    // the `.jsonl` extension via the `(?i)` flag.
+    let re = Regex::new(r"(?i)\.claude/projects/[^\s]*\.jsonl").unwrap();
     let mut violations = Vec::new();
     for agent in agent_files() {
         let content = common::read_agent(&agent);
@@ -4570,26 +4575,61 @@ fn agents_no_transcript_jsonl_reads() {
 /// concerns.
 #[test]
 fn skills_no_tmp_writes_outside_allowed_extensions() {
+    // The closed extension set per `.claude/rules/permissions.md`
+    // "Symmetric R+W /tmp/ Extension Policy."
     const ALLOWED: &[&str] = &["txt", "diff", "patch", "md", "json", "jsonl"];
-    let re = Regex::new(r"Write\(/tmp/[^)]*\.([a-zA-Z0-9]+)\)").unwrap();
+
+    // Match `Write(/tmp/...)` or `Write(//tmp/...)`. UNIVERSAL_ALLOW
+    // patterns use the double-slash form; skill prose may use either.
+    // The optional second slash is captured via `/?`. The extension
+    // capture is optional — a missing extension (`Write(/tmp/scratch)`)
+    // is itself a violation because no closed-set entry covers it,
+    // surfacing a permission prompt at runtime.
+    let re = Regex::new(r"Write\(//?tmp/([^)]+)\)").unwrap();
     let mut violations = Vec::new();
+
+    let classify = |inner: &str| -> Option<String> {
+        // Extract the extension if present (text after the last
+        // `.` in the path tail). Missing extension → return None,
+        // which the caller treats as a violation.
+        inner
+            .rsplit_once('.')
+            .map(|(_, ext)| ext.to_ascii_lowercase())
+    };
+
+    let check = |label: String, line_no: usize, line: &str, violations: &mut Vec<String>| {
+        for cap in re.captures_iter(line) {
+            let inner = cap.get(1).unwrap().as_str();
+            let match_text = cap.get(0).unwrap().as_str();
+            match classify(inner) {
+                Some(ext) if ALLOWED.contains(&ext.as_str()) => {} // in-set, allowed
+                Some(ext) => violations.push(format!(
+                    "{}:{}: {} — extension `.{}` is outside the closed allow set",
+                    label,
+                    line_no + 1,
+                    match_text,
+                    ext
+                )),
+                None => violations.push(format!(
+                    "{}:{}: {} — extensionless /tmp/ writes have no allow-list entry",
+                    label,
+                    line_no + 1,
+                    match_text
+                )),
+            }
+        }
+    };
 
     // Plugin-marketplace skills.
     for name in common::all_skill_names() {
         let content = common::read_skill(&name);
         for (i, line) in content.lines().enumerate() {
-            for cap in re.captures_iter(line) {
-                let ext = cap.get(1).unwrap().as_str().to_ascii_lowercase();
-                if !ALLOWED.contains(&ext.as_str()) {
-                    violations.push(format!(
-                        "skills/{}/SKILL.md:{}: Write(/tmp/...{}) — extension `.{}` is outside the closed allow set",
-                        name,
-                        i + 1,
-                        cap.get(0).unwrap().as_str(),
-                        ext
-                    ));
-                }
-            }
+            check(
+                format!("skills/{}/SKILL.md", name),
+                i,
+                line,
+                &mut violations,
+            );
         }
     }
 
@@ -4606,18 +4646,12 @@ fn skills_no_tmp_writes_outside_allowed_extensions() {
             };
             let skill_name = entry.file_name().to_string_lossy().to_string();
             for (i, line) in content.lines().enumerate() {
-                for cap in re.captures_iter(line) {
-                    let ext = cap.get(1).unwrap().as_str().to_ascii_lowercase();
-                    if !ALLOWED.contains(&ext.as_str()) {
-                        violations.push(format!(
-                            ".claude/skills/{}/SKILL.md:{}: {} — extension `.{}` is outside the closed allow set",
-                            skill_name,
-                            i + 1,
-                            cap.get(0).unwrap().as_str(),
-                            ext
-                        ));
-                    }
-                }
+                check(
+                    format!(".claude/skills/{}/SKILL.md", skill_name),
+                    i,
+                    line,
+                    &mut violations,
+                );
             }
         }
     }
@@ -4626,18 +4660,7 @@ fn skills_no_tmp_writes_outside_allowed_extensions() {
     for agent in agent_files() {
         let content = common::read_agent(&agent);
         for (i, line) in content.lines().enumerate() {
-            for cap in re.captures_iter(line) {
-                let ext = cap.get(1).unwrap().as_str().to_ascii_lowercase();
-                if !ALLOWED.contains(&ext.as_str()) {
-                    violations.push(format!(
-                        "agents/{}:{}: {} — extension `.{}` is outside the closed allow set",
-                        agent,
-                        i + 1,
-                        cap.get(0).unwrap().as_str(),
-                        ext
-                    ));
-                }
-            }
+            check(format!("agents/{}", agent), i, line, &mut violations);
         }
     }
 
@@ -4663,17 +4686,33 @@ fn skills_no_tmp_writes_outside_allowed_extensions() {
 /// `bin/flow write-rule` for managed artifacts).
 #[test]
 fn skills_no_placeholder_anchor_language() {
-    let anchor_redirect_re = Regex::new(r"(?i)anchor.*redirect").unwrap();
+    // The forbidden mechanic is "write a stub file, then redirect
+    // command output into it." Trigger vocabulary targets that exact
+    // pattern. `placeholder.*redirect` on a single line is more
+    // specific than `anchor.*redirect` (the latter catches legitimate
+    // prose like "anchor the discovery step and redirect to ...").
+    // `empty.*file.*then.*redirect` catches the imperative form.
+    let placeholder_redirect_re = Regex::new(r"(?i)placeholder.*redirect").unwrap();
     let empty_then_redirect_re = Regex::new(r"(?i)empty.*file.*then.*redirect").unwrap();
     let mut violations = Vec::new();
 
     let scan = |label: &str, content: &str, violations: &mut Vec<String>| {
         let lines: Vec<&str> = content.lines().collect();
         for (i, line) in lines.iter().enumerate() {
-            // Trigger 1: placeholder ↔ anchor within 5 lines (either
-            // direction). We anchor on `placeholder` matches and look
-            // for `anchor` in the surrounding window.
             let lower = line.to_ascii_lowercase();
+            // Opt-out comment grammar: a line that carries the
+            // marker `<!-- no-placeholder-anchors: not-anchored -->`
+            // suppresses every trigger on that line. The marker is
+            // the standard escape hatch for legitimate prose that
+            // happens to use the trigger vocabulary in a non-
+            // forbidden sense (e.g., describing the anti-pattern
+            // itself).
+            if line.contains("<!-- no-placeholder-anchors: not-anchored -->") {
+                continue;
+            }
+            // Trigger 1: placeholder ↔ anchor within 5 lines.
+            // The proximity check catches multi-line prose that
+            // walks the model through stub-file-then-anchor steps.
             if lower.contains("placeholder") {
                 let lo = i.saturating_sub(5);
                 let hi = (i + 6).min(lines.len());
@@ -4689,10 +4728,11 @@ fn skills_no_placeholder_anchor_language() {
                     }
                 }
             }
-            // Trigger 2 + 3: same-line patterns.
-            if anchor_redirect_re.is_match(&lower) {
+            // Trigger 2 + 3: same-line patterns targeting the actual
+            // forbidden mechanic.
+            if placeholder_redirect_re.is_match(&lower) {
                 violations.push(format!(
-                    "{}:{}: 'anchor.*redirect': {}",
+                    "{}:{}: 'placeholder.*redirect': {}",
                     label,
                     i + 1,
                     line.trim()

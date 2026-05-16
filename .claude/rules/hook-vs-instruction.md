@@ -196,12 +196,22 @@ insufficient:
   `validate-claude-paths` redirects to
   `bin/flow write-rule` for `CLAUDE.md`,
   `.claude/rules/`, and `.claude/skills/`.
-- **Edit/Write on `~/.claude/projects/` (transcript root) in
-  any context** — `validate-claude-paths` rejects Edit/Write
-  regardless of flow state. The transcript file backs Layer 1's
-  user-invocation check; tampering would defeat
-  `validate-skill`. Read access is preserved for the walker
-  itself. See `.claude/rules/user-only-skills.md` Layer 3.
+- **Edit/Write/Read/Glob/Grep on `~/.claude/projects/`
+  (transcript root) in any context** —
+  `validate-claude-paths` rejects Edit, Write, Read, Glob,
+  and Grep across the `~/.claude/projects/` subtree
+  regardless of flow state, except for the auto-memory
+  subdirectory (`~/.claude/projects/<id>/memory/...`) which
+  is carved out so the user's MEMORY.md remains readable.
+  The transcript files back Layer 1's user-invocation check;
+  tampering would defeat `validate-skill`, and a model
+  Read/Glob/Grep of the transcript root would surface a
+  permission prompt mid-flow. Internal walkers in
+  `validate-skill` and `validate-ask-user` use
+  `fs::read_to_string` from Rust subprocesses rather than
+  the Read tool, so blocking Read/Glob/Grep at the tool
+  layer does not affect them. See
+  `.claude/rules/user-only-skills.md` Layer 3.
 - **Edit/Write on shared config files inside a worktree** —
   `validate-worktree-paths` rejects modifications to
   `.gitignore`, `.gitattributes`, `Makefile`, etc., without

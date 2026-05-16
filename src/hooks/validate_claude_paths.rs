@@ -1,23 +1,28 @@
-//! PreToolUse hook that blocks Edit/Write/Read on:
+//! PreToolUse hook that blocks Edit/Write/Read/Glob/Grep on:
 //!
 //! 1. `.claude/rules/`, `.claude/skills/`, and `CLAUDE.md` — only Edit
 //!    and Write, only during active FLOW phases. Redirects to
-//!    `bin/flow write-rule`. Read of these paths is preserved so the
-//!    model can read rule and skill files during a flow.
-//! 2. `~/.claude/projects/` (the Claude Code persisted transcript root,
-//!    which also houses the auto-memory directory) — Edit, Write, AND
-//!    Read, in ALL contexts (not just active flows). The matcher walks
-//!    the path components and fires whenever any segment matches
-//!    `.claude` followed by `projects` (case-insensitive), covering the
-//!    entire subtree — transcript JSONLs, memory files, and any future
-//!    descendant. Transcript tampering could subvert
+//!    `bin/flow write-rule`. Read/Glob/Grep of these paths is preserved
+//!    so the model can read and search rule and skill files during a
+//!    flow.
+//! 2. `~/.claude/projects/` (the Claude Code persisted transcript
+//!    root) — Edit, Write, Read, Glob, AND Grep, in ALL contexts (not
+//!    just active flows). The matcher walks the path components and
+//!    fires whenever any segment matches `.claude` followed by
+//!    `projects` (case-insensitive). The auto-memory subdirectory
+//!    (`~/.claude/projects/<project-id>/memory/...`) is CARVED OUT so
+//!    Read of the user's MEMORY.md continues to work — the
+//!    transcript-tampering threat model targets the per-session JSONL
+//!    files at the second-level project-id directory, not the memory
+//!    subtree which the UNIVERSAL_ALLOW `Read(~/.claude/projects/*/memory/*)`
+//!    entry preserves. Transcript tampering could subvert
 //!    `validate-skill`'s user-only block by injecting a fake user
-//!    `<command-name>` line; a model Read of the transcript root also
-//!    sits outside the project root and would surface a permission
-//!    prompt mid-flow. The internal walkers in `validate-skill` and
-//!    `validate-ask-user` use `fs::read_to_string` from inside Rust
-//!    subcommands rather than the Read tool, so blocking Read at the
-//!    tool layer does not affect them.
+//!    `<command-name>` line; a model Read/Glob/Grep of the transcript
+//!    root also sits outside the project root and would surface a
+//!    permission prompt mid-flow. The internal walkers in
+//!    `validate-skill` and `validate-ask-user` use `fs::read_to_string`
+//!    from inside Rust subcommands rather than the Read tool, so
+//!    blocking Read at the tool layer does not affect them.
 //!
 //!    The block message leads with a redirect to
 //!    `bin/flow write-rule --path .claude/rules/<topic>.md` so a
@@ -26,12 +31,13 @@
 //!    points at `.claude/rules/persistence-routing.md` as the routing
 //!    decision tree.
 //!
-//! Fires on Edit, Write, and Read tool calls.
+//! Fires on Edit, Write, Read, Glob, and Grep tool calls.
 //!
 //! Exit 0 — allow (path is not protected, or no FLOW phase active and
 //!          path is not in the always-protected transcript root, or
-//!          the tool is Read and the path is a non-transcript protected
-//!          path)
+//!          the tool is Read/Glob/Grep and the path is a non-transcript
+//!          protected path, or the path is under the auto-memory
+//!          subdirectory carve-out)
 //! Exit 2 — block
 
 use std::path::Path;
@@ -41,16 +47,29 @@ use crate::flow_paths::FlowStatesDir;
 use crate::protected_paths::is_protected_path;
 
 /// Returns `true` when `file_path` passes through a `.claude/projects/`
-/// directory at any depth. The Claude Code harness persists session
-/// transcripts under `<home>/.claude/projects/<project_id>/<session>.jsonl`;
-/// any Edit/Write to that family of paths is a tampering vector for
-/// `validate-skill`'s user-only-skill block, so blocked across all
-/// contexts (not just active flows).
+/// directory at any depth, EXCEPT when the path enters the auto-memory
+/// subdirectory (`.claude/projects/<project-id>/memory/...`). The Claude
+/// Code harness persists session transcripts under
+/// `<home>/.claude/projects/<project_id>/<session>.jsonl`; Edit, Write,
+/// Read, Glob, and Grep on that family of paths is a tampering vector
+/// for `validate-skill`'s user-only-skill block AND surfaces a
+/// permission prompt because the path sits outside the project root.
+/// Blocked across all contexts (not just active flows).
 ///
-/// Matching is ASCII-case-insensitive for `.claude` and `projects` so a
-/// caller on a case-insensitive filesystem (macOS APFS/HFS+ by default)
-/// cannot bypass the gate by writing to `.CLAUDE/Projects/...` —
-/// matches the same discipline used by `is_protected_path`.
+/// The auto-memory carve-out preserves Read access to the user's
+/// MEMORY.md, which lives at
+/// `~/.claude/projects/<project-id>/memory/MEMORY.md`. The
+/// UNIVERSAL_ALLOW pattern `Read(~/.claude/projects/*/memory/*)`
+/// documents this carve-out at the settings layer; the hook honors the
+/// same boundary by checking the third path component for `memory`
+/// (case-insensitive) and returning `false` so legitimate memory reads
+/// pass through.
+///
+/// Matching is ASCII-case-insensitive for `.claude`, `projects`, and
+/// `memory` so a caller on a case-insensitive filesystem (macOS
+/// APFS/HFS+ by default) cannot bypass the gate by writing to
+/// `.CLAUDE/Projects/...` — matches the same discipline used by
+/// `is_protected_path`.
 fn is_transcript_path(file_path: &str) -> bool {
     let path = Path::new(file_path);
     let components: Vec<&str> = path
@@ -61,6 +80,18 @@ fn is_transcript_path(file_path: &str) -> bool {
         if comp.eq_ignore_ascii_case(".claude") && i + 1 < components.len() {
             let next = components[i + 1];
             if next.eq_ignore_ascii_case("projects") {
+                // Carve out `.claude/projects/<project-id>/memory/...`:
+                // the auto-memory subdirectory is preserved per the
+                // UNIVERSAL_ALLOW Read(~/.claude/projects/*/memory/*)
+                // entry. Memory files are not transcript content; the
+                // tampering threat targets the per-session JSONL at
+                // the second-level project-id directory.
+                if i + 3 < components.len() {
+                    let memory_candidate = components[i + 3];
+                    if memory_candidate.eq_ignore_ascii_case("memory") {
+                        return false;
+                    }
+                }
                 return true;
             }
         }
@@ -68,18 +99,57 @@ fn is_transcript_path(file_path: &str) -> bool {
     false
 }
 
-/// Validate that an Edit/Write/Read on this path is allowed.
+/// Extract the target file path from `tool_input`. Edit, Write, and
+/// Read use `file_path`; Glob uses `pattern` (with optional `path`);
+/// Grep uses `path`. The helper checks all three keys in priority
+/// order so the hook sees the same target the model addressed,
+/// regardless of which tool emitted the call.
+///
+/// Mirrors `validate_worktree_paths::get_file_path` with `pattern`
+/// added for Glob — `.claude/rules/security-gates.md` "Enumerate
+/// Bypass Variants Before Coding" requires the gate to cover every
+/// path field the matcher family carries.
+fn get_file_path(tool_input: &serde_json::Value) -> String {
+    if let Some(fp) = tool_input.get("file_path").and_then(|v| v.as_str()) {
+        return fp.to_string();
+    }
+    if let Some(p) = tool_input.get("path").and_then(|v| v.as_str()) {
+        return p.to_string();
+    }
+    if let Some(pat) = tool_input.get("pattern").and_then(|v| v.as_str()) {
+        return pat.to_string();
+    }
+    String::new()
+}
+
+/// Normalize `tool_name` for gate comparison: strip NULs, trim
+/// whitespace, lowercase with ASCII semantics. Mirrors
+/// `.claude/rules/security-gates.md` "Normalize Before Comparing" —
+/// gate inputs must be robust to case variants and whitespace padding
+/// that the harness or future Claude Code releases could emit.
+fn normalize_tool_name(s: &str) -> String {
+    s.replace('\0', "").trim().to_ascii_lowercase()
+}
+
+/// Validate that an Edit/Write/Read/Glob/Grep on this path is allowed.
 ///
 /// `tool_name` is the literal name from the hook input (`"Edit"`,
-/// `"Write"`, `"Read"`, …). Transcript-root paths (Layer 2 above) block
-/// for any tool, including Read — tampering and surfacing a permission
-/// prompt are both prevented. Protected paths (Layer 1: `.claude/rules/`,
-/// `.claude/skills/`, `CLAUDE.md`) block only for mutating tools (Edit,
-/// Write); Read of those paths is preserved so the model can read rule
-/// and skill files during a flow. An unrecognized tool_name (empty,
-/// future tool name) falls into the Edit/Write block class — fail-closed
-/// so a new mutating tool surface added by Claude Code doesn't silently
-/// bypass the protected-path gate.
+/// `"Write"`, `"Read"`, `"Glob"`, `"Grep"`, …). Comparison is
+/// normalized (NUL-stripped, whitespace-trimmed, ASCII-lowercased) per
+/// `.claude/rules/security-gates.md` "Normalize Before Comparing" so
+/// case variants and trailing whitespace cannot bypass or falsely
+/// trip the gate.
+///
+/// Transcript-root paths (Layer 2 above) block for any tool, including
+/// Read/Glob/Grep — tampering, content enumeration, and permission-
+/// prompt surface are all prevented. Protected paths (Layer 1:
+/// `.claude/rules/`, `.claude/skills/`, `CLAUDE.md`) block only for
+/// mutating tools (Edit, Write); Read/Glob/Grep of those paths is
+/// preserved so the model can read and search rule and skill files
+/// during a flow. An unrecognized tool_name (empty, future tool name)
+/// falls into the Edit/Write block class — fail-closed so a new
+/// mutating tool surface added by Claude Code doesn't silently bypass
+/// the protected-path gate.
 ///
 /// Returns `(allowed, message)`.
 pub fn validate(file_path: &str, flow_active: bool, tool_name: &str) -> (bool, String) {
@@ -90,16 +160,19 @@ pub fn validate(file_path: &str, flow_active: bool, tool_name: &str) -> (bool, S
     // Transcript paths blocked regardless of flow_active and tool_name.
     // Tampering with the persisted transcript can subvert
     // validate-skill's user-only block by injecting a fake user
-    // `<command-name>` line; a model Read of the transcript root also
-    // sits outside the project root and would surface a permission
-    // prompt mid-flow. The block must fire even pre-flow / post-flow
-    // and for any tool that can address the path.
+    // `<command-name>` line; a model Read/Glob/Grep of the transcript
+    // root also sits outside the project root and would surface a
+    // permission prompt mid-flow. The block must fire even pre-flow
+    // / post-flow and for any tool that can address the path.
     if is_transcript_path(file_path) {
         return (
             false,
             "BLOCKED: `~/.claude/projects/` is the Claude Code persisted \
-             transcript root and the auto-memory directory. Edit, Write, \
-             and Read are all forbidden here.\n\n\
+             transcript root. Edit, Write, Read, Glob, and Grep are all \
+             forbidden here. The auto-memory subdirectory \
+             (`~/.claude/projects/<project-id>/memory/...`) IS allowed \
+             — only the transcript JSONL files at the project-id level \
+             are blocked.\n\n\
              To capture a behavioral constraint that every engineer \
              should follow, write a project rule: \
              `${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule \
@@ -118,11 +191,12 @@ pub fn validate(file_path: &str, flow_active: bool, tool_name: &str) -> (bool, S
              The internal transcript walkers in validate-skill and \
              validate-ask-user use fs::read_to_string from Rust \
              subprocesses, not the Read tool, so blocking the Read tool \
-             at this layer does not affect them. Edit, Write, and Read \
-             are blocked across all contexts (not just active flows) \
-             because tampering with — or model-tool reading of — the \
-             transcript can subvert validate-skill's user-only skill \
-             block or surface a permission prompt mid-flow."
+             at this layer does not affect them. Edit, Write, Read, \
+             Glob, and Grep are blocked across all contexts (not just \
+             active flows) because tampering with — or model-tool \
+             reading of — the transcript can subvert validate-skill's \
+             user-only skill block or surface a permission prompt \
+             mid-flow."
                 .to_string(),
         );
     }
@@ -132,14 +206,16 @@ pub fn validate(file_path: &str, flow_active: bool, tool_name: &str) -> (bool, S
     }
 
     // Protected-path block (Layer 1) applies only to mutating tools.
-    // Read of `.claude/rules/<x>.md`, `.claude/skills/<x>/SKILL.md`, and
-    // `CLAUDE.md` is preserved so the model can read rule and skill
-    // files during an active flow — `system-reminder` injections cover
-    // the auto-load case, but explicit Read calls remain valid. An
-    // unrecognized tool_name falls into the mutating branch
-    // (fail-closed) so a new mutating tool surface added by Claude Code
-    // doesn't silently bypass the gate.
-    if tool_name == "Read" {
+    // Read/Glob/Grep on `.claude/rules/<x>.md`,
+    // `.claude/skills/<x>/SKILL.md`, and `CLAUDE.md` is preserved so the
+    // model can read and search rule and skill files during an active
+    // flow — `system-reminder` injections cover the auto-load case, but
+    // explicit Read/Glob/Grep calls remain valid. An unrecognized
+    // tool_name falls into the mutating branch (fail-closed) so a new
+    // mutating tool surface added by Claude Code doesn't silently
+    // bypass the gate.
+    let normalized = normalize_tool_name(tool_name);
+    if normalized == "read" || normalized == "glob" || normalized == "grep" {
         return (true, String::new());
     }
 
@@ -204,10 +280,7 @@ pub fn run_impl_main(
         .cloned()
         .unwrap_or(serde_json::Value::Object(Default::default()));
 
-    let file_path = tool_input
-        .get("file_path")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let file_path = get_file_path(&tool_input);
     if file_path.is_empty() {
         return (0, None);
     }
@@ -230,7 +303,7 @@ pub fn run_impl_main(
         _ => false,
     };
 
-    let (allowed, message) = validate(file_path, flow_active, tool_name);
+    let (allowed, message) = validate(&file_path, flow_active, tool_name);
     if !allowed {
         return (2, Some(message));
     }

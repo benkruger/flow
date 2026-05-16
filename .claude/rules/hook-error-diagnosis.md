@@ -12,7 +12,7 @@ anything.
   and `validate-claude-paths`
 - `PreToolUse:Bash` and `PreToolUse:Agent` → `validate-pretool`
 - `PreToolUse:Read`, `PreToolUse:Glob`, `PreToolUse:Grep` →
-  `validate-worktree-paths`
+  `validate-worktree-paths` and `validate-claude-paths`
 - `PreToolUse:AskUserQuestion` → `validate-ask-user`
 - `PreToolUse:Skill` → `validate-skill`
 

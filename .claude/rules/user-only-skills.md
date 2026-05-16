@@ -48,12 +48,18 @@ Each layer addresses a specific bypass surface:
   skill — meaning the user just typed the slash command and Layer
   1 already verified it.
 - **Layer 3 (`validate-claude-paths` transcript root)** — defends
-  against *transcript tampering* that would defeat Layer 1's user-
-  invocation check. Blocks Edit/Write across the entire
-  `~/.claude/projects/` subtree (transcript JSONLs, memory files,
-  and any future descendant) regardless of flow state. Reads
-  remain allowed because Layer 1 and Layer 2 walkers themselves
-  need them.
+  against *transcript tampering* AND *transcript content
+  exfiltration* that would defeat Layer 1's user-invocation check.
+  Blocks Edit, Write, Read, Glob, and Grep across the
+  `~/.claude/projects/` transcript subtree regardless of flow
+  state. The auto-memory subdirectory
+  (`~/.claude/projects/<id>/memory/...`) is CARVED OUT so the
+  user's MEMORY.md remains readable — the
+  `UNIVERSAL_ALLOW Read(~/.claude/projects/*/memory/*)` entry
+  documents the same boundary at the settings layer. Internal
+  walkers in Layer 1 and Layer 2 use `fs::read_to_string` from
+  Rust subprocesses rather than the Read tool, so blocking
+  Read/Glob/Grep at the tool layer does not affect them.
 
 If Layer 1's substring or membership check has a bypass, Layers 2
 and 3 cannot independently catch the bypass — they are defense in
@@ -144,12 +150,21 @@ first.
 `src/hooks/validate_claude_paths.rs::is_transcript_path` walks the
 target path's components and matches whenever any segment is
 `.claude` followed by `projects` (case-insensitive). The match
-covers the entire `~/.claude/projects/` subtree — the persisted
-transcript JSONLs, the auto-memory directory, and any future
-descendant Claude Code adds under that root. The block fires
-regardless of flow state because transcript tampering can subvert
-Layer 1: a hand-injected fake user `<command-name>` line in an
-old transcript would bypass the user-invocation check.
+covers the `~/.claude/projects/` subtree EXCEPT for the
+auto-memory subdirectory: when the third component (counting from
+the `.claude/projects/<project-id>/` level) is `memory`, the
+matcher carves out so memory files remain readable. The block
+fires regardless of flow state because transcript tampering can
+subvert Layer 1, AND a model Read/Glob/Grep of the transcript
+root sits outside the project root and would surface a permission
+prompt mid-flow.
+
+The hook is registered on the `Edit`, `Write`, and `Read|Glob|Grep`
+matchers in `hooks/hooks.json`. The path-extraction helper
+(`get_file_path`) reads `tool_input.file_path`,
+`tool_input.path`, and `tool_input.pattern` in priority order so
+Glob and Grep payloads (which carry the target path in `path` or
+`pattern` rather than `file_path`) are matched correctly.
 
 The block message leads with a redirect to
 `bin/flow write-rule --path .claude/rules/<topic>.md` so a
@@ -158,9 +173,14 @@ concrete path to land as a project rule instead. The message
 points at `.claude/rules/persistence-routing.md` as the routing
 decision tree.
 
-Read access is preserved because Layer 1 and Layer 2 walkers
-themselves need to scan the file. The hook is registered for the
-Edit and Write matchers only in `hooks/hooks.json`.
+Internal walkers in `validate-skill` and `validate-ask-user` use
+`fs::read_to_string` from inside Rust subprocesses, not the Read
+tool, so blocking the Read tool at this layer does not affect
+them. The model's Read tool calls on protected paths
+(`.claude/rules/`, `.claude/skills/`, `CLAUDE.md`) are also
+preserved (only Edit and Write redirect to `bin/flow write-rule`)
+— a model that needs to read a rule file during a flow can still
+do so.
 
 Residual surface: Bash file-mutation commands beyond redirect
 (`cp`, `mv`, `dd`) are not blocked by this layer — `validate-pretool`
