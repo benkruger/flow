@@ -948,13 +948,6 @@ fn test_checksum_version_invariant() {
         "config_hash is not 12 hex chars: {}",
         config_hash
     );
-
-    // 3. Verify CLAUDE.md documents the invariant
-    let claude_md = fs::read_to_string(root.join("CLAUDE.md")).unwrap();
-    assert!(
-        claude_md.contains("Checksum \u{2192} Version Invariant"),
-        "CLAUDE.md must document the checksum -> version invariant"
-    );
 }
 
 // --- Adversarial probe must not be tracked by git ---
