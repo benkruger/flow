@@ -478,8 +478,34 @@ section. Most Learn phases land here with an empty list.
 
 ### Apply CLAUDE.md changes
 
-For each item routed to CLAUDE.md (project-wide conventions,
-architecture):
+Before routing any finding to CLAUDE.md, apply the
+**obey-vs-describe test** per
+`.claude/rules/persistence-routing.md`. The scope test resolving
+to CLAUDE.md is not sufficient on its own.
+
+For each candidate addition, name the specific behavior the entry
+controls every session — "all timestamps use Pacific Time," "never
+invoke cargo directly," "use bin/flow finalize-commit." If no
+behavior can be named, the finding describes how the system works
+rather than how the model should behave. Route to one of:
+
+- **Module doc comment** in `src/<name>.rs` — Rust code mechanics
+  that future readers find via grep or rustdoc.
+- **`docs/` subtree** — long-form architecture, schema reference,
+  public-facing material loaded on demand.
+- **Discard** — when the Discoverability test resolves negatively,
+  the next session can derive the content by reading the code or
+  existing rules.
+
+A description that fails the obey-vs-describe test belongs in a
+module doc comment, the `docs/` subtree, or discard — not
+CLAUDE.md. CLAUDE.md is always loaded into every session's
+context, so every descriptive byte compounds token cost on every
+subsequent turn. Only behavioral instructions the model obeys and
+one-line pointer indexes to rule files belong here.
+
+For each item that passes the obey-vs-describe test (project-wide
+conventions, architecture pointers):
 
 **Compose** a learning entry following the writing rules above.
 

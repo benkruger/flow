@@ -34,6 +34,10 @@ to write the same updates you could write now.
   rely on Key Files as their index to the repository surface
   area; a new permanent artifact that is absent from Key Files
   is effectively invisible until a later PR rediscovers it.
+  Entries take the shape name + 1-line purpose only — a path or
+  symbol followed by a single sentence of intent. Descriptions
+  of how the artifact works belong in the module doc comment at
+  the top of the artifact's source file, not in CLAUDE.md.
 - **Changed type signatures or module architecture → the module-
   level doc comment and every affected item's doc comment in the
   same source file.** Splitting one type into two changes the

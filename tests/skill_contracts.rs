@@ -6743,3 +6743,118 @@ fn flow_review_step_2_hard_gate_forbids_per_agent_bash_during_launch() {
          work resumes — see .claude/rules/cognitive-isolation.md"
     );
 }
+
+// --- persistence-routing CLAUDE.md scope ---
+
+/// `.claude/rules/persistence-routing.md` must carry the obey-vs-describe
+/// test that gates CLAUDE.md routing, name the three alternative
+/// destinations for descriptive content, and expose two sections that
+/// scope what CLAUDE.md is and is not for. Without the gate, descriptive
+/// project knowledge routes to CLAUDE.md and compounds token cost across
+/// every session.
+#[test]
+fn persistence_routing_has_obey_vs_describe_test() {
+    let path = PathBuf::from(".claude/rules/persistence-routing.md");
+    let content =
+        fs::read_to_string(&path).expect(".claude/rules/persistence-routing.md must exist");
+    assert!(
+        content.contains("obey-vs-describe test"),
+        "persistence-routing.md must name the `obey-vs-describe test` as the \
+         gate on CLAUDE.md routing"
+    );
+    assert!(
+        content.contains("module doc comment"),
+        "persistence-routing.md must name `module doc comment` as a \
+         destination for descriptive content"
+    );
+    assert!(
+        content.contains("`docs/`"),
+        "persistence-routing.md must name the `docs/` subtree as a \
+         destination for descriptive content"
+    );
+    assert!(
+        content.contains("discard"),
+        "persistence-routing.md must name `discard` as a destination for \
+         descriptive content that the Discoverability test resolves \
+         negatively"
+    );
+    assert!(
+        content.contains("## What CLAUDE.md Is For"),
+        "persistence-routing.md must include a `## What CLAUDE.md Is For` \
+         section naming the two acceptable CLAUDE.md content shapes"
+    );
+    assert!(
+        content.contains("## What CLAUDE.md Is Not For"),
+        "persistence-routing.md must include a `## What CLAUDE.md Is Not \
+         For` section naming the three alternative destinations"
+    );
+}
+
+// --- flow-learn Step 3 obey-vs-describe gate ---
+
+/// `flow-learn` Step 3's `### Apply CLAUDE.md changes` subsection must
+/// gate on the obey-vs-describe test before routing any finding into
+/// CLAUDE.md. Without the gate, descriptive findings route into
+/// CLAUDE.md and compound token cost across every session.
+#[test]
+fn flow_learn_step_3_has_obey_vs_describe_gate() {
+    let content = common::read_skill("flow-learn");
+    // Anchor on the heading shape (`\n### ... \n`) so that inline
+    // prose mentioning the subsection by name (e.g. the Routing
+    // section's cross-reference at line 415) cannot satisfy the
+    // split. The first match is the heading at column 0 followed
+    // by a newline.
+    let tail = content
+        .split_once("\n### Apply CLAUDE.md changes\n")
+        .map(|(_, t)| t)
+        .expect("flow-learn must contain `### Apply CLAUDE.md changes` heading");
+    let subsection = tail.split_once("\n### ").map(|(s, _)| s).unwrap_or(tail);
+    assert!(
+        subsection.contains("obey-vs-describe test"),
+        "flow-learn Step 3 `### Apply CLAUDE.md changes` must gate on the \
+         `obey-vs-describe test` before routing into CLAUDE.md"
+    );
+    assert!(
+        subsection.contains("module doc comment"),
+        "flow-learn Step 3 `### Apply CLAUDE.md changes` must name `module \
+         doc comment` as an alternative destination"
+    );
+    assert!(
+        subsection.contains("`docs/`"),
+        "flow-learn Step 3 `### Apply CLAUDE.md changes` must name the \
+         `docs/` subtree as an alternative destination"
+    );
+    assert!(
+        subsection.contains("discard"),
+        "flow-learn Step 3 `### Apply CLAUDE.md changes` must name `discard` \
+         as an alternative destination"
+    );
+}
+
+// --- docs-with-behavior Key Files entry shape ---
+
+/// `.claude/rules/docs-with-behavior.md` `## What Counts` section must
+/// clarify that Key Files entries are name + 1-line purpose only.
+/// Without the bound, descriptions of how the artifact works route into
+/// CLAUDE.md instead of the module doc comment.
+#[test]
+fn docs_with_behavior_key_files_bullet_clarifies_shape() {
+    let path = PathBuf::from(".claude/rules/docs-with-behavior.md");
+    let content =
+        fs::read_to_string(&path).expect(".claude/rules/docs-with-behavior.md must exist");
+    let tail = content
+        .split_once("## What Counts")
+        .map(|(_, t)| t)
+        .expect("docs-with-behavior.md must contain `## What Counts`");
+    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
+    assert!(
+        section.contains("name + 1-line purpose only"),
+        "docs-with-behavior.md `## What Counts` must clarify Key Files \
+         entries as `name + 1-line purpose only`"
+    );
+    assert!(
+        section.contains("module doc comment"),
+        "docs-with-behavior.md `## What Counts` must route descriptions \
+         of how the artifact works to the `module doc comment`"
+    );
+}
