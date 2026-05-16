@@ -180,28 +180,6 @@ pub fn classify_tombstones(
     (stale, current)
 }
 
-/// Detect the repository from git remote.
-fn detect_repo() -> Option<String> {
-    let output = std::process::Command::new("gh")
-        .args([
-            "repo",
-            "view",
-            "--json",
-            "nameWithOwner",
-            "-q",
-            ".nameWithOwner",
-        ])
-        .output()
-        .ok()?;
-    if output.status.success() {
-        let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if s.contains('/') {
-            return Some(s);
-        }
-    }
-    None
-}
-
 /// Fetch the oldest open PR creation date as the staleness threshold.
 ///
 /// Returns `Ok(Some(date))` when open PRs exist, `Ok(None)` when no
@@ -303,7 +281,9 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     // Detect repo
     let repo = match &args.repo {
         Some(r) => r.clone(),
-        None => detect_repo().ok_or("Could not detect repository from git remote")?,
+        None => {
+            crate::github::detect_repo(None).ok_or("Could not detect repository from git remote")?
+        }
     };
 
     // Fetch threshold (oldest open PR creation date)

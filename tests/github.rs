@@ -14,7 +14,7 @@ mod common;
 
 use std::process::Command;
 
-use flow_rs::github::{detect_repo, parse_github_url};
+use flow_rs::github::{detect_repo, parse_github_url, validate_gh_repo_output};
 
 // --- parse_github_url ---
 
@@ -65,6 +65,86 @@ fn extract_repo_http_not_https() {
         parse_github_url("http://github.com/owner/repo"),
         Some("owner/repo".to_string())
     );
+}
+
+#[test]
+fn ssh_alias_url_does_not_match_regex() {
+    // The `parse_github_url` regex requires the literal `github.com`
+    // substring. SSH host aliases like `git@github-pt:owner/repo.git`
+    // do not match — the `detect_repo` gh fallback is the surface that
+    // resolves aliases. A future edit that loosens the regex to accept
+    // aliases must also delete or rewrite this test.
+    assert_eq!(parse_github_url("git@github-pt:owner/repo.git"), None);
+}
+
+// --- validate_gh_repo_output ---
+
+#[test]
+fn validate_gh_repo_output_accepts_canonical_owner_repo() {
+    assert_eq!(
+        validate_gh_repo_output("owner/repo"),
+        Some("owner/repo".to_string())
+    );
+}
+
+#[test]
+fn validate_gh_repo_output_accepts_dots_and_hyphens() {
+    // GitHub allows dots, underscores, and hyphens in segment names.
+    assert_eq!(
+        validate_gh_repo_output("acme-corp/my.project_v2"),
+        Some("acme-corp/my.project_v2".to_string())
+    );
+}
+
+#[test]
+fn validate_gh_repo_output_rejects_multiline_output() {
+    // Newline-injection bypass: `gh` stdout with an embedded newline
+    // passes the contains('/') check but corrupts every downstream
+    // consumer (gh args, state file, Markdown URLs).
+    assert_eq!(validate_gh_repo_output("owner/repo\nextra-garbage"), None);
+}
+
+#[test]
+fn validate_gh_repo_output_rejects_bare_slash() {
+    // Empty owner / empty repo segments: a bare `/` is not a valid
+    // GitHub repository slug.
+    assert_eq!(validate_gh_repo_output("/"), None);
+}
+
+#[test]
+fn validate_gh_repo_output_rejects_three_component_path() {
+    // `owner/repo/extra` looks repo-shaped but is not — `gh repo view`
+    // never produces three-segment paths.
+    assert_eq!(validate_gh_repo_output("owner/repo/extra"), None);
+}
+
+#[test]
+fn validate_gh_repo_output_rejects_empty_input() {
+    assert_eq!(validate_gh_repo_output(""), None);
+}
+
+#[test]
+fn validate_gh_repo_output_rejects_whitespace_inside_segment() {
+    assert_eq!(validate_gh_repo_output("owner /repo"), None);
+}
+
+#[test]
+fn validate_gh_repo_output_rejects_owner_only() {
+    assert_eq!(validate_gh_repo_output("owner/"), None);
+}
+
+#[test]
+fn validate_gh_repo_output_rejects_repo_only() {
+    assert_eq!(validate_gh_repo_output("/repo"), None);
+}
+
+#[test]
+fn validate_gh_repo_output_rejects_unsafe_characters() {
+    // Pipes, semicolons, quotes, and other shell metacharacters must
+    // not flow into downstream subprocess args.
+    assert_eq!(validate_gh_repo_output("owner|cat/etc"), None);
+    assert_eq!(validate_gh_repo_output("owner/repo;rm"), None);
+    assert_eq!(validate_gh_repo_output("owner/repo\"injection"), None);
 }
 
 // --- detect_repo (in-process) ---
@@ -151,6 +231,12 @@ fn detect_repo_returns_none_when_git_returns_empty_stdout() {
     let git_stub = stub_dir.join("git");
     fs::write(&git_stub, "#!/usr/bin/env bash\nexit 0\n").unwrap();
     fs::set_permissions(&git_stub, fs::Permissions::from_mode(0o755)).unwrap();
+    // Stub gh too so the fallback cannot reach the real gh CLI and pull
+    // in the user's authenticated session. Exit non-zero to drive the
+    // None branch of the fallback.
+    let gh_stub = stub_dir.join("gh");
+    fs::write(&gh_stub, "#!/usr/bin/env bash\nexit 1\n").unwrap();
+    fs::set_permissions(&gh_stub, fs::Permissions::from_mode(0o755)).unwrap();
 
     let path_env = format!(
         "{}:{}",
@@ -171,5 +257,162 @@ fn detect_repo_returns_none_when_git_returns_empty_stdout() {
         "session-context should succeed even when git returns empty. stdout: {}, stderr: {}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+/// Helper: create a git repo whose `origin` remote URL is a custom
+/// string (SSH alias, non-GitHub URL, etc.). Returns the repo path.
+/// Unlike `common::create_git_repo_with_remote`, this does not push
+/// to a bare remote — the URL is a string, not a path to a real repo.
+fn create_repo_with_custom_remote(
+    parent: &std::path::Path,
+    remote_url: &str,
+) -> std::path::PathBuf {
+    let repo = parent.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    Command::new("git")
+        .args(["init", "-b", "main"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    for (key, val) in [
+        ("user.email", "test@test.com"),
+        ("user.name", "Test"),
+        ("commit.gpgsign", "false"),
+    ] {
+        Command::new("git")
+            .args(["config", key, val])
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+    }
+    Command::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["remote", "add", "origin", remote_url])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    repo
+}
+
+/// `detect_repo` falls back to `gh repo view` when `parse_github_url`
+/// returns None. SSH host aliases (`git@github-pt:owner/repo.git`)
+/// are the canonical case — the regex requires the literal
+/// `github.com` substring, but `gh` resolves the alias via its
+/// authenticated session.
+///
+/// Scope of this test: verify that the fallback *is invoked* when the
+/// regex misses an SSH alias. The marker file's existence is the
+/// observable signal — `session-context` is the shallowest entry
+/// point that exercises `detect_repo` and intentionally swallows the
+/// returned value (its `write_tab_sequences` call ignores failures).
+/// The behavior of the validator itself — what counts as a valid
+/// `owner/repo` slug — is covered by the in-process
+/// `validate_gh_repo_output_*` tests above, which do not need PATH
+/// manipulation. `HOME` is set to the tempdir so the child reads no
+/// user dotfiles per `.claude/rules/subprocess-test-hygiene.md`.
+#[test]
+fn gh_fallback_resolves_ssh_alias() {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_repo_with_custom_remote(dir.path(), "git@github-pt:owner/repo.git");
+    let stub_dir = dir.path().join("stub_bin");
+    fs::create_dir_all(&stub_dir).unwrap();
+    let gh_stub = stub_dir.join("gh");
+    let marker = stub_dir.join("gh-was-called");
+    fs::write(
+        &gh_stub,
+        format!(
+            "#!/usr/bin/env bash\ntouch '{}'\necho 'owner/repo'\nexit 0\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&gh_stub, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let path_env = format!(
+        "{}:{}",
+        stub_dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let flow_rs = env!("CARGO_BIN_EXE_flow-rs");
+    let output = Command::new(flow_rs)
+        .args(["session-context"])
+        .current_dir(&repo)
+        .env("PATH", &path_env)
+        .env("HOME", dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "session-context must succeed when gh fallback resolves the SSH alias. stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    assert!(
+        marker.exists(),
+        "gh fallback must run when parse_github_url returns None for an SSH alias",
+    );
+}
+
+/// `detect_repo`'s gh fallback rejects malformed output via
+/// `validate_gh_repo_output`. Stub `gh` to print a no-slash string
+/// and verify the fallback ran AND that `session-context` still
+/// succeeds (detection failure is non-fatal for `session-context`).
+///
+/// Scope of this test: verify the fallback is invoked and that
+/// malformed gh output does not cause `session-context` to fail. The
+/// rejection behavior itself — multi-line, bare slash, three-segment
+/// paths, etc. — is covered by the in-process
+/// `validate_gh_repo_output_*` tests, which test every rejection
+/// class without PATH manipulation. `HOME` is set to the tempdir per
+/// `.claude/rules/subprocess-test-hygiene.md`.
+#[test]
+fn gh_fallback_rejects_malformed_output() {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_repo_with_custom_remote(dir.path(), "git@github-pt:owner/repo.git");
+    let stub_dir = dir.path().join("stub_bin");
+    fs::create_dir_all(&stub_dir).unwrap();
+    let gh_stub = stub_dir.join("gh");
+    let marker = stub_dir.join("gh-was-called");
+    fs::write(
+        &gh_stub,
+        format!(
+            "#!/usr/bin/env bash\ntouch '{}'\necho 'no-slash-here'\nexit 0\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&gh_stub, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let path_env = format!(
+        "{}:{}",
+        stub_dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let flow_rs = env!("CARGO_BIN_EXE_flow-rs");
+    let output = Command::new(flow_rs)
+        .args(["session-context"])
+        .current_dir(&repo)
+        .env("PATH", &path_env)
+        .env("HOME", dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "session-context must tolerate malformed gh output. stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    assert!(
+        marker.exists(),
+        "gh fallback must run even when the output is malformed",
     );
 }

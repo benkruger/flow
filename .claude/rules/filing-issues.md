@@ -39,27 +39,38 @@ issues are pre-planned by definition.
 
 ## The Pattern
 
-`bin/flow issue --body-file <path>` resolves `<path>` against
-`project_root()` (the main repo root), but the `validate-worktree-paths`
-hook blocks writing files directly to the main repo when the session
-is running inside a linked worktree. Using a relative path like
-`.flow-issue-body` creates a split: the Write tool writes it to the
-worktree (where the hook allows writes), but `bin/flow issue` then
-looks for it at `<main_repo>/.flow-issue-body` (where it does not
-exist). The fix is to always pass an absolute worktree path.
+`bin/flow issue --body-file <path>` resolves a relative `<path>`
+against the caller's current working directory (the Bash tool's
+cwd at invocation time); absolute paths are used as given. Inside
+an active FLOW worktree, flow-start anchors Bash cwd to the
+worktree root, so both the Write tool and `bin/flow issue` see
+the same directory and a relative `.flow-issue-body-<id>`
+resolves consistently between them. Outside a worktree, Bash cwd
+is the project root, so a relative path likewise resolves
+consistently. The `validate-worktree-paths` hook still blocks
+Write-tool calls targeting the main repo when invoked from
+inside a worktree, so paths written via the Write tool must land
+inside the worktree.
+
+Recommended absolute-path shape (unambiguous regardless of where
+Bash cwd ends up):
 
 1. Write the issue body to `<worktree>/.flow-issue-body` (or
    `<worktree>/.flow-issue-body-1`, etc., for parallel filing)
-   using the Write tool — the worktree path is allowed by the
-   `validate-worktree-paths` hook
+   using the Write tool — the absolute worktree path satisfies
+   the `validate-worktree-paths` hook
 2. Call `bin/flow issue --title "..." --body-file
    <worktree>/.flow-issue-body` using the absolute worktree path
-3. The script reads the file, deletes it, then creates the issue
+3. The script reads the file, deletes it on a best-effort basis
+   (per `read_body_file`'s doc comment — cleanup errors are
+   swallowed), then creates the issue
 
-When not in a worktree (no active FLOW phase), the project root
-IS the repo root — a relative path `.flow-issue-body` works because
-the Write tool and `bin/flow issue` both resolve to the same
-directory. Use the relative form in that case.
+Relative paths are accepted when the Bash cwd matches the Write
+target's parent directory. `bin/flow issue` rejects `..` traversal
+segments in relative paths, rejects empty `--body-file` arguments,
+and rejects non-regular-file targets (symlinks, directories,
+device nodes) via `fs::symlink_metadata` — see
+`.claude/rules/external-input-path-construction.md`.
 
 ## Editing Existing Issues
 
@@ -311,3 +322,5 @@ include an Implementation Plan section by design.
 - Proposed solutions or "open questions" about tradeoffs
 - Prescribed code changes or architectural suggestions
 - Diagnosis of why the bug happens — only what happens
+</content>
+</invoke>

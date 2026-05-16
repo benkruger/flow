@@ -807,7 +807,7 @@ fn read_body_file_reads_and_deletes() {
     let file = dir.path().join(".flow-issue-body");
     fs::write(&file, "Issue body with | pipes and && ampersands").unwrap();
 
-    let result = read_body_file(file.to_str().unwrap(), dir.path());
+    let result = read_body_file(file.to_str().unwrap());
 
     assert_eq!(result.unwrap(), "Issue body with | pipes and && ampersands");
     assert!(!file.exists());
@@ -818,7 +818,7 @@ fn read_body_file_missing_returns_error() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("nonexistent.md");
 
-    let result = read_body_file(file.to_str().unwrap(), dir.path());
+    let result = read_body_file(file.to_str().unwrap());
 
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Could not read body file"));
@@ -830,7 +830,7 @@ fn read_body_file_empty_returns_empty_string() {
     let file = dir.path().join(".flow-issue-body");
     fs::write(&file, "").unwrap();
 
-    let result = read_body_file(file.to_str().unwrap(), dir.path());
+    let result = read_body_file(file.to_str().unwrap());
 
     assert_eq!(result.unwrap(), "");
     assert!(!file.exists());
@@ -843,47 +843,284 @@ fn read_body_file_rich_markdown_preserved() {
     let content = "## Summary\n\n| Column | Value |\n|--------|-------|\n| A | B |\n";
     fs::write(&file, content).unwrap();
 
-    let result = read_body_file(file.to_str().unwrap(), dir.path());
+    let result = read_body_file(file.to_str().unwrap());
 
     assert_eq!(result.unwrap(), content);
 }
 
 #[test]
-fn read_body_file_relative_resolved_against_root() {
-    let dir = tempfile::tempdir().unwrap();
-    let project_dir = dir.path().join("project");
-    fs::create_dir_all(&project_dir).unwrap();
-    let file = project_dir.join(".flow-issue-body");
-    fs::write(&file, "Resolved body").unwrap();
-
-    let result = read_body_file(".flow-issue-body", &project_dir);
-
-    assert_eq!(result.unwrap(), "Resolved body");
-    assert!(!file.exists());
-}
-
-#[test]
-fn read_body_file_absolute_ignores_root() {
+fn read_body_file_absolute_path_unaffected_by_cwd() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join(".flow-issue-body");
     fs::write(&file, "Absolute body").unwrap();
 
-    let other_root = dir.path().join("other");
-    fs::create_dir_all(&other_root).unwrap();
-
-    let result = read_body_file(file.to_str().unwrap(), &other_root);
+    let result = read_body_file(file.to_str().unwrap());
 
     assert_eq!(result.unwrap(), "Absolute body");
 }
 
 #[test]
-fn read_body_file_relative_missing_returns_error() {
-    let dir = tempfile::tempdir().unwrap();
+fn read_body_file_cleans_up_on_read_failure() {
+    use std::os::unix::fs::PermissionsExt;
 
-    let result = read_body_file("nonexistent.md", dir.path());
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("orphan.md");
+    fs::write(&file, "should be removed even though read fails").unwrap();
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o000)).unwrap();
+
+    let result = read_body_file(file.to_str().unwrap());
 
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Could not read body file"));
+    assert!(
+        fs::metadata(&file).is_err(),
+        "read_body_file must delete the body file even when the read fails, leaving no orphan"
+    );
+}
+
+#[test]
+fn read_body_file_empty_path_rejected() {
+    let result = read_body_file("");
+    let err = result.expect_err("empty --body-file must reject");
+    assert!(
+        err.contains("empty"),
+        "empty-path error must name 'empty'; got: {}",
+        err
+    );
+}
+
+#[test]
+fn read_body_file_relative_dotdot_traversal_rejected() {
+    let result = read_body_file("../escape.md");
+    let err = result.expect_err("`..` traversal must reject");
+    assert!(
+        err.contains("forbidden") && err.contains("traversal"),
+        "dotdot rejection error must name 'forbidden' and 'traversal'; got: {}",
+        err
+    );
+}
+
+#[test]
+fn read_body_file_symlink_target_rejected_and_preserved() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("target.txt");
+    fs::write(&target, "preserve me").unwrap();
+    let link = dir.path().join("link.md");
+    symlink(&target, &link).unwrap();
+
+    let result = read_body_file(link.to_str().unwrap());
+
+    let err = result.expect_err("symlink must reject");
+    assert!(
+        err.contains("not a regular file"),
+        "symlink rejection error must name 'not a regular file'; got: {}",
+        err
+    );
+    assert!(
+        fs::read_to_string(&target).unwrap() == "preserve me",
+        "symlink target must survive — read_body_file must not follow the symlink"
+    );
+}
+
+#[test]
+fn read_body_file_body_exceeding_cap_rejected_and_cleaned_up() {
+    use flow_rs::plan_from_issue::PLAN_BODY_BYTE_CAP;
+
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("oversize.md");
+    let body = "x".repeat(PLAN_BODY_BYTE_CAP + 10);
+    fs::write(&file, &body).unwrap();
+
+    let result = read_body_file(file.to_str().unwrap());
+
+    let err = result.expect_err("oversize body must reject");
+    assert!(
+        err.contains("exceeds") && err.contains(&PLAN_BODY_BYTE_CAP.to_string()),
+        "oversize error must name 'exceeds' and the cap; got: {}",
+        err
+    );
+    assert!(
+        !file.exists(),
+        "oversize body file must still be cleaned up after rejection"
+    );
+}
+
+#[test]
+fn read_body_file_non_utf8_returns_error_and_cleans_up() {
+    // File::open succeeds (regular file with read permissions), but
+    // read_to_string fails because the bytes are not valid UTF-8.
+    // Covers the read_to_string Err arm in read_body_file.
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("non-utf8.md");
+    fs::write(&file, [0xFF, 0xFE, 0xFD, 0xFC]).unwrap();
+
+    let result = read_body_file(file.to_str().unwrap());
+
+    let err = result.expect_err("non-utf8 body must reject");
+    assert!(
+        err.contains("Could not read body file") && err.contains("UTF-8"),
+        "non-utf8 error must name read failure and 'UTF-8'; got: {}",
+        err
+    );
+    assert!(
+        !file.exists(),
+        "cleanup must run even when read_to_string fails on non-utf8 content"
+    );
+}
+
+/// Subprocess test for the cwd-relative resolution branch in
+/// `read_body_file`. Spawns the binary with `current_dir(<root>/subdir)`
+/// and passes a relative `--body-file` so the path-resolution path goes
+/// through `std::env::current_dir()`. With the body file present at
+/// `<root>/subdir/.flow-issue-body-test`, the read step succeeds; the
+/// downstream `gh` call then fails on the invalid token but that error
+/// is distinct from "Could not read body file", which is the substring
+/// the test asserts is ABSENT.
+#[cfg(unix)]
+#[test]
+fn read_body_file_relative_resolves_against_caller_cwd() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let subdir = root.join("subdir");
+    fs::create_dir_all(&subdir).expect("mkdir subdir");
+    let body_path = subdir.join(".flow-issue-body-test");
+    fs::write(&body_path, "Resolved body").expect("write body");
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.args([
+        "issue",
+        "--title",
+        "test",
+        "--body-file",
+        ".flow-issue-body-test",
+        "--repo",
+        "fake/repo",
+    ]);
+    cmd.current_dir(&subdir);
+    cmd.env_remove("FLOW_CI_RUNNING");
+    cmd.env("GH_TOKEN", "invalid");
+    cmd.env("GITHUB_TOKEN", "invalid");
+    cmd.env("HOME", &root);
+    cmd.env("GIT_CEILING_DIRECTORIES", &root);
+
+    let output = cmd.output().expect("spawn flow-rs issue");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{}\n{}", stdout, stderr);
+
+    assert!(
+        !combined.contains("Could not read body file"),
+        "expected body-file read to succeed via cwd resolution; combined output:\n{}",
+        combined
+    );
+}
+
+/// Subprocess test for the cwd-relative missing-file branch. Same
+/// fixture shape as the resolves-against-caller-cwd test above, but the
+/// body file is intentionally not written. The error path must surface
+/// `Could not read body file` AND name the cwd-resolved path
+/// (containing the `subdir/.flow-issue-body-test` suffix) so the user
+/// can see which absolute path the binary attempted to read.
+#[cfg(unix)]
+#[test]
+fn read_body_file_relative_missing_returns_error() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let subdir = root.join("subdir");
+    fs::create_dir_all(&subdir).expect("mkdir subdir");
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.args([
+        "issue",
+        "--title",
+        "test",
+        "--body-file",
+        ".flow-issue-body-test",
+        "--repo",
+        "fake/repo",
+    ]);
+    cmd.current_dir(&subdir);
+    cmd.env_remove("FLOW_CI_RUNNING");
+    cmd.env("GH_TOKEN", "invalid");
+    cmd.env("GITHUB_TOKEN", "invalid");
+    cmd.env("HOME", &root);
+    cmd.env("GIT_CEILING_DIRECTORIES", &root);
+
+    let output = cmd.output().expect("spawn flow-rs issue");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{}\n{}", stdout, stderr);
+
+    assert!(
+        combined.contains("Could not read body file"),
+        "expected 'Could not read body file' error; combined output:\n{}",
+        combined
+    );
+    assert!(
+        combined.contains("subdir/.flow-issue-body-test"),
+        "expected error to name the cwd-resolved path; combined output:\n{}",
+        combined
+    );
+}
+
+/// Subprocess test for the `current_dir()` Err branch. The child is
+/// spawned with `current_dir(cwd)` set; a `pre_exec` closure then
+/// `rmdir`s that cwd after the kernel has chdir'd the child into it,
+/// leaving the child with an unlinked cwd inode — `getcwd(3)` then
+/// returns `ENOENT` and Rust's `env::current_dir()` reports Err. With a
+/// relative `--body-file`, the read path hits the Err arm and surfaces
+/// `Could not determine current directory`.
+#[cfg(unix)]
+#[test]
+fn read_body_file_current_dir_error_propagated() {
+    use std::os::unix::process::CommandExt;
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let cwd = root.join("doomed");
+    fs::create_dir(&cwd).expect("mkdir doomed");
+
+    let cwd_for_preexec = cwd.clone();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.args([
+        "issue",
+        "--title",
+        "test",
+        "--body-file",
+        ".flow-issue-body-test",
+        "--repo",
+        "fake/repo",
+    ]);
+    cmd.current_dir(&cwd);
+    cmd.env_remove("FLOW_CI_RUNNING");
+    cmd.env("GH_TOKEN", "invalid");
+    cmd.env("GITHUB_TOKEN", "invalid");
+    cmd.env("HOME", &root);
+    cmd.env("GIT_CEILING_DIRECTORIES", &root);
+
+    // SAFETY: `pre_exec` requires the closure to be async-signal-safe.
+    // `libc::rmdir` is listed as AS-safe by POSIX; we only call it and
+    // return Ok — no memory allocation, no panic surfaces.
+    let preexec_path = std::ffi::CString::new(cwd_for_preexec.to_str().expect("utf8").as_bytes())
+        .expect("CString from cwd path");
+    unsafe {
+        cmd.pre_exec(move || {
+            libc::rmdir(preexec_path.as_ptr());
+            Ok(())
+        });
+    }
+
+    let output = cmd.output().expect("spawn flow-rs issue");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{}\n{}", stdout, stderr);
+
+    assert!(
+        combined.contains("Could not determine current directory"),
+        "expected current_dir Err propagation; combined output:\n{}",
+        combined
+    );
 }
 
 // --- parse_issue_number ---
@@ -987,10 +1224,9 @@ fn default_args() -> Args {
 
 #[test]
 fn gate_blocks_when_current_phase_is_review() {
-    let dir = tempfile::tempdir().unwrap();
     let state = || Some(r#"{"current_phase":"flow-review"}"#.to_string());
     let repo = || Some("owner/name".to_string());
-    let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
+    let (value, code) = run_impl_main(default_args(), &state, &repo);
     assert_eq!(code, 1);
     assert_eq!(value["status"], "error");
     let msg = value["message"].as_str().unwrap();
@@ -1005,10 +1241,9 @@ fn gate_allows_in_learn_phase_with_stubbed_gh() {
     // spawns gh. With no gh on PATH the spawn fails, but what matters
     // here is the gate pass — the failure appears in the returned
     // error, not as a Review block.
-    let dir = tempfile::tempdir().unwrap();
     let state = || Some(r#"{"current_phase":"flow-learn"}"#.to_string());
     let repo = || Some("owner/name".to_string());
-    let (value, _code) = run_impl_main(default_args(), dir.path(), &state, &repo);
+    let (value, _code) = run_impl_main(default_args(), &state, &repo);
     // gate pass proven by absence of Review message.
     assert!(!value["message"]
         .as_str()
@@ -1018,10 +1253,9 @@ fn gate_allows_in_learn_phase_with_stubbed_gh() {
 
 #[test]
 fn gate_allows_when_no_state_file() {
-    let dir = tempfile::tempdir().unwrap();
     let state = || None;
     let repo = || Some("owner/name".to_string());
-    let (value, _code) = run_impl_main(default_args(), dir.path(), &state, &repo);
+    let (value, _code) = run_impl_main(default_args(), &state, &repo);
     assert!(!value["message"]
         .as_str()
         .unwrap_or("")
@@ -1030,10 +1264,9 @@ fn gate_allows_when_no_state_file() {
 
 #[test]
 fn gate_fails_closed_when_state_malformed() {
-    let dir = tempfile::tempdir().unwrap();
     let state = || Some("not json".to_string());
     let repo = || Some("owner/name".to_string());
-    let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
+    let (value, code) = run_impl_main(default_args(), &state, &repo);
     assert_eq!(code, 1);
     assert!(value["message"]
         .as_str()
@@ -1043,10 +1276,9 @@ fn gate_fails_closed_when_state_malformed() {
 
 #[test]
 fn gate_fails_closed_when_current_phase_missing() {
-    let dir = tempfile::tempdir().unwrap();
     let state = || Some(r#"{"branch":"x"}"#.to_string());
     let repo = || Some("owner/name".to_string());
-    let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
+    let (value, code) = run_impl_main(default_args(), &state, &repo);
     assert_eq!(code, 1);
     assert!(value["message"]
         .as_str()
@@ -1056,10 +1288,9 @@ fn gate_fails_closed_when_current_phase_missing() {
 
 #[test]
 fn gate_fails_closed_when_current_phase_is_array() {
-    let dir = tempfile::tempdir().unwrap();
     let state = || Some(r#"{"current_phase":["flow-review"]}"#.to_string());
     let repo = || Some("owner/name".to_string());
-    let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
+    let (value, code) = run_impl_main(default_args(), &state, &repo);
     assert_eq!(code, 1);
     assert!(value["message"]
         .as_str()
@@ -1069,20 +1300,18 @@ fn gate_fails_closed_when_current_phase_is_array() {
 
 #[test]
 fn gate_fails_closed_when_state_has_bom() {
-    let dir = tempfile::tempdir().unwrap();
     let state = || Some("\u{feff}{\"current_phase\":\"flow-review\"}".to_string());
     let repo = || Some("owner/name".to_string());
-    let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
+    let (value, code) = run_impl_main(default_args(), &state, &repo);
     assert_eq!(code, 1);
     assert!(value["message"].as_str().unwrap().contains("Review"));
 }
 
 #[test]
 fn gate_fails_closed_when_state_has_bom_and_no_review() {
-    let dir = tempfile::tempdir().unwrap();
     let state = || Some("\u{feff}{\"current_phase\":\"flow-learn\"}".to_string());
     let repo = || Some("owner/name".to_string());
-    let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
+    let (value, code) = run_impl_main(default_args(), &state, &repo);
     assert_eq!(code, 1);
     assert!(value["message"]
         .as_str()
@@ -1092,10 +1321,9 @@ fn gate_fails_closed_when_state_has_bom_and_no_review() {
 
 #[test]
 fn gate_allows_when_state_is_empty_string() {
-    let dir = tempfile::tempdir().unwrap();
     let state = || Some(String::new());
     let repo = || Some("owner/name".to_string());
-    let (value, _code) = run_impl_main(default_args(), dir.path(), &state, &repo);
+    let (value, _code) = run_impl_main(default_args(), &state, &repo);
     assert!(!value["message"]
         .as_str()
         .unwrap_or("")
@@ -1104,10 +1332,9 @@ fn gate_allows_when_state_is_empty_string() {
 
 #[test]
 fn gate_allows_when_state_is_whitespace_only() {
-    let dir = tempfile::tempdir().unwrap();
     let state = || Some("   \n  ".to_string());
     let repo = || Some("owner/name".to_string());
-    let (value, _code) = run_impl_main(default_args(), dir.path(), &state, &repo);
+    let (value, _code) = run_impl_main(default_args(), &state, &repo);
     assert!(!value["message"]
         .as_str()
         .unwrap_or("")
@@ -1116,52 +1343,47 @@ fn gate_allows_when_state_is_whitespace_only() {
 
 #[test]
 fn gate_blocks_when_current_phase_is_whitespace_padded() {
-    let dir = tempfile::tempdir().unwrap();
     let state = || Some(r#"{"current_phase":" flow-review "}"#.to_string());
     let repo = || Some("owner/name".to_string());
-    let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
+    let (value, code) = run_impl_main(default_args(), &state, &repo);
     assert_eq!(code, 1);
     assert!(value["message"].as_str().unwrap().contains("Review"));
 }
 
 #[test]
 fn gate_blocks_when_current_phase_is_uppercase() {
-    let dir = tempfile::tempdir().unwrap();
     let state = || Some(r#"{"current_phase":"FLOW-REVIEW"}"#.to_string());
     let repo = || Some("owner/name".to_string());
-    let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
+    let (value, code) = run_impl_main(default_args(), &state, &repo);
     assert_eq!(code, 1);
     assert!(value["message"].as_str().unwrap().contains("Review"));
 }
 
 #[test]
 fn gate_blocks_when_current_phase_has_trailing_nul() {
-    let dir = tempfile::tempdir().unwrap();
     let state = || Some("{\"current_phase\":\"flow-review\\u0000\"}".to_string());
     let repo = || Some("owner/name".to_string());
-    let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
+    let (value, code) = run_impl_main(default_args(), &state, &repo);
     assert_eq!(code, 1);
     assert!(value["message"].as_str().unwrap().contains("Review"));
 }
 
 #[test]
 fn gate_blocks_when_current_phase_duplicate_key_serde_last_wins() {
-    let dir = tempfile::tempdir().unwrap();
     let state =
         || Some(r#"{"current_phase":"flow-review","current_phase":"flow-learn"}"#.to_string());
     let repo = || Some("owner/name".to_string());
-    let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
+    let (value, code) = run_impl_main(default_args(), &state, &repo);
     assert_eq!(code, 1);
     assert!(value["message"].as_str().unwrap().contains("Review"));
 }
 
 #[test]
 fn gate_blocks_when_duplicate_key_in_reverse_order() {
-    let dir = tempfile::tempdir().unwrap();
     let state =
         || Some(r#"{"current_phase":"flow-learn","current_phase":"flow-review"}"#.to_string());
     let repo = || Some("owner/name".to_string());
-    let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
+    let (value, code) = run_impl_main(default_args(), &state, &repo);
     assert_eq!(code, 1);
     assert!(value["message"].as_str().unwrap().contains("Review"));
 }
@@ -1173,10 +1395,9 @@ fn gate_raw_scanner_advances_past_current_phase_without_colon() {
     // After trim_start, strip_prefix(':') returns None and the scanner
     // advances. The parser path then fails to parse and the gate
     // fails CLOSED.
-    let dir = tempfile::tempdir().unwrap();
     let state = || Some(r#""current_phase" prefix no colon"#.to_string());
     let repo = || Some("owner/name".to_string());
-    let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
+    let (value, code) = run_impl_main(default_args(), &state, &repo);
     assert_eq!(code, 1);
     assert!(value["message"]
         .as_str()
@@ -1187,10 +1408,9 @@ fn gate_raw_scanner_advances_past_current_phase_without_colon() {
 #[test]
 fn gate_fails_closed_when_current_phase_value_has_no_closing_quote() {
     // Covers the raw scanner's `value_body.find('"')` None fallthrough.
-    let dir = tempfile::tempdir().unwrap();
     let state = || Some(r#"{"current_phase":"flow-review"#.to_string());
     let repo = || Some("owner/name".to_string());
-    let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
+    let (value, code) = run_impl_main(default_args(), &state, &repo);
     assert_eq!(code, 1);
     assert!(value["message"]
         .as_str()
@@ -1202,12 +1422,11 @@ fn gate_fails_closed_when_current_phase_value_has_no_closing_quote() {
 
 #[test]
 fn run_impl_main_no_repo_returns_error_tuple() {
-    let dir = tempfile::tempdir().unwrap();
     let state = || None;
     let repo = || None;
     let mut args = default_args();
     args.repo = None;
-    let (value, code) = run_impl_main(args, dir.path(), &state, &repo);
+    let (value, code) = run_impl_main(args, &state, &repo);
     assert_eq!(value["status"], "error");
     assert_eq!(code, 1);
     assert!(value["message"]
@@ -1218,12 +1437,11 @@ fn run_impl_main_no_repo_returns_error_tuple() {
 
 #[test]
 fn run_impl_main_body_file_missing_returns_error_tuple() {
-    let dir = tempfile::tempdir().unwrap();
     let state = || None;
     let repo = || Some("owner/name".to_string());
     let mut args = default_args();
     args.body_file = Some("nonexistent-body.md".to_string());
-    let (value, code) = run_impl_main(args, dir.path(), &state, &repo);
+    let (value, code) = run_impl_main(args, &state, &repo);
     assert_eq!(value["status"], "error");
     assert_eq!(code, 1);
     assert!(value["message"]
@@ -1247,7 +1465,7 @@ fn run_impl_main_state_file_path_falls_back_to_resolver() {
     args.repo = None;
     args.state_file = Some(state_file.to_string_lossy().to_string());
     // Don't assert on code; just cover the branch.
-    let (_, _code) = run_impl_main(args, dir.path(), &state, &repo);
+    let (_, _code) = run_impl_main(args, &state, &repo);
 }
 
 #[test]
@@ -1260,18 +1478,17 @@ fn run_impl_main_state_file_resolves_repo() {
     let mut args = default_args();
     args.repo = None;
     args.state_file = Some(state_file.to_string_lossy().to_string());
-    let (_, _code) = run_impl_main(args, dir.path(), &state, &repo);
+    let (_, _code) = run_impl_main(args, &state, &repo);
 }
 
 #[test]
 fn run_impl_main_missing_state_file_falls_back_to_resolver() {
-    let dir = tempfile::tempdir().unwrap();
     let state = || None;
     let repo = || Some("fallback/repo".to_string());
     let mut args = default_args();
     args.repo = None;
     args.state_file = Some("/nonexistent/state.json".to_string());
-    let (_, _code) = run_impl_main(args, dir.path(), &state, &repo);
+    let (_, _code) = run_impl_main(args, &state, &repo);
 }
 
 #[test]
@@ -1284,7 +1501,7 @@ fn run_impl_main_state_file_no_repo_no_resolver_errors() {
     let mut args = default_args();
     args.repo = None;
     args.state_file = Some(state_file.to_string_lossy().to_string());
-    let (value, code) = run_impl_main(args, dir.path(), &state, &repo);
+    let (value, code) = run_impl_main(args, &state, &repo);
     assert_eq!(code, 1);
     assert!(value["message"]
         .as_str()
@@ -1294,10 +1511,9 @@ fn run_impl_main_state_file_no_repo_no_resolver_errors() {
 
 #[test]
 fn run_impl_main_blocked_by_review_returns_error_tuple() {
-    let dir = tempfile::tempdir().unwrap();
     let state = || Some(r#"{"current_phase":"flow-review"}"#.to_string());
     let repo = || Some("owner/name".to_string());
-    let (value, code) = run_impl_main(default_args(), dir.path(), &state, &repo);
+    let (value, code) = run_impl_main(default_args(), &state, &repo);
     assert_eq!(value["status"], "error");
     assert_eq!(code, 1);
     assert!(value["message"].as_str().unwrap().contains("Review"));
@@ -1306,12 +1522,11 @@ fn run_impl_main_blocked_by_review_returns_error_tuple() {
 #[test]
 fn gate_override_bypasses_review_block() {
     // Covers the `if override_flag { return None; }` early return.
-    let dir = tempfile::tempdir().unwrap();
     let state = || Some(r#"{"current_phase":"flow-review"}"#.to_string());
     let repo = || Some("owner/name".to_string());
     let mut args = default_args();
     args.override_review_ban = true;
-    let (value, _code) = run_impl_main(args, dir.path(), &state, &repo);
+    let (value, _code) = run_impl_main(args, &state, &repo);
     // Gate passed — no Review message.
     assert!(!value["message"]
         .as_str()
@@ -1323,14 +1538,13 @@ fn gate_override_bypasses_review_block() {
 fn run_impl_main_resolver_only_path_uses_resolver_repo() {
     // Covers the outermost `else { match repo_resolver() Some(r) => r }`
     // branch: no --repo, no --state-file, resolver returns Some.
-    let dir = tempfile::tempdir().unwrap();
     let state = || None;
     let repo = || Some("resolver/repo".to_string());
     let mut args = default_args();
     args.repo = None;
     args.state_file = None;
     // Don't care about exit code; just covering the repo-resolution branch.
-    let (_, _code) = run_impl_main(args, dir.path(), &state, &repo);
+    let (_, _code) = run_impl_main(args, &state, &repo);
 }
 
 #[test]
@@ -1347,5 +1561,5 @@ fn run_impl_main_state_file_with_invalid_json_falls_back_to_resolver() {
     let mut args = default_args();
     args.repo = None;
     args.state_file = Some(state_file.to_string_lossy().to_string());
-    let (_, _code) = run_impl_main(args, dir.path(), &state, &repo);
+    let (_, _code) = run_impl_main(args, &state, &repo);
 }
