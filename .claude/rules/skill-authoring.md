@@ -440,9 +440,22 @@ design that makes it reachable.
 
 ## Plugin Root for bin/flow
 
-Every `bin/flow` call in a plugin skill bash block must use
-`${CLAUDE_PLUGIN_ROOT}/bin/flow`. Bare `bin/flow` only
-resolves in the FLOW repo itself — target projects do not have it.
+`bin/flow` invocations in skill bash blocks resolve differently
+depending on where the skill lives — plugin-marketplace skills run
+in target projects, project-local maintainer skills run only in the
+FLOW repo. Each case has its own canonical form:
+
+- **Plugin-marketplace skills under `skills/**/SKILL.md`** — MUST
+  use `${CLAUDE_PLUGIN_ROOT}/bin/flow`. Bare `bin/flow` does not
+  resolve in target projects where cwd is not the FLOW repo.
+- **Project-local skills under `.claude/skills/**/SKILL.md`** —
+  MUST use bare `bin/flow`. These skills run only in the FLOW repo
+  where cwd resolves bare `bin/flow` directly. The
+  `${CLAUDE_PLUGIN_ROOT}` prefix triggers Claude Code's "Contains
+  expansion" permission prompt with no benefit.
+
+The project-local case is enforced mechanically by
+`tests/skill_contracts.rs::no_claude_skills_use_plugin_root_expansion`.
 
 ## Worktree bin/flow for Repo-Modifying Commands
 
