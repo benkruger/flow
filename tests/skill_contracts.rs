@@ -2248,6 +2248,72 @@ fn flow_release_skill_builds_and_commits_binary() {
     }
 }
 
+/// flow-qa is the project-local maintainer skill that files a
+/// pre-decomposed QA issue for full-lifecycle regression testing
+/// of the FLOW plugin. The SKILL.md must declare valid frontmatter
+/// (name + non-empty description) and emit the canonical announce
+/// banner so the user sees a consistent "STARTING" line when they
+/// type `/flow-qa`.
+///
+/// Regression guarded: a future edit that removes the frontmatter,
+/// changes the `name:` field away from `flow-qa`, drops the
+/// `description:` field, or omits the announce banner string.
+#[test]
+fn flow_qa_skill_exists_with_proper_frontmatter() {
+    let content = fs::read_to_string(
+        common::repo_root()
+            .join(".claude")
+            .join("skills")
+            .join("flow-qa")
+            .join("SKILL.md"),
+    )
+    .expect(".claude/skills/flow-qa/SKILL.md must exist");
+
+    assert!(
+        content.starts_with("---\n"),
+        "flow-qa SKILL.md must open with YAML frontmatter delimiter"
+    );
+
+    let after_open = content
+        .strip_prefix("---\n")
+        .expect("frontmatter open delimiter checked above");
+    let (frontmatter, _body) = after_open
+        .split_once("\n---\n")
+        .expect("flow-qa SKILL.md frontmatter must close with `\\n---\\n`");
+
+    assert!(
+        frontmatter
+            .lines()
+            .any(|line| line.trim() == "name: flow-qa"),
+        "flow-qa SKILL.md frontmatter must declare `name: flow-qa`"
+    );
+
+    let desc_line = frontmatter
+        .lines()
+        .find(|line| line.trim_start().starts_with("description:"))
+        .expect("flow-qa SKILL.md frontmatter must declare a `description:` field");
+    let desc_value = desc_line
+        .trim_start()
+        .strip_prefix("description:")
+        .map(|v| v.trim().trim_matches('"').trim())
+        .unwrap_or("");
+    assert!(
+        !desc_value.is_empty(),
+        "flow-qa SKILL.md `description:` field must be non-empty"
+    );
+
+    // Match a structural banner shape — `FLOW v<MAJOR>.<MINOR>.<PATCH> — flow-qa — STARTING` —
+    // rather than pinning the literal version `v2.2.0`. The pinned-version form forced
+    // every release to update this test in lockstep; the structural form names the
+    // regression target (banner present, naming the skill) without the version drift cost.
+    let banner_re =
+        Regex::new(r"FLOW v\d+\.\d+\.\d+ — flow-qa — STARTING").expect("banner regex must compile");
+    assert!(
+        banner_re.is_match(&content),
+        "flow-qa SKILL.md must contain the announce banner matching `FLOW v<x>.<y>.<z> — flow-qa — STARTING`"
+    );
+}
+
 // --- Logging ---
 
 #[test]
@@ -5105,6 +5171,40 @@ fn flow_skills_admin_and_maintainer_match_user_only() {
     }
 }
 
+/// Named regression: a future edit removes the `/flow-qa` row from
+/// the Maintainer table in `skills/flow-skills/SKILL.md`, so the
+/// catalog of maintainer-invokable skills drifts out of sync with
+/// the project-local `.claude/skills/flow-qa/` resident. Named
+/// consumer: a maintainer typing `/flow:flow-skills` to discover
+/// which maintainer skills they can invoke.
+///
+/// The bare-name regex in `flow_skills_admin_and_maintainer_match_user_only`
+/// captures only `flow:flow-...` prefixed entries from
+/// `USER_ONLY_SKILLS`; `flow-qa` is bare-name and invisible to that
+/// scan. This test provides direct coverage for the `/flow-qa` row.
+#[test]
+fn flow_skills_maintainer_section_references_flow_qa() {
+    let content = common::read_skill("flow-skills");
+    let needle = "\n#### Maintainer\n";
+    let tail = content
+        .split_once(needle)
+        .map(|(_, t)| t)
+        .expect("flow-skills SKILL.md must contain a `#### Maintainer` subsection");
+    let mut end = tail.len();
+    for marker in &["\n## ", "\n### ", "\n#### "] {
+        if let Some((before, _)) = tail.split_once(marker) {
+            if before.len() < end {
+                end = before.len();
+            }
+        }
+    }
+    let section = &tail[..end];
+    assert!(
+        section.contains("/flow-qa"),
+        "Maintainer section of skills/flow-skills/SKILL.md must reference `/flow-qa`"
+    );
+}
+
 // --- no-backwards-reasoning rule + skill scans ---
 
 /// The four canonical scan phrasings the SKILL bodies enumerate. Each phrase
@@ -6004,9 +6104,17 @@ fn every_marker_writing_skill_is_in_multi_step_allowlist() {
         .split_once(';')
         .map(|(v, _)| v)
         .expect("MULTI_STEP_UTILITY_SKILLS declaration must end with `;`");
-    let marker_re = Regex::new(r"set-utility-in-progress\s+--skill\s+(flow:[a-z0-9-]+)")
-        .expect("regex must compile");
+    // Accept both `flow:`-prefixed plugin-marketplace skills (`skills/<name>/`)
+    // and bare-name project-local maintainer skills (`.claude/skills/<name>/`).
+    // The two skill roots emit different `input.skill` shapes per
+    // `.claude/rules/user-only-skills.md` "Namespacing asymmetry," so the
+    // scanner must capture both forms to honor the marker invariant across
+    // every skill family.
+    let marker_re =
+        Regex::new(r"set-utility-in-progress\s+--skill\s+(\S+)").expect("regex must compile");
     let mut missing: Vec<(String, String)> = Vec::new();
+
+    // Walk plugin-marketplace skills under `skills/`.
     for skill_name in common::all_skill_names() {
         let content = common::read_skill(&skill_name);
         for cap in marker_re.captures_iter(&content) {
@@ -6014,6 +6122,32 @@ fn every_marker_writing_skill_is_in_multi_step_allowlist() {
             let needle = format!("\"{}\"", skill_id);
             if !value.contains(&needle) {
                 missing.push((skill_name.clone(), skill_id));
+            }
+        }
+    }
+
+    // Walk project-local maintainer skills under `.claude/skills/`. These
+    // are not in `common::all_skill_names()` (which only enumerates the
+    // plugin-marketplace `skills/` tree). Without this branch, a future
+    // bare-name maintainer skill that writes a per-session marker would
+    // silently bypass the allowlist check.
+    let project_skills_dir = common::repo_root().join(".claude").join("skills");
+    if let Ok(entries) = std::fs::read_dir(&project_skills_dir) {
+        for entry in entries.flatten() {
+            if !entry.path().is_dir() {
+                continue;
+            }
+            let skill_md = entry.path().join("SKILL.md");
+            let Ok(content) = std::fs::read_to_string(&skill_md) else {
+                continue;
+            };
+            let skill_name = entry.file_name().to_string_lossy().to_string();
+            for cap in marker_re.captures_iter(&content) {
+                let skill_id = cap.get(1).unwrap().as_str().to_string();
+                let needle = format!("\"{}\"", skill_id);
+                if !value.contains(&needle) {
+                    missing.push((format!(".claude/skills/{}", skill_name), skill_id));
+                }
             }
         }
     }

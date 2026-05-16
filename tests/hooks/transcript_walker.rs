@@ -198,17 +198,19 @@ fn most_recent_skill_in_user_only_set_stops_at_user_turn() {
 }
 
 #[test]
-fn user_only_skills_constant_lists_five_skills() {
+fn user_only_skills_constant_lists_six_skills() {
     let names: Vec<&str> = USER_ONLY_SKILLS.to_vec();
     assert!(names.contains(&"flow:flow-abort"));
     assert!(names.contains(&"flow:flow-reset"));
-    // flow-release is a project-local maintainer skill at
-    // `.claude/skills/flow-release/`, so Claude Code emits the bare
-    // name (no `flow:` prefix) when the user types `/flow-release`.
+    // flow-release and flow-qa are project-local maintainer skills
+    // at `.claude/skills/<name>/`, so Claude Code emits the bare
+    // names (no `flow:` prefix) when the user types `/flow-release`
+    // or `/flow-qa`.
     assert!(names.contains(&"flow-release"));
+    assert!(names.contains(&"flow-qa"));
     assert!(names.contains(&"flow:flow-prime"));
     assert!(names.contains(&"flow:flow-continue"));
-    assert_eq!(names.len(), 5);
+    assert_eq!(names.len(), 6);
 }
 
 #[test]

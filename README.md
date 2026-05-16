@@ -68,7 +68,7 @@ Once `/flow-start` lands, you're inside the lifecycle. Each phase is its own ski
 | **4: Learn** | `/flow-learn` | Learnings routed to project `CLAUDE.md` and `.claude/rules/`; plugin process gaps filed as GitHub issues. |
 | **5: Complete** | `/flow-complete` | Merge the PR, close issues referenced in the prompt, remove the worktree, delete the state file. |
 
-Maintainer-only commands (private to this repo): `/flow-release` ships a tagged version; `/flow-changelog-audit` reviews Claude Code's CHANGELOG for plugin-relevant changes.
+Maintainer-only commands (private to this repo): `/flow-qa` files a pre-decomposed QA issue against the FLOW plugin repo for end-to-end lifecycle regression testing; `/flow-release` ships a tagged version; `/flow-changelog-audit` reviews Claude Code's CHANGELOG for plugin-relevant changes.
 
 ---
 

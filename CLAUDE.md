@@ -69,7 +69,7 @@ Four core tenets:
 Behavior I obey lives in the rule files below. Reading the rule when relevant beats pre-loading the architecture description.
 
 - **Permissions, commit gates, concurrency** — see `.claude/rules/permissions.md` and `.claude/rules/concurrency-model.md`.
-- **User-only skills** (model must never invoke `/flow:flow-abort`, `/flow:flow-reset`, `/flow-release`, `/flow:flow-prime`, `/flow:flow-continue`) — see `.claude/rules/user-only-skills.md`.
+- **User-only skills** (model must never invoke `/flow:flow-abort`, `/flow:flow-reset`, `/flow-release`, `/flow-qa`, `/flow:flow-prime`, `/flow:flow-continue`) — see `.claude/rules/user-only-skills.md`.
 - **Autonomous phase discipline** (Stop-hook two-exit halt model, AskUserQuestion gate) — see `.claude/rules/autonomous-phase-discipline.md`.
 - **Tombstone tests** — see `.claude/rules/tombstone-tests.md`.
 - **100% coverage gate** (pinned, never lowered, no waivers) — see `.claude/rules/no-waivers.md`.
@@ -80,6 +80,7 @@ Module-level doc comments in `src/*.rs` describe each file's purpose. Discover v
 
 ## Maintainer Skills (private to this repo)
 
+- `/flow-qa` — `.claude/skills/flow-qa/SKILL.md` — file a pre-decomposed QA issue against the FLOW plugin repo for end-to-end lifecycle regression testing
 - `/flow-release` — `.claude/skills/flow-release/SKILL.md` — bump version, tag, push, create GitHub Release
 - `/flow-changelog-audit` — audit Claude Code CHANGELOG.md for plugin-relevant changes
 

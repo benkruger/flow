@@ -1,6 +1,6 @@
 # User-Only Skills
 
-Five FLOW skills are reserved for direct user invocation. The model
+Six FLOW skills are reserved for direct user invocation. The model
 must never invoke them — neither via the Skill tool, nor by
 suggesting that an `AskUserQuestion` answer should be "yes, run
 `/flow:flow-X`". Each skill performs an action whose authorization
@@ -14,6 +14,7 @@ command) rather than from inferred context.
 | `/flow:flow-abort` | Closes the PR, deletes the remote branch, removes the worktree, deletes the state file. | Destructive — losing in-flight work. |
 | `/flow:flow-reset` | Same destructive shape but applied across every active flow on the machine. | Destructive — losing in-flight work across multiple flows. |
 | `/flow-release` | Bumps version, tags, pushes, and creates a public GitHub Release. | Resource-shipping — visible to plugin marketplace consumers. Project-local skill at `.claude/skills/flow-release/`; Claude Code emits the bare-namespace form because the skill is not in the `flow:` plugin namespace. |
+| `/flow-qa` | Files a pre-decomposed QA issue against the FLOW plugin repo (`benkruger/flow`) with assignee `@me`, triggering a full FLOW lifecycle on the QA-pass branch. | Resource-shipping — the filed issue becomes shared GitHub state visible to plugin consumers and pulls a maintainer through Start → Code → Review → Learn → Complete. Project-local skill at `.claude/skills/flow-qa/`; Claude Code emits the bare-namespace form because the skill is not in the `flow:` plugin namespace. |
 | `/flow:flow-prime` | Writes `.claude/settings.json` and the four `bin/*` stubs into the project. | Environment-mutating — modifies shared config the project has not yet reviewed. |
 | `/flow:flow-continue` | Clears `_halt_pending` so the paused autonomous flow resumes. | Authorization to resume must come from explicit user intent — the user typing the slash command — rather than from model inference. The matching `bin/flow clear-halt` subcommand self-gates on the same transcript marker, so even a model that bypasses Layer 1 cannot clear the halt. |
 
@@ -27,7 +28,7 @@ command directly.
 
 ## Three-Layer Enforcement Chain
 
-The five skills are protected by three independent mechanical
+The six skills are protected by three independent mechanical
 gates so a single bypass does not defeat the discipline.
 
 ### Layer threat mapping

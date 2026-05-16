@@ -25,7 +25,7 @@ Four sections render in every project:
 
 Two additional sections render only when the current repo is the FLOW plugin source (detected via `git remote get-url origin` matching `benkruger/flow`):
 
-- **Maintainer** — release.
+- **Maintainer** — qa, release.
 - **Private** — phase skills (code, review, learn, complete) and helpers (commit, status, note) that other FLOW skills invoke. The user does not type these directly.
 
 ---

@@ -49,8 +49,8 @@ route through `bin/flow write-rule`:
   (in `.flow-states/`)
 
 Session-scoped `-<id>` temp files used by `flow-explore`, `flow-plan`,
-and `flow-decompose-project` are NOT monitored because their unique id
-prevents cross-invocation collision.
+`flow-decompose-project`, and `flow-qa` are NOT monitored because their
+unique id prevents cross-invocation collision.
 
 Intermediate content files that the model Writes as input to
 `bin/flow write-rule` (for example
