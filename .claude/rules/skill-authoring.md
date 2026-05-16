@@ -51,6 +51,34 @@ allow-list entries, the cause is a platform constraint — not a missing
 permission. Never propose adding permissions for paths that are
 platform-protected.
 
+### Directory creation for new skill paths
+
+When a plan introduces a new skill, rule, or agent file that
+requires a parent directory that does not yet exist, route the
+directory creation through `bin/flow write-rule` rather than
+running a bare `mkdir` against the `.claude/` path. The platform
+constraint above extends to `mkdir` from a bash block: Claude
+Code refuses the directory-creation tool call under `.claude/`
+regardless of settings.json, so a `mkdir .claude/skills/<new>/`
+line in any skill or agent surfaces a permission prompt mid-flow
+— exactly the system-initiated-prompts class
+`.claude/rules/autonomous-phase-discipline.md` forbids.
+
+`bin/flow write-rule` (`src/write_rule.rs`) calls
+`fs::create_dir_all(parent)` from inside the Rust subprocess
+before its `fs::write`, so writing the new file routes the
+directory creation through the sanctioned tool surface. The
+subprocess has filesystem authority the Bash tool does not, and
+the call works whether the parent existed or not. No prior
+`mkdir` is needed; the write-rule invocation alone creates every
+missing ancestor.
+
+`tests/skill_contracts.rs::skills_no_mkdir_on_claude_paths` is
+the corpus scanner that locks this invariant in: every fenced
+bash block under `skills/`, `.claude/skills/`, and `agents/` is
+scanned for `mkdir(\s+-[a-z]+)?\s+[^\s]*\.claude/` and a single
+match fails CI.
+
 ## Commit Skill Internals
 
 Never skip `git add -A` in flow:commit Step 1. The Code phase

@@ -4440,6 +4440,86 @@ fn no_exec_in_bash_blocks() {
     );
 }
 
+#[test]
+fn skills_no_mkdir_on_claude_paths() {
+    // Forbid `mkdir <flags?> <path>.claude/...` in any skill or agent
+    // bash block. Claude Code's platform protection refuses tool
+    // calls under `.claude/` regardless of allow-list patterns
+    // (`.claude/rules/skill-authoring.md` "Platform Constraints");
+    // the sanctioned path for creating skill or rule directories is
+    // `bin/flow write-rule`, which calls `fs::create_dir_all(parent)`
+    // from inside the Rust subprocess. A direct `mkdir` under
+    // `.claude/` would surface a permission prompt mid-autonomous-flow
+    // — exactly the system-initiated-prompts class
+    // `.claude/rules/autonomous-phase-discipline.md` forbids.
+    //
+    // The pattern allows optional short flags between `mkdir` and the
+    // path so `mkdir -p .claude/foo` and `mkdir -pv .claude/foo` both
+    // fail. The path captures any non-whitespace prefix followed by
+    // `.claude/` — bare `.claude/x`, `<plugin>/.claude/x`, and
+    // `~/.claude/x` are all caught.
+    let mkdir_re = Regex::new(r"mkdir(\s+-[a-z]+)?\s+[^\s]*\.claude/").unwrap();
+    let mut violations = Vec::new();
+
+    // Walk plugin-marketplace skills under `skills/`.
+    for name in common::all_skill_names() {
+        let content = common::read_skill(&name);
+        for block in common::extract_bash_blocks(&content) {
+            for line in block.lines() {
+                if mkdir_re.is_match(line) {
+                    violations.push(format!("skills/{}/SKILL.md: {}", name, line.trim()));
+                }
+            }
+        }
+    }
+
+    // Walk project-local maintainer skills under `.claude/skills/`.
+    // These are not in `common::all_skill_names()` (which only
+    // enumerates the plugin-marketplace `skills/` tree).
+    let project_skills_dir = common::repo_root().join(".claude").join("skills");
+    if let Ok(entries) = fs::read_dir(&project_skills_dir) {
+        for entry in entries.flatten() {
+            if !entry.path().is_dir() {
+                continue;
+            }
+            let skill_md = entry.path().join("SKILL.md");
+            let Ok(content) = fs::read_to_string(&skill_md) else {
+                continue;
+            };
+            let skill_name = entry.file_name().to_string_lossy().to_string();
+            for block in common::extract_bash_blocks(&content) {
+                for line in block.lines() {
+                    if mkdir_re.is_match(line) {
+                        violations.push(format!(
+                            ".claude/skills/{}/SKILL.md: {}",
+                            skill_name,
+                            line.trim()
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    // Walk agents under `agents/`.
+    for agent in agent_files() {
+        let content = common::read_agent(&agent);
+        for block in common::extract_bash_blocks(&content) {
+            for line in block.lines() {
+                if mkdir_re.is_match(line) {
+                    violations.push(format!("agents/{}: {}", agent, line.trim()));
+                }
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "Skill and agent bash blocks must not run `mkdir` on `.claude/` paths — Claude Code platform protection blocks these regardless of settings.json. Route directory creation through `bin/flow write-rule` (which calls `fs::create_dir_all(parent)` internally). Violations:\n{}",
+        violations.join("\n")
+    );
+}
+
 // --- Prime preset ordering ---
 
 #[test]
