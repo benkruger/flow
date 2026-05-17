@@ -196,9 +196,33 @@ resolves under `~/.claude/projects/`.
    description and threat-shape rationale.
 3. Add a `validate_user_only_skill_<name>_is_in_set` test in
    `tests/hooks/validate_skill.rs`.
-4. Confirm the skill's `SKILL.md` has a HARD-GATE that prompts the
-   user before performing the destructive / resource-shipping
-   action.
+4. Decide whether the skill's `SKILL.md` needs an in-band HARD-GATE
+   prompting the user before the destructive / resource-shipping
+   action. Apply this test:
+   - **HARD-GATE required.** When the skill is invoked during an
+     autonomous phase or by another skill in a multi-skill
+     pipeline, the HARD-GATE is the in-band confirmation that
+     proves explicit user intent for the destructive action at
+     the moment it happens. `/flow:flow-abort` and
+     `/flow:flow-reset` fit this shape because the model can
+     reach them indirectly through `AskUserQuestion` answers
+     during a flow.
+   - **HARD-GATE not required.** When the skill is invoked
+     directly by the user typing the slash command AND every
+     subsequent action in the skill follows from that one
+     invocation (no autonomous-phase re-entry, no multi-skill
+     pipeline), Layer 1's slash-command match is itself the
+     explicit user intent. An additional HARD-GATE adds
+     friction without adding safety. `/flow-qa`, `/flow-release`,
+     `/flow:flow-prime`, and `/flow:flow-continue` fit this
+     shape: each runs on the integration branch or in a
+     single-shot context where Layer 1's mechanical enforcement
+     is sufficient.
+
+   When the skill omits a HARD-GATE under the second branch,
+   record the reasoning in the skill's `## Hard Rules` section
+   (or in a brief comment near the destructive call) so a
+   future maintainer reading the skill sees the decision.
 
 ## How to Apply (Skill Authoring)
 
