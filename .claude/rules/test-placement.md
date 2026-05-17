@@ -117,6 +117,7 @@ the mirror rule:
 - `tests/agent_grep_tool_present.rs` — frontmatter contract: every Review-tier agent that consumes the diff via file handoff (DIFF_FILE / SUBSTANTIVE_DIFF_FILE) must declare `Grep` in its `tools:` allow-list
 - `tests/bin_flow.rs` — dispatcher resolution contract for the `bin/flow` bash script; no `src/*.rs` mirror because the subject is a shell script (`tests/bin_<stem>.rs` convention)
 - `tests/binary_artifact.rs` — committed-binary contract for `bin/flow-rs-darwin-arm64` (presence, executable git mode, Mach-O arm64); no `src/*.rs` mirror because the subject is a checked-in build artifact
+- `tests/hello_smoke.rs` — QA-pass smoke-test contract for `hello.sh`; no `src/*.rs` mirror because the subject is a bash artifact rewritten each QA pass (`/flow-qa`) to carry the current pass's date stamp
 
 Adding a new meta-test without a src counterpart requires amending
 this list. Every other test under `tests/` must mirror a src file.

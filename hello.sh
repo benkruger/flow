@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-echo "Hello again, FLOW!"
+echo "Hello, FLOW! (QA 2026-05-16)"

@@ -62,11 +62,11 @@ lifecycle exercises a low-risk file.
 
 ## Why
 
-`hello.sh` is the designated smoke-test artifact — referenced only
-by `CLAUDE.md`, with no callers, no tests, and no coverage impact.
-Routing a fresh QA pass through the standard lifecycle on this file
-confirms every phase still operates against the current FLOW
-plugin source.
+`hello.sh` is the designated smoke-test artifact — referenced by
+`CLAUDE.md` and pinned by `tests/hello_smoke.rs`, with no
+production callers. Routing a fresh QA pass through the standard
+lifecycle on this file confirms every phase still operates against
+the current FLOW plugin source.
 
 ## Acceptance Criteria
 
