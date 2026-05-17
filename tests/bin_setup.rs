@@ -3,20 +3,25 @@
 //! The script is invoked by users from their plain terminal after
 //! `/plugin install` and before `/flow:flow-prime`. It checks for
 //! `cargo` and `cc` prereqs and runs `cargo build --release` when
-//! both are present. Passed `--stage-binary`, it additionally copies
+//! both are present. Passed `--stage-binary`, it additionally moves
 //! the fresh release binary to `bin/flow-rs-darwin-arm64` so the
-//! committed prebuilt binary never lags the source.
-//! The first three tests assert structural
-//! contracts (existence, executable bit, bash syntax, content
-//! snippets, shebang, strict-mode preamble, active success echo)
-//! so an accidental edit that drops a prereq check, the build
-//! invocation, the success message, the executable bit, the
-//! bash-specific shebang, or the strict-mode preamble fails CI
-//! immediately. The last two tests exercise the script's runtime
-//! behavior against mocked PATHs so a regression that breaks the
-//! prereq-missing exit code or stderr routing is caught — the
-//! script's full build path (`cargo build --release`) is not
-//! exercised here because it would take minutes.
+//! committed prebuilt binary never lags the source AND the source
+//! artifact at `target/release/flow-rs` does not survive staging
+//! (a leftover would shadow the committed binary on the next
+//! `--plugin-dir` QA session because the dispatcher in `bin/flow`
+//! prefers `target/release` over the committed path).
+//!
+//! The structural tests assert presence-contracts (existence,
+//! executable bit, bash syntax, content snippets, shebang,
+//! strict-mode preamble, active success echo) so an accidental edit
+//! that drops a prereq check, the build invocation, the success
+//! message, the executable bit, the bash-specific shebang, or the
+//! strict-mode preamble fails CI immediately. The runtime tests
+//! exercise the script's behavior against mocked PATHs so
+//! regressions in the prereq-missing exit code, stderr routing, or
+//! `--stage-binary` move semantics are caught — the script's full
+//! cargo-driven build path is not exercised here because it would
+//! take minutes.
 
 mod common;
 
@@ -233,6 +238,18 @@ exit 0
     (tmp, path_value, staged_setup, PLACEHOLDER)
 }
 
+/// Reset the mock cargo so a subsequent `--stage-binary` invocation
+/// finds NO source artifact at `target/release/flow-rs` — simulates
+/// cargo's incremental cache skipping the link step on a re-run.
+fn replace_cargo_with_noop(root: &std::path::Path) {
+    let no_op_body = "#!/usr/bin/env bash\nset -euo pipefail\nexit 0\n";
+    let cargo = root.join("mock_bin").join("cargo");
+    fs::write(&cargo, no_op_body).expect("rewrite mock cargo");
+    let mut perms = fs::metadata(&cargo).expect("metadata").permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&cargo, perms).expect("chmod no-op cargo");
+}
+
 /// `bin/setup --stage-binary` must MOVE the freshly-built binary from
 /// `target/release/flow-rs` to `bin/flow-rs-darwin-arm64`, not copy
 /// it. A leftover `target/release/flow-rs` shadows source changes
@@ -288,6 +305,122 @@ fn stage_binary_removes_target_release_artifact() {
         placeholder,
         "committed binary bytes must equal the mock cargo's output; \
          the move must transfer content, not just delete the source"
+    );
+}
+
+/// `bin/setup --stage-binary` must be idempotent across re-runs.
+/// After the first staging consumes `target/release/flow-rs` via
+/// the move, a second invocation whose cargo cache hits and skips
+/// the link step (no new artifact at `target/release/flow-rs`)
+/// must leave the already-staged committed binary in place rather
+/// than failing with a raw `mv: rename ... No such file or
+/// directory` error. The flow-release skill at
+/// `.claude/skills/flow-release/SKILL.md` line 253 declares the
+/// release skill idempotent — Step 6's `bin/setup --stage-binary`
+/// must honor that contract on `/loop`-driven retries.
+#[test]
+fn stage_binary_is_idempotent_when_source_artifact_already_consumed() {
+    let (tmp, path_value, staged_setup, placeholder) = stage_setup_fixture();
+    let root = tmp.path();
+
+    let first = Command::new("/bin/bash")
+        .arg(&staged_setup)
+        .arg("--stage-binary")
+        .env("PATH", &path_value)
+        .output()
+        .expect("spawn staged bin/setup (first run)");
+    assert!(
+        first.status.success(),
+        "first --stage-binary must succeed; stderr: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+
+    replace_cargo_with_noop(root);
+
+    let second = Command::new("/bin/bash")
+        .arg(&staged_setup)
+        .arg("--stage-binary")
+        .env("PATH", &path_value)
+        .output()
+        .expect("spawn staged bin/setup (second run, no fresh artifact)");
+    assert!(
+        second.status.success(),
+        "second --stage-binary with no fresh artifact must succeed (idempotent); \
+         got status {:?}\nstdout: {}\nstderr: {}",
+        second.status,
+        String::from_utf8_lossy(&second.stdout),
+        String::from_utf8_lossy(&second.stderr),
+    );
+    let stderr2 = String::from_utf8_lossy(&second.stderr);
+    assert!(
+        !stderr2.contains("mv: rename"),
+        "second --stage-binary must not leak a raw mv error; got stderr: {}",
+        stderr2
+    );
+
+    let committed = root.join("bin/flow-rs-darwin-arm64");
+    let committed_bytes = fs::read(&committed).expect("read committed binary");
+    assert_eq!(
+        committed_bytes.as_slice(),
+        placeholder,
+        "second run must preserve the bytes the first run staged"
+    );
+}
+
+/// When `bin/setup --stage-binary` runs with no source artifact at
+/// `target/release/flow-rs` AND no prior staged binary at
+/// `bin/flow-rs-darwin-arm64`, the script must fail with a
+/// diagnostic naming the cargo-build expectation rather than
+/// leaking a raw `mv: rename ... No such file or directory`
+/// kernel-level error. This catches the genuinely-broken case
+/// (cargo build succeeded without producing the expected
+/// artifact: workspace-target-dir misconfiguration, [[bin]]
+/// rename, CARGO_TARGET_DIR env divergence) without obscuring the
+/// operator's recovery path.
+#[test]
+fn stage_binary_emits_useful_error_when_source_and_destination_both_missing() {
+    let (tmp, path_value, staged_setup, _) = stage_setup_fixture();
+    let root = tmp.path();
+
+    replace_cargo_with_noop(root);
+
+    let output = Command::new("/bin/bash")
+        .arg(&staged_setup)
+        .arg("--stage-binary")
+        .env("PATH", &path_value)
+        .output()
+        .expect("spawn staged bin/setup");
+
+    assert!(
+        !output.status.success(),
+        "bin/setup --stage-binary must fail when neither source nor destination exists; \
+         got status {:?}\nstdout: {}\nstderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("mv: rename"),
+        "stderr must not leak a raw mv error; got: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("--stage-binary cannot proceed"),
+        "stderr must name the staging-failure diagnostic; got: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("cargo build --release"),
+        "stderr must point the operator at the cargo-build expectation; got: {}",
+        stderr
+    );
+
+    let committed = root.join("bin/flow-rs-darwin-arm64");
+    assert!(
+        !committed.exists(),
+        "destination must remain absent when neither source nor prior staging is present"
     );
 }
 
