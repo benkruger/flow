@@ -4688,3 +4688,28 @@ fn validate_pretool_halt_gate_fires_when_settings_json_missing() {
         "block message must name /flow:flow-continue: {stderr}"
     );
 }
+
+#[test]
+fn finalize_commit_destination_arm_falls_through_when_project_root_missing() {
+    // Covers the destination-path arm in `check_commit_during_flow`
+    // where `extract_finalize_commit_branch_arg` returns Some but
+    // `find_settings_and_root_from(cwd)` returns (_, None) — no
+    // `.claude/settings.json` in any ancestor of cwd. Without a
+    // project root, the destination check cannot resolve the
+    // integration branch and the arm falls through to the cwd path
+    // (which is also a no-op since the cwd has no git repo). The
+    // hook returns exit 0 (allow).
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().canonicalize().expect("canonicalize");
+    // Fresh tempdir with no .claude/ and no .git/. cwd ancestors
+    // have no settings.json (tempdir lives under /var/folders/ on
+    // macOS, /tmp/ on Linux — neither contains .claude/settings.json).
+
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt main"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 0,
+        "finalize-commit from a no-project-root cwd must fall through \
+         without blocking; stderr={stderr}"
+    );
+}

@@ -1,23 +1,23 @@
 ---
 name: flow-reset
-description: "Reset all FLOW artifacts. Closes PRs, removes worktrees, deletes branches, clears state files."
+description: "Wipe `.flow-states/` on this machine in one pass. PRs, worktrees, and branches are NOT touched — those require per-flow `/flow:flow-abort`."
 ---
 
 # FLOW Reset
 
-Remove every FLOW artifact from the current project in one pass: every PR, every
-worktree, every per-branch state directory, every residual start-lock entry, the
-orchestration queue singleton, and the base-branch CI sentinel directory. Use
-when abandoned features have left orphaned worktrees, branches, state files,
-and PRs that the per-feature `/flow:flow-abort` cannot reach.
+Wipe `.flow-states/` on this machine in one pass. Use when abandoned
+features have left orphaned state directories that the per-feature
+`/flow:flow-abort` cannot reach. PRs, worktrees, and branches are
+NOT touched — those require per-flow `/flow:flow-abort` invoked
+against each branch separately before reset.
 
-The skill is a thin wrapper around `bin/flow cleanup --all`. The Rust primitive
-walks `.flow-states/` for every flow with a `state.json`, runs the per-branch
-cleanup against each, then runs the three machine-level tail steps
-(`orchestrate.json`, the base-branch CI sentinel directory at
-`.flow-states/<base_branch>/`, `start-queue/` sweep). The directory shells
-(`.flow-states/`, `.flow-states/start-queue/`) survive so subsequent
-flow-starts do not need to recreate them.
+The skill is a thin wrapper around `bin/flow cleanup --all`. The
+Rust primitive walks `.flow-states/` once, builds a categorized
+inventory of what is inside (flows with `state.json`, state-less
+orphan directories, top-level files, machine-level singletons, and
+the base-branch CI sentinel directory), then removes the entire
+`.flow-states/` directory via `fs::remove_dir_all`. The directory
+shell is recreated on demand by subsequent flow-start invocations.
 
 ## Guard
 
@@ -44,64 +44,83 @@ resolved name into the rejection message:
 
 ## Step 1 — Inventory
 
-Print the inventory of what `--all` would remove without modifying disk. The
-JSON output's `flows[]`, `orchestrate_json`, `base_dir` (the base-branch CI
-sentinel directory result), `base_branch` (the resolved trunk name), and
-`queue_sweep` fields describe every artifact that the live run would touch.
+Print the inventory of `.flow-states/` contents without modifying disk. The
+JSON output's `inventory` object carries five arrays naming the entries the
+walker found: `flows_with_state`, `orphan_dirs`, `top_level_files`,
+`singletons`, and `sentinel_dirs`. `flow_states_dir` reports the dry-run
+outcome (`"would_remove"` when the directory exists, `"skipped"` when it is
+already missing).
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow cleanup . --all --dry-run
 ```
 
-Render the JSON output inline inside a fenced code block so the user can
-review it before approving the destructive run.
+Render the inventory as a five-row table inline inside a fenced code block so
+the user can review it before approving the destructive run. The Category
+column names the bucket; the Count column reports `inventory.<bucket>.len()`;
+the Examples column lists up to five names from each bucket.
 
-If `flows[]` is empty AND `orchestrate_json` is `"skipped"` AND `base_dir` is
-`"skipped"` AND `queue_sweep` is `"skipped"`, print:
+````text
+.flow-states/ contents:
 
-> "No FLOW artifacts found. Nothing to reset."
+Category                Count  Examples
+----------------------  -----  ----------------------------------------------
+Flows with state.json       N  name1, name2, ...
+Orphan dirs (no state)      N  name1, name2, ...
+Top-level files             N  name1, name2, ...
+Machine singletons          N  orchestrate.json
+Sentinel dirs               N  main/
+````
+
+If all five inventory arrays are empty AND `flow_states_dir` is `"skipped"`,
+print:
+
+> "Nothing to reset."
 
 And stop.
 
 ## Step 2 — Confirm
 
-This is destructive and irreversible. Use AskUserQuestion:
+This is destructive and irreversible — for `.flow-states/` only. PRs,
+worktrees, and branches stay untouched. Use AskUserQuestion:
 
-> "Destroy all listed artifacts? This cannot be undone."
+> "Wipe `.flow-states/`? This removes local FLOW state for every flow on this
+> machine. PRs, worktrees, and branches are NOT touched. For per-flow GitHub
+> cleanup, run `/flow:flow-abort <branch>` separately first."
 >
-> - **Yes, destroy everything**
+> - **Yes, wipe `.flow-states/`**
 > - **No, cancel**
 
 If cancelled, stop.
 
 ## Step 3 — Execute
 
-Run the live cleanup. Each per-branch cleanup may report `"failed: <reason>"`
-for individual steps (a missing worktree, an already-deleted remote branch);
-the walk continues to the next flow regardless.
+Run the live cleanup. The Rust primitive recursively removes `.flow-states/`
+via `fs::remove_dir_all`. On success, `flow_states_dir` reports `"deleted"`;
+on filesystem failure (permissions, busy file, etc.), it reports
+`"failed: <reason>"` and the partial state of the directory is left on disk
+for the user to inspect.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow cleanup . --all
 ```
 
-Render the JSON output inline so the user can see the per-flow `steps` map and
-the tail-step results.
+Render the inventory table inline (same shape as Step 1) so the user sees
+what was on disk at decision time, followed by the `flow_states_dir`
+outcome. A `"failed: <reason>"` outcome surfaces to the user directly.
 
 ## Step 4 — Verify
 
-Confirm only the integration branch remains.
+Confirm the result of Step 3 by parsing the `flow_states_dir` field from the
+JSON output. `"deleted"` indicates the directory was removed successfully;
+`"skipped"` indicates the directory was already absent before the run; any
+`"failed: <reason>"` value indicates the recursive removal returned an
+`io::Error` and the partial state of the directory is still on disk for the
+user to inspect.
 
-```bash
-git worktree list
-```
-
-```bash
-git branch --list
-```
-
-If any worktree besides the main working tree appears, or any local branch
-besides the resolved base branch, list the survivors so the user can
-investigate. Otherwise print:
+If the outcome was anything other than `"deleted"` or `"skipped"`, surface
+the `flow_states_dir` value to the user so they can investigate. Otherwise
+print:
 
 ````markdown
 ```text
@@ -114,7 +133,6 @@ investigate. Otherwise print:
 ## Rules
 
 - Available from the integration branch only — running from a worktree is unsafe
-- Never rebase, never force push — the cleanup primitive only invokes the
-  destructive surfaces the per-feature `/flow:flow-abort` already uses
-- Every step after confirmation is best-effort — if one per-flow step fails,
-  the next flow still processes
+- Reset wipes local state only. For each open PR or worktree, run
+  `/flow:flow-abort <branch>` separately before reset.
+- Never rebase, never force push — reset never touches GitHub state

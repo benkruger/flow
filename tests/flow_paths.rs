@@ -270,6 +270,26 @@ fn try_new_returns_none_for_multi_slash_branch() {
     assert!(FlowPaths::try_new("/p", "a/b/c").is_none());
 }
 
+#[test]
+fn try_new_with_empty_project_root_defaults_to_slash() {
+    // Empty project_root triggers the defensive `PathBuf::from("/")`
+    // fallback so worktree() / state_file() etc. produce absolute
+    // paths instead of cwd-relative paths. Production callers pass
+    // canonical absolute roots; this branch guards test fixtures and
+    // degenerate inputs from silent routing defects.
+    let paths = FlowPaths::try_new("", "feature-foo").expect("valid branch");
+    assert!(
+        paths.state_file().is_absolute(),
+        "empty project_root must produce absolute paths, got: {:?}",
+        paths.state_file()
+    );
+    assert!(
+        paths.state_file().starts_with("/"),
+        "empty project_root must default to `/`, got: {:?}",
+        paths.state_file()
+    );
+}
+
 // --- Path-traversal rejection (PR #1258 security gate) ---
 //
 // `.` and `..` segments would resolve outside the per-branch
