@@ -787,6 +787,16 @@ fn extract_dash_c_path(stripped: &str) -> Option<&str> {
 /// aware integration-branch and active-flow checks — independent of
 /// the hook's process cwd. Mirrors `finalize_commit::run_impl`'s
 /// own branch-derived routing through `FlowPaths::worktree()`.
+///
+/// The returned branch is validated via `FlowPaths::is_valid_branch`
+/// per `.claude/rules/branch-path-safety.md`. An invalid branch
+/// (empty, `.`, `..`, slash-containing, or NUL-bearing) returns
+/// `None` so the caller (`check_commit_during_flow`) falls through
+/// to the cwd path rather than constructing
+/// `<main_root>/.worktrees/<invalid>` with a path-traversal payload.
+/// The cwd path's `is_commit_invocation` gate still recognizes the
+/// invocation as a commit, so `git commit`-shaped active-flow
+/// checks against the caller's cwd still fire when appropriate.
 fn extract_finalize_commit_branch_arg(stripped: &str) -> Option<&str> {
     let mut tokens = stripped.split_whitespace();
     // Empty or whitespace-only commands fall through to the
@@ -811,20 +821,44 @@ fn extract_finalize_commit_branch_arg(stripped: &str) -> Option<&str> {
         return None;
     }
     // Skip the message-file token; require the branch token after.
+    // Both `tokens.next()?` short-circuit when the user invoked
+    // `bin/flow finalize-commit` with no positional args or only
+    // the message file — without the second positional, this
+    // helper has no branch to bind to and the caller falls back
+    // to the cwd-based commit check.
     tokens.next()?;
     let branch_raw = tokens.next()?;
-    Some(dequote_token(branch_raw))
+    let branch = dequote_token(branch_raw);
+    // Validate before returning so downstream path construction
+    // (`main_root.join(".worktrees").join(branch)`) cannot receive
+    // a `..`, `.`, or `/`-containing payload. An invalid branch
+    // produces `None` and the caller falls through to the cwd
+    // path, which is the conservative behavior for arbitrary
+    // user input.
+    if !crate::flow_paths::FlowPaths::is_valid_branch(branch) {
+        return None;
+    }
+    Some(branch)
 }
 
 /// Compare the dequoted branch argument against the project's
 /// integration branch (resolved via `default_branch_in`). When the
 /// normalized strings match, return the Layer 9 block message
-/// keyed on the branch arg; otherwise return `None`.
+/// keyed on the integration branch's canonical name; otherwise
+/// return `None`.
 ///
 /// Both sides pass through `normalize_gate_input` (NUL strip +
 /// trim + ASCII lowercase) per `.claude/rules/security-gates.md`
 /// "Normalize Before Comparing" — a whitespace-padded or
 /// case-variant `--branch Main` must compare equal to `main`.
+///
+/// Per `.claude/rules/security-gates.md` "Gate-Action Atomicity
+/// for Validated Paths", the block message uses the canonical
+/// integration branch from `default_branch_in` rather than the
+/// raw `branch_arg`. A case-variant `MAIN` arg blocks AND the
+/// message names the canonical `main` — the user sees the
+/// integration branch the gate resolved, not the unnormalized
+/// input that the gate had to fold.
 ///
 /// `main_root` is the resolved project root (parent of the FLOW
 /// state directory). The destination check needs it both as the
@@ -832,10 +866,11 @@ fn extract_finalize_commit_branch_arg(stripped: &str) -> Option<&str> {
 /// caller constructs `<main_root>/.worktrees/<branch>/` for the
 /// active-flow arm.
 fn match_finalize_commit_destination(branch_arg: &str, main_root: &Path) -> Option<String> {
+    let integration = default_branch_in(main_root);
     let branch_norm = normalize_gate_input(branch_arg);
-    let integration_norm = normalize_gate_input(&default_branch_in(main_root));
+    let integration_norm = normalize_gate_input(&integration);
     if branch_norm == integration_norm {
-        Some(commit_block_message(branch_arg))
+        Some(commit_block_message(&integration))
     } else {
         None
     }

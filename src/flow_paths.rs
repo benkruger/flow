@@ -62,8 +62,18 @@ impl FlowStatesDir {
 }
 
 /// Branch-scoped `.flow-states/*` path builder.
+///
+/// Holds the project root and a validated branch name. The project
+/// root is absolutized at construction so `worktree()` and every
+/// other branch-scoped path returns an absolute `PathBuf` regardless
+/// of whether the caller passed an empty, relative, or absolute
+/// project root. The absolutization guarantee is what
+/// `src/finalize_commit.rs::run_impl` relies on: running git in a
+/// relative worktree path would resolve against the process cwd and
+/// defeat branch-derived routing entirely.
 #[derive(Debug, Clone)]
 pub struct FlowPaths {
+    project_root: PathBuf,
     flow_states_dir: PathBuf,
     branch: String,
 }
@@ -150,8 +160,25 @@ impl FlowPaths {
         if !Self::is_valid_branch(&branch) {
             return None;
         }
+        // Treat empty project_root as `/` so worktree() always
+        // produces an absolute path. A degenerate empty input
+        // would otherwise produce relative paths that resolve
+        // against the process cwd at use time — a silent routing
+        // defect for callers that change directory (the
+        // finalize-commit path changes cwd to the worktree for
+        // every git operation). Production callers pass canonical
+        // absolute roots from `project_root()`; this branch
+        // defends test fixtures and degenerate inputs.
+        let root_ref = project_root.as_ref();
+        let project_root = if root_ref.as_os_str().is_empty() {
+            PathBuf::from("/")
+        } else {
+            root_ref.to_path_buf()
+        };
+        let flow_states_dir = project_root.join(".flow-states");
         Some(Self {
-            flow_states_dir: project_root.as_ref().join(".flow-states"),
+            project_root,
+            flow_states_dir,
             branch,
         })
     }
@@ -202,22 +229,17 @@ impl FlowPaths {
     /// directory FLOW creates for this branch at flow-start. Derived
     /// from the project root and branch name held by this instance,
     /// so callers that already validated the branch via `try_new`
-    /// inherit a `/`-free, `\0`-free, non-empty component.
+    /// inherit a `/`-free, `\0`-free, non-empty component. The
+    /// returned path is always absolute because `try_new`
+    /// absolutizes `project_root` at construction time.
     ///
     /// Named production consumer: `src/finalize_commit.rs::run_impl`
     /// uses this to route every git operation, the CI sub-invocation,
     /// and the tree snapshot through the worktree path derived from
     /// the explicit `<branch>` argument — independent of the caller's
-    /// cwd. The path returned is `<project_root>/.worktrees/<branch>`,
-    /// where `<project_root>` is recovered as the parent of
-    /// `flow_states_dir` (which is `<project_root>/.flow-states`).
+    /// cwd.
     pub fn worktree(&self) -> PathBuf {
-        let project_root = self
-            .flow_states_dir
-            .parent()
-            .unwrap_or(Path::new(""))
-            .to_path_buf();
-        project_root.join(".worktrees").join(&self.branch)
+        self.project_root.join(".worktrees").join(&self.branch)
     }
 
     /// `<branch_dir>/log` — session log appended by skills and Rust

@@ -456,8 +456,6 @@ fn finalize_commit_routes_to_worktree_when_caller_cwd_differs() {
     let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("feature-routing");
     let clone_path = clone_dir.path();
 
-    let _caller_dir = tempfile::tempdir().unwrap();
-
     fs::write(worktree_path.join("feature.rs"), "fn main() {}\n").unwrap();
     git_assert_ok(
         &Command::new("git")
