@@ -440,9 +440,38 @@ design that makes it reachable.
 
 ## Plugin Root for bin/flow
 
-Every `bin/flow` call in a plugin skill bash block must use
-`${CLAUDE_PLUGIN_ROOT}/bin/flow`. Bare `bin/flow` only
-resolves in the FLOW repo itself — target projects do not have it.
+`bin/flow` invocations in skill bash blocks resolve differently
+depending on where the skill lives — plugin-marketplace skills run
+in target projects, project-local maintainer skills run only in the
+FLOW repo. Each case has its own canonical form:
+
+- **Plugin-marketplace skills under `skills/<name>/SKILL.md`** —
+  MUST use `${CLAUDE_PLUGIN_ROOT}/bin/flow`. Bare `bin/flow` does
+  not resolve in target projects where cwd is not the FLOW repo.
+  This half is enforced by runtime behavior in target projects (a
+  permission prompt or "command not found" surfaces the first time
+  a violation runs) rather than by a corpus contract test, so the
+  mechanical asymmetry between the two halves is intentional.
+- **Project-local skills at `.claude/skills/<name>/SKILL.md`**
+  (direct-child SKILL.md only — nested `.claude/skills/<group>/`
+  layouts are not in scope) — MUST use bare `bin/flow`. These
+  skills run only in the FLOW repo where cwd resolves bare
+  `bin/flow` directly. The `${CLAUDE_PLUGIN_ROOT}` prefix triggers
+  Claude Code's "Contains expansion" permission prompt with no
+  benefit. Documentation comments and prose-as-anti-example
+  citations of the prefix belong in `.claude/rules/skill-authoring.md`
+  (this file), not in any project-local SKILL.md — the scanner
+  flags every occurrence of `${CLAUDE_PLUGIN_ROOT}` in those files
+  regardless of fence shape or surrounding context.
+
+The project-local case is enforced mechanically by
+`tests/skill_contracts.rs::no_claude_skills_use_plugin_root_expansion`,
+which scans every direct-child `.claude/skills/<name>/SKILL.md` for
+any occurrence of `${CLAUDE_PLUGIN_ROOT}` anywhere in the file
+content (not just inside ` ```bash ` fences) — broadening the match
+ensures sibling fence shapes (` ```sh `, ` ```shell `, ` ~~~bash `,
+indented blocks) and shell-composition bypasses
+(`${CLAUDE_PLUGIN_ROOT}""/bin/flow`) cannot route around the gate.
 
 ## Worktree bin/flow for Repo-Modifying Commands
 

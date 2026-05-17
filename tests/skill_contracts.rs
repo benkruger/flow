@@ -7382,3 +7382,71 @@ fn docs_with_behavior_key_files_bullet_clarifies_shape() {
          of how the artifact works to the `module doc comment`"
     );
 }
+
+/// Project-local skills at `.claude/skills/<name>/SKILL.md` run only
+/// in the FLOW repo where bare `bin/flow` resolves directly. The
+/// `${CLAUDE_PLUGIN_ROOT}` prefix is for plugin-marketplace skills
+/// under `skills/<name>/SKILL.md` that need to resolve in target
+/// projects — applying it to a project-local skill triggers Claude
+/// Code's "Contains expansion" permission prompt mid-autonomous-flow
+/// with no benefit. See `.claude/rules/skill-authoring.md` "Plugin
+/// Root for bin/flow".
+///
+/// The scanner matches the literal `${CLAUDE_PLUGIN_ROOT}` anywhere
+/// in each project-local SKILL.md (not just inside ` ```bash `
+/// fences). The broader match closes bypass surfaces that surfaced
+/// during Review: sibling fence shapes (` ```sh `, ` ```shell `,
+/// ` ```zsh `, ` ~~~bash `, indented code blocks) and bash composition
+/// (`${CLAUDE_PLUGIN_ROOT}""/bin/flow`, `${CLAUDE_PLUGIN_ROOT}/bin/$(printf flow)`)
+/// all collapse to the single check "does any occurrence of
+/// `${CLAUDE_PLUGIN_ROOT}` exist in this file?" Project-local skills
+/// have no legitimate need for the prefix in any context — teaching
+/// commentary belongs in `.claude/rules/skill-authoring.md`, which
+/// the scanner does not walk.
+///
+/// The scanner walks direct-child entries under `.claude/skills/`
+/// only — nested `.claude/skills/<group>/<name>/SKILL.md` layouts
+/// are out of scope by design (no such layout exists in the project).
+/// When the directory itself cannot be read, the scanner fails closed
+/// per `.claude/rules/security-gates.md` "Fail Closed When State Is
+/// Unreliable" — a missing or unreadable `.claude/skills/` directory
+/// is a repo-structure regression, not a benign empty state.
+#[test]
+fn no_claude_skills_use_plugin_root_expansion() {
+    const FORBIDDEN: &str = "${CLAUDE_PLUGIN_ROOT}";
+    let mut violations = Vec::new();
+
+    let project_skills_dir = common::repo_root().join(".claude").join("skills");
+    let entries = fs::read_dir(&project_skills_dir).unwrap_or_else(|e| {
+        panic!(
+            "fail-closed: `.claude/skills/` must exist and be readable for the scanner to enforce the project-local bin/flow rule (read_dir error: {})",
+            e
+        )
+    });
+    for entry in entries.flatten() {
+        if !entry.path().is_dir() {
+            continue;
+        }
+        let skill_md = entry.path().join("SKILL.md");
+        let Ok(content) = fs::read_to_string(&skill_md) else {
+            continue;
+        };
+        let skill_name = entry.file_name().to_string_lossy().to_string();
+        for (line_no, line) in content.lines().enumerate() {
+            if line.contains(FORBIDDEN) {
+                violations.push(format!(
+                    ".claude/skills/{}/SKILL.md:{} — {}",
+                    skill_name,
+                    line_no + 1,
+                    line.trim()
+                ));
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "Project-local skills at `.claude/skills/<name>/SKILL.md` must not contain `${{CLAUDE_PLUGIN_ROOT}}` anywhere — the prefix exists only for plugin-marketplace skills under `skills/<name>/SKILL.md`, and any occurrence in a project-local skill triggers Claude Code's \"Contains expansion\" permission prompt. Teaching commentary about the prefix belongs in `.claude/rules/skill-authoring.md`. See `.claude/rules/skill-authoring.md` \"Plugin Root for bin/flow\". Violations:\n{}",
+        violations.join("\n")
+    );
+}
