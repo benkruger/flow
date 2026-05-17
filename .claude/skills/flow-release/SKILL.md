@@ -152,13 +152,22 @@ a fresh install needs no build step. It must be regenerated from source
 at every release so its bytes match the tagged source generation; a
 stale binary would run an older FLOW than the release claims.
 
-`bin/setup --stage-binary` builds the release binary and copies it to
-the committed path in one step. The compiler and the copy both run
-inside that script, which keeps them off the FLOW Bash allow-list
-surface — invoking the Rust toolchain or `cp` directly is
-permission-denied. Use a 10-minute Bash tool timeout
-(`timeout: 600000`) — a cold release build can take several minutes
-and the default 2-minute timeout would background the process.
+`bin/setup --stage-binary` builds the release binary and moves it to
+the committed path in one step. The move (rather than a copy) leaves
+no source artifact at `target/release/flow-rs` after staging — a
+leftover would sit at higher dispatcher precedence than the committed
+binary at `bin/flow-rs-darwin-arm64` and shadow source changes during
+`--plugin-dir` QA on a session that runs without rebuilding (see
+`bin/flow` lines 27-33: the dispatcher prefers `target/release` over
+the committed binary by existence priority, not mtime). The compiler
+and the move both run inside that script, which keeps them off the
+FLOW Bash allow-list surface — invoking the Rust toolchain or `mv`
+directly is permission-denied. The staging is idempotent: invoking
+`--stage-binary` after a prior successful staging (no fresh build
+output) leaves the committed binary in place rather than failing.
+Use a 10-minute Bash tool timeout (`timeout: 600000`) — a cold
+release build can take several minutes and the default 2-minute
+timeout would background the process.
 
 ```bash
 bin/setup --stage-binary

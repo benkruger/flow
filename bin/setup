@@ -16,13 +16,46 @@ fi
 
 cargo build --release --manifest-path "$REPO_ROOT/Cargo.toml"
 
-# --stage-binary additionally refreshes the committed prebuilt binary
-# from the fresh release build, so bin/flow-rs-darwin-arm64 never lags
-# the source it ships alongside. The copy runs inside this script,
-# keeping it off the FLOW Bash allow-list surface.
+# --stage-binary refreshes the committed prebuilt binary from the
+# fresh release build so bin/flow-rs-darwin-arm64 never lags the
+# source it ships alongside. The move (rather than a copy) leaves
+# no source artifact at target/release/flow-rs after staging — the
+# dispatcher in bin/flow prefers target/release over the committed
+# binary by existence priority (bin/flow lines 27-33, first-match-
+# wins, not mtime), so a leftover artifact would silently shadow
+# source changes during --plugin-dir QA on the next session that
+# runs without rebuilding.
+#
+# The staging is idempotent: a re-invocation after a prior
+# successful staging finds no fresh build output (cargo's
+# incremental cache may skip the link step when nothing changed),
+# so the script preserves the already-staged committed binary
+# rather than failing with a raw "mv: rename ... No such file or
+# directory" error. The guard distinguishes three cases:
+#
+#   (1) Source exists  → mv it onto the committed path.
+#   (2) Source absent, committed binary already in place → no-op
+#       (the prior run already staged successfully).
+#   (3) Source absent AND committed binary absent → fail with a
+#       diagnostic naming the cargo-build expectation rather than
+#       leaking mv's kernel-level error.
+#
+# chmod stays in place as defensive coverage for environments
+# where mv ever fails to preserve mode bits.
 if [ "${1:-}" = "--stage-binary" ]; then
-  cp "$REPO_ROOT/target/release/flow-rs" "$REPO_ROOT/bin/flow-rs-darwin-arm64"
-  chmod 755 "$REPO_ROOT/bin/flow-rs-darwin-arm64"
+  SRC="$REPO_ROOT/target/release/flow-rs"
+  DST="$REPO_ROOT/bin/flow-rs-darwin-arm64"
+  if [ -f "$SRC" ]; then
+    mv "$SRC" "$DST"
+  elif [ ! -f "$DST" ]; then
+    echo "bin/setup: --stage-binary cannot proceed: no artifact at $SRC" >&2
+    echo "  and no prior staging left $DST in place. cargo build --release" >&2
+    echo "  succeeded but produced no binary at the expected path. Check" >&2
+    echo "  Cargo.toml [[bin]] config, CARGO_TARGET_DIR env, and workspace" >&2
+    echo "  layout, then re-run." >&2
+    exit 1
+  fi
+  chmod 755 "$DST"
 fi
 
 echo "Setup complete — run /flow:flow-prime in your project to initialize."
