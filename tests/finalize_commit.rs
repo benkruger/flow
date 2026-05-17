@@ -185,11 +185,112 @@ exit 0
     (clone_dir, bare_dir)
 }
 
-fn write_ci_sentinel(clone_path: &std::path::Path, branch: &str) {
-    let snapshot = flow_rs::ci::tree_snapshot(clone_path, None);
-    let sentinel = flow_rs::ci::sentinel_path(clone_path, branch);
+/// Snapshot the tree of `commit_cwd` and pin the sentinel under
+/// `<root>/.flow-states/<branch>/ci-passed`. Used by tests that route
+/// finalize-commit through a worktree at `<root>/.worktrees/<branch>/`:
+/// the sentinel must reflect the worktree's tree (the destination
+/// commit_cwd resolves to inside `run_impl`), not the main clone's
+/// tree, otherwise the sentinel mismatches and CI re-runs.
+fn write_ci_sentinel_for_worktree(
+    root: &std::path::Path,
+    branch: &str,
+    commit_cwd: &std::path::Path,
+) {
+    let snapshot = flow_rs::ci::tree_snapshot(commit_cwd, None);
+    let sentinel = flow_rs::ci::sentinel_path(root, branch);
     fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
     fs::write(&sentinel, &snapshot).unwrap();
+}
+
+/// Set up a real worktree fixture for tests of finalize-commit's
+/// branch-derived routing. The base call (`setup_integration_repo_with_ci`)
+/// produces a clone on `main` with a controllable `bin/test` script.
+/// This helper then creates `branch` in the clone, pushes it to origin
+/// so `git pull` has an upstream, and `git worktree add`s a linked
+/// worktree at `<clone>/.worktrees/<branch>/`. Returns the clone TempDir,
+/// the bare TempDir, and the worktree path (must all be kept alive).
+///
+/// `branch` must be a non-`main` branch name: git refuses
+/// `worktree add` when the target branch is already checked out at the
+/// main clone path.
+fn setup_worktree_fixture(branch: &str) -> (tempfile::TempDir, tempfile::TempDir, PathBuf) {
+    let (clone_dir, bare_dir) = setup_integration_repo_with_ci();
+    let clone_path = clone_dir.path();
+    let clone_str = clone_path.to_str().unwrap();
+
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", clone_str, "branch", branch])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap(),
+    );
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", clone_str, "push", "-u", "origin", branch])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap(),
+    );
+
+    let worktree_path = clone_path.join(".worktrees").join(branch);
+    git_assert_ok(
+        &Command::new("git")
+            .args([
+                "-C",
+                clone_str,
+                "worktree",
+                "add",
+                worktree_path.to_str().unwrap(),
+                branch,
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap(),
+    );
+
+    // Configure worktree-local git identity so commits work even when
+    // global git config is absent (CI environments).
+    let wt_str = worktree_path.to_str().unwrap();
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", wt_str, "config", "user.email", "test@test.com"])
+            .output()
+            .unwrap(),
+    );
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", wt_str, "config", "user.name", "Test"])
+            .output()
+            .unwrap(),
+    );
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", wt_str, "config", "pull.rebase", "false"])
+            .output()
+            .unwrap(),
+    );
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", wt_str, "config", "commit.gpgSign", "false"])
+            .output()
+            .unwrap(),
+    );
+
+    (clone_dir, bare_dir, worktree_path)
+}
+
+/// Return the SHA at HEAD of the repo at `cwd`. Panics on git failure.
+fn head_sha(cwd: &std::path::Path) -> String {
+    let out = Command::new("git")
+        .args(["-C", cwd.to_str().unwrap(), "rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    git_assert_ok(&out);
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
 }
 
 fn write_state_with_continue_pending(clone_path: &std::path::Path, branch: &str) {
@@ -315,31 +416,226 @@ fn last_json_line(stdout: &str) -> Value {
 
 #[test]
 fn happy_path_commit_pull_push_succeed() {
-    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("happy-path");
     let clone_path = clone_dir.path();
 
-    fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    fs::write(worktree_path.join("feature.rs"), "fn main() {}\n").unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .args(["-C", worktree_path.to_str().unwrap(), "add", "-A"])
             .output()
             .unwrap(),
     );
 
-    let msg_path = clone_path.join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "Test commit.").unwrap();
 
-    write_ci_sentinel(clone_path, "main");
+    write_ci_sentinel_for_worktree(clone_path, "happy-path", &worktree_path);
 
     let args = Args {
         message_file: msg_path.to_str().unwrap().to_string(),
-        branch: "main".to_string(),
+        branch: "happy-path".to_string(),
     };
-    let result = run_impl(&args, clone_path, clone_path).unwrap();
+    let result = run_impl(&args, clone_path).unwrap();
     assert_eq!(result["status"], "ok", "got: {}", result);
     assert_eq!(result["pull_merged"], false);
     // Message file was removed after commit.
     assert!(!msg_path.exists());
+}
+
+// --- run_impl: branch-derived routing through worktree ---
+
+/// `run_impl` derives `commit_cwd` from `<branch>` + `<root>` via
+/// `FlowPaths::worktree()`, so the commit must land on the worktree's
+/// HEAD even when the caller's cwd is an unrelated sibling tempdir
+/// outside both the main clone and the worktree. The plan calls this
+/// the canonical fresh-worktree case: caller cwd is irrelevant; the
+/// branch argument is the routing key.
+#[test]
+fn finalize_commit_routes_to_worktree_when_caller_cwd_differs() {
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("feature-routing");
+    let clone_path = clone_dir.path();
+
+    fs::write(worktree_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", worktree_path.to_str().unwrap(), "add", "-A"])
+            .output()
+            .unwrap(),
+    );
+
+    let msg_path = worktree_path.join(".flow-commit-msg");
+    fs::write(&msg_path, "Routing-from-sibling commit.").unwrap();
+
+    write_ci_sentinel_for_worktree(clone_path, "feature-routing", &worktree_path);
+
+    let main_sha_before = head_sha(clone_path);
+    let worktree_sha_before = head_sha(&worktree_path);
+
+    let args = Args {
+        message_file: msg_path.to_str().unwrap().to_string(),
+        branch: "feature-routing".to_string(),
+    };
+    let result = run_impl(&args, clone_path).unwrap();
+    assert_eq!(result["status"], "ok", "got: {}", result);
+
+    let main_sha_after = head_sha(clone_path);
+    let worktree_sha_after = head_sha(&worktree_path);
+
+    assert_eq!(
+        main_sha_before, main_sha_after,
+        "main HEAD must not advance — commit must land in worktree"
+    );
+    assert_ne!(
+        worktree_sha_before, worktree_sha_after,
+        "worktree HEAD must advance"
+    );
+}
+
+/// Monorepo case: a checkout opened from a subdirectory of the main
+/// clone (e.g. `<clone>/hub/`) used to cause Layer 9 to read the wrong
+/// branch from the caller's cwd. With branch-derived routing, the
+/// `--branch` argument is the routing key and the commit lands on
+/// the feature-branch worktree regardless of where the caller's
+/// shell sits inside the main clone.
+#[test]
+fn finalize_commit_routes_to_worktree_when_caller_cwd_inside_main_subdir() {
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("feature-monorepo");
+    let clone_path = clone_dir.path();
+
+    let subdir = clone_path.join("hub");
+    fs::create_dir_all(&subdir).unwrap();
+    fs::write(subdir.join("placeholder.txt"), "placeholder").unwrap();
+
+    fs::write(worktree_path.join("api.rs"), "fn main() {}\n").unwrap();
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", worktree_path.to_str().unwrap(), "add", "-A"])
+            .output()
+            .unwrap(),
+    );
+
+    let msg_path = worktree_path.join(".flow-commit-msg");
+    fs::write(&msg_path, "Monorepo subdir commit.").unwrap();
+
+    write_ci_sentinel_for_worktree(clone_path, "feature-monorepo", &worktree_path);
+
+    let main_sha_before = head_sha(clone_path);
+    let worktree_sha_before = head_sha(&worktree_path);
+
+    let args = Args {
+        message_file: msg_path.to_str().unwrap().to_string(),
+        branch: "feature-monorepo".to_string(),
+    };
+    let result = run_impl(&args, clone_path).unwrap();
+    assert_eq!(result["status"], "ok", "got: {}", result);
+
+    let main_sha_after = head_sha(clone_path);
+    let worktree_sha_after = head_sha(&worktree_path);
+
+    assert_eq!(
+        main_sha_before, main_sha_after,
+        "main HEAD must not advance — commit must land in worktree"
+    );
+    assert_ne!(
+        worktree_sha_before, worktree_sha_after,
+        "worktree HEAD must advance even when caller cwd is inside main subdir"
+    );
+}
+
+/// Latent-bug case: two feature worktrees coexist (`branch-a` and
+/// `branch-b`). The branch argument routes the commit to the
+/// `branch-b` worktree even if a hypothetical caller cwd were inside
+/// the `branch-a` worktree. Layer 9 previously blocked this entire
+/// shape by refusing commits whose cwd resolved to a different active
+/// flow; with branch-derived routing the destination is unambiguous.
+#[test]
+fn finalize_commit_routes_to_worktree_when_caller_cwd_on_other_feature_branch() {
+    let (clone_dir, _bare_dir, worktree_a) = setup_worktree_fixture("feature-a");
+    let clone_path = clone_dir.path();
+    let clone_str = clone_path.to_str().unwrap();
+
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", clone_str, "branch", "feature-b"])
+            .output()
+            .unwrap(),
+    );
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", clone_str, "push", "-u", "origin", "feature-b"])
+            .output()
+            .unwrap(),
+    );
+    let worktree_b = clone_path.join(".worktrees").join("feature-b");
+    git_assert_ok(
+        &Command::new("git")
+            .args([
+                "-C",
+                clone_str,
+                "worktree",
+                "add",
+                worktree_b.to_str().unwrap(),
+                "feature-b",
+            ])
+            .output()
+            .unwrap(),
+    );
+    let wt_b_str = worktree_b.to_str().unwrap();
+    for (key, val) in [
+        ("user.email", "test@test.com"),
+        ("user.name", "Test"),
+        ("pull.rebase", "false"),
+        ("commit.gpgSign", "false"),
+    ] {
+        git_assert_ok(
+            &Command::new("git")
+                .args(["-C", wt_b_str, "config", key, val])
+                .output()
+                .unwrap(),
+        );
+    }
+
+    fs::write(worktree_b.join("b.rs"), "fn main() {}\n").unwrap();
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", wt_b_str, "add", "-A"])
+            .output()
+            .unwrap(),
+    );
+
+    let msg_path = worktree_b.join(".flow-commit-msg");
+    fs::write(&msg_path, "Sibling-worktree commit.").unwrap();
+
+    write_ci_sentinel_for_worktree(clone_path, "feature-b", &worktree_b);
+
+    let main_sha_before = head_sha(clone_path);
+    let worktree_a_sha_before = head_sha(&worktree_a);
+    let worktree_b_sha_before = head_sha(&worktree_b);
+
+    let args = Args {
+        message_file: msg_path.to_str().unwrap().to_string(),
+        branch: "feature-b".to_string(),
+    };
+    let result = run_impl(&args, clone_path).unwrap();
+    assert_eq!(result["status"], "ok", "got: {}", result);
+
+    let main_sha_after = head_sha(clone_path);
+    let worktree_a_sha_after = head_sha(&worktree_a);
+    let worktree_b_sha_after = head_sha(&worktree_b);
+
+    assert_eq!(
+        main_sha_before, main_sha_after,
+        "main HEAD must not advance"
+    );
+    assert_eq!(
+        worktree_a_sha_before, worktree_a_sha_after,
+        "sibling worktree A must not advance — branch arg names B"
+    );
+    assert_ne!(
+        worktree_b_sha_before, worktree_b_sha_after,
+        "target worktree B must advance — branch arg names B"
+    );
 }
 
 // --- run_impl: working_tree_dirty gate ---
@@ -353,56 +649,44 @@ fn happy_path_commit_pull_push_succeed() {
 /// different set (the index).
 #[test]
 fn working_tree_dirty_blocks_commit_when_index_differs() {
-    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("dirty-tree");
     let clone_path = clone_dir.path();
+    let wt_str = worktree_path.to_str().unwrap();
 
-    fs::write(clone_path.join("feature.rs"), "initial\n").unwrap();
+    fs::write(worktree_path.join("feature.rs"), "initial\n").unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .args(["-C", wt_str, "add", "-A"])
             .output()
             .unwrap(),
     );
     git_assert_ok(
         &Command::new("git")
-            .args([
-                "-C",
-                clone_path.to_str().unwrap(),
-                "commit",
-                "-m",
-                "seed feature.rs",
-            ])
+            .args(["-C", wt_str, "commit", "-m", "seed feature.rs"])
             .output()
             .unwrap(),
     );
 
-    fs::write(clone_path.join("feature.rs"), "staged-bad\n").unwrap();
+    fs::write(worktree_path.join("feature.rs"), "staged-bad\n").unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "feature.rs"])
+            .args(["-C", wt_str, "add", "feature.rs"])
             .output()
             .unwrap(),
     );
 
-    fs::write(clone_path.join("feature.rs"), "working-tree-good\n").unwrap();
+    fs::write(worktree_path.join("feature.rs"), "working-tree-good\n").unwrap();
 
-    let msg_path = clone_path.join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "Test commit.").unwrap();
 
-    let head_before = Command::new("git")
-        .args(["-C", clone_path.to_str().unwrap(), "rev-parse", "HEAD"])
-        .output()
-        .unwrap();
-    git_assert_ok(&head_before);
-    let sha_before = String::from_utf8_lossy(&head_before.stdout)
-        .trim()
-        .to_string();
+    let sha_before = head_sha(&worktree_path);
 
     let args = Args {
         message_file: msg_path.to_str().unwrap().to_string(),
-        branch: "main".to_string(),
+        branch: "dirty-tree".to_string(),
     };
-    let result = run_impl(&args, clone_path, clone_path).unwrap();
+    let result = run_impl(&args, clone_path).unwrap();
 
     assert_eq!(result["status"], "error", "got: {}", result);
     assert_eq!(result["step"], "working_tree_dirty");
@@ -418,14 +702,7 @@ fn working_tree_dirty_blocks_commit_when_index_differs() {
         msg
     );
 
-    let head_after = Command::new("git")
-        .args(["-C", clone_path.to_str().unwrap(), "rev-parse", "HEAD"])
-        .output()
-        .unwrap();
-    git_assert_ok(&head_after);
-    let sha_after = String::from_utf8_lossy(&head_after.stdout)
-        .trim()
-        .to_string();
+    let sha_after = head_sha(&worktree_path);
     assert_eq!(sha_before, sha_after, "HEAD must not have advanced");
 
     // Gate fired before finalize_commit ran, so the message file
@@ -437,26 +714,27 @@ fn working_tree_dirty_blocks_commit_when_index_differs() {
 
 #[test]
 fn ci_fails_blocks_commit() {
-    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("ci-fail");
     let clone_path = clone_dir.path();
+    let wt_str = worktree_path.to_str().unwrap();
 
-    fs::write(clone_path.join(".ci-should-fail"), "1").unwrap();
+    fs::write(worktree_path.join(".ci-should-fail"), "1").unwrap();
 
-    fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    fs::write(worktree_path.join("feature.rs"), "fn main() {}\n").unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .args(["-C", wt_str, "add", "-A"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .unwrap(),
     );
 
-    let msg_path = clone_path.join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "Add feature.rs").unwrap();
 
     let before = Command::new("git")
-        .args(["-C", clone_path.to_str().unwrap(), "log", "--oneline"])
+        .args(["-C", wt_str, "log", "--oneline"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -466,15 +744,15 @@ fn ci_fails_blocks_commit() {
 
     let args = Args {
         message_file: msg_path.to_str().unwrap().to_string(),
-        branch: "main".to_string(),
+        branch: "ci-fail".to_string(),
     };
 
-    let result = run_impl(&args, clone_path, clone_path).unwrap();
+    let result = run_impl(&args, clone_path).unwrap();
     assert_eq!(result["status"], "error", "expected CI failure: {}", result);
     assert_eq!(result["step"], "ci");
 
     let after = Command::new("git")
-        .args(["-C", clone_path.to_str().unwrap(), "log", "--oneline"])
+        .args(["-C", wt_str, "log", "--oneline"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -489,40 +767,38 @@ fn ci_fails_blocks_commit() {
 
 #[test]
 fn ci_sentinel_fresh_skips_ci() {
-    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("ci-sentinel");
     let clone_path = clone_dir.path();
+    let wt_str = worktree_path.to_str().unwrap();
 
-    fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    fs::write(worktree_path.join("feature.rs"), "fn main() {}\n").unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "feature.rs"])
+            .args(["-C", wt_str, "add", "feature.rs"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .unwrap(),
     );
 
-    let msg_path = clone_path.join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "Add feature.rs").unwrap();
 
-    let snapshot = flow_rs::ci::tree_snapshot(clone_path, None);
-    let sentinel = flow_rs::ci::sentinel_path(clone_path, "main");
-    fs::create_dir_all(sentinel.parent().unwrap()).unwrap();
-    fs::write(&sentinel, &snapshot).unwrap();
+    write_ci_sentinel_for_worktree(clone_path, "ci-sentinel", &worktree_path);
 
     let args = Args {
         message_file: msg_path.to_str().unwrap().to_string(),
-        branch: "main".to_string(),
+        branch: "ci-sentinel".to_string(),
     };
 
-    let result = run_impl(&args, clone_path, clone_path).unwrap();
+    let result = run_impl(&args, clone_path).unwrap();
     assert_eq!(result["status"], "ok", "commit should succeed: {}", result);
     assert!(
         !result["sha"].as_str().unwrap().is_empty(),
         "should have a commit SHA"
     );
 
-    let marker = clone_path.join(".ci-invocation-marker");
+    let marker = worktree_path.join(".ci-invocation-marker");
     assert!(
         !marker.exists(),
         "CI should not have been invoked (sentinel was fresh)"
@@ -533,36 +809,37 @@ fn ci_sentinel_fresh_skips_ci() {
 
 #[test]
 fn error_clears_continue_pending() {
-    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("err-clear");
     let clone_path = clone_dir.path();
+    let wt_str = worktree_path.to_str().unwrap();
 
-    write_state_with_continue_pending(clone_path, "main");
+    write_state_with_continue_pending(clone_path, "err-clear");
 
-    fs::write(clone_path.join(".ci-should-fail"), "1").unwrap();
+    fs::write(worktree_path.join(".ci-should-fail"), "1").unwrap();
 
-    fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    fs::write(worktree_path.join("feature.rs"), "fn main() {}\n").unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .args(["-C", wt_str, "add", "-A"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .unwrap(),
     );
 
-    let msg_path = clone_path.join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "Add feature.rs").unwrap();
 
     let args = Args {
         message_file: msg_path.to_str().unwrap().to_string(),
-        branch: "main".to_string(),
+        branch: "err-clear".to_string(),
     };
 
-    let result = run_impl(&args, clone_path, clone_path).unwrap();
+    let result = run_impl(&args, clone_path).unwrap();
     assert_eq!(result["status"], "error", "expected CI failure: {}", result);
     assert_eq!(result["step"], "ci");
 
-    let state = read_state(clone_path, "main");
+    let state = read_state(clone_path, "err-clear");
     let pending = state
         .get("_continue_pending")
         .and_then(|v| v.as_str())
@@ -585,35 +862,36 @@ fn error_clears_continue_pending() {
 
 #[test]
 fn ok_preserves_continue_pending() {
-    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("ok-preserve");
     let clone_path = clone_dir.path();
+    let wt_str = worktree_path.to_str().unwrap();
 
-    write_state_with_continue_pending(clone_path, "main");
+    write_state_with_continue_pending(clone_path, "ok-preserve");
 
-    fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    fs::write(worktree_path.join("feature.rs"), "fn main() {}\n").unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .args(["-C", wt_str, "add", "-A"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .unwrap(),
     );
 
-    let msg_path = clone_path.join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "Add feature.rs").unwrap();
 
-    write_ci_sentinel(clone_path, "main");
+    write_ci_sentinel_for_worktree(clone_path, "ok-preserve", &worktree_path);
 
     let args = Args {
         message_file: msg_path.to_str().unwrap().to_string(),
-        branch: "main".to_string(),
+        branch: "ok-preserve".to_string(),
     };
 
-    let result = run_impl(&args, clone_path, clone_path).unwrap();
+    let result = run_impl(&args, clone_path).unwrap();
     assert_eq!(result["status"], "ok", "commit should succeed: {}", result);
 
-    let state = read_state(clone_path, "main");
+    let state = read_state(clone_path, "ok-preserve");
     assert_eq!(
         state["_continue_pending"], "commit",
         "_continue_pending should be preserved on success"
@@ -626,11 +904,15 @@ fn ok_preserves_continue_pending() {
 
 #[test]
 fn conflict_preserves_continue_pending() {
-    let (clone_dir, bare_dir) = setup_integration_repo_with_ci();
+    let (clone_dir, bare_dir, worktree_path) = setup_worktree_fixture("conflict-preserve");
     let clone_path = clone_dir.path();
+    let wt_str = worktree_path.to_str().unwrap();
 
-    write_state_with_continue_pending(clone_path, "main");
+    write_state_with_continue_pending(clone_path, "conflict-preserve");
 
+    // Sibling clone that pushes a conflicting commit to origin's
+    // feature branch, so the worktree's `git pull` brings down a
+    // change that overlaps the local commit.
     let clone2_dir = tempfile::tempdir().unwrap();
     git_assert_ok(
         &Command::new("git")
@@ -642,20 +924,23 @@ fn conflict_preserves_continue_pending() {
             .output()
             .unwrap(),
     );
+    let clone2_str = clone2_dir.path().to_str().unwrap();
     for (key, val) in [("user.email", "other@test.com"), ("user.name", "Other")] {
         git_assert_ok(
             &Command::new("git")
-                .args([
-                    "-C",
-                    clone2_dir.path().to_str().unwrap(),
-                    "config",
-                    key,
-                    val,
-                ])
+                .args(["-C", clone2_str, "config", key, val])
                 .output()
                 .unwrap(),
         );
     }
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", clone2_str, "checkout", "conflict-preserve"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap(),
+    );
 
     fs::write(
         clone2_dir.path().join("README.md"),
@@ -664,7 +949,7 @@ fn conflict_preserves_continue_pending() {
     .unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone2_dir.path().to_str().unwrap(), "add", "-A"])
+            .args(["-C", clone2_str, "add", "-A"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -672,13 +957,7 @@ fn conflict_preserves_continue_pending() {
     );
     git_assert_ok(
         &Command::new("git")
-            .args([
-                "-C",
-                clone2_dir.path().to_str().unwrap(),
-                "commit",
-                "-m",
-                "Conflicting commit",
-            ])
+            .args(["-C", clone2_str, "commit", "-m", "Conflicting commit"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -686,7 +965,7 @@ fn conflict_preserves_continue_pending() {
     );
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone2_dir.path().to_str().unwrap(), "push"])
+            .args(["-C", clone2_str, "push"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -694,50 +973,37 @@ fn conflict_preserves_continue_pending() {
     );
 
     fs::write(
-        clone_path.join("README.md"),
+        worktree_path.join("README.md"),
         "# Local conflicting content\n",
     )
     .unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .args(["-C", wt_str, "add", "-A"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .unwrap(),
     );
 
-    let msg_path = clone_path.join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "Local change to README").unwrap();
 
-    git_assert_ok(
-        &Command::new("git")
-            .args([
-                "-C",
-                clone_path.to_str().unwrap(),
-                "config",
-                "pull.rebase",
-                "false",
-            ])
-            .output()
-            .unwrap(),
-    );
-
-    write_ci_sentinel(clone_path, "main");
+    write_ci_sentinel_for_worktree(clone_path, "conflict-preserve", &worktree_path);
 
     let args = Args {
         message_file: msg_path.to_str().unwrap().to_string(),
-        branch: "main".to_string(),
+        branch: "conflict-preserve".to_string(),
     };
 
-    let result = run_impl(&args, clone_path, clone_path).unwrap();
+    let result = run_impl(&args, clone_path).unwrap();
     assert_eq!(
         result["status"], "conflict",
         "expected conflict: {}",
         result
     );
 
-    let state = read_state(clone_path, "main");
+    let state = read_state(clone_path, "conflict-preserve");
     assert_eq!(
         state["_continue_pending"], "commit",
         "_continue_pending should be preserved on conflict"
@@ -748,35 +1014,36 @@ fn conflict_preserves_continue_pending() {
 
 #[test]
 fn refreshes_sentinel_after_commit() {
-    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
-    let clone_path = clone_dir.path().to_str().unwrap().to_string();
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("refresh-sent");
+    let clone_path = clone_dir.path();
+    let wt_str = worktree_path.to_str().unwrap();
 
-    let src = clone_dir.path().join("src.rs");
+    let src = worktree_path.join("src.rs");
     fs::write(&src, "fn main() {}\n").unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", &clone_path, "add", "-A"])
+            .args(["-C", wt_str, "add", "-A"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .unwrap(),
     );
 
-    let msg_path = clone_dir.path().join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "Add src.rs").unwrap();
 
-    write_ci_sentinel(clone_dir.path(), "main");
+    write_ci_sentinel_for_worktree(clone_path, "refresh-sent", &worktree_path);
 
     let args = Args {
         message_file: msg_path.to_str().unwrap().to_string(),
-        branch: "main".to_string(),
+        branch: "refresh-sent".to_string(),
     };
 
-    let result = run_impl(&args, clone_dir.path(), clone_dir.path()).unwrap();
+    let result = run_impl(&args, clone_path).unwrap();
     assert_eq!(result["status"], "ok", "commit should succeed: {}", result);
     assert_eq!(result["pull_merged"], false);
 
-    let sentinel = flow_rs::ci::sentinel_path(clone_dir.path(), "main");
+    let sentinel = flow_rs::ci::sentinel_path(clone_path, "refresh-sent");
     assert!(
         sentinel.exists(),
         "sentinel file should exist after clean commit"
@@ -796,9 +1063,13 @@ fn refreshes_sentinel_after_commit() {
 
 #[test]
 fn no_sentinel_refresh_when_pull_merges() {
-    let (clone_dir, bare_dir) = setup_integration_repo_with_ci();
-    let clone_path = clone_dir.path().to_str().unwrap().to_string();
+    let (clone_dir, bare_dir, worktree_path) = setup_worktree_fixture("no-refresh");
+    let clone_path = clone_dir.path();
+    let wt_str = worktree_path.to_str().unwrap();
 
+    // Sibling clone that pushes a non-conflicting commit to origin's
+    // feature branch. The local pull merges it cleanly, so
+    // pull_merged = true and the sentinel must be removed.
     let clone2_dir = tempfile::tempdir().unwrap();
     git_assert_ok(
         &Command::new("git")
@@ -810,27 +1081,24 @@ fn no_sentinel_refresh_when_pull_merges() {
             .output()
             .unwrap(),
     );
+    let clone2_str = clone2_dir.path().to_str().unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args([
-                "-C",
-                clone2_dir.path().to_str().unwrap(),
-                "config",
-                "user.email",
-                "other@test.com",
-            ])
+            .args(["-C", clone2_str, "config", "user.email", "other@test.com"])
             .output()
             .unwrap(),
     );
     git_assert_ok(
         &Command::new("git")
-            .args([
-                "-C",
-                clone2_dir.path().to_str().unwrap(),
-                "config",
-                "user.name",
-                "Other",
-            ])
+            .args(["-C", clone2_str, "config", "user.name", "Other"])
+            .output()
+            .unwrap(),
+    );
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", clone2_str, "checkout", "no-refresh"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .output()
             .unwrap(),
     );
@@ -839,7 +1107,7 @@ fn no_sentinel_refresh_when_pull_merges() {
     fs::write(&other_file, "other content\n").unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone2_dir.path().to_str().unwrap(), "add", "-A"])
+            .args(["-C", clone2_str, "add", "-A"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -847,13 +1115,7 @@ fn no_sentinel_refresh_when_pull_merges() {
     );
     git_assert_ok(
         &Command::new("git")
-            .args([
-                "-C",
-                clone2_dir.path().to_str().unwrap(),
-                "commit",
-                "-m",
-                "Other commit",
-            ])
+            .args(["-C", clone2_str, "commit", "-m", "Other commit"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -861,39 +1123,39 @@ fn no_sentinel_refresh_when_pull_merges() {
     );
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone2_dir.path().to_str().unwrap(), "push"])
+            .args(["-C", clone2_str, "push"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .unwrap(),
     );
 
-    let src = clone_dir.path().join("local.txt");
+    let src = worktree_path.join("local.txt");
     fs::write(&src, "local content\n").unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", &clone_path, "add", "-A"])
+            .args(["-C", wt_str, "add", "-A"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .unwrap(),
     );
 
-    let msg_path = clone_dir.path().join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "Add local.txt").unwrap();
 
-    write_ci_sentinel(clone_dir.path(), "main");
+    write_ci_sentinel_for_worktree(clone_path, "no-refresh", &worktree_path);
 
     let args = Args {
         message_file: msg_path.to_str().unwrap().to_string(),
-        branch: "main".to_string(),
+        branch: "no-refresh".to_string(),
     };
 
-    let result = run_impl(&args, clone_dir.path(), clone_dir.path()).unwrap();
+    let result = run_impl(&args, clone_path).unwrap();
     assert_eq!(result["status"], "ok", "commit should succeed: {}", result);
     assert_eq!(result["pull_merged"], true);
 
-    let sentinel = flow_rs::ci::sentinel_path(clone_dir.path(), "main");
+    let sentinel = flow_rs::ci::sentinel_path(clone_path, "no-refresh");
     assert!(
         !sentinel.exists(),
         "sentinel should not exist when pull merged"
@@ -909,39 +1171,40 @@ fn no_sentinel_refresh_when_pull_merges() {
 /// continuation-field reset is attempted.
 #[test]
 fn error_state_wrong_type_guard_fires() {
-    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("wrong-state");
     let clone_path = clone_dir.path();
+    let wt_str = worktree_path.to_str().unwrap();
 
     // Overwrite state file with a JSON ARRAY (not an object). mutate_state's
     // closure in run_impl will see state.is_array() and return early via
     // the type guard — no mutation applied, no panic.
-    let branch_dir = clone_path.join(".flow-states").join("main");
+    let branch_dir = clone_path.join(".flow-states").join("wrong-state");
     fs::create_dir_all(&branch_dir).unwrap();
     let state_path = branch_dir.join("state.json");
     fs::write(&state_path, "[1, 2, 3]").unwrap();
 
     // Configure CI to fail so run_impl hits the error-cleanup path.
-    fs::write(clone_path.join(".ci-should-fail"), "1").unwrap();
+    fs::write(worktree_path.join(".ci-should-fail"), "1").unwrap();
 
-    fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    fs::write(worktree_path.join("feature.rs"), "fn main() {}\n").unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .args(["-C", wt_str, "add", "-A"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .unwrap(),
     );
 
-    let msg_path = clone_path.join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "Add feature.rs").unwrap();
 
     let args = Args {
         message_file: msg_path.to_str().unwrap().to_string(),
-        branch: "main".to_string(),
+        branch: "wrong-state".to_string(),
     };
 
-    let result = run_impl(&args, clone_path, clone_path).unwrap();
+    let result = run_impl(&args, clone_path).unwrap();
     assert_eq!(result["status"], "error");
     assert_eq!(result["step"], "ci");
 
@@ -961,10 +1224,11 @@ fn error_state_wrong_type_guard_fires() {
 /// body is empty (does not contain "original"), so the gate fires.
 #[test]
 fn plan_deviation_blocks_commit() {
-    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("plan-dev");
     let clone_path = clone_dir.path();
+    let wt_str = worktree_path.to_str().unwrap();
 
-    let branch_dir = clone_path.join(".flow-states").join("main");
+    let branch_dir = clone_path.join(".flow-states").join("plan-dev");
     fs::create_dir_all(&branch_dir).unwrap();
     let plan_path = branch_dir.join("plan.md");
     let plan_content = r#"# Plan
@@ -983,13 +1247,13 @@ fn test_foo() {
 
     let state_file = branch_dir.join("state.json");
     let state = json!({
-        "branch": "main",
+        "branch": "plan-dev",
         "current_phase": "flow-code",
-        "files": {"plan": ".flow-states/main/plan.md"}
+        "files": {"plan": ".flow-states/plan-dev/plan.md"}
     });
     fs::write(&state_file, serde_json::to_string_pretty(&state).unwrap()).unwrap();
 
-    let tests_dir = clone_path.join("tests");
+    let tests_dir = worktree_path.join("tests");
     fs::create_dir_all(&tests_dir).unwrap();
     let test_file = tests_dir.join("foo.rs");
     fs::write(
@@ -999,24 +1263,24 @@ fn test_foo() {
     .unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .args(["-C", wt_str, "add", "-A"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .unwrap(),
     );
 
-    let msg_path = clone_path.join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "Add test_foo").unwrap();
 
-    write_ci_sentinel(clone_path, "main");
+    write_ci_sentinel_for_worktree(clone_path, "plan-dev", &worktree_path);
 
     let args = Args {
         message_file: msg_path.to_str().unwrap().to_string(),
-        branch: "main".to_string(),
+        branch: "plan-dev".to_string(),
     };
 
-    let result = run_impl(&args, clone_path, clone_path).unwrap();
+    let result = run_impl(&args, clone_path).unwrap();
     assert_eq!(
         result["status"], "error",
         "plan deviation should block: {}",
@@ -1043,10 +1307,11 @@ fn test_foo() {
 /// the same pluralization pattern so both are covered by the same test.
 #[test]
 fn plan_deviation_two_deviations_plural_message() {
-    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("plan-dev2");
     let clone_path = clone_dir.path();
+    let wt_str = worktree_path.to_str().unwrap();
 
-    let branch_dir = clone_path.join(".flow-states").join("main");
+    let branch_dir = clone_path.join(".flow-states").join("plan-dev2");
     fs::create_dir_all(&branch_dir).unwrap();
     let plan_path = branch_dir.join("plan.md");
     let plan_content = r#"# Plan
@@ -1068,13 +1333,13 @@ fn test_beta() {
 
     let state_file = branch_dir.join("state.json");
     let state = json!({
-        "branch": "main",
+        "branch": "plan-dev2",
         "current_phase": "flow-code",
-        "files": {"plan": ".flow-states/main/plan.md"}
+        "files": {"plan": ".flow-states/plan-dev2/plan.md"}
     });
     fs::write(&state_file, serde_json::to_string_pretty(&state).unwrap()).unwrap();
 
-    let tests_dir = clone_path.join("tests");
+    let tests_dir = worktree_path.join("tests");
     fs::create_dir_all(&tests_dir).unwrap();
     let test_file = tests_dir.join("drift.rs");
     fs::write(
@@ -1085,24 +1350,24 @@ fn test_beta() {
     .unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .args(["-C", wt_str, "add", "-A"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .unwrap(),
     );
 
-    let msg_path = clone_path.join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "Add test_alpha and test_beta").unwrap();
 
-    write_ci_sentinel(clone_path, "main");
+    write_ci_sentinel_for_worktree(clone_path, "plan-dev2", &worktree_path);
 
     let args = Args {
         message_file: msg_path.to_str().unwrap().to_string(),
-        branch: "main".to_string(),
+        branch: "plan-dev2".to_string(),
     };
 
-    let result = run_impl(&args, clone_path, clone_path).unwrap();
+    let result = run_impl(&args, clone_path).unwrap();
     assert_eq!(result["status"], "error");
     assert_eq!(result["step"], "plan_deviation");
     let msg = result["message"].as_str().unwrap();
@@ -1158,20 +1423,20 @@ fn git_unavailable_returns_working_tree_dirty() {
 /// `Ok((code, _, stderr))` commit-error branch.
 #[test]
 fn commit_nonzero_returns_error_step_commit() {
-    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("commit-fail");
     let clone_path = clone_dir.path();
 
-    let msg_path = clone_path.join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "msg").unwrap();
 
-    write_ci_sentinel(clone_path, "main");
+    write_ci_sentinel_for_worktree(clone_path, "commit-fail", &worktree_path);
 
     let stubs = write_git_stub(clone_path);
 
     let output = run_finalize_with_stub(
         clone_path,
         &msg_path,
-        "main",
+        "commit-fail",
         &stubs,
         &[
             ("FAKE_COMMIT_EXIT", "1"),
@@ -1191,30 +1456,31 @@ fn commit_nonzero_returns_error_step_commit() {
 /// status --porcelain returns clean. Covers pull-error no-conflict path.
 #[test]
 fn pull_nonzero_no_conflict_returns_error_step_pull() {
-    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("pull-fail");
     let clone_path = clone_dir.path();
+    let wt_str = worktree_path.to_str().unwrap();
 
-    fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    fs::write(worktree_path.join("feature.rs"), "fn main() {}\n").unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .args(["-C", wt_str, "add", "-A"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .unwrap(),
     );
 
-    let msg_path = clone_path.join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "msg").unwrap();
 
-    write_ci_sentinel(clone_path, "main");
+    write_ci_sentinel_for_worktree(clone_path, "pull-fail", &worktree_path);
 
     let stubs = write_git_stub(clone_path);
 
     let output = run_finalize_with_stub(
         clone_path,
         &msg_path,
-        "main",
+        "pull-fail",
         &stubs,
         &[
             ("FAKE_PULL_EXIT", "1"),
@@ -1234,30 +1500,31 @@ fn pull_nonzero_no_conflict_returns_error_step_pull() {
 /// files array.
 #[test]
 fn pull_nonzero_with_conflict_returns_conflict_status() {
-    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("pull-conflict");
     let clone_path = clone_dir.path();
+    let wt_str = worktree_path.to_str().unwrap();
 
-    fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    fs::write(worktree_path.join("feature.rs"), "fn main() {}\n").unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .args(["-C", wt_str, "add", "-A"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .unwrap(),
     );
 
-    let msg_path = clone_path.join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "msg").unwrap();
 
-    write_ci_sentinel(clone_path, "main");
+    write_ci_sentinel_for_worktree(clone_path, "pull-conflict", &worktree_path);
 
     let stubs = write_git_stub(clone_path);
 
     let output = run_finalize_with_stub(
         clone_path,
         &msg_path,
-        "main",
+        "pull-conflict",
         &stubs,
         &[
             ("FAKE_PULL_EXIT", "1"),
@@ -1281,30 +1548,31 @@ fn pull_nonzero_with_conflict_returns_conflict_status() {
 /// branch.
 #[test]
 fn push_nonzero_returns_error_step_push() {
-    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("push-fail");
     let clone_path = clone_dir.path();
+    let wt_str = worktree_path.to_str().unwrap();
 
-    fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    fs::write(worktree_path.join("feature.rs"), "fn main() {}\n").unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .args(["-C", wt_str, "add", "-A"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .unwrap(),
     );
 
-    let msg_path = clone_path.join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "msg").unwrap();
 
-    write_ci_sentinel(clone_path, "main");
+    write_ci_sentinel_for_worktree(clone_path, "push-fail", &worktree_path);
 
     let stubs = write_git_stub(clone_path);
 
     let output = run_finalize_with_stub(
         clone_path,
         &msg_path,
-        "main",
+        "push-fail",
         &stubs,
         &[
             ("FAKE_PUSH_EXIT", "1"),
@@ -1328,7 +1596,7 @@ fn empty_message_file_returns_err() {
         message_file: String::new(),
         branch: "main".to_string(),
     };
-    let err = run_impl(&args, &root, &root).unwrap_err();
+    let err = run_impl(&args, &root).unwrap_err();
     assert!(err.contains("finalize-commit"));
 }
 
@@ -1340,7 +1608,7 @@ fn empty_branch_returns_err() {
         message_file: "msg.txt".to_string(),
         branch: String::new(),
     };
-    let err = run_impl(&args, &root, &root).unwrap_err();
+    let err = run_impl(&args, &root).unwrap_err();
     assert!(err.contains("finalize-commit"));
 }
 
@@ -1428,26 +1696,27 @@ fn run_impl_main_empty_args_exits_1_with_args_step() {
 // CI is configured to fail, so finalize-commit returns step="ci".
 #[test]
 fn run_impl_main_ok_status_error_exits_1() {
-    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("main-err");
     let clone_path = clone_dir.path();
+    let wt_str = worktree_path.to_str().unwrap();
 
-    fs::write(clone_path.join(".ci-should-fail"), "1").unwrap();
+    fs::write(worktree_path.join(".ci-should-fail"), "1").unwrap();
 
-    fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    fs::write(worktree_path.join("feature.rs"), "fn main() {}\n").unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .args(["-C", wt_str, "add", "-A"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .unwrap(),
     );
 
-    let msg_path = clone_path.join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "Add feature.rs").unwrap();
 
     let output = flow_rs_no_recursion()
-        .args(["finalize-commit", msg_path.to_str().unwrap(), "main"])
+        .args(["finalize-commit", msg_path.to_str().unwrap(), "main-err"])
         .current_dir(clone_path)
         .env("GIT_CEILING_DIRECTORIES", clone_path)
         .env("GH_TOKEN", "invalid")
@@ -1470,26 +1739,27 @@ fn run_impl_main_ok_status_error_exits_1() {
 // CI sentinel is fresh, so the fast skip path lets commit succeed.
 #[test]
 fn run_impl_main_ok_status_ok_exits_0() {
-    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("main-ok");
     let clone_path = clone_dir.path();
+    let wt_str = worktree_path.to_str().unwrap();
 
-    fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    fs::write(worktree_path.join("feature.rs"), "fn main() {}\n").unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .args(["-C", wt_str, "add", "-A"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .unwrap(),
     );
 
-    let msg_path = clone_path.join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "Add feature.rs").unwrap();
 
-    write_ci_sentinel(clone_path, "main");
+    write_ci_sentinel_for_worktree(clone_path, "main-ok", &worktree_path);
 
     let output = flow_rs_no_recursion()
-        .args(["finalize-commit", msg_path.to_str().unwrap(), "main"])
+        .args(["finalize-commit", msg_path.to_str().unwrap(), "main-ok"])
         .current_dir(clone_path)
         .env("GIT_CEILING_DIRECTORIES", clone_path)
         .env("GH_TOKEN", "invalid")
@@ -1516,24 +1786,25 @@ fn run_impl_main_ok_status_ok_exits_0() {
 
 #[test]
 fn finalize_commit_passes_ci_reason() {
-    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("ci-reason");
     let clone_path = clone_dir.path();
+    let wt_str = worktree_path.to_str().unwrap();
 
-    fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    fs::write(worktree_path.join("feature.rs"), "fn main() {}\n").unwrap();
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", clone_path.to_str().unwrap(), "add", "-A"])
+            .args(["-C", wt_str, "add", "-A"])
             .output()
             .unwrap(),
     );
 
-    let msg_path = clone_path.join(".flow-commit-msg");
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "Test commit.").unwrap();
 
     // No sentinel — CI runs and the explicit reason wins.
 
     let output = flow_rs_no_recursion()
-        .args(["finalize-commit", msg_path.to_str().unwrap(), "main"])
+        .args(["finalize-commit", msg_path.to_str().unwrap(), "ci-reason"])
         .current_dir(clone_path)
         .output()
         .expect("spawn flow-rs");

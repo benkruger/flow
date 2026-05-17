@@ -4180,6 +4180,314 @@ fn layer_10_bootstrap_carveout_fires_for_flow_release_with_intervening_non_commi
     );
 }
 
+// --- layer_10_finalize_commit_destination ---
+//
+// Layer 9's new destination-aware dispatch fires when the command
+// shape is `bin/flow finalize-commit <msg> <branch>`. The routing
+// key is the explicit branch argument, not the caller's process
+// cwd. The tests below cover:
+//
+//   - extract_finalize_commit_branch_arg: per-branch behavior of
+//     the new parser (Task 8 sibling tests).
+//   - match_finalize_commit_destination: integration-branch match
+//     vs. feature-branch miss (Tasks 9, 10).
+//   - End-to-end cwd-independence (Tasks 11, 12).
+//   - Carve-out interactions (Tasks 13, 14).
+//   - Regression tests proving non-finalize-commit shapes still
+//     route through the cwd path (Tasks 15, 16).
+//
+// Mirror the production binding: the binary at
+// `src/finalize_commit.rs::run_impl` derives `commit_cwd` from the
+// branch arg via `FlowPaths::worktree()`. The hook must agree on
+// the destination so a block on the hook side and a successful
+// commit on the binary side cannot land on different branches.
+
+#[test]
+fn extract_finalize_commit_branch_arg_returns_none_for_git_commit() {
+    // `git commit` is not a `bin/flow` invocation → the new
+    // dispatch's first token check returns None. Falls through to
+    // the existing cwd path → match_branch_at(main) blocks.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "git commit -F msg.txt"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(code, 2, "git commit on main must block; stderr={stderr}");
+    assert!(stderr.contains("integration branch"));
+}
+
+#[test]
+fn extract_finalize_commit_branch_arg_returns_none_for_bin_flow_status() {
+    // `bin/flow status` is not a commit invocation at all →
+    // is_commit_invocation returns false → the new dispatch is
+    // never consulted. Layer 9 silent → allow.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "bin/flow status"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(code, 0, "bin/flow status must allow; stderr={stderr}");
+}
+
+#[test]
+fn extract_finalize_commit_branch_arg_returns_branch_for_happy_path() {
+    // `bin/flow finalize-commit msg.txt main` parses to
+    // Some("main"). main_root resolves via the .claude/ fixture
+    // and default_branch_in falls back to "main", so the
+    // destination match fires and blocks the call from a sibling
+    // worktree cwd — proving the parser returned the branch arg.
+    let (_dir, _root, cwd) = setup_active_flow_worktree("feat", false);
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt main"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 2,
+        "branch arg main must block via destination check; stderr={stderr}"
+    );
+    assert!(stderr.contains("integration branch"));
+    assert!(stderr.contains("main"));
+}
+
+#[test]
+fn extract_finalize_commit_branch_arg_returns_none_for_missing_branch_token() {
+    // `bin/flow finalize-commit msg.txt` has the msg token but
+    // no branch token. The parser returns None. The dispatch
+    // falls through to the existing cwd path → match_branch_at
+    // resolves "main" from the repo's branch.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 2,
+        "missing branch token falls through to cwd path; stderr={stderr}"
+    );
+    assert!(stderr.contains("integration branch"));
+}
+
+#[test]
+fn extract_finalize_commit_branch_arg_dequotes_branch_token() {
+    // `bin/flow finalize-commit msg.txt "main"` should dequote
+    // the branch token to "main" — the destination match fires
+    // even though the raw token is `"main"` with quotes.
+    let (_dir, _root, cwd) = setup_active_flow_worktree("feat", false);
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt \"main\""}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 2,
+        "quoted branch arg main must block via destination check; stderr={stderr}"
+    );
+    assert!(stderr.contains("integration branch"));
+    assert!(stderr.contains("main"));
+}
+
+#[test]
+fn match_finalize_commit_destination_blocks_integration_branch_arg() {
+    // Default integration branch is "main" (no remote configured
+    // for the worktree fixture). branch_arg="main" matches →
+    // block with the integration-branch message. Includes the
+    // case-variant input to prove normalize_gate_input runs on
+    // both sides.
+    let (_dir, _root, cwd) = setup_active_flow_worktree("feat", false);
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt MAIN"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 2,
+        "case-variant integration branch arg must block; stderr={stderr}"
+    );
+    assert!(stderr.contains("integration branch"));
+}
+
+#[test]
+fn match_finalize_commit_destination_allows_feature_branch_arg() {
+    // branch_arg="some-feature" does NOT match the integration
+    // branch ("main" fallback) → integration arm returns None.
+    // worktree_path = <root>/.worktrees/some-feature/ has no
+    // active state file → active-flow arm returns None. Allow.
+    let (_dir, _root, cwd) = setup_active_flow_worktree("feat", false);
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt some-feature"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "feature-branch arg with no active flow must allow; stderr={stderr}"
+    );
+}
+
+#[test]
+fn finalize_commit_invocation_with_integration_branch_arg_blocks_regardless_of_cwd() {
+    // Cwd is a feature-branch worktree (so the OLD cwd path would
+    // have resolved feat ≠ main → None and allowed the call
+    // through). The NEW destination path resolves branch_arg=main
+    // and blocks. Proves the destination check fires regardless
+    // of where the caller's shell sits — the regression-protection
+    // contract.
+    let (_dir, _root, cwd) = setup_active_flow_worktree("feat", false);
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt main"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 2,
+        "integration branch arg must block from feature worktree cwd; stderr={stderr}"
+    );
+    assert!(stderr.contains("integration branch"));
+}
+
+#[test]
+fn finalize_commit_invocation_with_feature_branch_arg_allows_regardless_of_cwd() {
+    // Cwd is on the integration branch (so the OLD cwd path would
+    // have blocked via match_branch_at(main)). The NEW destination
+    // path resolves branch_arg=feature-foo, which differs from
+    // integration, returns None for the integration arm; the
+    // active-flow arm checks at <root>/.worktrees/feature-foo/
+    // which has no state file → None. Allow. Proves the
+    // destination check honours the branch arg even when cwd
+    // would have blocked under the old behavior.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feature-foo"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 0,
+        "feature branch arg must allow from integration cwd; stderr={stderr}"
+    );
+}
+
+#[test]
+fn bootstrap_carveout_fires_for_finalize_commit_integration_branch_arg_with_sanctioned_chain() {
+    // Cwd is on integration. Transcript shows
+    // Skill(flow:flow-start) + Skill(flow:flow-commit) since the
+    // most recent user turn — the canonical bootstrap window.
+    // The new destination check would block (branch_arg=main
+    // matches integration), but bootstrap_carveout_applies fires
+    // and suppresses it. No active-flow at
+    // <root>/.worktrees/main/ → final result is allow.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = format!(
+        "{}{}",
+        assistant_skill_jsonl("flow:flow-start"),
+        assistant_skill_jsonl("flow:flow-commit"),
+    );
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 0,
+        "bootstrap carve-out must suppress the destination check on the integration branch arg; stderr={stderr}"
+    );
+}
+
+#[test]
+fn active_flow_carveout_fires_for_finalize_commit_feature_branch_arg_with_flow_commit_skill() {
+    // Active-flow carve-out via the new destination dispatch.
+    // worktree_path = <root>/.worktrees/feat/, state file has
+    // _continue_pending="commit", transcript shows
+    // Skill(flow:flow-commit) — all three carve-out conditions
+    // hold → allow. Inverse: without the transcript fixture, the
+    // walker condition fails and the active-flow block fires.
+    let (_dir, root, cwd) =
+        setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
+    let jsonl = assistant_skill_jsonl("flow:flow-commit");
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    let allow_input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (allow_code, _stdout, allow_stderr) =
+        run_hook_with_input_and_home(&allow_input, Some(&cwd), Some(&root));
+    assert_eq!(
+        allow_code, 0,
+        "active-flow carve-out must fire on feature branch arg with flow-commit Skill; stderr={allow_stderr}"
+    );
+
+    // Inverse: no transcript → walker condition fails → block.
+    let block_input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let (block_code, _stdout, block_stderr) = run_hook_with_input(block_input, Some(&cwd));
+    assert_eq!(
+        block_code, 2,
+        "without transcript fixture the active-flow block must fire; stderr={block_stderr}"
+    );
+    assert!(block_stderr.contains("active flow"));
+}
+
+#[test]
+fn cwd_path_bootstrap_carveout_fires_when_finalize_commit_lacks_branch_arg() {
+    // Coverage-required: the cwd path's bootstrap-carve-out arm is
+    // reachable only for finalize-commit invocations where the branch
+    // arg cannot be extracted (so the new destination dispatch falls
+    // through). Setup: cwd=main, command omits the branch positional,
+    // transcript shows the canonical bootstrap chain (flow-start +
+    // flow-commit). The carve-out fires, no block.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    let jsonl = format!(
+        "{}{}",
+        assistant_skill_jsonl("flow:flow-start"),
+        assistant_skill_jsonl("flow:flow-commit"),
+    );
+    let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
+    // No branch positional — extract_finalize_commit_branch_arg
+    // returns None because tokens.next() after the msg token is None.
+    let input = format!(
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt"}}, "transcript_path": "{}"}}"#,
+        transcript.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
+    assert_eq!(
+        code, 0,
+        "cwd-path bootstrap carve-out must fire for finalize-commit shape without branch arg; stderr={stderr}"
+    );
+}
+
+#[test]
+fn plain_git_commit_still_uses_cwd_match_branch_at() {
+    // Regression: plain `git commit` from cwd=main must continue
+    // to block via the existing cwd path (match_branch_at(cwd)).
+    // Pins the boundary so a future refactor that accidentally
+    // migrates non-finalize-commit shapes onto the new destination
+    // check fails CI.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input = r#"{"tool_input": {"command": "git commit -m \"x\""}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 2,
+        "plain git commit on main must block via cwd path; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("integration branch"),
+        "must use integration-branch message; got: {stderr}"
+    );
+}
+
+#[test]
+fn git_dash_c_path_still_uses_target_match_branch_at() {
+    // Regression: `git -C <main_repo_path> commit` from a feature
+    // worktree must continue to block via the cwd path's `-C`
+    // target check. extract_finalize_commit_branch_arg returns
+    // None for git commands, so the dispatch falls through. The
+    // -C target's match_branch_at fires.
+    let (_main_dir, main_root) = setup_repo_on_branch("main");
+    let (_feat_dir, feat_root) = setup_repo_on_branch("feat-x");
+    let main_path = main_root.to_str().expect("utf-8 main path");
+    let cmd = format!(
+        r#"{{"tool_input": {{"command": "git -C {} commit -m \"x\""}}}}"#,
+        main_path
+    );
+    let (code, _stdout, stderr) = run_hook_with_input(&cmd, Some(&feat_root));
+    assert_eq!(
+        code, 2,
+        "git -C <main_path> commit must block via target match_branch_at; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("main"),
+        "must name the -C target branch 'main'; got: {stderr}"
+    );
+}
+
 // --- halt gate ---
 //
 // `_halt_pending=true` in the state file refuses every model-

@@ -1,5 +1,17 @@
 //! Commit, cleanup, pull, push.
 //!
+//! Routing. Every git operation inside `run_impl` (working-tree-dirty
+//! check, CI sub-invocation, plan-deviation staged diff, the commit-
+//! pull-push sequence, and the tree-snapshot used to refresh the CI
+//! sentinel) runs against `commit_cwd`, which is derived from the
+//! explicit `<branch>` argument and the project root via
+//! `FlowPaths::worktree()`. This decouples the commit destination
+//! from the caller's process cwd: a caller invoking from a sibling
+//! tempdir, a monorepo subdirectory of the integration trunk, or
+//! another feature-branch worktree all see the commit land on the
+//! feature-branch worktree that flow-start created at
+//! `<project_root>/.worktrees/<branch>/`.
+//!
 //! Two gates run before committing:
 //!
 //! 1. **CI gate** — calls [`ci::run_impl`]. If CI fails, returns an error
@@ -97,6 +109,10 @@ fn run_git_in_dir(
 /// compiled `bin/flow finalize-commit` binary for testing via real git
 /// fixtures and stubs. No closure-injection seam.
 ///
+/// `commit_cwd` is the worktree path derived from the branch argument
+/// by `run_impl` via `FlowPaths::worktree()`. Every git operation here
+/// runs against it, never against the caller's process cwd.
+///
 /// All git calls `.expect()` on Ok because the working_tree_dirty gate
 /// in `run_impl` already proved git is alive by the time this function
 /// runs — its `git diff --quiet` call would have returned Err and
@@ -105,10 +121,11 @@ fn run_git_in_dir(
 /// empty commit, the user's identity isn't configured, etc.); pull and
 /// push retain non-zero branches for legit error cases (merge conflict,
 /// push rejected) per `.claude/rules/testability-means-simplicity.md`.
-fn finalize_commit(message_file: &str, branch: &str, cwd: &std::path::Path) -> Value {
+fn finalize_commit(message_file: &str, branch: &str, commit_cwd: &std::path::Path) -> Value {
     // Step 1: git commit -F <message_file>
-    let (code, _, stderr) = run_git_in_dir(cwd, &["commit", "-F", message_file], LOCAL_TIMEOUT)
-        .expect("git located by working_tree_dirty gate");
+    let (code, _, stderr) =
+        run_git_in_dir(commit_cwd, &["commit", "-F", message_file], LOCAL_TIMEOUT)
+            .expect("git located by working_tree_dirty gate");
     remove_message_file(message_file);
     if code != 0 {
         return json!({
@@ -121,17 +138,18 @@ fn finalize_commit(message_file: &str, branch: &str, cwd: &std::path::Path) -> V
     // Capture post-commit SHA for pull_merged detection. After a successful
     // commit, git is alive and HEAD exists — both Err and non-zero branches
     // would be unreachable defensive code.
-    let (_, post_stdout, _) = run_git_in_dir(cwd, &["rev-parse", "HEAD"], LOCAL_TIMEOUT)
+    let (_, post_stdout, _) = run_git_in_dir(commit_cwd, &["rev-parse", "HEAD"], LOCAL_TIMEOUT)
         .expect("git located by commit call");
     let post_commit_sha = post_stdout.trim().to_string();
 
     // Step 2: git pull origin <branch>
     let (pull_code, _, pull_stderr) =
-        run_git_in_dir(cwd, &["pull", "origin", branch], NETWORK_TIMEOUT)
+        run_git_in_dir(commit_cwd, &["pull", "origin", branch], NETWORK_TIMEOUT)
             .expect("git located by commit call");
     if pull_code != 0 {
-        let (_, status_stdout, _) = run_git_in_dir(cwd, &["status", "--porcelain"], LOCAL_TIMEOUT)
-            .expect("git located by commit call");
+        let (_, status_stdout, _) =
+            run_git_in_dir(commit_cwd, &["status", "--porcelain"], LOCAL_TIMEOUT)
+                .expect("git located by commit call");
         let conflicts = parse_conflict_files(&status_stdout);
         if !conflicts.is_empty() {
             return json!({"status": "conflict", "files": conflicts});
@@ -145,7 +163,7 @@ fn finalize_commit(message_file: &str, branch: &str, cwd: &std::path::Path) -> V
 
     // Step 3: git push
     let (push_code, _, push_stderr) =
-        run_git_in_dir(cwd, &["push"], NETWORK_TIMEOUT).expect("git located by commit call");
+        run_git_in_dir(commit_cwd, &["push"], NETWORK_TIMEOUT).expect("git located by commit call");
     if push_code != 0 {
         return json!({
             "status": "error",
@@ -155,7 +173,7 @@ fn finalize_commit(message_file: &str, branch: &str, cwd: &std::path::Path) -> V
     }
 
     // Step 4: final rev-parse HEAD
-    let (_, final_stdout, _) = run_git_in_dir(cwd, &["rev-parse", "HEAD"], LOCAL_TIMEOUT)
+    let (_, final_stdout, _) = run_git_in_dir(commit_cwd, &["rev-parse", "HEAD"], LOCAL_TIMEOUT)
         .expect("git located by commit call");
     let final_sha = final_stdout.trim();
     let pull_merged = post_commit_sha != final_sha;
@@ -165,17 +183,19 @@ fn finalize_commit(message_file: &str, branch: &str, cwd: &std::path::Path) -> V
 /// Testable entry point: enforces CI, runs finalize-commit, then maintains
 /// the CI sentinel (refresh on clean pull, delete on merge-pull).
 ///
-/// `cwd` and `root` are passed explicitly so integration tests can avoid
-/// `set_current_dir` (which is process-wide and races with parallel tests).
+/// `root` is the project root passed explicitly so integration tests can
+/// avoid `set_current_dir` (which is process-wide and races with parallel
+/// tests). The git working directory for every operation here —
+/// working-tree-dirty check, CI sub-invocation, staged-diff capture,
+/// commit-pull-push sequence, and the sentinel tree snapshot — is
+/// `commit_cwd`, derived from `<root>` and `<args.branch>` via
+/// `FlowPaths::worktree()`. The caller's process cwd does not influence
+/// the commit destination.
 ///
 /// Returns `Result<Value, String>` where `Ok` carries any JSON response
 /// including status-error payloads (CI failure, commit failure, etc.) and
 /// `Err` carries only infrastructure errors (empty arguments).
-pub fn run_impl(
-    args: &Args,
-    cwd: &std::path::Path,
-    root: &std::path::Path,
-) -> Result<Value, String> {
+pub fn run_impl(args: &Args, root: &std::path::Path) -> Result<Value, String> {
     if args.message_file.is_empty() || args.branch.is_empty() {
         return Err("Usage: bin/flow finalize-commit <message-file> <branch>".to_string());
     }
@@ -194,6 +214,13 @@ pub fn run_impl(
             }));
         }
     };
+
+    // Branch-derived routing destination. The validated branch passed
+    // through `FlowPaths::try_new` cannot contain `/` or `\0`, so the
+    // joined path stays inside `<root>/.worktrees/`. Every downstream
+    // git, CI, and snapshot call binds to this value rather than the
+    // caller's process cwd.
+    let commit_cwd = paths.worktree();
 
     // Derive phase number from state file's current_phase for log prefixes.
     let pn = {
@@ -217,7 +244,8 @@ pub fn run_impl(
     // non-empty so the user makes an explicit choice: `git add` to
     // commit the working-tree state or `git restore <file>` to drop
     // unstaged edits. See `.claude/rules/plan-commit-atomicity.md`.
-    let working_tree_dirty = match run_git_in_dir(cwd, &["diff", "--quiet"], LOCAL_TIMEOUT) {
+    let working_tree_dirty = match run_git_in_dir(&commit_cwd, &["diff", "--quiet"], LOCAL_TIMEOUT)
+    {
         Ok((code, _, _)) => code != 0,
         Err(_) => true,
     };
@@ -253,7 +281,7 @@ pub fn run_impl(
             trailing: Vec::new(),
             reason: Some("verifying commit before git commit".to_string()),
         };
-        let (ci_result, ci_code) = crate::ci::run_impl(&ci_args, cwd, root, false);
+        let (ci_result, ci_code) = crate::ci::run_impl(&ci_args, &commit_cwd, root, false);
 
         if ci_code != 0 {
             let msg = ci_result["message"]
@@ -282,8 +310,9 @@ pub fn run_impl(
             // repo, so .expect() is safe — Err and non-zero arms
             // for `git diff --cached` are unreachable in practice
             // per `.claude/rules/testability-means-simplicity.md`.
-            let (_, staged_diff, _) = run_git_in_dir(cwd, &["diff", "--cached"], LOCAL_TIMEOUT)
-                .expect("git located by working_tree_dirty gate");
+            let (_, staged_diff, _) =
+                run_git_in_dir(&commit_cwd, &["diff", "--cached"], LOCAL_TIMEOUT)
+                    .expect("git located by working_tree_dirty gate");
 
             // Plan signature deviation gate. Blocks the commit when
             // a plan-named test's fixture value drifts without a
@@ -291,7 +320,7 @@ pub fn run_impl(
             // enforcement of `.claude/rules/plan-commit-atomicity.md`
             // "Plan Signature Deviations Must Be Logged".
             match crate::plan_deviation::run_impl(root, &args.branch, &staged_diff) {
-                Ok(()) => finalize_commit(&args.message_file, &args.branch, cwd),
+                Ok(()) => finalize_commit(&args.message_file, &args.branch, &commit_cwd),
                 Err(deviations) => {
                     emit_deviation_stderr(&args.branch, &deviations);
                     let _ = append_log(
@@ -368,7 +397,7 @@ pub fn run_impl(
     if result["status"] == "ok" {
         let sentinel = crate::ci::sentinel_path(root, &args.branch);
         if result.get("pull_merged") == Some(&json!(false)) {
-            let snapshot = crate::ci::tree_snapshot(cwd, None);
+            let snapshot = crate::ci::tree_snapshot(&commit_cwd, None);
             let _ = fs::write(&sentinel, &snapshot);
         } else {
             let _ = fs::remove_file(&sentinel);
@@ -380,9 +409,8 @@ pub fn run_impl(
 
 /// Main-arm dispatch: returns (value, exit code). Err wraps into JSON.
 pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
-    let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
     let root = crate::git::project_root();
-    match run_impl(args, &cwd, &root) {
+    match run_impl(args, &root) {
         Err(msg) => (
             json!({"status": "error", "message": msg, "step": "args"}),
             1,

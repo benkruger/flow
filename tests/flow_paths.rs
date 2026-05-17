@@ -134,6 +134,15 @@ fn start_prompt_lives_under_branch_dir() {
 }
 
 #[test]
+fn flow_paths_worktree_returns_main_root_dot_worktrees_branch() {
+    let p = FlowPaths::try_new("/tmp/project", "my-feature").expect("valid branch");
+    assert_eq!(
+        p.worktree(),
+        PathBuf::from("/tmp/project/.worktrees/my-feature")
+    );
+}
+
+#[test]
 fn accepts_pathbuf_and_path_for_project_root() {
     let p1 = FlowPaths::try_new(PathBuf::from("/p"), "b").expect("valid branch");
     let p2 = FlowPaths::try_new(Path::new("/p"), "b").expect("valid branch");

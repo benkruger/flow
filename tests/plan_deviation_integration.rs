@@ -96,19 +96,22 @@ fn run_git(repo: &Path, args: &[&str]) {
     }
 }
 
-/// Build a git repo fixture under `parent` with:
+/// Build a git fixture under `parent` with:
 /// - a bare remote (from `common::create_git_repo_with_remote`)
-/// - a feature branch named `BRANCH` tracking origin
 /// - executable `bin/{format,lint,build,test}` stubs that all
-///   `exit 0` so CI passes
-/// - an initial commit pushing the stubs to origin
+///   `exit 0` so CI passes, committed on `main` so they appear
+///   in every branch forked from main
+/// - a feature branch `BRANCH` forked from main and pushed to
+///   origin
+/// - a linked worktree at `<repo>/.worktrees/<BRANCH>/` checking
+///   out `BRANCH`
 ///
-/// Returns the canonicalized path to the clone.
-fn make_repo_fixture(parent: &Path) -> PathBuf {
+/// Returns `(repo, worktree)` — both canonicalized. `repo` is
+/// the project_root finalize-commit sees, and `worktree` is the
+/// path commit_cwd resolves to inside `run_impl` for `BRANCH`.
+fn make_repo_fixture(parent: &Path) -> (PathBuf, PathBuf) {
     let repo = common::create_git_repo_with_remote(parent);
     let repo = repo.canonicalize().expect("canonicalize repo");
-
-    run_git(&repo, &["checkout", "-b", BRANCH]);
 
     let bin_dir = repo.join("bin");
     fs::create_dir_all(&bin_dir).expect("create bin dir");
@@ -123,20 +126,51 @@ fn make_repo_fixture(parent: &Path) -> PathBuf {
     }
     run_git(&repo, &["add", "bin"]);
     run_git(&repo, &["commit", "-m", "add bin stubs"]);
+    run_git(&repo, &["push", "origin", "main"]);
+
+    run_git(&repo, &["branch", BRANCH]);
     run_git(&repo, &["push", "-u", "origin", BRANCH]);
 
-    repo
+    let worktree = repo.join(".worktrees").join(BRANCH);
+    run_git(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            worktree.to_str().expect("worktree path utf8"),
+            BRANCH,
+        ],
+    );
+
+    for (key, val) in [
+        ("user.email", "test@test.com"),
+        ("user.name", "Test"),
+        ("pull.rebase", "false"),
+        ("commit.gpgsign", "false"),
+    ] {
+        run_git(&worktree, &["config", key, val]);
+    }
+
+    (repo, worktree)
 }
 
-/// Seed `.flow-states/` files and stage the test file change.
+/// Seed `.flow-states/` files (at project_root, not the worktree)
+/// and stage the test file change inside the worktree.
 ///
 /// `state` is the full JSON content of the state file.
 /// `plan` is the plan Markdown to write (skipped when `None`).
 /// `test_rs` is the content of `tests/foo.rs` staged via
-/// `git add`. `log` is the log content to write (skipped when
-/// `None`). Writes a `.flow-commit-msg` file for
-/// `finalize-commit`'s `git commit -F` step.
-fn seed_flow_state(repo: &Path, state: &str, plan: Option<&str>, test_rs: &str, log: Option<&str>) {
+/// `git add` inside `worktree`. `log` is the log content to write
+/// (skipped when `None`). Writes a `.flow-commit-msg` file inside
+/// the worktree for `finalize-commit`'s `git commit -F` step.
+fn seed_flow_state(
+    repo: &Path,
+    worktree: &Path,
+    state: &str,
+    plan: Option<&str>,
+    test_rs: &str,
+    log: Option<&str>,
+) {
     let branch_dir = repo.join(".flow-states").join(BRANCH);
     fs::create_dir_all(&branch_dir).expect("create branch dir");
     fs::write(branch_dir.join("state.json"), state).expect("write state");
@@ -147,19 +181,28 @@ fn seed_flow_state(repo: &Path, state: &str, plan: Option<&str>, test_rs: &str, 
         fs::write(branch_dir.join("log"), log).expect("write log");
     }
 
-    let test_dir = repo.join("tests");
+    let test_dir = worktree.join("tests");
     fs::create_dir_all(&test_dir).expect("create tests dir");
     fs::write(test_dir.join("foo.rs"), test_rs).expect("write test file");
-    run_git(repo, &["add", "tests/foo.rs"]);
+    run_git(worktree, &["add", "tests/foo.rs"]);
 
-    fs::write(repo.join(".flow-commit-msg"), "test commit\n").expect("write commit msg");
+    fs::write(worktree.join(".flow-commit-msg"), "test commit\n").expect("write commit msg");
 }
 
 /// Spawn `flow-rs finalize-commit <msg-file> <branch>` against
-/// the prepared fixture and return `(exit_code, stdout, stderr)`.
-fn run_finalize_commit(repo: &Path) -> (i32, String, String) {
+/// the prepared fixture. `current_dir(repo)` so `project_root()`
+/// (via `git worktree list --porcelain`) reports the main clone
+/// as the integration root. The `<msg-file>` arg is an absolute
+/// path under the worktree because `finalize-commit` reads it via
+/// `git -C <worktree> commit -F <abs-path>`.
+fn run_finalize_commit(repo: &Path, worktree: &Path) -> (i32, String, String) {
+    let msg_file = worktree.join(".flow-commit-msg");
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["finalize-commit", ".flow-commit-msg", BRANCH])
+        .args([
+            "finalize-commit",
+            msg_file.to_str().expect("msg file utf8"),
+            BRANCH,
+        ])
         .current_dir(repo)
         .env_remove("FLOW_CI_RUNNING")
         .output()
@@ -187,10 +230,10 @@ fn last_json_line(stdout: &str) -> serde_json::Value {
 fn finalize_commit_no_plan_file_proceeds_to_commit() {
     let dir = tempfile::tempdir().expect("tempdir");
     let parent = dir.path().canonicalize().expect("canonicalize parent");
-    let repo = make_repo_fixture(&parent);
-    seed_flow_state(&repo, STATE_NO_PLAN, None, UNRELATED_RS, None);
+    let (repo, worktree) = make_repo_fixture(&parent);
+    seed_flow_state(&repo, &worktree, STATE_NO_PLAN, None, UNRELATED_RS, None);
 
-    let (code, stdout, stderr) = run_finalize_commit(&repo);
+    let (code, stdout, stderr) = run_finalize_commit(&repo, &worktree);
     let json = last_json_line(&stdout);
     assert_eq!(
         json["status"], "ok",
@@ -204,16 +247,17 @@ fn finalize_commit_no_plan_file_proceeds_to_commit() {
 fn finalize_commit_diff_touches_no_plan_named_tests_proceeds() {
     let dir = tempfile::tempdir().expect("tempdir");
     let parent = dir.path().canonicalize().expect("canonicalize parent");
-    let repo = make_repo_fixture(&parent);
+    let (repo, worktree) = make_repo_fixture(&parent);
     seed_flow_state(
         &repo,
+        &worktree,
         STATE_WITH_PLAN,
         Some(DRIFTING_PLAN),
         UNRELATED_RS,
         None,
     );
 
-    let (code, stdout, stderr) = run_finalize_commit(&repo);
+    let (code, stdout, stderr) = run_finalize_commit(&repo, &worktree);
     let json = last_json_line(&stdout);
     assert_eq!(
         json["status"], "ok",
@@ -227,16 +271,17 @@ fn finalize_commit_diff_touches_no_plan_named_tests_proceeds() {
 fn finalize_commit_diff_matches_plan_proceeds() {
     let dir = tempfile::tempdir().expect("tempdir");
     let parent = dir.path().canonicalize().expect("canonicalize parent");
-    let repo = make_repo_fixture(&parent);
+    let (repo, worktree) = make_repo_fixture(&parent);
     seed_flow_state(
         &repo,
+        &worktree,
         STATE_WITH_PLAN,
         Some(DRIFTING_PLAN),
         MATCHING_RS,
         None,
     );
 
-    let (code, stdout, stderr) = run_finalize_commit(&repo);
+    let (code, stdout, stderr) = run_finalize_commit(&repo, &worktree);
     let json = last_json_line(&stdout);
     assert_eq!(
         json["status"], "ok",
@@ -250,18 +295,19 @@ fn finalize_commit_diff_matches_plan_proceeds() {
 fn finalize_commit_diff_diverges_but_log_acknowledges_proceeds() {
     let dir = tempfile::tempdir().expect("tempdir");
     let parent = dir.path().canonicalize().expect("canonicalize parent");
-    let repo = make_repo_fixture(&parent);
+    let (repo, worktree) = make_repo_fixture(&parent);
     let log =
         "2026-04-15T10:00:00-08:00 [Phase 3] Plan signature deviation: test_foo drifted from expected to actual.\n";
     seed_flow_state(
         &repo,
+        &worktree,
         STATE_WITH_PLAN,
         Some(DRIFTING_PLAN),
         DRIFTING_RS,
         Some(log),
     );
 
-    let (code, stdout, stderr) = run_finalize_commit(&repo);
+    let (code, stdout, stderr) = run_finalize_commit(&repo, &worktree);
     let json = last_json_line(&stdout);
     assert_eq!(
         json["status"], "ok",
@@ -275,16 +321,17 @@ fn finalize_commit_diff_diverges_but_log_acknowledges_proceeds() {
 fn finalize_commit_diff_diverges_without_log_blocks() {
     let dir = tempfile::tempdir().expect("tempdir");
     let parent = dir.path().canonicalize().expect("canonicalize parent");
-    let repo = make_repo_fixture(&parent);
+    let (repo, worktree) = make_repo_fixture(&parent);
     seed_flow_state(
         &repo,
+        &worktree,
         STATE_WITH_PLAN,
         Some(DRIFTING_PLAN),
         DRIFTING_RS,
         None,
     );
 
-    let (code, stdout, stderr) = run_finalize_commit(&repo);
+    let (code, stdout, stderr) = run_finalize_commit(&repo, &worktree);
     let json = last_json_line(&stdout);
     assert_eq!(
         json["status"], "error",

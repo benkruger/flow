@@ -106,10 +106,10 @@ for the other; both run the CI gate inside `finalize-commit`.
 The exception above is rule-level. The hook described in
 "Mechanical Enforcement" below is stricter: Layer 9 mechanically
 blocks any `git ... commit` or `bin/flow ... finalize-commit`
-invocation whose effective cwd resolves either to the integration
-branch OR to a feature branch with an active FLOW state file,
-even when the maintainer has explicitly directed an on-main or
-in-flow fix in the current session. A user direction that lifts
+invocation whose effective destination resolves either to the
+integration branch OR to a feature branch with an active FLOW state
+file, even when the maintainer has explicitly directed an on-main
+or in-flow fix in the current session. A user direction that lifts
 the rule-level default does NOT lift the hook-level gate. To
 commit a maintainer carve-out fix, work on a feature branch and
 merge through the standard PR path; to commit during an active
@@ -121,12 +121,12 @@ context-sensitive predicate the model could rationalize past.
 ### Mechanical Enforcement
 
 The `validate-pretool` PreToolUse hook's Layer 9 mechanically
-rejects direct commit invocations whose effective cwd resolves
-either to the integration branch named by `default_branch_in` OR
-to a feature branch with an active FLOW state file at
-`.flow-states/<branch>/state.json`. The hook checks two pathways:
-`git ... commit` and `bin/flow ... finalize-commit` (recognized
-by basename suffix so absolute paths like
+rejects direct commit invocations whose effective destination
+resolves either to the integration branch named by
+`default_branch_in` OR to a feature branch with an active FLOW
+state file at `.flow-states/<branch>/state.json`. The hook checks
+two pathways: `git ... commit` and `bin/flow ... finalize-commit`
+(recognized by basename suffix so absolute paths like
 `/Users/.../bin/flow finalize-commit` block the same way as bare
 `bin/flow`). The matcher is robust to a curated set of bypasses:
 
@@ -143,6 +143,36 @@ by basename suffix so absolute paths like
   inner command. The wrapper itself is the escape hatch — Layer 9
   never needs to unwrap it.
 
+### Branch-Arg Routing (finalize-commit Destination Path)
+
+For `bin/flow finalize-commit <msg> <branch>` invocations, Layer 9
+binds its checks to the explicit `<branch>` argument rather than
+the caller's process cwd. The integration-branch check compares
+the branch arg against `default_branch_in(<main_root>)` via
+`match_finalize_commit_destination`; the active-flow check runs
+at `<main_root>/.worktrees/<branch>/` so an active flow on that
+worktree fires the gate regardless of where the caller's shell
+sits — a sibling tempdir, a monorepo subdirectory of the
+integration trunk, or another feature-branch worktree all see
+the gate fire on the correct destination.
+
+This mirrors `finalize_commit::run_impl`'s own branch-derived
+routing through `FlowPaths::worktree()` so the hook and the
+binary agree on the commit destination. Both helpers normalize
+their inputs via `normalize_gate_input` per
+`.claude/rules/security-gates.md` "Normalize Before Comparing",
+so case- or whitespace-variant branch args (`MAIN`, `  main  `)
+still match the integration-branch check.
+
+For every other shape — `git commit`, `git -C <path> commit`,
+and any malformed `bin/flow finalize-commit` invocation (missing
+positional args) — Layer 9 falls back to the cwd path that
+checks the hook's process cwd and any `-C <path>` target. The
+two dispatch paths share both carve-outs documented below: the
+active-flow skill-commit carve-out and the integration-branch
+bootstrap-skill carve-out apply identically whether Layer 9
+routes on the branch arg or on the caller's cwd.
+
 ### Active-Flow Trigger
 
 Layer 9 fires in two contexts. The integration-branch context
@@ -156,9 +186,12 @@ shared with every other flow-aware hook (`validate-ask-user`,
 `validate-claude-paths`, `stop_continue`, etc.).
 
 The active-flow context covers the same bypasses as the
-integration-branch context and applies to both candidate cwds
-(process cwd and any `-C` target). When both predicates fire on
-the same candidate, the integration-branch message wins.
+integration-branch context and applies to every branch source
+Layer 9 considers: the destination path's branch-arg-derived
+worktree path (`<main_root>/.worktrees/<branch_arg>/`), the cwd
+path's process cwd, and the cwd path's `-C <path>` target. When
+both predicates fire on the same source, the integration-branch
+message wins.
 
 User-direction interaction mirrors the integration-branch
 posture: an explicit user direction in the current session does
@@ -295,20 +328,22 @@ refs/remotes/origin/HEAD` (fallback `"main"`), so the carve-out
 works identically for repos on `staging`, `master`,
 `develop`, etc.
 
-The carve-out is **cwd-only**. `check_commit_during_flow` does
-NOT consult `bootstrap_carveout_applies` at the `-C` target's
-`match_branch_at(target)` callsite. The transcript walker is
-session-scoped (the persisted transcript records the model's
-session activity regardless of which repo the work targets), so
-a bootstrap chain accrued in one repo's session activity could
-otherwise authorize a commit redirected via
+The carve-out is **cwd-only** for the cwd-path dispatch. The
+destination-path dispatch applies the same carve-out to its
+integration-branch arm. `check_commit_during_flow` does NOT
+consult `bootstrap_carveout_applies` at the cwd path's `-C`
+target's `match_branch_at(target)` callsite. The transcript
+walker is session-scoped (the persisted transcript records the
+model's session activity regardless of which repo the work
+targets), so a bootstrap chain accrued in one repo's session
+activity could otherwise authorize a commit redirected via
 `git -C <other-repo>` to a different repo's integration branch.
 All three legitimate bootstrap windows (flow-start Step 2,
 flow-prime Step 6, and flow-release's commit step) run with
 cwd ON the integration branch by design — none uses `-C` to
-shift git's effective cwd — so restricting the carve-out to
-the cwd callsite has no production consumer cost. Restricting
-it preserves cross-repo safety: a
+shift git's effective cwd — so restricting the carve-out away
+from the `-C` callsite has no production consumer cost.
+Restricting it preserves cross-repo safety: a
 `git -C <integration-branch-target> commit` from any cwd
 remains blocked at the `-C` target's `match_branch_at` even
 when the session's transcript carries a valid bootstrap chain

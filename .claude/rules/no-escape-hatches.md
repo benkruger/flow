@@ -174,6 +174,27 @@ conditions; the third condition in both is a transcript-walker
 check that proves the surrounding skill choreography actually
 ran.
 
+The Layer 9 dispatch has two paths that determine which branch
+source the gate's checks bind to:
+
+- **Destination path.** When the command shape is `bin/flow
+  finalize-commit <msg> <branch>`, the gate binds its checks to
+  the explicit `<branch>` argument. The integration-branch check
+  runs `match_finalize_commit_destination(branch_arg, &main_root)`
+  and the active-flow check runs at
+  `<main_root>/.worktrees/<branch_arg>/`. See
+  `.claude/rules/concurrency-model.md` "Branch-Arg Routing
+  (finalize-commit Destination Path)" for the full design.
+- **Cwd path.** For `git ... commit`, `git -C <path> commit`, and
+  any malformed `bin/flow finalize-commit` invocation whose branch
+  argument cannot be extracted, the gate falls back to the
+  caller's process cwd plus any `-C <path>` target.
+
+Both carve-outs below apply identically across both dispatch
+paths. The wiring details below name `check_active_flow_at` and
+`bootstrap_carveout_applies` — those helpers are reused on every
+branch source the dispatch considers.
+
 **Active-flow carve-out** at
 `src/hooks/validate_pretool.rs::check_active_flow_at`:
 
@@ -189,12 +210,16 @@ ran.
    flow.
 
 Only when all three hold does the active-flow gate allow the
-invocation through.
+invocation through. The carve-out fires on every branch source
+the dispatch checks: the destination path's
+`<main_root>/.worktrees/<branch_arg>/` worktree path, the cwd
+path's process cwd, and the cwd path's `-C <path>` target.
 
 **Bootstrap-skill carve-out** at
 `src/hooks/validate_pretool.rs::bootstrap_carveout_applies`,
-wired into the cwd's `match_branch_at` call site only (NOT
-the `-C` target — see "cwd-only scope" below):
+wired into the integration-branch checks of both dispatch paths
+but NOT into the cwd path's `-C` target's `match_branch_at`
+callsite (see "cwd-only scope" below):
 
 1. The command shape is `bin/flow ... finalize-commit`.
 2. The transcript shows a sanctioned commit-window skill —
@@ -261,7 +286,7 @@ applies identically to `main`, `staging`, `master`, `develop`,
 and any other configured trunk.
 
 cwd-only scope: `check_commit_during_flow` does NOT consult
-`bootstrap_carveout_applies` at the `-C` target's
+`bootstrap_carveout_applies` at the cwd path's `-C` target's
 `match_branch_at(target)` callsite. The transcript walker is
 session-scoped (the persisted transcript records all session
 activity regardless of which repo the work targeted), so a
@@ -271,8 +296,8 @@ different repo's integration branch. All three legitimate
 bootstrap windows (flow-start Step 2, flow-prime Step 6, and
 flow-release's commit step) run with cwd ON the integration
 branch by design — none uses `-C` to shift git's effective cwd
-— so restricting the carve-out to the cwd callsite has no
-production consumer cost while preserving cross-repo safety.
+— so restricting the carve-out away from the `-C` callsite has
+no production consumer cost while preserving cross-repo safety.
 
 Window closure: the walker stops at the most recent real user
 turn going backward. A user message after `/flow:flow-prime` (or
@@ -325,7 +350,8 @@ is legitimate.
   discipline that Layer A operationalizes.
 - `.claude/rules/concurrency-model.md` — the active-flow and
   integration-branch commit gates plus their carve-outs (Layer 9
-  in `validate-pretool`).
+  in `validate-pretool`), and the destination-path dispatch in
+  the "Branch-Arg Routing" subsection.
 - `.claude/rules/user-only-skills.md` — the sibling enforcement
   pattern for direct user invocation; the transcript walker is
   shared infrastructure.

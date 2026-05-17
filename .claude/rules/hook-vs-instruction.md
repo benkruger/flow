@@ -51,11 +51,24 @@ insufficient:
   rejects commands not present in the merged allow list.
 - **Direct commits during a flow** — Layer 9 rejects
   `git ... commit` and `bin/flow ... finalize-commit`
-  invocations whose effective cwd (or any `git -C` target)
-  resolves to the integration branch named by
-  `default_branch_in` OR to a feature branch with an active
-  FLOW state file at `.flow-states/<branch>/state.json`. Two
-  context-specific carve-outs cover the legitimate skill-
+  invocations whose effective destination resolves to the
+  integration branch named by `default_branch_in` OR to a
+  feature branch with an active FLOW state file at
+  `.flow-states/<branch>/state.json`. The effective
+  destination has two dispatch paths: for `bin/flow
+  finalize-commit <msg> <branch>` shapes, Layer 9 binds to
+  the explicit `<branch>` positional argument (the
+  destination path) and checks the integration-branch arm
+  via `match_finalize_commit_destination` and the
+  active-flow arm at `<main_root>/.worktrees/<branch>/`; for
+  `git commit`, `git -C <path> commit`, and any malformed
+  finalize-commit shape whose branch arg cannot be
+  extracted, Layer 9 falls back to the caller's process cwd
+  (and any `-C <path>` target). The branch-arg extraction
+  validates via `FlowPaths::is_valid_branch` so a `/`-,
+  `.`/`..`-, or NUL-bearing arg cannot reach path
+  construction. Both dispatch paths share two context-
+  specific carve-outs that cover the legitimate skill-
   driven commit paths; raw `git commit` is never carved out
   in either context. The active-flow context's skill-commit
   carve-out passes `bin/flow ... finalize-commit` when the
@@ -81,7 +94,11 @@ insufficient:
   branch state file at the trunk, so the bootstrap carve-out
   uses a SECOND walker condition where the active-flow
   carve-out uses a state-file marker — both walker conditions
-  are load-bearing. See
+  are load-bearing. The bootstrap carve-out's `-C`-target
+  scope exclusion lives on the cwd path only; the
+  destination path's integration-branch arm also applies the
+  bootstrap carve-out because the branch arg is the
+  authoritative routing key. See
   `.claude/rules/concurrency-model.md` "Mechanical
   Enforcement" for the bypass surface, the carve-out trust-
   contract analyses, and the documented v1 gaps.
