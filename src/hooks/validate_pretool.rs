@@ -769,6 +769,78 @@ fn extract_dash_c_path(stripped: &str) -> Option<&str> {
     None
 }
 
+/// Extract the explicit `<branch>` positional argument from a
+/// `bin/flow finalize-commit <msg-file> <branch>` invocation.
+/// Returns the dequoted branch token when the shape matches and
+/// both positional arguments are present, `None` otherwise.
+///
+/// Mirrors the `bin/flow` arm of `is_commit_invocation_inner`:
+/// dequotes the first token, accepts the bare `bin/flow` form and
+/// the `*/bin/flow` suffix form via `is_bin_flow_token`, and walks
+/// past any future global flags between launcher and subcommand
+/// before locating `finalize-commit`. After the subcommand token,
+/// the next token is the message file; the token after that is the
+/// branch.
+///
+/// Production consumer: Layer 9's `check_commit_during_flow` uses
+/// the returned branch arg as the routing key for the destination-
+/// aware integration-branch and active-flow checks — independent of
+/// the hook's process cwd. Mirrors `finalize_commit::run_impl`'s
+/// own branch-derived routing through `FlowPaths::worktree()`.
+fn extract_finalize_commit_branch_arg(stripped: &str) -> Option<&str> {
+    let mut tokens = stripped.split_whitespace();
+    // Empty or whitespace-only commands fall through to the
+    // `!is_bin_flow_token(first)` rejection below — no separate
+    // early return is needed.
+    let first_raw = tokens.next().unwrap_or("");
+    let first = dequote_token(first_raw);
+    if !is_bin_flow_token(first) {
+        return None;
+    }
+    // Walk past any pre-subcommand flags so `bin/flow --verbose
+    // finalize-commit <msg> <branch>` extracts the branch
+    // unchanged.
+    let mut found_subcommand = false;
+    for t in tokens.by_ref() {
+        if t == "finalize-commit" {
+            found_subcommand = true;
+            break;
+        }
+    }
+    if !found_subcommand {
+        return None;
+    }
+    // Skip the message-file token; require the branch token after.
+    tokens.next()?;
+    let branch_raw = tokens.next()?;
+    Some(dequote_token(branch_raw))
+}
+
+/// Compare the dequoted branch argument against the project's
+/// integration branch (resolved via `default_branch_in`). When the
+/// normalized strings match, return the Layer 9 block message
+/// keyed on the branch arg; otherwise return `None`.
+///
+/// Both sides pass through `normalize_gate_input` (NUL strip +
+/// trim + ASCII lowercase) per `.claude/rules/security-gates.md`
+/// "Normalize Before Comparing" — a whitespace-padded or
+/// case-variant `--branch Main` must compare equal to `main`.
+///
+/// `main_root` is the resolved project root (parent of the FLOW
+/// state directory). The destination check needs it both as the
+/// argument to `default_branch_in` and as the prefix when the
+/// caller constructs `<main_root>/.worktrees/<branch>/` for the
+/// active-flow arm.
+fn match_finalize_commit_destination(branch_arg: &str, main_root: &Path) -> Option<String> {
+    let branch_norm = normalize_gate_input(branch_arg);
+    let integration_norm = normalize_gate_input(&default_branch_in(main_root));
+    if branch_norm == integration_norm {
+        Some(commit_block_message(branch_arg))
+    } else {
+        None
+    }
+}
+
 /// Recognize a direct commit invocation that Layer 9 must block
 /// when the effective cwd is on the integration branch. v1 matches:
 /// `git ... commit` (skipping `-c k=v` and `-C path` between `git`
@@ -835,33 +907,91 @@ fn commit_block_message_active_flow(branch: &str) -> String {
     )
 }
 
-/// Run Layer 9's commit-during-flow check against the effective cwd.
-/// Returns `Some(message)` when the check fires (the command is a
-/// commit invocation AND at least one candidate cwd either resolves
-/// to the integration branch OR has an active FLOW state file); the
-/// caller eprintlns the message and exits 2. Returns `None` when
-/// Layer 9 does not block — either the command is not a commit
-/// invocation, no candidate cwd is in a git repo / FLOW project, or
-/// every resolved branch differs from its own integration branch and
-/// has no active state file.
+/// Run Layer 9's commit-during-flow check against the appropriate
+/// branch source. Returns `Some(message)` when the check fires
+/// (the command is a commit invocation AND the routing key it binds
+/// to either resolves to the integration branch OR has an active
+/// FLOW state file); the caller eprintlns the message and exits 2.
+/// Returns `None` when Layer 9 does not block.
 ///
-/// Candidates are the hook's process cwd plus any `-C <path>`
-/// argument extracted from the command — `git -C <other> commit`
-/// shifts git's effective cwd onto `<other>`, so each candidate must
-/// be checked. Layer 9 blocks if EITHER candidate triggers either
-/// predicate.
+/// Dispatch shape:
+///
+/// 1. **Finalize-commit destination path** — when the command is
+///    `bin/flow finalize-commit <msg> <branch>` AND the branch
+///    positional argument parses, the branch arg is the routing key.
+///    The integration-branch check compares the branch arg against
+///    `default_branch_in(<main_root>)` via
+///    `match_finalize_commit_destination`. The active-flow check
+///    runs at `<main_root>/.worktrees/<branch_arg>/` so an active
+///    flow on that worktree fires the gate regardless of the
+///    caller's process cwd. This mirrors
+///    `finalize_commit::run_impl`'s own branch-derived routing
+///    through `FlowPaths::worktree()` so the hook and the binary
+///    agree on the destination.
+///
+/// 2. **Cwd path (fallback)** — for `git ... commit` invocations,
+///    for `bin/flow finalize-commit` invocations whose branch arg
+///    cannot be extracted (missing tokens, malformed shape), or
+///    when `main_root` cannot be resolved from the cwd, the
+///    historical cwd-based predicate runs. The hook's process cwd
+///    and any `-C <path>` target are each checked against
+///    `match_branch_at` and `check_active_flow_at`.
 ///
 /// Per-candidate predicate ordering: integration-branch fires before
 /// active-flow so the existing "integration branch" message wins on
 /// the rare case where both apply (the integration branch itself
-/// has an active flow). Across candidates: process cwd is checked
-/// before the `-C` target.
+/// has an active flow).
+///
+/// Bootstrap carve-out: applied to the integration-branch arm in
+/// BOTH dispatch shapes (destination path and cwd path), but NOT
+/// to the `-C` target's `match_branch_at` callsite. The transcript
+/// walker is session-scoped (not per-repo), so a bootstrap chain
+/// accrued in session activity for repo A could otherwise authorize
+/// a commit redirected via `-C <repo-B>` to repo B's integration
+/// branch. The legitimate bootstrap windows (flow-start Step 2,
+/// flow-prime Step 6, flow-release) always run with cwd ON the
+/// integration branch — none uses `-C` to shift git's effective
+/// cwd. See `.claude/rules/concurrency-model.md` "Bootstrap-skill
+/// carve-out" for the cwd-only design.
 fn check_commit_during_flow(
     command: &str,
     cwd: &Path,
     transcript_path: Option<&Path>,
     home: &Path,
 ) -> Option<String> {
+    // Destination path: when the command names an explicit branch
+    // via `bin/flow finalize-commit <msg> <branch>`, route on the
+    // branch arg rather than the caller's cwd. Extract gates this
+    // path on its own — it returns None for non-bin/flow shapes,
+    // for bin/flow shapes that lack the `finalize-commit` token,
+    // and for finalize-commit shapes whose positional arguments
+    // are incomplete. When extract returns None, the dispatch
+    // falls through to the cwd path (gated on is_commit_invocation)
+    // which still covers `git commit`, `git -C <path> commit`, and
+    // any malformed finalize-commit invocation.
+    if let Some(branch_arg) = extract_finalize_commit_branch_arg(command) {
+        let (_, project_root) = find_settings_and_root_from(cwd);
+        if let Some(root) = project_root {
+            let main_root = resolve_main_root(&root);
+            if let Some(msg) = match_finalize_commit_destination(branch_arg, &main_root) {
+                if !bootstrap_carveout_applies(command, transcript_path, home) {
+                    return Some(msg);
+                }
+            }
+            let worktree_path = main_root.join(".worktrees").join(branch_arg);
+            if let Some(msg) = check_active_flow_at(command, &worktree_path, transcript_path, home)
+            {
+                return Some(msg);
+            }
+            return None;
+        }
+    }
+
+    // Cwd path: covers `git ... commit`, `git -C <path> commit`,
+    // and any finalize-commit invocation whose branch arg cannot
+    // be extracted. The is_commit_invocation gate filters out
+    // non-commit commands so an `ls -la` on the integration branch
+    // doesn't accidentally trigger the integration-branch block.
     if !is_commit_invocation(command) {
         return None;
     }
@@ -875,18 +1005,6 @@ fn check_commit_during_flow(
     }
     if let Some(p) = extract_dash_c_path(command) {
         let target = Path::new(p);
-        // The bootstrap-skill carve-out is intentionally NOT applied
-        // to the `-C` target path. The transcript walker is session-
-        // scoped (not per-repo), so a bootstrap chain accrued in
-        // session activity for repo A could otherwise authorize a
-        // commit redirected via `-C <repo-B>` to repo B's
-        // integration branch. The legitimate bootstrap windows
-        // (flow-start Step 2, flow-prime Step 6) always run with
-        // cwd ON the integration branch — neither uses `-C` to
-        // shift git's effective cwd — so blocking the carve-out at
-        // this callsite has no production consumer. See
-        // `.claude/rules/concurrency-model.md` "Bootstrap-skill
-        // carve-out" for the cwd-only design.
         if let Some(msg) = match_branch_at(target) {
             return Some(msg);
         }
@@ -1006,6 +1124,14 @@ fn bootstrap_carveout_applies(command: &str, transcript_path: Option<&Path>, hom
 /// path; return the block message when they match (commit on
 /// integration), otherwise None. Factored out so the cwd check and
 /// the `-C path` check share one block-decision shape.
+///
+/// Scope: serves the cwd path of `check_commit_during_flow` —
+/// `git ... commit`, `git -C <path> commit`, and any
+/// `bin/flow finalize-commit` invocation whose branch argument
+/// cannot be extracted. The `bin/flow finalize-commit <msg>
+/// <branch>` shape with a valid branch argument routes through
+/// `match_finalize_commit_destination` instead, where the routing
+/// key is the explicit branch arg rather than `current_branch_in`.
 fn match_branch_at(path: &Path) -> Option<String> {
     let current = current_branch_in(path)?;
     let integration = default_branch_in(path);
