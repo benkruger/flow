@@ -12,7 +12,7 @@ command) rather than from inferred context.
 | Skill | Action | Reason for the gate |
 |---|---|---|
 | `/flow:flow-abort` | Closes the PR, deletes the remote branch, removes the worktree, deletes the state file. | Destructive — losing in-flight work. |
-| `/flow:flow-reset` | Same destructive shape but applied across every active flow on the machine. | Destructive — losing in-flight work across multiple flows. |
+| `/flow:flow-reset` | Wipes `.flow-states/` on this machine in one pass; PRs, worktrees, and branches are NOT touched (those require per-flow `/flow:flow-abort`). | Destructive — losing local FLOW state for every flow on this machine. |
 | `/flow-release` | Bumps version, tags, pushes, and creates a public GitHub Release. | Resource-shipping — visible to plugin marketplace consumers. Project-local skill at `.claude/skills/flow-release/`; Claude Code emits the bare-namespace form because the skill is not in the `flow:` plugin namespace. |
 | `/flow-qa` | Files a pre-decomposed QA issue against the FLOW plugin repo (`benkruger/flow`) with assignee `@me`, triggering a full FLOW lifecycle on the QA-pass branch. | Resource-shipping — the filed issue becomes shared GitHub state visible to plugin consumers and pulls a maintainer through Start → Code → Review → Learn → Complete. Project-local skill at `.claude/skills/flow-qa/`; Claude Code emits the bare-namespace form because the skill is not in the `flow:` plugin namespace. |
 | `/flow:flow-prime` | Writes `.claude/settings.json` and the four `bin/*` stubs into the project. | Environment-mutating — modifies shared config the project has not yet reviewed. |

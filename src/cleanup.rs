@@ -83,11 +83,13 @@ pub struct Args {
     #[arg(long)]
     pub pull: bool,
 
-    /// Reset every flow on this machine. Walks `.flow-states/` for
-    /// every subdirectory containing a `state.json` and runs the
-    /// per-branch cleanup against it, then removes `orchestrate.json`,
-    /// `.flow-states/main/`, and any residual `start-queue/` entries.
-    /// Mutually exclusive with `--branch`.
+    /// Build a categorized inventory of `.flow-states/` contents
+    /// and (unless `--dry-run`) remove the entire `.flow-states/`
+    /// directory via `fs::remove_dir_all`. The directory shell is
+    /// recreated on demand by subsequent `flow-start` invocations.
+    /// PRs, worktrees, and branches are NOT touched — those are
+    /// handled per-flow via `/flow:flow-abort` and
+    /// `/flow:flow-complete`. Mutually exclusive with `--branch`.
     #[arg(long)]
     pub all: bool,
 
@@ -504,7 +506,18 @@ fn build_inventory(states_dir: &Path, project_root: &Path) -> Value {
         for entry in sorted {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().into_owned();
-            if path.is_dir() {
+            // Use symlink_metadata so symlinks classify as their actual
+            // filesystem type (not the type of their target). A symlink
+            // pointing to a foreign directory containing state.json
+            // would otherwise be misreported as a real flow. The wipe
+            // via fs::remove_dir_all unlinks the symlink entry rather
+            // than following it, so symlinks fall through both arms
+            // and are categorized into top_level_files (preserving
+            // visibility in the inventory).
+            let metadata = fs::symlink_metadata(&path).ok();
+            let is_dir = metadata.as_ref().is_some_and(|m| m.is_dir());
+            let is_file = metadata.as_ref().is_some_and(|m| m.is_file());
+            if is_dir {
                 if path.join("state.json").is_file() {
                     flows_with_state.push(name);
                 } else if name == base_branch {
@@ -512,12 +525,17 @@ fn build_inventory(states_dir: &Path, project_root: &Path) -> Value {
                 } else {
                     orphan_dirs.push(name);
                 }
-            } else if path.is_file() {
+            } else if is_file {
                 if name == "orchestrate.json" {
                     singletons.push(name);
                 } else {
                     top_level_files.push(name);
                 }
+            } else {
+                // Symlinks (regardless of target) and other special
+                // file types (sockets, fifos) fall into top_level_files
+                // so the inventory remains audit-complete.
+                top_level_files.push(name);
             }
         }
     }

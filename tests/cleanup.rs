@@ -1536,14 +1536,14 @@ fn cleanup_all_live_removes_flow_states_directory() {
     assert!(!states_dir.exists(), "live mode must remove the directory");
 }
 
-/// T11 — a broken symlink in `.flow-states/` is neither dir nor
-/// file, so `build_inventory` skips it from every bucket. Covers
-/// the branch where both `path.is_dir()` and `path.is_file()`
-/// return false (Path::is_dir and Path::is_file follow symlinks
-/// and return false on a dangling target). This is a real-world
-/// case: a user may have a stray symlink left by an external tool.
+/// T11 — a broken symlink in `.flow-states/` is neither a real
+/// directory nor a real file. `build_inventory` uses
+/// `fs::symlink_metadata` (which does NOT follow symlinks) so the
+/// symlink classifies as its actual type (a symlink) and falls
+/// through the directory and file arms into `top_level_files`,
+/// preserving audit-complete visibility in the inventory.
 #[test]
-fn cleanup_all_walks_non_file_non_dir_entry() {
+fn cleanup_all_classifies_broken_symlink_as_top_level_file() {
     use std::os::unix::fs::symlink;
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo(dir.path());
@@ -1552,27 +1552,114 @@ fn cleanup_all_walks_non_file_non_dir_entry() {
     symlink("/nonexistent/target", states_dir.join("broken-link")).unwrap();
 
     let value = run_impl_main(&args_all(dir.path(), true)).0;
+    let files: Vec<&str> = value["inventory"]["top_level_files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert!(
+        files.contains(&"broken-link"),
+        "broken symlink must classify into top_level_files (fall-through arm), got: {:?}",
+        files
+    );
+}
+
+/// T12 — a symlink pointing to a foreign directory that contains
+/// `state.json` must NOT be classified as a real flow. The
+/// inventory uses `fs::symlink_metadata`, so the symlink reports
+/// as a symlink (neither file nor directory) and lands in
+/// `top_level_files`. Guards against the adversarial case where a
+/// foreign directory could be mistaken for an active flow because
+/// `Path::is_dir` follows symlinks.
+#[test]
+fn cleanup_all_classifies_symlink_to_dir_with_state_as_top_level_file() {
+    use std::os::unix::fs::symlink;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    setup_git_repo(&root);
+    let states_dir = root.join(".flow-states");
+    fs::create_dir_all(&states_dir).unwrap();
+
+    let foreign_dir = root.join("foreign-flow");
+    fs::create_dir_all(&foreign_dir).unwrap();
+    fs::write(
+        foreign_dir.join("state.json"),
+        json!({"branch": "foreign"}).to_string(),
+    )
+    .unwrap();
+    symlink(&foreign_dir, states_dir.join("foreign-link")).unwrap();
+
+    let value = run_impl_main(&args_all(&root, true)).0;
     let inv = &value["inventory"];
-    for bucket in [
-        "flows_with_state",
-        "orphan_dirs",
-        "top_level_files",
-        "singletons",
-        "sentinel_dirs",
-    ] {
-        let names: Vec<&str> = inv[bucket]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_str().unwrap())
-            .collect();
-        assert!(
-            !names.contains(&"broken-link"),
-            "broken symlink must not appear in inventory.{}, got: {:?}",
-            bucket,
-            names
-        );
-    }
+    let flows: Vec<&str> = inv["flows_with_state"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert!(
+        !flows.contains(&"foreign-link"),
+        "symlink to foreign dir with state.json must NOT classify as flows_with_state, got: {:?}",
+        flows
+    );
+    let files: Vec<&str> = inv["top_level_files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert!(
+        files.contains(&"foreign-link"),
+        "symlink must classify into top_level_files (fall-through arm), got: {:?}",
+        files
+    );
+}
+
+/// T13 — a symlink at `.flow-states/orchestrate.json` pointing to
+/// a foreign file must NOT be classified as the singleton
+/// orchestration queue. The inventory uses `fs::symlink_metadata`
+/// so the symlink reports as a symlink (not a file) and lands in
+/// `top_level_files`. Guards against the adversarial case where a
+/// foreign file could be mistaken for the orchestration queue
+/// because `Path::is_file` follows symlinks.
+#[test]
+fn cleanup_all_classifies_symlink_named_orchestrate_json_as_top_level_file() {
+    use std::os::unix::fs::symlink;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    setup_git_repo(&root);
+    let states_dir = root.join(".flow-states");
+    fs::create_dir_all(&states_dir).unwrap();
+
+    let foreign_file = root.join("foreign-orchestrate.json");
+    fs::write(&foreign_file, "{}").unwrap();
+    symlink(&foreign_file, states_dir.join("orchestrate.json")).unwrap();
+
+    let value = run_impl_main(&args_all(&root, true)).0;
+    let inv = &value["inventory"];
+    let singletons: Vec<&str> = inv["singletons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert!(
+        !singletons.contains(&"orchestrate.json"),
+        "symlink to foreign file must NOT classify as singleton, got: {:?}",
+        singletons
+    );
+    let files: Vec<&str> = inv["top_level_files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert!(
+        files.contains(&"orchestrate.json"),
+        "symlink named orchestrate.json must classify into top_level_files, got: {:?}",
+        files
+    );
 }
 
 /// T10 — `fs::remove_dir_all` failure surfaces as `failed: <reason>`
