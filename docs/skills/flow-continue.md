@@ -16,6 +16,14 @@ mid-flow. The Stop hook's `check_autonomous_stop` predicate sets
 an in-progress autonomous phase; this skill clears that flag so the
 next assistant turn resumes execution.
 
+`/flow-continue` works universally: it clears any pending halt and
+also acts as a **watermark** over preceding conversation. The Stop
+hook's walker treats the slash-command invocation as the user
+answering whatever pause their previous prose may have triggered, so
+the next Stop fires Rule 1 (encouraging refusal) rather than re-arming
+Rule 2 from stale prose. The autonomous flow resumes whether it was
+paused by a user message, a network error, or a rate-limit interrupt.
+
 `/flow-continue` is the ONLY path that clears `_halt_pending`. The
 skill is in `USER_ONLY_SKILLS` — the model cannot invoke it, and the
 underlying `bin/flow clear-halt` subcommand self-gates by re-checking

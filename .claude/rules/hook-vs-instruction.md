@@ -165,15 +165,25 @@ insufficient:
       `/flow:flow-abort` (close the flow). Persists across
       every subsequent Stop until the user invokes
       `/flow:flow-continue`.
-    - **Conversation pass-through** — a real user message
-      appeared since the model's most recent Skill action
-      (detected via
+    - **Conversation pass-through** — a real **conversational
+      prose** user message appeared since the model's most
+      recent Skill action (detected via
       `transcript_walker::most_recent_user_message_since_skill_action`,
       which filters synthetic `isMeta:true` turns per
-      `.claude/rules/transcript-shape.md`): set
-      `_halt_pending=true` and allow the Stop so the model can
-      answer. The next Stop without a new user message fires
-      Rule 2.
+      `.claude/rules/transcript-shape.md` AND filters
+      imperative slash-command shapes
+      `<command-name>/<skill></command-name>` or the
+      two-line `<command-message>...</command-message>`
+      form): set `_halt_pending=true` and allow the Stop so
+      the model can answer. The next Stop without a new
+      conversational prose message fires Rule 2.
+      `/flow:flow-continue` is the universal resume directive
+      — the walker watermarks any preceding prose to `None`
+      so the next Stop after a resume fires Rule 1 instead of
+      re-arming Rule 2 from the user's prior pause prose. See
+      `.claude/rules/transcript-shape.md` "Real User Turns:
+      Imperative vs Conversational Shapes" for the
+      discriminator.
   See `.claude/rules/autonomous-phase-discipline.md` "The
   Two-Exit Halt Model" for the full design and the lifecycle
   of `_halt_pending`.

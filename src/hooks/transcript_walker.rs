@@ -1129,16 +1129,21 @@ pub fn most_recent_user_message_since_skill_action(
             .and_then(|m| m.get("content"))
             .and_then(|c| c.as_str())
             .expect("is_real_user_turn guarantees string content");
-        let trimmed_content = s.trim_start();
-        if content_starts_with_slash_command(trimmed_content) {
+        // Normalize-before-comparing per
+        // `.claude/rules/security-gates.md`: the slash-command tag
+        // check and the watermark trigger both run on lowercased
+        // content so case-variant emission shapes
+        // (`<COMMAND-NAME>`, `<Command-Message>`, `/FLOW:FLOW-CONTINUE`)
+        // cannot bypass either branch.
+        let normalized = s.trim_start().to_ascii_lowercase();
+        if content_starts_with_slash_command(&normalized) {
             // Imperative slash-command input is not
             // conversational prose. `/flow:flow-continue` is
             // additionally the universal resume directive — it
             // clears the candidate so the next Stop event fires
             // Rule 1 (encouraging-message refusal) instead of
             // re-arming Rule 2 from the user's prior pause prose.
-            let norm = trimmed_content.to_ascii_lowercase();
-            if content_invokes_skill(&norm, "flow:flow-continue") {
+            if content_invokes_skill(&normalized, "flow:flow-continue") {
                 candidate = None;
             }
             continue;
@@ -1148,10 +1153,11 @@ pub fn most_recent_user_message_since_skill_action(
     candidate
 }
 
-/// Return `true` when `content_trimmed` (a user turn's
-/// `message.content` already passed through `trim_start`) begins
-/// with one of the two emission shapes Claude Code uses for
-/// user-typed slash commands:
+/// Return `true` when `content_normalized` — a user turn's
+/// `message.content` already passed through `trim_start` AND
+/// `to_ascii_lowercase` by the caller — begins with one of the
+/// two emission shapes Claude Code uses for user-typed slash
+/// commands:
 ///
 /// - Two-line shape (Claude Code 2.1.140+):
 ///   `<command-message>...</command-message>\n<command-name>/...</command-name>`
@@ -1163,6 +1169,15 @@ pub fn most_recent_user_message_since_skill_action(
 /// captures every slash-command-invocation user turn while
 /// rejecting prose that happens to mention either tag mid-text.
 ///
+/// The caller normalizes the content via `to_ascii_lowercase`
+/// before this check so case-variant emission shapes
+/// (`<COMMAND-NAME>`, `<Command-Message>`) match the same
+/// lowercase tag literal here. Per
+/// `.claude/rules/security-gates.md` "Normalize Before
+/// Comparing", normalization runs on both sides — the
+/// callsite lowercases the content; this helper's literals
+/// are already lowercase.
+///
 /// Consumed by `most_recent_user_message_since_skill_action`
 /// to discriminate imperative slash-command input from
 /// conversational prose. The check is intentionally
@@ -1171,9 +1186,9 @@ pub fn most_recent_user_message_since_skill_action(
 /// capture so the halt-pause contract treats every
 /// `/<slash-command>` invocation as imperative input, never
 /// as a conversational halt trigger.
-fn content_starts_with_slash_command(content_trimmed: &str) -> bool {
-    content_trimmed.starts_with("<command-name>")
-        || content_trimmed.starts_with("<command-message>")
+fn content_starts_with_slash_command(content_normalized: &str) -> bool {
+    content_normalized.starts_with("<command-name>")
+        || content_normalized.starts_with("<command-message>")
 }
 
 /// Read the entire `path` as a UTF-8 String. Returns `None` on
