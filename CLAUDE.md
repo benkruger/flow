@@ -1,8 +1,25 @@
 # CLAUDE.md
 
-FLOW is a Claude Code plugin (`flow:` namespace) that enforces an opinionated 5-phase development lifecycle: Start, Code, Review, Learn, Complete. Each phase is a skill that Claude reads and follows. Phase gates prevent skipping ahead. Language-agnostic — every project owns its toolchain via repo-local `bin/format`, `bin/lint`, `bin/build`, `bin/test` scripts that FLOW orchestrates.
+## You Don't Understand This Code Yet. Read This Before You Change Anything.
+
+**What.** FLOW is a Claude Code plugin (`flow:` namespace) that enforces an opinionated 5-phase development lifecycle: Start, Code, Review, Learn, Complete. Each phase is a Skill (markdown) Claude reads and follows. Phase gates prevent skipping ahead. Language-agnostic — every project owns its toolchain via repo-local `bin/format`, `bin/lint`, `bin/build`, `bin/test` scripts that FLOW orchestrates.
 
 This repo is the plugin source code. When installed in a target project, skills and hooks run in the target project's working directory, not here. State files, worktrees, and logs all live in the target project. If you are developing FLOW itself, you are modifying the plugin — not using it.
+
+**Why.** LLM agents lack engineering discipline by default. We skip verification, rationalize shortcuts, commit half-finished work, bypass safety mechanisms when the gate feels inconvenient, and reach for deletion when we don't understand unfamiliar code. FLOW makes Claude Code usable on real software by enforcing the discipline structurally — hooks, gates, state files, contract tests — rather than relying on the model's self-discipline, which doesn't hold across sessions. The four tenets below (Unobtrusive, configurable autonomy, safe in local env, N×N×N concurrent) follow from that goal.
+
+**How.** Defense in depth, five layers: rules (`.claude/rules/*.md` prose the model reads) → skills (`skills/<name>/SKILL.md` executable phase instructions) → hooks (`hooks/hooks.json` → `bin/flow hook <name>` PreToolUse blocks that exit-2 invalid tool calls) → `bin/flow` Rust subcommands (own every state mutation and gate decision; the model never computes timestamps or counters) → contract tests (lock invariants so refactors can't drift them). The 5-phase lifecycle (table below) runs over this scaffolding, with state at `.flow-states/<branch>/state.json` and worktrees at `.worktrees/<branch>/` so N engineers × N flows × N machines never collide.
+
+**The discipline this anchors.** Every piece of FLOW infrastructure — every hook, gate, state mutation, cleanup step, transcript walker, carve-out — exists to prevent a specific failure mode. The code does not look familiar because the failure modes are not familiar; they are the patterns of LLM agents working unattended on production code. The reflex to remove or simplify unfamiliar FLOW code IS the failure mode this project exists to prevent.
+
+Before proposing removal or simplification of any FLOW infrastructure code:
+
+1. Read the file's module doc comment — most carry the "why this exists" up front.
+2. Read the rule(s) the module doc cites in `.claude/rules/`.
+3. Read the test(s) that lock the behavior in.
+4. State the failure mode the code prevents, citing the rule and test.
+
+If you cannot articulate the failure mode after reading those three artifacts, you do not understand the code. Do not change it. Ask the user.
 
 ## Design Philosophy
 
