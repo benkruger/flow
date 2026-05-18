@@ -168,13 +168,13 @@ in the same file is the canonical structural-check shape.
 
 ### Layer C — Transcript-walker gate (closes bypass shortcuts)
 
-The Layer 9 commit gate carries two carve-outs for legitimate
+The Layer 10 commit gate carries two carve-outs for legitimate
 skill-driven commit paths. Each carve-out AND-combines three
 conditions; the third condition in both is a transcript-walker
 check that proves the surrounding skill choreography actually
 ran.
 
-The Layer 9 dispatch has two paths that determine which branch
+The Layer 10 dispatch has two paths that determine which branch
 source the gate's checks bind to:
 
 - **Destination path.** When the command shape is `bin/flow
@@ -349,7 +349,7 @@ is legitimate.
 - `.claude/rules/permissions.md` — the deny-list and allow-list
   discipline that Layer A operationalizes.
 - `.claude/rules/concurrency-model.md` — the active-flow and
-  integration-branch commit gates plus their carve-outs (Layer 9
+  integration-branch commit gates plus their carve-outs (Layer 10
   in `validate-pretool`), and the destination-path dispatch in
   the "Branch-Arg Routing" subsection.
 - `.claude/rules/user-only-skills.md` — the sibling enforcement

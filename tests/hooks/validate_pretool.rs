@@ -1449,13 +1449,14 @@ fn test_is_flow_command_whitespace_only_returns_false() {
 // (regardless of flow_active).
 
 fn run_hook_with_bg(bg: Value) -> (i32, String, String) {
-    // Isolate the child's cwd from the host worktree so the active-flow
-    // state file on the host (which has `current_phase=flow-code,
-    // status=in_progress` for THIS PR's branch) does not trip Layer 11
-    // when the command is `bin/flow ci` and bg is falsy. The bg-truthy
-    // tests only exercise the run_in_background decision; the cwd's
-    // FLOW state is irrelevant to that decision but reaches Layer 11
-    // when bg falls through.
+    // Isolate the child's cwd from any host-environment FLOW state.
+    // Any active Code-phase flow on the host machine has
+    // `current_phase=flow-code, status=in_progress` in its state
+    // file; a `bin/flow ci` invocation rooted in that worktree
+    // would trip Layer 11 and produce an unexpected block. These
+    // tests only exercise the `is_bg_truthy` decision — the cwd's
+    // FLOW state is irrelevant to that decision but reaches
+    // Layer 11 when bg is falsy and the bg check falls through.
     let isolation = tempfile::tempdir().expect("tempdir");
     let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["hook", "validate-pretool"])
@@ -5079,6 +5080,162 @@ fn layer_11_no_block_when_state_file_is_unreadable() {
         code, 0,
         "unreadable state.json must allow bin/flow ci; stderr={stderr}"
     );
+}
+
+#[test]
+fn layer_11_no_block_when_state_file_has_invalid_utf8() {
+    // Drives the `read_state_file_capped` `read_to_string` Err
+    // branch — `File::open` succeeds (state.json exists and is
+    // readable) but the content is not valid UTF-8. Fail-closed-
+    // as-no-block: the gate falls through and `bin/flow ci`
+    // passes.
+    let (_dir, root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let state_path = root.join(".flow-states").join("feat").join("state.json");
+    std::fs::write(&state_path, [0xFF, 0xFE, 0xFD]).unwrap();
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "invalid UTF-8 in state.json must allow bin/flow ci; stderr={stderr}"
+    );
+}
+
+// Subcommand-position discipline: `ci` must appear as the first
+// non-flag token after `bin/flow`. Sibling subcommands whose args
+// happen to include the literal `ci` token must NOT trip Layer 11.
+
+#[test]
+fn layer_11_does_not_fire_for_phase_enter_with_phase_arg_ci() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow phase-enter --phase ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "phase-enter --phase ci must not trip Layer 11; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_does_not_fire_for_phase_transition_with_action_ci() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow phase-transition --action ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "phase-transition --action ci must not trip Layer 11; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_does_not_fire_for_log_with_ci_in_message() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow log feat Phase-2 ci notes"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "log with bare ci in message must not trip Layer 11; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_does_not_fire_for_set_timestamp_with_value_ci() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow set-timestamp --field ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "set-timestamp with --field ci must not trip Layer 11; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_does_not_fire_when_only_global_flags_no_subcommand() {
+    // Drives the `is_flow_ci_invocation` "ran out of tokens" path —
+    // first token passes `is_bin_flow_token`, every subsequent token
+    // is a global flag or its value, no non-flag subcommand surfaces.
+    // Per UNIVERSAL_ALLOW, `Bash(*bin/flow *)` passes Layer 9.
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow --log-level info --foo bar"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "global flags only must not trip Layer 11; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_blocks_with_global_flag_value_pair_before_ci() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow --log-level info ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_layer_11_block(code, &stderr, "bin/flow --log-level info ci");
+}
+
+#[test]
+fn layer_11_blocks_with_global_flag_equals_value_before_ci() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow --log-level=info ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_layer_11_block(code, &stderr, "bin/flow --log-level=info ci");
+}
+
+// Carve-out normalization: case variants and the `--flag=value`
+// form both reach the recovery path per
+// `.claude/rules/security-gates.md` "Normalize Before Comparing".
+
+#[test]
+fn layer_11_carveout_allows_uppercase_clean_flag() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow ci --CLEAN"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "--CLEAN case variant must carve out; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_carveout_allows_clean_with_equals_value() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow ci --clean=true"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(code, 0, "--clean=true must carve out; stderr={stderr}");
+}
+
+#[test]
+fn layer_11_blocks_no_clean_variant() {
+    // `--no-clean` is a distinct flag, not the carve-out token.
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow ci --no-clean"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_layer_11_block(code, &stderr, "bin/flow ci --no-clean");
+}
+
+// Normalize before comparing applies to state-file values too:
+// hand-edited or legacy state files with case- or whitespace-variant
+// `current_phase` / `phases.flow-code.status` strings still trigger
+// the gate per `.claude/rules/security-gates.md`.
+
+#[test]
+fn layer_11_fires_on_case_variant_current_phase() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state(
+        "feat",
+        r#"{"current_phase": "FLOW-CODE", "phases": {"flow-code": {"status": "in_progress"}}}"#,
+    );
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_layer_11_block(code, &stderr, "case-variant current_phase");
+}
+
+#[test]
+fn layer_11_fires_on_case_variant_status() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state(
+        "feat",
+        r#"{"current_phase": "flow-code", "phases": {"flow-code": {"status": "IN_PROGRESS"}}}"#,
+    );
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_layer_11_block(code, &stderr, "case-variant status");
 }
 
 #[test]

@@ -1360,16 +1360,28 @@ fn state_continue_pending_is_commit(branch: &str, main_root: &Path) -> bool {
     state.get("_continue_pending").and_then(|v| v.as_str()) == Some("commit")
 }
 
-/// Recognize a `bin/flow ... ci` invocation. Mirrors the structure of
-/// `is_finalize_commit_invocation`: tokenizes on whitespace, dequotes
-/// the first token, requires it to be `bin/flow` or any absolute path
-/// ending in `/bin/flow`, then accepts `ci` as any subsequent token so
-/// global flags between launcher and subcommand (e.g.
-/// `bin/flow --log-level info ci`) cannot defeat the matcher.
+/// Recognize a `bin/flow ... ci` invocation. Tokenizes on whitespace,
+/// dequotes the first token, requires it to be `bin/flow` or any
+/// absolute path ending in `/bin/flow`, skips leading global flags
+/// (`--log-level info`, `--branch=foo`), then requires the first
+/// non-flag token to equal `ci`.
+///
+/// The subcommand-position discipline prevents false positives where
+/// a sibling `bin/flow` subcommand happens to take `ci` as a flag
+/// value or positional argument: `bin/flow phase-enter --phase ci`,
+/// `bin/flow log feat "Phase 2 ci notes"`,
+/// `bin/flow set-timestamp --field ci`, and
+/// `bin/flow phase-transition --action ci` all return false.
 ///
 /// Returns false for non-`bin/flow` first tokens (`bin/test`,
-/// `git ci`, `npm ci`) and for `bin/flow` invocations whose subcommand
-/// is not `ci` (`bin/flow status`, `bin/flow finalize-commit`).
+/// `git ci`, `npm ci`) and for `bin/flow` invocations whose
+/// subcommand is not `ci` (`bin/flow status`, `bin/flow finalize-commit`).
+///
+/// `bin/flow --log-level info ci` returns true: `--log-level` is a
+/// global flag, `info` is its value (skipped), `ci` is the
+/// subcommand. `bin/flow --log-level=info ci` likewise returns true:
+/// `--log-level=info` is a self-contained flag arg, `ci` is the next
+/// non-flag token.
 fn is_flow_ci_invocation(stripped: &str) -> bool {
     let mut tokens = stripped.split_whitespace();
     let first_raw = tokens.next().unwrap_or("");
@@ -1377,16 +1389,41 @@ fn is_flow_ci_invocation(stripped: &str) -> bool {
     if !is_bin_flow_token(first) {
         return false;
     }
-    tokens.any(|t| t == "ci")
+    let mut consume_next_as_flag_value = false;
+    for token in tokens {
+        if consume_next_as_flag_value {
+            consume_next_as_flag_value = false;
+            continue;
+        }
+        if let Some(stripped_flag) = token.strip_prefix("--") {
+            // `--flag=value` is self-contained; advance to next token.
+            if stripped_flag.contains('=') {
+                continue;
+            }
+            // `--flag` with separate value: consume next token too.
+            consume_next_as_flag_value = true;
+            continue;
+        }
+        // First non-flag token is the subcommand.
+        return token == "ci";
+    }
+    false
 }
 
-/// Recognize the `--clean` flag in a tokenized command. The flag's
-/// position is irrelevant — `bin/flow ci --clean`,
-/// `bin/flow --log-level info ci --clean`, and
-/// `bin/flow ci --branch foo --clean` all match. The match is exact:
-/// `--no-clean` and `--cleanup` do NOT match.
+/// Recognize the `--clean` flag in a tokenized command.
+///
+/// Inputs are normalized per `.claude/rules/security-gates.md`
+/// "Normalize Before Comparing": case-folded to ASCII lowercase
+/// before comparison. `--CLEAN`, `--Clean`, and `--clean` all match.
+/// The `--clean=value` form (where value is any text) also matches:
+/// users reach for the documented phantom-misses recovery path via
+/// either bare or assigned-value flag shape. `--no-clean`,
+/// `--cleanup`, and `--clean-files` do NOT match.
 fn has_clean_flag(stripped: &str) -> bool {
-    stripped.split_whitespace().any(|t| t == "--clean")
+    stripped.split_whitespace().any(|t| {
+        let lower = t.to_ascii_lowercase();
+        lower == "--clean" || lower.starts_with("--clean=")
+    })
 }
 
 /// Read `<main_root>/.flow-states/<branch>/state.json` and return
@@ -1407,24 +1444,64 @@ fn has_clean_flag(stripped: &str) -> bool {
 /// returning true. `is_flow_active` itself calls `FlowPaths::try_new`
 /// with the same arguments and returns false on `None`, so reaching
 /// this helper guarantees the constructor succeeds.
+///
+/// String comparisons are normalized per
+/// `.claude/rules/security-gates.md` "Normalize Before Comparing":
+/// `current_phase` and `phases.flow-code.status` are stripped of
+/// NULs, trimmed, and ASCII-lowercased before comparison so a
+/// hand-edited `" Flow-Code "` or `"In_Progress"` still trips the
+/// gate.
+///
+/// The read is bounded at `STATE_FILE_BYTE_CAP` (8 MB) per
+/// `.claude/rules/external-input-path-construction.md` "Enforce a
+/// documented size cap on every external read". A corrupted or
+/// maliciously-large state file cannot OOM-kill the hook.
 fn state_is_in_code_phase(branch: &str, main_root: &Path) -> bool {
     let paths = FlowPaths::try_new(main_root, branch)
         .expect("is_flow_active gate guarantees FlowPaths-valid branch");
-    let Ok(content) = std::fs::read_to_string(paths.state_file()) else {
+    let Ok(content) = read_state_file_capped(&paths.state_file()) else {
         return false;
     };
     let Ok(state) = serde_json::from_str::<Value>(&content) else {
         return false;
     };
-    if state.get("current_phase").and_then(|v| v.as_str()) != Some("flow-code") {
+    let current = state
+        .get("current_phase")
+        .and_then(|v| v.as_str())
+        .map(normalize_gate_input)
+        .unwrap_or_default();
+    if current != "flow-code" {
         return false;
     }
-    state
+    let status = state
         .get("phases")
         .and_then(|p| p.get("flow-code"))
         .and_then(|p| p.get("status"))
         .and_then(|v| v.as_str())
-        == Some("in_progress")
+        .map(normalize_gate_input)
+        .unwrap_or_default();
+    status == "in_progress"
+}
+
+/// Byte cap for `<main_root>/.flow-states/<branch>/state.json` reads.
+/// 8 MB comfortably covers every state file the FLOW writer produces
+/// — typical state files are 5-30 KB, the largest observed in
+/// practice carry compaction summaries up to ~500 KB. The cap exists
+/// to bound a corrupted or maliciously-large state file from
+/// OOM-killing a hook script.
+const STATE_FILE_BYTE_CAP: u64 = 8 * 1024 * 1024;
+
+/// Read a state file with a documented size cap. Returns the file
+/// contents truncated to `STATE_FILE_BYTE_CAP` bytes. The truncation
+/// is silent — `serde_json::from_str` downstream will reject any
+/// truncated-mid-token result on its own, falling through to the
+/// caller's fail-closed branch.
+fn read_state_file_capped(path: &Path) -> std::io::Result<String> {
+    use std::io::Read;
+    let file = std::fs::File::open(path)?;
+    let mut buf = String::new();
+    file.take(STATE_FILE_BYTE_CAP).read_to_string(&mut buf)?;
+    Ok(buf)
 }
 
 /// Layer 11 block message. Redirects `bin/flow ci` to the per-file
@@ -1437,12 +1514,12 @@ fn state_is_in_code_phase(branch: &str, main_root: &Path) -> bool {
 /// `bin/flow ci --clean` is preserved as the documented phantom-
 /// misses recovery path per `.claude/rules/per-file-coverage-iteration.md`.
 const LAYER_11_BLOCK_MSG: &str = "BLOCKED: `bin/flow ci` is disabled during Code phase. \
-    Use the per-file gate instead: `bin/test tests/<name>.rs` (seconds, same 100/100/100 \
-    thresholds). `bin/test --show src/<name>.rs` inspects uncovered regions; \
-    `bin/test --funcs src/<name>.rs` lists function instantiations. The pre-commit gate \
-    runs full CI automatically via `/flow:flow-commit`. To clean stale coverage \
-    artifacts, `bin/flow ci --clean` is still allowed. See \
-    .claude/rules/per-file-coverage-iteration.md.";
+    Run the per-file gate defined in the project's CLAUDE.md (the \"Default iteration \
+    loop\") — for projects using cargo-llvm-cov nextest the form is \
+    `bin/test tests/<name>.rs`; consult CLAUDE.md for the project-specific command. \
+    The pre-commit gate runs full CI automatically inside `/flow:flow-commit`. To \
+    clean stale coverage artifacts, `bin/flow ci --clean` is still allowed. See \
+    .claude/rules/per-file-coverage-iteration.md \"Enforcement\".";
 
 /// Layer 11: redirect `bin/flow ci` to the per-file gate during Code
 /// phase. Fires when ALL of the following hold:

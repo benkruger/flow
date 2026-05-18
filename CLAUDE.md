@@ -67,11 +67,11 @@ Four core tenets:
 - **`bin/test --show <file>`** renders annotated source coverage. **`bin/test --funcs <file>`** lists every function instantiation with its execution count.
 - **`bin/test` sweeps `*.profraw` recursively under `target/llvm-cov-target/` at the start of every invocation** to keep coverage measurement scoped to the current run.
 - **Use `bin/flow ci --test -- <filter>` for targeted test runs across the workspace.**
-- **Layer 11 mechanical gate.** During the Code phase, `validate-pretool`'s Layer 11 redirects bare `bin/flow ci` (and its `--format`/`--lint`/`--build`/`--test`/`--force` variants) to the per-file gate above. The single carve-out is `bin/flow ci --clean` — the documented phantom-misses recovery path. The commit-time CI gate inside `finalize-commit` calls `ci::run_impl()` as a Rust function and never reaches the Bash hook, so cross-file regressions are still caught at the commit boundary. See `.claude/rules/per-file-coverage-iteration.md` "Enforcement".
-- `bin/flow ci` runs `./bin/format`, `./bin/lint`, `./bin/build`, `./bin/test` in sequence (format first for fail-fast). In THIS repo, `bin/build` is a no-op — compilation happens inside `bin/test` via `cargo-llvm-cov nextest`. Use it as the final pre-commit gate.
+- **Layer 11 mechanical gate.** During the Code phase, `validate-pretool`'s Layer 11 redirects `bin/flow ci` (every variant — bare, `--test`, `--lint`, `--format`, `--build`, `--force`, `--audit`, and any other flag suffix) to the per-file gate above. The single carve-out is `bin/flow ci --clean` — the documented phantom-misses recovery path. The commit-time CI gate inside `finalize-commit` calls `ci::run_impl()` as a Rust function and never reaches the Bash hook, so cross-file regressions are still caught at the commit boundary. See `.claude/rules/per-file-coverage-iteration.md` "Enforcement".
+- `bin/flow ci` runs `./bin/format`, `./bin/lint`, `./bin/build`, `./bin/test` in sequence (format first for fail-fast). In THIS repo, `bin/build` is a no-op — compilation happens inside `bin/test` via `cargo-llvm-cov nextest`. Use it as the final pre-commit gate (run from outside Code phase or via the `--clean` carve-out when phantom-misses appear).
 - `bin/flow ci --format`/`--lint`/`--build`/`--test` runs only that single phase. Single-phase runs disable both sentinel read and write.
 - `bin/flow ci --force` runs all four AND bypasses the sentinel skip.
-- `bin/flow ci --clean` is the user-facing deep-reset (wipes sentinel, profraws, `target/llvm-cov-target/debug/`).
+- `bin/flow ci --clean` is the user-facing deep-reset (wipes sentinel, profraws, `target/llvm-cov-target/debug/`) — and the only Layer 11 carve-out during Code phase.
 - Run tests with `bin/flow ci` only — never invoke cargo directly.
 - Dependencies managed via `bin/dependencies` (runs `cargo update`).
 

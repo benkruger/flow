@@ -88,7 +88,7 @@ relocate to for any of them:
   tag could live. The slash command is bare (no `flow:` prefix)
   because the skill is project-local at `.claude/skills/flow-release/`.
 
-The bootstrap-skill carve-out in Layer 9 (see "Mechanical
+The bootstrap-skill carve-out in Layer 10 (see "Mechanical
 Enforcement" below) sanctions all three windows specifically.
 
 The bootstrap commits land on the integration branch through one of
@@ -104,7 +104,7 @@ explicit commit-message file. Each path's choreography substitutes
 for the other; both run the CI gate inside `finalize-commit`.
 
 The exception above is rule-level. The hook described in
-"Mechanical Enforcement" below is stricter: Layer 9 mechanically
+"Mechanical Enforcement" below is stricter: Layer 10 mechanically
 blocks any `git ... commit` or `bin/flow ... finalize-commit`
 invocation whose effective destination resolves either to the
 integration branch OR to a feature branch with an active FLOW state
@@ -120,7 +120,7 @@ context-sensitive predicate the model could rationalize past.
 
 ### Mechanical Enforcement
 
-The `validate-pretool` PreToolUse hook's Layer 9 mechanically
+The `validate-pretool` PreToolUse hook's Layer 10 mechanically
 rejects direct commit invocations whose effective destination
 resolves either to the integration branch named by
 `default_branch_in` OR to a feature branch with an active FLOW
@@ -137,15 +137,15 @@ two pathways: `git ... commit` and `bin/flow ... finalize-commit`
   the matcher walks past these flag pairs to find the effective
   subcommand.
 - **Shell-eval wrappers** (`bash -c '<inner>'`, `sh -c '<inner>'`,
-  `zsh -c '<inner>'`, `eval '<inner>'`) — Layer 7.5 in `validate`
+  `zsh -c '<inner>'`, `eval '<inner>'`) — Layer 8 in `validate`
   (`.claude/rules/no-escape-hatches.md` Layer B) blocks every
-  shell-eval shape BEFORE Layer 9 runs, regardless of the wrapped
-  inner command. The wrapper itself is the escape hatch — Layer 9
+  shell-eval shape BEFORE Layer 10 runs, regardless of the wrapped
+  inner command. The wrapper itself is the escape hatch — Layer 10
   never needs to unwrap it.
 
 ### Branch-Arg Routing (finalize-commit Destination Path)
 
-For `bin/flow finalize-commit <msg> <branch>` invocations, Layer 9
+For `bin/flow finalize-commit <msg> <branch>` invocations, Layer 10
 binds its checks to the explicit `<branch>` argument rather than
 the caller's process cwd. The integration-branch check compares
 the branch arg against `default_branch_in(<main_root>)` via
@@ -166,16 +166,16 @@ still match the integration-branch check.
 
 For every other shape — `git commit`, `git -C <path> commit`,
 and any malformed `bin/flow finalize-commit` invocation (missing
-positional args) — Layer 9 falls back to the cwd path that
+positional args) — Layer 10 falls back to the cwd path that
 checks the hook's process cwd and any `-C <path>` target. The
 two dispatch paths share both carve-outs documented below: the
 active-flow skill-commit carve-out and the integration-branch
-bootstrap-skill carve-out apply identically whether Layer 9
+bootstrap-skill carve-out apply identically whether Layer 10
 routes on the branch arg or on the caller's cwd.
 
 ### Active-Flow Trigger
 
-Layer 9 fires in two contexts. The integration-branch context
+Layer 10 fires in two contexts. The integration-branch context
 above defends against direct commits on the trunk. The
 **active-flow context** defends against direct commits in any
 feature-branch worktree that already has a FLOW lifecycle
@@ -187,7 +187,7 @@ shared with every other flow-aware hook (`validate-ask-user`,
 
 The active-flow context covers the same bypasses as the
 integration-branch context and applies to every branch source
-Layer 9 considers: the destination path's branch-arg-derived
+Layer 10 considers: the destination path's branch-arg-derived
 worktree path (`<main_root>/.worktrees/<branch_arg>/`), the cwd
 path's process cwd, and the cwd path's `-C <path>` target. When
 both predicates fire on the same source, the integration-branch
@@ -204,7 +204,7 @@ surface during a flow.
 The pre-flow editing scenario remains unblocked: if no state
 file exists at `.flow-states/<branch>/state.json` (the user
 hasn't run `/flow:flow-start` yet), the active-flow predicate
-returns false and Layer 9 stays silent. The gate fires only
+returns false and Layer 10 stays silent. The gate fires only
 once a flow is genuinely active.
 
 **Skill-commit carve-out (active-flow context).** The active-flow
@@ -407,14 +407,14 @@ Shell-eval wrappers (`bash -c`, `sh -c`, `zsh -c`, `eval`),
 command-construction launchers (`xargs git commit`,
 `node finalize-commit`), and inter-process injection
 (`tmux send-keys`, `screen -X`) are blocked structurally by
-Layer 7.5 BEFORE Layer 9 runs, so the wrapped invocations never
+Layer 8 BEFORE Layer 10 runs, so the wrapped invocations never
 reach the commit-invocation matcher. See
 `.claude/rules/no-escape-hatches.md` for the canonical
 program/flag table.
 
 These limitations are documented v1 boundaries, not security
 holes. The default-no-edit-on-the-base-branch discipline
-above remains the primary instrument; Layer 9 is the
+above remains the primary instrument; Layer 10 is the
 merge-conflict trip-wire for the shapes Claude is most likely to
 produce by accident.
 

@@ -47,23 +47,23 @@ insufficient:
   to the Read tool and the Grep tool.
 - **Deny-list permissions** — Layer 7 honours
   `.claude/settings.json` deny patterns ahead of allow.
-- **Whitelist enforcement under an active flow** — Layer 8
+- **Whitelist enforcement under an active flow** — Layer 9
   rejects commands not present in the merged allow list.
-- **Direct commits during a flow** — Layer 9 rejects
+- **Direct commits during a flow** — Layer 10 rejects
   `git ... commit` and `bin/flow ... finalize-commit`
   invocations whose effective destination resolves to the
   integration branch named by `default_branch_in` OR to a
   feature branch with an active FLOW state file at
   `.flow-states/<branch>/state.json`. The effective
   destination has two dispatch paths: for `bin/flow
-  finalize-commit <msg> <branch>` shapes, Layer 9 binds to
+  finalize-commit <msg> <branch>` shapes, Layer 10 binds to
   the explicit `<branch>` positional argument (the
   destination path) and checks the integration-branch arm
   via `match_finalize_commit_destination` and the
   active-flow arm at `<main_root>/.worktrees/<branch>/`; for
   `git commit`, `git -C <path> commit`, and any malformed
   finalize-commit shape whose branch arg cannot be
-  extracted, Layer 9 falls back to the caller's process cwd
+  extracted, Layer 10 falls back to the caller's process cwd
   (and any `-C <path>` target). The branch-arg extraction
   validates via `FlowPaths::is_valid_branch` so a `/`-,
   `.`/`..`-, or NUL-bearing arg cannot reach path
@@ -102,6 +102,27 @@ insufficient:
   `.claude/rules/concurrency-model.md` "Mechanical
   Enforcement" for the bypass surface, the carve-out trust-
   contract analyses, and the documented v1 gaps.
+- **`bin/flow ci` during Code phase** — Layer 11 redirects
+  `bin/flow ci` (every variant) to the per-file gate
+  (`bin/test tests/<name>.rs`) when an active flow has
+  `current_phase == "flow-code"` AND
+  `phases.flow-code.status == "in_progress"`. The single
+  carve-out is `bin/flow ci --clean` — the documented
+  phantom-misses recovery path. The block fires only when ALL
+  of: command shape is `bin/flow ... ci` (with `ci` as the
+  first non-flag token after the launcher, so sibling
+  subcommands taking `ci` as an arg pass through);
+  `--clean` (case-insensitive, with optional `=value` suffix)
+  is absent; an active flow exists; and the state file's
+  normalized `current_phase` and `phases.flow-code.status`
+  match. Fail-closed-as-no-block — every state-file read or
+  parse error returns "no block" because Layer 11 is
+  friction-prevention, not a security gate. The commit-time
+  CI gate inside `finalize-commit` calls `ci::run_impl()` as
+  a Rust function and never reaches the Bash hook, so cross-
+  file regressions are still caught at the commit boundary.
+  See `.claude/rules/per-file-coverage-iteration.md`
+  "Enforcement".
 - **Halt gate on Bash commands** — `validate-pretool` blocks
   flow-advancing Bash commands when the active flow's state
   file has `_halt_pending=true`. The closed allowlist is the
