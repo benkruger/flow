@@ -83,16 +83,16 @@ phase.
 ### What counts as a new bash command
 
 A bash block in a SKILL.md introduces a "new" command when its
-first token (the program name, modulo `${CLAUDE_PLUGIN_ROOT}/`
-prefix) is not already covered by an existing `UNIVERSAL_ALLOW`
+first token (the program name, modulo the plugin root prefix)
+is not already covered by an existing `UNIVERSAL_ALLOW`
 entry. Examples:
 
 - A skill that adds `bin/test --adversarial-path` introduces a new
   command — `Bash(bin/test --adversarial-path)` is the matching
   entry.
-- A skill that adds `${CLAUDE_PLUGIN_ROOT}/bin/flow custom-subcmd`
-  is covered by the existing `Bash(*bin/flow *)` entry — no
-  permission change needed.
+- A skill that adds `bin/flow custom-subcmd` (resolved via the
+  plugin root prefix) is covered by the existing
+  `Bash(*bin/flow *)` entry — no permission change needed.
 - A skill that adds `gh release upload <tag> <file>` likely needs
   a new `Bash(gh release upload *)` entry.
 
@@ -138,11 +138,11 @@ The dispatch question is orthogonal to the script-body language.
 A `bin/flow <subcommand>` Rust arm can be a thin shim that exec's
 an existing shell script — the bash body is preserved, only the
 invocation path changes. `src/reset.rs` is the reference: it exec's
-`${CLAUDE_PLUGIN_ROOT}/bin/reset` from inside a `Commands::Reset`
-match arm so callers reach the script through the `bin/flow`
-dispatcher. Porting the script body to Rust is a separate decision
-made on Rust-win merits, not a prerequisite for routing through
-`bin/flow`.
+`bin/reset` (resolved via the plugin root prefix) from inside a
+`Commands::Reset` match arm so callers reach the script through
+the `bin/flow` dispatcher. Porting the script body to Rust is a
+separate decision made on Rust-win merits, not a prerequisite for
+routing through `bin/flow`.
 
 ### When bin/flow cannot reach
 

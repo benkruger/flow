@@ -363,8 +363,12 @@ decompose-and-file pipeline.
 
 ### Generate session ID
 
-Generate a short session ID by running
-`${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id` via the Bash tool.
+Generate a short session ID using the Bash tool:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id
+```
+
 This ID scopes the body file path (`.flow-issue-body-<id>`) so
 concurrent `/flow:flow-plan` invocations cannot collide on the
 same temp file.
@@ -767,6 +771,6 @@ slash command directly.
 - Treat absence or unknown values of the `.flow.json` `role`
   field as "no preferred default" and proceed silently. Never
   block on a missing field.
-- All `bin/flow` calls use `${CLAUDE_PLUGIN_ROOT}/bin/flow` —
-  bare `bin/flow` only resolves inside the FLOW repo itself, not
-  in target projects.
+- All `bin/flow` calls in skill bash blocks use the plugin root
+  prefix — bare `bin/flow` only resolves inside the FLOW repo
+  itself, not in target projects.

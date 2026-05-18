@@ -17,8 +17,9 @@
 //! "skipped", or "failed: <reason>".
 //!
 //! Machine-wide `.flow-states/` wipes belong to `/flow:flow-reset`,
-//! which invokes `${CLAUDE_PLUGIN_ROOT}/bin/reset` directly — that
-//! script (and not this module) owns the wholesale reset path.
+//! which invokes `bin/reset` directly (resolved via the plugin root
+//! prefix) — that script (and not this module) owns the wholesale
+//! reset path.
 //!
 //! Tests live at tests/cleanup.rs per .claude/rules/test-placement.md —
 //! no inline #[cfg(test)] in this file.

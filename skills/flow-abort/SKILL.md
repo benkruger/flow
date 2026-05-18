@@ -34,7 +34,7 @@ shared state must be idempotent.
 
 1. If `--auto` was passed → mode is **auto**
 2. If `--manual` was passed → mode is **manual**
-3. Otherwise, run `${CLAUDE_PLUGIN_ROOT}/bin/flow resolve-skill-mode --skill flow-abort --branch <branch>` — it reads `skills.flow-abort` from the state file, tolerates every config shape (bare string, object with `continue`, missing/null/wrong-type entry), and falls back to **manual** when the config is missing or unparseable. Use the `mode` field from its JSON output. The Entry Check below runs this command after resolving `<branch>`.
+3. Otherwise, run `bin/flow resolve-skill-mode --skill flow-abort --branch <branch>` (prepended with the plugin root prefix) — it reads `skills.flow-abort` from the state file, tolerates every config shape (bare string, object with `continue`, missing/null/wrong-type entry), and falls back to **manual** when the config is missing or unparseable. Use the `mode` field from its JSON output. The Entry Check below runs this command after resolving `<branch>`.
 
 ## Entry Check
 

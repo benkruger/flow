@@ -304,7 +304,17 @@ verbatim, including extension — the project's `bin/test` owns
 both):
 
 - `<temp_test_file>` = (trimmed output of `bin/test --adversarial-path`)
-- `<test_command>` = `${CLAUDE_PLUGIN_ROOT}/bin/flow ci --test --file <temp_test_file>`
+- `<test_command>` = the bash invocation shown below, with
+  `<temp_test_file>` substituted by the value captured above
+
+The adversarial agent invokes `<test_command>` with a 10-minute
+Bash tool timeout (`timeout: 600000`) — CI runs can take 3–4
+minutes and the default 2-minute timeout would background the
+process, defeating the gate (per `.claude/rules/ci-is-a-gate.md`):
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow ci --test --file <temp_test_file>
+```
 
 The adversarial agent always launches when `bin/test
 --adversarial-path` returns a configured path. If the project's

@@ -175,8 +175,9 @@ pub fn validate(file_path: &str, flow_active: bool, tool_name: &str) -> (bool, S
              are blocked.\n\n\
              To capture a behavioral constraint that every engineer \
              should follow, write a project rule: \
-             `${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule \
-             --path .claude/rules/<topic>.md --content-file <temp>`.\n\n\
+             `bin/flow write-rule --path .claude/rules/<topic>.md \
+             --content-file <temp>` (prepended with the plugin root \
+             prefix when invoked from a marketplace skill).\n\n\
              To capture a user-specific preference, ask the user to add \
              it to `~/.claude/CLAUDE.md` manually — there is no in-FLOW \
              path for memory writes by design.\n\n\
@@ -226,9 +227,10 @@ pub fn validate(file_path: &str, flow_active: bool, tool_name: &str) -> (bool, S
     (
         false,
         "BLOCKED: .claude/ paths are protected during FLOW phases. \
-         Use `${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <target> --content-file <temp>` instead. \
-         Write the full file content to a temp file in .flow-states/, \
-         then run the write-rule command."
+         Use `bin/flow write-rule --path <target> --content-file <temp>` \
+         (prepended with the plugin root prefix when invoked from a \
+         marketplace skill) instead. Write the full file content to a \
+         temp file in .flow-states/, then run the write-rule command."
             .to_string(),
     )
 }

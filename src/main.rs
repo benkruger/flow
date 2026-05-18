@@ -411,9 +411,10 @@ enum Commands {
     },
 
     /// Wipe `.flow-states/` on this machine. Thin Rust shim that
-    /// exec's the existing `${CLAUDE_PLUGIN_ROOT}/bin/reset` bash
-    /// script. Routes `/flow:flow-reset` through `bin/flow` so the
-    /// canonical `Bash(*bin/flow *)` allow entry covers it.
+    /// exec's the existing `bin/reset` bash script (resolved via the
+    /// plugin root prefix). Routes `/flow:flow-reset` through
+    /// `bin/flow` so the canonical `Bash(*bin/flow *)` allow entry
+    /// covers it.
     Reset(reset::Args),
 
     /// Resolve the configured autonomy mode of a terminal skill

@@ -26,7 +26,8 @@ which exec's a shell script that resolves the main repo root via
 
 1. Asks for confirmation via `AskUserQuestion` — the user must
    explicitly approve the wipe.
-2. Invokes `${CLAUDE_PLUGIN_ROOT}/bin/flow reset`. The Rust shim
+2. Invokes `bin/flow reset` (resolved via the plugin root prefix).
+   The Rust shim
    exec's the existing shell script, which resolves the main repo
    root (works from any cwd including worktrees), refuses to operate
    if path resolution returns "/" or empty as a safety check, and
