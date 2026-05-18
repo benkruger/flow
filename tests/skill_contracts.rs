@@ -5122,21 +5122,24 @@ fn file_tool_preflight_edit_paths_preceded_by_read() {
 
 // --- flow-reset SKILL.md delegates to ${CLAUDE_PLUGIN_ROOT}/bin/reset ---
 //
-// The flow-reset skill is a thin wrapper around
-// `${CLAUDE_PLUGIN_ROOT}/bin/reset`, a shell script that resolves
-// the main repo root via `git rev-parse --git-common-dir` and removes
+// The flow-reset skill dispatches the destructive wipe through
+// `bin/flow reset` so model-invoked calls land on the canonical
+// `Bash(*bin/flow *)` allow entry rather than a script-specific
+// wildcard. The Rust shim at `src/reset.rs` exec's the existing
+// `${CLAUDE_PLUGIN_ROOT}/bin/reset` bash script, which resolves the
+// main repo root via `git rev-parse --git-common-dir` and removes
 // `.flow-states/` via `rm -rf`. The contract test below locks in the
-// canonical delegation: the skill must invoke the script after the
-// confirmation prompt. If the invocation is missing, the skill
-// cannot fulfil its purpose.
+// canonical delegation: the skill must invoke the dispatcher in
+// Step 2 so the bash body stays reachable from the sanctioned
+// permission surface.
 
 #[test]
-fn flow_reset_invokes_bin_reset_script() {
+fn flow_reset_invokes_bin_flow_reset_dispatcher() {
     let content = common::read_skill("flow-reset");
     assert!(
-        content.contains("${CLAUDE_PLUGIN_ROOT}/bin/reset"),
-        "skills/flow-reset/SKILL.md must invoke `${{CLAUDE_PLUGIN_ROOT}}/bin/reset` \
-         (Step 2 execute)"
+        content.contains("${CLAUDE_PLUGIN_ROOT}/bin/flow reset"),
+        "skills/flow-reset/SKILL.md must invoke `${{CLAUDE_PLUGIN_ROOT}}/bin/flow reset` \
+         (Step 2 execute) so the dispatch lands on Bash(*bin/flow *)"
     );
 }
 

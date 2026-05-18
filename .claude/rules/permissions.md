@@ -120,6 +120,73 @@ SKILL.md bash command in the diff against the diff's allow-list
 changes. A SKILL.md bash command without a matching allow-list
 entry is a Real finding fixed in Step 4.
 
+## bin/flow Dispatch First
+
+Before adding any `Bash(*bin/<script>)` wildcard entry to
+`UNIVERSAL_ALLOW`, answer: "Can this script be routed through
+`bin/flow`?" The model's canonical entry into the project's script
+surface is `bin/flow`, and the single permission entry
+`Bash(*bin/flow *)` covers every subcommand under it. A new
+wildcard `bin/*` allow entry expands the model's reachable command
+surface without going through the dispatcher's discoverability
+contract, so the default answer is to add a `bin/flow <subcommand>`
+Rust arm and reuse the existing allow entry.
+
+### Script body vs. dispatch
+
+The dispatch question is orthogonal to the script-body language.
+A `bin/flow <subcommand>` Rust arm can be a thin shim that exec's
+an existing shell script — the bash body is preserved, only the
+invocation path changes. `src/reset.rs` is the reference: it exec's
+`${CLAUDE_PLUGIN_ROOT}/bin/reset` from inside a `Commands::Reset`
+match arm so callers reach the script through the `bin/flow`
+dispatcher. Porting the script body to Rust is a separate decision
+made on Rust-win merits, not a prerequisite for routing through
+`bin/flow`.
+
+### When bin/flow cannot reach
+
+Target-project-owned discovery hooks are the closed set of
+exceptions, distinguished structurally: they appear in
+`UNIVERSAL_ALLOW` as exact-form (non-wildcard) entries because the
+cwd-relative bare path is the only resolvable form. Examples:
+`Bash(bin/test --adversarial-path)` (Review's adversarial agent
+reaches the project's own `bin/test` to discover the canonical
+probe path) and `Bash(bin/dependencies)` (Complete's toolchain
+refresh invokes the project's own `bin/dependencies`). Routing
+either through `bin/flow` would put the script body inside the
+FLOW plugin rather than the target project's repo, which is the
+opposite of what these hooks need to do.
+
+### Mechanical enforcement
+
+`tests/permissions.rs::universal_allow_wildcard_bin_entries_are_whitelisted`
+asserts every wildcard entry in `UNIVERSAL_ALLOW` whose pattern
+contains `bin/` matches an explicit whitelist
+(`ALLOWED_WILDCARD_BIN_ENTRIES`). The whitelist's intent is to
+force a new wildcard `bin/*` entry to clear the dispatch-first
+question explicitly: extending the whitelist requires naming a
+context in which `bin/flow` genuinely cannot dispatch. The
+exact-form discovery-hook entries above are exempt by structure
+(no `*` in the pattern), so they do not require whitelist
+extension.
+
+### How to apply
+
+**Plan phase.** When a plan proposes a new model-invoked script,
+decide between plugin-owned (route through `bin/flow` and reuse
+the existing `Bash(*bin/flow *)` allow entry) and
+target-project-owned (add an exact-form `Bash(bin/<script>)` entry
+for a discovery hook the target project must own). Adding a
+wildcard `bin/*` entry to the whitelist is reserved for the rare
+case neither pattern fits.
+
+**Review phase.** The reviewer agent flags any diff that adds a
+wildcard `bin/*` entry to `UNIVERSAL_ALLOW` without a matching
+extension of `ALLOWED_WILDCARD_BIN_ENTRIES` AND a justification in
+the plan or commit message naming why `bin/flow` cannot dispatch
+the call.
+
 ## Plan-Phase Verification of FLOW_DENY Pattern Additions
 
 When a plan adds entries to `FLOW_DENY` (`src/prime_check.rs`),

@@ -57,6 +57,7 @@ pub mod protected_paths;
 pub mod record_agent_return;
 pub mod render_pr_body;
 pub mod required_agents;
+pub mod reset;
 pub mod resolve_skill_mode;
 pub mod session_cost;
 pub mod session_metrics;

@@ -50,6 +50,7 @@ use flow_rs::prime_setup;
 use flow_rs::promote_permissions;
 use flow_rs::record_agent_return;
 use flow_rs::render_pr_body;
+use flow_rs::reset;
 use flow_rs::resolve_skill_mode;
 use flow_rs::start_finalize;
 use flow_rs::start_gate;
@@ -408,6 +409,12 @@ enum Commands {
         #[arg(long)]
         branch: Option<String>,
     },
+
+    /// Wipe `.flow-states/` on this machine. Thin Rust shim that
+    /// exec's the existing `${CLAUDE_PLUGIN_ROOT}/bin/reset` bash
+    /// script. Routes `/flow:flow-reset` through `bin/flow` so the
+    /// canonical `Bash(*bin/flow *)` allow entry covers it.
+    Reset(reset::Args),
 
     /// Resolve the configured autonomy mode of a terminal skill
     /// (flow-complete / flow-abort) from the state file.
@@ -885,6 +892,10 @@ fn main() {
                     process::exit(code);
                 }
             }
+        }
+        Some(Commands::Reset(_args)) => {
+            let (value, code) = reset::run_impl_main(flow_rs::utils::plugin_root());
+            flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::ResolveSkillMode(args)) => {
             let root = project_root();

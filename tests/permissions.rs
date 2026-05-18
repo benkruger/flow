@@ -899,3 +899,44 @@ fn prime_setup_lists_match_skill_md_reference() {
         errors.join("\n  ")
     );
 }
+
+/// Wildcard permission entries that match a `bin/*` script. `bin/flow`
+/// is the canonical model-invoked dispatcher; any other entry here must
+/// be an explicit grandfathered exception. To add one, name a context
+/// in which `bin/flow` genuinely cannot reach the script.
+/// See `.claude/rules/permissions.md` "bin/flow Dispatch First".
+const ALLOWED_WILDCARD_BIN_ENTRIES: &[&str] = &["Bash(*bin/flow *)"];
+
+#[test]
+fn universal_allow_wildcard_bin_entries_are_whitelisted() {
+    let actual: Vec<&'static str> = flow_rs::prime_check::UNIVERSAL_ALLOW
+        .iter()
+        .copied()
+        .filter(|e| e.contains('*') && e.contains("bin/"))
+        .collect();
+    let expected: Vec<&'static str> = ALLOWED_WILDCARD_BIN_ENTRIES.to_vec();
+    assert_eq!(
+        actual, expected,
+        "UNIVERSAL_ALLOW wildcard bin entries drifted from whitelist. \
+         Either route the new script through bin/flow, or extend \
+         ALLOWED_WILDCARD_BIN_ENTRIES with a defensive comment per \
+         .claude/rules/permissions.md \"bin/flow Dispatch First\"."
+    );
+}
+
+#[test]
+fn wildcard_bin_scanner_catches_synthetic_violation() {
+    // Positive proof against the scanner's filter expression itself: a
+    // regression that broke `e.contains('*') && e.contains("bin/")`
+    // would silently disable the gate above. This test catches that
+    // class of drift by exercising the filter on a fixture independent
+    // of UNIVERSAL_ALLOW.
+    let synthetic_violation = ["Bash(*bin/flow *)", "Bash(*flow*/bin/newscript)"];
+    let flagged: Vec<&str> = synthetic_violation
+        .iter()
+        .copied()
+        .filter(|e| e.contains('*') && e.contains("bin/"))
+        .collect();
+    assert_eq!(flagged.len(), 2);
+    assert!(flagged.contains(&"Bash(*flow*/bin/newscript)"));
+}
