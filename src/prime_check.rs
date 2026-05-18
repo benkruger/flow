@@ -134,6 +134,7 @@ pub const UNIVERSAL_ALLOW: &[&str] = &[
     "Bash(gh release create *)",
     "Bash(gh -C *)",
     "Bash(*bin/flow *)",
+    "Bash(*bin/reset)",
     "Bash(bin/test --adversarial-path)",
     "Bash(bin/dependencies)",
     "Bash(rm .flow-*)",

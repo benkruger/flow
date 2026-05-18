@@ -333,6 +333,7 @@ All universal permissions written to `.claude/settings.json` for reference:
       "Bash(gh release create *)",
       "Bash(gh -C *)",
       "Bash(*bin/flow *)",
+      "Bash(*bin/reset)",
       "Bash(bin/test --adversarial-path)",
       "Bash(bin/dependencies)",
       "Bash(rm .flow-*)",

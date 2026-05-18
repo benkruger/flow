@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# FLOW reset — wipe `<project_root>/.flow-states/` on this machine.
+#
+# Resolves the main repo root via `git rev-parse --git-common-dir`
+# so the script works from any cwd inside the repo tree, including
+# linked worktrees. The safety check refuses to operate at the
+# filesystem root in case path resolution returns "/" or empty.
+#
+# Invoked by `/flow:flow-reset` after the user has confirmed the
+# destructive operation. PRs, worktrees, and branches are NOT
+# touched — those require per-flow `/flow:flow-abort`.
+
+set -e
+
+PROJECT_ROOT="$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)"
+
+if [ -z "$PROJECT_ROOT" ] || [ "$PROJECT_ROOT" = "/" ]; then
+  echo "bin/reset: refusing to operate at filesystem root" >&2
+  exit 1
+fi
+
+rm -rf "$PROJECT_ROOT/.flow-states/"
