@@ -7442,3 +7442,325 @@ fn no_claude_skills_use_plugin_root_expansion() {
         violations.join("\n")
     );
 }
+
+/// The wider FLOW prose corpus must not name the brace-expansion form
+/// of the plugin root prefix outside fenced code blocks. A prose noun
+/// like the brace-form copied into a runtime argument value
+/// (`--reason`, `--message`, `--finding`, commit prose, log entries)
+/// trips Claude Code's "Contains expansion" permission heuristic and
+/// surfaces a prompt that breaks autonomous flows. The canonical
+/// paraphrase for prose mention is "the plugin root prefix" — see
+/// `.claude/rules/skill-authoring.md` "Plugin Root for bin/flow".
+///
+/// Syntactic uses are preserved by the Markdown walker's fence
+/// awareness — every ` ```bash ` / ` ```sh ` / ` ~~~bash ` fence in
+/// plugin-marketplace SKILL.md files keeps the brace-expansion form
+/// because target projects resolve `bin/flow` via the env var Claude
+/// Code sets at session start. The Rust walker checks every line; the
+/// `src/utils.rs` and `src/start_init.rs` env-var lookups use the
+/// bare identifier `CLAUDE_PLUGIN_ROOT` (no `${}`) so they are out of
+/// scope by content.
+///
+/// The scanner walks:
+///
+/// - `CLAUDE.md` at the repo root
+/// - Direct-child `.md` files under `.claude/rules/`
+/// - Every `SKILL.md` directly under `skills/<name>/`
+/// - Direct-child `.md` files under `agents/`
+/// - Every `.md` file under `docs/` recursively
+/// - Every `.rs` file under `src/` recursively
+///
+/// The Markdown walker tracks fenced-block state with a matching
+/// opener token (handles ` ``` `, ` ```` `, ` ~~~ `, language tags,
+/// and indented code blocks of 4+ leading spaces). Outside fences,
+/// any line containing the forbidden literal is recorded as a
+/// violation. The Rust walker is simpler: every line is checked
+/// regardless of context.
+///
+/// Self-exclusion: the scanner lives in `tests/skill_contracts.rs`,
+/// which is outside the walked scope set (`tests/` is not walked) —
+/// no explicit canonicalize() check needed. `tests/tombstones.rs`
+/// (the other file that carries the literal as a scan-target
+/// constant) is also out of scope by the same mechanism.
+///
+/// Test-panic discipline (not a security-gates fail-closed): the
+/// `fs::read_dir` panics on every walked scope-set directory are
+/// intentional. A test that asserts repo invariants treats a
+/// missing or unreadable scope-set subtree as a repo-structure
+/// regression and surfaces it loudly rather than silently producing
+/// zero violations against a half-walked corpus. See the inline
+/// helper doc comments for `walk_for_brace_expansion` for the
+/// rationale and the contrast with hook / CLI panic discipline
+/// (which forbids `.expect()` on filesystem reads per
+/// `.claude/rules/external-input-path-construction.md`).
+///
+/// Future Rust src/ use of the literal: a future PR that legitimately
+/// needs `${CLAUDE_PLUGIN_ROOT}` as a string-literal value in a
+/// `src/*.rs` file (e.g. a new escape-hatch detector validating the
+/// literal as input) can use a `concat!` split to produce the same
+/// runtime string without tripping this scanner. Mirror the precedent
+/// from `.claude/rules/test-placement.md` Enforcement section
+/// (`concat!("#[cfg", "(test)]")` is the sibling pattern): write
+/// `concat!("$", "{CLAUDE_PLUGIN_ROOT}")` so the literal substring
+/// never appears in source on a single line. Document the escape at
+/// the callsite so future readers see the rationale.
+#[test]
+fn no_prose_uses_plugin_root_expansion() {
+    const FORBIDDEN: &str = "${CLAUDE_PLUGIN_ROOT}";
+    let mut violations: Vec<String> = Vec::new();
+    let root = common::repo_root();
+
+    // CLAUDE.md (single file at the repo root).
+    let claude_md = root.join("CLAUDE.md");
+    if let Ok(content) = fs::read_to_string(&claude_md) {
+        scan_markdown_for_brace_expansion(&content, "CLAUDE.md", FORBIDDEN, &mut violations);
+    }
+
+    // .claude/rules/*.md (direct-child .md files only).
+    let rules_dir = root.join(".claude").join("rules");
+    let rules_entries = fs::read_dir(&rules_dir).unwrap_or_else(|e| {
+        panic!(
+            "test invariant: `.claude/rules/` must exist and be readable for the prose scanner — missing subtree is a repo-structure regression (read_dir error: {})",
+            e
+        )
+    });
+    for entry in rules_entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("md") {
+            continue;
+        }
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let rel = format!(".claude/rules/{}", entry.file_name().to_string_lossy());
+        scan_markdown_for_brace_expansion(&content, &rel, FORBIDDEN, &mut violations);
+    }
+
+    // skills/<name>/SKILL.md (plugin-marketplace scope, direct child).
+    let skills_dir = root.join("skills");
+    let skills_entries = fs::read_dir(&skills_dir).unwrap_or_else(|e| {
+        panic!(
+            "test invariant: `skills/` must exist and be readable for the prose scanner — missing subtree is a repo-structure regression (read_dir error: {})",
+            e
+        )
+    });
+    for entry in skills_entries.flatten() {
+        if !entry.path().is_dir() {
+            continue;
+        }
+        let skill_md = entry.path().join("SKILL.md");
+        let Ok(content) = fs::read_to_string(&skill_md) else {
+            continue;
+        };
+        let skill_name = entry.file_name().to_string_lossy().to_string();
+        let rel = format!("skills/{}/SKILL.md", skill_name);
+        scan_markdown_for_brace_expansion(&content, &rel, FORBIDDEN, &mut violations);
+    }
+
+    // agents/*.md (direct-child .md files only).
+    let agents_dir = root.join("agents");
+    let agents_entries = fs::read_dir(&agents_dir).unwrap_or_else(|e| {
+        panic!(
+            "test invariant: `agents/` must exist and be readable for the prose scanner — missing subtree is a repo-structure regression (read_dir error: {})",
+            e
+        )
+    });
+    for entry in agents_entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("md") {
+            continue;
+        }
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let rel = format!("agents/{}", entry.file_name().to_string_lossy());
+        scan_markdown_for_brace_expansion(&content, &rel, FORBIDDEN, &mut violations);
+    }
+
+    // docs/**/*.md (recursive).
+    walk_for_brace_expansion(
+        &root.join("docs"),
+        &root,
+        "md",
+        FORBIDDEN,
+        &mut violations,
+        true,
+    );
+
+    // src/**/*.rs (recursive).
+    walk_for_brace_expansion(
+        &root.join("src"),
+        &root,
+        "rs",
+        FORBIDDEN,
+        &mut violations,
+        false,
+    );
+
+    assert!(
+        violations.is_empty(),
+        "FLOW prose corpus must not name `${{CLAUDE_PLUGIN_ROOT}}` outside fenced code blocks — \
+         prose nouns trip Claude Code's \"Contains expansion\" permission heuristic when copied \
+         into runtime argument values. Paraphrase as \"the plugin root prefix\". \
+         See `.claude/rules/skill-authoring.md` \"Plugin Root for bin/flow\". Violations:\n{}",
+        violations.join("\n")
+    );
+}
+
+/// Fence-aware Markdown line scanner. Tracks fenced-block state by
+/// matching the opener token (3+ backticks or tildes, with or without
+/// a language tag). Inside a fence, every line is skipped — a closing
+/// fence is detected when the trimmed line equals the recorded opener
+/// token. Outside a fence, lines with 4+ leading whitespace columns
+/// (spaces or tabs) are treated as indented code blocks and skipped.
+/// Every other line is checked for `forbidden` substring; matches
+/// produce `<rel>:<line> — <trimmed>` violation entries.
+///
+/// Known v1 limitations (curated-closed scanner — false negatives are
+/// preferred over false positives per the project's curated-scanner
+/// philosophy):
+///
+/// - **List-item continuation prose** indented 4+ columns is treated
+///   as a code block and skipped. The current corpus has no such
+///   shape containing the forbidden literal; a future violation
+///   under this pattern would evade detection.
+/// - **Mixed fence-char misclose.** An opener `~~~bash` closed by an
+///   incorrect ` ``` ` line is NOT recognized as a close (the closer
+///   must match the opener's fence char). Lines after a misclosed
+///   opener stay in-fence until the next matching opener line or EOF.
+///   Authors rarely misclose fences; the limitation is documented for
+///   adversarial-testing visibility.
+/// - **Fence-opener line containing the literal.** When the literal
+///   appears in the language-tag slot of a fence opener (e.g.
+///   ` ```${CLAUDE_PLUGIN_ROOT}bash `), the opener-detection branch
+///   exits the line before the forbidden-literal check runs. This is
+///   pathological in practice but adversarially demonstrable.
+fn scan_markdown_for_brace_expansion(
+    content: &str,
+    rel_path: &str,
+    forbidden: &str,
+    violations: &mut Vec<String>,
+) {
+    let mut fence_opener: Option<String> = None;
+    for (line_no, line) in content.lines().enumerate() {
+        let trimmed_start = line.trim_start();
+        let trimmed = line.trim();
+
+        if let Some(opener) = &fence_opener {
+            // Closing fence: trimmed equals opener (no language tag).
+            if trimmed == opener.as_str() {
+                fence_opener = None;
+            }
+            continue;
+        }
+
+        // Outside fence: detect opening fence.
+        let first_char = trimmed_start.chars().next();
+        if matches!(first_char, Some('`') | Some('~')) {
+            let fence_char = first_char.unwrap();
+            let opener: String = trimmed_start
+                .chars()
+                .take_while(|&c| c == fence_char)
+                .collect();
+            if opener.len() >= 3 {
+                fence_opener = Some(opener);
+                continue;
+            }
+        }
+
+        // Indented code block (4+ leading whitespace columns, spaces
+        // or tabs). Tabs are counted as a single column each — a
+        // tab-indented code-block line still trips at 4 columns
+        // total. The simpler 4+ check matches the dominant Markdown
+        // convention; a more precise tab-stop calculation is not
+        // needed for the prose-detection use case.
+        let leading_ws = line.chars().take_while(|&c| c == ' ' || c == '\t').count();
+        if leading_ws >= 4 {
+            continue;
+        }
+
+        if line.contains(forbidden) {
+            violations.push(format!("{}:{} — {}", rel_path, line_no + 1, line.trim()));
+        }
+    }
+}
+
+/// Recursive directory walker that scans every file whose extension
+/// matches `ext`. Markdown files (`use_md_scanner = true`) route
+/// through the fence-aware scanner; other files (Rust source) check
+/// every line.
+///
+/// Symlinks are NOT followed — directory descent uses
+/// `entry.file_type()` (does not resolve symlinks) instead of
+/// `Path::is_dir()` (which DOES resolve symlinks). A symlink under any
+/// walked subtree pointing to a directory outside the repo would
+/// otherwise read out-of-repo files into the scanner. Per
+/// `.claude/rules/rust-patterns.md` "Symlink-Safe Existence Checks
+/// Before Writes" (read-side discipline), symlink-aware metadata is
+/// required when walking caller-controlled trees.
+///
+/// Missing or unreadable subdirectory panics are intentional for a
+/// test scanner. A test that asserts repo invariants over a
+/// scope-set subtree (`CLAUDE.md`, `.claude/rules/`, `skills/`,
+/// `agents/`, `docs/`, `src/`) treats a missing subtree as a
+/// repo-structure regression — the panic surfaces the missing tree
+/// loudly rather than silently producing zero violations against a
+/// half-walked corpus. Test panic discipline differs from hook /
+/// CLI panic discipline (see `.claude/rules/external-input-path-construction.md`
+/// "No `.expect()` on Filesystem Reads in Hooks or CLI Subcommands") —
+/// the rule there protects user-visible session lifecycle code, not
+/// test scanners.
+fn walk_for_brace_expansion(
+    dir: &std::path::Path,
+    root: &std::path::Path,
+    ext: &str,
+    forbidden: &str,
+    violations: &mut Vec<String>,
+    use_md_scanner: bool,
+) {
+    let entries = fs::read_dir(dir).unwrap_or_else(|e| {
+        panic!(
+            "test invariant: `{}` must exist and be readable for the prose scanner — missing subtree is a repo-structure regression (read_dir error: {})",
+            dir.display(),
+            e
+        )
+    });
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // entry.file_type() does NOT follow symlinks; symlink targets
+        // outside the repo therefore do not get recursively scanned.
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
+            walk_for_brace_expansion(&path, root, ext, forbidden, violations, use_md_scanner);
+            continue;
+        }
+        if !file_type.is_file() {
+            continue;
+        }
+        if path.extension().and_then(|s| s.to_str()) != Some(ext) {
+            continue;
+        }
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let rel = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .display()
+            .to_string();
+        if use_md_scanner {
+            scan_markdown_for_brace_expansion(&content, &rel, forbidden, violations);
+        } else {
+            for (line_no, line) in content.lines().enumerate() {
+                if line.contains(forbidden) {
+                    violations.push(format!("{}:{} — {}", rel, line_no + 1, line.trim()));
+                }
+            }
+        }
+    }
+}

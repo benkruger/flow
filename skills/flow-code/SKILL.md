@@ -151,12 +151,12 @@ Read `code_task` from the state file (default `0` if absent).
   a session restart), determine progress by comparing the plan to
   committed work.
 
-**Resolve the integration branch.** Run
-`${CLAUDE_PLUGIN_ROOT}/bin/flow base-branch` to retrieve the base
-branch the flow coordinates against. Capture its stdout — call the
-value `<base_branch>` — and substitute it into the `git log` command
-below. A repo whose default branch is `staging` produces
-`<base_branch> = staging`; a standard repo produces
+**Resolve the integration branch.** Run the `bin/flow base-branch`
+command shown below (it uses the plugin root prefix) to retrieve
+the base branch the flow coordinates against. Capture its stdout —
+call the value `<base_branch>` — and substitute it into the
+`git log` command below. A repo whose default branch is `staging`
+produces `<base_branch> = staging`; a standard repo produces
 `<base_branch> = main`.
 
 ```bash

@@ -1,5 +1,5 @@
 //! `bin/flow reset` — Rust shim that exec's the existing
-//! `${CLAUDE_PLUGIN_ROOT}/bin/reset` bash script.
+//! `bin/reset` bash script (resolved via the plugin root prefix).
 //!
 //! Routes `/flow:flow-reset` through the canonical `bin/flow`
 //! dispatcher covered by `Bash(*bin/flow *)` so model-invoked reset

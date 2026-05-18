@@ -265,8 +265,12 @@ success banner.
 
 ### Capture
 
-Generate a short session ID by running
-`${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id` via the Bash tool.
+Generate a short session ID using the Bash tool:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id
+```
+
 This ID scopes the body file path
 (`.flow-issue-body-<id>`) so concurrent
 `/flow:flow-explore` invocations cannot collide on the same temp
@@ -519,6 +523,6 @@ slash command directly.
   argument.
 - Never delete the body file — the `bin/flow issue` script
   handles cleanup.
-- All `bin/flow` calls use `${CLAUDE_PLUGIN_ROOT}/bin/flow` — bare
-  `bin/flow` only resolves inside the FLOW repo itself, not in
-  target projects.
+- All `bin/flow` calls in skill bash blocks use the plugin root
+  prefix — bare `bin/flow` only resolves inside the FLOW repo
+  itself, not in target projects.

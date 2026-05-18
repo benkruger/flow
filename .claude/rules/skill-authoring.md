@@ -446,8 +446,14 @@ in target projects, project-local maintainer skills run only in the
 FLOW repo. Each case has its own canonical form:
 
 - **Plugin-marketplace skills under `skills/<name>/SKILL.md`** —
-  MUST use `${CLAUDE_PLUGIN_ROOT}/bin/flow`. Bare `bin/flow` does
-  not resolve in target projects where cwd is not the FLOW repo.
+  MUST use the plugin root prefix to resolve `bin/flow` in target
+  projects, where the user's cwd is not the FLOW repo. The canonical
+  form is:
+
+  ```bash
+  ${CLAUDE_PLUGIN_ROOT}/bin/flow
+  ```
+
   This half is enforced by runtime behavior in target projects (a
   permission prompt or "command not found" surfaces the first time
   a violation runs) rather than by a corpus contract test, so the
@@ -456,31 +462,45 @@ FLOW repo. Each case has its own canonical form:
   (direct-child SKILL.md only — nested `.claude/skills/<group>/`
   layouts are not in scope) — MUST use bare `bin/flow`. These
   skills run only in the FLOW repo where cwd resolves bare
-  `bin/flow` directly. The `${CLAUDE_PLUGIN_ROOT}` prefix triggers
-  Claude Code's "Contains expansion" permission prompt with no
-  benefit. Documentation comments and prose-as-anti-example
-  citations of the prefix belong in `.claude/rules/skill-authoring.md`
-  (this file), not in any project-local SKILL.md — the scanner
-  flags every occurrence of `${CLAUDE_PLUGIN_ROOT}` in those files
+  `bin/flow` directly. The plugin root prefix triggers Claude
+  Code's "Contains expansion" permission prompt with no benefit.
+  Documentation comments and prose-as-anti-example citations of
+  the prefix belong in `.claude/rules/skill-authoring.md` (this
+  file), not in any project-local SKILL.md — the scanner flags
+  every occurrence of the brace-expansion form in those files
   regardless of fence shape or surrounding context.
 
 The project-local case is enforced mechanically by
 `tests/skill_contracts.rs::no_claude_skills_use_plugin_root_expansion`,
 which scans every direct-child `.claude/skills/<name>/SKILL.md` for
-any occurrence of `${CLAUDE_PLUGIN_ROOT}` anywhere in the file
+any occurrence of the brace-expansion form anywhere in the file
 content (not just inside ` ```bash ` fences) — broadening the match
 ensures sibling fence shapes (` ```sh `, ` ```shell `, ` ~~~bash `,
-indented blocks) and shell-composition bypasses
-(`${CLAUDE_PLUGIN_ROOT}""/bin/flow`) cannot route around the gate.
+indented blocks) and shell-composition bypasses (concatenation
+variants like adjacent empty quotes after the prefix) cannot route
+around the gate.
+
+The wider prose corpus is enforced mechanically by
+`tests/skill_contracts.rs::no_prose_uses_plugin_root_expansion`,
+which walks `CLAUDE.md`, `.claude/rules/*.md`, every
+plugin-marketplace `skills/<name>/SKILL.md`, `agents/*.md`,
+`docs/**/*.md`, and `src/**/*.rs`. The Markdown walker is
+fence-aware so syntactic uses inside bash fences are preserved;
+the Rust walker checks every line because doc-comment uses of the
+brace-form trip the same expansion heuristic when the documented
+identifier is copied into runtime argument values. Bare-identifier
+`CLAUDE_PLUGIN_ROOT` env-var lookups in `src/utils.rs` and
+`src/start_init.rs` are out of scope by content — the bare
+identifier (no `${}`) does not trigger the heuristic.
 
 ## Worktree bin/flow for Repo-Modifying Commands
 
 When running repo-modifying bin/flow subcommands (e.g. bump-version) during
 the Code phase in a worktree, use the worktree's own bin/flow — not the
-cached plugin's ${CLAUDE_PLUGIN_ROOT}/bin/flow. These scripts resolve file
-paths relative to __file__, so the cached plugin writes to the cache
-directory. FLOW state commands (phase-transition, set-timestamp, log, ci) use
-project_root() and work from either path.
+cached plugin's `bin/flow` reached via the plugin root prefix. These scripts
+resolve file paths relative to __file__, so the cached plugin writes to the
+cache directory. FLOW state commands (phase-transition, set-timestamp, log,
+ci) use project_root() and work from either path.
 
 ## Worktree Path for Repo-Tracked Files
 

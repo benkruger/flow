@@ -141,8 +141,13 @@ exploration using Glob, Grep, and Read to ground every finding.
 
 Present the full DAG synthesis to the user.
 
-After presenting the synthesis, generate a session ID by running
-`${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id` via the Bash tool.
+After presenting the synthesis, generate a session ID using the
+Bash tool:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow generate-id
+```
+
 Write `{"decompose_step": 1}` to
 `.flow-states/decompose-project-<id>.json` using the Write tool.
 Save the full decompose output to
@@ -642,7 +647,7 @@ Output the COMPLETE banner:
 - Always use the Write tool to create body files — never pass body text as a CLI argument
 - Never delete body files — the `bin/flow issue` script handles cleanup
 - Each step ends by invoking the skill itself as the final action — never continue to the next step in the same invocation
-- All `bin/flow` calls use `${CLAUDE_PLUGIN_ROOT}/bin/flow`
+- All `bin/flow` calls in skill bash blocks use the plugin root prefix
 - Session state files use the `<id>` prefix to prevent concurrent collisions
 - Issue creation order is topological — leaves first so dependency numbers exist
 - Phase labels are auto-derived from DAG groupings, not user-specified
@@ -650,5 +655,5 @@ Output the COMPLETE banner:
 - Sub-issue and blocked-by linking is best-effort — failures do not block the skill
 - Every issue body (epic and children) wraps its Implementation Plan in the FLOW-PLAN sentinel pair so `bin/flow plan-from-issue` can extract the plan at flow-start
 - Tasks within the Implementation Plan use `#### Task N:` headers (not numbered list items) so `count_tasks` recognises the heading shape and populates `code_tasks_total`
-- Always invoke `${CLAUDE_PLUGIN_ROOT}/bin/flow validate-issue-body` before `${CLAUDE_PLUGIN_ROOT}/bin/flow issue` — on validator error, route through the Revise loop in Step 3 (epic) or Step 4 (per child)
+- Always invoke `bin/flow validate-issue-body` (prepended with the plugin root prefix) before `bin/flow issue` — on validator error, route through the Revise loop in Step 3 (epic) or Step 4 (per child)
 - Paraphrase every prose reference to the FLOW-PLAN sentinel pair — the literal HTML-comment marker strings appear only at the actual delimiters of the wrapped Implementation Plan
