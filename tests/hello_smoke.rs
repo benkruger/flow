@@ -14,7 +14,7 @@ fn hello_sh_contains_current_qa_greeting() {
     let path = common::repo_root().join("hello.sh");
     let content = fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
-    let expected = r#"echo "Hello, FLOW! (QA 2026-05-16)""#;
+    let expected = r#"echo "Hello, FLOW! (QA 2026-05-18)""#;
     assert!(
         content.contains(expected),
         "hello.sh must contain the current QA-dated greeting `{}`; got:\n{}",
