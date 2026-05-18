@@ -11,8 +11,8 @@ features have left orphaned state directories that the per-feature
 NOT touched — those require per-flow `/flow:flow-abort` invoked
 against each branch separately before reset.
 
-The skill is a thin wrapper around `${CLAUDE_PLUGIN_ROOT}/bin/reset`,
-a shell script that resolves the main repo root via
+The skill is a thin wrapper around the `bin/flow reset` subcommand,
+which exec's a shell script that resolves the main repo root via
 `git rev-parse --git-common-dir` so it works from any cwd in the
 repo tree (including linked worktrees) and removes `.flow-states/`
 via `rm -rf`.
@@ -34,7 +34,7 @@ If cancelled, stop.
 ## Step 2 — Execute
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/reset
+${CLAUDE_PLUGIN_ROOT}/bin/flow reset
 ```
 
 If the script exits 0, print:

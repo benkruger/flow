@@ -580,6 +580,56 @@ fn test_flow_deny_no_escape_hatch_entry_removal() {
     );
 }
 
+/// Tombstone: removed in PR #1650. The `Bash(*flow*/bin/reset)`
+/// wildcard allow entry was a script-specific permission that
+/// granted direct invocation of `${CLAUDE_PLUGIN_ROOT}/bin/reset`
+/// outside the canonical `bin/flow` dispatcher. The
+/// `/flow:flow-reset` skill now invokes
+/// `${CLAUDE_PLUGIN_ROOT}/bin/flow reset` and the Rust shim
+/// `src/reset.rs` exec's the underlying bash script — so the
+/// single `Bash(*bin/flow *)` allow entry covers the call per
+/// `.claude/rules/permissions.md` "bin/flow Dispatch First". A
+/// merge-conflict re-introduction of the deleted entry would
+/// silently widen the model's bash-invocation surface and bypass
+/// the dispatcher's discoverability contract.
+///
+/// Stability argument (per `.claude/rules/tombstone-tests.md`
+/// "Literal tombstones — stability checklist"): the entry is a
+/// const &str slice element in `UNIVERSAL_ALLOW` — the literal
+/// cannot be reassembled by `concat!`, produced by `format!`, or
+/// split across constant declarations because the patterns are
+/// stored as inline string literals in a const slice. The
+/// bounded-slice scan over the `UNIVERSAL_ALLOW` region (between
+/// `pub const UNIVERSAL_ALLOW: &[&str] = &[` and the terminating
+/// `];`) prevents prose elsewhere in `src/prime_check.rs` that
+/// mentions the pattern from satisfying the `.contains(...)`
+/// check. The `.arg()`-chain bypass does not apply because
+/// `UNIVERSAL_ALLOW` is consumed as whole-string entries, not as
+/// method-chain arguments.
+#[test]
+fn test_universal_allow_no_flow_bin_reset_wildcard() {
+    let root = common::repo_root();
+    let path = root.join("src").join("prime_check.rs");
+    let content = fs::read_to_string(&path).expect("src/prime_check.rs must exist");
+    let tail = content
+        .split_once("pub const UNIVERSAL_ALLOW: &[&str] = &[")
+        .map(|(_, t)| t)
+        .expect("UNIVERSAL_ALLOW declaration must exist in src/prime_check.rs");
+    let region = tail
+        .split_once("];")
+        .map(|(r, _)| r)
+        .expect("UNIVERSAL_ALLOW const must be terminated by `];`");
+    let forbidden = "\"Bash(*flow*/bin/reset)\"";
+    assert!(
+        !region.contains(forbidden),
+        "src/prime_check.rs::UNIVERSAL_ALLOW must not re-introduce `{}`. \
+         The script is now reached via the canonical `bin/flow reset` \
+         dispatcher; see `.claude/rules/permissions.md` \
+         \"bin/flow Dispatch First\".",
+        forbidden
+    );
+}
+
 // --- Weak-coverage prose loophole closure ---
 //
 // Weak-coverage language ("adequate test coverage", "adequately tested")
