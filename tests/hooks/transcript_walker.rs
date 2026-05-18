@@ -2160,6 +2160,188 @@ fn most_recent_user_message_since_skill_action_unknown_turn_type_skipped() {
     );
 }
 
+#[test]
+fn most_recent_user_message_since_skill_action_skips_slash_command_legacy_shape() {
+    // A slash-command-shape user turn (legacy
+    // `<command-name>/<skill></command-name>` emission) is
+    // imperative input, not conversational prose. The walker
+    // must skip it so a user typing `/flow:flow-explore` mid-
+    // autonomous-flow does not trigger the halt-pause contract.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-explore</command-name>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home),
+        None,
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_skips_slash_command_two_line_shape() {
+    // The two-line slash-command emission Claude Code 2.1.140+
+    // produces (`<command-message><skill></command-message>\n<command-name>/<skill></command-name>`)
+    // is the same imperative-input shape. The walker filters it
+    // for the same reason as the legacy shape.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-message>flow:flow-explore</command-message>\\n<command-name>/flow:flow-explore</command-name>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home),
+        None,
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_skips_flow_continue() {
+    // A user-typed `/flow:flow-continue` is the resume directive.
+    // The walker filters it so the halt-pause contract does not
+    // re-fire on every subsequent Stop event after the user has
+    // resumed the flow.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-continue</command-name>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home),
+        None,
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_continue_watermarks_preceding_prose() {
+    // `/flow:flow-continue` is the universal resume directive: it
+    // clears the candidate, watermarking any preceding prose. A
+    // user who first sent a pause message and then typed
+    // `/flow:flow-continue` has answered their own pause — the
+    // walker returns `None` so the next Stop sees no fresh user
+    // message and Rule 1 (encouraging-message refusal) fires.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"please pause\"}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-continue</command-name>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home),
+        None,
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_prose_after_continue_recaptures() {
+    // Prose typed AFTER `/flow:flow-continue` is a new
+    // conversational signal. The watermark cleared the earlier
+    // prose, but prose that follows the resume directive is a
+    // fresh halt-trigger.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"prose A\"}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-continue</command-name>\"}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"prose B\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home),
+        Some("prose B".to_string()),
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_arbitrary_slash_command_does_not_watermark() {
+    // Only `/flow:flow-continue` is the resume directive. Other
+    // slash commands (e.g. `/flow:flow-abort`) are filtered from
+    // candidate capture (they are imperative input) but they do
+    // NOT clear preceding prose — the user's pause prose is still
+    // a legitimate halt-trigger. The walker returns the prose.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"please pause\"}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home),
+        Some("please pause".to_string()),
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_plain_prose_still_captures() {
+    // Baseline: a plain prose user turn after a Skill action is
+    // still captured. The slash-command filter must not regress
+    // the conversational pass-through path the halt-pause
+    // contract depends on.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"wait, why X?\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home),
+        Some("wait, why X?".to_string()),
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_skips_uppercase_command_name_tag() {
+    // The slash-command filter must lowercase the content before
+    // the tag check per `.claude/rules/security-gates.md`
+    // "Normalize Before Comparing". A case-variant tag from a
+    // hostile or future-shape transcript must still be classified
+    // as imperative input — not captured as halt-trigger prose.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<COMMAND-NAME>/flow:flow-continue</COMMAND-NAME>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home),
+        None,
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_skips_mixedcase_command_message_tag() {
+    // Two-line emission shape with title-cased tags must also
+    // pass through the filter as imperative input. Same
+    // normalize-both-sides discipline as the uppercase
+    // <COMMAND-NAME> case.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<Command-Message>flow:flow-continue</Command-Message>\\n<Command-Name>/flow:flow-continue</Command-Name>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home),
+        None,
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_uppercase_continue_watermarks_preceding_prose() {
+    // The watermark trigger itself must also be case-insensitive.
+    // `/FLOW:FLOW-CONTINUE` with uppercase tags is still the
+    // resume directive and must clear the preceding prose, or the
+    // walker returns prose, `check_autonomous_stop` re-arms
+    // `_halt_pending` on the next Stop, and the autonomous flow
+    // deadlocks despite the user's explicit resume.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"please pause\"}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<COMMAND-NAME>/FLOW:FLOW-CONTINUE</COMMAND-NAME>\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home),
+        None,
+    );
+}
+
 // --- any_skill_in_set_since_user ---
 //
 // `validate_pretool::bootstrap_carveout_applies` consults this helper

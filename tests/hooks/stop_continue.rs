@@ -11,7 +11,7 @@ use std::process::{Command, Stdio};
 
 use flow_rs::hooks::stop_continue::{
     capture_session_id, check_autonomous_stop, check_continue, check_in_progress_utility_skill,
-    format_block_output, set_blocked_idle, set_tab_color,
+    format_block_output, set_blocked_idle, set_tab_color, RULE_1_STOP_REFUSED_MESSAGE,
 };
 use serde_json::{json, Value};
 
@@ -1878,6 +1878,51 @@ fn check_autonomous_stop_no_halt_no_user_message_refuses_with_rule1_encouraging_
     assert_eq!(
         context, "Stop Refused: Continue, you can do it. Don't give up, you got this! No excuses!",
         "rule 1 must be the verbatim encouraging message"
+    );
+}
+
+#[test]
+fn check_autonomous_stop_rule_1_fires_after_flow_continue() {
+    // End-to-end regression at the consumer layer:
+    // assistant Skill, then prose pause, then user-typed
+    // `/flow:flow-continue`. The walker's watermark must clear
+    // the prose candidate so `check_autonomous_stop` sees no
+    // new user message and fires Rule 1 (encouraging refusal)
+    // instead of the conversation pass-through (which would
+    // re-arm `_halt_pending` permanently).
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = auto_stop_transcript(dir.path(), "t.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&autonomous_stop_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            json!(false),
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let jsonl = concat!(
+        "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n",
+        "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"wait, why X?\"}}\n",
+        "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-continue</command-name>\"}}\n",
+    );
+    fs::write(&transcript, jsonl).unwrap();
+    let result = check_autonomous_stop(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+    assert!(
+        result.should_block,
+        "Rule 1 must refuse the Stop after /flow:flow-continue clears preceding prose"
+    );
+    assert_eq!(
+        result.context,
+        Some(RULE_1_STOP_REFUSED_MESSAGE.to_string()),
+        "Rule 1 must emit the encouraging message, not Rule 2 or a pass-through"
+    );
+    assert!(
+        !read_halt_pending(&state_path),
+        "Rule 1 path must NOT set _halt_pending (the user already resumed)"
     );
 }
 

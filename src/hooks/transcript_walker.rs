@@ -137,6 +137,41 @@
 //! catalog of synthetic shapes and the mechanical contract each
 //! walker must satisfy.
 //!
+//! ## Imperative vs conversational real user turns
+//!
+//! Real (non-synthetic) user turns split further into two classes:
+//! conversational prose (the user is talking to the model) and
+//! imperative slash-command input (the user is invoking a slash
+//! command via `<command-name>/<skill></command-name>` or the
+//! two-line `<command-message>...</command-message>` shape). The
+//! distinction matters only for
+//! `most_recent_user_message_since_skill_action`, whose consumer
+//! (`stop_continue::check_autonomous_stop`) uses the walker's
+//! return to detect whether the user has typed a conversational
+//! halt trigger. A slash-command turn is user-direction input,
+//! not a conversation — treating it as halt-trigger prose would
+//! permanently re-arm `_halt_pending` after every
+//! `/flow:flow-continue` and trap the autonomous flow.
+//!
+//! Within imperative slash commands, `/flow:flow-continue` is the
+//! universal resume directive: the walker also watermarks
+//! preceding conversational prose to `None` so a user who first
+//! paused with prose and then resumed with the slash command sees
+//! the next Stop fire Rule 1 (encouraging refusal), not Rule 2 or
+//! a fresh conversation pass-through.
+//!
+//! Every other walker in this module uses real-user-turn as a
+//! *boundary* (where to stop scanning) rather than as a
+//! *conversation signal* (whether the user wants to talk). The
+//! imperative-vs-conversational discrimination lives in
+//! `most_recent_user_message_since_skill_action` alone — see the
+//! function's doc for the full rationale and
+//! `.claude/rules/transcript-shape.md` "Real User Turns:
+//! Imperative vs Conversational Shapes" for the discipline
+//! authored at the rule layer.
+//! `.claude/rules/autonomous-phase-discipline.md` "Conversation
+//! pass-through" carries the consumer-side picture.
+//!
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
@@ -965,38 +1000,64 @@ fn user_turn_carries_tool_result_for(turn: &Value, target_id: &str) -> bool {
 
 /// Return the most recent string-content user-role turn AFTER the
 /// FIRST assistant Skill `tool_use` in the transcript at
-/// `transcript_path`. Returns `None` when no Skill call has fired,
-/// when no real user turn follows the first Skill call, when the
+/// `transcript_path`, filtering imperative slash-command turns
+/// from candidate capture and treating `/flow:flow-continue` as a
+/// watermark that resets preceding prose. Returns `None` when no
+/// Skill call has fired, when no real user turn follows the first
+/// Skill call, when the only post-Skill user turns are slash-
+/// command shapes, when `/flow:flow-continue` has cleared every
+/// preceding prose candidate with no subsequent prose, when the
 /// validator rejects the path, when the file cannot be read or
 /// parsed, or when the file is empty.
 ///
-/// A "real user turn" is a turn whose `type == "user"` AND whose
-/// `message.content` is a string. Synthetic tool_result-wrapped
-/// user turns (where `content` is an array of blocks carrying
-/// assistant-generated tool output) are skipped — they do not
-/// represent user prose.
+/// ## Three classes of real user turn
 ///
-/// The walker iterates forward in file order. Once it sees ANY
-/// assistant Skill `tool_use`, the candidate window is open and
-/// every subsequent real-user-turn content overwrites the
-/// candidate so the LAST string-content user turn in file order
-/// wins. Subsequent Skill actions do NOT close the window — the
-/// user's pause message must remain visible even when the model
-/// fires additional Skills as part of its response to the user.
-/// (Closing the window on every Skill would erase the user's
-/// pause when autonomous mode's normal loop fires another Skill
-/// before the next Stop event.)
+/// Per `.claude/rules/transcript-shape.md`, transcript JSONL
+/// carries two synthetic user-turn shapes alongside user-typed
+/// prose. This walker further partitions real (non-synthetic)
+/// user turns into two sub-classes:
 ///
-/// Production consumer: `check_halt_pending` in
-/// `src/hooks/stop_continue.rs`. The predicate uses the returned
-/// content to detect whether the user has typed a new prose
-/// message since the model last took a Skill action — the trigger
-/// for the mechanical halt-pause contract per
-/// `.claude/rules/autonomous-phase-discipline.md` "Explicit User
-/// Pause Directives".
+/// - **Conversational prose** — string content not matching the
+///   slash-command emission shape. The user is talking to the
+///   model. Captured as `candidate`.
+/// - **Imperative slash-command input** — string content
+///   beginning with `<command-message>` or `<command-name>`. The
+///   user is invoking a slash command, not conversing. Filtered
+///   from candidate capture. When the slash-command names
+///   `flow:flow-continue`, the walker additionally watermarks
+///   the prior `candidate` to `None` because the resume directive
+///   is the user answering whatever pause their preceding prose
+///   triggered — preserving that prose would re-arm the halt
+///   contract on the next Stop event and trap the autonomous
+///   flow in a permanent voluntary-stop state.
 ///
-/// Validation contract per
-/// `.claude/rules/external-input-path-construction.md`:
+/// Other slash commands (e.g. `/flow:flow-abort`) are filtered
+/// from candidate capture but do NOT watermark preceding prose:
+/// only `/flow:flow-continue` is the universal resume directive,
+/// so preserving the user's prose lets the user combine "pause
+/// to talk" with "and also abort" without losing the
+/// conversational signal.
+///
+/// ## Production consumer
+///
+/// `check_autonomous_stop` in `src/hooks/stop_continue.rs`. The
+/// predicate uses the returned content to detect whether the
+/// user has typed a new prose message since the model last took
+/// a Skill action. Per
+/// `.claude/rules/autonomous-phase-discipline.md` "The Two-Exit
+/// Halt Model", a `Some` return triggers the conversation
+/// pass-through (set `_halt_pending=true`, allow the Stop so the
+/// model can answer); a `None` return triggers Rule 1 (refuse
+/// the Stop with the encouraging message). The slash-command
+/// filter and the `/flow:flow-continue` watermark are what give
+/// `/flow:flow-continue` its universal-resume semantics — they
+/// ensure the next Stop after a resume fires Rule 1, not Rule 2
+/// or a fresh pass-through, regardless of whether the original
+/// halt was triggered by user prose or by a system event.
+///
+/// ## Validation contract
+///
+/// Per `.claude/rules/external-input-path-construction.md`,
 /// `transcript_path` runs through
 /// `crate::session_metrics::is_safe_transcript_path` (rejects
 /// empty, NUL-byte, relative, ParentDir-component, and prefix-
@@ -1068,9 +1129,66 @@ pub fn most_recent_user_message_since_skill_action(
             .and_then(|m| m.get("content"))
             .and_then(|c| c.as_str())
             .expect("is_real_user_turn guarantees string content");
+        // Normalize-before-comparing per
+        // `.claude/rules/security-gates.md`: the slash-command tag
+        // check and the watermark trigger both run on lowercased
+        // content so case-variant emission shapes
+        // (`<COMMAND-NAME>`, `<Command-Message>`, `/FLOW:FLOW-CONTINUE`)
+        // cannot bypass either branch.
+        let normalized = s.trim_start().to_ascii_lowercase();
+        if content_starts_with_slash_command(&normalized) {
+            // Imperative slash-command input is not
+            // conversational prose. `/flow:flow-continue` is
+            // additionally the universal resume directive — it
+            // clears the candidate so the next Stop event fires
+            // Rule 1 (encouraging-message refusal) instead of
+            // re-arming Rule 2 from the user's prior pause prose.
+            if content_invokes_skill(&normalized, "flow:flow-continue") {
+                candidate = None;
+            }
+            continue;
+        }
         candidate = Some(s.to_string());
     }
     candidate
+}
+
+/// Return `true` when `content_normalized` — a user turn's
+/// `message.content` already passed through `trim_start` AND
+/// `to_ascii_lowercase` by the caller — begins with one of the
+/// two emission shapes Claude Code uses for user-typed slash
+/// commands:
+///
+/// - Two-line shape (Claude Code 2.1.140+):
+///   `<command-message>...</command-message>\n<command-name>/...</command-name>`
+/// - Legacy one-line shape: `<command-name>/...</command-name>`
+///
+/// Both shapes share the property that the leading bytes
+/// after `trim_start` are an XML-like opening tag, so a single
+/// shape match against `<command-message>` OR `<command-name>`
+/// captures every slash-command-invocation user turn while
+/// rejecting prose that happens to mention either tag mid-text.
+///
+/// The caller normalizes the content via `to_ascii_lowercase`
+/// before this check so case-variant emission shapes
+/// (`<COMMAND-NAME>`, `<Command-Message>`) match the same
+/// lowercase tag literal here. Per
+/// `.claude/rules/security-gates.md` "Normalize Before
+/// Comparing", normalization runs on both sides — the
+/// callsite lowercases the content; this helper's literals
+/// are already lowercase.
+///
+/// Consumed by `most_recent_user_message_since_skill_action`
+/// to discriminate imperative slash-command input from
+/// conversational prose. The check is intentionally
+/// skill-name-agnostic — every slash command (not just
+/// `flow:flow-continue`) gets filtered out of candidate
+/// capture so the halt-pause contract treats every
+/// `/<slash-command>` invocation as imperative input, never
+/// as a conversational halt trigger.
+fn content_starts_with_slash_command(content_normalized: &str) -> bool {
+    content_normalized.starts_with("<command-name>")
+        || content_normalized.starts_with("<command-message>")
 }
 
 /// Read the entire `path` as a UTF-8 String. Returns `None` on

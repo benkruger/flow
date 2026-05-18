@@ -211,24 +211,42 @@ with the state-file field `_halt_pending` to track halt state
 across multiple Stop events.
 
 **Three rules.** The predicate's behavior depends on whether a
-real user message appeared since the model's most recent Skill
-action AND whether `_halt_pending` is already set:
+conversational-prose user message appeared since the model's
+most recent Skill action AND whether `_halt_pending` is already
+set:
 
-- **Conversation pass-through.** When a real user message
-  appeared since the most recent Skill action, set
-  `_halt_pending=true` and ALLOW the Stop so the model can
-  answer. On the next Stop without a new user message, Rule 2
-  fires.
-- **Rule 2 — halt pending, no new user message.** Refuse the
-  Stop with a message naming the two exits: `/flow:flow-continue`
-  to resume, `/flow:flow-abort` to close the flow. The block
-  persists across every subsequent Stop until `_halt_pending` is
-  cleared.
 - **Rule 1 — no halt, no new user message.** Refuse the Stop
   with the encouraging message
   `"Stop Refused: Continue, you can do it. Don't give up, you
   got this! No excuses!"`. The autonomous flow must keep going —
   `continue: auto` already authorized continuous execution.
+- **Rule 2 — halt pending, no new user message.** Refuse the
+  Stop with a message naming the two exits: `/flow:flow-continue`
+  to resume, `/flow:flow-abort` to close the flow. The block
+  persists across every subsequent Stop until `_halt_pending` is
+  cleared.
+- **Conversation pass-through.** When a real **conversational
+  prose** user turn appears since the most recent Skill action,
+  set `_halt_pending=true` and ALLOW the Stop so the model can
+  answer. On the next Stop without a new conversational prose
+  message, Rule 2 fires. Imperative slash-command turns
+  (`<command-name>/<skill></command-name>` or the two-line
+  `<command-message>...</command-message>` shape) are filtered
+  by the walker and do NOT trigger pass-through — they neither
+  set `_halt_pending` nor authorize a voluntary stop. Within
+  that filter, `/flow:flow-continue` is the universal resume
+  directive: the walker additionally watermarks preceding prose
+  to `None`, so a user who first paused with prose and then
+  typed `/flow:flow-continue` sees the next Stop fire Rule 1
+  (encouraging refusal) instead of re-arming Rule 2. The
+  resulting two-channel UX: prose triggers pass-through and
+  conversation; `/flow:flow-continue` resumes without
+  authorizing voluntary stops regardless of whether the halt
+  was caused by user prose or by an external interrupt. The
+  imperative-vs-conversational discriminator and the
+  `/flow:flow-continue` watermark live in
+  `.claude/rules/transcript-shape.md` "Real User Turns:
+  Imperative vs Conversational Shapes".
 
 **Who clears `_halt_pending`.** The flag is cleared by exactly
 two writers:

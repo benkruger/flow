@@ -25,6 +25,48 @@ apart from real user input.
 Real user turns have string `content` AND no `isMeta:true` field.
 Both checks must pass — neither suffices alone.
 
+## Real User Turns: Imperative vs Conversational Shapes
+
+Real (non-synthetic) user turns split further into two classes —
+the same `is_real_user_turn` discriminator covers both, but
+`most_recent_user_message_since_skill_action` is the one walker
+in the family that must distinguish them.
+
+| Shape | Content begins with | Walker semantics |
+|---|---|---|
+| Conversational prose | Anything other than the slash-command tags | Captured as the candidate user message; consumer treats it as a halt trigger |
+| Imperative slash-command input | `<command-message>` or `<command-name>` after `trim_start` | Filtered from candidate capture; not a halt trigger |
+
+A slash-command-shape user turn is user-direction input — the
+user is invoking a slash command, not conversing with the
+model. Treating it as halt-trigger prose would re-arm
+`_halt_pending` after every `/flow:flow-continue` and trap the
+autonomous flow in a permanent voluntary-stop state. The
+discrimination is consumer-specific: it lives in
+`most_recent_user_message_since_skill_action` alone because
+every other walker uses real-user-turn as a *boundary* (where to
+stop scanning) rather than as a *conversation signal*.
+
+Within imperative slash commands, `/flow:flow-continue` is the
+universal resume directive. The walker additionally
+**watermarks** preceding conversational prose to `None` when it
+sees a `/flow:flow-continue` turn: a user who first paused with
+prose and then typed `/flow:flow-continue` has answered their
+own pause, so the next Stop event must fire Rule 1 (encouraging
+refusal) rather than re-arming Rule 2 or a fresh conversation
+pass-through. Every other slash command (e.g.,
+`/flow:flow-abort`) filters from candidate capture but does NOT
+watermark preceding prose — only `/flow:flow-continue` is the
+resume directive, so a user who pauses with prose and then
+aborts still has a legitimate conversational signal that must
+remain visible to the predicate.
+
+Cross-reference:
+`.claude/rules/autonomous-phase-discipline.md` "Conversation
+pass-through" carries the consumer-side picture of how the
+walker's `Some`/`None` returns drive the three rules of
+`check_autonomous_stop`.
+
 ## Why Both Checks Are Required
 
 A walker that filters only on `content.as_str().is_some()` catches
