@@ -15,8 +15,8 @@ branches are NOT touched — those require per-flow `/flow:flow-abort`
 invoked against each branch separately before reset.
 
 Runs from any cwd in the repo tree, including linked worktrees. The
-skill is a thin wrapper around `${CLAUDE_PLUGIN_ROOT}/bin/reset`, a
-shell script that resolves the main repo root via
+skill is a thin wrapper around the `bin/flow reset` subcommand,
+which exec's a shell script that resolves the main repo root via
 `git rev-parse --git-common-dir` and removes `.flow-states/` via
 `rm -rf`. Requires explicit user confirmation before the wipe runs.
 
@@ -26,10 +26,11 @@ shell script that resolves the main repo root via
 
 1. Asks for confirmation via `AskUserQuestion` — the user must
    explicitly approve the wipe.
-2. Invokes `${CLAUDE_PLUGIN_ROOT}/bin/reset`. The script resolves the
-   main repo root (works from any cwd including worktrees), refuses to
-   operate if path resolution returns "/" or empty as a safety check,
-   and removes the entire `.flow-states/` directory via `rm -rf`. The
+2. Invokes `${CLAUDE_PLUGIN_ROOT}/bin/flow reset`. The Rust shim
+   exec's the existing shell script, which resolves the main repo
+   root (works from any cwd including worktrees), refuses to operate
+   if path resolution returns "/" or empty as a safety check, and
+   removes the entire `.flow-states/` directory via `rm -rf`. The
    directory shell is recreated on demand by subsequent flow-start
    invocations.
 3. On non-zero exit, surfaces stderr so the user can investigate

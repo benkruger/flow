@@ -5134,7 +5134,7 @@ fn file_tool_preflight_edit_paths_preceded_by_read() {
 // permission surface.
 
 #[test]
-fn flow_reset_invokes_bin_reset_script() {
+fn flow_reset_invokes_bin_flow_reset_dispatcher() {
     let content = common::read_skill("flow-reset");
     assert!(
         content.contains("${CLAUDE_PLUGIN_ROOT}/bin/flow reset"),
