@@ -41,11 +41,7 @@ fn setup_git_repo(dir: &Path) {
 }
 
 /// Create a worktree and seed the branch directory with a state.json
-/// and log file. Returns the worktree's relative path. The state file
-/// includes the `worktree` field so cleanup_all's
-/// `is_safe_worktree_rel` validator accepts it (an empty/missing
-/// worktree value is rejected as a state-derived path-construction
-/// hazard).
+/// and log file. Returns the worktree's relative path.
 fn setup_feature(git_repo: &Path, branch: &str) -> String {
     let wt_rel = format!(".worktrees/{}", branch);
     StdCommand::new("git")
@@ -73,22 +69,6 @@ fn args_for(dir: &Path, branch: &str, wt_rel: &str, pr: Option<i64>, pull: bool)
         worktree: Some(wt_rel.to_string()),
         pr,
         pull,
-        all: false,
-        dry_run: false,
-    }
-}
-
-/// Build Args for the `--all` cleanup_all entry shape. `branch`,
-/// `worktree`, `pr`, and `pull` are unused in `--all` mode.
-fn args_all(dir: &Path, dry_run: bool) -> Args {
-    Args {
-        project_root: dir.to_string_lossy().to_string(),
-        branch: None,
-        worktree: None,
-        pr: None,
-        pull: false,
-        all: true,
-        dry_run,
     }
 }
 
@@ -652,8 +632,6 @@ fn run_impl_main_nonexistent_root_returns_error() {
         worktree: Some(".worktrees/test".to_string()),
         pr: None,
         pull: false,
-        all: false,
-        dry_run: false,
     };
     let (value, code) = run_impl_main(&args);
     assert_eq!(code, 1);
@@ -761,10 +739,10 @@ fn cli_run_cmd_spawn_err_produces_failed_step() {
     );
 }
 
-// --- run_impl_main validation (--all / --branch mutual exclusion) ---
+// --- run_impl_main validation ---
 
 #[test]
-fn cleanup_neither_branch_nor_all_returns_error() {
+fn cleanup_missing_branch_returns_error() {
     let dir = tempfile::tempdir().unwrap();
     let args = Args {
         project_root: dir.path().to_string_lossy().to_string(),
@@ -772,16 +750,14 @@ fn cleanup_neither_branch_nor_all_returns_error() {
         worktree: None,
         pr: None,
         pull: false,
-        all: false,
-        dry_run: false,
     };
     let (value, code) = run_impl_main(&args);
     assert_eq!(code, 1);
     assert_eq!(value["status"], "error");
     let msg = value["message"].as_str().unwrap_or("");
     assert!(
-        msg.contains("--branch") && msg.contains("--all"),
-        "expected message to name both flags, got: {}",
+        msg.contains("--branch"),
+        "expected message to mention --branch, got: {}",
         msg
     );
 }
@@ -795,8 +771,6 @@ fn cleanup_branch_without_worktree_returns_error() {
         worktree: None,
         pr: None,
         pull: false,
-        all: false,
-        dry_run: false,
     };
     let (value, code) = run_impl_main(&args);
     assert_eq!(code, 1);
@@ -807,104 +781,6 @@ fn cleanup_branch_without_worktree_returns_error() {
         "expected message to mention --worktree, got: {}",
         msg
     );
-}
-
-// --- run_impl_main mutual-exclusion errors (Review fixes) ---
-
-#[test]
-fn cleanup_all_with_branch_returns_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let args = Args {
-        project_root: dir.path().to_string_lossy().to_string(),
-        branch: Some("test".to_string()),
-        worktree: None,
-        pr: None,
-        pull: false,
-        all: true,
-        dry_run: false,
-    };
-    let (value, code) = run_impl_main(&args);
-    assert_eq!(code, 1);
-    assert_eq!(value["status"], "error");
-    assert!(value["message"].as_str().unwrap_or("").contains("--branch"));
-}
-
-#[test]
-fn cleanup_all_with_worktree_returns_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let args = Args {
-        project_root: dir.path().to_string_lossy().to_string(),
-        branch: None,
-        worktree: Some(".worktrees/test".to_string()),
-        pr: None,
-        pull: false,
-        all: true,
-        dry_run: false,
-    };
-    let (value, code) = run_impl_main(&args);
-    assert_eq!(code, 1);
-    assert_eq!(value["status"], "error");
-    assert!(value["message"]
-        .as_str()
-        .unwrap_or("")
-        .contains("--worktree"));
-}
-
-#[test]
-fn cleanup_all_with_pr_returns_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let args = Args {
-        project_root: dir.path().to_string_lossy().to_string(),
-        branch: None,
-        worktree: None,
-        pr: Some(123),
-        pull: false,
-        all: true,
-        dry_run: false,
-    };
-    let (value, code) = run_impl_main(&args);
-    assert_eq!(code, 1);
-    assert_eq!(value["status"], "error");
-    assert!(value["message"].as_str().unwrap_or("").contains("--pr"));
-}
-
-#[test]
-fn cleanup_all_with_pull_returns_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let args = Args {
-        project_root: dir.path().to_string_lossy().to_string(),
-        branch: None,
-        worktree: None,
-        pr: None,
-        pull: true,
-        all: true,
-        dry_run: false,
-    };
-    let (value, code) = run_impl_main(&args);
-    assert_eq!(code, 1);
-    assert_eq!(value["status"], "error");
-    assert!(value["message"].as_str().unwrap_or("").contains("--pull"));
-}
-
-#[test]
-fn cleanup_dry_run_without_all_returns_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let args = Args {
-        project_root: dir.path().to_string_lossy().to_string(),
-        branch: Some("test".to_string()),
-        worktree: Some(".worktrees/test".to_string()),
-        pr: None,
-        pull: false,
-        all: false,
-        dry_run: true,
-    };
-    let (value, code) = run_impl_main(&args);
-    assert_eq!(code, 1);
-    assert_eq!(value["status"], "error");
-    assert!(value["message"]
-        .as_str()
-        .unwrap_or("")
-        .contains("--dry-run"));
 }
 
 // --- delete_adversarial_probe ---
@@ -1290,414 +1166,5 @@ fn cleanup_adversarial_probe_failed_when_path_is_directory() {
         steps["adversarial_probe"].starts_with("failed:"),
         "directory at probe path must surface as a `failed:` outcome, got: {}",
         steps["adversarial_probe"]
-    );
-}
-
-// --- cleanup_all collapse: inventory + flow_states_dir (T1-T10) ---
-//
-// The collapsed `cleanup_all` walks `.flow-states/` once to build a
-// five-bucket inventory (`flows_with_state`, `orphan_dirs`,
-// `top_level_files`, `singletons`, `sentinel_dirs`) and then either
-// removes the directory wholesale (live mode) or records the intent
-// (`dry_run`). PRs, worktrees, branches, and the prior tail steps
-// (orchestrate.json removal, base-branch sentinel directory removal,
-// start-queue sweep) are no longer touched by `--all`; per-flow
-// `cleanup()` still handles those via `/flow:flow-abort` and
-// `/flow:flow-complete`. JSON shape is `{status, dry_run, inventory,
-// flow_states_dir}` — `flows[]`, `orchestrate_json`, `base_dir`,
-// `base_branch`, `queue_sweep` are removed.
-
-/// T1 — missing `.flow-states/` directory entirely: empty inventory,
-/// `flow_states_dir == "skipped"`. The default for a fresh tempdir
-/// with no flows ever started.
-#[test]
-fn cleanup_all_missing_flow_states_dir_returns_skipped() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    // No .flow-states/ subdir at all.
-
-    let value = run_impl_main(&args_all(dir.path(), false)).0;
-    assert_eq!(value["status"], "ok");
-    assert_eq!(value["flow_states_dir"], "skipped");
-    let inv = &value["inventory"];
-    assert_eq!(inv["flows_with_state"].as_array().unwrap().len(), 0);
-    assert_eq!(inv["orphan_dirs"].as_array().unwrap().len(), 0);
-    assert_eq!(inv["top_level_files"].as_array().unwrap().len(), 0);
-    assert_eq!(inv["singletons"].as_array().unwrap().len(), 0);
-    assert_eq!(inv["sentinel_dirs"].as_array().unwrap().len(), 0);
-}
-
-/// T2 — empty `.flow-states/`: empty inventory arrays,
-/// `flow_states_dir == "deleted"` (the directory shell is gone after
-/// live wipe).
-#[test]
-fn cleanup_all_empty_directory_returns_empty_inventory_and_deleted() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let states_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&states_dir).unwrap();
-
-    let value = run_impl_main(&args_all(dir.path(), false)).0;
-    assert_eq!(value["status"], "ok");
-    assert_eq!(value["flow_states_dir"], "deleted");
-    let inv = &value["inventory"];
-    assert_eq!(inv["flows_with_state"].as_array().unwrap().len(), 0);
-    assert_eq!(inv["orphan_dirs"].as_array().unwrap().len(), 0);
-    assert_eq!(inv["top_level_files"].as_array().unwrap().len(), 0);
-    assert_eq!(inv["singletons"].as_array().unwrap().len(), 0);
-    assert_eq!(inv["sentinel_dirs"].as_array().unwrap().len(), 0);
-    assert!(!states_dir.exists(), "directory shell removed in live mode");
-}
-
-/// T3 — a subdirectory containing `state.json` lands in
-/// `inventory.flows_with_state` and is wiped wholesale.
-#[test]
-fn cleanup_all_categorizes_subdir_with_state_json() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let foo_dir = dir.path().join(".flow-states/foo");
-    fs::create_dir_all(&foo_dir).unwrap();
-    fs::write(
-        foo_dir.join("state.json"),
-        json!({"branch": "foo", "worktree": ".worktrees/foo"}).to_string(),
-    )
-    .unwrap();
-
-    let value = run_impl_main(&args_all(dir.path(), true)).0;
-    let flows: Vec<&str> = value["inventory"]["flows_with_state"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap())
-        .collect();
-    assert!(
-        flows.contains(&"foo"),
-        "inventory.flows_with_state must contain `foo`, got: {:?}",
-        flows
-    );
-}
-
-/// T4 — a state-less subdirectory whose name is not the integration
-/// branch lands in `inventory.orphan_dirs` (the classic "orphan
-/// from killed Complete pass" case).
-#[test]
-fn cleanup_all_categorizes_state_less_subdir_as_orphan() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    // No state.json — and name is not the resolved default branch
-    // ("main" with no origin/HEAD configured), so this is a true
-    // orphan dir.
-    let bar_dir = dir.path().join(".flow-states/bar");
-    fs::create_dir_all(&bar_dir).unwrap();
-    fs::write(bar_dir.join("log"), "stale log\n").unwrap();
-
-    let value = run_impl_main(&args_all(dir.path(), true)).0;
-    let orphans: Vec<&str> = value["inventory"]["orphan_dirs"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap())
-        .collect();
-    assert!(
-        orphans.contains(&"bar"),
-        "inventory.orphan_dirs must contain `bar`, got: {:?}",
-        orphans
-    );
-}
-
-/// T5 — a subdirectory whose name matches the resolved default branch
-/// lands in `inventory.sentinel_dirs` (the base-branch CI sentinel
-/// directory `.flow-states/<base_branch>/`). With no origin/HEAD
-/// configured, `default_branch_in` returns "main".
-#[test]
-fn cleanup_all_categorizes_base_branch_subdir_as_sentinel() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let main_dir = dir.path().join(".flow-states/main");
-    fs::create_dir_all(&main_dir).unwrap();
-    fs::write(main_dir.join("ci-passed"), "snapshot").unwrap();
-
-    let value = run_impl_main(&args_all(dir.path(), true)).0;
-    let sentinels: Vec<&str> = value["inventory"]["sentinel_dirs"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap())
-        .collect();
-    assert!(
-        sentinels.contains(&"main"),
-        "inventory.sentinel_dirs must contain `main`, got: {:?}",
-        sentinels
-    );
-}
-
-/// T6 — a top-level `orchestrate.json` file lands in
-/// `inventory.singletons` (the machine-level orchestration queue).
-#[test]
-fn cleanup_all_categorizes_orchestrate_json_as_singleton() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let states_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&states_dir).unwrap();
-    fs::write(states_dir.join("orchestrate.json"), "{}").unwrap();
-
-    let value = run_impl_main(&args_all(dir.path(), true)).0;
-    let singletons: Vec<&str> = value["inventory"]["singletons"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap())
-        .collect();
-    assert!(
-        singletons.contains(&"orchestrate.json"),
-        "inventory.singletons must contain `orchestrate.json`, got: {:?}",
-        singletons
-    );
-}
-
-/// T7 — a top-level non-singleton file (an `*-start-prompt` orphan
-/// left by an interrupted flow-start) lands in
-/// `inventory.top_level_files`.
-#[test]
-fn cleanup_all_categorizes_top_level_file() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let states_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&states_dir).unwrap();
-    fs::write(states_dir.join("280-start-prompt"), "#280\n").unwrap();
-
-    let value = run_impl_main(&args_all(dir.path(), true)).0;
-    let files: Vec<&str> = value["inventory"]["top_level_files"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap())
-        .collect();
-    assert!(
-        files.contains(&"280-start-prompt"),
-        "inventory.top_level_files must contain `280-start-prompt`, got: {:?}",
-        files
-    );
-}
-
-/// T8 — `dry_run=true` builds the inventory but preserves the
-/// `.flow-states/` directory on disk. `flow_states_dir == "would_remove"`.
-#[test]
-fn cleanup_all_dry_run_preserves_flow_states_directory() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let states_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&states_dir).unwrap();
-    fs::write(states_dir.join("orchestrate.json"), "{}").unwrap();
-    let foo_dir = states_dir.join("foo");
-    fs::create_dir_all(&foo_dir).unwrap();
-    fs::write(
-        foo_dir.join("state.json"),
-        json!({"branch": "foo", "worktree": ".worktrees/foo"}).to_string(),
-    )
-    .unwrap();
-
-    let value = run_impl_main(&args_all(dir.path(), true)).0;
-    assert_eq!(value["status"], "ok");
-    assert_eq!(value["dry_run"], true);
-    assert_eq!(value["flow_states_dir"], "would_remove");
-    assert!(states_dir.exists(), "dry_run must preserve the directory");
-    assert!(
-        states_dir.join("orchestrate.json").exists(),
-        "dry_run must preserve singletons"
-    );
-    assert!(
-        foo_dir.join("state.json").exists(),
-        "dry_run must preserve subdir contents"
-    );
-}
-
-/// T9 — live mode (`dry_run=false`) wipes `.flow-states/` wholesale.
-/// `flow_states_dir == "deleted"`.
-#[test]
-fn cleanup_all_live_removes_flow_states_directory() {
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let states_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&states_dir).unwrap();
-    fs::write(states_dir.join("orchestrate.json"), "{}").unwrap();
-    let foo_dir = states_dir.join("foo");
-    fs::create_dir_all(&foo_dir).unwrap();
-    fs::write(
-        foo_dir.join("state.json"),
-        json!({"branch": "foo", "worktree": ".worktrees/foo"}).to_string(),
-    )
-    .unwrap();
-
-    let value = run_impl_main(&args_all(dir.path(), false)).0;
-    assert_eq!(value["status"], "ok");
-    assert_eq!(value["dry_run"], false);
-    assert_eq!(value["flow_states_dir"], "deleted");
-    assert!(!states_dir.exists(), "live mode must remove the directory");
-}
-
-/// T11 — a broken symlink in `.flow-states/` is neither a real
-/// directory nor a real file. `build_inventory` uses
-/// `fs::symlink_metadata` (which does NOT follow symlinks) so the
-/// symlink classifies as its actual type (a symlink) and falls
-/// through the directory and file arms into `top_level_files`,
-/// preserving audit-complete visibility in the inventory.
-#[test]
-fn cleanup_all_classifies_broken_symlink_as_top_level_file() {
-    use std::os::unix::fs::symlink;
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let states_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&states_dir).unwrap();
-    symlink("/nonexistent/target", states_dir.join("broken-link")).unwrap();
-
-    let value = run_impl_main(&args_all(dir.path(), true)).0;
-    let files: Vec<&str> = value["inventory"]["top_level_files"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap())
-        .collect();
-    assert!(
-        files.contains(&"broken-link"),
-        "broken symlink must classify into top_level_files (fall-through arm), got: {:?}",
-        files
-    );
-}
-
-/// T12 — a symlink pointing to a foreign directory that contains
-/// `state.json` must NOT be classified as a real flow. The
-/// inventory uses `fs::symlink_metadata`, so the symlink reports
-/// as a symlink (neither file nor directory) and lands in
-/// `top_level_files`. Guards against the adversarial case where a
-/// foreign directory could be mistaken for an active flow because
-/// `Path::is_dir` follows symlinks.
-#[test]
-fn cleanup_all_classifies_symlink_to_dir_with_state_as_top_level_file() {
-    use std::os::unix::fs::symlink;
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().canonicalize().unwrap();
-    setup_git_repo(&root);
-    let states_dir = root.join(".flow-states");
-    fs::create_dir_all(&states_dir).unwrap();
-
-    let foreign_dir = root.join("foreign-flow");
-    fs::create_dir_all(&foreign_dir).unwrap();
-    fs::write(
-        foreign_dir.join("state.json"),
-        json!({"branch": "foreign"}).to_string(),
-    )
-    .unwrap();
-    symlink(&foreign_dir, states_dir.join("foreign-link")).unwrap();
-
-    let value = run_impl_main(&args_all(&root, true)).0;
-    let inv = &value["inventory"];
-    let flows: Vec<&str> = inv["flows_with_state"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap())
-        .collect();
-    assert!(
-        !flows.contains(&"foreign-link"),
-        "symlink to foreign dir with state.json must NOT classify as flows_with_state, got: {:?}",
-        flows
-    );
-    let files: Vec<&str> = inv["top_level_files"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap())
-        .collect();
-    assert!(
-        files.contains(&"foreign-link"),
-        "symlink must classify into top_level_files (fall-through arm), got: {:?}",
-        files
-    );
-}
-
-/// T13 — a symlink at `.flow-states/orchestrate.json` pointing to
-/// a foreign file must NOT be classified as the singleton
-/// orchestration queue. The inventory uses `fs::symlink_metadata`
-/// so the symlink reports as a symlink (not a file) and lands in
-/// `top_level_files`. Guards against the adversarial case where a
-/// foreign file could be mistaken for the orchestration queue
-/// because `Path::is_file` follows symlinks.
-#[test]
-fn cleanup_all_classifies_symlink_named_orchestrate_json_as_top_level_file() {
-    use std::os::unix::fs::symlink;
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().canonicalize().unwrap();
-    setup_git_repo(&root);
-    let states_dir = root.join(".flow-states");
-    fs::create_dir_all(&states_dir).unwrap();
-
-    let foreign_file = root.join("foreign-orchestrate.json");
-    fs::write(&foreign_file, "{}").unwrap();
-    symlink(&foreign_file, states_dir.join("orchestrate.json")).unwrap();
-
-    let value = run_impl_main(&args_all(&root, true)).0;
-    let inv = &value["inventory"];
-    let singletons: Vec<&str> = inv["singletons"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap())
-        .collect();
-    assert!(
-        !singletons.contains(&"orchestrate.json"),
-        "symlink to foreign file must NOT classify as singleton, got: {:?}",
-        singletons
-    );
-    let files: Vec<&str> = inv["top_level_files"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap())
-        .collect();
-    assert!(
-        files.contains(&"orchestrate.json"),
-        "symlink named orchestrate.json must classify into top_level_files, got: {:?}",
-        files
-    );
-}
-
-/// T10 — `fs::remove_dir_all` failure surfaces as `failed: <reason>`
-/// rather than panicking. Achieved via `chmod 000` on the
-/// `.flow-states/` directory, which makes the recursive walk fail
-/// with `EACCES` (the inventory walk also sees an empty result, but
-/// the wipe attempt records the permission failure). Teardown
-/// restores perms so `TempDir` drop can clean up.
-#[test]
-fn cleanup_all_remove_failure_recorded_in_output() {
-    use std::os::unix::fs::PermissionsExt;
-    let dir = tempfile::tempdir().unwrap();
-    setup_git_repo(dir.path());
-    let states_dir = dir.path().join(".flow-states");
-    fs::create_dir_all(&states_dir).unwrap();
-    // Populate so remove_dir_all has work to do.
-    fs::write(states_dir.join("orchestrate.json"), "{}").unwrap();
-    let inner = states_dir.join("inner");
-    fs::create_dir_all(&inner).unwrap();
-    fs::write(inner.join("blob"), "x").unwrap();
-    // chmod 000 on `inner` so remove_dir_all cannot enumerate its
-    // contents. Parent perms remain so test teardown can restore.
-    let mut perms = fs::metadata(&inner).unwrap().permissions();
-    perms.set_mode(0o000);
-    fs::set_permissions(&inner, perms).unwrap();
-
-    let value = run_impl_main(&args_all(dir.path(), false)).0;
-
-    // Restore perms BEFORE assertions so TempDir teardown can clean up
-    // even when the assertion fails.
-    let mut perms = fs::metadata(&inner).unwrap().permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(&inner, perms).unwrap();
-
-    let outcome = value["flow_states_dir"].as_str().unwrap_or("");
-    assert!(
-        outcome.starts_with("failed:"),
-        "remove_dir_all failure must surface as `failed: ...`, got: {}",
-        outcome
     );
 }

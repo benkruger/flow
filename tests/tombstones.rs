@@ -2764,163 +2764,68 @@ fn test_tombstones_no_flow_prime_step_4_skip_branch() {
     );
 }
 
-// --- cleanup_all `--all` tail-step removal (PR #1635) ---
+// --- cleanup_all / build_inventory removal (PR #1643) ---
+//
+// `cleanup_all` and `build_inventory` previously backed the deleted
+// `bin/flow cleanup --all` dispatch arm in `src/cleanup.rs`. Their
+// only consumer was `/flow:flow-reset`, which now invokes
+// `${CLAUDE_PLUGIN_ROOT}/bin/reset` directly. Both functions are
+// gone; the per-branch `cleanup()` function used by
+// `/flow:flow-abort` and `/flow:flow-complete` is untouched.
 
-/// Scope `src/cleanup.rs`'s `cleanup_all` body for the byte-substring
-/// tombstone scans below. The bounded slice starts at the marker
-/// `pub fn cleanup_all(` and ends at the next top-level function
-/// declaration. This prevents false positives from the per-branch
-/// `cleanup()` function above and `run_impl_main` below, which
-/// legitimately retain subprocess invocations and other content that
-/// `cleanup_all` itself must no longer contain.
-fn read_cleanup_all_body() -> String {
+/// Tombstone: removed in PR #1643. `cleanup_all` and `build_inventory`
+/// are gone from `src/cleanup.rs` — `/flow:flow-reset` now invokes
+/// `${CLAUDE_PLUGIN_ROOT}/bin/reset` directly. The `--all` and
+/// `--dry-run` `Args` fields and the `--all` dispatch arm in
+/// `run_impl_main` are gone too. The per-branch `cleanup()` function
+/// stays untouched. Must not return.
+///
+/// Stability: byte-substring checks against the literal function
+/// definition signatures `pub fn cleanup_all(` and `fn build_inventory(`.
+/// Rust function declarations are emitted as source-level tokens —
+/// a `concat!` reassembly cannot produce a parseable function
+/// declaration (the declaration is parsed by `rustc`, not at
+/// runtime), a `format!` reassembly does not apply (function
+/// declarations are not runtime strings), and a `constant`
+/// declaration cannot replace a function definition. The four-question
+/// stability checklist passes for these byte-literal scans.
+#[test]
+fn test_cleanup_no_cleanup_all_or_build_inventory() {
     let content = fs::read_to_string("src/cleanup.rs").expect("src/cleanup.rs must exist");
-    let tail = content
-        .split_once("pub fn cleanup_all(")
-        .map(|(_, t)| t)
-        .expect("pub fn cleanup_all marker must exist in src/cleanup.rs");
-    let body = tail.split_once("\npub fn ").map(|(b, _)| b).unwrap_or(tail);
-    body.to_string()
-}
-
-/// Tombstone: removed in PR #1635. The collapsed `cleanup_all` no
-/// longer emits the `orchestrate_json` JSON field; the orchestration
-/// queue singleton (`.flow-states/orchestrate.json`) is wiped
-/// wholesale by `fs::remove_dir_all(.flow-states/)` and surfaces in
-/// `inventory.singletons` at decision time.
-///
-/// Stability: byte-substring check against the literal JSON key
-/// `"orchestrate_json"`. JSON keys are emitted via
-/// `serde_json::json!({...})` macros at compile time. A `concat!`
-/// reassembly (`concat!("orchestrate_", "json")`) or a `format!`
-/// reassembly would change source surface that this scan catches;
-/// a `constant` declaration (`const KEY: &str = "orchestrate_json"`)
-/// would also surface here because the literal would still appear
-/// in source. The key is JSON, not a CLI invocation, so `.arg()`
-/// chain splits do not apply. The four-question stability checklist
-/// passes for this byte-literal scan.
-#[test]
-fn test_cleanup_all_no_orchestrate_json_key() {
-    let body = read_cleanup_all_body();
     assert!(
-        !body.contains("\"orchestrate_json\""),
-        "src/cleanup.rs::cleanup_all body must not contain the JSON key \
-         \"orchestrate_json\" — the orchestration-queue tail step was \
-         removed in PR #1635. The singleton is now categorized into \
-         inventory.singletons and wiped wholesale by the directory \
-         removal."
+        !content.contains("pub fn cleanup_all("),
+        "src/cleanup.rs must not contain `pub fn cleanup_all(` — \
+         the function was removed in PR #1643. /flow:flow-reset \
+         now invokes ${{CLAUDE_PLUGIN_ROOT}}/bin/reset directly."
+    );
+    assert!(
+        !content.contains("fn build_inventory("),
+        "src/cleanup.rs must not contain `fn build_inventory(` — \
+         the helper was removed in PR #1643 alongside cleanup_all. \
+         No remaining caller needs the inventory categorization."
     );
 }
 
-/// Tombstone: removed in PR #1635. The collapsed `cleanup_all` no
-/// longer emits the `base_dir` JSON field; the base-branch CI
-/// sentinel directory (`.flow-states/<base_branch>/`) is categorized
-/// into `inventory.sentinel_dirs` at decision time and wiped
-/// wholesale.
+/// Tombstone: removed in PR #1643. The `cleanup_all_*` test family
+/// is gone from `tests/cleanup.rs` — the tests exercised the deleted
+/// `cleanup_all` function and `--all` dispatch arm. Per-branch
+/// `cleanup()` tests stay untouched. Must not return.
 ///
-/// Stability: byte-substring check against the literal JSON key
-/// `"base_dir"`. JSON keys are emitted via `serde_json::json!({...})`
-/// macros. A `concat!` or `format!` reassembly would change source
-/// surface this scan catches; a `constant` declaration would also
-/// surface here. The key is JSON, not a CLI argument, so `.arg()`
-/// chain splits do not apply. The four-question stability checklist
-/// passes.
+/// Stability: byte-substring check against the literal function-name
+/// prefix `fn cleanup_all_`. Test function declarations are emitted
+/// as source-level tokens parsed by rustc — a `concat!` reassembly
+/// cannot produce a parseable `#[test] fn ...` declaration, a
+/// `format!` reassembly does not apply (function declarations are
+/// not runtime strings), and a `constant` declaration cannot
+/// replace a function definition. The four-question stability
+/// checklist passes for this byte-literal scan.
 #[test]
-fn test_cleanup_all_no_base_dir_key() {
-    let body = read_cleanup_all_body();
+fn test_cleanup_tests_no_cleanup_all_prefix() {
+    let content = fs::read_to_string("tests/cleanup.rs").expect("tests/cleanup.rs must exist");
     assert!(
-        !body.contains("\"base_dir\""),
-        "src/cleanup.rs::cleanup_all body must not contain the JSON key \
-         \"base_dir\" — the base-branch CI sentinel tail step was \
-         removed in PR #1635. The sentinel directory is now \
-         categorized into inventory.sentinel_dirs and wiped wholesale \
-         by the directory removal."
-    );
-}
-
-/// Tombstone: removed in PR #1635. The collapsed `cleanup_all` no
-/// longer emits the `queue_sweep` JSON field; the start-queue
-/// (`.flow-states/start-queue/`) is wiped wholesale by the directory
-/// removal alongside everything else in `.flow-states/`.
-///
-/// Stability: byte-substring check against the literal JSON key
-/// `"queue_sweep"`. JSON keys are emitted via `serde_json::json!({...})`
-/// macros. A `concat!` or `format!` reassembly would change source
-/// surface this scan catches; a `constant` declaration would also
-/// surface here. The key is JSON, not a CLI argument, so `.arg()`
-/// chain splits do not apply. The four-question stability checklist
-/// passes.
-#[test]
-fn test_cleanup_all_no_queue_sweep_key() {
-    let body = read_cleanup_all_body();
-    assert!(
-        !body.contains("\"queue_sweep\""),
-        "src/cleanup.rs::cleanup_all body must not contain the JSON key \
-         \"queue_sweep\" — the start-queue sweep tail step was \
-         removed in PR #1635. The queue files are wiped wholesale by \
-         the directory removal."
-    );
-}
-
-/// Tombstone: removed in PR #1635. The collapsed `cleanup_all` no
-/// longer invokes the `gh` CLI. Closing PRs was a side effect of the
-/// per-flow walk through `cleanup()`; the collapse drops the walk
-/// and leaves PR closure to `/flow:flow-abort` per flow.
-///
-/// Stability: structural byte-substring check for the program name
-/// `"gh"` inside the bounded `cleanup_all` body. The check is
-/// bounded so the per-branch `cleanup()` function — which
-/// legitimately invokes `gh pr close` and remains in the file —
-/// does not trigger a false positive. The substring is a fixed
-/// string literal passed to `run_cmd(&["gh", ...])` patterns; a
-/// `concat!`-built variant (`concat!("g", "h")`) would still
-/// produce the same runtime effect but the source would also
-/// contain the literal `g` and `h` strings separately, which the
-/// bounded scan can flag with the keyword `gh`. The protected
-/// function whose body is scanned is `cleanup_all`.
-#[test]
-fn test_cleanup_all_no_gh_subprocess_call() {
-    let body = read_cleanup_all_body();
-    assert!(
-        !body.contains("\"gh\""),
-        "src/cleanup.rs::cleanup_all body must not contain the \
-         subprocess argument \"gh\" — `gh` invocations were removed \
-         in PR #1635. PR closure is the responsibility of \
-         /flow:flow-abort per flow, not the wholesale --all path."
-    );
-}
-
-/// Tombstone: removed in PR #1635. The collapsed `cleanup_all` no
-/// longer spawns subprocesses. The walk-and-cleanup-per-flow design
-/// is replaced with `fs::remove_dir_all` on the entire
-/// `.flow-states/` directory, which is a pure-Rust filesystem
-/// operation.
-///
-/// Stability: structural byte-substring check for `Command::new`
-/// inside the bounded `cleanup_all` body. The protected function
-/// whose body is scanned is `cleanup_all`. The per-branch `cleanup()`
-/// function above legitimately calls `Command::new` via `run_cmd`
-/// and is unaffected because the bounded slice ends before
-/// `cleanup_all`'s function header. `Command::new` is a Rust method
-/// invocation, not a string literal — `concat!` and `format!` can
-/// only synthesize string literals, not callable method paths, so a
-/// macro-reassembled variant cannot actually spawn a subprocess.
-/// Sibling import paths (`std::process::Command::new`,
-/// `process::Command::new`) still include the `Command::new`
-/// literal in source and are caught. A `constant` declaration
-/// (`const CMD: &str = "Command::new"`) is just a string — not a
-/// callable — so it cannot resurrect subprocess invocation. The
-/// four-question stability checklist passes.
-#[test]
-fn test_cleanup_all_no_command_new_subprocess_call() {
-    let body = read_cleanup_all_body();
-    assert!(
-        !body.contains("Command::new"),
-        "src/cleanup.rs::cleanup_all body must not contain \
-         `Command::new` — subprocess invocations were removed in \
-         PR #1635. The collapsed --all path is pure-Rust filesystem \
-         operations only; subprocess fan-out belongs to the \
-         per-branch `cleanup()` function invoked by \
-         /flow:flow-abort and /flow:flow-complete."
+        !content.contains("fn cleanup_all_"),
+        "tests/cleanup.rs must not contain `fn cleanup_all_*` test functions — \
+         the cleanup_all test family was removed in PR #1643 alongside \
+         the cleanup_all function it exercised."
     );
 }

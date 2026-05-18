@@ -1,50 +1,24 @@
-//! Cleanup orchestrator for FLOW features.
+//! Per-branch cleanup orchestrator for FLOW features.
 //!
-//! Two entry shapes:
+//! Used by `/flow:flow-complete` (Phase 5) and `/flow:flow-abort`.
+//! Closes the PR, removes the worktree, deletes the local and remote
+//! branches, removes the branch directory under `.flow-states/`, and
+//! sweeps the start-lock queue entry for the named branch.
 //!
-//! - **Per-branch (`--branch`)** — used by `/flow:flow-complete` (Phase 5)
-//!   and `/flow:flow-abort`. Closes the PR, removes the worktree, deletes
-//!   branches, removes the branch directory, and sweeps the start-lock
-//!   queue entry for the named branch.
-//! - **All-flows (`--all`)** — used by `/flow:flow-reset`. Builds a
-//!   categorized inventory of `.flow-states/` contents in one walk,
-//!   then (unless `--dry-run`) removes the entire `.flow-states/`
-//!   directory via `fs::remove_dir_all`. The directory shell is
-//!   recreated on demand by subsequent `flow-start` invocations.
-//!   PRs, worktrees, and branches are NOT touched by `--all` —
-//!   those are handled per-flow via the `--branch <name> --worktree
-//!   <path>` mode invoked by `/flow:flow-abort` and
-//!   `/flow:flow-complete`.
-//!
-//! Per-branch usage:
+//! Usage:
 //!   bin/flow cleanup <project_root> --branch <name> --worktree <path> [--pr <number>] [--pull]
 //!
-//! All-flows usage:
-//!   bin/flow cleanup <project_root> --all [--dry-run]
-//!
-//! Per-branch output (JSON to stdout):
+//! Output (JSON to stdout):
 //!   {"status": "ok", "steps": {"pr_close": ..., "worktree": ..., "remote_branch": ...,
 //!                              "local_branch": ..., "branch_dir": ..., "queue_entry": ...,
 //!                              "git_pull": ...}}
 //!
-//! Each per-branch step reports one of:
-//! "removed"/"deleted"/"closed"/"pulled", "skipped", or
-//! "failed: <reason>".
+//! Each step reports one of: "removed"/"deleted"/"closed"/"pulled",
+//! "skipped", or "failed: <reason>".
 //!
-//! All-flows output (JSON to stdout):
-//!   {"status": "ok", "dry_run": <bool>,
-//!    "inventory": {"flows_with_state": [...], "orphan_dirs": [...],
-//!                  "top_level_files": [...], "singletons": [...],
-//!                  "sentinel_dirs": [...]},
-//!    "flow_states_dir": "deleted" | "would_remove" | "skipped" | "failed: <reason>"}
-//!
-//! Each `inventory` array names the entries the walker found in
-//! `.flow-states/` at decision time (BEFORE the wipe). `flow_states_dir`
-//! reports the outcome of the wipe attempt: `"deleted"` after a
-//! successful `fs::remove_dir_all`, `"would_remove"` when `--dry-run`
-//! preserves the directory, `"skipped"` when the directory was missing
-//! at invocation, or `"failed: <reason>"` when the recursive removal
-//! returned an `io::Error`.
+//! Machine-wide `.flow-states/` wipes belong to `/flow:flow-reset`,
+//! which invokes `${CLAUDE_PLUGIN_ROOT}/bin/reset` directly — that
+//! script (and not this module) owns the wholesale reset path.
 //!
 //! Tests live at tests/cleanup.rs per .claude/rules/test-placement.md —
 //! no inline #[cfg(test)] in this file.
@@ -55,48 +29,33 @@ use std::process::Command;
 
 use clap::Parser;
 use indexmap::IndexMap;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::commands::log::append_log;
 use crate::commands::start_lock::QUEUE_DIRNAME;
-use crate::flow_paths::{FlowPaths, FlowStatesDir};
+use crate::flow_paths::FlowPaths;
 
 #[derive(Parser, Debug)]
-#[command(name = "cleanup", about = "FLOW cleanup orchestrator")]
+#[command(name = "cleanup", about = "FLOW per-branch cleanup orchestrator")]
 pub struct Args {
     /// Path to project root
     pub project_root: String,
 
-    /// Branch name (required unless --all)
+    /// Branch name (required)
     #[arg(long)]
     pub branch: Option<String>,
 
-    /// Worktree path relative to project_root (required unless --all)
+    /// Worktree path relative to project_root (required)
     #[arg(long)]
     pub worktree: Option<String>,
 
-    /// PR number to close (per-branch mode only)
+    /// PR number to close
     #[arg(long = "pr")]
     pub pr: Option<i64>,
 
     /// Run git pull origin <base_branch> after per-branch cleanup
     #[arg(long)]
     pub pull: bool,
-
-    /// Build a categorized inventory of `.flow-states/` contents
-    /// and (unless `--dry-run`) remove the entire `.flow-states/`
-    /// directory via `fs::remove_dir_all`. The directory shell is
-    /// recreated on demand by subsequent `flow-start` invocations.
-    /// PRs, worktrees, and branches are NOT touched — those are
-    /// handled per-flow via `/flow:flow-abort` and
-    /// `/flow:flow-complete`. Mutually exclusive with `--branch`.
-    #[arg(long)]
-    pub all: bool,
-
-    /// With `--all`: print the inventory of what would be removed
-    /// without modifying disk.
-    #[arg(long = "dry-run")]
-    pub dry_run: bool,
 }
 
 /// Run a command in `cwd` via `Command::output()` without a timeout.
@@ -460,171 +419,15 @@ pub fn cleanup(
     steps
 }
 
-/// Build a categorized inventory of `.flow-states/` contents.
-///
-/// Walks `states_dir` once and classifies every entry into one of five
-/// buckets:
-///
-/// - `flows_with_state` — a subdirectory containing `state.json` (an
-///   active or stranded per-branch flow).
-/// - `sentinel_dirs` — a subdirectory whose name equals the resolved
-///   integration branch (the base-branch CI sentinel directory
-///   `.flow-states/<base_branch>/` written by `start-gate`). The
-///   resolved branch comes from `git::default_branch_in(project_root)`
-///   which falls back to `"main"` when origin/HEAD is unset, so this
-///   bucket covers both main-trunk and `staging`/`develop`/etc. repos.
-/// - `orphan_dirs` — any other subdirectory (state-less remnants from
-///   killed Complete passes, partially-cleaned-up flows, etc.). The
-///   `start-queue/` subdirectory falls into this bucket; it is wiped
-///   by the wholesale `remove_dir_all` rather than being enumerated
-///   per-entry.
-/// - `singletons` — top-level `orchestrate.json` (the machine-level
-///   orchestration queue).
-/// - `top_level_files` — any other top-level file (e.g. an
-///   `*-start-prompt` file left by an interrupted flow-start).
-///
-/// An empty directory produces five empty arrays. A missing directory
-/// produces five empty arrays as well — callers distinguish via the
-/// separate `flow_states_dir` outcome string.
-///
-/// The walker swallows per-entry filesystem errors (unreadable
-/// `file_type`, etc.) and treats them as "skip this entry" rather
-/// than propagating panics. The wholesale wipe that follows surfaces
-/// the structural failure mode if the directory is truly unreadable.
-fn build_inventory(states_dir: &Path, project_root: &Path) -> Value {
-    let mut flows_with_state: Vec<String> = Vec::new();
-    let mut orphan_dirs: Vec<String> = Vec::new();
-    let mut sentinel_dirs: Vec<String> = Vec::new();
-    let mut top_level_files: Vec<String> = Vec::new();
-    let mut singletons: Vec<String> = Vec::new();
-
-    let base_branch = crate::git::default_branch_in(project_root);
-
-    if let Ok(entries) = fs::read_dir(states_dir) {
-        let mut sorted: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-        sorted.sort_by_key(|e| e.file_name());
-        for entry in sorted {
-            let path = entry.path();
-            let name = entry.file_name().to_string_lossy().into_owned();
-            // Use symlink_metadata so symlinks classify as their actual
-            // filesystem type (not the type of their target). A symlink
-            // pointing to a foreign directory containing state.json
-            // would otherwise be misreported as a real flow. The wipe
-            // via fs::remove_dir_all unlinks the symlink entry rather
-            // than following it, so symlinks fall through both arms
-            // and are categorized into top_level_files (preserving
-            // visibility in the inventory).
-            let metadata = fs::symlink_metadata(&path).ok();
-            let is_dir = metadata.as_ref().is_some_and(|m| m.is_dir());
-            let is_file = metadata.as_ref().is_some_and(|m| m.is_file());
-            if is_dir {
-                if path.join("state.json").is_file() {
-                    flows_with_state.push(name);
-                } else if name == base_branch {
-                    sentinel_dirs.push(name);
-                } else {
-                    orphan_dirs.push(name);
-                }
-            } else if is_file {
-                if name == "orchestrate.json" {
-                    singletons.push(name);
-                } else {
-                    top_level_files.push(name);
-                }
-            } else {
-                // Symlinks (regardless of target) and other special
-                // file types (sockets, fifos) fall into top_level_files
-                // so the inventory remains audit-complete.
-                top_level_files.push(name);
-            }
-        }
-    }
-
-    json!({
-        "flows_with_state": flows_with_state,
-        "orphan_dirs": orphan_dirs,
-        "top_level_files": top_level_files,
-        "singletons": singletons,
-        "sentinel_dirs": sentinel_dirs,
-    })
-}
-
-/// Reset every flow on this machine. Builds a categorized inventory
-/// of `.flow-states/` contents in one walk, then (unless `dry_run`)
-/// removes the entire `.flow-states/` directory via
-/// `fs::remove_dir_all`. The directory shell is recreated on demand
-/// by subsequent `flow-start` invocations.
-///
-/// PRs, worktrees, and branches are NOT touched by this entry shape —
-/// those are handled per-flow via [`cleanup`] invoked by
-/// `/flow:flow-abort` and `/flow:flow-complete`. The collapsed scope
-/// keeps `--all` purely local: no `gh` calls, no `git worktree`
-/// operations, no per-flow subprocess fan-out. Users who want
-/// GitHub-side cleanup of a specific flow run `/flow:flow-abort`
-/// against that branch before invoking `/flow:flow-reset`.
-///
-/// `dry_run = true` returns the inventory with `flow_states_dir`
-/// reporting `"would_remove"` (or `"skipped"` if the directory is
-/// missing) without touching disk. Live mode returns the same
-/// inventory plus `flow_states_dir == "deleted"` on a successful
-/// removal, `"failed: <reason>"` when `fs::remove_dir_all` returns
-/// an `io::Error`, or `"skipped"` when the directory is missing at
-/// invocation.
-///
-/// The inventory is built BEFORE the wipe so the JSON output reflects
-/// the entries that existed at decision time — a future audit can
-/// reconcile a successful reset against what was on disk.
-///
-/// **Concurrency.** Invoked exclusively from `/flow:flow-reset`,
-/// whose Guard gates entry on the user being on the repository's
-/// integration branch at the project root. The reset is destructive
-/// by design: it wipes `.flow-states/` wholesale, which includes any
-/// `start-queue/` subdirectory and the base-branch CI sentinel
-/// directory `.flow-states/<base_branch>/`. Any concurrent
-/// `flow-start` running on the same machine during the wipe will be
-/// disrupted (the next start may re-run base-branch CI because the
-/// sentinel was removed; an in-flight start may have its queue
-/// entry deleted mid-acquire). The 30-minute stale timeout on queue
-/// entries protects against permanent block; recovery from
-/// sentinel-loss is automatic on the next CI run.
-pub fn cleanup_all(project_root: &Path, dry_run: bool) -> Value {
-    let states_dir = FlowStatesDir::new(project_root).path().to_path_buf();
-    let inventory = build_inventory(&states_dir, project_root);
-
-    let flow_states_dir = if !states_dir.is_dir() {
-        "skipped".to_string()
-    } else if dry_run {
-        "would_remove".to_string()
-    } else {
-        match fs::remove_dir_all(&states_dir) {
-            Ok(()) => "deleted".to_string(),
-            Err(e) => format!("failed: {}", e),
-        }
-    };
-
-    json!({
-        "status": "ok",
-        "dry_run": dry_run,
-        "inventory": inventory,
-        "flow_states_dir": flow_states_dir,
-    })
-}
-
-/// Main-arm dispatch: validate args.project_root and run cleanup.
+/// Main-arm dispatch: validate args.project_root and run per-branch cleanup.
 /// Returns (JSON value, exit code).
 ///
-/// Two modes:
-/// - `--all`: invoke [`cleanup_all`] over every flow on disk.
-/// - `--branch <name> --worktree <path>`: invoke [`cleanup`] for the
-///   single flow.
-///
-/// Per-branch `base_branch` is resolved from the per-branch state file
-/// via `git::read_base_branch` and falls back to git's integration
-/// branch (`origin/HEAD`) when the state file is missing, malformed,
-/// or omits the field — both the abort path (state file may be
-/// partially initialized) and pre-`base_branch`-field state files are
-/// covered by the same fallback. `--all` resolves `base_branch`
-/// per-flow inside [`cleanup_all`].
+/// `base_branch` is resolved from the per-branch state file via
+/// `git::read_base_branch` and falls back to git's integration branch
+/// (`origin/HEAD`) when the state file is missing, malformed, or omits
+/// the field — both the abort path (state file may be partially
+/// initialized) and pre-`base_branch`-field state files are covered
+/// by the same fallback.
 pub fn run_impl_main(args: &Args) -> (Value, i32) {
     let root = Path::new(&args.project_root);
     if !root.is_dir() {
@@ -633,52 +436,12 @@ pub fn run_impl_main(args: &Args) -> (Value, i32) {
         return (serde_json::from_str(&err_str).unwrap(), 1);
     }
 
-    // Mutual exclusion: --all is the destructive machine-wide reset
-    // path and ignores per-branch flags. Silently dropping --branch /
-    // --worktree / --pr / --pull when --all is also set would mask
-    // user intent (e.g., a misconstructed automation script that
-    // sets both). Reject the combination with a structured error so
-    // the user sees which flag was unexpected.
-    if args.all {
-        if args.branch.is_some() {
-            let err_str =
-                crate::output::json_error_string("--all is mutually exclusive with --branch", &[]);
-            return (serde_json::from_str(&err_str).unwrap(), 1);
-        }
-        if args.worktree.is_some() {
-            let err_str = crate::output::json_error_string(
-                "--all is mutually exclusive with --worktree",
-                &[],
-            );
-            return (serde_json::from_str(&err_str).unwrap(), 1);
-        }
-        if args.pr.is_some() {
-            let err_str =
-                crate::output::json_error_string("--all is mutually exclusive with --pr", &[]);
-            return (serde_json::from_str(&err_str).unwrap(), 1);
-        }
-        if args.pull {
-            let err_str =
-                crate::output::json_error_string("--all is mutually exclusive with --pull", &[]);
-            return (serde_json::from_str(&err_str).unwrap(), 1);
-        }
-        return (cleanup_all(root, args.dry_run), 0);
-    }
-
-    // --dry-run only applies to --all; reject when --all is absent.
-    if args.dry_run {
-        let err_str = crate::output::json_error_string("--dry-run requires --all", &[]);
-        return (serde_json::from_str(&err_str).unwrap(), 1);
-    }
-
     // Per-branch mode: --branch and --worktree are required.
     let branch = match args.branch.as_deref() {
         Some(b) => b,
         None => {
-            let err_str = crate::output::json_error_string(
-                "Either --branch (with --worktree) or --all is required",
-                &[],
-            );
+            let err_str =
+                crate::output::json_error_string("--branch (with --worktree) is required", &[]);
             return (serde_json::from_str(&err_str).unwrap(), 1);
         }
     };
