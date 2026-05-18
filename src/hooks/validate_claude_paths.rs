@@ -174,10 +174,12 @@ pub fn validate(file_path: &str, flow_active: bool, tool_name: &str) -> (bool, S
              — only the transcript JSONL files at the project-id level \
              are blocked.\n\n\
              To capture a behavioral constraint that every engineer \
-             should follow, write a project rule: \
-             `bin/flow write-rule --path .claude/rules/<topic>.md \
-             --content-file <temp>` (prepended with the plugin root \
-             prefix when invoked from a marketplace skill).\n\n\
+             should follow, write a project rule by invoking the \
+             `bin/flow write-rule` subcommand with the standard \
+             plugin root prefix: pass `--path .claude/rules/<topic>.md` \
+             naming the rule file, and `--content-file <temp>` naming \
+             the temp file under `.flow-states/<branch>/` that holds \
+             the rule content.\n\n\
              To capture a user-specific preference, ask the user to add \
              it to `~/.claude/CLAUDE.md` manually — there is no in-FLOW \
              path for memory writes by design.\n\n\
@@ -227,10 +229,15 @@ pub fn validate(file_path: &str, flow_active: bool, tool_name: &str) -> (bool, S
     (
         false,
         "BLOCKED: .claude/ paths are protected during FLOW phases. \
-         Use `bin/flow write-rule --path <target> --content-file <temp>` \
-         (prepended with the plugin root prefix when invoked from a \
-         marketplace skill) instead. Write the full file content to a \
-         temp file in .flow-states/, then run the write-rule command."
+         Use the `bin/flow write-rule` subcommand instead (invoke \
+         with the standard plugin root prefix): pass `--path <target>` \
+         naming the protected file, and `--content-file <temp>` naming \
+         the temp file under `.flow-states/<branch>/` that holds the \
+         intended file content. Write the full file content to the temp \
+         file via the Write tool first, then run the write-rule \
+         command — the Rust subcommand reads the temp file and writes \
+         the protected destination from inside the FLOW process, \
+         bypassing the tool-call hook."
             .to_string(),
     )
 }
