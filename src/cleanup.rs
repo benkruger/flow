@@ -29,7 +29,7 @@ use std::process::Command;
 
 use clap::Parser;
 use indexmap::IndexMap;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::commands::log::append_log;
 use crate::commands::start_lock::QUEUE_DIRNAME;
@@ -422,11 +422,16 @@ pub fn cleanup(
 /// Main-arm dispatch: validate args.project_root and run per-branch cleanup.
 /// Returns (JSON value, exit code).
 ///
-/// `base_branch` is resolved via `git::default_branch_in(root)` at
-/// dispatch entry — git is the single source of truth for the
-/// integration branch. Fails closed via a `resolve_base_branch`
-/// JSON error envelope when git cannot resolve `origin/HEAD` (no
-/// remote, symbolic-ref unset, non-git directory).
+/// `base_branch` is resolved via `git::default_branch_in(root)` ONLY
+/// when `args.pull` is true (the only consumer of `base_branch`
+/// inside `cleanup` is `git pull origin <base_branch>`). When
+/// `args.pull` is false, `base_branch` is irrelevant and cleanup
+/// proceeds with an empty placeholder. When `args.pull` is true and
+/// git cannot resolve `origin/HEAD`, the resolve failure is surfaced
+/// as `git_pull: "failed: <reason>"` in the steps map rather than
+/// aborting all cleanup — worktree removal, branch deletion, PR
+/// close, queue-entry sweep, and branch-dir removal proceed
+/// independently of integration-branch resolution.
 pub fn run_impl_main(args: &Args) -> (Value, i32) {
     let root = Path::new(&args.project_root);
     if !root.is_dir() {
@@ -455,16 +460,31 @@ pub fn run_impl_main(args: &Args) -> (Value, i32) {
         }
     };
 
-    let base_branch = match crate::git::default_branch_in(root) {
-        Ok(b) => b,
-        Err(msg) => {
-            let err_str =
-                crate::output::json_error_string(&msg, &[("step", json!("resolve_base_branch"))]);
-            return (serde_json::from_str(&err_str).unwrap(), 1);
+    let (base_branch, base_branch_resolve_err): (String, Option<String>) = if args.pull {
+        match crate::git::default_branch_in(root) {
+            Ok(b) => (b, None),
+            Err(msg) => (String::new(), Some(msg)),
         }
+    } else {
+        (String::new(), None)
     };
 
-    let steps = cleanup(root, branch, worktree, args.pr, args.pull, &base_branch);
+    let pull_for_cleanup = args.pull && base_branch_resolve_err.is_none();
+    let mut steps = cleanup(
+        root,
+        branch,
+        worktree,
+        args.pr,
+        pull_for_cleanup,
+        &base_branch,
+    );
+    if let Some(msg) = base_branch_resolve_err {
+        steps.insert(
+            "git_pull".to_string(),
+            format!("failed: cannot resolve integration branch — {}", msg),
+        );
+    }
+    let steps = steps;
     let steps_map: IndexMap<String, Value> = steps
         .into_iter()
         .map(|(k, v)| (k, Value::String(v)))

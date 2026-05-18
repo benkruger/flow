@@ -10,9 +10,11 @@
 //! Complete phase) for git subprocess calls so timeout policy stays
 //! consolidated in one place. `run_impl_main` calls
 //! `git::default_branch_in` first to resolve the integration branch
-//! and probe git binary availability; downstream calls in this module
-//! `.expect()` on Ok because git is proven alive after the probe per
-//! `.claude/rules/testability-means-simplicity.md`.
+//! and probe git binary availability. Subsequent calls in this
+//! module fold any `Err` (timeout OR spawn failure) into a synthetic
+//! `(exit_code=-1, stdout="", stderr=msg)` tuple so downstream
+//! non-zero-exit handling produces a structured error envelope
+//! instead of a panic.
 //!
 //! Tests live at `tests/check_freshness.rs` per
 //! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]` in
@@ -22,7 +24,9 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
-use crate::complete_preflight::{run_cmd_with_timeout, LOCAL_TIMEOUT, NETWORK_TIMEOUT};
+use crate::complete_preflight::{
+    fold_cmd_result, run_cmd_with_timeout, LOCAL_TIMEOUT, NETWORK_TIMEOUT,
+};
 use crate::lock::mutate_state;
 use crate::utils::{parse_conflict_files, tolerant_i64};
 
@@ -58,26 +62,24 @@ fn increment_retries(state_path: &Path) -> i64 {
     cell.get()
 }
 
-/// Run `git -C <cwd> <args>` via the shared run_cmd_with_timeout.
-///
-/// `.expect()` on the Err arm follows the merge_main probe pattern:
-/// `run_impl_main` calls `git::default_branch_in` first, which fails
-/// closed with a structured error envelope when git cannot spawn or
-/// `origin/HEAD` is unresolvable. By the time `check_freshness` runs,
-/// the git binary is proven available. The only remaining Err class
-/// is a 30s/60s timeout — an infrastructure-level event whose panic
-/// surfaces the failure rather than silently masking it.
+/// Run `git -C <cwd> <args>` via the shared run_cmd_with_timeout,
+/// folding `Err` (timeout OR spawn failure) into `(-1, "", msg)`
+/// via [`crate::complete_preflight::fold_cmd_result`]. Downstream
+/// `code != 0` handling produces a structured error envelope
+/// instead of a panic. The upstream `default_branch_in` probe only
+/// proves spawn-time availability at one moment; subsequent calls
+/// can still time out (NETWORK_TIMEOUT on `git fetch` / `git
+/// merge`, LOCAL_TIMEOUT on `git status`).
 fn run_git(args: &[&str], timeout_secs: u64, cwd: &Path) -> (i32, String, String) {
-    let mut with_c: Vec<&str> = Vec::with_capacity(args.len() + 2);
-    with_c.push("git");
-    with_c.push("-C");
-    let cwd_str = cwd.to_str().unwrap_or(".");
-    with_c.push(cwd_str);
+    let mut with_c: Vec<String> = Vec::with_capacity(args.len() + 2);
+    with_c.push("git".to_string());
+    with_c.push("-C".to_string());
+    with_c.push(cwd.to_string_lossy().into_owned());
     for a in &args[1..] {
-        with_c.push(a);
+        with_c.push((*a).to_string());
     }
-    run_cmd_with_timeout(&with_c, timeout_secs)
-        .expect("git located by default_branch_in probe at run_impl_main entry")
+    let refs: Vec<&str> = with_c.iter().map(|s| s.as_str()).collect();
+    fold_cmd_result(run_cmd_with_timeout(&refs, timeout_secs))
 }
 
 /// Core freshness logic: fetch, check ancestry, merge if behind.

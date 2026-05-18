@@ -1079,3 +1079,97 @@ fn finalize_result_includes_empty_banner_and_issues_links_on_bare_state() {
     assert!(json.get("issues_links").is_some());
     assert!(json.get("banner_line").is_some());
 }
+
+/// Drives the `invalid_branch` early-return in `run_impl` when
+/// `--branch` fails `FlowPaths::is_valid_branch` (empty, contains
+/// `/`, `.`, `..`, or NUL). The guard runs after the cwd-inside-
+/// worktree check and before any cleanup, so the worktree must
+/// still exist after rejection — proving the validation gate the
+/// branch-path-safety rule requires.
+#[test]
+fn complete_finalize_rejects_invalid_branch_arg() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = make_repo_fixture(&parent);
+    // State file: write under a valid sibling branch since the
+    // state file path is a CLI arg, not constrained by the branch
+    // arg under test.
+    let state_path = write_state_file(&repo, BRANCH, true);
+    // Use a sibling worktree path so the cwd-inside-worktree guard
+    // does not preempt this test.
+    let worktree_abs = repo.join(".worktrees").join("sibling-feature");
+    fs::create_dir_all(&worktree_abs).unwrap();
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.args([
+        "complete-finalize",
+        "--pr",
+        "1",
+        "--state-file",
+        state_path.to_string_lossy().as_ref(),
+        "--branch",
+        // Slash-containing branch — rejected by is_valid_branch.
+        SLASH_BRANCH,
+        "--worktree",
+        worktree_abs.to_string_lossy().as_ref(),
+    ])
+    .current_dir(&repo)
+    .env_remove("FLOW_CI_RUNNING")
+    .env("GH_TOKEN", "invalid")
+    .env("HOME", &parent);
+    let output = cmd.output().expect("spawn flow-rs");
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let json = last_json_line(&stdout);
+    assert_eq!(json["status"], "error");
+    assert_eq!(json["reason"], "invalid_branch");
+    let msg = json["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("not a valid FLOW branch name"),
+        "message should name the validation failure; got: {}",
+        msg
+    );
+    assert!(
+        worktree_abs.exists(),
+        "worktree must still exist when invalid_branch rejects — \
+         the guard runs before cleanup"
+    );
+}
+
+/// Sibling of `complete_finalize_rejects_invalid_branch_arg` with an
+/// empty branch (another `is_valid_branch == false` case). Exercises
+/// the same return-arm with a different rejection cause to ensure the
+/// format! Debug-formatter handles empty strings as well as slash-
+/// containing ones.
+#[test]
+fn complete_finalize_rejects_empty_branch_arg() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = make_repo_fixture(&parent);
+    let state_path = write_state_file(&repo, BRANCH, true);
+    let worktree_abs = repo.join(".worktrees").join("sibling-feature");
+    fs::create_dir_all(&worktree_abs).unwrap();
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.args([
+        "complete-finalize",
+        "--pr",
+        "1",
+        "--state-file",
+        state_path.to_string_lossy().as_ref(),
+        "--branch",
+        "",
+        "--worktree",
+        worktree_abs.to_string_lossy().as_ref(),
+    ])
+    .current_dir(&repo)
+    .env_remove("FLOW_CI_RUNNING")
+    .env("GH_TOKEN", "invalid")
+    .env("HOME", &parent);
+    let output = cmd.output().expect("spawn flow-rs");
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let json = last_json_line(&stdout);
+    assert_eq!(json["status"], "error");
+    assert_eq!(json["reason"], "invalid_branch");
+}

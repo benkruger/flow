@@ -44,9 +44,12 @@ fn setup_git_repo_no_origin_head(dir: &Path) {
 }
 
 #[test]
-fn cleanup_returns_failed_step_when_default_branch_resolve_fails_pull() {
-    // Per-branch cleanup path → default_branch_in fails before the
-    // pull step runs, surfaces as resolve_base_branch error.
+fn cleanup_returns_failed_pull_step_when_default_branch_resolve_fails() {
+    // Per-branch cleanup with --pull → default_branch_in fails to
+    // resolve the integration branch. Cleanup must still complete
+    // (worktree removal, branch deletion, etc.); the pull step
+    // surfaces the resolve failure as `git_pull: "failed: ..."`
+    // rather than aborting all cleanup.
     let dir = tempfile::tempdir().unwrap();
     setup_git_repo_no_origin_head(dir.path());
     let _wt_rel = setup_feature(dir.path(), "test-feature");
@@ -58,9 +61,34 @@ fn cleanup_returns_failed_step_when_default_branch_resolve_fails_pull() {
         None,
         true,
     ));
-    assert_eq!(code, 1);
-    assert_eq!(value["status"], "error");
-    assert_eq!(value["step"], "resolve_base_branch");
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+    let git_pull = value["steps"]["git_pull"].as_str().unwrap_or("");
+    assert!(
+        git_pull.starts_with("failed: cannot resolve integration branch"),
+        "git_pull must surface the resolve failure; got: {}",
+        git_pull
+    );
+}
+
+#[test]
+fn cleanup_without_pull_succeeds_when_default_branch_resolve_fails() {
+    // Per-branch cleanup without --pull → `default_branch_in` is not
+    // called at all (no consumer of `base_branch` runs). Cleanup
+    // completes normally even on repos with no origin/HEAD.
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo_no_origin_head(dir.path());
+    let _wt_rel = setup_feature(dir.path(), "test-feature");
+
+    let (value, code) = run_impl_main(&args_for(
+        dir.path(),
+        "test-feature",
+        ".worktrees/test-feature",
+        None,
+        false,
+    ));
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
 }
 
 /// Create a minimal git repo for testing. Configures

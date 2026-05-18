@@ -324,9 +324,12 @@ through iff ALL THREE conditions hold:
 
 The carve-out names no branch — `default_branch_in()` resolves
 the actual integration branch from `git symbolic-ref --short
-refs/remotes/origin/HEAD` (fallback `"main"`), so the carve-out
-works identically for repos on `staging`, `master`,
-`develop`, etc.
+refs/remotes/origin/HEAD`, so the carve-out works identically
+for repos on `staging`, `master`, `develop`, etc. When git
+cannot resolve the integration branch, `default_branch_in`
+returns an `Err` rather than guessing a default; the gate's
+integration-branch arm cannot fire under that input and the
+fall-through proceeds to the active-flow arm.
 
 The carve-out is **cwd-only** for the cwd-path dispatch. The
 destination-path dispatch applies the same carve-out to its
@@ -399,9 +402,6 @@ rather than an accident:
 - **User-defined git aliases.** `git ci -m x` (with
   `alias.ci = commit` configured) shows `ci` to the matcher, not
   `commit`.
-- **Repos with no configured `origin/HEAD`.** `default_branch_in`
-  falls back to `"main"` when `git symbolic-ref --short
-  refs/remotes/origin/HEAD` fails.
 
 Shell-eval wrappers (`bash -c`, `sh -c`, `zsh -c`, `eval`),
 command-construction launchers (`xargs git commit`,

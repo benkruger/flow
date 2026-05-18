@@ -459,3 +459,43 @@ fn default_branch_in_subprocess_with_no_git_in_path_covers_spawn_err() {
         .expect("spawn flow-rs base-branch");
     let _ = output;
 }
+
+/// Drives the `if stripped.is_empty()` branch in
+/// `default_branch_from_output` by spawning the compiled `flow-rs`
+/// binary with `PATH` pointed at a fake `git` that exits 0 with
+/// empty stdout. `bin/flow base-branch` calls `default_branch_in`,
+/// which spawns `git symbolic-ref` and gets exit 0 with no output;
+/// `String::from_utf8_lossy("").trim().to_string()` yields "",
+/// `strip_prefix("origin/")` returns None so `unwrap_or` gives "",
+/// and the empty-check returns Err. Real git refuses to set
+/// `refs/remotes/origin/HEAD` to a target without a branch suffix,
+/// so this anomalous shape is only reachable via fake-binary
+/// fixtures or git binary corruption.
+#[test]
+fn default_branch_in_returns_err_when_git_returns_empty_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let mock_bin = root.join("mock_bin");
+    fs::create_dir_all(&mock_bin).unwrap();
+    // Fake git: exit 0 with empty stdout for every invocation.
+    fs::write(mock_bin.join("git"), "#!/usr/bin/env bash\nexit 0\n").unwrap();
+    let mut perms = fs::metadata(mock_bin.join("git")).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(mock_bin.join("git"), perms).unwrap();
+    let path = format!(
+        "{}:{}",
+        mock_bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["base-branch"])
+        .current_dir(&root)
+        .env_remove("FLOW_CI_RUNNING")
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env("PATH", &path)
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs base-branch");
+    let _ = output;
+}

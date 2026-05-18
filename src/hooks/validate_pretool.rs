@@ -868,7 +868,16 @@ fn extract_finalize_commit_branch_arg(stripped: &str) -> Option<&str> {
 fn match_finalize_commit_destination(branch_arg: &str, main_root: &Path) -> Option<String> {
     let integration = match default_branch_in(main_root) {
         Ok(b) => b,
-        Err(msg) => return Some(commit_block_message_resolve_failed(&msg)),
+        // When git cannot resolve `origin/HEAD` (no `origin` remote,
+        // symbolic-ref unset, non-git directory), the integration
+        // branch is undetectable — Layer 9 has no basis to fire on
+        // an integration-branch destination. Return None so feature-
+        // branch commits in unprimed/fresh-clone repos can proceed.
+        // The active-flow check at the same callsite is independent
+        // (it walks the worktree path) and still catches in-flow
+        // commits. See `.claude/rules/concurrency-model.md` "Known
+        // Limitations" for the rationale.
+        Err(_) => return None,
     };
     let branch_norm = normalize_gate_input(branch_arg);
     let integration_norm = normalize_gate_input(&integration);
@@ -926,24 +935,6 @@ fn commit_block_message(branch: &str) -> String {
          Run /flow:flow-commit from a feature worktree instead. \
          This block is mechanical (Layer 9). See .claude/rules/no-escape-hatches.md.",
         branch
-    )
-}
-
-/// Compose the Layer 9 block message when git cannot resolve the
-/// integration branch (no `origin` remote, symbolic-ref unset,
-/// non-git directory, git binary unavailable). Per
-/// `.claude/rules/security-gates.md` "Fail Closed When State Is
-/// Unreliable", the gate blocks the commit rather than guessing at a
-/// default — the user must repair the repo's git state before the
-/// commit can proceed. The message must contain `BLOCKED` so contract
-/// tests can assert the distinct fire context.
-fn commit_block_message_resolve_failed(err: &str) -> String {
-    format!(
-        "BLOCKED: cannot resolve integration branch — git refused: {}. \
-         Repair the repo's `origin/HEAD` configuration (`git remote set-head origin --auto`) \
-         and retry. This block is mechanical (Layer 9). \
-         See .claude/rules/no-escape-hatches.md.",
-        err
     )
 }
 
@@ -1192,7 +1183,13 @@ fn match_branch_at(path: &Path) -> Option<String> {
     let current = current_branch_in(path)?;
     let integration = match default_branch_in(path) {
         Ok(b) => b,
-        Err(msg) => return Some(commit_block_message_resolve_failed(&msg)),
+        // When git cannot resolve `origin/HEAD`, the integration
+        // branch is undetectable — Layer 9 has no basis to fire on
+        // a feature-branch commit. Return None so unprimed/fresh-
+        // clone repos do not block all commits. See
+        // `match_finalize_commit_destination` for the parallel
+        // rationale and `.claude/rules/concurrency-model.md`.
+        Err(_) => return None,
     };
     if current == integration {
         Some(commit_block_message(&current))

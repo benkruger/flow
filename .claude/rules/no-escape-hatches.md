@@ -281,9 +281,12 @@ trunk to write to.
 
 The carve-out names no branch — `default_branch_in()` resolves
 the actual integration branch from `git symbolic-ref --short
-refs/remotes/origin/HEAD` (fallback `"main"`), so the carve-out
-applies identically to `main`, `staging`, `master`, `develop`,
-and any other configured trunk.
+refs/remotes/origin/HEAD`, so the carve-out applies identically
+to `main`, `staging`, `master`, `develop`, and any other
+configured trunk. When git cannot resolve the integration branch,
+`default_branch_in` returns an `Err` rather than guessing a
+default; the gate's integration-branch arm cannot fire under that
+input and the fall-through proceeds to the active-flow arm.
 
 cwd-only scope: `check_commit_during_flow` does NOT consult
 `bootstrap_carveout_applies` at the cwd path's `-C` target's

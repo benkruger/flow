@@ -14,7 +14,8 @@ use std::process::{Command, Output};
 use serde_json::{json, Value};
 
 use flow_rs::complete_preflight::{
-    check_learn_phase, check_pr_status, merge_main, resolve_mode, run_cmd_with_timeout,
+    check_learn_phase, check_pr_status, fold_cmd_result, merge_main, resolve_mode,
+    run_cmd_with_timeout,
 };
 
 mod common;
@@ -1051,4 +1052,33 @@ esac
         "merge_main error must reference 'staging' to prove base_branch flowed through, got: {}",
         msg
     );
+}
+
+// --- fold_cmd_result ---
+
+/// Drives the `Ok(t) => t` arm of `fold_cmd_result` with a synthetic
+/// success tuple. The tuple passes through unchanged.
+#[test]
+fn fold_cmd_result_passes_through_ok_tuple() {
+    let result = fold_cmd_result(Ok((
+        0,
+        "stdout-bytes".to_string(),
+        "stderr-bytes".to_string(),
+    )));
+    assert_eq!(result.0, 0);
+    assert_eq!(result.1, "stdout-bytes");
+    assert_eq!(result.2, "stderr-bytes");
+}
+
+/// Drives the `Err(msg) => (-1, "", msg)` arm of `fold_cmd_result`
+/// with a synthetic Err input. The folded tuple has exit code `-1`,
+/// empty stdout, and the Err message in stderr's position — so
+/// downstream `code != 0` checks produce structured error envelopes
+/// instead of panicking on timeout/spawn-failure.
+#[test]
+fn fold_cmd_result_folds_err_into_negative_exit_with_msg_in_stderr() {
+    let result = fold_cmd_result(Err("timeout after 60s".to_string()));
+    assert_eq!(result.0, -1);
+    assert_eq!(result.1, "");
+    assert_eq!(result.2, "timeout after 60s");
 }

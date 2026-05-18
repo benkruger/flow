@@ -128,16 +128,36 @@ pub fn default_branch_in(cwd: &Path) -> Result<String, String> {
 }
 
 /// Pure helper for [`default_branch_in`]. On success, strips the
-/// `origin/` prefix and returns the trimmed branch name. On any
-/// non-success path — spawn failure (git binary missing) or
-/// non-zero exit (no `origin` remote, symbolic-ref unset) — returns
-/// `Err` with a message naming the failure class.
+/// `origin/` prefix once and rejects an empty result; otherwise
+/// returns the branch name. On any non-success path — spawn
+/// failure (git binary missing) or non-zero exit (no `origin`
+/// remote, symbolic-ref unset) — returns `Err` with a message
+/// naming the failure class.
+///
+/// `strip_prefix` (not `trim_start_matches`) removes the
+/// `origin/` prefix exactly once so `origin/origin/x` from a
+/// misconfigured remote does not silently collapse to `x`. The
+/// empty-after-strip rejection catches the one reachable malformed
+/// shape: `git symbolic-ref` printing exactly `origin/` (without a
+/// branch suffix) under a hand-crafted `update-ref` misconfiguration.
+/// Other malformed shapes (path-traversal segments, leading dashes,
+/// control characters) are unreachable because git itself rejects
+/// such branch names at creation time. Git output is "Trusted but
+/// external" per `.claude/rules/external-input-validation.md` —
+/// the producer validates so every consumer can trust the value.
 fn default_branch_from_output(output: io::Result<Output>) -> Result<String, String> {
     match output {
-        Ok(o) if o.status.success() => Ok(String::from_utf8_lossy(&o.stdout)
-            .trim()
-            .trim_start_matches("origin/")
-            .to_string()),
+        Ok(o) if o.status.success() => {
+            let raw = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            let stripped = raw.strip_prefix("origin/").unwrap_or(&raw).to_string();
+            if stripped.is_empty() {
+                return Err(
+                    "git symbolic-ref refs/remotes/origin/HEAD returned an empty branch name"
+                        .to_string(),
+                );
+            }
+            Ok(stripped)
+        }
         Ok(o) => Err(format!(
             "git symbolic-ref refs/remotes/origin/HEAD failed (exit {}): {}",
             o.status.code().unwrap_or(-1),

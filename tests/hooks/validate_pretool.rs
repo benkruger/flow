@@ -4545,15 +4545,21 @@ fn git_dash_c_path_still_uses_target_match_branch_at() {
     );
 }
 
-// --- Layer 9 fail-closed on default_branch_in resolve failure ---
+// --- Layer 9 returns None on default_branch_in resolve failure ---
 //
-// Per `.claude/rules/security-gates.md` "Fail Closed When State Is
-// Unreliable", when git cannot resolve the integration branch, the
-// gate blocks rather than guessing. `commit_block_message_resolve_failed`
-// produces the BLOCKED message naming the resolve failure.
+// When git cannot resolve the integration branch (no `origin` remote,
+// symbolic-ref unset, non-git directory), Layer 9 has no basis to
+// fire on an integration-branch destination — the integration
+// branch is undetectable, so a feature-branch commit cannot be
+// matched against it. The gate returns None (no block) so commits
+// in unprimed/fresh-clone repos proceed. The active-flow check at
+// the same callsite is independent and still catches in-flow
+// commits via the state file. See
+// `match_finalize_commit_destination` and `match_branch_at` in
+// src/hooks/validate_pretool.rs.
 
 #[test]
-fn layer_9_blocks_finalize_commit_destination_when_default_branch_resolve_fails() {
+fn layer_9_returns_none_on_finalize_commit_destination_when_default_branch_resolve_fails() {
     // Tempdir with no git init — `default_branch_in` returns Err.
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path().canonicalize().expect("canonicalize");
@@ -4563,24 +4569,25 @@ fn layer_9_blocks_finalize_commit_destination_when_default_branch_resolve_fails(
 
     let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt main"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    // No flow active and no integration branch detectable — gate
+    // returns None, hook exits 0 (no block).
     assert_eq!(
-        code, 2,
-        "destination-path dispatch must fail-closed on resolve failure; stderr={stderr}"
+        code, 0,
+        "destination-path dispatch must return no block when integration branch is undetectable; stderr={stderr}"
     );
     assert!(
-        stderr.contains("BLOCKED"),
-        "stderr must contain BLOCKED on resolve failure; got: {stderr}"
-    );
-    assert!(
-        stderr.contains("cannot resolve integration branch"),
-        "stderr must name the resolve failure; got: {stderr}"
+        !stderr.contains("BLOCKED"),
+        "stderr must not contain BLOCKED when no integration-branch match is possible; got: {stderr}"
     );
 }
 
 #[test]
-fn layer_9_blocks_commit_when_default_branch_resolve_fails_cwd_path() {
-    // Tempdir with no git init — match_branch_at's default_branch_in
-    // returns Err and the cwd-path dispatch fails closed.
+fn layer_9_returns_none_on_commit_when_default_branch_resolve_fails_cwd_path() {
+    // Tempdir with no origin/HEAD — match_branch_at's
+    // default_branch_in returns Err and the cwd-path dispatch
+    // returns None (no integration-branch block). The user is on a
+    // feature branch and the integration branch is undetectable;
+    // the gate has no basis to fire.
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path().canonicalize().expect("canonicalize");
     let claude_dir = root.join(".claude");
@@ -4603,21 +4610,22 @@ fn layer_9_blocks_commit_when_default_branch_resolve_fails_cwd_path() {
         .args(["commit", "--allow-empty", "-m", "init"])
         .current_dir(&root)
         .output();
+    let _ = std::process::Command::new("git")
+        .args(["checkout", "-b", "feature-x"])
+        .current_dir(&root)
+        .output();
 
-    // git commit (cwd-path dispatch, no branch arg).
+    // git commit on feature-x with no origin/HEAD — cwd-path dispatch
+    // must NOT block (no integration branch detectable).
     let input = r#"{"tool_input": {"command": "git commit -m \"x\""}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
     assert_eq!(
-        code, 2,
-        "cwd-path dispatch must fail-closed on resolve failure; stderr={stderr}"
+        code, 0,
+        "cwd-path dispatch must return no block when integration branch is undetectable; stderr={stderr}"
     );
     assert!(
-        stderr.contains("BLOCKED"),
-        "stderr must contain BLOCKED on resolve failure; got: {stderr}"
-    );
-    assert!(
-        stderr.contains("cannot resolve integration branch"),
-        "stderr must name the resolve failure; got: {stderr}"
+        !stderr.contains("BLOCKED"),
+        "stderr must not contain BLOCKED on feature-branch commit when origin/HEAD is unset; got: {stderr}"
     );
 }
 

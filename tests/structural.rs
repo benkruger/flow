@@ -1002,15 +1002,28 @@ fn adversarial_probe_must_not_be_tracked() {
 // `staging`/`develop`/etc. coordinate against their actual
 // integration branch instead of crashing on a missing `main` ref.
 //
-// Two narrow allow-list entries are documented because their
+// One narrow allow-list entry is documented because its
 // `origin/main` occurrence is structurally NOT an integration-branch
 // hardcode:
 //
 // - `src/capture_diff.rs` — uses the literal `origin/main` as a
 //   generic ref-shape illustration inside the `is_safe_base` doc
 //   comment, not as a runtime value.
-// - `tests/structural.rs` — this file itself contains the literal
-//   as the search needle.
+//
+// The Rust scanner walks `src/` only; the bash-block scanner walks
+// `skills/` and `.claude/skills/` only. Neither walks `tests/`,
+// so the search-needle literals inside this file are never scanned
+// — they need no allow-list entry.
+//
+// Both scanners use byte-substring matching (`content.contains`
+// and `line.contains`), so a deliberate `concat!("origin/", "main")`
+// or `format!("origin/{}")` would bypass the gate at the source
+// level. The Review reviewer agent catches deliberate bypasses
+// in future PRs; these scanners are the merge-conflict trip-wire
+// for accidental hardcodes, not a defense against an adversarial
+// author. Strengthening to structural (function-body scoped)
+// scanning per `.claude/rules/tombstone-tests.md` "Two kinds of
+// tombstone" is a future tightening.
 
 /// Walk a directory recursively, appending every `.rs` file path to `out`.
 /// Skips `target/` build artifact directories.

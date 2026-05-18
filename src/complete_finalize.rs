@@ -52,8 +52,10 @@ pub struct Args {
 
 /// Production entry: runs post-merge then cleanup, building the final
 /// JSON result. Best-effort logging to `.flow-states/<branch>.log`
-/// when the directory exists. Slash-containing branches no-op the log
-/// closure via `FlowPaths::try_new`.
+/// when the directory exists. The `is_valid_branch` upfront guard
+/// rejects empty, slash-containing, path-traversal, and NUL-bearing
+/// branch values with a structured `invalid_branch` error envelope
+/// before any side effect runs.
 ///
 /// Self-gates against cwd-inside-worktree before any side effect: when
 /// the caller's canonicalized cwd equals or sits beneath the
@@ -81,21 +83,39 @@ pub fn run_impl(args: &Args) -> Value {
         }
     }
 
+    // Validate the --branch argument before any side effect runs.
+    // `cleanup::cleanup` constructs `.flow-states/<branch>/` and
+    // `.worktrees/<branch>/` paths from this value; an empty,
+    // path-traversal, or NUL-bearing branch would escape the
+    // per-branch scope per `.claude/rules/branch-path-safety.md`.
+    if !FlowPaths::is_valid_branch(&args.branch) {
+        return json!({
+            "status": "error",
+            "reason": "invalid_branch",
+            "message": "--branch is not a valid FLOW branch name (empty, contains '/', '.', '..', or NUL)",
+        });
+    }
+
     let root = project_root();
     let branch = &args.branch;
 
-    // Best-effort logging — `try_new` tolerates slash-containing
-    // branches per `.claude/rules/external-input-validation.md`. The
-    // guard checks the branch directory rather than the parent
-    // `.flow-states/` directory so that the post-cleanup invocation
-    // skips when cleanup has just removed the branch directory:
-    // `append_log` calls `ensure_branch_dir()`, and a parent-scoped
-    // guard would resurrect the directory cleanup just removed.
+    // Best-effort logging — the upstream `is_valid_branch` check
+    // above guarantees `branch` is a valid FLOW branch name, so
+    // `FlowPaths::try_new` always returns `Some` here. The
+    // `.expect` documents that the boundary check makes the None
+    // arm unreachable per `.claude/rules/external-input-validation.md`.
+    // The directory guard checks the branch directory rather than
+    // the parent `.flow-states/` directory so that the post-cleanup
+    // invocation skips when cleanup has just removed the branch
+    // directory: `append_log` calls `ensure_branch_dir()`, and a
+    // parent-scoped guard would resurrect the directory cleanup
+    // just removed.
+    let paths = FlowPaths::try_new(&root, branch).expect(
+        "is_valid_branch guard above proves branch is non-empty, no '/', no '.'/'..', no NUL",
+    );
     let log = |msg: &str| {
-        if let Some(paths) = FlowPaths::try_new(&root, branch) {
-            if paths.branch_dir().is_dir() {
-                let _ = append_log(&root, branch, msg);
-            }
+        if paths.branch_dir().is_dir() {
+            let _ = append_log(&root, branch, msg);
         }
     };
 
