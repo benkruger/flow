@@ -8,7 +8,10 @@ description: "Clear the autonomous-flow halt set when the user spoke mid-flow. I
 Resume an autonomous flow that paused because the user typed a message
 mid-flow. The Stop hook's `check_autonomous_stop` predicate set
 `_halt_pending=true` when it observed the user message; this skill
-clears that flag so the next assistant turn proceeds.
+clears that flag so the next assistant turn proceeds. Works universally:
+clears any pending halt and acts as a watermark over preceding
+conversation, so the autonomous flow resumes whether it was paused by
+a user message, a network error, or a rate-limit interrupt.
 
 `/flow:flow-continue` is the ONLY path that clears `_halt_pending`.
 The skill is in `USER_ONLY_SKILLS` — the model cannot invoke it, and
