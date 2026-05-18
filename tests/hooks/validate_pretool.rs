@@ -4430,12 +4430,10 @@ fn hook_blocks_finalize_commit_iff_helper_routes_to_project_root() {
 
     for b in ["main", "MAIN", "feat-x"] {
         let dest_is_root = finalize_commit_destination(&root, b) == root;
-        let input = format!(
-            r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt {b}"}}}}"#
-        );
+        let input =
+            format!(r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt {b}"}}}}"#);
         let (code, _stdout, stderr) = run_hook_with_input(&input, Some(&root));
-        let hook_blocks_via_destination =
-            code == 2 && stderr.contains("integration branch");
+        let hook_blocks_via_destination = code == 2 && stderr.contains("integration branch");
         assert_eq!(
             dest_is_root, hook_blocks_via_destination,
             "branch {b:?}: finalize_commit_destination==root is {dest_is_root} but \
