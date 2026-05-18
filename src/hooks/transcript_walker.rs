@@ -21,7 +21,7 @@
 //!    block. The shared-config block's BLOCKED message itself
 //!    instructs the model to call `AskUserQuestion` to confirm — the
 //!    carve-out lets the prompt fire instead of deadlocking.
-//! 4. `src/hooks/validate_pretool.rs` — Layer 9 bootstrap-skill
+//! 4. `src/hooks/validate_pretool.rs` — Layer 10 bootstrap-skill
 //!    carve-out for the integration-branch commit gate. Calls
 //!    `any_skill_in_set_since_user(transcript_path, home, &[
 //!    "flow:flow-start", "flow:flow-prime", "flow-release"])` to
@@ -42,7 +42,7 @@
 //! The fail-open return surfaces as "no match" at every consumer,
 //! which routes through to the consumer's safe default (block for
 //! Layer 1, fall through to existing autonomous block for Layer 2,
-//! block for Layer 9 commit-gate carve-outs).
+//! block for Layer 10 commit-gate carve-outs).
 //!
 //! ## Validation contract
 //!
@@ -351,7 +351,7 @@ fn is_meta_marker_present(v: Option<&Value>) -> bool {
 /// match.
 ///
 /// Shared by `last_user_message_invokes_skill` (Layer 1 user-only-
-/// skill enforcement) and `any_skill_in_set_since_user` (Layer 9
+/// skill enforcement) and `any_skill_in_set_since_user` (Layer 10
 /// bootstrap carve-out), so a future change to the slash-command
 /// emission shapes updates a single point.
 fn content_invokes_skill(content_norm: &str, skill_norm: &str) -> bool {
@@ -521,9 +521,9 @@ pub fn most_recent_skill_in_user_only_set(path: &Path, home: &Path) -> bool {
 /// boundary, when `sanctioned` is empty, or on any read / parse /
 /// validation failure (fail-open).
 ///
-/// The walker is the load-bearing predicate for the Layer 9 bootstrap
+/// The walker is the load-bearing predicate for the Layer 10 bootstrap
 /// carve-out in `validate_pretool::bootstrap_carveout_applies`. Layer
-/// 9's integration-branch context has no per-branch state file, so
+/// 10's integration-branch context has no per-branch state file, so
 /// the carve-out cannot use the `_continue_pending=commit` marker
 /// that the active-flow context uses. This walker substitutes for
 /// the marker: when the persisted transcript shows a sanctioned

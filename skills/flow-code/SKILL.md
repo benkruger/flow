@@ -216,16 +216,20 @@ Proceed directly to the next task in the group.
 covering all tasks in the group. Run `git status` and `git diff HEAD`
 as two separate commands, then render the output inline following the
 same format as the ### Review section. If commit=auto, skip the
-AskUserQuestion and proceed to CI. Otherwise, ask for review of the
-combined diff.
+AskUserQuestion and proceed to Plan Test Verification. Otherwise,
+ask for review of the combined diff.
 
-**Single CI gate.** Run `bin/flow ci` once for the entire group.
-If it fails, fix and retry following the standard CI failure process.
+**CI gate routes through `/flow:flow-commit`.** As with single-task
+commits, the group's CI gate runs inside `finalize-commit`
+(`ci::run_impl()` Rust call). A failed internal CI returns the
+error to the model, which fixes and retries. Do NOT invoke
+`bin/flow ci` directly between tasks in the group — Layer 11 of
+`validate-pretool` blocks it.
 
-**Plan Test Verification.** After CI passes, run the Plan Test
-Verification check (see the section below) for ALL tasks in the
-group — not just the last one. Verify that every test function
-named in any task's plan description exists in the codebase.
+**Plan Test Verification.** Run the Plan Test Verification check
+(see the section below) for ALL tasks in the group — not just the
+last one. Verify that every test function named in any task's
+plan description exists in the codebase.
 
 **Single commit.** Use the standard Commit section flow: set the
 continuation context and `_continue_pending`, then invoke
@@ -249,16 +253,13 @@ convention and never invents a shortcut.
 
 Skip the TDD Cycle (there is no test or implementation to write
 for a task that produces no file changes) and perform the task's
-measurement action as the task body — for example, `bin/flow ci`
-to verify a threshold or `bin/flow log` to record a TOTAL into the
-session log. Then proceed through the `bin/flow ci` Gate section
-below just like a file-changing task would: the CI HARD-GATE still
-applies, and `bin/flow ci` must be green before the Commit step
-runs. (When the measurement action already invoked `bin/flow ci`,
-the gate's sentinel skip makes the second invocation a fast no-op.)
-After the CI Gate passes, follow the Commit section exactly as a
-file-changing task would: advance `code_task` via `set-timestamp`,
-set `_continue_context` and `_continue_pending=commit`, and invoke
+measurement action as the task body — for example, `bin/flow log`
+to record a TOTAL into the session log. Do NOT invoke
+`bin/flow ci` directly: Layer 11 of `validate-pretool` blocks it
+during Code phase (the `--clean` carve-out is the only allowed
+form). Then follow the Commit section exactly as a file-changing
+task would: advance `code_task` via `set-timestamp`, set
+`_continue_context` and `_continue_pending=commit`, and invoke
 `/flow:flow-commit`. The commit skill stages all changes via
 `git add -A` in Round 3, then runs `git diff --cached` in Round 4;
 when the staged diff is empty it prints "Nothing to commit",
@@ -363,7 +364,7 @@ still passes.
 ### Review
 
 After the TDD cycle passes, show the diff for this task and ask for
-review before running `bin/flow ci` or committing.
+review before committing.
 
 Run `git status` and `git diff HEAD` as two separate commands, then
 render the output inline:
@@ -383,16 +384,16 @@ new file:   <path/to/test_file>
 ```
 
 **If commit=auto**, streamline is active from task 1 — skip the
-AskUserQuestion and proceed directly to `bin/flow ci`.
+AskUserQuestion and proceed directly to Plan Test Verification.
 
 **If streamline mode is active** (opted in during a previous task),
-skip the AskUserQuestion and proceed directly to `bin/flow ci`.
+skip the AskUserQuestion and proceed directly to Plan Test Verification.
 
 Otherwise, use AskUserQuestion:
 
 > "Task <n>: <description> — does this look right?"
 >
-> - **Yes, run bin/flow ci and commit**
+> - **Yes, commit**
 > - **Needs changes** — describe what to fix
 > - **Streamline remaining tasks** — (only shown from the second task onward)
 
@@ -402,38 +403,25 @@ again. Loop until approved.
 **If "Streamline remaining tasks"** — set a session-only flag (not
 persisted to state). For all remaining tasks, still show the diff for
 user visibility, but skip the AskUserQuestion and proceed directly to
-`bin/flow ci` and commit.
+Plan Test Verification and commit.
 
 ---
 
-### bin/flow ci Gate
+### CI gate routes through `/flow:flow-commit`
 
-Use a 10-minute Bash tool timeout (`timeout: 600000`) — CI runs can
-take 3–4 minutes and the default 2-minute timeout would background
-the process, defeating the gate (per `.claude/rules/ci-is-a-gate.md`).
+The per-task CI gate runs inside `/flow:flow-commit`'s
+`finalize-commit` call as a Rust function (`ci::run_impl()`), not
+as a separate Bash invocation. Each TDD task's per-file test
+verifies the file under change; cross-file regressions are caught
+when the commit's internal CI runs. A failed internal CI returns
+the error to the model, which fixes and retries. Do NOT invoke
+`bin/flow ci` directly during Code phase — Layer 11 of
+`validate-pretool` blocks it per
+`.claude/rules/per-file-coverage-iteration.md` "Enforcement".
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci
-```
-
-This must be green before committing.
-
-**If `bin/flow ci` fails:**
-
-- Read the output carefully
-- Fix each failure following the **CI Failure Fix Order** from the project CLAUDE.md
-- Re-run CI after each fix. Use a 10-minute Bash tool timeout
-  (`timeout: 600000`) on the retry for the same reason:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci
-```
-
-- Max 3 attempts — if still failing after 3, stop and report exactly what is failing
-
-<HARD-GATE>
-Do NOT commit and do NOT move to the next task until `bin/flow ci` is green.
-</HARD-GATE>
+The `--clean` carve-out is available when phantom-misses
+symptoms appear (see the rule). Reach for it only when the
+diagnostic signals match.
 
 ---
 
@@ -511,32 +499,24 @@ invocation.
 
 ## All Tasks Complete
 
-Once every task from the plan file is complete:
+Once every task from the plan file is complete, proceed directly to
+the Done section below.
 
-**Final `bin/flow ci` sweep:** Use a 10-minute Bash tool timeout
-(`timeout: 600000`) — CI runs can take 3–4 minutes and the default
-2-minute timeout would background the process, defeating the gate
-(per `.claude/rules/ci-is-a-gate.md`).
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci
-```
-
-Then check coverage — Read `coverage/uncovered.txt`.
-
-If there are uncovered lines, write tests for each uncovered line, then
-run CI again with the same 10-minute Bash tool timeout
-(`timeout: 600000`):
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci
-```
-
-Repeat until `coverage/uncovered.txt` is empty.
+Every commit during Code phase routed through `/flow:flow-commit` →
+`finalize-commit`, which runs the full CI gate (`ci::run_impl()`) and
+enforces the 100/100/100 coverage threshold before the commit lands.
+The last task's commit verified the same invariants the final sweep
+would have measured, so no explicit `bin/flow ci` is needed before
+transitioning to Review. Layer 11 of `validate-pretool` blocks
+`bin/flow ci` during Code phase to protect against the
+single-file-iteration misuse pattern; the per-task per-file gate
+(`bin/test tests/<name>.rs`) plus the commit-time internal CI cover
+the same surface at lower cost.
 
 <HARD-GATE>
-Do NOT transition to Review until `bin/flow ci` is green AND coverage/uncovered.txt
-is empty. 100% coverage is mandatory.
+Do NOT transition to Review until every plan task is committed.
+100% coverage is enforced by each commit's internal CI gate;
+post-commit re-verification is not required.
 </HARD-GATE>
 
 ## Done — Update state and complete phase
@@ -615,7 +595,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 
 - **Never skip the TDD cycle** — test must fail before code is written
 - **Always show the diff for every task** — when commit=manual, the first task requires explicit approval; when commit=auto, streamline is active from task 1
-- **Never skip `bin/flow ci`** — must be green before every commit
+- **Never invoke `bin/flow ci` directly during Code phase** — Layer 11 of `validate-pretool` blocks it. The per-task targeted test command (see the project CLAUDE.md) plus `/flow:flow-commit`'s internal `ci::run_impl()` cover the same surface. The `--clean` carve-out is for the documented phantom-misses recovery path only.
 - **Never move to the next task** until the current task is committed
 - **Never rebase** — always merge
 - Plus the **Project-Specific Hard Rules** from the project CLAUDE.md

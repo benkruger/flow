@@ -493,7 +493,7 @@ fn finalize_commit_routes_to_worktree_when_caller_cwd_differs() {
 }
 
 /// Monorepo case: a checkout opened from a subdirectory of the main
-/// clone (e.g. `<clone>/hub/`) used to cause Layer 9 to read the wrong
+/// clone (e.g. `<clone>/hub/`) used to cause Layer 10 to read the wrong
 /// branch from the caller's cwd. With branch-derived routing, the
 /// `--branch` argument is the routing key and the commit lands on
 /// the feature-branch worktree regardless of where the caller's
@@ -546,7 +546,7 @@ fn finalize_commit_routes_to_worktree_when_caller_cwd_inside_main_subdir() {
 /// Latent-bug case: two feature worktrees coexist (`branch-a` and
 /// `branch-b`). The branch argument routes the commit to the
 /// `branch-b` worktree even if a hypothetical caller cwd were inside
-/// the `branch-a` worktree. Layer 9 previously blocked this entire
+/// the `branch-a` worktree. Layer 10 previously blocked this entire
 /// shape by refusing commits whose cwd resolved to a different active
 /// flow; with branch-derived routing the destination is unambiguous.
 #[test]

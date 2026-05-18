@@ -518,7 +518,7 @@ fn test_blocks_absolute_path_find_exec() {
 //
 // Read-only find shapes (no destructive flag) must NOT be blocked
 // by Layer 4 — they fall through to subsequent layers so the
-// whitelist (Layer 8) can permit them via UNIVERSAL_ALLOW's
+// whitelist (Layer 9) can permit them via UNIVERSAL_ALLOW's
 // `Bash(find *)` allow.
 
 #[test]
@@ -536,9 +536,9 @@ fn test_layer4_skips_non_find_command() {
     assert!(allowed);
 }
 
-// --- Layer 7.5: structural escape-hatch program/flag block ---
+// --- Layer 8: structural escape-hatch program/flag block ---
 //
-// Layer 7.5 in src/hooks/validate_pretool.rs::validate strips env-var
+// Layer 8 in src/hooks/validate_pretool.rs::validate strips env-var
 // prefixes (KEY=VAL ...), strips the path prefix to a basename, and
 // matches the basename against the escape-hatch program set from
 // `.claude/rules/no-escape-hatches.md` "Canonical Escape-Hatch Shapes"
@@ -698,12 +698,12 @@ fn test_blocks_screen_capital_x() {
     assert!(msg.contains("no-escape-hatches.md"));
 }
 
-// --- Layer 7.5: indirect-form rejections ---
+// --- Layer 8: indirect-form rejections ---
 //
 // Glob deny patterns require the exact first-token spelling; these
 // indirect shapes (absolute path prefix, env-var prefix, flags
 // before the trigger) route around Layer 7's settings-driven check.
-// Layer 7.5's structural tokenization catches them.
+// Layer 8's structural tokenization catches them.
 
 #[test]
 fn test_blocks_absolute_path_bash_dash_c() {
@@ -751,24 +751,24 @@ fn test_blocks_bash_login_dash_c() {
     assert!(msg.contains("BLOCKED"));
 }
 
-// --- Layer 7.5: pass-through cases ---
+// --- Layer 8: pass-through cases ---
 //
 // `bash -n script.sh` (syntax check, no eval) is in UNIVERSAL_ALLOW
-// and must pass Layer 7.5 untouched. `ssh-keygen` has the basename
+// and must pass Layer 8 untouched. `ssh-keygen` has the basename
 // `ssh-keygen` rather than `ssh` and must NOT trip the ssh-class
 // block — basename matching is exact, not prefix-based.
 
 #[test]
 fn test_layer_7_5_passes_bash_dash_n() {
     let (allowed, msg) = validate("bash -n script.sh", None, false);
-    assert!(allowed, "bash -n must pass Layer 7.5; msg={msg:?}");
+    assert!(allowed, "bash -n must pass Layer 8; msg={msg:?}");
     assert!(msg.is_empty());
 }
 
 #[test]
 fn test_layer_7_5_passes_ssh_keygen() {
-    // Pass settings=None so we skip Layer 8's whitelist; the test is
-    // that Layer 7.5 doesn't fire on `ssh-keygen`.
+    // Pass settings=None so we skip Layer 9's whitelist; the test is
+    // that Layer 8 doesn't fire on `ssh-keygen`.
     let (allowed, _msg) = validate("ssh-keygen -t rsa", None, false);
     assert!(
         allowed,
@@ -813,7 +813,7 @@ fn test_layer_7_5_passes_ruby_script_invocation() {
 #[test]
 fn test_layer_7_5_passes_tmux_ls() {
     // `tmux ls` lists sessions — not the `send-keys` injection
-    // shape, so Layer 7.5 must let it through.
+    // shape, so Layer 8 must let it through.
     let (allowed, _msg) = validate("tmux ls", None, false);
     assert!(allowed, "tmux without send-keys subcommand must pass");
 }
@@ -821,7 +821,7 @@ fn test_layer_7_5_passes_tmux_ls() {
 #[test]
 fn test_layer_7_5_passes_screen_ls() {
     // `screen -ls` lists sessions — not the `-X` stuff-key shape, so
-    // Layer 7.5 must let it through.
+    // Layer 8 must let it through.
     let (allowed, _msg) = validate("screen -ls", None, false);
     assert!(allowed, "screen without -X flag must pass");
 }
@@ -833,13 +833,13 @@ fn test_layer_7_5_passes_bare_env_assignment() {
     // `strip_env_prefix` does not strip the final segment because
     // there is no whitespace boundary proving a following command
     // exists. The tokenized basename is `KEY=VAL`, which matches no
-    // escape-hatch program — Layer 7.5 returns None and the call
+    // escape-hatch program — Layer 8 returns None and the call
     // passes through.
     let (allowed, _msg) = validate("FOO=BAR", None, false);
     assert!(allowed);
 }
 
-// --- Layer 7.5: combined-flag scan (adversarial regression) ---
+// --- Layer 8: combined-flag scan (adversarial regression) ---
 //
 // `bash -lc 'cmd'` packs `-l` (login) and `-c` (eval) into a single
 // token. A literal `rest.contains(&"-c")` check matches only the
@@ -886,7 +886,7 @@ fn test_layer_7_5_passes_bash_dash_n_long() {
     assert!(allowed);
 }
 
-// --- Layer 7.5: wrapper-launcher strip (adversarial regression) ---
+// --- Layer 8: wrapper-launcher strip (adversarial regression) ---
 //
 // `env`, `time`, `nice`, `nohup`, `taskset`, `ionice` wrap another
 // command. The `strip_wrapper_launchers` helper consumes the
@@ -956,7 +956,7 @@ fn test_layer_7_5_blocks_absolute_path_env_bash_dash_c() {
 fn test_layer_7_5_passes_env_with_only_wrapper() {
     // `env` alone with no following command — wrapper-launcher
     // returns empty. The next token check sees nothing, the
-    // `first` extraction fails, and Layer 7.5 returns None.
+    // `first` extraction fails, and Layer 8 returns None.
     let (allowed, _msg) = validate("env", None, false);
     assert!(allowed);
 }
@@ -967,7 +967,7 @@ fn test_layer_7_5_passes_time_alone() {
     assert!(allowed);
 }
 
-// --- Layer 7.5: additional interpreter-eval programs ---
+// --- Layer 8: additional interpreter-eval programs ---
 //
 // osascript (macOS AppleScript), tclsh (Tcl), and lua all evaluate
 // strings passed via -e/-c flags and have builtins that shell out
@@ -1019,7 +1019,7 @@ fn test_layer_7_5_passes_lua_script_invocation() {
     assert!(allowed);
 }
 
-// --- Layer 7.5: tmux with global flags (adversarial regression) ---
+// --- Layer 8: tmux with global flags (adversarial regression) ---
 //
 // `tmux send-keys` was previously caught only when send-keys was
 // the first arg token. Global tmux flags (`-L socket`, `-S path`,
@@ -1041,7 +1041,7 @@ fn test_layer_7_5_blocks_tmux_with_config_flag() {
     assert!(msg.contains("BLOCKED"));
 }
 
-// --- Layer 7.5: block message sanctioned-alternative content ---
+// --- Layer 8: block message sanctioned-alternative content ---
 
 #[test]
 fn test_bash_block_message_names_sanctioned_alternative() {
@@ -1449,8 +1449,19 @@ fn test_is_flow_command_whitespace_only_returns_false() {
 // (regardless of flow_active).
 
 fn run_hook_with_bg(bg: Value) -> (i32, String, String) {
+    // Isolate the child's cwd from any host-environment FLOW state.
+    // Any active Code-phase flow on the host machine has
+    // `current_phase=flow-code, status=in_progress` in its state
+    // file; a `bin/flow ci` invocation rooted in that worktree
+    // would trip Layer 11 and produce an unexpected block. These
+    // tests only exercise the `is_bg_truthy` decision — the cwd's
+    // FLOW state is irrelevant to that decision but reaches
+    // Layer 11 when bg is falsy and the bg check falls through.
+    let isolation = tempfile::tempdir().expect("tempdir");
     let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["hook", "validate-pretool"])
+        .current_dir(isolation.path())
+        .env("HOME", isolation.path())
         .env_remove("FLOW_CI_RUNNING")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -2117,7 +2128,7 @@ fn test_allows_ampersand_in_flag_name() {
 
 // --- commit_on_integration_branch ---
 //
-// Layer 9: block direct commit invocations when the hook's effective
+// Layer 10: block direct commit invocations when the hook's effective
 // cwd resolves to the integration branch (the value `default_branch_in`
 // returns — `main` for the test fixtures below, since no remote HEAD is
 // configured and the helper falls back to `"main"`).
@@ -2235,7 +2246,7 @@ fn t6_git_commit_amend_on_main_blocks() {
 #[test]
 fn t2_git_commit_on_feature_branch_in_worktree_allows() {
     // Fixture branch `feat-x` differs from default_branch_in's "main"
-    // fallback (no remote configured). Layer 9 does not fire.
+    // fallback (no remote configured). Layer 10 does not fire.
     let (_dir, root) = setup_repo_on_branch("feat-x");
     let input = r#"{"tool_input": {"command": "git commit -m \"x\""}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
@@ -2262,7 +2273,7 @@ fn t3_git_commit_on_feature_branch_in_main_repo_allows() {
 fn t4_git_commit_on_staging_default_repo_blocks() {
     // Configure `origin/HEAD` to `origin/staging` so default_branch_in
     // returns "staging" rather than the hardcoded fallback. The block
-    // message names the staging branch — proving Layer 9 honours the
+    // message names the staging branch — proving Layer 10 honours the
     // actual integration branch.
     let (_dir, root) = setup_repo_on_branch("staging");
     let _ = Command::new("git")
@@ -2299,7 +2310,7 @@ fn t4_git_commit_on_staging_default_repo_blocks() {
 
 #[test]
 fn t14_git_status_on_main_allows() {
-    // Layer 9 only fires on `git ... commit`. `git status` is a
+    // Layer 10 only fires on `git ... commit`. `git status` is a
     // different subcommand → is_commit_invocation returns false →
     // the hook does not check the branch.
     let (_dir, root) = setup_repo_on_branch("main");
@@ -2372,15 +2383,15 @@ fn t19_git_ci_alias_on_main_allows_in_v1() {
 #[test]
 fn t20_xargs_git_commit_on_main_blocks_via_escape_hatch_layer() {
     // The `xargs git commit` shape is blocked structurally by Layer
-    // 7.5 (`.claude/rules/no-escape-hatches.md` "Canonical
-    // Escape-Hatch Shapes"). Layer 9's commit-invocation matcher
-    // never sees the wrapped `git commit` because Layer 7.5 fires
+    // 8 (`.claude/rules/no-escape-hatches.md` "Canonical
+    // Escape-Hatch Shapes"). Layer 10's commit-invocation matcher
+    // never sees the wrapped `git commit` because Layer 8 fires
     // first on the `xargs` first-token basename — the wrapper itself
     // is the escape hatch regardless of what is being wrapped.
     let (_dir, root) = setup_repo_on_branch("main");
     let input = r#"{"tool_input": {"command": "xargs git commit"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
-    assert_eq!(code, 2, "xargs is blocked at Layer 7.5; stderr={stderr}");
+    assert_eq!(code, 2, "xargs is blocked at Layer 8; stderr={stderr}");
     assert!(stderr.contains("BLOCKED"));
     assert!(stderr.contains("xargs"));
     assert!(stderr.contains("escape hatch"));
@@ -2445,7 +2456,7 @@ fn t11_bin_flow_finalize_commit_in_worktree_allows() {
 #[test]
 fn t12_bin_flow_start_gate_on_main_allows() {
     // start-gate is a sibling bin/flow subcommand that does NOT
-    // perform a commit through Claude's Bash tool path. Layer 9
+    // perform a commit through Claude's Bash tool path. Layer 10
     // must not match it. This pins the boundary so the matcher
     // doesn't over-fire on every bin/flow invocation.
     let (_dir, root) = setup_repo_on_branch("main");
@@ -2460,7 +2471,7 @@ fn t12_bin_flow_start_gate_on_main_allows() {
 #[test]
 fn t13_bin_flow_start_workspace_on_main_allows() {
     // Sibling case: start-workspace also runs from the start lock on
-    // main and must not be blocked by Layer 9.
+    // main and must not be blocked by Layer 10.
     let (_dir, root) = setup_repo_on_branch("main");
     let input = r#"{"tool_input": {"command": "bin/flow start-workspace feat-x --branch feat-x"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
@@ -2512,7 +2523,7 @@ fn t7_git_dash_c_key_value_commit_on_main_blocks() {
 fn t8_git_dash_c_to_main_from_worktree_blocks() {
     // Adversarial: hook cwd is a feature-branch worktree, but the
     // command uses `git -C <main_repo_path>` to redirect git's
-    // effective cwd onto the integration branch. Layer 9 must
+    // effective cwd onto the integration branch. Layer 10 must
     // resolve the branch from BOTH the hook cwd AND the `-C` path
     // and block when EITHER matches the integration branch.
     let (_main_dir, main_root) = setup_repo_on_branch("main");
@@ -2562,13 +2573,13 @@ fn t15_quoted_git_commit_on_main_blocks() {
 #[test]
 fn t16_bash_dash_c_git_commit_on_main_blocks() {
     // `bash -c '<inner>'` is a shell-eval escape hatch regardless
-    // of the inner content. Layer 7.5
-    // (`.claude/rules/no-escape-hatches.md`) fires before Layer 9's
+    // of the inner content. Layer 8
+    // (`.claude/rules/no-escape-hatches.md`) fires before Layer 10's
     // integration-branch matcher unwraps the `-c` argument, so the
     // block message is the escape-hatch citation rather than the
     // integration-branch citation. The intent of the original test
     // — `bash -c 'git commit ...'` is rejected on main — is preserved
-    // by the earlier and stronger Layer 7.5 block.
+    // by the earlier and stronger Layer 8 block.
     let (_dir, root) = setup_repo_on_branch("main");
     let input = r#"{"tool_input": {"command": "bash -c 'git commit -m \"x\"'"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
@@ -2608,7 +2619,7 @@ fn t24_git_dash_c_with_no_value_allows() {
     // Boundary: `git -c` with no value (or no subcommand after the
     // value) — the matcher consumes `-c` plus the next token (None
     // here), the loop exhausts without finding a subcommand, and
-    // returns Some(_) == "commit" → false. Layer 9 doesn't fire.
+    // returns Some(_) == "commit" → false. Layer 10 doesn't fire.
     // Pins the "next_git_subcommand returns None on exhaustion"
     // branch so a refactor that loses the loop-end fallback fails CI.
     let (_dir, root) = setup_repo_on_branch("main");
@@ -2627,7 +2638,7 @@ fn t25_git_dash_uppercase_c_with_no_path_allows() {
     // returns None and check_commit_on_integration only checks the
     // hook cwd (which is `main`). is_commit_invocation also returns
     // false because next_git_subcommand exhausts without finding a
-    // subcommand → Layer 9 does not fire → allow.
+    // subcommand → Layer 10 does not fire → allow.
     let (_dir, root) = setup_repo_on_branch("main");
     let input = r#"{"tool_input": {"command": "git -C"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
@@ -2683,7 +2694,7 @@ fn t27_git_dash_c_to_nonexistent_path_from_feature_branch_allows() {
 
 // --- layer_10_active_flow ---
 //
-// Layer 9 also fires when the hook's effective cwd resolves to a
+// Layer 10 also fires when the hook's effective cwd resolves to a
 // feature-branch worktree that has an active FLOW state file at
 // `.flow-states/<branch>/state.json` — the second trigger context
 // the gate covers. The fixture `setup_active_flow_worktree` builds
@@ -2793,13 +2804,13 @@ fn layer_10_blocks_bash_dash_c_git_commit_on_active_flow_worktree() {
         "bash -c 'git commit ...' during active flow must block; stderr={stderr}"
     );
     assert!(stderr.contains("BLOCKED"));
-    // Layer 7.5's structural escape-hatch block fires before Layer 10's
+    // Layer 8's structural escape-hatch block fires before Layer 10's
     // commit-during-flow gate because `bash -c` is itself a shell-eval
     // escape hatch regardless of what's wrapped inside it. The block
     // still fires; the message is the no-escape-hatches.md citation
     // rather than the active-flow citation. The test's intent —
     // `bash -c 'git commit ...'` is rejected during an active flow —
-    // is preserved by the earlier and stronger Layer 7.5 block.
+    // is preserved by the earlier and stronger Layer 8 block.
     assert!(stderr.contains("escape hatch") || stderr.contains("active flow"));
 }
 
@@ -2863,7 +2874,7 @@ fn layer_10_blocks_git_dash_c_path_to_active_flow_worktree() {
 
 #[test]
 fn layer_10_passes_git_status_on_active_flow_worktree() {
-    // Read-only git is not a commit invocation → Layer 9 is silent.
+    // Read-only git is not a commit invocation → Layer 10 is silent.
     let (_dir, _root, cwd) = setup_active_flow_worktree("feat", true);
     let input = r#"{"tool_input": {"command": "git status"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
@@ -2900,7 +2911,7 @@ fn layer_10_passes_git_commit_on_feature_branch_without_state_file() {
     // Pre-flow editing scenario: settings.json present (so the FLOW
     // project is discoverable) but no state file at
     // .flow-states/<branch>/state.json. is_flow_active returns false
-    // → active-flow predicate returns None → Layer 9 silent.
+    // → active-flow predicate returns None → Layer 10 silent.
     let (_dir, _root, cwd) = setup_active_flow_worktree("feat", false);
     let input = r#"{"tool_input": {"command": "git commit -m \"x\""}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
@@ -2912,8 +2923,8 @@ fn layer_10_passes_git_commit_on_feature_branch_without_state_file() {
 
 /// Drives the `cwd.is_none()` branch in `validate_pretool::run()` —
 /// `env::current_dir()` returns `Err` when the cwd inode has been
-/// unlinked. The hook must fall through Layer 9 cleanly (no panic,
-/// no Layer 9 fire) and exit 0 on the allowed `git status` payload.
+/// unlinked. The hook must fall through Layer 10 cleanly (no panic,
+/// no Layer 10 fire) and exit 0 on the allowed `git status` payload.
 ///
 /// Mirrors the production-binding test for the same branch in
 /// `tests/adversarial_agent_block.rs::validate_pretool_with_stale_cwd_does_not_panic`,
@@ -2977,7 +2988,7 @@ fn layer_10_passes_git_commit_in_unrelated_git_repo() {
     // up from cwd → find_settings_and_root_from returns (None, None)
     // → match_active_flow_at returns None. Branch resolves to
     // "feat-x" via the real git subprocess (the existing fixture),
-    // so match_branch_at returns None ("feat-x" != "main"). Layer 9
+    // so match_branch_at returns None ("feat-x" != "main"). Layer 10
     // silent → allow.
     let (_dir, root) = setup_repo_on_branch("feat-x");
     let input = r#"{"tool_input": {"command": "git commit -m \"x\""}}"#;
@@ -2994,7 +3005,7 @@ fn layer_10_passes_git_commit_in_unrelated_git_repo() {
 // `bin/flow finalize-commit`. The flow-code, flow-review, and
 // flow-learn skills all set `_continue_pending=commit` on the state
 // file immediately before invoking /flow:flow-commit, so the field is
-// the marker Layer 9 checks. When the carve-out fires, the hook
+// the marker Layer 10 checks. When the carve-out fires, the hook
 // allows `bin/flow ... finalize-commit` (and only that shape) through
 // the active-flow gate. `git commit` is never carved out — the skill
 // never invokes raw git commit, so the marker plus a `git commit`
@@ -3036,7 +3047,7 @@ fn layer_10_carveout_allows_bin_flow_finalize_commit_when_continue_pending_is_co
     // assistant Skill in the transcript) AND flow-code (or sibling)
     // wrote _continue_pending=commit, AND the command shape is
     // bin/flow finalize-commit. All three carve-out conditions hold,
-    // so Layer 9 passes through. CI runs inside finalize-commit and
+    // so Layer 10 passes through. CI runs inside finalize-commit and
     // the commit lands.
     let (_dir, root, cwd) =
         setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
@@ -3207,16 +3218,16 @@ fn layer_10_carveout_blocks_finalize_commit_when_state_file_is_unreadable() {
 
 #[test]
 fn layer_10_carveout_allows_bash_c_wrapped_finalize_commit() {
-    // Layer 7.5 (`.claude/rules/no-escape-hatches.md`) blocks
+    // Layer 8 (`.claude/rules/no-escape-hatches.md`) blocks
     // `bash -c '...'` as a shell-eval escape hatch regardless of the
     // wrapped inner command. The active-flow carve-out at Layer 10
     // recognizes a `bash -c`-wrapped finalize-commit shape only for
-    // callers that bypass Layer 7.5 — and during an active flow no
+    // callers that bypass Layer 8 — and during an active flow no
     // such caller exists, because /flow:flow-commit invokes
     // `bin/flow finalize-commit` directly via the Bash tool (no
     // bash -c wrapper). The skill-commit carve-out is therefore
     // unreachable from the active-flow path when the wrapper is
-    // bash -c. The legitimate skill commit path bypasses Layer 7.5
+    // bash -c. The legitimate skill commit path bypasses Layer 8
     // because it does not pass through bash -c at all.
     let (_dir, _root, cwd) =
         setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
@@ -3224,7 +3235,7 @@ fn layer_10_carveout_allows_bash_c_wrapped_finalize_commit() {
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
     assert_eq!(
         code, 2,
-        "bash -c wrapper is itself a shell-eval escape hatch and must block at Layer 7.5; stderr={stderr}"
+        "bash -c wrapper is itself a shell-eval escape hatch and must block at Layer 8; stderr={stderr}"
     );
     assert!(stderr.contains("BLOCKED"));
     assert!(stderr.contains("escape hatch"));
@@ -3439,7 +3450,7 @@ fn layer_10_closure_block_message_cites_no_escape_hatches_rule() {
 
 // --- layer_10_bootstrap_carveout ---
 //
-// The bootstrap-skill carve-out on Layer 9's integration-branch
+// The bootstrap-skill carve-out on Layer 10's integration-branch
 // context. The flow-start Step 2 (deps repair commit) and flow-prime
 // Step 6 (setup writes commit) skills invoke `/flow:flow-commit`
 // while cwd is on the integration branch. Without a carve-out, the
@@ -3467,7 +3478,7 @@ fn layer_10_bootstrap_carveout_allows_on_main_when_flow_start_chain() {
     // transcript shows Skill(flow:flow-start) followed by
     // Skill(flow:flow-commit) since the most recent user turn, and
     // the command shape is `bin/flow finalize-commit`. All three
-    // bootstrap-carveout conditions hold → Layer 9 passes through.
+    // bootstrap-carveout conditions hold → Layer 10 passes through.
     let (_dir, root) = setup_repo_on_branch("main");
     let claude_dir = root.join(".claude");
     std::fs::create_dir_all(&claude_dir).unwrap();
@@ -3965,7 +3976,7 @@ fn layer_10_bootstrap_carveout_allows_for_flow_release_user_typed_slash_command(
     // `last_user_message_invokes_skill(path, "flow-release", home)`
     // OR-arm, and `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)`
     // recognizes the same user turn as the sanctioned bootstrap
-    // parent. Layer 9 passes through.
+    // parent. Layer 10 passes through.
     //
     // Regression guard: a future edit drops the
     // `last_user_message_invokes_skill` OR-arm from
@@ -4039,7 +4050,7 @@ fn layer_10_bootstrap_carveout_blocks_when_no_bootstrap_skill_in_transcript() {
     // skill, and `last_user_message_invokes_skill(path, "flow-release",
     // home)` finds no `/flow-release` user turn. With `commit_window`
     // false and `any_skill_in_set_since_user(BOOTSTRAP_SKILLS)` also
-    // false, the carve-out cannot fire and Layer 9 blocks the commit
+    // false, the carve-out cannot fire and Layer 10 blocks the commit
     // on the integration branch.
     //
     // Regression guard: a future edit makes the
@@ -4079,7 +4090,7 @@ fn layer_10_active_flow_carveout_does_not_fire_on_flow_release_user_turn() {
     // `_continue_pending=commit` and a most-recent-user-turn
     // `/flow-release` does NOT satisfy the active-flow carve-out — no
     // `flow:flow-commit` assistant Skill ran, so the choreography the
-    // carve-out exists to require was skipped. Layer 9 blocks.
+    // carve-out exists to require was skipped. Layer 10 blocks.
     //
     // Regression guard: a future edit moves the `/flow-release`
     // user-turn arm back into the shared
@@ -4182,7 +4193,7 @@ fn layer_10_bootstrap_carveout_fires_for_flow_release_with_intervening_non_commi
 
 // --- layer_10_finalize_commit_destination ---
 //
-// Layer 9's new destination-aware dispatch fires when the command
+// Layer 10's new destination-aware dispatch fires when the command
 // shape is `bin/flow finalize-commit <msg> <branch>`. The routing
 // key is the explicit branch argument, not the caller's process
 // cwd. The tests below cover:
@@ -4218,7 +4229,7 @@ fn extract_finalize_commit_branch_arg_returns_none_for_git_commit() {
 fn extract_finalize_commit_branch_arg_returns_none_for_bin_flow_status() {
     // `bin/flow status` is not a commit invocation at all →
     // is_commit_invocation returns false → the new dispatch is
-    // never consulted. Layer 9 silent → allow.
+    // never consulted. Layer 10 silent → allow.
     let (_dir, root) = setup_repo_on_branch("main");
     let input = r#"{"tool_input": {"command": "bin/flow status"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
@@ -4555,8 +4566,8 @@ fn validate_pretool_blocks_phase_transition_during_halt() {
 fn validate_pretool_blocks_finalize_commit_during_halt() {
     // finalize-commit advances the flow past the halt. Even when
     // `_continue_pending=commit` is also set (which would normally
-    // satisfy Layer 9's active-flow carve-out), the halt gate runs
-    // AFTER Layer 9 and refuses. The user must clear the halt via
+    // satisfy Layer 10's active-flow carve-out), the halt gate runs
+    // AFTER Layer 10 and refuses. The user must clear the halt via
     // `/flow:flow-continue` before commits can resume.
     let (_dir, root, cwd) = setup_active_flow_worktree_with_state(
         "feat",
@@ -4666,7 +4677,7 @@ fn validate_pretool_blocks_set_timestamp_code_task_equals_form_during_halt() {
 fn validate_pretool_halt_gate_fires_when_settings_json_missing() {
     // The halt gate must NOT depend on `.claude/settings.json` to
     // resolve the branch and main_root. Settings is consulted only
-    // for Layer 8 whitelist enforcement; conflating that with halt
+    // for Layer 9 whitelist enforcement; conflating that with halt
     // detection silently disables the halt gate in environments
     // where settings.json is absent (interrupted prime, CI runners
     // that gitignore it, fresh clones before /flow:flow-prime). The
@@ -4711,5 +4722,542 @@ fn finalize_commit_destination_arm_falls_through_when_project_root_missing() {
         code, 0,
         "finalize-commit from a no-project-root cwd must fall through \
          without blocking; stderr={stderr}"
+    );
+}
+
+// --- layer_11_ci_during_code_phase ---
+//
+// Layer 11 redirects `bin/flow ci` to the per-file gate during Code
+// phase. The full-CI runner is wasteful for single-file iteration
+// when `bin/test tests/<name>.rs` enforces identical 100/100/100
+// thresholds at seconds-scale. The single carve-out is
+// `bin/flow ci --clean` (the documented phantom-misses recovery
+// path). `finalize_commit::run_impl` calls `ci::run_impl()` as a
+// Rust function and never reaches this Bash hook — the commit-time
+// CI gate is structurally unaffected.
+//
+// The fixture `setup_active_flow_worktree_with_state` (defined
+// above) builds the minimal layout: settings.json,
+// `.flow-states/<branch>/state.json` with caller-controlled content,
+// and a `.worktrees/<branch>/` directory with a `.git` pointer so
+// `detect_branch_from_path` resolves. The Code-phase state shape
+// the gate looks for is `current_phase == "flow-code"` AND
+// `phases.flow-code.status == "in_progress"`.
+
+const CODE_PHASE_STATE: &str =
+    r#"{"current_phase": "flow-code", "phases": {"flow-code": {"status": "in_progress"}}}"#;
+
+/// Assert the Layer 11 block fires: exit code 2, stderr names the
+/// redirect target and the per-file rule.
+fn assert_layer_11_block(code: i32, stderr: &str, context: &str) {
+    assert_eq!(code, 2, "{context}: must block; stderr={stderr}");
+    assert!(
+        stderr.contains("BLOCKED"),
+        "{context}: stderr should contain BLOCKED; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("bin/test tests/"),
+        "{context}: stderr should redirect to per-file gate; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("per-file-coverage-iteration.md"),
+        "{context}: stderr should cite the per-file rule; got: {stderr}"
+    );
+}
+
+// Block-fires set: every `bin/flow ci` shape during Code phase
+// produces the Layer 11 block.
+
+#[test]
+fn layer_11_blocks_bare_bin_flow_ci_in_code_phase() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_layer_11_block(code, &stderr, "bare bin/flow ci");
+}
+
+#[test]
+fn layer_11_blocks_bin_flow_ci_test_in_code_phase() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow ci --test"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_layer_11_block(code, &stderr, "bin/flow ci --test");
+}
+
+#[test]
+fn layer_11_blocks_bin_flow_ci_audit_in_code_phase() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow ci --audit"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_layer_11_block(code, &stderr, "bin/flow ci --audit");
+}
+
+#[test]
+fn layer_11_blocks_bin_flow_ci_build_in_code_phase() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow ci --build"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_layer_11_block(code, &stderr, "bin/flow ci --build");
+}
+
+#[test]
+fn layer_11_blocks_bin_flow_ci_force_in_code_phase() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow ci --force"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_layer_11_block(code, &stderr, "bin/flow ci --force");
+}
+
+#[test]
+fn layer_11_blocks_bin_flow_ci_format_in_code_phase() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow ci --format"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_layer_11_block(code, &stderr, "bin/flow ci --format");
+}
+
+#[test]
+fn layer_11_blocks_bin_flow_ci_lint_in_code_phase() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow ci --lint"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_layer_11_block(code, &stderr, "bin/flow ci --lint");
+}
+
+#[test]
+fn layer_11_blocks_absolute_path_bin_flow_ci_in_code_phase() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "/Users/x/code/flow/bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_layer_11_block(code, &stderr, "absolute-path bin/flow ci");
+}
+
+// Carve-out set: `--clean` lets the command through so the
+// documented phantom-misses recovery path stays available.
+
+#[test]
+fn layer_11_carveout_allows_bin_flow_ci_clean() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow ci --clean"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(code, 0, "--clean must carve out; stderr={stderr}");
+}
+
+#[test]
+fn layer_11_carveout_allows_bin_flow_ci_clean_with_branch_arg() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow ci --clean --branch foo"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "--clean with branch arg must carve out; stderr={stderr}"
+    );
+}
+
+// Pass-through set: every non-Code-phase context allows
+// `bin/flow ci` through.
+
+#[test]
+fn layer_11_does_not_fire_when_no_active_flow() {
+    // No state.json at all → is_flow_active returns false → Layer 11
+    // never reaches state_is_in_code_phase.
+    let (_dir, _root, cwd) = setup_active_flow_worktree("feat", false);
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "no active flow must allow bin/flow ci; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_does_not_fire_in_flow_start_phase() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state(
+        "feat",
+        r#"{"current_phase": "flow-start", "phases": {"flow-code": {"status": "pending"}}}"#,
+    );
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "flow-start phase must allow bin/flow ci; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_does_not_fire_in_flow_review_phase() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state(
+        "feat",
+        r#"{"current_phase": "flow-review", "phases": {"flow-review": {"status": "in_progress"}}}"#,
+    );
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "flow-review phase must allow bin/flow ci; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_does_not_fire_in_flow_learn_phase() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state(
+        "feat",
+        r#"{"current_phase": "flow-learn", "phases": {"flow-learn": {"status": "in_progress"}}}"#,
+    );
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "flow-learn phase must allow bin/flow ci; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_does_not_fire_in_flow_complete_phase() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state(
+        "feat",
+        r#"{"current_phase": "flow-complete", "phases": {"flow-complete": {"status": "in_progress"}}}"#,
+    );
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "flow-complete phase must allow bin/flow ci; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_does_not_fire_when_code_status_pending() {
+    // current_phase is flow-code but the phase status hasn't reached
+    // in_progress yet (e.g. between phase_complete and phase_enter).
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state(
+        "feat",
+        r#"{"current_phase": "flow-code", "phases": {"flow-code": {"status": "pending"}}}"#,
+    );
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "flow-code status=pending must allow bin/flow ci; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_does_not_fire_when_code_status_complete() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state(
+        "feat",
+        r#"{"current_phase": "flow-code", "phases": {"flow-code": {"status": "complete"}}}"#,
+    );
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "flow-code status=complete must allow bin/flow ci; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_does_not_fire_for_bin_flow_status_subcommand() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow status"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "bin/flow status must not trip Layer 11; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_does_not_fire_for_bin_flow_phase_transition_subcommand() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow phase-transition --action complete"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "bin/flow phase-transition must not trip Layer 11; stderr={stderr}"
+    );
+}
+
+// Fail-closed set: every state-file corruption shape returns no
+// block (the friction-prevention inversion of Layer 10's posture).
+
+#[test]
+fn layer_11_no_block_when_state_unparseable() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", "{this is not json}");
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "unparseable state.json must allow bin/flow ci (fail-closed-no-block); stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_no_block_when_current_phase_absent() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state(
+        "feat",
+        r#"{"phases": {"flow-code": {"status": "in_progress"}}}"#,
+    );
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "absent current_phase must allow bin/flow ci; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_no_block_when_phases_wrong_type() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state(
+        "feat",
+        r#"{"current_phase": "flow-code", "phases": 42}"#,
+    );
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "phases=number must allow bin/flow ci; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_no_block_when_flow_code_entry_wrong_type() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state(
+        "feat",
+        r#"{"current_phase": "flow-code", "phases": {"flow-code": "in_progress"}}"#,
+    );
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "phases.flow-code=string must allow bin/flow ci; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_no_block_when_code_status_wrong_type() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state(
+        "feat",
+        r#"{"current_phase": "flow-code", "phases": {"flow-code": {"status": 1}}}"#,
+    );
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "status=number must allow bin/flow ci; stderr={stderr}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn layer_11_no_block_when_state_file_is_unreadable() {
+    use std::os::unix::fs::PermissionsExt;
+
+    // `is_flow_active`'s `.is_file()` succeeds even when the file's
+    // read perms are 000 — metadata is fetched from the parent dir,
+    // not by reading content. The downstream `state_is_in_code_phase`
+    // then attempts `read_to_string`, which returns `Err(EACCES)`.
+    // Fail-closed-as-no-block (the Layer 11 inversion of Layer 10's
+    // posture): the read failure means we can't confirm Code phase,
+    // so `bin/flow ci` is allowed through.
+    let (_dir, root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let state_path = root.join(".flow-states").join("feat").join("state.json");
+
+    let mut perms = std::fs::metadata(&state_path).unwrap().permissions();
+    perms.set_mode(0o000);
+    std::fs::set_permissions(&state_path, perms).unwrap();
+
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+
+    // Restore perms before any assertion can short-circuit tempdir
+    // cleanup.
+    let mut perms = std::fs::metadata(&state_path).unwrap().permissions();
+    perms.set_mode(0o644);
+    std::fs::set_permissions(&state_path, perms).unwrap();
+
+    assert_eq!(
+        code, 0,
+        "unreadable state.json must allow bin/flow ci; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_no_block_when_state_file_has_invalid_utf8() {
+    // Drives the `read_state_file_capped` `read_to_string` Err
+    // branch — `File::open` succeeds (state.json exists and is
+    // readable) but the content is not valid UTF-8. Fail-closed-
+    // as-no-block: the gate falls through and `bin/flow ci`
+    // passes.
+    let (_dir, root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let state_path = root.join(".flow-states").join("feat").join("state.json");
+    std::fs::write(&state_path, [0xFF, 0xFE, 0xFD]).unwrap();
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "invalid UTF-8 in state.json must allow bin/flow ci; stderr={stderr}"
+    );
+}
+
+// Subcommand-position discipline: `ci` must appear as the first
+// non-flag token after `bin/flow`. Sibling subcommands whose args
+// happen to include the literal `ci` token must NOT trip Layer 11.
+
+#[test]
+fn layer_11_does_not_fire_for_phase_enter_with_phase_arg_ci() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow phase-enter --phase ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "phase-enter --phase ci must not trip Layer 11; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_does_not_fire_for_phase_transition_with_action_ci() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow phase-transition --action ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "phase-transition --action ci must not trip Layer 11; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_does_not_fire_for_log_with_ci_in_message() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow log feat Phase-2 ci notes"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "log with bare ci in message must not trip Layer 11; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_does_not_fire_for_set_timestamp_with_value_ci() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow set-timestamp --field ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "set-timestamp with --field ci must not trip Layer 11; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_does_not_fire_when_only_global_flags_no_subcommand() {
+    // Drives the `is_flow_ci_invocation` "ran out of tokens" path —
+    // first token passes `is_bin_flow_token`, every subsequent token
+    // is a global flag or its value, no non-flag subcommand surfaces.
+    // Per UNIVERSAL_ALLOW, `Bash(*bin/flow *)` passes Layer 9.
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow --log-level info --foo bar"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "global flags only must not trip Layer 11; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_blocks_with_global_flag_value_pair_before_ci() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow --log-level info ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_layer_11_block(code, &stderr, "bin/flow --log-level info ci");
+}
+
+#[test]
+fn layer_11_blocks_with_global_flag_equals_value_before_ci() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow --log-level=info ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_layer_11_block(code, &stderr, "bin/flow --log-level=info ci");
+}
+
+// Carve-out normalization: case variants and the `--flag=value`
+// form both reach the recovery path per
+// `.claude/rules/security-gates.md` "Normalize Before Comparing".
+
+#[test]
+fn layer_11_carveout_allows_uppercase_clean_flag() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow ci --CLEAN"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 0,
+        "--CLEAN case variant must carve out; stderr={stderr}"
+    );
+}
+
+#[test]
+fn layer_11_carveout_allows_clean_with_equals_value() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow ci --clean=true"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(code, 0, "--clean=true must carve out; stderr={stderr}");
+}
+
+#[test]
+fn layer_11_blocks_no_clean_variant() {
+    // `--no-clean` is a distinct flag, not the carve-out token.
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", CODE_PHASE_STATE);
+    let input = r#"{"tool_input": {"command": "bin/flow ci --no-clean"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_layer_11_block(code, &stderr, "bin/flow ci --no-clean");
+}
+
+// Normalize before comparing applies to state-file values too:
+// hand-edited or legacy state files with case- or whitespace-variant
+// `current_phase` / `phases.flow-code.status` strings still trigger
+// the gate per `.claude/rules/security-gates.md`.
+
+#[test]
+fn layer_11_fires_on_case_variant_current_phase() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state(
+        "feat",
+        r#"{"current_phase": "FLOW-CODE", "phases": {"flow-code": {"status": "in_progress"}}}"#,
+    );
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_layer_11_block(code, &stderr, "case-variant current_phase");
+}
+
+#[test]
+fn layer_11_fires_on_case_variant_status() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state(
+        "feat",
+        r#"{"current_phase": "flow-code", "phases": {"flow-code": {"status": "IN_PROGRESS"}}}"#,
+    );
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_layer_11_block(code, &stderr, "case-variant status");
+}
+
+#[test]
+fn layer_11_no_block_when_no_project_root() {
+    // Build a fixture where `.worktrees/<branch>/` exists so
+    // `detect_branch_from_path` returns Some — but no
+    // `.claude/settings.json` exists anywhere upward, so
+    // `find_settings_and_root_from` returns `(None, None)` and the
+    // `let root = project_root?` line returns None. Layer 11 passes
+    // through.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().canonicalize().expect("canonicalize");
+    let worktree = root.join(".worktrees").join("feat");
+    std::fs::create_dir_all(&worktree).unwrap();
+    std::fs::write(worktree.join(".git"), "gitdir: ../../.git/worktrees/feat").unwrap();
+    // Deliberately omit `.claude/settings.json` — find_settings walks
+    // up to filesystem root without finding it.
+
+    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&worktree));
+    assert_eq!(
+        code, 0,
+        "no project root must allow bin/flow ci; stderr={stderr}"
     );
 }
