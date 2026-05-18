@@ -422,12 +422,11 @@ pub fn cleanup(
 /// Main-arm dispatch: validate args.project_root and run per-branch cleanup.
 /// Returns (JSON value, exit code).
 ///
-/// `base_branch` is resolved from the per-branch state file via
-/// `git::read_base_branch` and falls back to git's integration branch
-/// (`origin/HEAD`) when the state file is missing, malformed, or omits
-/// the field — both the abort path (state file may be partially
-/// initialized) and pre-`base_branch`-field state files are covered
-/// by the same fallback.
+/// `base_branch` is resolved via `git::default_branch_in(root)` at
+/// dispatch entry — git is the single source of truth for the
+/// integration branch. Fails closed via a `resolve_base_branch`
+/// JSON error envelope when git cannot resolve `origin/HEAD` (no
+/// remote, symbolic-ref unset, non-git directory).
 pub fn run_impl_main(args: &Args) -> (Value, i32) {
     let root = Path::new(&args.project_root);
     if !root.is_dir() {

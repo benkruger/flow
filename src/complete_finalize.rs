@@ -191,18 +191,17 @@ pub fn run_impl(args: &Args) -> Value {
     // write is best-effort — a filesystem error here must not fail
     // the merge that already succeeded upstream.
     if args.pull && cleanup_map.get("git_pull").and_then(|v| v.as_str()) == Some("pulled") {
-        // `base_branch` comes from the state file's `base_branch`
-        // field OR the `default_branch_in` fallback. Both sources
-        // are unvalidated state-derived input — slash-containing
-        // origin/HEAD targets (e.g. `feature/main`) and corrupt
-        // state-file values can reach this branch. `sentinel_path`
-        // calls `FlowPaths::try_new(...).expect(...)` and panics on
-        // invalid branches; per
-        // `.claude/rules/branch-path-safety.md`, callers must
-        // pattern-match on `is_valid_branch` before reaching the
-        // panicking constructor. Sentinel writing is best-effort
-        // (per the surrounding rationale), so an invalid base_branch
-        // here simply skips the write — the next start-gate run will
+        // `base_branch` comes from `git::default_branch_in(root)` via
+        // the match arm at the top of run_impl. The value is git
+        // subprocess output and is unvalidated — slash-containing
+        // origin/HEAD targets (e.g. `feature/main`) can reach this
+        // branch. `sentinel_path` calls
+        // `FlowPaths::try_new(...).expect(...)` and panics on invalid
+        // branches; per `.claude/rules/branch-path-safety.md`, callers
+        // must pattern-match on `is_valid_branch` before reaching the
+        // panicking constructor. Sentinel writing is best-effort (per
+        // the surrounding rationale), so an invalid base_branch here
+        // simply skips the write — the next start-gate run will
         // re-establish the sentinel.
         if FlowPaths::is_valid_branch(&base_branch) {
             let snapshot = crate::ci::tree_snapshot(&root, None);

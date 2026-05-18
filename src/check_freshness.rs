@@ -82,11 +82,11 @@ fn run_git(args: &[&str], timeout_secs: u64, cwd: &Path) -> (i32, String, String
 
 /// Core freshness logic: fetch, check ancestry, merge if behind.
 ///
-/// `base_branch` is the integration branch (read from the state
-/// file by the caller); the function targets `origin/<base_branch>`
-/// for fetch/merge-base/merge so a repo whose default branch is
-/// `staging` exercises the right remote ref instead of the
-/// hardcoded `main`.
+/// `base_branch` is the integration branch (resolved by the caller
+/// via `git::default_branch_in` at `run_impl_main` entry); the
+/// function targets `origin/<base_branch>` for fetch/merge-base/merge
+/// so a repo whose default branch is `staging` exercises the right
+/// remote ref instead of the hardcoded `main`.
 fn check_freshness(state_file: Option<&Path>, cwd: &Path, base_branch: &str) -> Value {
     if let Some(path) = state_file {
         let retries = read_retries(path);

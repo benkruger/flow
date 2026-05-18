@@ -256,15 +256,6 @@ fn cleanup_empty_tempdir_does_not_panic() {
 
 // --- Library-level tests via run_impl_main ---
 
-/// Drive the `Some(str)` branch of `read_base_branch` through
-/// `cleanup --pull` and prove the state-file value reaches
-/// `git pull origin <base_branch>`. The fixture creates a bare
-/// remote with only `main`; the state file declares
-/// `base_branch: "staging"`. After the helper plumbing,
-/// `cleanup` issues `git pull origin staging` against the bare
-/// remote, which fails — the failure stderr (carrying "staging")
-/// surfaces as the `steps.git_pull` value, proving the value
-/// flowed through rather than the hardcoded "main".
 /// Prove that `cleanup` resolves the integration branch via
 /// `git::default_branch_in` rather than from any state-file field.
 /// The bare remote has only `main`; we configure origin/HEAD to
