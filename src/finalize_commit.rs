@@ -215,12 +215,18 @@ pub fn run_impl(args: &Args, root: &std::path::Path) -> Result<Value, String> {
         }
     };
 
-    // Branch-derived routing destination. The validated branch passed
-    // through `FlowPaths::try_new` cannot contain `/` or `\0`, so the
-    // joined path stays inside `<root>/.worktrees/`. Every downstream
-    // git, CI, and snapshot call binds to this value rather than the
-    // caller's process cwd.
-    let commit_cwd = paths.worktree();
+    // Branch-derived routing destination. An integration-branch
+    // (bootstrap) commit runs at the project root, where the trunk is
+    // checked out and no `<root>/.worktrees/<integration>` directory
+    // exists; a feature-branch commit runs in its per-branch worktree.
+    // `finalize_commit_destination` makes that decision and is the
+    // same helper the Layer 10 hook calls, so the binary's commit
+    // destination and the hook's block decision cannot drift. The
+    // validated branch passed through `FlowPaths::try_new` cannot
+    // contain `/` or `\0`, so the joined worktree path stays inside
+    // `<root>/.worktrees/`. Every downstream git, CI, and snapshot
+    // call binds to this value rather than the caller's process cwd.
+    let commit_cwd = crate::flow_paths::finalize_commit_destination(root, &args.branch);
 
     // Derive phase number from state file's current_phase for log prefixes.
     let pn = {

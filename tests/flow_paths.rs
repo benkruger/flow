@@ -624,8 +624,7 @@ fn finalize_commit_destination_no_origin_with_worktree_routes_to_worktree() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let parent = tmp.path().canonicalize().expect("canonicalize");
     let root = create_git_repo_no_origin(&parent);
-    std::fs::create_dir_all(root.join(".worktrees").join("feat-x"))
-        .expect("create worktree dir");
+    std::fs::create_dir_all(root.join(".worktrees").join("feat-x")).expect("create worktree dir");
     assert_eq!(
         finalize_commit_destination(&root, "feat-x"),
         root.join(".worktrees").join("feat-x")
