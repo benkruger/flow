@@ -1,14 +1,16 @@
 //! Subprocess tests for `bin/flow base-branch`. Mirrors
 //! `src/base_branch_cmd.rs`. Each test spawns the compiled `flow-rs`
-//! binary in a fixture git repo with a hand-written state file, and
-//! asserts stdout/stderr/exit semantics.
+//! binary in a fixture repo and asserts stdout/stderr/exit semantics.
+//!
+//! `base-branch` is a thin wrapper around `git::default_branch_in` —
+//! the subcommand has no `--branch` flag and reads no state files.
+//! Git is the single source of truth for the integration branch.
 //!
 //! Subprocess hygiene per `.claude/rules/subprocess-test-hygiene.md`:
 //! every spawn neutralizes `GH_TOKEN`, `HOME`, and `FLOW_CI_RUNNING`
 //! to keep the child off the host's GitHub account, dotfiles, and any
 //! ambient CI recursion guard.
 
-use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
@@ -29,22 +31,50 @@ fn init_git_repo(dir: &Path, branch: &str) {
     run(&["commit", "--allow-empty", "-m", "init"]);
 }
 
-/// Write a minimal state file at `.flow-states/<branch>/state.json`.
-fn write_state(repo: &Path, branch: &str, content: &str) {
-    let dir = repo.join(".flow-states").join(branch);
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("state.json"), content).unwrap();
+/// Create an `origin` remote that points at a local bare repo and set
+/// `refs/remotes/origin/HEAD` to the named branch via
+/// `git remote set-head`. Returns the bare-repo path so the caller can
+/// keep it alive for the test duration.
+fn setup_origin_with_head(repo: &Path, head_branch: &str) {
+    // Create a bare repo on the same branch and add it as `origin`.
+    let bare = repo.parent().unwrap().join(format!(
+        "bare-{}",
+        repo.file_name().unwrap().to_string_lossy()
+    ));
+    std::fs::create_dir_all(&bare).unwrap();
+    let run = |args: &[&str], cwd: &Path| {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .expect("git command failed");
+        assert!(output.status.success(), "git {:?} failed", args);
+    };
+    run(&["init", "--bare", "--initial-branch", head_branch], &bare);
+    // Repo points at the bare as origin and fetches it.
+    run(&["remote", "add", "origin", bare.to_str().unwrap()], repo);
+    // Push the current branch so origin/HEAD has something to point at.
+    // First rename the local branch if needed so it matches head_branch.
+    let local_branch_output = Command::new("git")
+        .args(["branch", "--show-current"])
+        .current_dir(repo)
+        .output()
+        .expect("git branch --show-current");
+    let current = String::from_utf8_lossy(&local_branch_output.stdout)
+        .trim()
+        .to_string();
+    if current != head_branch {
+        run(&["branch", "-m", current.as_str(), head_branch], repo);
+    }
+    run(&["push", "-u", "origin", head_branch], repo);
+    run(&["remote", "set-head", "origin", head_branch], repo);
 }
 
-/// Run `flow-rs base-branch` in the given repo with optional `--branch`
-/// override. Returns the captured Output.
-fn run_base_branch(repo: &Path, branch_override: Option<&str>) -> Output {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
-    cmd.arg("base-branch");
-    if let Some(b) = branch_override {
-        cmd.arg("--branch").arg(b);
-    }
-    cmd.current_dir(repo)
+/// Run `flow-rs base-branch` in the given repo. Returns the captured Output.
+fn run_base_branch(repo: &Path) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .arg("base-branch")
+        .current_dir(repo)
         .env("GH_TOKEN", "invalid")
         .env("HOME", repo)
         .env_remove("FLOW_CI_RUNNING")
@@ -54,13 +84,13 @@ fn run_base_branch(repo: &Path, branch_override: Option<&str>) -> Output {
 }
 
 #[test]
-fn base_branch_subcommand_prints_value_when_state_present_main() {
+fn base_branch_subcommand_prints_default_branch_resolved_by_git() {
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().canonicalize().unwrap();
-    init_git_repo(&repo, "feature");
-    write_state(&repo, "feature", r#"{"base_branch": "main"}"#);
+    init_git_repo(&repo, "main");
+    setup_origin_with_head(&repo, "main");
 
-    let output = run_base_branch(&repo, None);
+    let output = run_base_branch(&repo);
     assert_eq!(
         output.status.code(),
         Some(0),
@@ -72,277 +102,67 @@ fn base_branch_subcommand_prints_value_when_state_present_main() {
 }
 
 #[test]
-fn base_branch_subcommand_prints_value_when_state_present_staging() {
+fn base_branch_subcommand_errors_when_git_cannot_resolve() {
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().canonicalize().unwrap();
-    init_git_repo(&repo, "feature");
-    write_state(&repo, "feature", r#"{"base_branch": "staging"}"#);
+    // No git init — `git symbolic-ref` fails outside a git repo.
 
-    let output = run_base_branch(&repo, None);
+    let output = run_base_branch(&repo);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "expected non-zero exit when git cannot resolve, got {:?}",
+        output.status.code()
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked at"),
+        "must not panic on git failure; stderr: {}",
+        stderr
+    );
+    assert!(
+        !stderr.is_empty(),
+        "expected structured stderr message when git cannot resolve, got empty stderr"
+    );
+}
+
+#[test]
+fn base_branch_subcommand_rejects_branch_flag() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().canonicalize().unwrap();
+    init_git_repo(&repo, "main");
+    setup_origin_with_head(&repo, "main");
+
+    // Clap must reject `--branch` because it is no longer a defined arg.
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["base-branch", "--branch", "main"])
+        .current_dir(&repo)
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &repo)
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .expect("spawn flow-rs base-branch");
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "expected clap to reject removed --branch flag, got 0"
+    );
+}
+
+#[test]
+fn base_branch_subcommand_works_outside_any_state_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().canonicalize().unwrap();
+    init_git_repo(&repo, "main");
+    setup_origin_with_head(&repo, "main");
+    // Note: no .flow-states/ directory created — base-branch must
+    // succeed because it no longer reads any state file.
+
+    let output = run_base_branch(&repo);
     assert_eq!(
         output.status.code(),
         Some(0),
         "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(stdout, "staging\n");
-}
-
-#[test]
-fn base_branch_subcommand_with_branch_flag_resolves_to_named_branch_state() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = dir.path().canonicalize().unwrap();
-    // Repo is on branch "current" but state file lives under "other".
-    init_git_repo(&repo, "current");
-    write_state(&repo, "other", r#"{"base_branch": "develop"}"#);
-
-    let output = run_base_branch(&repo, Some("other"));
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(stdout, "develop\n");
-}
-
-#[test]
-fn base_branch_subcommand_errs_when_no_state_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = dir.path().canonicalize().unwrap();
-    init_git_repo(&repo, "feature");
-    // No state file written.
-
-    let output = run_base_branch(&repo, None);
-    assert_ne!(
-        output.status.code(),
-        Some(0),
-        "expected non-zero exit, got {:?}",
-        output.status.code()
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !stderr.is_empty(),
-        "expected structured stderr message when state file missing, got empty stderr"
-    );
-}
-
-#[test]
-fn base_branch_subcommand_errs_when_state_corrupt() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = dir.path().canonicalize().unwrap();
-    init_git_repo(&repo, "feature");
-    write_state(&repo, "feature", "{ not valid json");
-
-    let output = run_base_branch(&repo, None);
-    assert_ne!(
-        output.status.code(),
-        Some(0),
-        "expected non-zero exit on corrupt state, got {:?}",
-        output.status.code()
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !stderr.is_empty(),
-        "expected structured stderr message on corrupt state, got empty stderr"
-    );
-}
-
-#[test]
-fn base_branch_subcommand_errs_when_state_empty() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = dir.path().canonicalize().unwrap();
-    init_git_repo(&repo, "feature");
-    write_state(&repo, "feature", "");
-
-    let output = run_base_branch(&repo, None);
-    assert_ne!(
-        output.status.code(),
-        Some(0),
-        "expected non-zero exit on empty state, got {:?}",
-        output.status.code()
-    );
-}
-
-#[test]
-fn base_branch_subcommand_errs_when_field_wrong_type() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = dir.path().canonicalize().unwrap();
-    init_git_repo(&repo, "feature");
-    write_state(&repo, "feature", r#"{"base_branch": 42}"#);
-
-    let output = run_base_branch(&repo, None);
-    assert_ne!(
-        output.status.code(),
-        Some(0),
-        "expected non-zero exit on wrong-type field, got {:?}",
-        output.status.code()
-    );
-}
-
-/// Branch overrides accepted on the CLI come from outside the process
-/// (the shell can pass any string), so the subcommand must validate
-/// the branch before joining it onto `.flow-states/`. Slash-containing
-/// branches must produce a structured error, never a panic. Per
-/// `.claude/rules/external-input-validation.md` and
-/// `.claude/rules/branch-path-safety.md`, the subcommand uses
-/// `FlowPaths::try_new` with a structured error on `None`.
-#[test]
-fn base_branch_subcommand_errs_when_branch_flag_is_slash_branch() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = dir.path().canonicalize().unwrap();
-    init_git_repo(&repo, "feature");
-
-    let output = run_base_branch(&repo, Some("feature/foo"));
-    assert_ne!(
-        output.status.code(),
-        Some(0),
-        "expected non-zero exit on slash-branch, got {:?}",
-        output.status.code()
-    );
-    // Must not panic — stderr should be a structured message, not a
-    // Rust backtrace.
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !stderr.contains("panicked at"),
-        "slash-branch must not panic; stderr: {}",
-        stderr
-    );
-}
-
-/// When no `--branch` override is given and the repo has no current
-/// branch (non-git directory), `resolve_branch` returns `None` and
-/// the subcommand exits with a "Could not determine current branch"
-/// message. Covers the `resolve_branch` None arm of `run_impl_main`.
-#[test]
-fn base_branch_subcommand_errs_when_no_current_branch() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = dir.path().canonicalize().unwrap();
-    // No `git init` — current_branch returns None.
-
-    let output = run_base_branch(&repo, None);
-    assert_ne!(
-        output.status.code(),
-        Some(0),
-        "expected non-zero exit when no current branch, got {:?}",
-        output.status.code()
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("Could not determine current branch"),
-        "expected 'Could not determine current branch' in stderr, got: {}",
-        stderr
-    );
-}
-
-#[test]
-fn base_branch_subcommand_errs_when_branch_flag_is_empty() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = dir.path().canonicalize().unwrap();
-    init_git_repo(&repo, "feature");
-
-    let output = run_base_branch(&repo, Some(""));
-    assert_ne!(
-        output.status.code(),
-        Some(0),
-        "expected non-zero exit on empty --branch, got {:?}",
-        output.status.code()
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !stderr.contains("panicked at"),
-        "empty --branch must not panic; stderr: {}",
-        stderr
-    );
-}
-
-/// Path-traversal segment `--branch .` must produce a structured error
-/// without panicking. `FlowPaths::try_new` rejects this input per
-/// `.claude/rules/branch-path-safety.md`.
-#[test]
-fn base_branch_subcommand_errs_when_branch_flag_is_dot() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = dir.path().canonicalize().unwrap();
-    init_git_repo(&repo, "feature");
-
-    let output = run_base_branch(&repo, Some("."));
-    assert_ne!(
-        output.status.code(),
-        Some(0),
-        "expected non-zero exit on '--branch .', got {:?}",
-        output.status.code()
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !stderr.contains("panicked at"),
-        "'--branch .' must not panic; stderr: {}",
-        stderr
-    );
-}
-
-/// Path-traversal segment `--branch ..` must produce a structured error
-/// without panicking. `FlowPaths::try_new` rejects this input per
-/// `.claude/rules/branch-path-safety.md`.
-#[test]
-fn base_branch_subcommand_errs_when_branch_flag_is_dotdot() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = dir.path().canonicalize().unwrap();
-    init_git_repo(&repo, "feature");
-
-    let output = run_base_branch(&repo, Some(".."));
-    assert_ne!(
-        output.status.code(),
-        Some(0),
-        "expected non-zero exit on '--branch ..', got {:?}",
-        output.status.code()
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !stderr.contains("panicked at"),
-        "'--branch ..' must not panic; stderr: {}",
-        stderr
-    );
-}
-
-/// NUL-containing branch validation is exercised at the library
-/// surface — `Command::arg` in std panics on embedded NULs before
-/// the child process even starts, so a subprocess test with
-/// `--branch "main\0evil"` is impossible. The library-level
-/// coverage lives in `tests/flow_paths.rs::is_valid_branch_rejects_nul_byte`,
-/// `try_new_returns_none_for_nul_branch`, and
-/// `new_panics_on_nul_branch`. The base-branch subcommand routes
-/// `--branch` overrides through `FlowPaths::try_new` which calls
-/// `is_valid_branch`, so any NUL the kernel does manage to deliver
-/// is rejected before path construction. The dot, dotdot, and
-/// empty-string subprocess tests above cover the practical
-/// branch-path-safety surface that `Command::arg` does allow.
-#[test]
-fn base_branch_subcommand_nul_rejected_at_library_surface() {
-    use flow_rs::flow_paths::FlowPaths;
-    assert!(!FlowPaths::is_valid_branch("main\0evil"));
-    assert!(FlowPaths::try_new("/tmp/p", "main\0evil").is_none());
-}
-
-/// Legacy in-flight flow: state file exists and parses cleanly but
-/// lacks the `base_branch` field. The subcommand falls back to "main"
-/// and exits 0 so skills running against pre-tracking flows don't
-/// break mid-lifecycle. Distinguishes from genuine corruption (parse
-/// failure, wrong type, validation failure) which still exits 1.
-#[test]
-fn base_branch_subcommand_legacy_state_falls_back_to_main() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = dir.path().canonicalize().unwrap();
-    init_git_repo(&repo, "feature");
-    write_state(&repo, "feature", r#"{"branch": "feature"}"#);
-
-    let output = run_base_branch(&repo, None);
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "expected exit 0 on legacy state without base_branch, got {:?} / stderr: {}",
-        output.status.code(),
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);

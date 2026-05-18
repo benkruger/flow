@@ -47,6 +47,63 @@ fn make_repo_fixture(parent: &Path) -> PathBuf {
     repo
 }
 
+/// Fixture WITHOUT `refs/remotes/origin/HEAD` so `default_branch_in`
+/// returns Err and complete_fast surfaces the resolve_base_branch
+/// error envelope. Uses raw git init (not the bare-repo helper) so
+/// no remote/HEAD is configured.
+fn make_repo_fixture_no_origin_head(parent: &Path) -> PathBuf {
+    let repo = parent.join("repo-no-head");
+    fs::create_dir_all(&repo).unwrap();
+    let run = |args: &[&str]| {
+        Command::new("git")
+            .args(args)
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+    };
+    run(&["init", "-b", "main"]);
+    run(&["config", "user.email", "t@t.com"]);
+    run(&["config", "user.name", "T"]);
+    run(&["config", "commit.gpgsign", "false"]);
+    run(&["commit", "--allow-empty", "-m", "init"]);
+    run(&["checkout", "-b", BRANCH]);
+    repo.canonicalize().expect("canonicalize repo")
+}
+
+#[test]
+fn complete_fast_errors_when_default_branch_resolve_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = make_repo_fixture_no_origin_head(&parent);
+    write_state_file(&repo, BRANCH, "complete", "auto");
+    let flow_bin = parent.join("bin-flow-stub").join("flow");
+    write_flow_stub(&flow_bin);
+    let stubs = build_path_stubs(&parent);
+    let env = [
+        ("FAKE_PR_STATE", "OPEN"),
+        ("FAKE_PR_CHECKS_OUT", "all-passing\tpass"),
+    ];
+    let output = run_complete_fast(&repo, Some(BRANCH), Some("--auto"), &flow_bin, &stubs, &env);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Find the JSON line — last line that starts with `{`.
+    let last_json_line = stdout
+        .lines()
+        .rfind(|l| l.trim_start().starts_with('{'))
+        .unwrap_or_else(|| panic!("no JSON line in stdout; stdout={}", stdout));
+    let value: Value = serde_json::from_str(last_json_line)
+        .unwrap_or_else(|e| panic!("JSON parse failed: {} (line: {:?})", e, last_json_line));
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["step"], "resolve_base_branch");
+    assert!(
+        value["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("symbolic-ref"),
+        "expected resolve failure message naming git symbolic-ref, got: {}",
+        value
+    );
+}
+
 fn write_state_file(
     repo: &Path,
     branch: &str,

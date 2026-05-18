@@ -1,80 +1,36 @@
 //! `bin/flow base-branch` — print the integration branch this flow
-//! coordinates against, the value originally captured at flow-start
-//! by `init_state` from `git symbolic-ref --short
-//! refs/remotes/origin/HEAD`.
+//! coordinates against.
 //!
-//! This is the skill-side single source of truth for the base branch.
-//! Skills shell into `bin/flow base-branch` and interpolate the result
-//! into git diff ranges, AskUserQuestion text, and other prose so a
-//! repo whose default branch is e.g. `staging` coordinates against its
-//! actual integration branch instead of a hardcoded `main`. The Rust
-//! side reads through `git::read_base_branch`; both sides hit the
-//! same `state["base_branch"]` field, eliminating drift between the
-//! two consumers.
+//! Thin wrapper around `git::default_branch_in`. Git is the single
+//! source of truth for the integration branch — the subcommand
+//! queries `git symbolic-ref --short refs/remotes/origin/HEAD` from
+//! the project root and prints the resolved branch name (`main`,
+//! `staging`, `develop`, …) on stdout with a trailing newline.
 //!
-//! Returns the value to stdout with a trailing newline and exits 0
-//! on success. On any error (no current branch, invalid `--branch`
-//! input per `FlowPaths::try_new`, missing or corrupt state file,
-//! wrong value type, failed validation) the message lands on stderr
-//! and the process exits non-zero. The one explicit fallback is the
-//! legacy in-flight flow case: when the state file exists and parses
-//! cleanly but lacks a `base_branch` field (a flow started before
-//! the field was tracked), the subcommand returns `"main"` and exits
-//! 0 so skills running against in-flight legacy flows don't break
-//! mid-lifecycle. Genuine corruption (parse failure, wrong root type,
-//! validation failure) still surfaces as an error.
+//! Returns exit code 0 on success. On any git failure (no `origin`
+//! remote, symbolic-ref unset, non-git directory, git binary
+//! unavailable) the message lands on stderr and the process exits 1.
 //!
 //! Tests live at `tests/base_branch_cmd.rs` and drive the binary
 //! through `CARGO_BIN_EXE_flow-rs`.
 
 use std::path::Path;
 
-use crate::flow_paths::FlowPaths;
-use crate::git::{read_base_branch, resolve_branch, BASE_BRANCH_MISSING_PREFIX};
+use crate::git::default_branch_in;
 
 /// Main-arm dispatcher for `bin/flow base-branch`. Returns
-/// `Ok((value, 0))` with the base-branch value (no trailing newline —
-/// `dispatch::dispatch_text` adds one via `println!`) when the read
-/// succeeds OR when the state file exists but lacks the
-/// `base_branch` field (legacy in-flight flow → `"main"` fallback).
-/// Returns `Err((msg, code))` for every other failure class. `code`
-/// is `2` for input-resolution failures (no current branch, invalid
-/// `--branch` override) and `1` for state-file failures (missing,
-/// empty, parse error, wrong type, validation failure).
+/// `Ok((value, 0))` with the integration branch name (no trailing
+/// newline — `dispatch::dispatch_text` adds one via `println!`) when
+/// git resolves the symbolic-ref cleanly. Returns `Err((msg, 1))`
+/// when git cannot determine the integration branch.
 ///
-/// Per `.claude/rules/external-input-validation.md` and
-/// `.claude/rules/branch-path-safety.md`, `--branch` overrides come
-/// from the shell (untrusted) and must route through
-/// `FlowPaths::try_new` so a slash-containing or empty branch
-/// surfaces as a structured error.
-pub fn run_impl_main(
-    branch_override: Option<&str>,
-    root: &Path,
-) -> Result<(String, i32), (String, i32)> {
-    let branch = match resolve_branch(branch_override, root) {
-        Some(b) => b,
-        None => return Err(("Could not determine current branch".to_string(), 2)),
-    };
-    let paths = match FlowPaths::try_new(root, &branch) {
-        Some(p) => p,
-        None => {
-            return Err((
-                format!(
-                    "invalid branch '{}': empty, '.', '..', or contains '/' or NUL",
-                    branch
-                ),
-                2,
-            ));
-        }
-    };
-    match read_base_branch(&paths.state_file()) {
+/// Reads the integration branch directly from git rather than from
+/// any state file: every FLOW phase trusts git as the authoritative
+/// source for the integration branch, so the subcommand stays
+/// branch-agnostic (no `--branch` flag, no state-file lookup).
+pub fn run_impl_main(root: &Path) -> Result<(String, i32), (String, i32)> {
+    match default_branch_in(root) {
         Ok(value) => Ok((value, 0)),
-        // Legacy in-flight fallback: a state file written before
-        // `base_branch` was tracked at flow-start has no field. Returning
-        // `"main"` keeps mid-lifecycle skills from breaking on those
-        // flows. Other error classes (file missing, parse error, wrong
-        // type, validation failure) still surface as exit-1 errors.
-        Err(msg) if msg.starts_with(BASE_BRANCH_MISSING_PREFIX) => Ok(("main".to_string(), 0)),
         Err(msg) => Err((msg, 1)),
     }
 }

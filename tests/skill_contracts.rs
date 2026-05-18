@@ -6964,15 +6964,15 @@ fn flow_explore_validator_auto_fix_loop() {
 // Layer 3 (exec prefix), Layer 4 (destructive find), and Layer 7
 // (settings-driven deny list).
 //
-// Layer 7.5 (structural escape-hatch program/flag block) and
-// Layer 9-active-flow (skill-commit gate) are also escape-hatch-class
+// Layer 8 (structural escape-hatch program/flag block) and
+// Layer 10-active-flow (skill-commit gate) are also escape-hatch-class
 // — Task 6 and Tasks 7-10 already added the citation. They are
 // included in the assertion below to lock the citation in place
 // across future refactors.
 //
 // Layer 5 (`git restore .`), Layer 6 (`git diff` with file args),
-// Layer 8 (whitelist enforcement is config-driven, not escape-hatch),
-// and the Layer 9-integration-branch path (workflow protection
+// Layer 9 (whitelist enforcement is config-driven, not escape-hatch),
+// and the Layer 10-integration-branch path (workflow protection
 // rather than escape-hatch) are exempt because their block messages
 // describe a different protection class. The integration-branch
 // message keeps the citation as a bonus — it was added alongside
@@ -7037,51 +7037,51 @@ fn validate_pretool_escape_hatch_messages_cite_rule() {
 
     // Layer 7 — settings-driven deny list. Exempt layers (5, 6)
     // sit between Layer 4 and Layer 7.
-    let layer7 = slice(&content, "// Layer 7:", "// Layer 7.5:");
+    let layer7 = slice(&content, "// Layer 7:", "// Layer 8:");
     assert!(
         layer7.contains(CITATION),
         "Layer 7 (deny list) block message must cite no-escape-hatches.md; layer body:\n{}",
         layer7
     );
 
-    // Layer 7.5 — structural escape-hatch program/flag block (Task
-    // 6). The actual block messages live inside the
-    // `check_escape_hatch_structural` helper function — Layer 7.5's
+    // Layer 8 — structural escape-hatch program/flag block. The
+    // actual block messages live inside the
+    // `check_escape_hatch_structural` helper function — Layer 8's
     // section in `validate()` just dispatches to the helper. Scope
     // the citation assertion to the helper's function body so the
     // contract tests each block-message string produced by Layer
-    // 7.5's match arms (one per escape-hatch family). The end
+    // 8's match arms (one per escape-hatch family). The end
     // marker is the next function definition
     // (`fn strip_env_and_wrappers`) — function-boundary markers
     // prevent a future refactor from accidentally shrinking the
     // slice via a common Rust pattern like `_ => None,` appearing
     // elsewhere in the file.
-    let layer7_5_helper = slice(
+    let layer8_helper = slice(
         &content,
         "fn check_escape_hatch_structural",
         "\nfn strip_env_and_wrappers",
     );
     assert!(
-        layer7_5_helper.contains(CITATION),
-        "Layer 7.5 helper `check_escape_hatch_structural` block messages must cite no-escape-hatches.md; function body:\n{}",
-        layer7_5_helper
+        layer8_helper.contains(CITATION),
+        "Layer 8 helper `check_escape_hatch_structural` block messages must cite no-escape-hatches.md; function body:\n{}",
+        layer8_helper
     );
 
-    // Layer 9 active-flow message function. The
+    // Layer 10 active-flow message function. The
     // `commit_block_message_active_flow` definition is the source of
     // every active-flow block message — assert the citation lives
     // inside the function body. End marker is the next item
     // declaration so the slice covers the whole function body
     // including the `format!` interpolation's `{}` braces.
-    let layer9_active = slice(
+    let layer10_active = slice(
         &content,
         "fn commit_block_message_active_flow",
-        "/// Run Layer 9",
+        "/// Run Layer 10",
     );
     assert!(
-        layer9_active.contains(CITATION),
-        "Layer 9 active-flow block message must cite no-escape-hatches.md; function body:\n{}",
-        layer9_active
+        layer10_active.contains(CITATION),
+        "Layer 10 active-flow block message must cite no-escape-hatches.md; function body:\n{}",
+        layer10_active
     );
 }
 

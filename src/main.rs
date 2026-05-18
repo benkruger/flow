@@ -404,11 +404,7 @@ enum Commands {
 
     /// Print the integration branch this flow coordinates against.
     #[command(name = "base-branch")]
-    BaseBranch {
-        /// Override branch for state file lookup
-        #[arg(long)]
-        branch: Option<String>,
-    },
+    BaseBranch,
 
     /// Wipe `.flow-states/` on this machine. Thin Rust shim that
     /// exec's the existing `bin/reset` bash script (resolved via the
@@ -884,9 +880,9 @@ fn main() {
                 }
             }
         }
-        Some(Commands::BaseBranch { branch }) => {
+        Some(Commands::BaseBranch) => {
             let root = project_root();
-            match base_branch_cmd::run_impl_main(branch.as_deref(), &root) {
+            match base_branch_cmd::run_impl_main(&root) {
                 Ok((text, code)) => flow_rs::dispatch::dispatch_text(&text, code),
                 Err((msg, code)) => {
                     eprintln!("{}", msg);

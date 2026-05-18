@@ -38,6 +38,29 @@ pub const COMPLETE_STEPS_TOTAL: i64 = 6;
 
 pub type CmdResult = Result<(i32, String, String), String>;
 
+/// Fold a `CmdResult` (the return type of `run_cmd_with_timeout`) into
+/// a uniform `(exit_code, stdout, stderr)` tuple so every caller can
+/// handle subprocess timeouts and spawn failures via the existing
+/// non-zero-exit branch instead of a panic.
+///
+/// On `Err`, the result is `(-1, "", msg)` — the synthetic exit code
+/// `-1` flags the failure for downstream `code != 0` checks and the
+/// timeout/spawn-failure message lands in stderr's position so
+/// existing error envelopes carry useful diagnostic content.
+///
+/// Per `.claude/rules/external-input-path-construction.md` "No
+/// `.expect()` on Filesystem Reads in Hooks or CLI Subcommands":
+/// callers must use a non-panicking fold rather than `.expect()`
+/// because the upstream `default_branch_in` probe only proves
+/// spawn-time availability at one moment; subsequent calls can
+/// still time out under slow network conditions.
+pub fn fold_cmd_result(r: CmdResult) -> (i32, String, String) {
+    match r {
+        Ok(t) => t,
+        Err(msg) => (-1, String::new(), msg),
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "complete-preflight", about = "FLOW Complete phase preflight")]
 pub struct Args {
@@ -189,11 +212,17 @@ pub fn check_pr_status(pr_number: Option<i64>, branch: &str) -> Result<String, S
 /// Merge `origin/<base_branch>` into the current branch.
 ///
 /// `base_branch` is the integration branch the flow coordinates
-/// against (read from the state file by the caller via
-/// `git::read_base_branch`); a repo whose default branch is
-/// `staging` passes `"staging"` here so `git fetch / merge-base /
-/// merge` operate on the correct remote ref instead of the hardcoded
-/// `main`.
+/// against (resolved by the caller via `git::default_branch_in`);
+/// a repo whose default branch is `staging` passes `"staging"`
+/// here so `git fetch / merge-base / merge` operate on the correct
+/// remote ref instead of the hardcoded `main`.
+///
+/// Every `run_cmd_with_timeout` call folds `Err` (timeout OR spawn
+/// failure) into `("error", Some(json!(msg)))` instead of
+/// panicking. The upstream `default_branch_in` probe proves
+/// spawn-time availability at one moment, but subsequent calls
+/// (NETWORK_TIMEOUT on fetch/merge/push, LOCAL_TIMEOUT on
+/// merge-base/status) can still time out on slow networks.
 ///
 /// Returns one of:
 ///   ("clean", None) — already up to date
@@ -202,32 +231,40 @@ pub fn check_pr_status(pr_number: Option<i64>, branch: &str) -> Result<String, S
 ///   ("error", Some(message_string)) — unexpected error
 pub fn merge_main(base_branch: &str) -> (String, Option<Value>) {
     let origin_ref = format!("origin/{}", base_branch);
-    // First git call probes binary availability. Err (spawn/timeout)
-    // surfaces directly. Subsequent calls `.expect()` on Ok because
-    // git was proven alive here; per `.claude/rules/testability-means-simplicity.md`.
-    match run_cmd_with_timeout(&["git", "fetch", "origin", base_branch], NETWORK_TIMEOUT) {
-        Err(e) => return ("error".to_string(), Some(json!(e))),
-        Ok((code, _, stderr)) if code != 0 => {
-            return ("error".to_string(), Some(json!(stderr.trim())));
-        }
-        Ok(_) => {}
+    // Every subprocess call routes through `fold_cmd_result`, which
+    // folds `Err` (timeout OR spawn failure) into a synthetic
+    // `(-1, "", msg)` tuple. Downstream `code != 0` checks then
+    // produce structured error envelopes for both the timeout/
+    // spawn-failure case and git's own non-zero-exit case, without
+    // panicking. Per `.claude/rules/external-input-path-construction.md`
+    // "No `.expect()` on Filesystem Reads in Hooks or CLI
+    // Subcommands": the upstream `default_branch_in` probe proves
+    // spawn-time availability at one moment, but subsequent calls
+    // (NETWORK_TIMEOUT on fetch/merge/push, LOCAL_TIMEOUT on
+    // merge-base/status) can still time out on slow networks.
+    let (fetch_code, _, fetch_stderr) = fold_cmd_result(run_cmd_with_timeout(
+        &["git", "fetch", "origin", base_branch],
+        NETWORK_TIMEOUT,
+    ));
+    if fetch_code != 0 {
+        return ("error".to_string(), Some(json!(fetch_stderr.trim())));
     }
 
-    let (mb_code, _, _) = run_cmd_with_timeout(
+    let (mb_code, _, _) = fold_cmd_result(run_cmd_with_timeout(
         &["git", "merge-base", "--is-ancestor", &origin_ref, "HEAD"],
         LOCAL_TIMEOUT,
-    )
-    .expect("git located by earlier fetch call");
+    ));
     if mb_code == 0 {
         return ("clean".to_string(), None);
     }
 
-    let (m_code, _, m_stderr) =
-        run_cmd_with_timeout(&["git", "merge", &origin_ref], NETWORK_TIMEOUT)
-            .expect("git located by earlier fetch call");
+    let (m_code, _, m_stderr) = fold_cmd_result(run_cmd_with_timeout(
+        &["git", "merge", &origin_ref],
+        NETWORK_TIMEOUT,
+    ));
     if m_code == 0 {
-        let (push_code, _, push_stderr) = run_cmd_with_timeout(&["git", "push"], NETWORK_TIMEOUT)
-            .expect("git located by earlier fetch call");
+        let (push_code, _, push_stderr) =
+            fold_cmd_result(run_cmd_with_timeout(&["git", "push"], NETWORK_TIMEOUT));
         if push_code != 0 {
             (
                 "error".to_string(),
@@ -240,9 +277,10 @@ pub fn merge_main(base_branch: &str) -> (String, Option<Value>) {
             ("merged".to_string(), None)
         }
     } else {
-        let (_, status_stdout, _) =
-            run_cmd_with_timeout(&["git", "status", "--porcelain"], LOCAL_TIMEOUT)
-                .expect("git located by earlier fetch call");
+        let (_, status_stdout, _) = fold_cmd_result(run_cmd_with_timeout(
+            &["git", "status", "--porcelain"],
+            LOCAL_TIMEOUT,
+        ));
         let conflicts = parse_conflict_files(&status_stdout);
         if !conflicts.is_empty() {
             ("conflict".to_string(), Some(json!(conflicts)))
@@ -399,18 +437,22 @@ fn preflight(branch: Option<&str>, auto: bool, manual: bool, root: &Path) -> Val
             Value::Object(out)
         }
         "OPEN" => {
-            // Resolve base_branch from state. In inferred mode (no
-            // state file) or when the field is absent, query git for
-            // the integration branch (origin/HEAD) so non-main-trunk
-            // repos resolve correctly instead of receiving a literal
-            // "main".
-            let base_branch = state
-                .as_ref()
-                .and_then(|s| s.get("base_branch"))
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| crate::git::default_branch_in(root));
+            // Resolve the integration branch from git (single source of
+            // truth). Fail closed via the error envelope when git cannot
+            // resolve it — `complete-preflight` cannot guess at the
+            // merge target.
+            let base_branch = match crate::git::default_branch_in(root) {
+                Ok(b) => b,
+                Err(msg) => {
+                    let mut out = serde_json::Map::new();
+                    out.insert("status".to_string(), json!("error"));
+                    out.insert("message".to_string(), json!(msg));
+                    for (k, v) in base {
+                        out.insert(k, v);
+                    }
+                    return Value::Object(out);
+                }
+            };
             let (merge_status, merge_data) = merge_main(&base_branch);
             let mut out = serde_json::Map::new();
             match merge_status.as_str() {

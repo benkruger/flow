@@ -10,8 +10,8 @@ use std::path::Path;
 use std::process::Command;
 
 use flow_rs::git::{
-    current_branch, current_branch_in, default_branch_in, project_root, read_base_branch,
-    resolve_branch, resolve_branch_in, BASE_BRANCH_MISSING_PREFIX,
+    current_branch, current_branch_in, default_branch_in, project_root, resolve_branch,
+    resolve_branch_in,
 };
 
 /// Initialize a git repo in the given directory with an initial commit
@@ -200,195 +200,72 @@ fn create_remote_ref(repo: &Path, branch: &str) {
 }
 
 #[test]
-fn default_branch_in_reads_symbolic_ref_when_set() {
+fn default_branch_in_returns_main_when_origin_head_points_to_main() {
+    let dir = tempfile::tempdir().unwrap();
+    init_git_repo(dir.path(), "main");
+    create_remote_ref(dir.path(), "main");
+    set_origin_head(dir.path(), "main");
+    let branch = default_branch_in(dir.path());
+    assert_eq!(branch, Ok("main".to_string()));
+}
+
+#[test]
+fn default_branch_in_returns_staging_when_origin_head_points_to_staging() {
     let dir = tempfile::tempdir().unwrap();
     init_git_repo(dir.path(), "main");
     create_remote_ref(dir.path(), "staging");
     set_origin_head(dir.path(), "staging");
-
     let branch = default_branch_in(dir.path());
-    assert_eq!(branch, "staging");
+    assert_eq!(branch, Ok("staging".to_string()));
 }
 
 #[test]
-fn default_branch_in_returns_main_for_repo_with_no_origin_head() {
+fn default_branch_in_returns_develop_when_origin_head_points_to_develop() {
     let dir = tempfile::tempdir().unwrap();
     init_git_repo(dir.path(), "main");
-    // No origin/HEAD set — symbolic-ref will fail and we fall back to "main".
+    create_remote_ref(dir.path(), "develop");
+    set_origin_head(dir.path(), "develop");
     let branch = default_branch_in(dir.path());
-    assert_eq!(branch, "main");
+    assert_eq!(branch, Ok("develop".to_string()));
 }
 
 #[test]
-fn default_branch_in_returns_main_for_non_git_directory() {
+fn default_branch_in_errors_when_origin_remote_missing() {
     let dir = tempfile::tempdir().unwrap();
-    // No `git init` — symbolic-ref errors out and the helper falls back.
-    let branch = default_branch_in(dir.path());
-    assert_eq!(branch, "main");
-}
-
-// --- read_base_branch ---
-
-#[test]
-fn read_base_branch_returns_value_from_state() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state.json");
-    fs::write(&state, r#"{"base_branch": "staging"}"#).unwrap();
-    assert_eq!(read_base_branch(&state), Ok("staging".to_string()));
-}
-
-#[test]
-fn read_base_branch_returns_main_when_state_field_main() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state.json");
-    fs::write(&state, r#"{"base_branch": "main"}"#).unwrap();
-    assert_eq!(read_base_branch(&state), Ok("main".to_string()));
-}
-
-#[test]
-fn read_base_branch_errs_when_state_file_missing() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("missing.json");
-    let result = read_base_branch(&state);
+    init_git_repo(dir.path(), "main");
+    // No `origin` remote configured at all.
+    let result = default_branch_in(dir.path());
     assert!(result.is_err(), "expected Err, got {:?}", result);
 }
 
 #[test]
-fn read_base_branch_errs_when_state_file_empty() {
+fn default_branch_in_errors_when_origin_head_unset() {
     let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state.json");
-    fs::write(&state, "").unwrap();
-    let result = read_base_branch(&state);
+    init_git_repo(dir.path(), "main");
+    // origin remote exists (we'd need create_remote_ref) but no symbolic-ref.
+    // Use a plain init without a remote — symbolic-ref fails just the same.
+    let result = default_branch_in(dir.path());
     assert!(result.is_err(), "expected Err, got {:?}", result);
 }
 
 #[test]
-fn read_base_branch_errs_when_state_root_not_object() {
+fn default_branch_in_errors_when_not_a_git_dir() {
     let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state.json");
-    fs::write(&state, r#"["base_branch", "main"]"#).unwrap();
-    let result = read_base_branch(&state);
+    // No `git init`.
+    let result = default_branch_in(dir.path());
     assert!(result.is_err(), "expected Err, got {:?}", result);
 }
 
 #[test]
-fn read_base_branch_errs_when_state_file_is_invalid_json() {
+fn default_branch_in_error_message_names_failure_class() {
     let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state.json");
-    fs::write(&state, "{ not valid json").unwrap();
-    let result = read_base_branch(&state);
-    assert!(result.is_err(), "expected Err, got {:?}", result);
-}
-
-#[test]
-fn read_base_branch_errs_when_field_missing() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state.json");
-    fs::write(&state, r#"{"branch": "main"}"#).unwrap();
-    let result = read_base_branch(&state);
-    assert!(result.is_err(), "expected Err, got {:?}", result);
-}
-
-#[test]
-fn read_base_branch_field_missing_uses_marker_prefix() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state.json");
-    fs::write(&state, r#"{"branch": "main"}"#).unwrap();
-    let err = read_base_branch(&state).unwrap_err();
+    let result = default_branch_in(dir.path());
+    let err = result.unwrap_err();
     assert!(
-        err.starts_with(BASE_BRANCH_MISSING_PREFIX),
-        "expected err to start with marker prefix, got: {}",
+        err.contains("symbolic-ref") || err.contains("spawn"),
+        "expected error to name the git failure class, got: {}",
         err
     );
-}
-
-#[test]
-fn read_base_branch_errs_when_field_wrong_type() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state.json");
-    fs::write(&state, r#"{"base_branch": 42}"#).unwrap();
-    let result = read_base_branch(&state);
-    assert!(result.is_err(), "expected Err, got {:?}", result);
-}
-
-#[test]
-fn read_base_branch_errs_when_value_empty_after_trim() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state.json");
-    fs::write(&state, r#"{"base_branch": "   "}"#).unwrap();
-    let result = read_base_branch(&state);
-    assert!(result.is_err(), "expected Err, got {:?}", result);
-}
-
-#[test]
-fn read_base_branch_errs_when_value_starts_with_dash() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state.json");
-    fs::write(&state, r#"{"base_branch": "-rf"}"#).unwrap();
-    let result = read_base_branch(&state);
-    assert!(result.is_err(), "expected Err, got {:?}", result);
-}
-
-#[test]
-fn read_base_branch_errs_when_value_contains_nul() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state.json");
-    fs::write(&state, "{\"base_branch\": \"main\\u0000evil\"}").unwrap();
-    let result = read_base_branch(&state);
-    assert!(result.is_err(), "expected Err, got {:?}", result);
-}
-
-#[test]
-fn read_base_branch_errs_when_value_contains_newline() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state.json");
-    fs::write(&state, "{\"base_branch\": \"main\\nevil\"}").unwrap();
-    let result = read_base_branch(&state);
-    assert!(result.is_err(), "expected Err, got {:?}", result);
-}
-
-#[test]
-fn read_base_branch_errs_when_value_contains_carriage_return() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state.json");
-    fs::write(&state, "{\"base_branch\": \"main\\revil\"}").unwrap();
-    let result = read_base_branch(&state);
-    assert!(result.is_err(), "expected Err, got {:?}", result);
-}
-
-#[test]
-fn read_base_branch_errs_when_value_contains_tab() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state.json");
-    fs::write(&state, "{\"base_branch\": \"main\\tevil\"}").unwrap();
-    let result = read_base_branch(&state);
-    assert!(result.is_err(), "expected Err, got {:?}", result);
-}
-
-#[test]
-fn read_base_branch_errs_when_value_is_dot() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state.json");
-    fs::write(&state, r#"{"base_branch": "."}"#).unwrap();
-    let result = read_base_branch(&state);
-    assert!(result.is_err(), "expected Err, got {:?}", result);
-}
-
-#[test]
-fn read_base_branch_errs_when_value_is_dotdot() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state.json");
-    fs::write(&state, r#"{"base_branch": ".."}"#).unwrap();
-    let result = read_base_branch(&state);
-    assert!(result.is_err(), "expected Err, got {:?}", result);
-}
-
-#[test]
-fn read_base_branch_trims_whitespace() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = dir.path().join("state.json");
-    fs::write(&state, r#"{"base_branch": "  staging  "}"#).unwrap();
-    assert_eq!(read_base_branch(&state), Ok("staging".to_string()));
 }
 
 // --- FLOW_SIMULATE_BRANCH subprocess coverage ---
@@ -407,20 +284,21 @@ fn current_branch_subprocess_with_flow_simulate_branch_env_set() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     init_git_repo(&root, "main");
-    // `base-branch` reads the state file for the resolved current
-    // branch. With FLOW_SIMULATE_BRANCH set, current_branch() returns
-    // the simulated value before any git call. We don't care about
-    // the subprocess's exit status — the coverage signal comes from
-    // current_branch() executing the simulate-branch path.
+    // `status` calls `format_status::run_impl_main` which resolves the
+    // branch via `resolve_branch` → `current_branch()`. With
+    // FLOW_SIMULATE_BRANCH set, current_branch() returns the simulated
+    // value before any git call. We don't care about the subprocess's
+    // exit status — the coverage signal comes from current_branch()
+    // executing the simulate-branch path.
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["base-branch"])
+        .args(["status"])
         .current_dir(&root)
         .env_remove("FLOW_CI_RUNNING")
         .env("FLOW_SIMULATE_BRANCH", "simulated-branch")
         .env("GH_TOKEN", "invalid")
         .env("HOME", &root)
         .output()
-        .expect("spawn flow-rs base-branch");
+        .expect("spawn flow-rs status");
     let _ = output;
 }
 
@@ -460,14 +338,14 @@ fn current_branch_subprocess_with_empty_flow_simulate_branch() {
     let root = dir.path().canonicalize().unwrap();
     init_git_repo(&root, "main");
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["base-branch"])
+        .args(["status"])
         .current_dir(&root)
         .env_remove("FLOW_CI_RUNNING")
         .env("FLOW_SIMULATE_BRANCH", "")
         .env("GH_TOKEN", "invalid")
         .env("HOME", &root)
         .output()
-        .expect("spawn flow-rs base-branch");
+        .expect("spawn flow-rs status");
     let _ = output;
 }
 
@@ -544,11 +422,77 @@ fn current_branch_subprocess_with_no_git_in_path() {
     let empty_bin = root.join("empty_bin");
     fs::create_dir_all(&empty_bin).unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["status"])
+        .current_dir(&root)
+        .env_remove("FLOW_CI_RUNNING")
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env("PATH", empty_bin.display().to_string())
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs status");
+    let _ = output;
+}
+
+/// Drives the `Err(e)` spawn-failure arm of
+/// `default_branch_from_output` by spawning the compiled `flow-rs`
+/// binary with `PATH` rewritten to a tempdir that does NOT contain
+/// `git`. `bin/flow base-branch` calls `default_branch_in(&root)`,
+/// which spawns `git symbolic-ref`. With no git on PATH, the spawn
+/// returns `Err(io::Error{NotFound})`; the match arm formats the
+/// spawn-failed message and the subcommand exits 1.
+#[test]
+fn default_branch_in_subprocess_with_no_git_in_path_covers_spawn_err() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let empty_bin = root.join("empty_bin");
+    fs::create_dir_all(&empty_bin).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["base-branch"])
         .current_dir(&root)
         .env_remove("FLOW_CI_RUNNING")
         .env_remove("FLOW_SIMULATE_BRANCH")
         .env("PATH", empty_bin.display().to_string())
+        .env("GH_TOKEN", "invalid")
+        .env("HOME", &root)
+        .output()
+        .expect("spawn flow-rs base-branch");
+    let _ = output;
+}
+
+/// Drives the `if stripped.is_empty()` branch in
+/// `default_branch_from_output` by spawning the compiled `flow-rs`
+/// binary with `PATH` pointed at a fake `git` that exits 0 with
+/// empty stdout. `bin/flow base-branch` calls `default_branch_in`,
+/// which spawns `git symbolic-ref` and gets exit 0 with no output;
+/// `String::from_utf8_lossy("").trim().to_string()` yields "",
+/// `strip_prefix("origin/")` returns None so `unwrap_or` gives "",
+/// and the empty-check returns Err. Real git refuses to set
+/// `refs/remotes/origin/HEAD` to a target without a branch suffix,
+/// so this anomalous shape is only reachable via fake-binary
+/// fixtures or git binary corruption.
+#[test]
+fn default_branch_in_returns_err_when_git_returns_empty_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let mock_bin = root.join("mock_bin");
+    fs::create_dir_all(&mock_bin).unwrap();
+    // Fake git: exit 0 with empty stdout for every invocation.
+    fs::write(mock_bin.join("git"), "#!/usr/bin/env bash\nexit 0\n").unwrap();
+    let mut perms = fs::metadata(mock_bin.join("git")).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(mock_bin.join("git"), perms).unwrap();
+    let path = format!(
+        "{}:{}",
+        mock_bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["base-branch"])
+        .current_dir(&root)
+        .env_remove("FLOW_CI_RUNNING")
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env("PATH", &path)
         .env("GH_TOKEN", "invalid")
         .env("HOME", &root)
         .output()

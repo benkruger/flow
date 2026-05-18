@@ -80,30 +80,6 @@ fn create_state_file(repo: &Path, branch: &str) {
     .unwrap();
 }
 
-/// Set up a state file with a non-default `base_branch` so start-gate's
-/// `read_base_branch` helper returns the configured value (the
-/// `Some(str)` branch of the `as_str` chain) rather than falling back
-/// to `"main"`. Used to verify that integration-branch operations
-/// (git pull, CI baseline, deps push) target the value from state.
-fn create_state_file_with_base_branch(repo: &Path, branch: &str, base_branch: &str) {
-    let branch_dir = flow_states_dir(repo).join(branch);
-    fs::create_dir_all(&branch_dir).unwrap();
-    let state = json!({
-        "schema_version": 1,
-        "branch": branch,
-        "base_branch": base_branch,
-        "current_phase": "flow-start",
-        "start_step": 1,
-        "start_steps_total": 5,
-        "phases": {}
-    });
-    fs::write(
-        branch_dir.join("state.json"),
-        serde_json::to_string_pretty(&state).unwrap(),
-    )
-    .unwrap();
-}
-
 /// Write a CI sentinel so ci::run_impl takes the fast skip path
 /// without spawning any bin/* scripts. Excludes `.flow-states/` from
 /// git so the sentinel itself doesn't change the tree snapshot
@@ -397,6 +373,23 @@ fn test_pull_failure() {
         .current_dir(&repo)
         .output()
         .unwrap();
+    // Synthesize origin/HEAD locally so default_branch_in resolves,
+    // even though no actual remote exists — git pull will still fail
+    // because the bare repo isn't there.
+    Command::new("git")
+        .args(["update-ref", "refs/remotes/origin/main", "HEAD"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args([
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/main",
+        ])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
 
     create_bin_tools(&repo, 0);
     create_state_file(&repo, "pull-fail-branch");
@@ -507,10 +500,26 @@ fn test_run_impl_main_always_exits_0() {
         .current_dir(&repo)
         .output()
         .unwrap();
+    // Synthesize origin/HEAD so default_branch_in resolves, but no
+    // actual remote exists — git pull will fail.
+    Command::new("git")
+        .args(["update-ref", "refs/remotes/origin/main", "HEAD"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args([
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/main",
+        ])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
 
     create_state_file(&repo, "exit-code-branch");
 
-    // No remote → git pull fails → status:error, exit 0.
+    // No actual remote → git pull fails → status:error, exit 0.
     let output = run_start_gate(&repo, "exit-code-branch");
     assert_eq!(
         output.status.code(),
@@ -522,19 +531,32 @@ fn test_run_impl_main_always_exits_0() {
     assert_eq!(data["step"], "git_pull");
 }
 
-/// Drive the `Some(str)` branch of `read_base_branch` and prove the
-/// value reaches `git pull origin <base_branch>`. Bare repo has only
-/// `main`; state file declares `base_branch: "staging"`. start-gate
-/// pulls `origin/staging`, which doesn't exist, so the failure
-/// surfaces as `step: git_pull` — and the stderr returned in the
-/// `message` field names "staging", proving the state-file value
-/// flowed through to the git invocation rather than the hardcoded
-/// "main" fallback.
+/// Prove that start-gate resolves the integration branch via
+/// `git::default_branch_in` rather than from any state-file field.
+/// We repoint local origin/HEAD at a synthesized `staging` branch
+/// that the bare remote does NOT have, so `git pull origin staging`
+/// fails — the failure stderr carrying "staging" proves the
+/// git-resolved branch reached the pull invocation.
 #[test]
-fn test_base_branch_from_state_used_for_git_pull() {
+fn start_gate_pulls_default_branch_resolved_by_git() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    create_state_file_with_base_branch(&repo, "feat-branch", "staging");
+    // Repoint origin/HEAD at staging locally; the bare has only main.
+    Command::new("git")
+        .args(["update-ref", "refs/remotes/origin/staging", "HEAD"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args([
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/staging",
+        ])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    create_state_file(&repo, "feat-branch");
 
     let output = run_start_gate(&repo, "feat-branch");
     let data = parse_output(&output);
@@ -543,7 +565,7 @@ fn test_base_branch_from_state_used_for_git_pull() {
     let msg = data["message"].as_str().unwrap_or("");
     assert!(
         msg.contains("staging"),
-        "git pull error must reference 'staging' to prove base_branch flowed through, got: {}",
+        "git pull error must reference 'staging' to prove git-resolved branch flowed through, got: {}",
         msg
     );
 }

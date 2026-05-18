@@ -25,7 +25,7 @@ use crate::cleanup;
 use crate::commands::log::append_log;
 use crate::complete_post_merge;
 use crate::flow_paths::FlowPaths;
-use crate::git::{project_root, read_base_branch};
+use crate::git::{default_branch_in, project_root};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -52,8 +52,10 @@ pub struct Args {
 
 /// Production entry: runs post-merge then cleanup, building the final
 /// JSON result. Best-effort logging to `.flow-states/<branch>.log`
-/// when the directory exists. Slash-containing branches no-op the log
-/// closure via `FlowPaths::try_new`.
+/// when the directory exists. The `is_valid_branch` upfront guard
+/// rejects empty, slash-containing, path-traversal, and NUL-bearing
+/// branch values with a structured `invalid_branch` error envelope
+/// before any side effect runs.
 ///
 /// Self-gates against cwd-inside-worktree before any side effect: when
 /// the caller's canonicalized cwd equals or sits beneath the
@@ -81,21 +83,39 @@ pub fn run_impl(args: &Args) -> Value {
         }
     }
 
+    // Validate the --branch argument before any side effect runs.
+    // `cleanup::cleanup` constructs `.flow-states/<branch>/` and
+    // `.worktrees/<branch>/` paths from this value; an empty,
+    // path-traversal, or NUL-bearing branch would escape the
+    // per-branch scope per `.claude/rules/branch-path-safety.md`.
+    if !FlowPaths::is_valid_branch(&args.branch) {
+        return json!({
+            "status": "error",
+            "reason": "invalid_branch",
+            "message": "--branch is not a valid FLOW branch name (empty, contains '/', '.', '..', or NUL)",
+        });
+    }
+
     let root = project_root();
     let branch = &args.branch;
 
-    // Best-effort logging — `try_new` tolerates slash-containing
-    // branches per `.claude/rules/external-input-validation.md`. The
-    // guard checks the branch directory rather than the parent
-    // `.flow-states/` directory so that the post-cleanup invocation
-    // skips when cleanup has just removed the branch directory:
-    // `append_log` calls `ensure_branch_dir()`, and a parent-scoped
-    // guard would resurrect the directory cleanup just removed.
+    // Best-effort logging — the upstream `is_valid_branch` check
+    // above guarantees `branch` is a valid FLOW branch name, so
+    // `FlowPaths::try_new` always returns `Some` here. The
+    // `.expect` documents that the boundary check makes the None
+    // arm unreachable per `.claude/rules/external-input-validation.md`.
+    // The directory guard checks the branch directory rather than
+    // the parent `.flow-states/` directory so that the post-cleanup
+    // invocation skips when cleanup has just removed the branch
+    // directory: `append_log` calls `ensure_branch_dir()`, and a
+    // parent-scoped guard would resurrect the directory cleanup
+    // just removed.
+    let paths = FlowPaths::try_new(&root, branch).expect(
+        "is_valid_branch guard above proves branch is non-empty, no '/', no '.'/'..', no NUL",
+    );
     let log = |msg: &str| {
-        if let Some(paths) = FlowPaths::try_new(&root, branch) {
-            if paths.branch_dir().is_dir() {
-                let _ = append_log(&root, branch, msg);
-            }
+        if paths.branch_dir().is_dir() {
+            let _ = append_log(&root, branch, msg);
         }
     };
 
@@ -161,13 +181,20 @@ pub fn run_impl(args: &Args) -> Value {
         .unwrap_or("")
         .to_string();
 
-    // Cleanup. Resolve base_branch from the state file referenced by
-    // --state-file (the path the post-merge step just consumed) so
-    // the optional --pull step targets origin/<base_branch>. Falls
-    // back to git's integration branch (origin/HEAD) when the field
-    // is missing or the file is unreadable.
-    let base_branch = read_base_branch(Path::new(&args.state_file))
-        .unwrap_or_else(|_| crate::git::default_branch_in(&root));
+    // Cleanup. Resolve the integration branch from git (single source
+    // of truth) so the optional --pull step targets
+    // origin/<base_branch>. Fail closed via JSON error envelope when
+    // git cannot resolve it.
+    let base_branch = match default_branch_in(&root) {
+        Ok(b) => b,
+        Err(msg) => {
+            return json!({
+                "status": "error",
+                "step": "resolve_base_branch",
+                "message": msg,
+            });
+        }
+    };
     let cleanup_steps =
         cleanup::cleanup(&root, branch, &args.worktree, None, args.pull, &base_branch);
     let cleanup_map: Map<String, Value> = cleanup_steps
@@ -184,18 +211,17 @@ pub fn run_impl(args: &Args) -> Value {
     // write is best-effort — a filesystem error here must not fail
     // the merge that already succeeded upstream.
     if args.pull && cleanup_map.get("git_pull").and_then(|v| v.as_str()) == Some("pulled") {
-        // `base_branch` comes from the state file's `base_branch`
-        // field OR the `default_branch_in` fallback. Both sources
-        // are unvalidated state-derived input — slash-containing
-        // origin/HEAD targets (e.g. `feature/main`) and corrupt
-        // state-file values can reach this branch. `sentinel_path`
-        // calls `FlowPaths::try_new(...).expect(...)` and panics on
-        // invalid branches; per
-        // `.claude/rules/branch-path-safety.md`, callers must
-        // pattern-match on `is_valid_branch` before reaching the
-        // panicking constructor. Sentinel writing is best-effort
-        // (per the surrounding rationale), so an invalid base_branch
-        // here simply skips the write — the next start-gate run will
+        // `base_branch` comes from `git::default_branch_in(root)` via
+        // the match arm at the top of run_impl. The value is git
+        // subprocess output and is unvalidated — slash-containing
+        // origin/HEAD targets (e.g. `feature/main`) can reach this
+        // branch. `sentinel_path` calls
+        // `FlowPaths::try_new(...).expect(...)` and panics on invalid
+        // branches; per `.claude/rules/branch-path-safety.md`, callers
+        // must pattern-match on `is_valid_branch` before reaching the
+        // panicking constructor. Sentinel writing is best-effort (per
+        // the surrounding rationale), so an invalid base_branch here
+        // simply skips the write — the next start-gate run will
         // re-establish the sentinel.
         if FlowPaths::is_valid_branch(&base_branch) {
             let snapshot = crate::ci::tree_snapshot(&root, None);

@@ -20,10 +20,12 @@ fn flow_rs_no_recursion() -> Command {
     cmd
 }
 
-/// Create a minimal git repo for testing.
-fn setup_git_repo(dir: &Path) {
+/// Create a git repo WITHOUT `refs/remotes/origin/HEAD`, so
+/// `default_branch_in` returns Err. Used by the fail-closed tests
+/// that exercise the new resolve_base_branch error path.
+fn setup_git_repo_no_origin_head(dir: &Path) {
     StdCommand::new("git")
-        .args(["init"])
+        .args(["init", "--initial-branch", "main"])
         .current_dir(dir)
         .output()
         .unwrap();
@@ -35,6 +37,103 @@ fn setup_git_repo(dir: &Path) {
     .unwrap();
     StdCommand::new("git")
         .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    // Deliberately no symbolic-ref setup.
+}
+
+#[test]
+fn cleanup_returns_failed_pull_step_when_default_branch_resolve_fails() {
+    // Per-branch cleanup with --pull → default_branch_in fails to
+    // resolve the integration branch. Cleanup must still complete
+    // (worktree removal, branch deletion, etc.); the pull step
+    // surfaces the resolve failure as `git_pull: "failed: ..."`
+    // rather than aborting all cleanup.
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo_no_origin_head(dir.path());
+    let _wt_rel = setup_feature(dir.path(), "test-feature");
+
+    let (value, code) = run_impl_main(&args_for(
+        dir.path(),
+        "test-feature",
+        ".worktrees/test-feature",
+        None,
+        true,
+    ));
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+    let git_pull = value["steps"]["git_pull"].as_str().unwrap_or("");
+    assert!(
+        git_pull.starts_with("failed: cannot resolve integration branch"),
+        "git_pull must surface the resolve failure; got: {}",
+        git_pull
+    );
+}
+
+#[test]
+fn cleanup_without_pull_succeeds_when_default_branch_resolve_fails() {
+    // Per-branch cleanup without --pull → `default_branch_in` is not
+    // called at all (no consumer of `base_branch` runs). Cleanup
+    // completes normally even on repos with no origin/HEAD.
+    let dir = tempfile::tempdir().unwrap();
+    setup_git_repo_no_origin_head(dir.path());
+    let _wt_rel = setup_feature(dir.path(), "test-feature");
+
+    let (value, code) = run_impl_main(&args_for(
+        dir.path(),
+        "test-feature",
+        ".worktrees/test-feature",
+        None,
+        false,
+    ));
+    assert_eq!(code, 0);
+    assert_eq!(value["status"], "ok");
+}
+
+/// Create a minimal git repo for testing. Configures
+/// `refs/remotes/origin/HEAD` to point at `refs/remotes/origin/main`
+/// so `git::default_branch_in` can resolve the integration branch via
+/// `git symbolic-ref --short refs/remotes/origin/HEAD`.
+fn setup_git_repo(dir: &Path) {
+    StdCommand::new("git")
+        .args(["init", "--initial-branch", "main"])
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    let config_path = dir.join(".git").join("config");
+    fs::write(
+        &config_path,
+        "[user]\n\temail = t@t.com\n\tname = T\n[commit]\n\tgpgsign = false\n",
+    )
+    .unwrap();
+    StdCommand::new("git")
+        .args(["commit", "--allow-empty", "-m", "init"])
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    // Synthesize `refs/remotes/origin/main` and the symbolic-ref HEAD so
+    // `default_branch_in` returns "main" without requiring a real remote.
+    let head_sha = String::from_utf8(
+        StdCommand::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(dir)
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap()
+    .trim()
+    .to_string();
+    let remote_dir = dir.join(".git/refs/remotes/origin");
+    fs::create_dir_all(&remote_dir).unwrap();
+    fs::write(remote_dir.join("main"), format!("{}\n", head_sha)).unwrap();
+    StdCommand::new("git")
+        .args([
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/main",
+        ])
         .current_dir(dir)
         .output()
         .unwrap();
@@ -185,22 +284,35 @@ fn cleanup_empty_tempdir_does_not_panic() {
 
 // --- Library-level tests via run_impl_main ---
 
-/// Drive the `Some(str)` branch of `read_base_branch` through
-/// `cleanup --pull` and prove the state-file value reaches
-/// `git pull origin <base_branch>`. The fixture creates a bare
-/// remote with only `main`; the state file declares
-/// `base_branch: "staging"`. After the helper plumbing,
-/// `cleanup` issues `git pull origin staging` against the bare
-/// remote, which fails — the failure stderr (carrying "staging")
-/// surfaces as the `steps.git_pull` value, proving the value
-/// flowed through rather than the hardcoded "main".
+/// Prove that `cleanup` resolves the integration branch via
+/// `git::default_branch_in` rather than from any state-file field.
+/// The bare remote has only `main`; we configure origin/HEAD to
+/// point at a `staging` branch (synthesized locally) so the cleanup
+/// step's `git pull origin staging` fails — the failure stderr
+/// carrying "staging" proves the git-resolved branch reached the
+/// pull call.
 #[test]
-fn cleanup_pulls_base_branch_from_state() {
+fn cleanup_pulls_default_branch_resolved_by_git() {
     let tmp = tempfile::tempdir().unwrap();
     let parent = tmp.path().canonicalize().unwrap();
-    // create_git_repo_with_remote sets up bare main + working repo
-    // with origin pointing at it.
     let repo = common::create_git_repo_with_remote(&parent);
+
+    // Repoint origin/HEAD locally at refs/remotes/origin/staging without
+    // pushing a real staging branch to the bare remote — pull will fail.
+    StdCommand::new("git")
+        .args(["update-ref", "refs/remotes/origin/staging", "HEAD"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    StdCommand::new("git")
+        .args([
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/staging",
+        ])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
 
     // Worktree on a feature branch.
     let wt_rel = ".worktrees/test-feature".to_string();
@@ -210,16 +322,11 @@ fn cleanup_pulls_base_branch_from_state() {
         .output()
         .unwrap();
 
-    // State file with base_branch=staging.
     let branch_dir = repo.join(".flow-states").join("test-feature");
     fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
         branch_dir.join("state.json"),
-        json!({
-            "branch": "test-feature",
-            "base_branch": "staging",
-        })
-        .to_string(),
+        json!({"branch": "test-feature"}).to_string(),
     )
     .unwrap();
 
@@ -232,7 +339,7 @@ fn cleanup_pulls_base_branch_from_state() {
         .unwrap_or_else(|| "<missing>".to_string());
     assert!(
         pull_result.contains("staging"),
-        "git_pull step must reference 'staging' to prove base_branch flowed through, got: {}",
+        "git_pull step must reference 'staging' to prove git-resolved branch flowed through, got: {}",
         pull_result
     );
 }
@@ -710,6 +817,20 @@ fn cli_run_cmd_spawn_err_produces_failed_step() {
     setup_git_repo(&root);
     let _wt_rel = setup_feature(&root, "test-feature");
 
+    // PATH with only git available (no gh). default_branch_in
+    // succeeds via real git; the cleanup's gh subprocess call
+    // (for --pr 999) fails to spawn — exercises run_cmd's Err
+    // branch.
+    let git_only_bin = root.join("git-only-bin");
+    fs::create_dir_all(&git_only_bin).unwrap();
+    let real_git = std::process::Command::new("which")
+        .arg("git")
+        .output()
+        .unwrap();
+    let real_git_path = String::from_utf8_lossy(&real_git.stdout).trim().to_string();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&real_git_path, git_only_bin.join("git")).unwrap();
+
     let output = flow_rs_no_recursion()
         .args([
             "cleanup",
@@ -721,7 +842,7 @@ fn cli_run_cmd_spawn_err_produces_failed_step() {
             "--pr",
             "999",
         ])
-        .env("PATH", "/nonexistent-path-for-flow-test")
+        .env("PATH", &git_only_bin)
         .env("HOME", &root)
         .output()
         .unwrap();
@@ -729,13 +850,11 @@ fn cli_run_cmd_spawn_err_produces_failed_step() {
     let last_line = stdout.trim().lines().last().unwrap_or("");
     let data: Value = serde_json::from_str(last_line).expect("json");
     let steps = data["steps"].as_object().unwrap();
-    let any_failed = steps
-        .values()
-        .any(|v| v.as_str().unwrap_or("").starts_with("failed:"));
+    let pr_close = steps["pr_close"].as_str().unwrap();
     assert!(
-        any_failed,
-        "expected at least one failed step with restricted PATH, got: {:?}",
-        steps
+        pr_close.starts_with("failed:"),
+        "expected pr_close to fail on gh spawn failure, got: {}",
+        pr_close
     );
 }
 

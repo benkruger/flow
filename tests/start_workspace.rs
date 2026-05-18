@@ -424,18 +424,32 @@ fn test_worktree_cwd_includes_relative_cwd_suffix() {
     assert_eq!(data["relative_cwd"], "api");
 }
 
-/// Drive the `Some(str)` branch of base_branch state-file parsing in
-/// `run_impl_with_paths` and prove the value reaches
-/// `gh pr create --base <base_branch>`. State file declares
-/// `base_branch: "staging"`. The gh stub captures every argv to a
-/// recorder file so the test can assert `--base staging` was passed —
-/// proving the value flowed through from state file to `gh` instead
-/// of the hardcoded `"main"` fallback.
+/// Prove that `start-workspace` resolves the integration branch via
+/// `git::default_branch_in` rather than from any state-file field.
+/// Repoint local origin/HEAD at a synthesized `staging` branch and
+/// prove `gh pr create --base staging` is passed — confirming the
+/// git-resolved branch reached the PR creation.
 #[test]
-fn test_base_branch_from_state_used_for_pr_base() {
+fn start_workspace_pr_base_resolved_by_git() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
+
+    // Repoint local origin/HEAD at staging.
+    Command::new("git")
+        .args(["update-ref", "refs/remotes/origin/staging", "HEAD"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args([
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/staging",
+        ])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
 
     // Recorder gh stub: append every invocation to .gh-args, then emit
     // the standard PR URL on stdout so the rest of the workflow proceeds.
@@ -448,13 +462,12 @@ fn test_base_branch_from_state_used_for_pr_base() {
     );
     let stub_dir = create_gh_stub(&repo, &stub_script);
 
-    // Pre-create state with non-default base_branch.
+    // State file no longer carries base_branch — that field is gone.
     let branch_dir = flow_states_dir(&repo).join("staging-flow");
     fs::create_dir_all(&branch_dir).unwrap();
     let state = json!({
         "schema_version": 1,
         "branch": "staging-flow",
-        "base_branch": "staging",
         "relative_cwd": "",
         "started_at": "2026-01-01T00:00:00-08:00",
         "current_phase": "flow-start",

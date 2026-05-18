@@ -331,6 +331,16 @@ pub fn create_git_repo_with_remote(parent: &Path) -> PathBuf {
         .output()
         .unwrap();
 
+    // Configure refs/remotes/origin/HEAD so `git::default_branch_in`
+    // resolves to "main" without ambiguity. `git clone` from an empty
+    // bare repo does NOT set the symbolic-ref because the bare had no
+    // commits at clone time.
+    Command::new("git")
+        .args(["remote", "set-head", "origin", "main"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+
     repo
 }
 

@@ -58,6 +58,21 @@ fn init_git_repo(dir: &std::path::Path) {
         "git commit failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+
+    // Synthesize refs/remotes/origin/HEAD so `git::default_branch_in`
+    // resolves to "main" without requiring a real remote.
+    let _ = Command::new("git")
+        .args(["update-ref", "refs/remotes/origin/main", "HEAD"])
+        .current_dir(dir)
+        .output();
+    let _ = Command::new("git")
+        .args([
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/main",
+        ])
+        .current_dir(dir)
+        .output();
 }
 
 /// Timing data for lock serialization tests.

@@ -32,7 +32,9 @@ fn git(cwd: &Path, args: &[&str]) {
 }
 
 /// Create a git repo at `<tmp>/repo` with main branch, user config, and
-/// an initial commit. Returns the canonicalized repo path.
+/// an initial commit. Configures `refs/remotes/origin/HEAD` so
+/// `git::default_branch_in` resolves to `main` without requiring a real
+/// remote. Returns the canonicalized repo path.
 fn make_repo(tmp: &Path) -> PathBuf {
     let repo = tmp.join("repo");
     fs::create_dir_all(&repo).unwrap();
@@ -43,16 +45,29 @@ fn make_repo(tmp: &Path) -> PathBuf {
     fs::write(repo.join("README.md"), "initial\n").unwrap();
     git(&repo, &["add", "-A"]);
     git(&repo, &["commit", "-m", "init"]);
+    // Synthesize a local origin/HEAD pointer at refs/remotes/origin/main
+    // so default_branch_in resolves to "main" without a real remote.
+    git(&repo, &["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    git(
+        &repo,
+        &[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/main",
+        ],
+    );
     repo.canonicalize().unwrap()
 }
 
 /// Create a bare remote at `<tmp>/bare.git`, add it to `repo` as origin,
-/// and push main. Returns the bare remote path.
+/// push main, and configure `refs/remotes/origin/HEAD` so
+/// `git::default_branch_in` resolves to `main`. Returns the bare path.
 fn attach_bare_remote(tmp: &Path, repo: &Path) -> PathBuf {
     let bare = tmp.join("bare.git");
     git(tmp, &["init", "--bare", bare.to_str().unwrap()]);
     git(repo, &["remote", "add", "origin", bare.to_str().unwrap()]);
     git(repo, &["push", "-u", "origin", "main"]);
+    git(repo, &["remote", "set-head", "origin", "main"]);
     bare
 }
 
@@ -225,51 +240,53 @@ fn run_impl_main_up_to_date_exits_0() {
     assert_eq!(value["status"], "up_to_date");
 }
 
-/// Drive the `Some(str)` branch of `read_base_branch` through
-/// `check_freshness` and prove the state-file value reaches
-/// `git fetch origin <base_branch>`. The bare remote has only
-/// `main`; the state file declares `base_branch: "staging"`. After
-/// the helper plumbing, `check_freshness` issues
-/// `git fetch origin staging` against the bare remote, which fails
-/// with "couldn't find remote ref staging" — surfaces as
-/// `status: "error"` with a `message` carrying "staging".
+/// Prove that `check_freshness` resolves the integration branch via
+/// `git::default_branch_in` (single source of truth) rather than from
+/// any state-file field. Bare remote's `origin/HEAD` points at
+/// `staging`; the bare repo does NOT have a `staging` ref so
+/// `git fetch origin staging` fails with "couldn't find remote ref
+/// staging" — surfaces as `status: "error"` with a `message` carrying
+/// "staging", proving the git-resolved branch reached the fetch call.
 #[test]
-fn check_freshness_uses_base_branch_from_state() {
+fn check_freshness_fetches_default_branch_resolved_by_git() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = make_repo(tmp.path());
-    attach_bare_remote(tmp.path(), &repo);
+    let bare = tmp.path().join("bare.git");
+    git(tmp.path(), &["init", "--bare", bare.to_str().unwrap()]);
+    git(&repo, &["remote", "add", "origin", bare.to_str().unwrap()]);
+    git(&repo, &["push", "-u", "origin", "main"]);
+    // Configure origin/HEAD to point at a `staging` branch that the
+    // bare remote does not actually have — fetch will fail with the
+    // remote ref missing.
+    git(
+        &repo,
+        &["update-ref", "refs/remotes/origin/staging", "HEAD"],
+    );
+    git(
+        &repo,
+        &[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/staging",
+        ],
+    );
 
-    let state_file = tmp.path().join("state.json");
-    fs::write(
-        &state_file,
-        json!({
-            "branch": "main",
-            "base_branch": "staging",
-            "freshness_retries": 0,
-        })
-        .to_string(),
-    )
-    .unwrap();
-
-    let raw_args = vec![
-        "--state-file".to_string(),
-        state_file.to_string_lossy().to_string(),
-    ];
+    let raw_args: Vec<String> = vec![];
     let (value, code) = run_impl_main(&raw_args, &repo);
     assert_eq!(
         code, 1,
-        "expected non-zero exit when origin/staging missing, got: {}",
+        "expected non-zero exit when origin/staging missing on remote, got: {}",
         value
     );
     assert_eq!(
         value["status"], "error",
-        "expected error status when origin/staging missing, got: {}",
+        "expected error status, got: {}",
         value
     );
     let msg = value["message"].as_str().unwrap_or("");
     assert!(
         msg.contains("staging"),
-        "fetch error must reference 'staging' to prove base_branch flowed through, got: {}",
+        "fetch error must reference 'staging' to prove git-resolved branch flowed through, got: {}",
         msg
     );
 }
@@ -309,19 +326,27 @@ fn run_impl_main_merged_with_state_file_increments_retries() {
 }
 
 #[test]
-fn run_impl_main_fetch_failure_returns_error() {
-    // No remote configured — `git fetch origin main` fails with
-    // "'origin' does not appear to be a git repository" or similar.
+fn check_freshness_errors_when_default_branch_resolve_fails() {
+    // Plain git init with NO origin/HEAD — `git symbolic-ref` fails
+    // and `check_freshness` surfaces the failure as
+    // `step: resolve_base_branch`.
     let tmp = tempfile::tempdir().unwrap();
-    let repo = make_repo(tmp.path());
+    let repo = tmp.path().join("repo");
+    fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-b", "main"]);
+    git(&repo, &["config", "user.email", "test@test.com"]);
+    git(&repo, &["config", "user.name", "Test"]);
+    git(&repo, &["config", "commit.gpgsign", "false"]);
+    git(&repo, &["commit", "--allow-empty", "-m", "init"]);
+    let repo = repo.canonicalize().unwrap();
 
     let (value, code) = run_impl_main(&[], &repo);
     assert_eq!(code, 1);
     assert_eq!(value["status"], "error");
-    assert_eq!(value["step"], "fetch");
+    assert_eq!(value["step"], "resolve_base_branch");
     assert!(
         !value["message"].as_str().unwrap_or("").is_empty(),
-        "expected non-empty fetch error message, got: {}",
+        "expected non-empty error message, got: {}",
         value
     );
 }
@@ -583,10 +608,10 @@ fn run_impl_main_merge_fails_without_conflict_markers() {
     );
 }
 
-/// With PATH restricted so `git` cannot be spawned, the fetch call's
-/// `run_cmd_with_timeout` returns `Err("Failed to spawn git: ...")`.
-/// `run_git` folds that into `(-1, "", spawn_err)` so `check_freshness`
-/// returns a fetch error — exercises the Err branch of run_git.
+/// With PATH restricted so `git` cannot be spawned, the resolve-base
+/// step's `git symbolic-ref` call fails to spawn. `check_freshness`
+/// surfaces that as a `resolve_base_branch` error before reaching the
+/// fetch step.
 #[test]
 fn cli_fetch_spawn_failure_returns_error() {
     let tmp = tempfile::tempdir().unwrap();
@@ -611,13 +636,13 @@ fn cli_fetch_spawn_failure_returns_error() {
     );
     let data = parse_last_json(&output.stdout);
     assert_eq!(data["status"], "error");
-    assert_eq!(data["step"], "fetch");
+    assert_eq!(data["step"], "resolve_base_branch");
     assert!(
         data["message"]
             .as_str()
             .unwrap_or("")
             .to_lowercase()
-            .contains("failed to spawn"),
+            .contains("spawn"),
         "expected spawn-failure message, got: {}",
         data
     );

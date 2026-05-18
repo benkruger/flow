@@ -52,7 +52,11 @@ not map to a tenant, discard it.
 
 Your prompt contains these labeled sections:
 
-- **DIFF** — the full `git diff origin/main...HEAD`
+- **DIFF** — the full `git diff origin/<base_branch>...HEAD`, where
+  `<base_branch>` is the integration branch the flow coordinates
+  against (resolved at runtime via `bin/flow base-branch` — usually
+  `main`, but `staging`/`develop`/etc. for repos whose default
+  branch is not `main`)
 - **STATE FILE DATA** — phase timings, visit counts, and notes from
   `/flow:flow-note` captured during the session
 - **PLAN** — the implementation plan the developer followed

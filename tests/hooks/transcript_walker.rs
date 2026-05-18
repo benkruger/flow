@@ -2635,7 +2635,7 @@ fn any_skill_in_set_since_user_skips_hook_feedback_string_content_ismeta_true() 
     // Regression guard: a future edit reintroduces the bare
     // `content.as_str().is_some()` check into
     // `any_skill_in_set_since_user`. The named consumer is the
-    // Layer 9 bootstrap carve-out in
+    // Layer 10 bootstrap carve-out in
     // `validate_pretool::bootstrap_carveout_applies`.
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
@@ -2662,7 +2662,7 @@ fn any_skill_recognizes_legacy_command_name_user_turn_for_flow_prime() {
     //
     // Regression guard: a future edit removes the user-turn
     // boundary-recognition branch from `any_skill_in_set_since_user`,
-    // so `flow:flow-prime` no longer satisfies the Layer 9 bootstrap
+    // so `flow:flow-prime` no longer satisfies the Layer 10 bootstrap
     // carve-out (`validate_pretool::bootstrap_carveout_applies`) and
     // legitimate flow-prime commits on the integration branch are
     // blocked.
@@ -2690,7 +2690,7 @@ fn any_skill_recognizes_two_line_command_message_user_turn_for_flow_release() {
     //
     // Regression guard: a future edit drops the two-line shape from
     // the user-turn boundary recognition, so `/flow-release` typed on
-    // Claude Code 2.1.140+ no longer satisfies the Layer 9 bootstrap
+    // Claude Code 2.1.140+ no longer satisfies the Layer 10 bootstrap
     // carve-out and legitimate release commits on the integration
     // branch are blocked.
     let dir = tempfile::tempdir().unwrap();
@@ -2714,7 +2714,7 @@ fn any_skill_recognizes_legacy_command_name_user_turn_for_flow_release() {
     //
     // Regression guard: a future edit drops the legacy shape from the
     // user-turn boundary recognition, so `/flow-release` typed on
-    // pre-2.1.140 Claude Code no longer satisfies the Layer 9
+    // pre-2.1.140 Claude Code no longer satisfies the Layer 10
     // bootstrap carve-out.
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
@@ -2737,7 +2737,7 @@ fn any_skill_rejects_user_turn_naming_non_sanctioned_user_only_skill() {
     //
     // Regression guard: a future edit makes the user-turn recognition
     // accept ANY user-only skill rather than only the sanctioned set,
-    // over-firing the Layer 9 bootstrap carve-out for an abort.
+    // over-firing the Layer 10 bootstrap carve-out for an abort.
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}}\n";
@@ -2760,7 +2760,7 @@ fn any_skill_rejects_user_turn_with_mid_prose_command_marker() {
     //
     // Regression guard: a future edit replaces the `starts_with`
     // anchor with a `contains` check, letting a user discussing the
-    // marker in prose spuriously satisfy the Layer 9 bootstrap
+    // marker in prose spuriously satisfy the Layer 10 bootstrap
     // carve-out.
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
@@ -2785,7 +2785,7 @@ fn any_skill_skips_synthetic_ismeta_user_turn_before_boundary_recognition() {
     // Regression guard: a future edit moves the user-turn boundary
     // recognition ahead of the `is_real_user_turn` guard, so a
     // hook-injected feedback turn that happens to echo a
-    // `<command-name>` marker spuriously satisfies the Layer 9
+    // `<command-name>` marker spuriously satisfies the Layer 10
     // bootstrap carve-out.
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
@@ -2811,7 +2811,7 @@ fn any_skill_skips_empty_normalized_sanctioned_entry() {
     // Regression guard: a future edit removes the
     // `skill_norm.is_empty()` skip, so an empty `sanctioned` entry
     // builds the degenerate `<command-name>/</command-name>` shape and
-    // spuriously satisfies the Layer 9 bootstrap carve-out for a user
+    // spuriously satisfies the Layer 10 bootstrap carve-out for a user
     // turn carrying that exact marker.
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();

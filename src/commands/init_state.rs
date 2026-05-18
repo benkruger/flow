@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 
 use crate::commands::log::append_log;
 use crate::flow_paths::FlowPaths;
-use crate::git::{current_branch_in, project_root};
+use crate::git::project_root;
 use crate::hooks::capture_session::read_captured_session;
 use crate::label_issues::LABEL;
 use crate::lock::mutate_state;
@@ -77,19 +77,10 @@ fn seed_session_id_from_capture(project_root: &Path, branch: &str) {
 /// flows started inside a subdirectory land back in the same subdirectory
 /// after worktree creation.
 ///
-/// `base_branch` — the integration branch FLOW operates against. The
-/// caller is responsible for detecting it; the canonical CLI path
-/// ([`run`]) reads it from [`current_branch_in`] at flow-start time so
-/// it equals whatever `git branch --show-current` would report. Persisted
-/// into the state file so downstream `start-gate`, `start-workspace`,
-/// `complete-fast`, and the Review/Learn diff commands target
-/// the same trunk on every repo — `main`, `staging`, `develop`, or
-/// anything else the team works from.
 #[allow(clippy::too_many_arguments)]
 pub fn create_state(
     project_root: &Path,
     branch: &str,
-    base_branch: &str,
     skills: Option<&IndexMap<String, SkillConfig>>,
     prompt: &str,
     commit_format: Option<&str>,
@@ -103,7 +94,6 @@ pub fn create_state(
     let mut state = serde_json::Map::new();
     state.insert("schema_version".into(), json!(1));
     state.insert("branch".into(), json!(branch));
-    state.insert("base_branch".into(), json!(base_branch));
     state.insert("relative_cwd".into(), json!(relative_cwd));
     state.insert("repo".into(), Value::Null);
     state.insert("pr_number".into(), Value::Null);
@@ -290,26 +280,9 @@ pub fn run(
         .map(|s| s.to_string());
     let commit_format = commit_format_owned.as_deref();
 
-    // Detect base_branch from the user's current git branch. flow-start
-    // creates the worktree off this branch, Review diffs against
-    // origin/<base_branch>, and Complete merges back into it. Detached
-    // HEAD or non-git cwd cannot produce a valid base — surface that as
-    // a structured error rather than silently picking the wrong trunk.
-    let base_branch = match current_branch_in(&root) {
-        Some(b) => b,
-        None => {
-            json_error(
-                "flow-start must be invoked from a git branch (detected detached HEAD or non-git cwd)",
-                &[("step", json!("detect_base_branch"))],
-            );
-            std::process::exit(1);
-        }
-    };
-
     if let Err(e) = create_state(
         &root,
         &branch,
-        &base_branch,
         skills.as_ref(),
         &prompt,
         commit_format,

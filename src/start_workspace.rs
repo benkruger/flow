@@ -325,17 +325,9 @@ fn run_impl_with_paths(args: &Args, root: &Path, cwd: &Path) -> Value {
     };
     update_step(&state_path, 3);
 
-    // Read state file once: relative_cwd routes the agent into a
-    // subdirectory of the worktree (mono-repo flows); base_branch is
-    // the integration branch the PR will target as `--base`. Both were
-    // written by init_state before start-gate ran. Defaults preserve
-    // pre-existing behavior when the state file is unreadable, parse
-    // fails, or fields are absent (root-level flow against `main`).
-    // Reading both fields from a single parse keeps the callsite
-    // atomic; routing base_branch through `git::read_base_branch`
-    // would re-read the file. The `git::read_base_branch` helper is
-    // the single source of truth for callers that need only the
-    // integration branch.
+    // Read relative_cwd from the state file (captured by init_state at
+    // flow-start). Default to empty (worktree root) when the state file
+    // is unreadable, parse fails, or the field is absent.
     let state_value = std::fs::read_to_string(&state_path)
         .ok()
         .and_then(|s| serde_json::from_str::<Value>(&s).ok());
@@ -347,16 +339,23 @@ fn run_impl_with_paths(args: &Args, root: &Path, cwd: &Path) -> Value {
                 .map(|s| s.to_string())
         })
         .unwrap_or_default();
-    let base_branch = state_value
-        .as_ref()
-        .and_then(|v| {
-            v.get("base_branch")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_else(|| "main".to_string());
 
     let queue_dir = queue_path(root);
+
+    // Resolve the integration branch from git (single source of truth).
+    // The PR will target this branch as `--base`. Fail closed via JSON
+    // error envelope when git cannot resolve it.
+    let base_branch = match crate::git::default_branch_in(root) {
+        Ok(b) => b,
+        Err(msg) => {
+            release(&args.branch, &queue_dir);
+            return json!({
+                "status": "error",
+                "step": "resolve_base_branch",
+                "message": msg,
+            });
+        }
+    };
 
     // Helper: release lock and return error
     let release_lock = |feature: &str| {

@@ -8,7 +8,7 @@ mod common;
 use std::collections::HashSet;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use regex::Regex;
 use serde_json::Value;
@@ -989,5 +989,185 @@ fn adversarial_probe_must_not_be_tracked() {
          A tracked stub or committed probe defeats the cleanup. \
          Found in git ls-files: {}",
         stdout.trim()
+    );
+}
+
+// --- origin/main hardcode sweep ---
+//
+// After git was made the runtime source of truth for the integration
+// branch, no production Rust source under `src/` and no skill bash
+// block may hardcode `origin/main`. Every integration-branch
+// reference must resolve via `git::default_branch_in` (Rust) or
+// `bin/flow base-branch` (skills) so repos whose default branch is
+// `staging`/`develop`/etc. coordinate against their actual
+// integration branch instead of crashing on a missing `main` ref.
+//
+// One narrow allow-list entry is documented because its
+// `origin/main` occurrence is structurally NOT an integration-branch
+// hardcode:
+//
+// - `src/capture_diff.rs` — uses the literal `origin/main` as a
+//   generic ref-shape illustration inside the `is_safe_base` doc
+//   comment, not as a runtime value.
+//
+// The Rust scanner walks `src/` only; the bash-block scanner walks
+// `skills/` and `.claude/skills/` only. Neither walks `tests/`,
+// so the search-needle literals inside this file are never scanned
+// — they need no allow-list entry.
+//
+// Both scanners use byte-substring matching (`content.contains`
+// and `line.contains`), so a deliberate `concat!("origin/", "main")`
+// or `format!("origin/{}")` would bypass the gate at the source
+// level. The Review reviewer agent catches deliberate bypasses
+// in future PRs; these scanners are the merge-conflict trip-wire
+// for accidental hardcodes, not a defense against an adversarial
+// author. Strengthening to structural (function-body scoped)
+// scanning per `.claude/rules/tombstone-tests.md` "Two kinds of
+// tombstone" is a future tightening.
+
+/// Walk a directory recursively, appending every `.rs` file path to `out`.
+/// Skips `target/` build artifact directories.
+fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                if name == "target" {
+                    continue;
+                }
+                collect_rs_files(&path, out);
+            } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                out.push(path);
+            }
+        }
+    }
+}
+
+/// Walk a directory recursively, appending every `*.md` file path to `out`.
+/// Skips `target/` and `node_modules/` build artifact directories.
+fn collect_md_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                if name == "target" || name == "node_modules" {
+                    continue;
+                }
+                collect_md_files(&path, out);
+            } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
+                out.push(path);
+            }
+        }
+    }
+}
+
+/// `no_production_code_hardcodes_origin_main` — corpus scanner that
+/// fails on any `origin/main` literal in `src/**/*.rs` outside the
+/// documented allow-list (the `is_safe_base` doc-comment illustration
+/// in `src/capture_diff.rs`).
+///
+/// The regression this guards: a future Rust callsite hardcodes
+/// `format!("origin/main")` or similar instead of resolving via
+/// `git::default_branch_in`. That callsite would silently break on
+/// repos whose default branch is `staging`/`develop`/etc. — the
+/// failure mode that `Make git the single source of truth` was
+/// authored to prevent.
+#[test]
+fn no_production_code_hardcodes_origin_main() {
+    let src = common::repo_root().join("src");
+    let mut files: Vec<PathBuf> = Vec::new();
+    collect_rs_files(&src, &mut files);
+    files.sort();
+
+    // Allow-list: relative paths under repo root. `src/capture_diff.rs`
+    // uses `origin/main` as a generic ref-shape illustration in a doc
+    // comment, not as a runtime value.
+    const ALLOW: &[&str] = &["src/capture_diff.rs"];
+
+    let mut violations: Vec<String> = Vec::new();
+    for path in &files {
+        let rel = path
+            .strip_prefix(common::repo_root())
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| path.to_string_lossy().to_string());
+        if ALLOW.contains(&rel.as_str()) {
+            continue;
+        }
+        let content = match fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        if content.contains("origin/main") {
+            violations.push(rel);
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "Production Rust source must not hardcode `origin/main` — \
+         resolve via `git::default_branch_in` so non-main-trunk repos \
+         coordinate against their actual integration branch. \
+         Violations: {:?}. Allow-list: {:?}.",
+        violations,
+        ALLOW
+    );
+}
+
+/// `no_skill_bash_block_hardcodes_origin_main` — corpus scanner that
+/// fails on any `origin/main` literal inside a fenced bash block of
+/// any SKILL.md under `skills/` or `.claude/skills/`.
+///
+/// The regression this guards: a future SKILL.md adds a bash block
+/// like `git diff origin/main...HEAD` or `git log
+/// origin/main..HEAD` instead of resolving via `bin/flow base-branch`
+/// first. Such a SKILL.md would silently break on non-main-trunk
+/// repos — the failure mode that `Make git the single source of
+/// truth` was authored to prevent. Prose mentions of `origin/main`
+/// outside fenced bash blocks are allowed (they describe what
+/// `<base_branch>` typically resolves to in standard repos).
+#[test]
+fn no_skill_bash_block_hardcodes_origin_main() {
+    let mut files: Vec<PathBuf> = Vec::new();
+    collect_md_files(&common::repo_root().join("skills"), &mut files);
+    collect_md_files(
+        &common::repo_root().join(".claude").join("skills"),
+        &mut files,
+    );
+    files.sort();
+
+    let mut violations: Vec<(String, usize, String)> = Vec::new();
+    for path in &files {
+        let rel = path
+            .strip_prefix(common::repo_root())
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| path.to_string_lossy().to_string());
+        let content = match fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let mut in_bash = false;
+        for (idx, line) in content.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("```bash") || trimmed.starts_with("```sh") {
+                in_bash = true;
+                continue;
+            }
+            if trimmed.starts_with("```") && in_bash {
+                in_bash = false;
+                continue;
+            }
+            if in_bash && line.contains("origin/main") {
+                violations.push((rel.clone(), idx + 1, line.to_string()));
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "SKILL.md bash blocks must not hardcode `origin/main` — \
+         resolve via `${{CLAUDE_PLUGIN_ROOT}}/bin/flow base-branch` \
+         first and substitute `<base_branch>` into the git command. \
+         Violations: {:?}.",
+        violations
     );
 }

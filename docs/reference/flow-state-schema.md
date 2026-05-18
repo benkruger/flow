@@ -33,7 +33,6 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 {
   "schema_version": 1,
   "branch": "app-payment-webhooks",
-  "base_branch": "main",
   "relative_cwd": "",
   "repo": "org/repo",
   "pr_number": 42,
@@ -103,7 +102,6 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 |-------|------|-------------|
 | `schema_version` | integer | Schema version marker — currently `1` |
 | `branch` | string | Git branch name — slug format. Canonical identity field. Feature name and worktree path are derived from this at read time |
-| `base_branch` | string | Integration branch FLOW operates against — what `start-gate` pulls from / runs CI on / pushes deps to, what `start-workspace` targets as the PR's `--base`, what Review/Plan/Learn diff against (`git diff origin/<base_branch>...HEAD`), and what Complete merges back into. Captured at flow-start time by `init-state` via `git branch --show-current` so it equals the branch the user was on when `/flow:flow-start` ran. flow-start refuses to proceed from detached HEAD or a non-git cwd — the value is required, not defaulted. Lets repos whose trunk is not `main` (e.g. `staging`, `develop`) run FLOW without leaking `main`-relative diffs |
 | `relative_cwd` | string | Subdirectory inside the project root where the user started the flow, captured by `start-init` from `cwd.strip_prefix(project_root())`. Empty string means the flow operates at the worktree root (the common case). Non-empty values (e.g. `"api"` or `"packages/api"`) tell `start-workspace` to include the suffix in its **absolute** `worktree_cwd` return value so the agent lands in the same subdirectory after the worktree is created, and tell every `bin/flow` subcommand's cwd-drift guard which directory to enforce. The skill's `cd <worktree_cwd>` works from any bash cwd because `worktree_cwd` is absolute; this matters when the user launches Claude at the repo root and `cd <app>` before invoking `/flow:flow-start`. Defaults to empty for state files written before this field existed |
 | `repo` | string / null | GitHub repo in `owner/repo` format, cached during `/flow-start`. Used by `bin/flow issue` to avoid repeated `git remote` calls. Null if detection fails |
 | `pr_number` | integer / null | GitHub PR number. Null during early Start (before PR creation) when created by `init-state` — backfilled by `start-workspace` after PR creation |

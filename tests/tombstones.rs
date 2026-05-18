@@ -535,7 +535,7 @@ const FLOW_DENY_ESCAPE_HATCH_ENTRIES: &[&str] = &[
 /// Shapes". A merge conflict or accidental edit that removes any
 /// entry from the `FLOW_DENY` const slice in `src/prime_check.rs`
 /// re-opens the corresponding escape-hatch surface — direct
-/// invocations bypass `validate-pretool`'s structural Layer 7.5 if
+/// invocations bypass `validate-pretool`'s structural Layer 8 if
 /// the settings-layer deny entry is also missing.
 ///
 /// Stability argument (per `.claude/rules/tombstone-tests.md`
@@ -2564,9 +2564,9 @@ fn test_rules_no_run_tui_arm_impl_closure_pair() {
     );
 }
 
-// --- Layer 9 integration-branch carve-out removal ---
+// --- Layer 10 integration-branch carve-out removal ---
 //
-// PR #1514 added the bootstrap-skill carve-out to Layer 9's
+// PR #1514 added the bootstrap-skill carve-out to Layer 10's
 // integration-branch context (previously uncarved). The old claim
 // "The integration-branch context is NOT carved out — commits on
 // the integration branch are blocked regardless of the marker"
@@ -2607,7 +2607,7 @@ fn test_rules_no_integration_branch_not_carved_out_claim() {
         assert!(
             !content.contains(FORBIDDEN),
             "{} must not contain '{}' — the bootstrap-skill carve-out \
-             on Layer 9's integration-branch context was added in \
+             on Layer 10's integration-branch context was added in \
              PR #1514, replacing the uncarved block. A merge \
              resurrection that brings back this phrase would create \
              a contradiction between the rule prose and the hook \

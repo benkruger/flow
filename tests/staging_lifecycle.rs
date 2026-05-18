@@ -3,25 +3,25 @@
 //! Primes a fixture repo whose default branch is `staging` (no
 //! `main` branch on the bare remote) and drives a representative
 //! slice of phase commands through the compiled `flow-rs` binary,
-//! asserting that each command honors `state["base_branch"]` and
-//! never falls back to a hardcoded `origin/main`. This is the
-//! integration-level lock-in for the read-side architecture
-//! introduced by issue #1275: each per-component test
-//! (`tests/git.rs::read_base_branch_*`,
-//! `tests/start_gate.rs::test_base_branch_from_state_used_for_git_pull`,
-//! `tests/check_freshness.rs::check_freshness_uses_base_branch_from_state`,
-//! `tests/cleanup.rs::cleanup_pulls_base_branch_from_state`,
-//! `tests/complete_preflight.rs::complete_preflight_merge_base_uses_base_branch_from_state`,
-//! `tests/base_branch_cmd.rs`) proves a single read site honors
-//! `base_branch`; this lifecycle test proves the cross-phase
+//! asserting that each command resolves the integration branch via
+//! `git::default_branch_in` (which reads
+//! `git symbolic-ref --short refs/remotes/origin/HEAD`) and never
+//! falls back to a hardcoded `origin/main`. This is the
+//! integration-level lock-in for the git-as-source-of-truth
+//! architecture: each per-component test
+//! (`tests/git.rs::default_branch_in_*`,
+//! `tests/start_gate.rs`, `tests/check_freshness.rs`,
+//! `tests/cleanup.rs`, `tests/complete_preflight.rs`,
+//! `tests/base_branch_cmd.rs`) proves a single read site honors the
+//! git-resolved branch; this lifecycle test proves the cross-phase
 //! composition does, so a future regression that re-introduces a
 //! hardcoded `origin/main` in any new phase callsite fails this
 //! test even when the per-component tests still pass.
 //!
-//! The fixture pattern follows
-//! `tests/commands/init_state.rs::base_branch_matches_current_branch_at_invocation`
-//! (checkout `staging` before driving the binary) extended with
-//! the bare-remote setup from
+//! The fixture sets `origin/HEAD` to `refs/remotes/origin/staging`
+//! via `git remote set-head origin staging` so `default_branch_in`
+//! resolves to `"staging"` instead of the standard `"main"`. The
+//! bare-remote setup follows
 //! `tests/common/mod.rs::create_git_repo_with_remote` so that
 //! `git fetch origin staging` actually succeeds against the
 //! fixture's remote.
@@ -89,6 +89,10 @@ fn create_staging_trunked_repo(parent: &Path) -> PathBuf {
     run(&["checkout", "-b", BASE_BRANCH], Some(&repo));
     run(&["commit", "--allow-empty", "-m", "init"], Some(&repo));
     run(&["push", "-u", "origin", BASE_BRANCH], Some(&repo));
+
+    // Configure refs/remotes/origin/HEAD so `git::default_branch_in`
+    // resolves to "staging" — git is the single source of truth.
+    run(&["remote", "set-head", "origin", BASE_BRANCH], Some(&repo));
 
     repo.canonicalize().expect("canonicalize repo")
 }
@@ -163,7 +167,7 @@ fn staging_lifecycle_base_branch_subcommand_returns_staging() {
     let repo = create_staging_trunked_repo(dir.path());
     write_staging_state(&repo);
 
-    let output = run_flow_rs(&repo, &["base-branch", "--branch", BRANCH]);
+    let output = run_flow_rs(&repo, &["base-branch"]);
     assert_eq!(
         output.status.code(),
         Some(0),

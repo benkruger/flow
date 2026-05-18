@@ -30,17 +30,8 @@ use crate::ci;
 use crate::commands::log::append_log;
 use crate::commands::start_step::update_step;
 use crate::flow_paths::FlowPaths;
-use crate::git::read_base_branch;
+use crate::git::default_branch_in;
 use crate::update_deps::run_update_deps;
-
-/// Resolve the integration branch for `run_impl_main`. Routes through
-/// `git::read_base_branch` (the no-silent-fallback helper) and falls
-/// back to `"main"` when the read returns an error so legacy state
-/// files and minimal test fixtures keep working without re-encoding
-/// the fallback at every call site.
-fn resolve_base_branch(state_path: &Path) -> String {
-    read_base_branch(state_path).unwrap_or_else(|_| "main".to_string())
-}
 
 const DEPS_TIMEOUT_SECS: u64 = 300;
 
@@ -77,12 +68,25 @@ pub fn run_impl_main(args: &Args, root: &Path, cwd: &Path) -> (Value, i32) {
     };
     update_step(&state_path, 2);
 
-    // Read the integration branch the user is working off of (captured
-    // at flow-start time in init_state). All subsequent git pull/push,
-    // CI baseline, and deps-commit operations target this branch
-    // instead of a hardcoded "main", so repos whose default branch is
-    // e.g. `staging` coordinate against their actual integration branch.
-    let base_branch = resolve_base_branch(&state_path);
+    // Resolve the integration branch from git's symbolic-ref (the single
+    // source of truth). All subsequent git pull/push, CI baseline, and
+    // deps-commit operations target this branch, so repos whose default
+    // branch is e.g. `staging` coordinate against their actual integration
+    // branch. Fail closed via JSON error envelope when git cannot resolve
+    // it — propagating the failure beats a silent guess.
+    let base_branch = match default_branch_in(cwd) {
+        Ok(b) => b,
+        Err(msg) => {
+            return (
+                json!({
+                    "status": "error",
+                    "step": "resolve_base_branch",
+                    "message": msg,
+                }),
+                0,
+            );
+        }
+    };
 
     // Step 1: git pull origin <base_branch>
     let pull_result = git_pull(cwd, &base_branch);
