@@ -61,6 +61,7 @@ pub mod reset;
 pub mod resolve_skill_mode;
 pub mod session_cost;
 pub mod session_metrics;
+pub mod shared_config_approval;
 pub mod start_finalize;
 pub mod start_gate;
 pub mod start_init;
