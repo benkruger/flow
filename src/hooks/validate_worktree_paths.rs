@@ -171,9 +171,13 @@ pub fn validate_shared_config(file_path: &str, cwd: &str, tool_name: &str) -> (b
             "BLOCKED: {} is a shared configuration file that affects every engineer \
              in the repository. Modifying it during a FLOW phase requires explicit \
              user permission. To authorize this single edit, the USER must reply \
-             with the exact line `approve shared-config: {}`, then run \
-             `bin/flow approve-shared-config --path {}` and retry the edit. The \
-             grant is single-use and scoped to this file. See \
+             with the exact line `approve shared-config: {}`. Do NOT run \
+             `bin/flow approve-shared-config` until the user has sent that exact \
+             reply — wait for it. Once the user has replied, run \
+             `bin/flow approve-shared-config --path {}` and retry the edit. A \
+             `not_user_approved` result means the user has not yet replied: keep \
+             waiting, do not retry the edit or re-run the subcommand in a loop. \
+             The grant is single-use and scoped to this file. See \
              .claude/rules/permissions.md \"Shared Config Files\" section.",
             display_name, file_path, file_path
         ),

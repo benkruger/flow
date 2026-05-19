@@ -3,11 +3,15 @@
 //!
 //! The shared-config gate (`validate_worktree_paths::validate_shared_config`)
 //! blocks Edit/Write on `.gitignore`/`Cargo.toml`/etc. inside a
-//! worktree and instructs the model to confirm with the user via
-//! `AskUserQuestion`. This module is the "proceed" half: once the
-//! user approves, `bin/flow approve-shared-config` writes a marker
-//! here, and the gate consults+consumes it immediately before its
-//! block return — allowing exactly one edit of exactly that file.
+//! worktree and instructs the user to reply with the exact line
+//! `approve shared-config: <path>`. This module is the "proceed"
+//! half: after that reply, `bin/flow approve-shared-config`
+//! self-gates on the transcript (the user-typed phrase is the
+//! unforgeable anchor — same trust model as `clear-halt`) and
+//! writes a marker here; the gate then consults+consumes it
+//! immediately before its block return — allowing exactly one edit
+//! of exactly that file. The model never fires an `AskUserQuestion`
+//! for shared-config; the user-typed phrase is the authorization.
 //!
 //! Three invariants the store enforces:
 //!

@@ -19,7 +19,7 @@ State files live under `.flow-states/<branch>/` at the project root, one subdire
 .flow-states/user-profile-redesign/ci-passed
 ```
 
-Each feature has up to four files inside its subdirectory: the state file (`state.json`), the log file (`log`), a frozen copy of `flow-phases.json` (`phases.json`), and a CI sentinel (`ci-passed`). The CI sentinel caches the last passing `bin/flow ci` snapshot so subsequent runs skip automatically when nothing changed (use `--force` to bypass). The sentinel is also automatically refreshed after `finalize-commit` when `git pull` does not introduce new content, preserving the optimization across commits. Multiple features can run simultaneously with no conflicts. The `.flow-states/` directory is added to `.git/info/exclude` by `/flow-start` (per-repo, not committed). Created by `/flow-start`, deleted by `/flow-complete` in a single `remove_dir_all(branch_dir)` call.
+Each feature has up to four files inside its subdirectory: the state file (`state.json`), the log file (`log`), a frozen copy of `flow-phases.json` (`phases.json`), and a CI sentinel (`ci-passed`). A feature may also hold a `shared-config-approvals/` subdirectory of single-use approval markers — see [Shared-Config Approval Markers](#shared-config-approval-markers). The CI sentinel caches the last passing `bin/flow ci` snapshot so subsequent runs skip automatically when nothing changed (use `--force` to bypass). The sentinel is also automatically refreshed after `finalize-commit` when `git pull` does not introduce new content, preserving the optimization across commits. Multiple features can run simultaneously with no conflicts. The `.flow-states/` directory is added to `.git/info/exclude` by `/flow-start` (per-repo, not committed). Created by `/flow-start`, deleted by `/flow-complete` in a single `remove_dir_all(branch_dir)` call.
 
 **State files are local to each machine.** In a multi-engineer team, each engineer's `.flow-states/` directory only contains their own features. GitHub (issues, PRs, labels) is the shared coordination layer visible to all engineers. The "Flow In-Progress" label on issues is the mechanism for cross-engineer WIP detection — see `/flow-issues`.
 
@@ -572,6 +572,47 @@ Appended to a phase's `step_snapshots[]` on every step-counter increment that na
 | `step` | integer | Counter value at capture time |
 | `field` | string | Counter name (one of `code_task`, `review_step`, `learn_step`, `complete_step`) |
 | _flattened snapshot fields_ | various | Every [Window Snapshot](#window-snapshot) field, inlined at the same level |
+
+---
+
+## Shared-Config Approval Markers
+
+The shared-config gate (`validate_worktree_paths::validate_shared_config`)
+blocks Edit/Write on `.gitignore`/`Cargo.toml`/`.github/`/etc. inside a
+worktree. The "proceed" half is a branch-scoped, per-file, single-use
+approval marker store at:
+
+```text
+.flow-states/<branch>/shared-config-approvals/<sha256(target_path)>
+```
+
+One marker file per approved target path. The on-disk filename is the
+SHA-256 hex of the full target path string (collision-safe,
+filesystem-safe — no separators or traversal segments). The marker body is:
+
+```json
+{"approved": true, "target": "/abs/path/to/Cargo.toml"}
+```
+
+Lifecycle:
+
+- **Created** by `bin/flow approve-shared-config --path <file>` after the
+  user replies with the exact line `approve shared-config: <path>`. The
+  subcommand self-gates on the persisted transcript (the user-typed
+  phrase is the unforgeable anchor — same trust model as `clear-halt`)
+  before `shared_config_approval::write_approval` writes the marker.
+- **Consumed** (read, validated, then deleted — single-use) by
+  `validate_shared_config` immediately before its block return, allowing
+  exactly one Edit/Write of exactly that file. Any unreadable, oversized
+  (> 64 KB read cap), unparseable, wrong-root-type, `approved != true`,
+  or target-mismatched marker yields no approval and the gate keeps
+  blocking (fail-closed — a corrupt marker is never an escape hatch).
+- **Bulk-cleared** by `shared_config_approval::clear_all` on phase
+  advance (`phase_enter`), best-effort, so a stale approval cannot
+  bleed into a later phase.
+
+The directory is removed with the rest of `.flow-states/<branch>/` by
+`/flow-complete` / `/flow-abort` cleanup.
 
 ---
 

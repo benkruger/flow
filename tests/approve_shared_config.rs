@@ -63,14 +63,19 @@ fn write_state(repo: &Path, branch: &str, state: &Value) -> PathBuf {
 }
 
 /// An approving exchange: a real user request, an Edit, the
-/// system shared-config BLOCK for `<basename>`, then the user's
-/// fixed approval phrase for `<target>` as the most recent real
-/// user turn.
+/// system shared-config BLOCK, then the user's fixed approval
+/// phrase for `<target>` as the most recent real user turn. The
+/// BLOCK content mirrors the production message
+/// (`validate_worktree_paths::validate_shared_config`): the
+/// leading clause names `<basename>` and the FULL `<target>` path
+/// appears in the phrase and the `--path` argument, because
+/// `user_approved_shared_config_edit` corroborates on the full
+/// path (a same-basename sibling block must not cross-corroborate).
 fn approving_jsonl(basename: &str, target: &str) -> String {
     format!(
         "{{\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":\"edit the manifest\"}}}}\n\
 {{\"type\":\"assistant\",\"message\":{{\"role\":\"assistant\",\"content\":[{{\"type\":\"tool_use\",\"name\":\"Edit\",\"id\":\"e1\",\"input\":{{\"file_path\":\"{target}\"}}}}]}}}}\n\
-{{\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"e1\",\"content\":\"BLOCKED: {basename} is a shared configuration file that affects every engineer in the repository.\",\"is_error\":true}}]}}}}\n\
+{{\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"e1\",\"content\":\"BLOCKED: {basename} is a shared configuration file that affects every engineer in the repository. To authorize this single edit, the USER must reply with the exact line `approve shared-config: {target}`, then run `bin/flow approve-shared-config --path {target}` and retry the edit.\",\"is_error\":true}}]}}}}\n\
 {{\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":\"approve shared-config: {target}\"}}}}\n"
     )
 }

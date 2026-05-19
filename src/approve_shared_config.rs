@@ -101,9 +101,23 @@ fn path_shape_ok(path: &str) -> bool {
 /// git worktree root for `cwd` (`git rev-parse --show-toplevel`),
 /// matching `cwd_scope`'s notion of the worktree. `None` when `cwd`
 /// is not git-managed (non-zero exit) — the caller fails closed
-/// (`path_outside_worktree`). git is a hard dependency (same
-/// `.expect` precedent as `cwd_scope::enforce`), so the spawn is
-/// treated as infallible; only git-managed-vs-not branches.
+/// (`path_outside_worktree`).
+///
+/// Unreachability proof for the `.output().expect(...)` (per
+/// `.claude/rules/external-input-path-construction.md` "No
+/// `.expect()` on Filesystem Reads in Hooks or CLI Subcommands" —
+/// the carve-out requires a proof the arm cannot be reached from
+/// any production path): `Command::output()` only `Err`s when the
+/// `git` binary cannot be spawned. `run_impl_main` calls
+/// `cwd_scope::enforce(cwd, root)` BEFORE `worktree_root(cwd)`, and
+/// `cwd_scope::enforce` itself runs `git rev-parse` with an
+/// identical `.expect` — so in any environment where `git` cannot
+/// spawn, that earlier call panics first and this arm is never
+/// reached. The `.expect` here is documentation of that invariant,
+/// not a reachable panic vector. A future refactor that moves this
+/// call ahead of `cwd_scope::enforce` (or removes the cwd guard)
+/// must convert this to a non-panicking `.ok()?` (the function
+/// already returns `Option`, so `None` → `path_outside_worktree`).
 fn worktree_root(cwd: &Path) -> Option<PathBuf> {
     let out = Command::new("git")
         .args(["rev-parse", "--show-toplevel"])

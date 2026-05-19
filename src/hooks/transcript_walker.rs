@@ -1500,17 +1500,22 @@ fn user_turn_carries_shared_config_block(turn: &Value) -> bool {
 ///    tool_result) is NOT the approval channel and yields `false`.
 /// 2. A system-emitted shared-config BLOCKED tool_result (the
 ///    literal `is a shared configuration file that affects every
-///    engineer` substring, `is_error` truthy, naming the
-///    `target_path` basename) must appear earlier in the window but
-///    not past the next-older real user turn — so the grant responds
-///    to a genuine block in the current exchange, not a stale or
-///    cross-file one. Only
+///    engineer` substring, `is_error` truthy, containing the FULL
+///    `target_path`) must appear earlier in the window but not past
+///    the next-older real user turn — so the grant responds to a
+///    genuine block in the current exchange, not a stale or
+///    cross-file one. The production block message interpolates the
+///    full file path, so matching the full path (not the basename)
+///    is what makes "not a cross-file one" true: a block for a
+///    same-basename sibling (`/a/Cargo.toml` vs `/a/sub/Cargo.toml`,
+///    a nested `.gitignore`, a monorepo `package.json`) cannot
+///    cross-corroborate a grant for a different file. Only
 ///    `validate_worktree_paths::validate_shared_config` emits that
 ///    substring, so the model cannot forge it.
 ///
 /// Fail-closed: any I/O, parse, or validation failure, a
 /// non-approval most-recent user turn, a missing/cross-file block,
-/// or an empty target basename returns `false` so the gate keeps
+/// or a target with no file name returns `false` so the gate keeps
 /// blocking. `transcript_path` is validated through
 /// `is_safe_transcript_path` per
 /// `.claude/rules/external-input-path-construction.md`; synthetic
@@ -1526,12 +1531,17 @@ pub fn user_approved_shared_config_edit(
         return false;
     }
     // `Path::file_name()` yields `None` for `/`, `""`, and
-    // `..`-terminal paths and never an empty component otherwise, so
-    // a `Some` is always a non-empty basename — no empty guard.
-    let basename = match Path::new(target_path).file_name().and_then(|n| n.to_str()) {
-        Some(b) => b.to_string(),
-        None => return false,
-    };
+    // `..`-terminal paths — reject those as not a real file target.
+    // Block-corroboration below matches the FULL `target_path` (not
+    // the basename) so a system block for a same-basename sibling
+    // cannot cross-corroborate a grant for a different file.
+    if Path::new(target_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_none()
+    {
+        return false;
+    }
     let lines = match read_recent_turns(transcript_path) {
         Some(s) => s,
         None => return false,
@@ -1593,7 +1603,7 @@ pub fn user_approved_shared_config_edit(
         if approval_seen
             && any_error_tool_result_text(&turn, |t| {
                 t.contains("is a shared configuration file that affects every engineer")
-                    && t.contains(&basename)
+                    && t.contains(target_path)
             })
         {
             return true;
