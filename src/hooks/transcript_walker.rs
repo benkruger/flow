@@ -1405,20 +1405,26 @@ pub fn recent_edit_blocked_on_shared_config(transcript_path: &Path, home: &Path)
     false
 }
 
-/// Returns `true` when the user-role turn carries a tool_result
-/// block whose `is_error` is truthy AND whose `content` contains
-/// the shared-config substring. Returns `false` for string-content
-/// user turns (the user typed a message), missing or non-array
-/// content, and array content where no block matches.
-fn user_turn_carries_shared_config_block(turn: &Value) -> bool {
+/// Scan every `tool_result` block in `turn` whose `is_error` is
+/// truthy and return `true` as soon as `pred` accepts that block's
+/// text. Returns `false` for string-content user turns (the user
+/// typed a message — not a tool_result wrapper), missing or
+/// non-array content, and array content where no error block's
+/// text satisfies `pred`.
+///
+/// `tool_result.content` is either a plain string or an array of
+/// content blocks (each typically a `text` block); both wire
+/// formats are flattened per block so `pred` sees the same text
+/// either way. Per-block short-circuit (no cross-block
+/// accumulation) keeps the branch surface minimal. Shared by
+/// `user_turn_carries_shared_config_block` and the
+/// `user_approved_shared_config_edit` block-corroboration check so
+/// the extraction logic lives in one place.
+fn any_error_tool_result_text<F: FnMut(&str) -> bool>(turn: &Value, mut pred: F) -> bool {
     let content = match turn.get("message").and_then(|m| m.get("content")) {
         Some(c) => c,
         None => return false,
     };
-    // String content is a real user-typed message — not a
-    // tool_result wrapper. The carve-out only fires when the
-    // most recent user-role event is a tool_result-wrapped turn
-    // carrying the shared-config block.
     if content.as_str().is_some() {
         return false;
     }
@@ -1437,10 +1443,6 @@ fn user_turn_carries_shared_config_block(turn: &Value) -> bool {
             Some(c) => c,
             None => continue,
         };
-        // tool_result.content is either a plain string or an
-        // array of content blocks (each typically a `text`
-        // block). Concatenate text fields for the array shape
-        // so a substring match catches both wire formats.
         let text = if let Some(s) = block_content.as_str() {
             s.to_string()
         } else if let Some(items) = block_content.as_array() {
@@ -1457,7 +1459,143 @@ fn user_turn_carries_shared_config_block(turn: &Value) -> bool {
         } else {
             continue;
         };
-        if text.contains("is a shared configuration file that affects every engineer") {
+        if pred(&text) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Returns `true` when the user-role turn carries a tool_result
+/// block whose `is_error` is truthy AND whose `content` contains
+/// the shared-config substring. Returns `false` for string-content
+/// user turns (the user typed a message), missing or non-array
+/// content, and array content where no block matches.
+fn user_turn_carries_shared_config_block(turn: &Value) -> bool {
+    any_error_tool_result_text(turn, |t| {
+        t.contains("is a shared configuration file that affects every engineer")
+    })
+}
+
+/// Returns `true` iff the persisted transcript shows the user
+/// granted a per-file shared-config edit for `target_path` in the
+/// current exchange. The forgery-resistant "proceed" predicate
+/// behind `bin/flow approve-shared-config` — the same trust model
+/// as `clear-halt`: a real user-typed turn the model cannot
+/// synthesize is the authorization anchor.
+///
+/// Scanning `read_recent_turns(transcript_path)` backward (4 MB
+/// tail; a block buried before the cap is a documented acceptable
+/// false-negative — the user re-triggers the block and re-approves):
+///
+/// 1. The most recent non-hook-feedback user-role turn MUST be a
+///    real user turn (`is_real_user_turn`: string `message.content`,
+///    no `isMeta:true`) whose `normalize_gate_input`-normalized
+///    content contains the fixed phrase
+///    `approve shared-config: <normalized target_path>`. Claude Code
+///    marks every model/synthetic turn with array content or
+///    `isMeta:true`, so the model cannot forge this turn. The full
+///    path in the phrase makes the grant per-file and
+///    replay-resistant. An AskUserQuestion answer (a model-mediated
+///    tool_result) is NOT the approval channel and yields `false`.
+/// 2. A system-emitted shared-config BLOCKED tool_result (the
+///    literal `is a shared configuration file that affects every
+///    engineer` substring, `is_error` truthy, naming the
+///    `target_path` basename) must appear earlier in the window but
+///    not past the next-older real user turn — so the grant responds
+///    to a genuine block in the current exchange, not a stale or
+///    cross-file one. Only
+///    `validate_worktree_paths::validate_shared_config` emits that
+///    substring, so the model cannot forge it.
+///
+/// Fail-closed: any I/O, parse, or validation failure, a
+/// non-approval most-recent user turn, a missing/cross-file block,
+/// or an empty target basename returns `false` so the gate keeps
+/// blocking. `transcript_path` is validated through
+/// `is_safe_transcript_path` per
+/// `.claude/rules/external-input-path-construction.md`; synthetic
+/// hook-feedback turns are skipped with the targeted
+/// string-content + `isMeta` skip per
+/// `.claude/rules/transcript-shape.md`.
+pub fn user_approved_shared_config_edit(
+    transcript_path: &Path,
+    home: &Path,
+    target_path: &str,
+) -> bool {
+    if !is_safe_transcript_path(transcript_path, home) {
+        return false;
+    }
+    // `Path::file_name()` yields `None` for `/`, `""`, and
+    // `..`-terminal paths and never an empty component otherwise, so
+    // a `Some` is always a non-empty basename — no empty guard.
+    let basename = match Path::new(target_path).file_name().and_then(|n| n.to_str()) {
+        Some(b) => b.to_string(),
+        None => return false,
+    };
+    let lines = match read_recent_turns(transcript_path) {
+        Some(s) => s,
+        None => return false,
+    };
+    let approve_phrase = format!(
+        "approve shared-config: {}",
+        normalize_gate_input(target_path)
+    );
+    let mut approval_seen = false;
+    for line in lines.lines().rev() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let turn: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let turn_type =
+            normalize_gate_input(turn.get("type").and_then(|v| v.as_str()).unwrap_or(""));
+        if turn_type != "user" {
+            continue;
+        }
+        // Targeted hook-feedback skip: string content + an isMeta
+        // marker is a Stop-hook refusal, never a real user turn or
+        // a tool_result wrapper. Per
+        // `.claude/rules/transcript-shape.md`.
+        let is_string_content = turn
+            .get("message")
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+            .is_some();
+        if is_string_content && is_meta_marker_present(turn.get("isMeta")) {
+            continue;
+        }
+        if is_real_user_turn(&turn) {
+            if approval_seen {
+                // Reached the next-older real user turn — the
+                // conversation boundary — without finding the system
+                // block. The grant does not respond to a block in
+                // this exchange.
+                return false;
+            }
+            // The most recent real user turn MUST be the approval.
+            let content = turn
+                .get("message")
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_str())
+                .unwrap_or("");
+            if normalize_gate_input(content).contains(&approve_phrase) {
+                approval_seen = true;
+                continue;
+            }
+            return false;
+        }
+        // Non-real user-role turn = tool_result wrapper. The system
+        // block only corroborates the grant once the approval (more
+        // recent) has been seen, and must name the target basename.
+        if approval_seen
+            && any_error_tool_result_text(&turn, |t| {
+                t.contains("is a shared configuration file that affects every engineer")
+                    && t.contains(&basename)
+            })
+        {
             return true;
         }
     }

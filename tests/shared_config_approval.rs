@@ -77,7 +77,11 @@ fn consume_deletes_the_marker_file() {
     write_approval(root, "feat-x", "/repo/Cargo.toml").expect("write succeeds");
     let p = marker_path(root, "feat-x", "/repo/Cargo.toml").unwrap();
     assert!(p.exists(), "marker exists after write");
-    assert!(check_and_consume_approval(root, "feat-x", "/repo/Cargo.toml"));
+    assert!(check_and_consume_approval(
+        root,
+        "feat-x",
+        "/repo/Cargo.toml"
+    ));
     assert!(!p.exists(), "marker deleted after consume");
 }
 

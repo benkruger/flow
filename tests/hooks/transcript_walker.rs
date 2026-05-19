@@ -15,8 +15,9 @@ use flow_rs::hooks::transcript_walker::{
     any_skill_in_set_since_user, last_user_message_invokes_skill,
     most_recent_skill_in_user_only_set, most_recent_skill_since_user,
     most_recent_user_message_since_skill_action, read_full, read_recency_window, read_recent_turns,
-    recent_edit_blocked_on_shared_config, verify_agent_returned_in_phase,
-    SHARED_CONFIG_BLOCK_BYTE_CAP, TRANSCRIPT_BYTE_CAP, USER_ONLY_SKILLS,
+    recent_edit_blocked_on_shared_config, user_approved_shared_config_edit,
+    verify_agent_returned_in_phase, SHARED_CONFIG_BLOCK_BYTE_CAP, TRANSCRIPT_BYTE_CAP,
+    USER_ONLY_SKILLS,
 };
 
 // --- last_user_message_invokes_skill ---
@@ -1102,6 +1103,342 @@ fn helper_continues_when_tool_result_content_is_number() {
 {\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":7,\"is_error\":true}]}}\n";
     let path = crate::common::transcript_fixture(home, "p", jsonl);
     assert!(!recent_edit_blocked_on_shared_config(&path, home));
+}
+
+// --- user_approved_shared_config_edit ---
+//
+// The forgery-resistant "proceed" predicate. Returns true iff the
+// most recent non-hook-feedback user-role turn is a REAL user turn
+// (string content, no isMeta — the model cannot synthesize it,
+// the same trust anchor as clear-halt) whose normalized content
+// contains the fixed phrase `approve shared-config: <target_path>`,
+// AND a system-emitted shared-config BLOCKED tool_result naming the
+// target basename appears earlier in the current exchange (between
+// the approval turn and the next-older real user turn).
+
+fn approval_turn(target: &str) -> String {
+    format!(
+        "{{\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":\"approve shared-config: {target}\"}}}}\n"
+    )
+}
+
+fn block_turn(basename: &str) -> String {
+    format!(
+        "{{\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"BLOCKED: {basename} is a shared configuration file that affects every engineer in the repository.\",\"is_error\":true}}]}}}}\n"
+    )
+}
+
+const REQ: &str =
+    "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"please edit the manifest\"}}\n";
+const EDIT: &str = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Edit\",\"id\":\"e1\",\"input\":{\"file_path\":\"/repo/Cargo.toml\"}}]}}\n";
+
+#[test]
+fn approve_true_when_real_user_grants_after_block() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = format!(
+        "{REQ}{EDIT}{}{}",
+        block_turn("Cargo.toml"),
+        approval_turn("/repo/Cargo.toml")
+    );
+    let path = crate::common::transcript_fixture(home, "p", &jsonl);
+    assert!(user_approved_shared_config_edit(
+        &path,
+        home,
+        "/repo/Cargo.toml"
+    ));
+}
+
+#[test]
+fn approve_false_when_latest_user_turn_is_not_an_approval() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let unrelated =
+        "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"no, do something else\"}}\n";
+    let jsonl = format!("{REQ}{EDIT}{}{unrelated}", block_turn("Cargo.toml"));
+    let path = crate::common::transcript_fixture(home, "p", &jsonl);
+    assert!(!user_approved_shared_config_edit(
+        &path,
+        home,
+        "/repo/Cargo.toml"
+    ));
+}
+
+#[test]
+fn approve_false_when_approval_names_different_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = format!(
+        "{REQ}{EDIT}{}{}",
+        block_turn("Cargo.toml"),
+        approval_turn("/repo/.gitignore")
+    );
+    let path = crate::common::transcript_fixture(home, "p", &jsonl);
+    assert!(!user_approved_shared_config_edit(
+        &path,
+        home,
+        "/repo/Cargo.toml"
+    ));
+}
+
+#[test]
+fn approve_false_when_no_system_block_in_exchange() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    // Approval phrase present, but no shared-config BLOCKED
+    // tool_result — the model cannot self-authorize without a
+    // genuine system block.
+    let jsonl = format!("{REQ}{EDIT}{}", approval_turn("/repo/Cargo.toml"));
+    let path = crate::common::transcript_fixture(home, "p", &jsonl);
+    assert!(!user_approved_shared_config_edit(
+        &path,
+        home,
+        "/repo/Cargo.toml"
+    ));
+}
+
+#[test]
+fn approve_false_when_block_names_different_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    // Block fired for .gitignore but approval is for Cargo.toml —
+    // per-file binding rejects the cross-file replay.
+    let jsonl = format!(
+        "{REQ}{EDIT}{}{}",
+        block_turn(".gitignore"),
+        approval_turn("/repo/Cargo.toml")
+    );
+    let path = crate::common::transcript_fixture(home, "p", &jsonl);
+    assert!(!user_approved_shared_config_edit(
+        &path,
+        home,
+        "/repo/Cargo.toml"
+    ));
+}
+
+#[test]
+fn approve_false_when_only_unrelated_error_block_present() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    // Approval phrase present, but the only error tool_result in the
+    // exchange is an unrelated block whose text lacks the
+    // shared-config substring — the block-corroboration predicate's
+    // first `contains` short-circuits to false, so no genuine
+    // shared-config block authorizes the grant.
+    let other_err = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"x\",\"content\":\"BLOCKED: rm -rf / matches a deny pattern.\",\"is_error\":true}]}}\n";
+    let jsonl = format!(
+        "{REQ}{EDIT}{other_err}{}",
+        approval_turn("/repo/Cargo.toml")
+    );
+    let path = crate::common::transcript_fixture(home, "p", &jsonl);
+    assert!(!user_approved_shared_config_edit(
+        &path,
+        home,
+        "/repo/Cargo.toml"
+    ));
+}
+
+#[test]
+fn approve_false_when_block_predates_prior_user_turn() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    // Block belongs to an OLDER exchange: a fresh real user turn
+    // intervenes between the block and the approval, so the block
+    // is not part of the current exchange.
+    let older =
+        "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"earlier unrelated ask\"}}\n";
+    let jsonl = format!(
+        "{REQ}{EDIT}{}{older}{}",
+        block_turn("Cargo.toml"),
+        approval_turn("/repo/Cargo.toml")
+    );
+    let path = crate::common::transcript_fixture(home, "p", &jsonl);
+    assert!(!user_approved_shared_config_edit(
+        &path,
+        home,
+        "/repo/Cargo.toml"
+    ));
+}
+
+#[test]
+fn approve_false_when_most_recent_user_turn_is_askuserquestion_toolresult() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    // The approval channel is a REAL user prose turn, never an
+    // AskUserQuestion answer (a model-mediated, non-forgery-resistant
+    // tool_result). An AskUserQuestion answer as the most recent
+    // user-role turn does NOT authorize the edit.
+    let askuq = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"aq1\",\"content\":\"User has answered your questions: \\\"May I edit Cargo.toml?\\\"=\\\"Yes\\\"\",\"is_error\":false}]}}\n";
+    let jsonl = format!("{REQ}{EDIT}{}{askuq}", block_turn("Cargo.toml"));
+    let path = crate::common::transcript_fixture(home, "p", &jsonl);
+    assert!(!user_approved_shared_config_edit(
+        &path,
+        home,
+        "/repo/Cargo.toml"
+    ));
+}
+
+#[test]
+fn approve_skips_hook_feedback_string_content_ismeta_true() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    // A Stop-hook refusal (string content + isMeta:true) lands after
+    // the approval. The walker must skip it via the targeted
+    // hook-feedback skip and still see the approval.
+    let refusal = "{\"type\":\"user\",\"isMeta\":true,\"message\":{\"role\":\"user\",\"content\":\"Stop hook feedback:\\nContinue.\"}}\n";
+    let jsonl = format!(
+        "{REQ}{EDIT}{}{}{refusal}",
+        block_turn("Cargo.toml"),
+        approval_turn("/repo/Cargo.toml")
+    );
+    let path = crate::common::transcript_fixture(home, "p", &jsonl);
+    assert!(user_approved_shared_config_edit(
+        &path,
+        home,
+        "/repo/Cargo.toml"
+    ));
+}
+
+#[test]
+fn approve_false_when_user_declined_in_prose() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let decline = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"do not touch Cargo.toml\"}}\n";
+    let jsonl = format!("{REQ}{EDIT}{}{decline}", block_turn("Cargo.toml"));
+    let path = crate::common::transcript_fixture(home, "p", &jsonl);
+    assert!(!user_approved_shared_config_edit(
+        &path,
+        home,
+        "/repo/Cargo.toml"
+    ));
+}
+
+#[test]
+fn approve_normalizes_case_and_whitespace_in_approval() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    // normalize_gate_input lowercases + trims, so a case/whitespace
+    // variant of the phrase still authorizes (same robustness the
+    // clear-halt marker has).
+    let approval = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"  APPROVE Shared-Config: /repo/Cargo.toml  \"}}\n";
+    let jsonl = format!("{REQ}{EDIT}{}{approval}", block_turn("Cargo.toml"));
+    let path = crate::common::transcript_fixture(home, "p", &jsonl);
+    assert!(user_approved_shared_config_edit(
+        &path,
+        home,
+        "/repo/Cargo.toml"
+    ));
+}
+
+#[test]
+fn approve_false_when_transcript_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let missing = home
+        .join(".claude")
+        .join("projects")
+        .join("p")
+        .join("nope.jsonl");
+    assert!(!user_approved_shared_config_edit(
+        &missing,
+        home,
+        "/repo/Cargo.toml"
+    ));
+}
+
+#[test]
+fn approve_false_when_transcript_unreadable_as_utf8() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    // File exists (so is_safe_transcript_path's canonicalize
+    // succeeds and the safety gate passes) but its bytes are not
+    // valid UTF-8, so read_recent_turns returns None — exercises the
+    // `None => return false` arm after the safety check.
+    let proj = home.join(".claude").join("projects").join("p");
+    std::fs::create_dir_all(&proj).unwrap();
+    let path = proj.join("session.jsonl");
+    std::fs::write(&path, [0xff_u8, 0xfe, 0xfd]).unwrap();
+    assert!(!user_approved_shared_config_edit(
+        &path,
+        home,
+        "/repo/Cargo.toml"
+    ));
+}
+
+#[test]
+fn approve_false_when_transcript_path_unsafe() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let relative = std::path::Path::new("relative/x.jsonl");
+    assert!(!user_approved_shared_config_edit(
+        relative,
+        home,
+        "/repo/Cargo.toml"
+    ));
+}
+
+#[test]
+fn approve_false_on_empty_transcript() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let path = crate::common::transcript_fixture(home, "p", "");
+    assert!(!user_approved_shared_config_edit(
+        &path,
+        home,
+        "/repo/Cargo.toml"
+    ));
+}
+
+#[test]
+fn approve_false_when_target_has_no_basename() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = format!(
+        "{REQ}{EDIT}{}{}",
+        block_turn("Cargo.toml"),
+        approval_turn("/")
+    );
+    let path = crate::common::transcript_fixture(home, "p", &jsonl);
+    assert!(!user_approved_shared_config_edit(&path, home, "/"));
+}
+
+#[test]
+fn approve_skips_unparseable_lines() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = format!(
+        "not json\n{REQ}{EDIT}{}{}garbage line\n",
+        block_turn("Cargo.toml"),
+        approval_turn("/repo/Cargo.toml")
+    );
+    let path = crate::common::transcript_fixture(home, "p", &jsonl);
+    assert!(user_approved_shared_config_edit(
+        &path,
+        home,
+        "/repo/Cargo.toml"
+    ));
+}
+
+#[test]
+fn approve_false_when_block_outside_byte_cap() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let proj = home.join(".claude").join("projects").join("p");
+    std::fs::create_dir_all(&proj).unwrap();
+    let path = proj.join("capped.jsonl");
+    // Block at HEAD, oversized padding pushes it (and REQ/EDIT)
+    // out of the tail-bounded read; only the approval is visible —
+    // without the block the predicate is false.
+    let mut content: Vec<u8> = format!("{REQ}{EDIT}{}", block_turn("Cargo.toml")).into_bytes();
+    let pad = (SHARED_CONFIG_BLOCK_BYTE_CAP as usize) + 1024;
+    content.extend(std::iter::repeat_n(b'\n', pad));
+    content.extend_from_slice(approval_turn("/repo/Cargo.toml").as_bytes());
+    std::fs::write(&path, &content).unwrap();
+    assert!(!user_approved_shared_config_edit(
+        &path,
+        home,
+        "/repo/Cargo.toml"
+    ));
 }
 
 // --- most_recent_skill_since_user ---
