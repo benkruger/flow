@@ -122,7 +122,14 @@
       "Bash(gh workflow view *)",
       "Bash(gh release list *)",
       "Bash(gh release view *)",
-      "Read(//tmp/*.json)"
+      "Read(//tmp/*.json)",
+      "Read(//tmp/*.jsonl)",
+      "Write(//tmp/*.txt)",
+      "Write(//tmp/*.diff)",
+      "Write(//tmp/*.patch)",
+      "Write(//tmp/*.md)",
+      "Write(//tmp/*.json)",
+      "Write(//tmp/*.jsonl)"
     ],
     "additionalDirectories": [
       "/Users/ben/code/initech"
