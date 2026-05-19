@@ -6418,6 +6418,114 @@ fn flow_plan_skill_reads_role_from_flow_json() {
 }
 
 #[test]
+fn flow_plan_skill_invokes_plan_review_with_capped_loop() {
+    // Regression: a future edit removes or weakens the Plan Review
+    // gate that sits between `Transform + Draft` and `Validate +
+    // File + Link` in Step 6. The gate invokes `flow:plan-reviewer`
+    // to audit the drafted Implementation Plan against the
+    // `.claude/rules/` corpus before the issue is filed, with a
+    // bounded re-decompose loop on `re-decompose` verdicts. Without
+    // the gate, plans ship without cognitively isolated rule-
+    // adherence review — the project applies cognitive isolation to
+    // implementation (four Review agents) but not to design.
+    //
+    // Consumer: the plan-reviewer agent at `agents/plan-reviewer.md`
+    // (Task 3 of PR #1677) and the re-decompose path through
+    // `decompose:decompose`. The cap of 3 attempts mirrors the
+    // existing Validator Auto-Fix Loop shape so a non-converging
+    // loop halts cleanly rather than oscillating.
+    let c = common::read_skill("flow-plan");
+
+    // Subsection must exist
+    assert!(
+        c.contains("### Plan Review"),
+        "skills/flow-plan/SKILL.md must declare a `### Plan Review` subsection in Step 6"
+    );
+
+    // Textual ordering: Transform + Draft < Plan Review < Validate + File + Link
+    let transform_idx = c
+        .find("### Transform + Draft")
+        .expect("`### Transform + Draft` subsection must exist as the Plan Review's upstream anchor");
+    let review_idx = c
+        .find("### Plan Review")
+        .expect("`### Plan Review` subsection must exist between Transform + Draft and Validate + File + Link");
+    let validate_idx = c
+        .find("### Validate + File + Link")
+        .expect("`### Validate + File + Link` subsection must exist as the Plan Review's downstream anchor");
+    assert!(
+        transform_idx < review_idx && review_idx < validate_idx,
+        "skills/flow-plan/SKILL.md: `### Plan Review` must appear textually between `### Transform + Draft` and `### Validate + File + Link` (got Transform@{transform_idx} Review@{review_idx} Validate@{validate_idx})"
+    );
+
+    // Bounded-slice the Plan Review subsection per
+    // `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions
+    // in Contract Tests" so unrelated siblings cannot satisfy the
+    // assertions.
+    let tail_at_heading = c
+        .split_once("### Plan Review")
+        .map(|(_, t)| t)
+        .expect("### Plan Review must exist");
+    let subsection = tail_at_heading
+        .split_once("\n### ")
+        .map(|(s, _)| s)
+        .unwrap_or(tail_at_heading);
+
+    // Invokes the named plan-reviewer agent via the Skill tool
+    assert!(
+        subsection.contains("flow:plan-reviewer"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must invoke `flow:plan-reviewer` so the agent is named explicitly"
+    );
+
+    // Loop cap of 3 attempts
+    assert!(
+        subsection.contains("max 3 attempts") || subsection.contains("cap 3") || subsection.contains("3 attempts"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must name the loop cap as 3 attempts so a non-converging re-decompose loop halts cleanly"
+    );
+
+    // Retry routes through decompose:decompose
+    assert!(
+        subsection.contains("decompose:decompose"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must route the re-decompose retry through `decompose:decompose` — the plan must never be hand-patched"
+    );
+
+    // Failure path: COMPLETE-FAILED banner
+    assert!(
+        subsection.contains("COMPLETE-FAILED"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must name the COMPLETE-FAILED banner as the cap-exhausted failure surface"
+    );
+
+    // Failure path: marker-clear
+    assert!(
+        subsection.contains("clear-utility-in-progress"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must clear the utility-in-progress marker on cap exhaustion so the Stop hook does not refuse the surfaced failure"
+    );
+
+    // Failure path: do NOT file
+    assert!(
+        subsection.contains("do not file") || subsection.contains("do NOT file") || subsection.contains("Do not file") || subsection.contains("Do NOT file"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must explicitly state that the issue is NOT filed on cap exhaustion"
+    );
+
+    // Failure path: do NOT close parent
+    assert!(
+        subsection.contains("do not close") || subsection.contains("do NOT close") || subsection.contains("Do not close") || subsection.contains("Do NOT close"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must explicitly state that the parent vanilla issue is NOT closed on cap exhaustion"
+    );
+
+    // Adjacency check: no `### ` heading sits between Transform + Draft
+    // and Plan Review's heading INSIDE the same step. Step 6 has multiple
+    // subsections; the structural ordering check above is the primary
+    // invariant. This block confirms the Plan Review heading appears
+    // BEFORE Validate + File + Link with no Validate-side subsection
+    // interposed.
+    let between_review_and_validate = &c[review_idx..validate_idx];
+    assert!(
+        !between_review_and_validate.contains("### Validate"),
+        "skills/flow-plan/SKILL.md: no `### Validate*` subsection may appear between `### Plan Review` and `### Validate + File + Link`"
+    );
+}
+
+#[test]
 fn every_marker_writing_skill_is_in_multi_step_allowlist() {
     // Regression: a future utility skill writes a per-session
     // marker via `bin/flow set-utility-in-progress --skill flow:<n>`
