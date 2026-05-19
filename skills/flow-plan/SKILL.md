@@ -569,11 +569,21 @@ is filed. The reviewer audits the drafted plan against the
 through `decompose:decompose` (never hand-patched) and re-reviewed,
 capped at 3 attempts.
 
-Invoke `flow:plan-reviewer` via the Skill tool with a three-block
-prompt: the drafted Implementation Plan body, the parent vanilla
-issue's Acceptance Criteria verbatim, and the `.claude/rules/`
-directory pointer. Explicitly state that no conversation context
-is provided — the agent must reason from the artifacts alone.
+Invoke `flow:plan-reviewer` via the **Agent tool** with
+`subagent_type: "flow:plan-reviewer"` (the canonical sub-agent
+dispatch shape — matching the flow-review and flow-learn agent
+invocations; the Skill tool is reserved for skill-to-skill
+dispatch, not sub-agent dispatch). The prompt is a three-block
+payload: the drafted Implementation Plan body verbatim, the
+parent vanilla issue's Acceptance Criteria verbatim, and an
+absolute path to the `.claude/rules/` directory. Explicitly
+state that no conversation context is provided — the agent must
+reason from the artifacts alone.
+
+Substitute `<project_root>` with the absolute path returned by
+`pwd` at session start; the bare relative `.claude/rules/` would
+resolve against the sub-agent's cwd, which is not guaranteed to
+equal the project root.
 
 The prompt structure:
 
@@ -582,16 +592,30 @@ You are reviewing a drafted Implementation Plan for rule
 adherence. No conversation context is provided.
 
 DRAFTED_PLAN:
-<the full drafted Implementation Plan body, including Context,
-Exploration, Risks, Approach, Dependency Graph, and Tasks>
+<the full drafted Implementation Plan body verbatim, in full —
+copy every line including Context, Exploration, Risks, Approach,
+Dependency Graph, and Tasks; do NOT summarize or paraphrase>
 
 ACCEPTANCE_CRITERIA:
 <the parent vanilla issue's Acceptance Criteria section, verbatim>
 
-RULES_DIR: .claude/rules/
+RULES_DIR: <project_root>/.claude/rules/
 ```
 
-Parse `VERDICT:` from the agent's response.
+Parse the agent's response. First check for the literal
+`## END-OF-FINDINGS` marker as the final structural element. If
+the marker is ABSENT, the agent was truncated by `maxTurns`
+exhaustion (per `.claude/rules/cognitive-isolation.md` "Context
+Budget + Truncation Recovery"). Re-invoke the agent with a
+narrower scope partitioned by rule-family (e.g., split
+`.claude/rules/` into `architecture/` + `correctness/` + the
+rest, one re-invocation per partition), then combine findings
+across runs. If a re-invocation itself returns without the
+marker, that is double-truncation — record the truncation in
+the final user-visible violations block rather than splitting
+infinitely.
+
+When the marker is present, parse `VERDICT:` from the response.
 
 - **`VERDICT: pass`** → the plan satisfies the project rules. Fall
   through to `Validate + File + Link` unchanged.
@@ -626,8 +650,12 @@ For each retry attempt:
 3. Re-run `Transform + Draft` on the new synthesis to produce a
    revised Implementation Plan.
 4. Re-run the Pre-Draft scans on the revised body.
-5. Re-invoke `flow:plan-reviewer` against the revised plan.
-6. Parse `VERDICT:` again. On `pass` exit the loop and fall
+5. Re-invoke `flow:plan-reviewer` against the revised plan via
+   the Agent tool with `subagent_type: "flow:plan-reviewer"`.
+6. Check for the `## END-OF-FINDINGS` marker. If absent, re-invoke
+   with narrower scope per the truncation-recovery path above
+   before parsing `VERDICT:`.
+7. Parse `VERDICT:` again. On `pass` exit the loop and fall
    through to `Validate + File + Link`. On `re-decompose`
    increment the attempt counter and continue.
 

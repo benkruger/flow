@@ -6470,10 +6470,49 @@ fn flow_plan_skill_invokes_plan_review_with_capped_loop() {
         .map(|(s, _)| s)
         .unwrap_or(tail_at_heading);
 
-    // Invokes the named plan-reviewer agent via the Skill tool
+    // Invokes the named plan-reviewer agent via the Agent tool with
+    // `subagent_type: "flow:plan-reviewer"` (the canonical sub-agent
+    // dispatch shape; the Skill tool is for skill-to-skill dispatch).
+    // The contract requires the canonical `subagent_type` literal to
+    // appear in the subsection so a future edit that mis-dispatches
+    // via the Skill tool (which would change the most-recent-Skill
+    // discriminator and break the Stop-hook decompose recognition)
+    // fails CI.
     assert!(
         subsection.contains("flow:plan-reviewer"),
         "skills/flow-plan/SKILL.md Plan Review subsection must invoke `flow:plan-reviewer` so the agent is named explicitly"
+    );
+    assert!(
+        subsection.contains("subagent_type: \"flow:plan-reviewer\""),
+        "skills/flow-plan/SKILL.md Plan Review subsection must specify `subagent_type: \"flow:plan-reviewer\"` (Agent tool dispatch, not Skill tool) so the most-recent-Skill discriminator stays at decompose:decompose for the Stop hook"
+    );
+
+    // Truncation detection: per .claude/rules/cognitive-isolation.md
+    // "Skill-side detection and re-invocation", the skill must check
+    // for the END-OF-FINDINGS marker absence and re-invoke with
+    // narrower scope. Without this, a truncated plan-reviewer
+    // response is silently treated as natural completion.
+    assert!(
+        subsection.contains("END-OF-FINDINGS"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must check for the `END-OF-FINDINGS` completion marker and re-invoke with narrower scope on truncation, per .claude/rules/cognitive-isolation.md"
+    );
+
+    // Verbatim copy contract: the DRAFTED_PLAN must be copied
+    // verbatim into the agent prompt; if the orchestrating model
+    // summarizes or paraphrases the plan, the reviewer sees a
+    // biased view and cognitive isolation is broken.
+    assert!(
+        subsection.contains("verbatim, in full"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must instruct the orchestrating model to copy DRAFTED_PLAN `verbatim, in full` so the reviewer sees the unbiased plan body"
+    );
+
+    // Absolute RULES_DIR: the prompt template must instruct the
+    // model to substitute an absolute project-root path, not the
+    // bare relative `.claude/rules/` (which would resolve against
+    // the sub-agent's cwd, not guaranteed to be project root).
+    assert!(
+        subsection.contains("<project_root>/.claude/rules/"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must use an absolute `<project_root>/.claude/rules/` path so the agent's Glob walks the project's rule corpus regardless of sub-agent cwd"
     );
 
     // Loop cap of 3 attempts
