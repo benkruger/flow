@@ -2910,3 +2910,102 @@ fn test_cleanup_no_all_or_dry_run_flag_strings() {
          inventory machinery. There is no remaining dry-run consumer."
     );
 }
+
+// --- flow-plan Step 1/Step 2 dual-input rewrite (PR #1676) ---
+//
+// `/flow:flow-plan` accepts either `#N` (issue-input mode, which
+// re-plans an existing problem statement in place) or a bare
+// non-empty prompt (bare-prompt mode, which synthesizes a brief
+// What/Why/AC and files one new decomposed issue). The Step 1
+// Conversation Gate no longer rejects bare topics with a
+// `/flow:flow-explore` redirect, and the Step 2 HARD-GATE no
+// longer refuses issues that carry the `decomposed` label —
+// the in-place edit IS the correct re-plan path now.
+//
+// Stability: each tombstone targets a SKILL.md byte-substring.
+// Markdown contains no `concat!` / `format!` / constant reassembly
+// surface — the file is read verbatim at runtime — so a byte
+// check is sufficient.
+
+/// Tombstone: removed in PR #1676. Must not return.
+///
+/// `skills/flow-plan/SKILL.md` Step 1 previously rejected
+/// bare-prompt invocations with a migration message opening
+/// "Topic-style invocations are no longer accepted". The current
+/// Step 1 accepts both `#N` and bare prompts; the redirect
+/// message is removed. A future regression might re-introduce
+/// the gate with the same opening phrasing — this tombstone
+/// catches the load-bearing identifier of that gate.
+///
+/// Stability: byte-substring check against "Topic-style
+/// invocations" — a single-line Markdown phrase that uniquely
+/// identified the removed gate's opening clause. Markdown is read
+/// verbatim at runtime — there is no `concat!` reassembly, no
+/// `format!` template, and no `constant` declaration that could
+/// synthesize the prose without the literal appearing in source.
+/// Plausible bypasses considered and rejected: (1) a reworded
+/// rejection ("bare topics are not accepted") — different prose;
+/// this scanner targets the canonical phrasing the removed gate
+/// used. (2) a redirect that retains "/flow:flow-explore" prose
+/// elsewhere — the slash-command name itself remains legitimate
+/// in cross-references; only "Topic-style invocations" identifies
+/// the removed rejection. (3) line-wrapping the phrase across
+/// Markdown blockquote prefixes — Markdown line breaks don't
+/// alter the contiguous bytes within a single line.
+#[test]
+fn test_flow_plan_no_explore_redirect_message() {
+    let content = fs::read_to_string("skills/flow-plan/SKILL.md")
+        .expect("skills/flow-plan/SKILL.md must exist");
+    const FORBIDDEN: &str = "Topic-style invocations";
+    assert!(
+        !content.contains(FORBIDDEN),
+        "skills/flow-plan/SKILL.md must not contain the bare-prompt \
+         rejection identifier `{}` — Step 1 accepts both `#N` and \
+         bare prompts as of PR #1676. Bare-prompt mode synthesizes \
+         a brief What/Why/AC and files one new decomposed issue.",
+        FORBIDDEN
+    );
+}
+
+/// Tombstone: removed in PR #1676. Must not return.
+///
+/// `skills/flow-plan/SKILL.md` Step 2 previously refused to plan
+/// against any issue whose labels included `decomposed`, with the
+/// user-facing message "already carries the `decomposed` label".
+/// The current shape edits #N in place — the `decomposed` label is
+/// expected (and re-applied via `gh issue edit --add-label
+/// decomposed`). The label gate has been removed entirely. A future
+/// regression that re-adds the gate would re-use the same
+/// user-facing phrasing.
+///
+/// Stability: byte-substring check against the user-facing
+/// rejection message. The phrase "already carries the `decomposed`
+/// label" is a fixed Markdown sentence inside a Step 2 HARD-GATE
+/// block; Markdown has no `concat!` reassembly, no `format!`
+/// template, and no `constant` declaration that could synthesize
+/// the literal without it appearing in source. Plausible bypasses
+/// considered: (1) a paraphrased rejection ("issue is already
+/// decomposed") — different prose; this scanner catches the
+/// canonical phrasing that the removed gate emitted. (2) a Hard
+/// Rules entry that re-asserts the gate's intent without the
+/// user-facing message — caught by the absence of the rejection
+/// flow in Step 2 (see the rewritten test
+/// `flow_plan_skill_keeps_closed_issue_rejection` which keeps
+/// the closed-issue arm but not the label arm). (3) a relocated
+/// gate that emits the same message from a different Step —
+/// still caught by this whole-file byte-substring scan.
+#[test]
+fn test_flow_plan_no_decomposed_label_gate() {
+    let content = fs::read_to_string("skills/flow-plan/SKILL.md")
+        .expect("skills/flow-plan/SKILL.md must exist");
+    const FORBIDDEN: &str = "already carries the `decomposed` label";
+    assert!(
+        !content.contains(FORBIDDEN),
+        "skills/flow-plan/SKILL.md must not contain the \
+         decomposed-label rejection message `{}` — the gate was \
+         removed in PR #1676. Re-planning an already-decomposed \
+         issue is the in-place edit path now; the label is \
+         expected, not a rejection criterion.",
+        FORBIDDEN
+    );
+}

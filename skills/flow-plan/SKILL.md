@@ -88,53 +88,60 @@ filed and linked.
 
 ## Step 1 — Conversation Gate
 
-Verify that an issue-reference argument was provided after the
-slash command in the form `#N` (a literal `#` followed by a
-positive integer).
+`/flow:flow-plan` accepts either of two argument shapes — `#N`
+(issue-input mode, which plans against an existing problem
+statement and edits that same issue in place) or a bare non-empty
+prompt (bare-prompt mode, which synthesizes a brief What/Why/AC
+from the conversation and files one new decomposed issue). The
+gate routes between the two modes; it does not redirect users to
+another skill.
+
+If the argument matches the regex `^#[1-9][0-9]*$` after stripping
+whitespace, set the working mode to **issue-input** and proceed
+to Step 2. Step 2 fetches the parent issue body and applies the
+remaining open-state gate.
+
+If the argument is a non-empty string that does not match the
+regex (a bare prompt such as `/flow:flow-plan add a budget cap`),
+set the working mode to **bare-prompt** and skip Step 2 entirely.
+The prompt seeds the planning discussion at Step 4 — there is no
+GitHub issue to fetch in this mode, so Step 2's fetch and gates
+do not apply. Continue at Step 3.
 
 <HARD-GATE>
 
-If no argument was provided, clear the utility-in-progress marker
-so the Stop hook does not refuse turn-end after the rejection,
-then output the usage guidance and stop:
+If no argument was provided at all, clear the utility-in-progress
+marker so the Stop hook does not refuse turn-end after the
+rejection, then output the usage guidance and stop:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-plan
 ```
 
-> "Issue reference required. Usage: `/flow:flow-plan #N` where N
-> is the GitHub issue number of a vanilla problem-statement issue
-> filed by `/flow:flow-explore`. To file a problem statement
-> first, run `/flow:flow-explore <topic>`."
+> "Argument required. Usage: `/flow:flow-plan #N` to plan against
+> issue N in place, or `/flow:flow-plan <topic>` to synthesize a
+> brief problem statement and file a new decomposed issue."
 
-If the argument does not match the regex `^#[1-9][0-9]*$` after
-stripping whitespace — for example, a bare topic like
-`/flow:flow-plan add a budget cap` — clear the marker and output
-the migration guidance:
-
-> "Argument must be `#N` (e.g., `#1234`). Topic-style invocations
-> are no longer accepted — to discuss a new problem statement
-> first, run `/flow:flow-explore <topic>`. That skill files a
-> vanilla `## What` / `## Why` / `## Acceptance Criteria` issue,
-> and `/flow:flow-plan #N` then plans the implementation against
-> that issue."
-
-Do not proceed to Step 2, propose direct edits, commit changes, or
-take any action outside this skill without a valid `#N` argument.
+Do not proceed without an argument. Do not propose direct edits,
+commit changes, or take any action outside this skill without
+either an `#N` argument or a bare-prompt argument.
 
 </HARD-GATE>
 
 ---
 
-## Step 2 — Fetch Vanilla Issue
+## Step 2 — Fetch Issue (issue-input mode only)
 
-Read the parent issue's title, body, number, labels, and state via
-the `gh` CLI. The body becomes the input the Tech Lead reads to
-ground the planning conversation; the labels gate the skill's
-posture (`decomposed`-labeled issues have already been planned and
-must not be re-planned); the state gates against closed issues
-(re-planning a closed problem statement requires the user to reopen
-it explicitly). The `state` field is load-bearing — without it,
+Only when Step 1 resolved to **issue-input** mode. In bare-prompt
+mode there is no GitHub issue to fetch; skip to Step 3.
+
+Read the issue's title, body, number, labels, and state via the
+`gh` CLI. The body becomes the input the Tech Lead reads to
+ground the planning conversation; the state gates against closed
+issues (planning into a closed problem statement requires the
+user to reopen it explicitly, because `bin/flow plan-from-issue`
+refuses closed issues at flow-start and the resulting plan would
+be unusable). The `state` field is load-bearing — without it,
 the closed-issue gate below silently bypasses for every issue
 because `state == "closed"` evaluates against an absent field that
 is never equal to `"closed"`.
@@ -153,24 +160,23 @@ Verify the fetched issue is in a state this skill can plan against:
 - The issue MUST exist. If `gh issue view` returns a non-zero exit
   status or an error JSON, clear the marker and report the error
   to the user. Do not proceed.
-- The issue's labels MUST NOT include `decomposed`. The
-  `decomposed` label marks an issue that has already been planned
-  via this skill; re-planning would file a sibling decomposed
-  issue against an already-decomposed parent. If the
-  issue carries `decomposed`, clear the marker and output:
-
-  > "Issue #N already carries the `decomposed` label. To start
-  > implementing it, run `/flow:flow-start #N`. To plan a
-  > different problem statement, run `/flow:flow-plan #M` against
-  > a vanilla issue."
-
 - The issue's state MUST be open. Closed issues represent
-  abandoned or completed work and must not be re-planned without
-  the user explicitly reopening them. If the issue is closed,
-  clear the marker and report:
+  abandoned or completed work and must not be planned against
+  without the user explicitly reopening them. `bin/flow
+  plan-from-issue` rejects closed issues at flow-start with
+  `reason: issue_closed`, so a plan written into a closed issue
+  is unusable downstream. If the issue is closed, clear the
+  marker and report:
 
   > "Issue #N is closed. Re-open it via `gh issue reopen N`
   > before planning, or pick a different issue."
+
+The issue's `decomposed` label is NOT a rejection criterion. An
+issue that already carries `decomposed` is a candidate for
+in-place re-planning — Step 6 issue-input mode preserves the
+content above the FLOW-PLAN sentinel and swaps the
+sentinel-delimited plan block, leaving the original problem
+statement intact.
 
 Do not proceed to Step 3, propose direct edits, commit changes,
 or take any action outside this skill until the fetch succeeds
@@ -722,9 +728,11 @@ slash command directly.
 
 ## Hard Rules
 
-- **Always require `#N` argument.** Bare-topic invocations are
-  rejected at Step 1 with a migration message naming
-  `/flow:flow-explore`.
+- **Accept `#N` or a bare prompt.** Step 1 routes `#N` to
+  issue-input mode (Step 2 fetches the issue and Step 6 edits it
+  in place) and bare non-empty prompts to bare-prompt mode (Step 2
+  is skipped; Step 6 synthesizes a brief What/Why/AC and files
+  one new decomposed issue).
 - **Always invoke `bin/flow close-issue` with `--comment`** after
   filing the decomposed issue. Closing the vanilla parent at plan
   time removes the duplicate problem-statement surface so the

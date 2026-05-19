@@ -6591,29 +6591,82 @@ fn flow_plan_validator_retry_cap_is_five() {
 // issue fetch reads title/body/number/labels.
 
 #[test]
-fn flow_plan_skill_usage_requires_issue_number_argument() {
-    // Regression: a future edit reverts the Conversation Gate to
-    // accept bare-topic invocations (the pre-rewrite shape). The
-    // role-based pipeline depends on flow-plan operating against a
-    // pre-filed vanilla issue — without the `#N` argument the skill
-    // would have no problem statement to plan against.
+fn flow_plan_skill_accepts_issue_or_bare_prompt() {
+    // Regression: a future edit narrows Step 1 back to a single
+    // accepted shape, forcing users through `/flow:flow-explore`
+    // before they can plan a new problem statement. The current
+    // contract is two accepted shapes — `#N` (issue-input mode, which
+    // plans against an existing vanilla problem statement and edits
+    // the same issue in place) AND a bare non-empty prompt
+    // (bare-prompt mode, which synthesizes a brief What/Why/AC and
+    // files one new decomposed issue).
     //
-    // Consumer: the role-based pipeline contract — the user types
-    // `/flow:flow-explore <topic>` to file a vanilla issue, then
-    // `/flow:flow-plan #N` against that issue. A bare-topic
-    // flow-plan invocation breaks the contract.
+    // Consumer: users invoking the skill with either shape, and the
+    // Step 1 branching that routes to Step 2 (issue-input) or skips
+    // Step 2 (bare-prompt). A regression that strips either branch
+    // breaks one of the two sanctioned entry paths.
     let c = common::read_skill("flow-plan");
+    // Usage must document both shapes.
     assert!(
         c.contains("/flow:flow-plan #N"),
-        "skills/flow-plan/SKILL.md Usage must show `/flow:flow-plan #N` so the issue-reference shape is documented"
+        "skills/flow-plan/SKILL.md Usage must document the `#N` issue-input shape"
     );
-    // The Conversation Gate must reject bare-topic invocations with
-    // a migration message naming /flow:flow-explore. Match either
-    // the explicit `^#[1-9][0-9]*$` regex contract or a prose hint
-    // that the `#N` form is required.
+    // Step 1 names the `#N` regex and a bare-prompt branch.
+    let step1_tail = c
+        .split_once("## Step 1")
+        .map(|(_, t)| t)
+        .expect("flow-plan SKILL.md must contain `## Step 1` heading");
+    let step1 = step1_tail
+        .split_once("\n## ")
+        .map(|(section, _)| section)
+        .unwrap_or(step1_tail);
     assert!(
-        c.contains("^#[1-9][0-9]*$") || c.contains("must be `#N`"),
-        "skills/flow-plan/SKILL.md must reject bare-topic invocations — name the `#N` argument shape in the Conversation Gate"
+        step1.contains("^#[1-9][0-9]*$"),
+        "flow-plan Step 1 must name the `#N` regex for issue-input mode"
+    );
+    assert!(
+        step1.contains("bare prompt") || step1.contains("bare-prompt"),
+        "flow-plan Step 1 must name a bare-prompt branch as a second accepted shape"
+    );
+    // Step 1 must not redirect to /flow:flow-explore as the only path.
+    assert!(
+        !step1.contains("Topic-style invocations are no longer accepted"),
+        "flow-plan Step 1 must not reject bare prompts — they are a sanctioned input shape"
+    );
+}
+
+#[test]
+fn flow_plan_skill_keeps_closed_issue_rejection() {
+    // Regression: a future edit removes the closed-issue rejection
+    // from Step 2 alongside the decomposed-label gate. The two gates
+    // are independent — the decomposed-label gate is removed because
+    // re-planning a `decomposed` issue is now the correct action
+    // (in-place edit), but closed issues remain rejected because
+    // `bin/flow plan-from-issue` (src/plan_from_issue.rs) refuses
+    // closed issues at flow-start. Planning against a closed issue
+    // produces an unusable artifact.
+    //
+    // Consumer: Step 2's closed-issue gate, and the downstream
+    // `plan-from-issue` flow-start consumer that depends on the
+    // parent issue being open.
+    let c = common::read_skill("flow-plan");
+    // Step 2 still fetches the state field.
+    assert!(
+        c.contains("state"),
+        "flow-plan Step 2 must still fetch the `state` field via `gh issue view --json`"
+    );
+    // Step 2 still rejects closed issues with reopen-first guidance.
+    let step2_tail = c
+        .split_once("## Step 2")
+        .map(|(_, t)| t)
+        .expect("flow-plan SKILL.md must contain `## Step 2` heading");
+    let step2 = step2_tail
+        .split_once("\n## ")
+        .map(|(section, _)| section)
+        .unwrap_or(step2_tail);
+    assert!(
+        step2.contains("closed") && step2.contains("reopen"),
+        "flow-plan Step 2 must keep the closed-issue rejection with reopen-first guidance"
     );
 }
 
