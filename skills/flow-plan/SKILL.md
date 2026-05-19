@@ -109,8 +109,21 @@ whitespace, set the working mode to **issue-input** and proceed
 to Step 2. Step 2 fetches the parent issue body and applies the
 remaining open-state gate.
 
-If the argument is a non-empty string that does not match the
-regex (a bare prompt such as `/flow:flow-plan add a budget cap`),
+If the argument starts with a `#` character but does NOT match
+the `^#[1-9][0-9]*$` regex (e.g., a lone `#`, `#0`, `#-1`,
+`#1234abc`, `#1.5`), the leading `#` is a strong signal of
+intended issue-input mode but the trailing characters are invalid.
+Routing such an argument to bare-prompt mode would silently file
+a new decomposed issue with the malformed token as the seeding
+topic — almost certainly a typo. Clear the utility-in-progress
+marker and reject with usage guidance:
+
+> "Argument starts with `#` but does not match `^#[1-9][0-9]*$`.
+> To plan against an existing issue, pass a valid number like
+> `#1234`. To plan from a bare prompt, drop the leading `#`."
+
+If the argument is a non-empty string that contains no leading
+`#` (a bare prompt such as `/flow:flow-plan add a budget cap`),
 set the working mode to **bare-prompt** and skip Step 2 entirely.
 The prompt seeds the planning discussion at Step 4 — there is no
 GitHub issue to fetch in this mode, so Step 2's fetch and gates
@@ -513,17 +526,33 @@ Build the issue body in working memory. The reconstruction is
 mode-dependent.
 
 - **Issue-input mode** — start from the issue body fetched at
-  Step 2. Take the substring **above the first opening FLOW-PLAN
-  sentinel** as the preserved original (or the whole body if the
-  body contains no sentinel). Discard everything from the opening
-  sentinel onward — this strips any prior sentinel-delimited plan
-  block. Append the freshly-decomposed sentinel-wrapped
-  `## Implementation Plan`. Do NOT rewrite or summarize the
-  preserved original; the user's `## What` / `## Why` /
-  `## Acceptance Criteria` (or whatever shape the issue body had)
-  stays verbatim. Re-planning is idempotent by construction:
-  every re-plan preserves the same prefix and swaps the plan
-  block.
+  Step 2. Split the body into three pieces using the FLOW-PLAN
+  sentinel pair (refer to them by paraphrase here — the literal
+  HTML-comment marker strings live only at their canonical
+  positions inside the issue body, per the discipline below):
+  1. **Prefix** — everything above the first opening FLOW-PLAN
+     sentinel (or the whole body if the body contains no
+     sentinel). The user's `## What` / `## Why` /
+     `## Acceptance Criteria` (or whatever shape the issue body
+     had) lives here.
+  2. **Old plan block** — the content between the first opening
+     sentinel and the matching closing sentinel. Discard this
+     entire block; it is the prior implementation plan that the
+     fresh decompose output replaces.
+  3. **Suffix** — anything below the closing FLOW-PLAN sentinel
+     (if present). Preserve verbatim. Engineers and PMs
+     sometimes add post-plan notes ("## Discussion Notes",
+     "## Open Questions", "## Acceptance Updates") below the
+     plan block; those additions must survive re-planning.
+
+  Reassemble the body as `<prefix>` + fresh sentinel-wrapped
+  `## Implementation Plan` block + `<suffix>` (concatenated with
+  blank-line separators so each section's `## ` heading begins on
+  its own line). Do NOT rewrite or summarize the preserved
+  pieces; only the sentinel-delimited plan block changes. Re-
+  planning is idempotent by construction: every re-plan preserves
+  the same prefix AND the same suffix while swapping only the
+  plan block.
 - **Bare-prompt mode** — synthesize a brief `## What` / `## Why`
   / `## Acceptance Criteria` from the planning conversation (the
   bare prompt the user typed plus any clarification surfaced
@@ -689,13 +718,34 @@ for `<N>`:
 gh issue edit <N> --body-file .flow-issue-body-<id> --add-label decomposed
 ```
 
+When `gh issue edit` returns a non-zero exit status (transient
+network failure, auth scope mismatch, the issue closed between
+Step 2 and now, etc.), the body update may have partially landed
+— gh writes the body before applying labels, so a mid-call
+failure can leave the issue with the new body but the
+`decomposed` label still missing, making it invisible to
+`flow-issues` / `flow-orchestrate`. Surface the gh exit status
+and stderr inline to the user with a concrete recovery command,
+then clear the utility-in-progress marker and stop. Do NOT
+retry the edit silently. The recovery command shape:
+
+> "`gh issue edit <N>` failed. Inspect via
+> `gh issue view <N> --json body,labels`. If the body landed but
+> `decomposed` is missing, run
+> `gh issue edit <N> --add-label decomposed`. If the body did not
+> land, the `.flow-issue-body-<id>` file is still on disk —
+> re-run `gh issue edit <N> --body-file
+> .flow-issue-body-<id> --add-label decomposed`."
+
 `gh issue edit` does not auto-delete the body file. Delete the
 temp file explicitly via the Write tool by writing an empty
 string to `.flow-issue-body-<id>`, then ignore the empty file —
 the worktree cleanup at Phase 5 Complete handles disposal. (The
 Bash permission allow-list refuses ad-hoc `rm` calls during a
 flow per `.claude/rules/permissions.md`; rewriting to empty is
-the sanctioned alternative.)
+the sanctioned alternative.) Skip this empty-write step when
+`gh issue edit` failed — preserving the body file on disk gives
+the user a concrete artifact to retry the edit against.
 
 Capture the issue's URL from the `gh issue view` JSON fetched at
 Step 2 (the `url` field), then record the issue in the state file
@@ -716,9 +766,13 @@ assigned to the planner who ran `flow-plan`:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<issue_title>" --body-file .flow-issue-body-<id> --label decomposed --assignee @me
 ```
 
-Capture the new issue's number from the URL in the filer's output
-(parse the trailing `/issues/M` segment). This is the new
-**decomposed issue number M**.
+Capture both the new issue's URL and number from the filer's
+output. `bin/flow issue` returns a JSON envelope including the
+full GitHub URL of the issue it created; the trailing
+`/issues/M` segment of that URL gives the **decomposed issue
+number M**. Keep both the full URL (as `<issue_url>`) and the
+number for the recording call below — bare-prompt mode has no
+Step 2 fetch to pull these from.
 
 Record the issue in the state file (no-op if no FLOW feature is
 active):

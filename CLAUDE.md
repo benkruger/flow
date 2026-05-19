@@ -92,7 +92,7 @@ The full step sequence and JSON status handling live in `skills/flow-start/SKILL
 - State file schema reference: `docs/reference/flow-state-schema.md`
 - Test fixtures: `tests/common/mod.rs` helpers
 - **Claude never computes timestamps, time differences, or counter increments.** All standard state mutations go through `bin/flow` commands (`phase-enter`, `phase-finalize`, `phase-transition`, `set-timestamp`, `add-finding`, `add-skipped-agent`, `record-agent-return`, `clear-halt`, `approve-shared-config`).
-- Plan handoff: `bin/flow plan-from-issue --issue <N> --branch <name>` extracts content between `<!-- FLOW-PLAN-BEGIN -->` and `<!-- FLOW-PLAN-END -->` sentinels in the issue body and writes it to `.flow-states/<branch>/plan.md`. Issue-filing skills wrap their output in these sentinels automatically.
+- Plan handoff: `bin/flow plan-from-issue --issue <N> --branch <name>` extracts content between `<!-- FLOW-PLAN-BEGIN -->` and `<!-- FLOW-PLAN-END -->` sentinels in the issue body and writes it to `.flow-states/<branch>/plan.md`. Skills that produce decomposed-issue plan bodies (whether filing new issues or editing existing ones in place) wrap the plan content in these sentinels automatically.
 
 ## Architecture References
 
