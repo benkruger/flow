@@ -8,6 +8,7 @@ use flow_rs::add_notification;
 use flow_rs::add_skipped_agent;
 use flow_rs::analyze_issues;
 use flow_rs::append_note;
+use flow_rs::approve_shared_config;
 use flow_rs::auto_close_parent;
 use flow_rs::base_branch_cmd;
 use flow_rs::bump_version;
@@ -168,6 +169,12 @@ enum Commands {
     /// without the user typing `/flow:flow-continue`.
     #[command(name = "clear-halt")]
     ClearHalt(clear_halt::Args),
+    /// Record a single-use user grant to edit a shared-config file.
+    /// The "proceed" half of the shared-config gate; self-gates via
+    /// the transcript walker so a Bash bypass cannot self-authorize
+    /// without a genuine per-file user grant.
+    #[command(name = "approve-shared-config")]
+    ApproveSharedConfig(approve_shared_config::Args),
 
     /// FLOW cleanup orchestrator (worktree, branches, state files).
     Cleanup(cleanup::Args),
@@ -657,6 +664,17 @@ fn main() {
             let root = project_root();
             let home = flow_rs::session_metrics::home_dir_or_empty();
             let (value, code) = clear_halt::run_impl_main(&args, &root, &home);
+            flow_rs::dispatch::dispatch_json(value, code);
+        }
+        Some(Commands::ApproveSharedConfig(args)) => {
+            let root = project_root();
+            let home = flow_rs::session_metrics::home_dir_or_empty();
+            let (value, code) = approve_shared_config::run_impl_main_with_cwd_result(
+                &args,
+                &root,
+                std::env::current_dir(),
+                &home,
+            );
             flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::Issue(args)) => {

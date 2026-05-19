@@ -4,6 +4,7 @@ pub mod add_notification;
 pub mod add_skipped_agent;
 pub mod analyze_issues;
 pub mod append_note;
+pub mod approve_shared_config;
 pub mod auto_close_parent;
 pub mod base_branch_cmd;
 pub mod bump_version;
