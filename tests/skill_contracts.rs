@@ -486,6 +486,11 @@ fn documentation_agent_declares_end_of_findings_marker() {
     assert_agent_output_format_declares_end_of_findings("documentation.md");
 }
 
+#[test]
+fn plan_reviewer_agent_declares_end_of_findings_marker() {
+    assert_agent_output_format_declares_end_of_findings("plan-reviewer.md");
+}
+
 // --- code_read field contract ---
 //
 // The pre-mortem agent's safety value depends on the agent actually
@@ -6414,6 +6419,149 @@ fn flow_plan_skill_reads_role_from_flow_json() {
     assert!(
         c.contains("role"),
         "skills/flow-plan/SKILL.md must name the `role` field so the complementary-default mapping is locked in"
+    );
+}
+
+#[test]
+fn flow_plan_skill_invokes_plan_review_with_capped_loop() {
+    // Regression: a future edit removes or weakens the Plan Review
+    // gate that sits between `Transform + Draft` and `Validate +
+    // File + Link` in Step 6. The gate invokes `flow:plan-reviewer`
+    // to audit the drafted Implementation Plan against the
+    // `.claude/rules/` corpus before the issue is filed, with a
+    // bounded re-decompose loop on `re-decompose` verdicts. Without
+    // the gate, plans ship without cognitively isolated rule-
+    // adherence review — the project applies cognitive isolation to
+    // implementation (four Review agents) but not to design.
+    //
+    // Consumer: the plan-reviewer agent at `agents/plan-reviewer.md`
+    // (Task 3 of PR #1677) and the re-decompose path through
+    // `decompose:decompose`. The cap of 3 attempts mirrors the
+    // existing Validator Auto-Fix Loop shape so a non-converging
+    // loop halts cleanly rather than oscillating.
+    let c = common::read_skill("flow-plan");
+
+    // Subsection must exist
+    assert!(
+        c.contains("### Plan Review"),
+        "skills/flow-plan/SKILL.md must declare a `### Plan Review` subsection in Step 6"
+    );
+
+    // Textual ordering: Transform + Draft < Plan Review < Validate the Body
+    let transform_idx = c.find("### Transform + Draft").expect(
+        "`### Transform + Draft` subsection must exist as the Plan Review's upstream anchor",
+    );
+    let review_idx = c
+        .find("### Plan Review")
+        .expect("`### Plan Review` subsection must exist between Transform + Draft and Validate the Body");
+    let validate_idx = c.find("### Validate the Body").expect(
+        "`### Validate the Body` subsection must exist as the Plan Review's downstream anchor",
+    );
+    assert!(
+        transform_idx < review_idx && review_idx < validate_idx,
+        "skills/flow-plan/SKILL.md: `### Plan Review` must appear textually between `### Transform + Draft` and `### Validate the Body` (got Transform@{transform_idx} Review@{review_idx} Validate@{validate_idx})"
+    );
+
+    // Bounded-slice the Plan Review subsection per
+    // `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions
+    // in Contract Tests" so unrelated siblings cannot satisfy the
+    // assertions.
+    let tail_at_heading = c
+        .split_once("### Plan Review")
+        .map(|(_, t)| t)
+        .expect("### Plan Review must exist");
+    let subsection = tail_at_heading
+        .split_once("\n### ")
+        .map(|(s, _)| s)
+        .unwrap_or(tail_at_heading);
+
+    // Invokes the named plan-reviewer agent via the Agent tool with
+    // `subagent_type: "flow:plan-reviewer"` (the canonical sub-agent
+    // dispatch shape; the Skill tool is for skill-to-skill dispatch).
+    // The contract requires the canonical `subagent_type` literal to
+    // appear in the subsection so a future edit that mis-dispatches
+    // via the Skill tool (which would change the most-recent-Skill
+    // discriminator and break the Stop-hook decompose recognition)
+    // fails CI.
+    assert!(
+        subsection.contains("flow:plan-reviewer"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must invoke `flow:plan-reviewer` so the agent is named explicitly"
+    );
+    assert!(
+        subsection.contains("subagent_type: \"flow:plan-reviewer\""),
+        "skills/flow-plan/SKILL.md Plan Review subsection must specify `subagent_type: \"flow:plan-reviewer\"` (Agent tool dispatch, not Skill tool) so the most-recent-Skill discriminator stays at decompose:decompose for the Stop hook"
+    );
+
+    // Truncation detection: per .claude/rules/cognitive-isolation.md
+    // "Skill-side detection and re-invocation", the skill must check
+    // for the END-OF-FINDINGS marker absence and re-invoke with
+    // narrower scope. Without this, a truncated plan-reviewer
+    // response is silently treated as natural completion.
+    assert!(
+        subsection.contains("END-OF-FINDINGS"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must check for the `END-OF-FINDINGS` completion marker and re-invoke with narrower scope on truncation, per .claude/rules/cognitive-isolation.md"
+    );
+
+    // Verbatim copy contract: the DRAFTED_PLAN must be copied
+    // verbatim into the agent prompt; if the orchestrating model
+    // summarizes or paraphrases the plan, the reviewer sees a
+    // biased view and cognitive isolation is broken.
+    assert!(
+        subsection.contains("verbatim, in full"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must instruct the orchestrating model to copy DRAFTED_PLAN `verbatim, in full` so the reviewer sees the unbiased plan body"
+    );
+
+    // Absolute RULES_DIR: the prompt template must instruct the
+    // model to substitute an absolute project-root path, not the
+    // bare relative `.claude/rules/` (which would resolve against
+    // the sub-agent's cwd, not guaranteed to be project root).
+    assert!(
+        subsection.contains("<project_root>/.claude/rules/"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must use an absolute `<project_root>/.claude/rules/` path so the agent's Glob walks the project's rule corpus regardless of sub-agent cwd"
+    );
+
+    // Loop cap of 3 attempts
+    assert!(
+        subsection.contains("max 3 attempts") || subsection.contains("cap 3") || subsection.contains("3 attempts"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must name the loop cap as 3 attempts so a non-converging re-decompose loop halts cleanly"
+    );
+
+    // Retry routes through decompose:decompose
+    assert!(
+        subsection.contains("decompose:decompose"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must route the re-decompose retry through `decompose:decompose` — the plan must never be hand-patched"
+    );
+
+    // Failure path: COMPLETE-FAILED banner
+    assert!(
+        subsection.contains("COMPLETE-FAILED"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must name the COMPLETE-FAILED banner as the cap-exhausted failure surface"
+    );
+
+    // Failure path: marker-clear
+    assert!(
+        subsection.contains("clear-utility-in-progress"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must clear the utility-in-progress marker on cap exhaustion so the Stop hook does not refuse the surfaced failure"
+    );
+
+    // Failure path: do NOT file (covers both modes — bare-prompt files
+    // new and issue-input edits in place; neither should occur on cap
+    // exhaustion). The "Do NOT file or edit" wording satisfies both.
+    assert!(
+        subsection.contains("do not file") || subsection.contains("do NOT file") || subsection.contains("Do not file") || subsection.contains("Do NOT file"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must explicitly state that the issue is NOT filed on cap exhaustion"
+    );
+
+    // Adjacency check: no `### ` heading sits between Transform + Draft
+    // and Plan Review's heading INSIDE the same step. Step 6 has multiple
+    // subsections; the structural ordering check above is the primary
+    // invariant. This block confirms the Plan Review heading appears
+    // BEFORE Validate the Body with no Validate-side subsection
+    // interposed.
+    let between_review_and_validate = &c[review_idx..validate_idx];
+    assert!(
+        !between_review_and_validate.contains("### Validate"),
+        "skills/flow-plan/SKILL.md: no `### Validate*` subsection may appear between `### Plan Review` and `### Validate the Body`"
     );
 }
 

@@ -643,6 +643,137 @@ Present the full draft inline in the response — both title and
 body. Do not tell the user to look at a file. Render it as a
 formatted markdown block so the user can review every detail.
 
+### Plan Review
+
+The drafted Implementation Plan has been transformed, combined,
+and pre-scanned by the orchestrating model — every check so far
+has run *on the orchestrating model's own output*. This subsection
+adds a cognitively isolated rule-adherence review before the issue
+is filed or edited. The reviewer audits the drafted plan against
+the `.claude/rules/` corpus; on `re-decompose` the plan is re-derived
+through `decompose:decompose` (never hand-patched) and re-reviewed,
+capped at 3 attempts.
+
+Invoke `flow:plan-reviewer` via the **Agent tool** with
+`subagent_type: "flow:plan-reviewer"` (the canonical sub-agent
+dispatch shape — matching the flow-review and flow-learn agent
+invocations; the Skill tool is reserved for skill-to-skill
+dispatch, not sub-agent dispatch). The prompt is a three-block
+payload: the drafted Implementation Plan body verbatim, the
+parent vanilla issue's Acceptance Criteria verbatim, and an
+absolute path to the `.claude/rules/` directory. Explicitly
+state that no conversation context is provided — the agent must
+reason from the artifacts alone.
+
+Substitute `<project_root>` with the absolute path returned by
+`pwd` at session start; the bare relative `.claude/rules/` would
+resolve against the sub-agent's cwd, which is not guaranteed to
+equal the project root.
+
+The prompt structure:
+
+```text
+You are reviewing a drafted Implementation Plan for rule
+adherence. No conversation context is provided.
+
+DRAFTED_PLAN:
+<the full drafted Implementation Plan body verbatim, in full —
+copy every line including Context, Exploration, Risks, Approach,
+Dependency Graph, and Tasks; do NOT summarize or paraphrase>
+
+ACCEPTANCE_CRITERIA:
+<the parent vanilla issue's Acceptance Criteria section, verbatim>
+
+RULES_DIR: <project_root>/.claude/rules/
+```
+
+Parse the agent's response. First check for the literal
+`## END-OF-FINDINGS` marker as the final structural element. If
+the marker is ABSENT, the agent was truncated by `maxTurns`
+exhaustion (per `.claude/rules/cognitive-isolation.md` "Context
+Budget + Truncation Recovery"). Re-invoke the agent with a
+narrower scope partitioned by rule-family (e.g., split
+`.claude/rules/` into `architecture/` + `correctness/` + the
+rest, one re-invocation per partition), then combine findings
+across runs. If a re-invocation itself returns without the
+marker, that is double-truncation — record the truncation in
+the final user-visible violations block rather than splitting
+infinitely.
+
+When the marker is present, parse `VERDICT:` from the response.
+
+- **`VERDICT: pass`** → the plan satisfies the project rules. Fall
+  through to `Validate the Body` unchanged.
+- **`VERDICT: re-decompose`** → at least one component is
+  unmotivated or one applicable rule is violated. Capture the
+  `Violations:` block from the agent's output and run the
+  re-decompose loop below.
+
+<HARD-GATE>
+Do NOT proceed to `Validate the Body` when the verdict is
+`re-decompose`. Do NOT hand-patch the plan to address violations.
+The plan must be re-derived through `decompose:decompose` with
+the violations fed back as input. Hand-patching defeats the
+cognitive-isolation contract — the orchestrating model would be
+editing its own output to satisfy the reviewer, reintroducing the
+bias the gate exists to break.
+</HARD-GATE>
+
+#### Plan-Reviewer Loop (max 3 attempts)
+
+When the verdict is `re-decompose`, run a bounded retry loop
+mirroring the Validator Auto-Fix Loop shape below. The cap is
+**3 attempts** including the first failed review.
+
+For each retry attempt:
+
+1. Construct a fresh `decompose:decompose` prompt that includes
+   the parent vanilla issue context, the prior plan synthesis,
+   and the `Violations:` block returned by the reviewer.
+2. Invoke `decompose:decompose` via the Skill tool and wait for
+   the new synthesis.
+3. Re-run `Transform + Draft` on the new synthesis to produce a
+   revised Implementation Plan.
+4. Re-run the Pre-Draft scans on the revised body.
+5. Re-invoke `flow:plan-reviewer` against the revised plan via
+   the Agent tool with `subagent_type: "flow:plan-reviewer"`.
+6. Check for the `## END-OF-FINDINGS` marker. If absent, re-invoke
+   with narrower scope per the truncation-recovery path above
+   before parsing `VERDICT:`.
+7. Parse `VERDICT:` again. On `pass` exit the loop and fall
+   through to `Validate the Body`. On `re-decompose`
+   increment the attempt counter and continue.
+
+After 3 failed reviews, clear the utility-in-progress marker,
+halt the skill with the structured error envelope, print the
+final `Violations:` block, and print the COMPLETE-FAILED banner.
+Do NOT file or edit the issue. Do NOT loop further.
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-plan
+```
+
+````markdown
+```json
+{"status":"error","reason":"plan_reviewer_max_retries","attempts":3}
+```
+````
+
+````markdown
+```text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✗ FLOW v2.4.0 — flow:flow-plan — COMPLETE-FAILED
+  Plan reviewer rejected the draft 3 times. Issue not filed.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+````
+
+Render the final `Violations:` block verbatim so the user sees
+which rules the plan repeatedly violated. The user can then
+decide whether to invoke `/flow:flow-plan #N` again with
+additional discussion-mode context, abort the planning attempt,
+or escalate the rule design (if a rule itself is at fault).
+
 ### Validate the Body
 
 Write the reconstructed body to `.flow-issue-body-<id>` using the
