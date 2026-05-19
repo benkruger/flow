@@ -1,5 +1,47 @@
 # Release Notes
 
+## v2.3.0 — QA and hygiene skills, reset rework, commit-path hardening
+
+### New features
+
+- **`/flow-qa` maintainer skill** — files a pre-decomposed QA issue
+  against the FLOW plugin repo to drive an end-to-end lifecycle
+  regression pass (#1611).
+- **`/flow-hygiene` skill** — audits the instruction corpus
+  (CLAUDE.md, rules, memory) for staleness, misplacement,
+  duplication, and contradictions.
+- **`bin/flow` as the default dispatcher** — the model's canonical
+  entry into the project script surface; one allow entry covers
+  every subcommand (#1650).
+- **Git as the source of truth** — flow state derives from git
+  rather than parallel bookkeeping (#1640).
+
+### Fixes
+
+- **finalize-commit failures** resolved (#1661); commit
+  finalization routed through a single path (#1630).
+- **Stalled-flow resume** — the user can now resume an interrupted
+  autonomous flow (#1649, #1618).
+- **flow-release stale target** — release no longer leaves a stale
+  `target/release` artifact that shadows the committed binary
+  (#1638).
+- **bin/flow issue** — body-file detection and `--body-file`
+  handling fixed (#1604, #1605).
+- **Transcript verifier** false-failure fixed (#1601).
+- **Code-phase CI redirect** — model no longer reaches for full
+  `bin/flow ci` during Code phase (#1652).
+
+### Improvements
+
+- **flow-reset rework** — machinery replaced, wipes all
+  `.flow-states/`, rejects non-main invocation (#1643, #1635,
+  #1628).
+- **flow-explore read access** widened (#1599).
+- **"Work as partners" rule** added; CLAUDE.md growth controls;
+  plugin-root prose cleanup (#1655).
+- **High-priority issue marking** in the issue list (#1598).
+- **Smoke-test greeting** refreshed (#1608).
+
 ## v2.2.0 — Zero-build marketplace install and terminal-skill mode resolution
 
 ### New features
