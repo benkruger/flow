@@ -486,6 +486,11 @@ fn documentation_agent_declares_end_of_findings_marker() {
     assert_agent_output_format_declares_end_of_findings("documentation.md");
 }
 
+#[test]
+fn plan_reviewer_agent_declares_end_of_findings_marker() {
+    assert_agent_output_format_declares_end_of_findings("plan-reviewer.md");
+}
+
 // --- code_read field contract ---
 //
 // The pre-mortem agent's safety value depends on the agent actually
