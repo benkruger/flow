@@ -34,11 +34,23 @@ Four core tenets:
 
 | Phase | Name | Command | Purpose |
 |-------|------|---------|---------|
-| 1 | Start | `/flow:flow-start` | Create worktree, PR, state file, configure workspace |
+| 1 | Start | `/flow:flow-start` | Under the start lock, bring the base branch to a green-CI + dependency-current baseline, then fork the worktree and open the PR — see "Start-Gate CI on the Base Branch as Serialization Point" below |
 | 2 | Code | `/flow:flow-code` | Execute plan tasks one at a time with TDD |
 | 3 | Review | `/flow:flow-review` | Six tenants assessed by four cognitively isolated agents (reviewer, pre-mortem, adversarial, documentation) |
 | 4 | Learn | `/flow:flow-learn` | Capture learnings, route to permanent homes |
 | 5 | Complete | `/flow:flow-complete` | Merge PR, remove worktree, delete state file |
+
+## Start-Gate CI on the Base Branch as Serialization Point
+
+**What.** flow-start (Phase 1) brings the base branch — the integration branch the flow coordinates against (`main` for standard repos, `staging`/`develop`/etc. otherwise) — to a known-good, dependency-current, CI-green state under the start lock, then forks an isolated worktree from that base for the feature.
+
+**Why.** The base branch is the only shared local resource in the N×N×N model. The known-good baseline must be established once and serialized so every concurrent flow forks from the same clean base, and the dependency-repair cost is paid once via `ci-fixer` instead of N times across N worktrees — O(1), not O(N), with later flows inheriting the result through the CI sentinel.
+
+**How.** Under the start lock: confirm CI is green on the base branch first (a green baseline before touching dependencies, so any subsequent failure is attributable to the dependency update and `ci-fixer` has a clean signal rather than debugging blind), update dependencies, repair any breakage with `ci-fixer`, commit and push the resolved green state to the base branch, fork the isolated worktree, open the PR, release the lock.
+
+The consequence: dependency and shared-config resolution is a base-branch, flow-start, serialized concern — never a worktree edit during a later phase. A worktree is forked from an already-resolved, already-green base. The shared-config gate that blocks `requirements.txt`/`Cargo.toml`/etc. edits inside a worktree is enforcing this invariant, not obstructing it.
+
+The full step sequence and JSON status handling live in `skills/flow-start/SKILL.md`; the concurrency rationale and the bootstrap-commit carve-out live in `.claude/rules/concurrency-model.md`.
 
 ## When You Must Update Docs and Tests
 
