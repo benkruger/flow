@@ -1,5 +1,6 @@
 //! Integration tests for `src/hooks/validate_worktree_paths.rs`.
 
+use std::fs;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -361,6 +362,104 @@ fn test_shared_config_empty_tool_name_allowed() {
     let (allowed, msg) = validate_shared_config(file_path, cwd, "");
     assert!(allowed);
     assert!(msg.is_empty());
+}
+
+// --- validate_shared_config approval consult ---
+//
+// The "proceed" half: before the block return, validate_shared_config
+// consults+consumes a single-use shared-config approval marker. A
+// valid unconsumed marker for the target allows the edit exactly
+// once; absence, corruption, per-file mismatch, or a second edit all
+// keep blocking (fail-closed).
+
+fn sc_fixture() -> (tempfile::TempDir, std::path::PathBuf, String, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_path_buf();
+    let cwd = root.join(".worktrees").join("feat");
+    fs::create_dir_all(&cwd).unwrap();
+    let file_path = format!("{}/Cargo.toml", cwd.display());
+    let cwd_s = cwd.to_string_lossy().to_string();
+    (dir, root, cwd_s, file_path)
+}
+
+#[test]
+fn shared_config_allows_with_valid_marker() {
+    let (_d, root, cwd, file_path) = sc_fixture();
+    flow_rs::shared_config_approval::write_approval(&root, "feat", &file_path).unwrap();
+    let (allowed, msg) = validate_shared_config(&file_path, &cwd, "Edit");
+    assert!(allowed, "valid marker must allow the edit");
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn shared_config_blocks_without_marker() {
+    let (_d, _root, cwd, file_path) = sc_fixture();
+    let (allowed, msg) = validate_shared_config(&file_path, &cwd, "Edit");
+    assert!(!allowed);
+    assert!(msg.contains("is a shared configuration file that affects every engineer"));
+    assert!(msg.contains("approve-shared-config"));
+}
+
+#[test]
+fn shared_config_marker_is_single_use() {
+    let (_d, root, cwd, file_path) = sc_fixture();
+    flow_rs::shared_config_approval::write_approval(&root, "feat", &file_path).unwrap();
+    let (a1, _) = validate_shared_config(&file_path, &cwd, "Edit");
+    assert!(a1, "first edit consumes the marker");
+    let (a2, msg2) = validate_shared_config(&file_path, &cwd, "Edit");
+    assert!(!a2, "second edit re-blocks (marker consumed)");
+    assert!(msg2.contains("approve-shared-config"));
+}
+
+#[test]
+fn shared_config_blocks_on_corrupt_marker() {
+    let (_d, root, cwd, file_path) = sc_fixture();
+    let mpath = flow_rs::shared_config_approval::marker_path(&root, "feat", &file_path).unwrap();
+    fs::create_dir_all(mpath.parent().unwrap()).unwrap();
+    fs::write(&mpath, "{ not json").unwrap();
+    let (allowed, _) = validate_shared_config(&file_path, &cwd, "Edit");
+    assert!(!allowed, "corrupt marker must fail closed (still block)");
+}
+
+#[test]
+fn shared_config_marker_is_per_file() {
+    let (_d, root, cwd, file_path) = sc_fixture();
+    // Marker granted for Cargo.toml; an Edit of .gitignore must
+    // still block.
+    flow_rs::shared_config_approval::write_approval(&root, "feat", &file_path).unwrap();
+    let other = format!("{}/.gitignore", std::path::Path::new(&cwd).display());
+    let (allowed, _) = validate_shared_config(&other, &cwd, "Edit");
+    assert!(!allowed, "marker for Cargo.toml must not allow .gitignore");
+    // Cargo.toml's marker is untouched and still usable.
+    let (a, _) = validate_shared_config(&file_path, &cwd, "Edit");
+    assert!(a);
+}
+
+#[test]
+fn shared_config_marker_ignored_for_read_tool() {
+    // Read is never blocked regardless of marker state — the
+    // tool-name guard returns allow before the consult, so the
+    // marker is NOT consumed by a Read.
+    let (_d, root, cwd, file_path) = sc_fixture();
+    flow_rs::shared_config_approval::write_approval(&root, "feat", &file_path).unwrap();
+    let (allowed, _) = validate_shared_config(&file_path, &cwd, "Read");
+    assert!(allowed);
+    // Marker survives (was not consumed): an Edit can still use it.
+    let (a, _) = validate_shared_config(&file_path, &cwd, "Edit");
+    assert!(a, "Read must not consume the marker");
+}
+
+#[test]
+fn shared_config_blocks_when_worktree_unresolvable() {
+    // cwd contains ".worktrees/" (passes the flow-active proxy
+    // check) but NOT "/.worktrees/" (no leading slash before the
+    // marker), so compute_worktree_paths returns None and the
+    // approval consult is skipped — fail-closed, still blocks.
+    let cwd = "x.worktrees/feat";
+    let file_path = "x.worktrees/feat/Cargo.toml";
+    let (allowed, msg) = validate_shared_config(file_path, cwd, "Edit");
+    assert!(!allowed);
+    assert!(msg.contains("is a shared configuration file that affects every engineer"));
 }
 
 // Direct `run_impl_main` tests removed — decision core is now

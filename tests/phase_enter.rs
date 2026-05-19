@@ -207,6 +207,56 @@ fn test_code_phase_happy_path() {
 }
 
 #[test]
+fn phase_enter_clears_stale_shared_config_markers() {
+    // A shared-config approval marker from an earlier phase must
+    // not bleed into the next phase: entering a new phase clears
+    // every marker for the branch (defense-in-depth alongside
+    // single-use consumption).
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "sc-marker-clear";
+    let repo = create_git_repo(dir.path(), branch);
+    create_state(&repo, branch, "flow-start", "complete", None);
+    let target = "/repo/Cargo.toml";
+    flow_rs::shared_config_approval::write_approval(&repo, branch, target).unwrap();
+    assert!(
+        flow_rs::shared_config_approval::marker_path(&repo, branch, target)
+            .unwrap()
+            .exists(),
+        "marker exists before phase-enter"
+    );
+
+    let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "phase-enter must not be blocked by marker clearing; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    // Marker cleared — a subsequent gate consult finds nothing.
+    assert!(
+        !flow_rs::shared_config_approval::check_and_consume_approval(&repo, branch, target),
+        "phase-enter must clear the stale marker"
+    );
+}
+
+#[test]
+fn phase_enter_marker_clear_is_best_effort_when_absent() {
+    // No markers exist — clear_all is a no-op and phase-enter
+    // succeeds normally (best-effort: a missing approvals dir never
+    // blocks or panics phase advance).
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "sc-marker-noop";
+    let repo = create_git_repo(dir.path(), branch);
+    create_state(&repo, branch, "flow-start", "complete", None);
+
+    let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(parse_output(&output)["status"], "ok");
+}
+
+#[test]
 fn test_review_phase_happy_path() {
     let dir = tempfile::tempdir().unwrap();
     let branch = "review-happy";

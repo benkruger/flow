@@ -161,10 +161,17 @@ insufficient:
       shared-config edit-block tool_result (a `tool_result`
       with `is_error: true` whose content contains the
       literal substring `"is a shared configuration file"`),
-      the block is suppressed so the system-initiated
-      AskUserQuestion the BLOCKED message demanded fires
-      instead of deadlocking. The user-only carve-out is
-      checked first. See
+      the block is suppressed so a system-initiated
+      confirmation prompt raised in response to that
+      shared-config block can fire instead of deadlocking
+      against the autonomous-phase block. The BLOCKED message
+      itself instructs the user to reply with `approve
+      shared-config: <path>` and the model to run `bin/flow
+      approve-shared-config` — the model never fires an
+      `AskUserQuestion` for a shared-config edit, so the
+      carve-out is the system-initiated-prompt safety net,
+      not a model-`AskUserQuestion` release. The user-only
+      carve-out is checked first. See
       `.claude/rules/autonomous-phase-discipline.md`
       "Shared-Config Carve-Out".
 - **Autonomous Stop refusal** — `stop_continue::run` composes

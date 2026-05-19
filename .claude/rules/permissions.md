@@ -398,6 +398,43 @@ Prefer approaches that keep the diff scoped to task-relevant
 code. Ask before expanding scope into shared territory. If the
 user approves the edit, proceed. If not, find a different path.
 
+### When the gate blocks an unapproved edit
+
+When an Edit/Write on a shared-config file is attempted inside a
+worktree without prior approval, `validate_shared_config` blocks
+it. The block is a confirm-and-proceed gate with a two-half
+recovery the model cannot self-authorize:
+
+1. The block message instructs the **user** to reply with the
+   exact line `approve shared-config: <path>`. The model does NOT
+   ask via `AskUserQuestion` and does NOT run anything until that
+   exact user reply lands — the user-typed phrase is the
+   authorization anchor (the same unforgeable trust model as
+   `clear-halt`: a real user-typed turn the model cannot
+   synthesize).
+2. After the user has replied, the model runs `bin/flow
+   approve-shared-config --path <path>`. That subcommand
+   self-gates on the persisted transcript via
+   `transcript_walker::user_approved_shared_config_edit` — it
+   requires the most recent real user turn to carry the fixed
+   phrase for that exact path AND a genuine system-emitted
+   shared-config block for that full path in the same exchange.
+   Only then does it write a single-use approval marker
+   (`src/shared_config_approval.rs`,
+   `.flow-states/<branch>/shared-config-approvals/<sha256(path)>`).
+3. `validate_shared_config` consults and consumes (deletes) the
+   marker immediately before its block return, allowing exactly
+   one Edit/Write of exactly that file. A second edit re-blocks
+   (single-use). Any unreadable, oversized, unparseable, or
+   target-mismatched marker yields no approval and the gate keeps
+   blocking — fail-closed, a corrupt marker is never an escape
+   hatch (the deliberate asymmetry vs. Layer 11's fail-open).
+
+A `not_user_approved` result from `bin/flow approve-shared-config`
+means the user has not yet replied with the exact line: keep
+waiting for the user — do not retry the edit or re-run the
+subcommand in a loop.
+
 ## Enforcement
 
 Shared-config protection is a workflow discipline, not a universal
@@ -425,21 +462,32 @@ The `validate_shared_config` function gates on tool name: only
 the CWD is inside a `.worktrees/` directory and the target path
 is inside the worktree.
 
-The block message directs the model to confirm with the user via
-`AskUserQuestion` before proceeding, and points to this section
-for context.
+The block message names the recovery path: the user must reply
+with the exact line `approve shared-config: <path>` and the model
+then runs `bin/flow approve-shared-config --path <path>`.
+Immediately before the block return, `validate_shared_config`
+calls `shared_config_approval::check_and_consume_approval` keyed
+on `(project_root, branch, file_path)` — a valid unconsumed
+single-use marker allows the edit exactly once (the marker is
+deleted on the allow path); any marker IO/parse/validation error
+keeps blocking (fail-closed). The block message also points to
+this section for context.
 
 ### Autonomous-phase carve-out for the confirmation prompt
 
-The block message instructs the model to call
-`AskUserQuestion` to confirm the shared-config edit. During an
-in-progress autonomous phase, the autonomous-phase block in
-`validate-ask-user` would refuse that prompt — two hooks
-contradicting each other and deadlocking the flow. To resolve
-the contradiction, `validate-ask-user::run_impl_main` carves out
-the AskUserQuestion when the persisted transcript carries a
-recent shared-config block: the carve-out lets the prompt fire
-so the system-initiated confirmation flow completes.
+The model never fires an `AskUserQuestion` for a shared-config
+edit — the recovery is the user-typed `approve shared-config:
+<path>` phrase plus `bin/flow approve-shared-config`, neither of
+which is a model-initiated prompt. The `validate-ask-user`
+shared-config carve-out
+(`recent_edit_blocked_on_shared_config`) nonetheless remains as a
+system-initiated-prompt safety net: the block message still
+contains the load-bearing substring `is a shared configuration
+file that affects every engineer`, so if a system-initiated
+confirmation prompt is raised during an in-progress autonomous
+phase in response to a recent shared-config block, the carve-out
+lets it fire rather than deadlocking against the autonomous-phase
+block in `validate-ask-user`.
 
 The carve-out is system-initiated, not model-initiated, so it
 does not violate the autonomous-mode discipline against

@@ -364,19 +364,29 @@ Layer 2 for the full design.
 ## Shared-Config Carve-Out
 
 The autonomous-phase block above protects against
-model-initiated prompts. The shared-config block from
+model-initiated prompts. The shared-config gate from
 `validate_worktree_paths` (see `.claude/rules/permissions.md`
-"Shared Config Files — Express User Permission Required") is the
-opposite shape: another hook explicitly instructs the model to
-call `AskUserQuestion` to confirm a shared-config edit. Without a
-carve-out, the autonomous-phase block refuses the very prompt the
-prior hook demanded — the flow deadlocks while two hooks
-contradict each other.
+"Shared Config Files — Express User Permission Required") has a
+two-half recovery: the block message instructs the **user** to
+reply with the exact line `approve shared-config: <path>`, and
+the model then runs `bin/flow approve-shared-config --path
+<path>` (which self-gates on that user-typed phrase and writes a
+single-use approval marker the gate consults+consumes). The model
+never fires an `AskUserQuestion` for a shared-config edit — so
+there is no model-initiated prompt to reconcile with the
+autonomous-phase block, and `bin/flow approve-shared-config` is
+not a user-only skill, so the model may run it once the user has
+replied.
 
-The trigger is system-initiated, not model-initiated: the
-shared-config BLOCKED message itself directs the next action.
-Letting the prompt fire completes the confirmation flow the
-system asked for.
+The `validate-ask-user` shared-config carve-out nonetheless
+remains as a system-initiated-prompt safety net. If a
+system-initiated confirmation prompt is raised during an
+in-progress autonomous phase in response to a recent
+shared-config block, the autonomous-phase block in
+`validate-ask-user` would otherwise refuse it; the carve-out lets
+it fire so a system-initiated confirmation flow completes rather
+than deadlocking. The trigger is system-initiated, not
+model-initiated.
 
 `validate-ask-user`'s `run_impl_main` calls
 `crate::hooks::transcript_walker::recent_edit_blocked_on_shared_config`

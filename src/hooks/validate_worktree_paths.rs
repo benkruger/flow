@@ -77,11 +77,27 @@ pub fn is_shared_config(file_path: &str) -> bool {
 
 /// Check if an Edit/Write on a shared config file should be blocked.
 ///
-/// Returns `(allowed, message)`. Only blocks when all of:
-/// - `tool_name` is "Edit" or "Write" (reads are fine)
+/// Returns `(allowed, message)`. The edit would block when all of:
+/// - `tool_name` is "Edit" or "Write" (reads are fine and never
+///   consult or consume a marker)
 /// - CWD is inside a `.worktrees/` directory
 /// - `file_path` is inside the worktree (not targeting main repo or external paths)
 /// - the file matches the shared-config list
+///
+/// The "proceed" half: immediately before the block return, the gate
+/// consults+consumes a single-use approval marker via
+/// `shared_config_approval::check_and_consume_approval` keyed on
+/// `(project_root, branch, file_path)` — `project_root`/branch derived
+/// from `cwd` via `compute_worktree_paths` (branch = the worktree
+/// directory name). A valid unconsumed marker allows the edit exactly
+/// once (the marker is deleted). Any absence, corruption, IO error,
+/// per-file mismatch, or unresolvable worktree keeps blocking
+/// (fail-closed — a corrupt marker can never become an escape hatch,
+/// the deliberate asymmetry vs. Layer 11). The block message names
+/// the `bin/flow approve-shared-config` recovery path and the exact
+/// `approve shared-config: <path>` phrase the user must type so the
+/// transcript self-gate (`user_approved_shared_config_edit`) can
+/// authorize the subcommand.
 pub fn validate_shared_config(file_path: &str, cwd: &str, tool_name: &str) -> (bool, String) {
     if file_path.is_empty() {
         return (true, String::new());
@@ -109,6 +125,33 @@ pub fn validate_shared_config(file_path: &str, cwd: &str, tool_name: &str) -> (b
         return (true, String::new());
     }
 
+    // Proceed half: a valid unconsumed single-use approval marker
+    // for this exact file allows the edit once. project_root/branch
+    // come from the same `compute_worktree_paths` the worktree gate
+    // uses (branch = the worktree directory name, structurally
+    // `/`-free). Any unresolvable worktree, invalid branch, or
+    // marker IO/parse failure falls through to the block
+    // (fail-closed) because `check_and_consume_approval` returns
+    // false on every error class.
+    if let Some((project_root, worktree_root)) = compute_worktree_paths(cwd) {
+        // `compute_worktree_paths` only returns `Some` for a path of
+        // the form `<root>/.worktrees/<branch>` with a non-empty,
+        // trailing-slash-stripped branch segment, so `file_name` is
+        // structurally `Some`. The `.expect` documents that
+        // invariant; it is unreachable, not a panic vector.
+        let branch = Path::new(worktree_root)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .expect("compute_worktree_paths yields a path ending in the branch segment");
+        if crate::shared_config_approval::check_and_consume_approval(
+            Path::new(project_root),
+            branch,
+            file_path,
+        ) {
+            return (true, String::new());
+        }
+    }
+
     // For .github/ directory matches, surface `.github/` as the protected
     // boundary rather than the leaf filename (e.g. "ci.yml" is not inherently
     // shared config — the `.github/` directory is).
@@ -127,9 +170,16 @@ pub fn validate_shared_config(file_path: &str, cwd: &str, tool_name: &str) -> (b
         format!(
             "BLOCKED: {} is a shared configuration file that affects every engineer \
              in the repository. Modifying it during a FLOW phase requires explicit \
-             user permission. Use AskUserQuestion to confirm with the user before \
-             proceeding. See .claude/rules/permissions.md \"Shared Config Files\" section.",
-            display_name
+             user permission. To authorize this single edit, the USER must reply \
+             with the exact line `approve shared-config: {}`. Do NOT run \
+             `bin/flow approve-shared-config` until the user has sent that exact \
+             reply — wait for it. Once the user has replied, run \
+             `bin/flow approve-shared-config --path {}` and retry the edit. A \
+             `not_user_approved` result means the user has not yet replied: keep \
+             waiting, do not retry the edit or re-run the subcommand in a loop. \
+             The grant is single-use and scoped to this file. See \
+             .claude/rules/permissions.md \"Shared Config Files\" section.",
+            display_name, file_path, file_path
         ),
     )
 }

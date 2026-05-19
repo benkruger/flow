@@ -91,14 +91,14 @@ The full step sequence and JSON status handling live in `skills/flow-start/SKILL
 
 - State file schema reference: `docs/reference/flow-state-schema.md`
 - Test fixtures: `tests/common/mod.rs` helpers
-- **Claude never computes timestamps, time differences, or counter increments.** All standard state mutations go through `bin/flow` commands (`phase-enter`, `phase-finalize`, `phase-transition`, `set-timestamp`, `add-finding`, `add-skipped-agent`, `record-agent-return`, `clear-halt`).
+- **Claude never computes timestamps, time differences, or counter increments.** All standard state mutations go through `bin/flow` commands (`phase-enter`, `phase-finalize`, `phase-transition`, `set-timestamp`, `add-finding`, `add-skipped-agent`, `record-agent-return`, `clear-halt`, `approve-shared-config`).
 - Plan handoff: `bin/flow plan-from-issue --issue <N> --branch <name>` extracts content between `<!-- FLOW-PLAN-BEGIN -->` and `<!-- FLOW-PLAN-END -->` sentinels in the issue body and writes it to `.flow-states/<branch>/plan.md`. Issue-filing skills wrap their output in these sentinels automatically.
 
 ## Architecture References
 
 Behavior I obey lives in the rule files below. Reading the rule when relevant beats pre-loading the architecture description.
 
-- **Permissions, commit gates, concurrency** — see `.claude/rules/permissions.md` and `.claude/rules/concurrency-model.md`.
+- **Permissions, commit gates, concurrency** — see `.claude/rules/permissions.md` and `.claude/rules/concurrency-model.md`. The shared-config edit gate's "proceed" half — the user-typed `approve shared-config: <path>` phrase, the `bin/flow approve-shared-config` subcommand, and the single-use marker store (`src/shared_config_approval.rs`) — is documented in `.claude/rules/permissions.md` "Shared Config Files".
 - **User-only skills** (model must never invoke `/flow:flow-abort`, `/flow:flow-reset`, `/flow-release`, `/flow-qa`, `/flow:flow-prime`, `/flow:flow-continue`) — see `.claude/rules/user-only-skills.md`.
 - **Autonomous phase discipline** (Stop-hook two-exit halt model, AskUserQuestion gate) — see `.claude/rules/autonomous-phase-discipline.md`.
 - **Tombstone tests** — see `.claude/rules/tombstone-tests.md`.

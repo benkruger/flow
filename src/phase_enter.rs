@@ -255,6 +255,14 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         }
     }
 
+    // Defense-in-depth: clear any stale shared-config approval
+    // markers for this branch on phase advance so a grant issued in
+    // an earlier phase cannot bleed forward (the primary guarantee
+    // is single-use consumption on the gate-allow path). Best-effort
+    // — `clear_all` swallows every IO error and never panics, so a
+    // marker-dir anomaly cannot block phase entry.
+    crate::shared_config_approval::clear_all(&root, &branch);
+
     let enter_result = enter_result_holder.into_inner();
     let _ = append_log(
         &root,
