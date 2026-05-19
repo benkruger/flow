@@ -5,10 +5,14 @@
 //! `src/flow_paths.rs`.
 
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use flow_rs::flow_paths::{
-    compute_worktree_paths, compute_worktree_root, FlowPaths, FlowStatesDir,
+    compute_worktree_paths, compute_worktree_root, finalize_commit_destination, FlowPaths,
+    FlowStatesDir,
 };
+
+mod common;
 
 // --- FlowPaths ---
 
@@ -550,4 +554,137 @@ fn compute_worktree_paths_returns_none_when_no_branch_segment() {
         compute_worktree_paths("/Users/ben/code/flow/.worktrees/"),
         None
     );
+}
+
+// --- finalize_commit_destination ---
+//
+// `finalize_commit_destination` decides where a finalize-commit git
+// operation runs. Integration-branch commits (the bootstrap skills
+// that commit on the trunk) route to the project root, where the
+// integration branch is checked out. Feature-branch commits route to
+// the per-branch worktree. When git cannot resolve the integration
+// branch, the worktree-existence fallback distinguishes a real
+// feature flow (worktree dir present -> worktree) from a fresh-clone
+// bootstrap (no worktree dir -> project root). The four tests below
+// pin each arm of that decision, including the normalize-both-sides
+// contract on the branch comparison.
+
+/// Create a plain `git init` repo with no `origin` remote at
+/// `<parent>/no-origin`. `git symbolic-ref refs/remotes/origin/HEAD`
+/// has no target in such a repo, so `default_branch_in` returns
+/// `Err` — exercising the worktree-existence fallback arms.
+fn create_git_repo_no_origin(parent: &Path) -> PathBuf {
+    let repo = parent.join("no-origin");
+    std::fs::create_dir_all(&repo).expect("create repo dir");
+    Command::new("git")
+        .args(["init", "-b", "main"])
+        .current_dir(&repo)
+        .output()
+        .expect("git init");
+    repo
+}
+
+#[test]
+fn finalize_commit_destination_integration_branch_routes_to_root() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let parent = tmp.path().canonicalize().expect("canonicalize");
+    let root = common::create_git_repo_with_remote(&parent);
+    assert_eq!(finalize_commit_destination(&root, "main"), root);
+}
+
+#[test]
+fn finalize_commit_destination_integration_branch_case_variant_routes_to_root() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let parent = tmp.path().canonicalize().expect("canonicalize");
+    let root = common::create_git_repo_with_remote(&parent);
+    assert_eq!(finalize_commit_destination(&root, "MAIN"), root);
+}
+
+#[test]
+fn finalize_commit_destination_integration_branch_whitespace_routes_to_root() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let parent = tmp.path().canonicalize().expect("canonicalize");
+    let root = common::create_git_repo_with_remote(&parent);
+    assert_eq!(finalize_commit_destination(&root, " main "), root);
+}
+
+#[test]
+fn finalize_commit_destination_feature_branch_routes_to_worktree() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let parent = tmp.path().canonicalize().expect("canonicalize");
+    let root = common::create_git_repo_with_remote(&parent);
+    assert_eq!(
+        finalize_commit_destination(&root, "feat-x"),
+        root.join(".worktrees").join("feat-x")
+    );
+}
+
+#[test]
+fn finalize_commit_destination_no_origin_with_worktree_routes_to_worktree() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let parent = tmp.path().canonicalize().expect("canonicalize");
+    let root = create_git_repo_no_origin(&parent);
+    std::fs::create_dir_all(root.join(".worktrees").join("feat-x")).expect("create worktree dir");
+    assert_eq!(
+        finalize_commit_destination(&root, "feat-x"),
+        root.join(".worktrees").join("feat-x")
+    );
+}
+
+// Divergence regression: when git cannot name the integration
+// branch (no `origin`), the helper must NEVER route to the project
+// root — even with no worktree directory present. Routing to root
+// here was the hook/binary drift the Review adversarial agent
+// proved: the binary committed feature work onto the trunk while
+// the hook's `default_branch_in().ok()?` returned no-block. The
+// `Err` path now routes to the per-branch worktree on both sides.
+#[test]
+fn finalize_commit_destination_no_origin_no_worktree_routes_to_worktree() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let parent = tmp.path().canonicalize().expect("canonicalize");
+    let root = create_git_repo_no_origin(&parent);
+    assert_eq!(
+        finalize_commit_destination(&root, "feat-x"),
+        root.join(".worktrees").join("feat-x")
+    );
+}
+
+// Branch-path-safety boundary (per
+// `.claude/rules/branch-path-safety.md`): `finalize_commit_destination`
+// is a pub surface that joins `branch` onto `.worktrees/`. An
+// invalid branch must never reach that join — the `is_valid_branch`
+// guard returns the project root (a non-escaping path) instead of
+// constructing a traversal-shaped `<root>/.worktrees/<bad>`. Both
+// production callers validate upstream, so this guard is
+// defense-in-depth; these tests lock the rejection classes the
+// adversarial harness could not reach (no crate link).
+
+#[test]
+fn finalize_commit_destination_rejects_empty_branch() {
+    let root = Path::new("/tmp/proj");
+    assert_eq!(finalize_commit_destination(root, ""), root);
+}
+
+#[test]
+fn finalize_commit_destination_rejects_dot_branch() {
+    let root = Path::new("/tmp/proj");
+    assert_eq!(finalize_commit_destination(root, "."), root);
+}
+
+#[test]
+fn finalize_commit_destination_rejects_dot_dot_branch() {
+    let root = Path::new("/tmp/proj");
+    assert_eq!(finalize_commit_destination(root, ".."), root);
+}
+
+#[test]
+fn finalize_commit_destination_rejects_slash_branch() {
+    let root = Path::new("/tmp/proj");
+    assert_eq!(finalize_commit_destination(root, "a/b"), root);
+}
+
+#[test]
+fn finalize_commit_destination_rejects_nul_branch() {
+    let root = Path::new("/tmp/proj");
+    assert_eq!(finalize_commit_destination(root, "a\0b"), root);
 }

@@ -3,6 +3,7 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+use flow_rs::flow_paths::finalize_commit_destination;
 use flow_rs::hooks::validate_pretool::{should_block_background, validate, validate_agent};
 use serde_json::{json, Value};
 
@@ -4360,6 +4361,35 @@ fn match_finalize_commit_destination_blocks_integration_branch_arg() {
     assert!(stderr.contains("integration branch"));
 }
 
+/// Delegation contract (Task 6): `match_finalize_commit_destination`
+/// computes the integration-branch decision via
+/// `crate::flow_paths::finalize_commit_destination` but still names
+/// the CANONICAL integration branch (resolved through
+/// `default_branch_in`) in the block message — not the raw
+/// case-variant `branch_arg`. Regression guard for the gate-action-
+/// atomicity contract: if the delegation ever named `branch_arg`
+/// instead, a `MAIN` arg would surface `MAIN` to the user. The arg
+/// is `MAIN`; the message must read `integration branch 'main'` and
+/// must not echo the raw `MAIN`.
+#[test]
+fn finalize_commit_destination_block_message_names_canonical_integration_branch() {
+    let (_dir, _root, cwd) = setup_active_flow_worktree("feat", false);
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt MAIN"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
+    assert_eq!(
+        code, 2,
+        "case-variant integration arg must block via delegated destination; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("integration branch 'main'"),
+        "block message must name canonical integration branch 'main'; got: {stderr}"
+    );
+    assert!(
+        !stderr.contains("MAIN"),
+        "block message must not echo the raw case-variant arg 'MAIN'; got: {stderr}"
+    );
+}
+
 #[test]
 fn match_finalize_commit_destination_allows_feature_branch_arg() {
     // branch_arg="some-feature" does NOT match the integration
@@ -4372,6 +4402,52 @@ fn match_finalize_commit_destination_allows_feature_branch_arg() {
     assert_eq!(
         code, 0,
         "feature-branch arg with no active flow must allow; stderr={stderr}"
+    );
+}
+
+/// Hook/binary destination-agreement contract (Task 7). Layer 10's
+/// integration-branch arm must fire exactly when the shared helper
+/// `finalize_commit_destination` routes the commit to the project
+/// root — the structural invariant #1660 demands so the hook's
+/// block decision and the binary's commit cwd cannot disagree. For
+/// a fixture repo with `origin/HEAD` → `main` and no active flow on
+/// the test branches, the hook's only firing path for a
+/// `bin/flow finalize-commit <msg> <branch>` invocation is the
+/// integration-branch destination arm, so "hook blocks via the
+/// destination path" ⟺ "the helper routes to root". The
+/// whitespace-padded `" main "` arm of the helper's normalize-both-
+/// sides contract cannot be carried as a single shell token through
+/// the command parser (split_whitespace would shatter it), so that
+/// element is asserted against the pub helper directly — which is
+/// the exact decision `match_finalize_commit_destination` delegates
+/// to, so the agreement still holds transitively.
+#[test]
+fn hook_blocks_finalize_commit_iff_helper_routes_to_project_root() {
+    let (_dir, root) = setup_repo_on_branch("main");
+    let claude_dir = root.join(".claude");
+    std::fs::create_dir_all(&claude_dir).unwrap();
+    std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
+
+    for b in ["main", "MAIN", "feat-x"] {
+        let dest_is_root = finalize_commit_destination(&root, b) == root;
+        let input =
+            format!(r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt {b}"}}}}"#);
+        let (code, _stdout, stderr) = run_hook_with_input(&input, Some(&root));
+        let hook_blocks_via_destination = code == 2 && stderr.contains("integration branch");
+        assert_eq!(
+            dest_is_root, hook_blocks_via_destination,
+            "branch {b:?}: finalize_commit_destination==root is {dest_is_root} but \
+             hook-blocks-via-destination is {hook_blocks_via_destination}; stderr={stderr}"
+        );
+    }
+
+    // Whitespace-padded arg: not expressible as a single shell token,
+    // so assert the shared helper (the decision the hook delegates
+    // to) routes it to the project root.
+    assert_eq!(
+        finalize_commit_destination(&root, " main "),
+        root,
+        "normalize-both-sides: ' main ' must route to the project root"
     );
 }
 

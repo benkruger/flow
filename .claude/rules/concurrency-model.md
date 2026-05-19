@@ -156,13 +156,21 @@ sits — a sibling tempdir, a monorepo subdirectory of the
 integration trunk, or another feature-branch worktree all see
 the gate fire on the correct destination.
 
-This mirrors `finalize_commit::run_impl`'s own branch-derived
-routing through `FlowPaths::worktree()` so the hook and the
-binary agree on the commit destination. Both helpers normalize
-their inputs via `normalize_gate_input` per
+Both `finalize_commit::run_impl` and
+`match_finalize_commit_destination` reach the route-to-root
+decision through the shared
+`crate::flow_paths::finalize_commit_destination` helper, so the
+hook and the binary agree on the commit destination by
+construction rather than by a maintained convention. That helper
+normalizes the branch via `normalize_gate_input` per
 `.claude/rules/security-gates.md` "Normalize Before Comparing",
 so case- or whitespace-variant branch args (`MAIN`, `  main  `)
-still match the integration-branch check.
+still match the integration-branch check. On the
+`default_branch_in` error path the helper routes to the
+per-branch worktree (never the project root) and
+`match_finalize_commit_destination` returns no-block, so neither
+side treats an undetectable-integration commit as a trunk
+destination.
 
 For every other shape — `git commit`, `git -C <path> commit`,
 and any malformed `bin/flow finalize-commit` invocation (missing

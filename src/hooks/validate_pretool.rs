@@ -842,47 +842,41 @@ fn extract_finalize_commit_branch_arg(stripped: &str) -> Option<&str> {
     Some(branch)
 }
 
-/// Compare the dequoted branch argument against the project's
-/// integration branch (resolved via `default_branch_in`). When the
-/// normalized strings match, return the Layer 10 block message
-/// keyed on the integration branch's canonical name; otherwise
-/// return `None`.
+/// Decide whether Layer 10's integration-branch arm fires for a
+/// `bin/flow finalize-commit <msg> <branch>` destination-path
+/// invocation. Delegates the destination decision to
+/// `crate::flow_paths::finalize_commit_destination` — the same
+/// helper `src/finalize_commit.rs::run_impl` uses to pick its
+/// commit cwd — so the hook's block decision and the binary's
+/// commit destination cannot drift: block exactly when the helper
+/// routes the commit to the project root.
 ///
-/// Both sides pass through `normalize_gate_input` (NUL strip +
-/// trim + ASCII lowercase) per `.claude/rules/security-gates.md`
-/// "Normalize Before Comparing" — a whitespace-padded or
-/// case-variant `--branch Main` must compare equal to `main`.
+/// `default_branch_in(main_root)` is consulted first as a guard
+/// and as the message's branch name. When it errs (no `origin`
+/// remote, symbolic-ref unset, non-git directory) the integration
+/// branch is undetectable, so this arm has no basis to fire and
+/// returns `None` — preserving the fresh-clone behavior. The
+/// active-flow check at the same callsite is independent (it walks
+/// the worktree path) and still catches in-flow commits via the
+/// state file. See `.claude/rules/concurrency-model.md` "Known
+/// Limitations".
 ///
 /// Per `.claude/rules/security-gates.md` "Gate-Action Atomicity
-/// for Validated Paths", the block message uses the canonical
-/// integration branch from `default_branch_in` rather than the
-/// raw `branch_arg`. A case-variant `MAIN` arg blocks AND the
-/// message names the canonical `main` — the user sees the
-/// integration branch the gate resolved, not the unnormalized
-/// input that the gate had to fold.
+/// for Validated Paths", the block message names the canonical
+/// integration branch from `default_branch_in`, not the raw
+/// `branch_arg`. The helper's own normalize-both-sides comparison
+/// (`.claude/rules/security-gates.md` "Normalize Before
+/// Comparing") makes a case-variant `MAIN` arg resolve to the
+/// project root and therefore block, with the message naming
+/// canonical `main`.
 ///
 /// `main_root` is the resolved project root (parent of the FLOW
-/// state directory). The destination check needs it both as the
-/// argument to `default_branch_in` and as the prefix when the
-/// caller constructs `<main_root>/.worktrees/<branch>/` for the
-/// active-flow arm.
+/// state directory). It is both the `finalize_commit_destination`
+/// root argument and the prefix the caller uses to construct
+/// `<main_root>/.worktrees/<branch>/` for the active-flow arm.
 fn match_finalize_commit_destination(branch_arg: &str, main_root: &Path) -> Option<String> {
-    let integration = match default_branch_in(main_root) {
-        Ok(b) => b,
-        // When git cannot resolve `origin/HEAD` (no `origin` remote,
-        // symbolic-ref unset, non-git directory), the integration
-        // branch is undetectable — Layer 9 has no basis to fire on
-        // an integration-branch destination. Return None so feature-
-        // branch commits in unprimed/fresh-clone repos can proceed.
-        // The active-flow check at the same callsite is independent
-        // (it walks the worktree path) and still catches in-flow
-        // commits. See `.claude/rules/concurrency-model.md` "Known
-        // Limitations" for the rationale.
-        Err(_) => return None,
-    };
-    let branch_norm = normalize_gate_input(branch_arg);
-    let integration_norm = normalize_gate_input(&integration);
-    if branch_norm == integration_norm {
+    let integration = default_branch_in(main_root).ok()?;
+    if crate::flow_paths::finalize_commit_destination(main_root, branch_arg) == main_root {
         Some(commit_block_message(&integration))
     } else {
         None

@@ -1380,6 +1380,69 @@ fn test_beta() {
     assert_eq!(deviations.len(), 2);
 }
 
+// --- run_impl: no-worktree integration-branch routing ---
+
+/// A bootstrap commit runs on the integration branch checked out at
+/// the project root, where no `<root>/.worktrees/<integration>`
+/// directory ever exists. finalize-commit must route its git
+/// operations to the project root in that shape rather than to a
+/// nonexistent worktree. The fixture is a clone on `main` with
+/// `origin/HEAD` resolving to `main` and no `.worktrees/` directory;
+/// the staged tree is clean (index == working tree). The response
+/// must NOT be `step:"working_tree_dirty"` — the working-tree-dirty
+/// gate's `git diff --quiet` would error against a nonexistent
+/// worktree cwd, so a `working_tree_dirty` result here means the
+/// commit was misrouted away from the project root. Proceeding past
+/// the dirty gate (to the CI gate / a clean commit) proves the
+/// destination resolved to the project root.
+#[test]
+fn finalize_commit_routes_to_root_when_no_worktree_exists_for_integration_branch() {
+    let (clone_dir, _bare_dir) = setup_integration_repo_with_ci();
+    let clone_path = clone_dir.path();
+    let clone_str = clone_path.to_str().unwrap();
+
+    // Resolve refs/remotes/origin/HEAD -> main so default_branch_in
+    // returns "main" and the integration-branch arm of
+    // finalize_commit_destination matches the "main" branch arg.
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", clone_str, "remote", "set-head", "origin", "main"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap(),
+    );
+
+    fs::write(clone_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", clone_str, "add", "-A"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap(),
+    );
+
+    let msg_path = clone_path.join(".flow-commit-msg");
+    fs::write(&msg_path, "Bootstrap commit on integration branch.").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["finalize-commit", msg_path.to_str().unwrap(), "main"])
+        .current_dir(clone_path)
+        .env("HOME", clone_path)
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .expect("spawn flow-rs");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json = last_json_line(&stdout);
+    assert_ne!(
+        json["step"], "working_tree_dirty",
+        "no-worktree integration commit must route to the project root, \
+         not a nonexistent worktree; got: {json}"
+    );
+}
+
 // --- run_impl: commit-step error paths (via git stub) ---
 
 /// Commit spawn failure: with git absent from PATH, the compiled flow-rs
