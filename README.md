@@ -43,13 +43,13 @@ You type three commands. FLOW handles the rest.
 | Step | Command | What you get |
 |------|---------|--------------|
 | 1 | `/flow-explore <topic>` | A vanilla `## What` / `## Why` / `## Acceptance Criteria` issue filed on GitHub (PM voice) |
-| 2 | `/flow-plan #<issue>` | A decomposed implementation plan filed as a linked issue ready for start (Tech Lead voice; mandatory `decompose:decompose` pass) |
+| 2 | `/flow-plan #<issue>` or `/flow-plan <topic>` | An implementation plan attached to a GitHub issue. `#N` re-plans the existing issue in place; a bare topic synthesizes `## What` / `## Why` / `## Acceptance Criteria` and files a new decomposed issue (Tech Lead voice; mandatory `decompose:decompose` pass) |
 | 3 | `/flow-start #<issue>` | Worktree, PR, plan extraction from the issue body — and the lifecycle begins |
 
 ```text
 /flow-explore add a per-flow budget cap
 /flow-plan #1234
-/flow-start #1235
+/flow-start #1234
 ```
 
 ### The five phases that run after `/flow-start`
@@ -149,7 +149,7 @@ Start a new Claude Code session so permissions take effect, then start a feature
 /flow-start #309
 ```
 
-The argument must match `^#[1-9][0-9]*$` — a pre-decomposed GitHub issue number prepared via `/flow-explore` + `/flow-plan`. This acquires a start lock (serializing concurrent starts), pulls the integration branch, runs `bin/flow ci` for a clean baseline, upgrades dependencies on the integration branch, runs `bin/flow ci` again to catch dep-induced breakage, commits everything to the integration branch, then fetches the issue title to derive the branch name, creates a worktree at `.worktrees/<branch>`, and opens a GitHub PR. You land in Phase 2: Code.
+The argument must match `^#[1-9][0-9]*$` — a pre-decomposed GitHub issue number. The decomposed issue is the one `/flow-plan` produced: either a `#N` you passed to `/flow-plan` (in-place re-plan) or a new issue `/flow-plan` filed from a bare prompt. This acquires a start lock (serializing concurrent starts), pulls the integration branch, runs `bin/flow ci` for a clean baseline, upgrades dependencies on the integration branch, runs `bin/flow ci` again to catch dep-induced breakage, commits everything to the integration branch, then fetches the issue title to derive the branch name, creates a worktree at `.worktrees/<branch>`, and opens a GitHub PR. You land in Phase 2: Code.
 
 ---
 
@@ -182,7 +182,7 @@ Run `/flow-skills` anytime to see the live catalog grouped by role.
 | `/flow-issues` | Group open issues by label into four sections (Blocked, Other, Vanilla, Decomposed) with mechanical sort and a copy-pasteable command per row |
 | `/flow-triage-issue` | PM-lens triage of a single open issue — verdict in {close, decompose} |
 | `/flow-explore` | Open a problem-statement conversation (PM voice); file a vanilla `## What` / `## Why` / `## Acceptance Criteria` issue on signal |
-| `/flow-plan` | Decompose a vanilla problem-statement issue into a linked decomposed issue ready for the start phase (Tech Lead voice) |
+| `/flow-plan` | Produce an implementation plan and attach it to an issue (Tech Lead voice). `#N` re-plans the existing issue in place; a bare topic synthesizes `## What` / `## Why` / `## Acceptance Criteria` and files a new decomposed issue |
 | `/flow-decompose-project` | Decompose a large project into linked GitHub issues with sub-issue and blocked-by relationships |
 | `/flow-orchestrate` | Process decomposed issues sequentially overnight via `flow-start --auto` |
 

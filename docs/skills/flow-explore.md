@@ -61,4 +61,4 @@ Persona dispatch routes to one of three planning sub-agents — each with its ow
 
 ## Output
 
-A vanilla GitHub issue with three top-level sections: `## What`, `## Why`, `## Acceptance Criteria`. The issue carries the `vanilla` origin label (never `decomposed`) and no FLOW-PLAN sentinel markers. The user runs `/flow:flow-plan #N` next, which decomposes the problem statement into an implementation plan and files a linked decomposed issue ready for `/flow:flow-start`.
+A vanilla GitHub issue with three top-level sections: `## What`, `## Why`, `## Acceptance Criteria`. The issue carries the `vanilla` origin label (never `decomposed`) and no FLOW-PLAN sentinel markers. The user runs `/flow:flow-plan #N` next, which decomposes the problem statement into an implementation plan and re-plans the same issue in place (preserving the original problem statement above the FLOW-PLAN sentinel and attaching the `decomposed` label) ready for `/flow:flow-start #N`.

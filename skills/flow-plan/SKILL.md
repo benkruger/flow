@@ -1,44 +1,52 @@
 ---
 name: flow-plan
-description: "Decompose a vanilla problem-statement issue into a pre-planned decomposed issue. Reads issue #N, runs a Tech-Lead-default planning conversation, dispatches to PM/Tech Lead/CTO sub-agents on explicit user request, then files a linked decomposed issue ready for /flow:flow-start. Usage: /flow:flow-plan #N"
+description: "Decompose a problem statement into a pre-planned decomposed issue. Accepts either an issue reference (#N, re-plans in place) or a bare prompt (synthesizes What/Why/AC and files a new issue). Runs a Tech-Lead-default planning conversation, dispatches to PM/Tech Lead/CTO sub-agents on explicit user request, then files or edits the issue ready for /flow:flow-start. Usage: /flow:flow-plan #N or /flow:flow-plan <topic>"
 ---
 
 # Flow Plan
 
-Decompose a vanilla problem-statement issue (filed by
-`/flow:flow-explore`) into a structured implementation plan and
-file it as a new decomposed GitHub issue. The skill reads the
-parent issue body, holds a Tech-Lead-default planning conversation,
-runs `decompose:decompose` against the agreed approach, transforms
-the synthesis into an Implementation Plan section wrapped in
-FLOW-PLAN sentinels, files the new issue with the `decomposed`
-label, and closes the parent vanilla issue with a comment naming
-the decomposed child.
+Produce a structured implementation plan and attach it to a
+GitHub issue. The skill holds a Tech-Lead-default planning
+conversation, runs `decompose:decompose` against the agreed
+approach, transforms the synthesis into an Implementation Plan
+section wrapped in FLOW-PLAN sentinels, and either edits an
+existing issue in place (issue-input mode) or files a new
+decomposed issue (bare-prompt mode).
 
-The output is a decomposed issue ready for `/flow:flow-start #M`.
-The vanilla issue stays as the durable problem statement; the
-decomposed issue carries the implementation plan that
+The output is an issue ready for `/flow:flow-start #N` (re-planned
+issue) or `/flow:flow-start #M` (new decomposed issue). The
+issue body carries the implementation plan that
 `bin/flow plan-from-issue` extracts at flow-start.
 
 ## Usage
 
 ```text
 /flow:flow-plan #N
+/flow:flow-plan <topic>
 ```
 
-The `#N` argument is the GitHub issue number of the vanilla
-problem-statement issue this skill plans against. The skill takes
-no other flags or arguments. Bare-topic invocations (`/flow:flow-plan
-some topic`) are rejected with a migration message naming
-`/flow:flow-explore`.
+The skill accepts two argument shapes:
+
+- **`#N`** — a literal `#` followed by a positive integer. Plans
+  against existing issue #N: Step 2 fetches the body and Step 6
+  edits the issue in place, preserving every byte above the
+  opening FLOW-PLAN sentinel.
+- **`<topic>`** — any non-empty string that does not match the
+  `#N` regex. Seeds discussion in Step 4; Step 6 synthesizes a
+  brief `## What` / `## Why` / `## Acceptance Criteria` from the
+  conversation and files one new decomposed issue.
+
+The skill takes no flags. A missing argument is rejected at
+Step 1.
 
 ## Concurrency
 
-The skill creates shared GitHub state (a new decomposed issue and
-a closure of the parent vanilla issue) only at the very end, on
-explicit user approval. Issue creation is idempotent by title —
-if a decomposed issue with the same title already exists, the
-user should be warned before filing a duplicate.
+The skill mutates shared GitHub state only at the very end of
+Step 6, on explicit user approval. In bare-prompt mode it files
+one new decomposed issue (creation is idempotent by title — warn
+the user before filing a duplicate). In issue-input mode it
+edits the existing issue's body and re-applies the `decomposed`
+label (the `gh issue edit --add-label` call is idempotent).
 
 The intermediate side effect is the per-session
 utility-in-progress marker (scoped to the user's Claude home, not
@@ -80,71 +88,93 @@ runs without protection but does not break.
 
 The marker is held across the entire pipeline. Every skill-exit
 boundary clears the marker so the Stop hook releases turn-end
-after the skill completes: the Step 1 Conversation Gate when the
-argument is missing or malformed, the Step 6 validator-max-retries
-halt, and the Step 6 success path after the decomposed issue is
-filed and linked.
+after the skill completes: the Step 1 Conversation Gate when no
+argument is provided, the Step 6 validator-max-retries halt, and
+the Step 6 success path after the issue has been filed or
+edited.
 ---
 
 ## Step 1 — Conversation Gate
 
-Verify that an issue-reference argument was provided after the
-slash command in the form `#N` (a literal `#` followed by a
-positive integer).
+`/flow:flow-plan` accepts either of two argument shapes — `#N`
+(issue-input mode, which plans against an existing problem
+statement and edits that same issue in place) or a bare non-empty
+prompt (bare-prompt mode, which synthesizes a brief What/Why/AC
+from the conversation and files one new decomposed issue). The
+gate routes between the two modes; it does not redirect users to
+another skill.
+
+If the argument matches the regex `^#[1-9][0-9]*$` after stripping
+whitespace, set the working mode to **issue-input** and proceed
+to Step 2. Step 2 fetches the parent issue body and applies the
+remaining open-state gate.
+
+If the argument starts with a `#` character but does NOT match
+the `^#[1-9][0-9]*$` regex (e.g., a lone `#`, `#0`, `#-1`,
+`#1234abc`, `#1.5`), the leading `#` is a strong signal of
+intended issue-input mode but the trailing characters are invalid.
+Routing such an argument to bare-prompt mode would silently file
+a new decomposed issue with the malformed token as the seeding
+topic — almost certainly a typo. Clear the utility-in-progress
+marker and reject with usage guidance:
+
+> "Argument starts with `#` but does not match `^#[1-9][0-9]*$`.
+> To plan against an existing issue, pass a valid number like
+> `#1234`. To plan from a bare prompt, drop the leading `#`."
+
+If the argument is a non-empty string that contains no leading
+`#` (a bare prompt such as `/flow:flow-plan add a budget cap`),
+set the working mode to **bare-prompt** and skip Step 2 entirely.
+The prompt seeds the planning discussion at Step 4 — there is no
+GitHub issue to fetch in this mode, so Step 2's fetch and gates
+do not apply. Continue at Step 3.
 
 <HARD-GATE>
 
-If no argument was provided, clear the utility-in-progress marker
-so the Stop hook does not refuse turn-end after the rejection,
-then output the usage guidance and stop:
+If no argument was provided at all, clear the utility-in-progress
+marker so the Stop hook does not refuse turn-end after the
+rejection, then output the usage guidance and stop:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-plan
 ```
 
-> "Issue reference required. Usage: `/flow:flow-plan #N` where N
-> is the GitHub issue number of a vanilla problem-statement issue
-> filed by `/flow:flow-explore`. To file a problem statement
-> first, run `/flow:flow-explore <topic>`."
+> "Argument required. Usage: `/flow:flow-plan #N` to plan against
+> issue N in place, or `/flow:flow-plan <topic>` to synthesize a
+> brief problem statement and file a new decomposed issue."
 
-If the argument does not match the regex `^#[1-9][0-9]*$` after
-stripping whitespace — for example, a bare topic like
-`/flow:flow-plan add a budget cap` — clear the marker and output
-the migration guidance:
-
-> "Argument must be `#N` (e.g., `#1234`). Topic-style invocations
-> are no longer accepted — to discuss a new problem statement
-> first, run `/flow:flow-explore <topic>`. That skill files a
-> vanilla `## What` / `## Why` / `## Acceptance Criteria` issue,
-> and `/flow:flow-plan #N` then plans the implementation against
-> that issue."
-
-Do not proceed to Step 2, propose direct edits, commit changes, or
-take any action outside this skill without a valid `#N` argument.
+Do not proceed without an argument. Do not propose direct edits,
+commit changes, or take any action outside this skill without
+either an `#N` argument or a bare-prompt argument.
 
 </HARD-GATE>
 
 ---
 
-## Step 2 — Fetch Vanilla Issue
+## Step 2 — Fetch Issue (issue-input mode only)
 
-Read the parent issue's title, body, number, labels, and state via
-the `gh` CLI. The body becomes the input the Tech Lead reads to
-ground the planning conversation; the labels gate the skill's
-posture (`decomposed`-labeled issues have already been planned and
-must not be re-planned); the state gates against closed issues
-(re-planning a closed problem statement requires the user to reopen
-it explicitly). The `state` field is load-bearing — without it,
+Only when Step 1 resolved to **issue-input** mode. In bare-prompt
+mode there is no GitHub issue to fetch; skip to Step 3.
+
+Read the issue's title, body, number, labels, and state via the
+`gh` CLI. The body becomes the input the Tech Lead reads to
+ground the planning conversation; the state gates against closed
+issues (planning into a closed problem statement requires the
+user to reopen it explicitly, because `bin/flow plan-from-issue`
+refuses closed issues at flow-start and the resulting plan would
+be unusable). The `state` field is load-bearing — without it,
 the closed-issue gate below silently bypasses for every issue
 because `state == "closed"` evaluates against an absent field that
 is never equal to `"closed"`.
 
 ```bash
-gh issue view <issue_number> --json title,body,number,labels,state
+gh issue view <issue_number> --json title,body,number,labels,state,url
 ```
 
-Parse the JSON output. Extract `title`, `body`, `number`, and the
-labels array.
+Parse the JSON output. Extract `title`, `body`, `number`, `url`,
+and the labels array. The `url` field is consumed by Step 6's
+`bin/flow add-issue` call so the recorded URL points at the same
+issue the user passed.
 
 <HARD-GATE>
 
@@ -153,24 +183,23 @@ Verify the fetched issue is in a state this skill can plan against:
 - The issue MUST exist. If `gh issue view` returns a non-zero exit
   status or an error JSON, clear the marker and report the error
   to the user. Do not proceed.
-- The issue's labels MUST NOT include `decomposed`. The
-  `decomposed` label marks an issue that has already been planned
-  via this skill; re-planning would file a sibling decomposed
-  issue against an already-decomposed parent. If the
-  issue carries `decomposed`, clear the marker and output:
-
-  > "Issue #N already carries the `decomposed` label. To start
-  > implementing it, run `/flow:flow-start #N`. To plan a
-  > different problem statement, run `/flow:flow-plan #M` against
-  > a vanilla issue."
-
 - The issue's state MUST be open. Closed issues represent
-  abandoned or completed work and must not be re-planned without
-  the user explicitly reopening them. If the issue is closed,
-  clear the marker and report:
+  abandoned or completed work and must not be planned against
+  without the user explicitly reopening them. `bin/flow
+  plan-from-issue` rejects closed issues at flow-start with
+  `reason: issue_closed`, so a plan written into a closed issue
+  is unusable downstream. If the issue is closed, clear the
+  marker and report:
 
   > "Issue #N is closed. Re-open it via `gh issue reopen N`
   > before planning, or pick a different issue."
+
+The issue's `decomposed` label is NOT a rejection criterion. An
+issue that already carries `decomposed` is a candidate for
+in-place re-planning — Step 6 issue-input mode preserves the
+content above the FLOW-PLAN sentinel and swaps the
+sentinel-delimited plan block, leaving the original problem
+statement intact.
 
 Do not proceed to Step 3, propose direct edits, commit changes,
 or take any action outside this skill until the fetch succeeds
@@ -355,11 +384,25 @@ agent's recommendation is the user's decision.
 
 ---
 
-## Step 6 — Wrap-up: Decompose, Transform, Validate, File, Close Parent
+## Step 6 — Wrap-up: Decompose, Transform, Validate, File or Edit
 
 When the user signals readiness — "ready", "file it", "let's go",
 "create the issue", or any equivalent phrasing — run the
-decompose-and-file pipeline.
+decompose-and-file pipeline. The output shape depends on the
+Step 1 mode:
+
+- **Issue-input mode** edits the existing issue #N in place: the
+  content above the opening FLOW-PLAN sentinel is preserved
+  verbatim (the original problem statement); any existing
+  sentinel-delimited plan block is replaced; the fresh
+  sentinel-wrapped `## Implementation Plan` is appended. The
+  parent issue stays open; the assignee is not changed.
+- **Bare-prompt mode** files one new decomposed issue: the model
+  synthesizes a brief `## What` / `## Why` / `## Acceptance
+  Criteria` from the conversation, appends the
+  sentinel-wrapped plan, and files via `bin/flow issue` with
+  `--label decomposed --assignee @me`. There is no parent to
+  close.
 
 ### Generate session ID
 
@@ -377,9 +420,18 @@ same temp file.
 
 Invoke `decompose:decompose` via the Skill tool with an
 implementation-focused prompt. The prompt must make clear that
-the problem statement is already agreed (the parent issue body
-fetched in Step 2 captures it); decompose should structure the
-implementation into tasks, not re-analyze the problem.
+the problem statement is already agreed; decompose should
+structure the implementation into tasks, not re-analyze the
+problem.
+
+The prompt's problem-statement input depends on the Step 1 mode:
+
+- **Issue-input mode** — pass the parent issue body fetched at
+  Step 2 (the `## What` / `## Why` / `## Acceptance Criteria` the
+  user filed).
+- **Bare-prompt mode** — pass a brief What/Why/AC synthesized
+  from the planning conversation (the bare prompt itself, plus
+  any clarification the user added during Step 4 discussion).
 
 Example prompt structure:
 
@@ -388,8 +440,9 @@ Example prompt structure:
 > with dependencies, approach, and file targets. The problem is
 > already understood — focus on structuring the implementation.
 >
-> [Parent issue body — `## What` / `## Why` / `## Acceptance
-> Criteria` from Step 2]
+> [Problem statement — `## What` / `## Why` / `## Acceptance
+> Criteria` — either from the parent issue body (issue-input
+> mode) or synthesized from the conversation (bare-prompt mode)]
 >
 > [Summary of the agreed approach from the conversation]
 >
@@ -446,12 +499,17 @@ Tasks must use `#### Task N:` heading format.
 
 ### Title Authoring
 
-The decomposed issue's title flows downstream into the branch name
-(via `branch_name`), the PR title, the commit subject, and every
-user-visible surface. Reuse the parent issue's title verbatim
-unless the planning conversation surfaced a sharper framing — in
-which case the new title must still pass the plain-English test
-applied at `/flow:flow-explore` filing time.
+The title flows downstream into the branch name (via
+`branch_name`), the PR title, the commit subject, and every
+user-visible surface.
+
+- **Issue-input mode** — the existing issue's title is what
+  flow-start reads; this skill does not rewrite it. The title
+  fetched in Step 2 is the title that downstream consumers will
+  see.
+- **Bare-prompt mode** — synthesize a title from the bare prompt
+  and the planning conversation. It must pass the plain-English
+  test applied at `/flow:flow-explore` filing time.
 
 **Required.** Subject + verb + object as a stakeholder would say
 it out loud. A non-contributor reading the title in a release-notes
@@ -462,18 +520,45 @@ the codebase.
 numbers, internal acronyms without expansion, one-letter shorthand,
 repo-specific jargon.
 
-### Combine into Issue Body
+### Reconstruct Issue Body
 
-Combine the parent issue's content with the Implementation Plan
-into a single decomposed issue body in working memory. The
-section order must be:
+Build the issue body in working memory. The reconstruction is
+mode-dependent.
 
-**What** (from parent) → **Why** (from parent) → **Acceptance
-Criteria** (from parent) → **Implementation Plan** (wrapped in
-FLOW-PLAN sentinels — containing Context, Exploration, Risks,
-Approach, Dependency Graph, Tasks subsections) →
-**Parent Issue** (one-line link to issue #N for forensic
-detection).
+- **Issue-input mode** — start from the issue body fetched at
+  Step 2. Split the body into three pieces using the FLOW-PLAN
+  sentinel pair (refer to them by paraphrase here — the literal
+  HTML-comment marker strings live only at their canonical
+  positions inside the issue body, per the discipline below):
+  1. **Prefix** — everything above the first opening FLOW-PLAN
+     sentinel (or the whole body if the body contains no
+     sentinel). The user's `## What` / `## Why` /
+     `## Acceptance Criteria` (or whatever shape the issue body
+     had) lives here.
+  2. **Old plan block** — the content between the first opening
+     sentinel and the matching closing sentinel. Discard this
+     entire block; it is the prior implementation plan that the
+     fresh decompose output replaces.
+  3. **Suffix** — anything below the closing FLOW-PLAN sentinel
+     (if present). Preserve verbatim. Engineers and PMs
+     sometimes add post-plan notes ("## Discussion Notes",
+     "## Open Questions", "## Acceptance Updates") below the
+     plan block; those additions must survive re-planning.
+
+  Reassemble the body as `<prefix>` + fresh sentinel-wrapped
+  `## Implementation Plan` block + `<suffix>` (concatenated with
+  blank-line separators so each section's `## ` heading begins on
+  its own line). Do NOT rewrite or summarize the preserved
+  pieces; only the sentinel-delimited plan block changes. Re-
+  planning is idempotent by construction: every re-plan preserves
+  the same prefix AND the same suffix while swapping only the
+  plan block.
+- **Bare-prompt mode** — synthesize a brief `## What` / `## Why`
+  / `## Acceptance Criteria` from the planning conversation (the
+  bare prompt the user typed plus any clarification surfaced
+  during Step 4 discussion). Append the freshly-decomposed
+  sentinel-wrapped `## Implementation Plan` after the Acceptance
+  Criteria section. There is no prior body to preserve.
 
 Each top-level section uses `##` headings. The Implementation
 Plan's subsections use `###` headings. Task entries within the
@@ -558,30 +643,30 @@ Present the full draft inline in the response — both title and
 body. Do not tell the user to look at a file. Render it as a
 formatted markdown block so the user can review every detail.
 
-### Validate + File + Link
+### Validate the Body
 
-Write the issue body to `.flow-issue-body-<id>` using the Write
-tool. Per `.claude/rules/filing-issues.md` "The Pattern": when
-invoked inside an active FLOW worktree, prepend the worktree
+Write the reconstructed body to `.flow-issue-body-<id>` using the
+Write tool. Per `.claude/rules/filing-issues.md` "The Pattern":
+when invoked inside an active FLOW worktree, prepend the worktree
 absolute path so the `validate-worktree-paths` hook allows the
 Write. When invoked outside a worktree, the relative form
 resolves cleanly because Write and `bin/flow issue` both target
 the same project root.
 
 Validate the body file through the pre-filing validator with
-`--mode decomposed` before asking the filer subcommand to send
-it to GitHub. The validator runs the same sentinel-extraction
+`--mode decomposed` before either filing the new issue or editing
+the existing one. The validator runs the same sentinel-extraction
 logic that `bin/flow plan-from-issue` applies at flow-start; any
-body that fails this gate is unconsumable downstream and must
-NOT be filed:
+body that fails this gate is unconsumable downstream and must NOT
+be sent to GitHub:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow validate-issue-body --mode decomposed --body-file .flow-issue-body-<id>
 ```
 
-Parse the JSON output. If `status` is `ok`, proceed to the filer
-invocation below. If `status` is `error`, run the bounded auto-fix
-loop:
+Parse the JSON output. If `status` is `ok`, proceed to the
+mode-specific filing branch below. If `status` is `error`, run
+the bounded auto-fix loop:
 
 #### Validator Auto-Fix Loop (max 5 attempts)
 
@@ -598,7 +683,7 @@ the validator. Track the attempt count mentally — the cap is
 After 5 failed validator runs, clear the utility-in-progress
 marker, halt the skill with the structured error envelope, and
 print the COMPLETE-FAILED banner. Do NOT file the issue. Do NOT
-edit issue #N. Do NOT loop further.
+edit any issue. Do NOT loop further.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-plan
@@ -619,71 +704,75 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-plan
 ```
 ````
 
-Once the validator returns `ok`, file the issue against the
+### File or Edit (branch on Step 1 mode)
+
+Once the validator returns `ok`, branch on the Step 1 mode.
+
+**Issue-input mode — edit #N in place.** Push the rebuilt body
+into the same issue, re-applying the `decomposed` label (the
+label may already be present; `--add-label` is idempotent).
+Substitute the issue number (the `#N` the user passed at Step 1)
+for `<N>`:
+
+```bash
+gh issue edit <N> --body-file .flow-issue-body-<id> --add-label decomposed
+```
+
+When `gh issue edit` returns a non-zero exit status (transient
+network failure, auth scope mismatch, the issue closed between
+Step 2 and now, etc.), the body update may have partially landed
+— gh writes the body before applying labels, so a mid-call
+failure can leave the issue with the new body but the
+`decomposed` label still missing, making it invisible to
+`flow-issues` / `flow-orchestrate`. Surface the gh exit status
+and stderr inline to the user with a concrete recovery command,
+then clear the utility-in-progress marker and stop. Do NOT
+retry the edit silently. The recovery command shape:
+
+> "`gh issue edit <N>` failed. Inspect via
+> `gh issue view <N> --json body,labels`. If the body landed but
+> `decomposed` is missing, run
+> `gh issue edit <N> --add-label decomposed`. If the body did not
+> land, the `.flow-issue-body-<id>` file is still on disk —
+> re-run `gh issue edit <N> --body-file
+> .flow-issue-body-<id> --add-label decomposed`."
+
+`gh issue edit` does not auto-delete the body file. Delete the
+temp file explicitly via the Write tool by writing an empty
+string to `.flow-issue-body-<id>`, then ignore the empty file —
+the worktree cleanup at Phase 5 Complete handles disposal. (The
+Bash permission allow-list refuses ad-hoc `rm` calls during a
+flow per `.claude/rules/permissions.md`; rewriting to empty is
+the sanctioned alternative.) Skip this empty-write step when
+`gh issue edit` failed — preserving the body file on disk gives
+the user a concrete artifact to retry the edit against.
+
+Capture the issue's URL from the `gh issue view` JSON fetched at
+Step 2 (the `url` field), then record the issue in the state file
+(no-op if no FLOW feature is active):
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "<issue_title>" --url "<issue_url>" --phase flow-plan
+```
+
+**Bare-prompt mode — file a new issue.** File against the
 current repo (no `--repo` flag — `flow-plan` always files where
 the user is) WITH the `decomposed` label so `flow-issues` and
-`flow-orchestrate` recognize it as ready-for-flow-start work, and
-WITH `--assignee @me` so the decomposed issue is assigned to the
-planner who ran `flow-plan`:
+`flow-orchestrate` recognize it as ready-for-flow-start work,
+and WITH `--assignee @me` so the new decomposed issue is
+assigned to the planner who ran `flow-plan`:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<issue_title>" --body-file .flow-issue-body-<id> --label decomposed --assignee @me
 ```
 
-Capture the new issue's number from the URL in the filer's output
-(parse the trailing `/issues/M` segment). This is the **decomposed
-issue number M** — distinct from the parent **vanilla issue
-number N** the user passed at Step 1.
-
-Close the parent vanilla issue with a comment naming the
-decomposed child. The decomposed issue's Implementation Plan is
-now the full problem-and-solution artifact for this work — the
-vanilla problem statement is superseded once the decomposed plan
-exists, and leaving the vanilla open duplicates the open surface
-for the same problem (`flow-issues` would surface both, and
-engineers picking from the backlog could not tell which is the
-canonical entry point). The closing comment carries a pointer to
-the decomposed child so a reader landing on the closed parent has
-a breadcrumb back to the work that supersedes it. Substitute the
-parent vanilla issue number (the `#N` the user passed at Step 1)
-for `<vanilla_number>` and the new decomposed issue number for
-`<M>`:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow close-issue --number <vanilla_number> --comment "Decomposed into #<M>. Implementation plan tracked there; closing this problem statement."
-```
-
-Parse the JSON result. When the response shape is
-`{"status":"error","message":"..."}` the gh subprocess refused the
-closure (transient network failure, auth scope mismatch, the
-parent was already closed by a parallel operation, etc.). The
-decomposed child issue #M already exists at this point — do NOT
-re-file it and do NOT retry the closure. Instead, report the
-failure inline so the user has a concrete recovery step:
-
-> "Filed decomposed issue #M but failed to close parent #N:
-> `<message>`. Close the parent manually with
-> `gh issue close <N> --comment "Decomposed into #M. ..."` once
-> the underlying gh failure is resolved, then run
-> `/flow:flow-start #M`."
-
-Then skip the remaining state-recording steps below (the
-`add-issue` and `clear-utility-in-progress` calls), print the
-COMPLETE-FAILED banner, and stop. Failing to halt would leave
-the utility-in-progress marker cleared with no breadcrumb back
-to the open parent — the user must reconcile the GitHub state
-before the flow can proceed.
-
-````markdown
-```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✗ FLOW v2.4.0 — flow:flow-plan — COMPLETE-FAILED
-  Decomposed issue filed; parent closure failed.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-````
-
-When the response is `{"status":"ok"}`, proceed.
+Capture both the new issue's URL and number from the filer's
+output. `bin/flow issue` returns a JSON envelope including the
+full GitHub URL of the issue it created; the trailing
+`/issues/M` segment of that URL gives the **decomposed issue
+number M**. Keep both the full URL (as `<issue_url>`) and the
+number for the recording call below — bare-prompt mode has no
+Step 2 fetch to pull these from.
 
 Record the issue in the state file (no-op if no FLOW feature is
 active):
@@ -692,15 +781,17 @@ active):
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "<issue_title>" --url "<issue_url>" --phase flow-plan
 ```
 
+### Finish
+
 Clear the utility-in-progress marker:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-plan
 ```
 
-Display the decomposed issue URL to the user, then output the
-COMPLETE banner in your response (not via Bash) inside a fenced
-code block:
+Display the issue URL to the user, then output the COMPLETE
+banner in your response (not via Bash) inside a fenced code
+block:
 
 ````markdown
 ```text
@@ -710,10 +801,13 @@ code block:
 ```
 ````
 
-Then instruct the user:
+Then instruct the user. The message names the same issue number
+the next phase will pick up.
 
-> "Filed decomposed issue #M and closed parent #N. To start
-> implementing, run `/flow:flow-start #M`."
+- **Issue-input mode:** "Re-planned issue #N in place. To start
+  implementing, run `/flow:flow-start #N`."
+- **Bare-prompt mode:** "Filed decomposed issue #M. To start
+  implementing, run `/flow:flow-start #M`."
 
 Do not invoke `/flow:flow-start` yourself — the user types the
 slash command directly.
@@ -722,16 +816,19 @@ slash command directly.
 
 ## Hard Rules
 
-- **Always require `#N` argument.** Bare-topic invocations are
-  rejected at Step 1 with a migration message naming
-  `/flow:flow-explore`.
-- **Always invoke `bin/flow close-issue` with `--comment`** after
-  filing the decomposed issue. Closing the vanilla parent at plan
-  time removes the duplicate problem-statement surface so the
-  decomposed work is the only open artifact for the problem.
-- **Never edit issue #N.** The parent vanilla issue stays as the
-  durable problem statement; the decomposed issue is filed as a
-  NEW linked issue, not an in-place edit.
+- **Accept `#N` or a bare prompt.** Step 1 routes `#N` to
+  issue-input mode (Step 2 fetches the issue and Step 6 edits it
+  in place) and bare non-empty prompts to bare-prompt mode (Step 2
+  is skipped; Step 6 synthesizes a brief What/Why/AC and files
+  one new decomposed issue).
+- **Issue-input mode edits #N in place; bare-prompt mode files
+  one new issue; never close a parent issue.** Issue-input mode
+  preserves every byte above the opening FLOW-PLAN sentinel
+  (including the original `## What` / `## Why` /
+  `## Acceptance Criteria`) and swaps the sentinel-delimited
+  plan block. Bare-prompt mode files one new decomposed issue
+  with `--label decomposed --assignee @me`. There is no
+  parent-closure step in either mode.
 - **Always file with `--label decomposed`.** Without the label,
   `flow-issues` and `flow-orchestrate` won't recognize the issue
   as ready-for-flow-start work.

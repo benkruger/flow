@@ -1775,37 +1775,42 @@ fn skills_record_issues_via_add_issue() {
 
 #[test]
 fn flow_plan_step_6_files_decomposed_issue_with_assignee_me() {
-    // The flow-plan Step 6 "Validate + File + Link" subsection files
-    // the decomposed issue via `bin/flow issue`. That invocation must
-    // carry `--label decomposed` (so flow-issues / flow-orchestrate
-    // recognize it as ready-for-flow-start work) AND `--assignee @me`
-    // (so the decomposed issue is assigned to the planner who ran
-    // flow-plan). The assertion is scoped to the `bin/flow issue`
-    // invocation line itself — not the whole subsection — because the
-    // subsection also contains a `bin/flow add-issue --label decomposed`
-    // call, so a subsection-wide `--label decomposed` check would still
-    // pass even if the filing invocation dropped the flag.
+    // Step 6 has two branches keyed by the Step 1 mode:
+    //
+    // - Bare-prompt mode files one new decomposed issue via
+    //   `bin/flow issue --title ... --label decomposed --assignee @me`.
+    //   Without `--assignee @me` the new issue lands unassigned;
+    //   without `--label decomposed` `flow-issues` /
+    //   `flow-orchestrate` cannot recognize it as ready work.
+    // - Issue-input mode edits the existing issue #N in place via
+    //   `gh issue edit <N> ... --add-label decomposed`. The label
+    //   is re-applied (idempotent for an already-decomposed parent)
+    //   so downstream consumers see the same shape regardless of
+    //   which branch produced the issue.
+    //
+    // Both branches must exist. A regression that collapses one
+    // back into the other defeats one of the two sanctioned entry
+    // paths.
     let c = common::read_skill("flow-plan");
-    let tail = c
-        .split_once("### Validate + File + Link")
-        .map(|(_, t)| t)
-        .expect("flow-plan must have a `Validate + File + Link` subsection");
-    let subsection = tail
-        .split_once("\n## ")
-        .map(|(section, _)| section)
-        .unwrap_or(tail);
-    let issue_invocation = subsection
-        .lines()
-        .find(|l| l.contains("bin/flow issue --title"))
-        .expect("flow-plan Step 6 must contain a `bin/flow issue --title` filing invocation");
+    let bare_prompt_invocation = c.lines().find(|l| {
+        let t = l.trim();
+        t.contains("bin/flow issue --title")
+            && t.contains("--label decomposed")
+            && t.contains("--assignee @me")
+    });
     assert!(
-        issue_invocation.contains("--label decomposed"),
-        "flow-plan Step 6 bin/flow issue invocation must carry --label decomposed"
+        bare_prompt_invocation.is_some(),
+        "flow-plan Step 6 bare-prompt branch must contain a single line with \
+         `bin/flow issue --title ... --label decomposed --assignee @me`"
     );
+    let issue_edit_invocation = c.lines().find(|l| {
+        let t = l.trim();
+        t.contains("gh issue edit") && t.contains("--add-label decomposed")
+    });
     assert!(
-        issue_invocation.contains("--assignee @me"),
-        "flow-plan Step 6 bin/flow issue invocation must carry --assignee @me \
-         so the decomposed issue is assigned to its planner"
+        issue_edit_invocation.is_some(),
+        "flow-plan Step 6 issue-input branch must contain a single line with \
+         `gh issue edit ... --add-label decomposed` for in-place re-planning"
     );
 }
 
@@ -6591,29 +6596,82 @@ fn flow_plan_validator_retry_cap_is_five() {
 // issue fetch reads title/body/number/labels.
 
 #[test]
-fn flow_plan_skill_usage_requires_issue_number_argument() {
-    // Regression: a future edit reverts the Conversation Gate to
-    // accept bare-topic invocations (the pre-rewrite shape). The
-    // role-based pipeline depends on flow-plan operating against a
-    // pre-filed vanilla issue — without the `#N` argument the skill
-    // would have no problem statement to plan against.
+fn flow_plan_skill_accepts_issue_or_bare_prompt() {
+    // Regression: a future edit narrows Step 1 back to a single
+    // accepted shape, forcing users through `/flow:flow-explore`
+    // before they can plan a new problem statement. The current
+    // contract is two accepted shapes — `#N` (issue-input mode, which
+    // plans against an existing vanilla problem statement and edits
+    // the same issue in place) AND a bare non-empty prompt
+    // (bare-prompt mode, which synthesizes a brief What/Why/AC and
+    // files one new decomposed issue).
     //
-    // Consumer: the role-based pipeline contract — the user types
-    // `/flow:flow-explore <topic>` to file a vanilla issue, then
-    // `/flow:flow-plan #N` against that issue. A bare-topic
-    // flow-plan invocation breaks the contract.
+    // Consumer: users invoking the skill with either shape, and the
+    // Step 1 branching that routes to Step 2 (issue-input) or skips
+    // Step 2 (bare-prompt). A regression that strips either branch
+    // breaks one of the two sanctioned entry paths.
     let c = common::read_skill("flow-plan");
+    // Usage must document both shapes.
     assert!(
         c.contains("/flow:flow-plan #N"),
-        "skills/flow-plan/SKILL.md Usage must show `/flow:flow-plan #N` so the issue-reference shape is documented"
+        "skills/flow-plan/SKILL.md Usage must document the `#N` issue-input shape"
     );
-    // The Conversation Gate must reject bare-topic invocations with
-    // a migration message naming /flow:flow-explore. Match either
-    // the explicit `^#[1-9][0-9]*$` regex contract or a prose hint
-    // that the `#N` form is required.
+    // Step 1 names the `#N` regex and a bare-prompt branch.
+    let step1_tail = c
+        .split_once("## Step 1")
+        .map(|(_, t)| t)
+        .expect("flow-plan SKILL.md must contain `## Step 1` heading");
+    let step1 = step1_tail
+        .split_once("\n## ")
+        .map(|(section, _)| section)
+        .unwrap_or(step1_tail);
     assert!(
-        c.contains("^#[1-9][0-9]*$") || c.contains("must be `#N`"),
-        "skills/flow-plan/SKILL.md must reject bare-topic invocations — name the `#N` argument shape in the Conversation Gate"
+        step1.contains("^#[1-9][0-9]*$"),
+        "flow-plan Step 1 must name the `#N` regex for issue-input mode"
+    );
+    assert!(
+        step1.contains("bare prompt") || step1.contains("bare-prompt"),
+        "flow-plan Step 1 must name a bare-prompt branch as a second accepted shape"
+    );
+    // Step 1 must not redirect to /flow:flow-explore as the only path.
+    assert!(
+        !step1.contains("Topic-style invocations are no longer accepted"),
+        "flow-plan Step 1 must not reject bare prompts — they are a sanctioned input shape"
+    );
+}
+
+#[test]
+fn flow_plan_skill_keeps_closed_issue_rejection() {
+    // Regression: a future edit removes the closed-issue rejection
+    // from Step 2 alongside the decomposed-label gate. The two gates
+    // are independent — the decomposed-label gate is removed because
+    // re-planning a `decomposed` issue is now the correct action
+    // (in-place edit), but closed issues remain rejected because
+    // `bin/flow plan-from-issue` (src/plan_from_issue.rs) refuses
+    // closed issues at flow-start. Planning against a closed issue
+    // produces an unusable artifact.
+    //
+    // Consumer: Step 2's closed-issue gate, and the downstream
+    // `plan-from-issue` flow-start consumer that depends on the
+    // parent issue being open.
+    let c = common::read_skill("flow-plan");
+    // Step 2 still fetches the state field.
+    assert!(
+        c.contains("state"),
+        "flow-plan Step 2 must still fetch the `state` field via `gh issue view --json`"
+    );
+    // Step 2 still rejects closed issues with reopen-first guidance.
+    let step2_tail = c
+        .split_once("## Step 2")
+        .map(|(_, t)| t)
+        .expect("flow-plan SKILL.md must contain `## Step 2` heading");
+    let step2 = step2_tail
+        .split_once("\n## ")
+        .map(|(section, _)| section)
+        .unwrap_or(step2_tail);
+    assert!(
+        step2.contains("closed") && step2.contains("reopen"),
+        "flow-plan Step 2 must keep the closed-issue rejection with reopen-first guidance"
     );
 }
 
@@ -6660,67 +6718,102 @@ fn flow_plan_skill_validates_with_decomposed_mode() {
 
 #[test]
 fn flow_plan_skill_files_with_decomposed_label() {
-    // Regression: a future edit drops the `--label decomposed`
-    // flag from the filing call. Without the label, `flow-issues`
-    // and `flow-orchestrate` won't recognize the new issue as
-    // ready-for-flow-start work — engineers picking from the
-    // backlog would treat it as a bare problem statement.
+    // Regression: a future edit drops the `decomposed` label
+    // attachment from BOTH Step 6 branches. The label is what
+    // makes `flow-issues` and `flow-orchestrate` recognize the
+    // issue as ready-for-flow-start work — without it, the
+    // decomposed plan becomes invisible to those readers.
     //
-    // Consumer: `flow-issues` / `flow-orchestrate`, which select
-    // `decomposed`-labeled issues. flow-plan's output must carry
-    // the label or it becomes invisible to those readers.
+    // Step 6 branches on the Step 1 mode:
+    //
+    // - Bare-prompt mode files via `bin/flow issue --title ...
+    //   --label decomposed ...` (attach-at-create).
+    // - Issue-input mode edits via `gh issue edit <N> ...
+    //   --add-label decomposed` (attach-on-edit, idempotent when
+    //   the parent already carries the label).
+    //
+    // EITHER line by itself satisfies the label-attachment contract
+    // for its mode; both must be present so neither branch's output
+    // loses visibility. The assertion is scoped to specific
+    // single-line invocations, not a whole subsection — a
+    // subsection-wide `--label decomposed` check would still pass
+    // even if the actual filing invocation dropped the flag.
     let c = common::read_skill("flow-plan");
-    let mut found = false;
-    for line in c.lines() {
-        let trimmed = line.trim();
-        if trimmed.contains("bin/flow issue") && trimmed.contains("--label decomposed") {
-            found = true;
-            break;
-        }
-    }
+    let bare_prompt_label = c.lines().any(|l| {
+        let t = l.trim();
+        t.contains("bin/flow issue") && t.contains("--label decomposed")
+    });
     assert!(
-        found,
-        "skills/flow-plan/SKILL.md must file the decomposed issue with `--label decomposed` on a single bin/flow issue invocation line"
+        bare_prompt_label,
+        "flow-plan Step 6 bare-prompt branch must attach the `decomposed` \
+         label via `bin/flow issue ... --label decomposed` on a single line"
+    );
+    let issue_input_label = c.lines().any(|l| {
+        let t = l.trim();
+        t.contains("gh issue edit") && t.contains("--add-label decomposed")
+    });
+    assert!(
+        issue_input_label,
+        "flow-plan Step 6 issue-input branch must attach the `decomposed` \
+         label via `gh issue edit ... --add-label decomposed` on a single \
+         line so re-planned issues remain visible to flow-issues / \
+         flow-orchestrate"
     );
 }
 
 #[test]
-fn flow_plan_skill_closes_parent_with_comment() {
-    // Regression: a future edit drops the `bin/flow close-issue`
-    // call after filing, or drops the `--comment` flag from it.
-    // Without the parent-closure call, the vanilla problem-statement
-    // issue stays open alongside the decomposed child, duplicating
-    // the open-artifact surface for the same problem. Without the
-    // `--comment` flag the closure carries no pointer to the
-    // decomposed child, leaving readers no breadcrumb back from the
-    // closed parent to the work that supersedes it.
+fn flow_plan_skill_replans_in_place_idempotently() {
+    // Regression: a future edit drops the in-place preserve / strip
+    // / append prose from Step 6's issue-input branch. The contract:
+    // when planning against an existing issue #N, the body above
+    // the opening FLOW-PLAN sentinel pair is preserved verbatim
+    // (original problem statement); any existing sentinel-delimited
+    // block is stripped (the prior plan); and a fresh plan block is
+    // appended wrapped in the same sentinel pair.
     //
-    // Consumer: the Step 6 wrap-up's `bin/flow close-issue --comment`
-    // invocation. The Step 6 subsection scope (bounded between
-    // `## Step 6 — Wrap-up` and the next `## ` heading per
-    // `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions
-    // in Contract Tests") keeps the assertion from being satisfied
-    // by an unrelated mention elsewhere in the file.
+    // Without that discipline, a re-plan would either (a) overwrite
+    // the original problem statement (losing the user's What/Why/AC
+    // — the very content that motivated the issue) or (b) leave the
+    // prior plan in place alongside the new one (yielding two
+    // sentinel-delimited blocks, which `bin/flow plan-from-issue`
+    // would slice incorrectly at flow-start).
+    //
+    // Consumer: the in-place re-plan path through Step 6's
+    // issue-input branch, and the downstream `plan-from-issue`
+    // consumer that depends on exactly one FLOW-PLAN block per
+    // issue body.
+    //
+    // The assertion is subsection-scoped to Step 6 and paraphrases
+    // the sentinel pair (asserts on the `preserve` / `above` /
+    // `FLOW-PLAN` tokens) rather than embedding a literal marker —
+    // the SKILL.md's own no-literal-marker-in-prose discipline
+    // forbids a second occurrence of the marker outside the issue
+    // body sentinels themselves.
     let c = common::read_skill("flow-plan");
-    let subsection = c
-        .split_once("## Step 6 — Wrap-up")
-        .map(|(_, tail)| tail)
-        .expect("flow-plan SKILL.md must contain `## Step 6 — Wrap-up` heading");
-    let subsection = subsection
+    let tail = c
+        .split_once("## Step 6")
+        .map(|(_, t)| t)
+        .expect("flow-plan SKILL.md must contain `## Step 6` heading");
+    let step6 = tail
         .split_once("\n## ")
         .map(|(section, _)| section)
-        .unwrap_or(subsection);
-    let mut found = false;
-    for line in subsection.lines() {
-        let trimmed = line.trim();
-        if trimmed.contains("bin/flow close-issue") && trimmed.contains("--comment") {
-            found = true;
-            break;
-        }
-    }
+        .unwrap_or(tail);
+    // The issue-input branch must name "preserve" (or "preserved")
+    // the content "above" the opening sentinel pair, AND it must
+    // name the sentinel pair by paraphrase ("FLOW-PLAN").
+    let names_preserve = step6.contains("preserve") || step6.contains("Preserve");
     assert!(
-        found,
-        "skills/flow-plan/SKILL.md Step 6 must invoke `bin/flow close-issue` with `--comment` on a single line so the parent vanilla issue closes with a pointer to the decomposed child"
+        names_preserve,
+        "flow-plan Step 6 issue-input branch must name preserving \
+         the body content above the opening FLOW-PLAN sentinel \
+         (look for `preserve`/`Preserve` in the subsection prose)"
+    );
+    let names_above_sentinel = step6.contains("above the") && step6.contains("FLOW-PLAN");
+    assert!(
+        names_above_sentinel,
+        "flow-plan Step 6 issue-input branch must paraphrase the \
+         FLOW-PLAN sentinel pair when describing the preserve/strip/append \
+         flow (look for `above the` and `FLOW-PLAN` in the subsection prose)"
     );
 }
 
@@ -6728,19 +6821,25 @@ fn flow_plan_skill_closes_parent_with_comment() {
 fn flow_plan_skill_fetches_issue_with_required_fields() {
     // Regression: a future edit changes the gh issue view JSON
     // field list. The skill needs `title` (for the decomposed
-    // issue's title), `body` (for the parent context section in
-    // the new body), `number` (for the close-issue call that
-    // closes the vanilla parent), and `labels` (for the gate that
-    // rejects already-decomposed issues). Dropping any field
-    // breaks a downstream step.
+    // issue's title), `body` (for the original-content preservation
+    // in the in-place edit), `number` (for the gh issue edit call
+    // that targets the same issue), `labels` (so the model can
+    // detect whether the issue already carries `decomposed`), and
+    // `state` (for the closed-issue rejection HARD-GATE). Dropping
+    // any field breaks a downstream step.
     //
-    // Consumer: Step 2's Fetch Vanilla Issue + the Combine into
-    // Issue Body and Close Parent steps in Step 6. Each downstream
-    // consumer depends on a specific field from this fetch.
+    // The fetch lives inside Step 2's issue-input conditional —
+    // bare-prompt mode skips Step 2 entirely — but the gh issue
+    // view invocation and the JSON field list still exist when the
+    // issue-input path runs.
+    //
+    // Consumer: Step 2's Fetch Issue + the Combine into Issue Body
+    // and in-place edit calls in Step 6. Each downstream consumer
+    // depends on a specific field from this fetch.
     let c = common::read_skill("flow-plan");
     assert!(
         c.contains("gh issue view"),
-        "skills/flow-plan/SKILL.md must invoke `gh issue view` to fetch the parent vanilla issue at Step 2"
+        "skills/flow-plan/SKILL.md must invoke `gh issue view` to fetch the issue body in issue-input mode at Step 2"
     );
     assert!(
         c.contains("--json"),
