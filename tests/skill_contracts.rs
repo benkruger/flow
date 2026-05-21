@@ -491,6 +491,51 @@ fn plan_reviewer_agent_declares_end_of_findings_marker() {
     assert_agent_output_format_declares_end_of_findings("plan-reviewer.md");
 }
 
+// --- documentation agent obey-vs-describe gate for CLAUDE.md findings ---
+//
+// The documentation agent's Workflow section must apply the
+// obey-vs-describe gate from
+// `.claude/rules/persistence-routing.md` "Cross-Surface Application"
+// before emitting any Tenant 6 finding that proposes adding prose
+// to CLAUDE.md. The gate distinguishes descriptive content (routes
+// to a feature-specific `.claude/rules/<feature>.md` file plus a
+// one-line CLAUDE.md index entry) from behavioral content (routes
+// to CLAUDE.md directly), and the agent must treat project-local
+// rules that mandate CLAUDE.md prose as suspect. The bounded slice
+// on `## Workflow` keeps the assertion scope tight per
+// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions
+// in Contract Tests".
+
+#[test]
+fn documentation_agent_applies_obey_vs_describe_gate_for_claude_md_findings() {
+    let c = common::read_agent("documentation.md");
+    let tail_at_heading = c
+        .split_once("## Workflow")
+        .map(|(_, tail)| tail.to_string())
+        .expect("documentation.md must have ## Workflow section");
+    let workflow = tail_at_heading
+        .split_once("\n## ")
+        .map(|(section, _)| section.to_string())
+        .unwrap_or(tail_at_heading);
+    const REQUIRED: &[&str] = &[
+        "obey-vs-describe",
+        ".claude/rules/persistence-routing.md",
+        "Cross-Surface Application",
+        "descriptive content",
+        "behavioral",
+        "feature-specific .claude/rules/",
+        "project-local rules",
+        "suspect",
+    ];
+    for needle in REQUIRED {
+        assert!(
+            workflow.contains(needle),
+            "documentation.md ## Workflow section must contain `{}` so the obey-vs-describe gate is applied before emitting CLAUDE.md findings (see .claude/rules/persistence-routing.md \"Cross-Surface Application\")",
+            needle
+        );
+    }
+}
+
 // --- code_read field contract ---
 //
 // The pre-mortem agent's safety value depends on the agent actually
