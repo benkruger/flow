@@ -35,7 +35,7 @@ At the very start, output the following banner in your response (not via Bash) i
 
 ## Finding Taxonomy
 
-Six finding types, each with a severity tag:
+Eight finding types, each with a severity tag:
 
 | Tag | Severity | Meaning |
 |-----|----------|---------|
@@ -45,6 +45,8 @@ Six finding types, each with a severity tag:
 | `[MISPLACED]` | Low | Content is stored in the wrong persistence layer per the routing decision tree — e.g., an imperative constraint in CLAUDE.md instead of a rule, or a project fact in memory instead of CLAUDE.md |
 | `[DUPLICATE]` | Low | The same constraint or fact appears in multiple surfaces with identical or near-identical wording — creates update burden when the constraint changes |
 | `[CONTRADICTION]` | High | Two surfaces prescribe opposite behavior for the same situation — one says "always do X", another says "never do X" |
+| `[CLAUDE_MD_MANDATE]` | High | A project-local rule file mandates that descriptive content be documented in CLAUDE.md — the mandate is itself the misclassification per `.claude/rules/persistence-routing.md` "Cross-Surface Application". Fix routes the mandated prose to a feature-specific `.claude/rules/<feature>.md` file plus a one-line CLAUDE.md index entry. |
+| `[SIZE_BUDGET]` | Medium | CLAUDE.md exceeds the configurable size budget (`claude_md_budget` in `.flow.json`, defaults 12000 chars / 400 lines). Descriptive prose should land in feature-specific rule files, not in CLAUDE.md itself, so the budget overrun signals that recent additions failed the obey-vs-describe gate. |
 
 ## Steps
 
@@ -74,6 +76,28 @@ context if it is loaded. If individual memory files are referenced in the
 index, read them using the Read tool. Memory files live at
 `~/.claude/projects/*/memory/` and are user-scoped — they may not exist
 for every project.
+
+**CLAUDE.md size budget check.** A CLAUDE.md that grows unchecked
+signals that descriptive content is being added where only behavioral
+content belongs, per `.claude/rules/persistence-routing.md` "Cross-
+Surface Application". Read `.flow.json` from the project root using
+the Read tool. If the file exists and contains a `claude_md_budget`
+object, parse its `chars` and `lines` fields. If the file is missing
+or the field is absent, use the defaults: 12000 chars and 400 lines.
+Fail safe to the defaults whenever the input is unreliable: if
+`.flow.json` is present but is not valid JSON, or `claude_md_budget`
+is present but is not an object, or `chars`/`lines` is present but
+is not a positive integer, use the defaults rather than prompting
+or erroring.
+
+Measure CLAUDE.md by reading the file with the Read tool — character
+count is the byte length of the content, line count is the count of
+newlines plus one for the final line. Emit a `[SIZE_BUDGET]` finding
+when either count exceeds its budget. The finding's body cites the
+measured value, the budget, the override path (`.flow.json` field
+`claude_md_budget`), and the recommended fix (route descriptive prose
+to feature-specific `.claude/rules/<feature>.md` files plus one-line
+CLAUDE.md index entries).
 
 ### Step 2 — Structural verification
 
@@ -150,6 +174,43 @@ Also check whether memory files contain architecture facts, code
 patterns, or file paths — these should be derivable from the code
 and do not belong in memory. Tag as `[MISPLACED]`.
 
+**CLAUDE.md mandate scan.** Project-local rules that mandate
+CLAUDE.md prose for descriptive content invert the persistence
+routing — the mandate is itself the misclassification per
+`.claude/rules/persistence-routing.md` "Cross-Surface Application".
+Use the Grep tool against `.claude/rules/*.md` (and any project-
+local rule subdirectories) for the four canonical paraphrased
+substrings the upstream rule catalogs. These four entries are
+*pattern shapes*, not literal grep strings — match them by
+judgment against the prose a rule file actually uses. In the
+first entry, `X` and `Y` are placeholders standing in for a
+project-specific noun (the descriptive surface) and a project-
+specific documentation requirement; a real rule file will use
+concrete nouns in those slots. Read each candidate rule file and
+decide whether its prose expresses one of these shapes:
+
+- `treats X added without Y documented in CLAUDE.md` — the
+  enforcement-claim shape where a project-local rule asserts CI
+  fails when a descriptive surface is added without a CLAUDE.md
+  paragraph
+- `must be documented in CLAUDE.md` — the direct-mandate shape
+- `documentation home is CLAUDE.md` — the routing-destination shape
+  for descriptive content
+- `CLAUDE.md as the canonical destination` — the
+  authoritative-source shape
+
+For each match, emit a `[CLAUDE_MD_MANDATE]` finding citing the
+rule file path, the matched line, and the recommended fix:
+"Rewrite this rule to route descriptive content to a feature-
+specific `.claude/rules/<feature>.md` plus a one-line CLAUDE.md
+index entry per `.claude/rules/persistence-routing.md` Cross-
+Surface Application."
+
+Exclude matches inside quoted-example fences (Markdown code blocks)
+or in paragraphs whose surrounding prose explicitly names the
+pattern as an anti-pattern — those occurrences are documentation of
+the pattern, not enforcement of it.
+
 ### Step 4 — Cross-reference audit
 
 When the same constraint lives in multiple surfaces, a change to one
@@ -189,7 +250,7 @@ Produce the findings report inline in the response.
 
 **Summary line.** Start with a one-line summary:
 
-> **Hygiene: N findings (X stale, Y orphaned, Z unenforced, W misplaced, V duplicate, U contradiction)**
+> **Hygiene: N findings (X stale, Y orphaned, Z unenforced, W misplaced, V duplicate, U contradiction, M claude-md-mandate, B size-budget)**
 
 If no findings, output:
 

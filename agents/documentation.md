@@ -99,6 +99,38 @@ documentation accuracy finding. Do NOT walk the full
 `<worktree>/docs/` tree — the listed paths are exhaustive for
 documentation drift in this PR.
 
+**Apply the obey-vs-describe gate before emitting any CLAUDE.md
+finding.** Before producing any finding whose Recommendation
+proposes adding prose to CLAUDE.md, classify the candidate content
+per `.claude/rules/persistence-routing.md` "Cross-Surface Application".
+The classification has two outcomes:
+
+- **Descriptive content** — schema columns, function names, helper
+  signatures, code internals, design rationale, file paths,
+  architecture mechanics. These describe *how* the system works.
+  Route to a feature-specific .claude/rules/<feature>.md file
+  plus a one-line CLAUDE.md index entry that points at the rule
+  file. The Recommendation must name the rule file destination
+  AND the one-line index-entry shape; never propose the prose
+  itself as a CLAUDE.md addition.
+- **Behavioral content** — obey-shape pointers the model must
+  follow every session ("X must use Y", "all timestamps via Z",
+  "never invoke W directly"). Route to CLAUDE.md directly as a
+  behavioral instruction or pointer line.
+
+A finding that proposes adding descriptive prose to CLAUDE.md is
+itself a misclassification. The fix is the routing change, not the
+prose addition.
+
+When checking project-local rules under `.claude/rules/`, treat any
+rule file that mandates CLAUDE.md prose for descriptive content as
+suspect — a rule that says "X must be documented in CLAUDE.md" is
+itself describing how the system works and inverts the routing.
+Per the upstream rule, "the mandate is itself the misclassification".
+The Recommendation in such a finding routes the mandated prose to
+a feature-specific rule file plus a one-line CLAUDE.md index entry,
+not into CLAUDE.md directly.
+
 **Write findings incrementally.** Produce each finding immediately when
 discovered as a structured `**Finding` block. Do not batch findings at
 the end. If you exhaust your turn budget, partial structured findings
@@ -120,7 +152,15 @@ For each finding, produce a structured block:
 - **Evidence:** What a newcomer would struggle to understand, or what
   documentation no longer matches the code
 - **Recommendation:** What documentation, naming change, or comment
-  would resolve the issue
+  would resolve the issue. For findings proposing CLAUDE.md
+  additions, the Recommendation MUST distinguish descriptive
+  content (route to a feature-specific
+  `.claude/rules/<feature>.md` file plus a one-line CLAUDE.md
+  index entry) from behavioral content (route to CLAUDE.md
+  directly as a pointer line) per
+  `.claude/rules/persistence-routing.md` "Cross-Surface
+  Application". A Recommendation that pastes descriptive prose
+  directly into CLAUDE.md is itself the misclassification.
 
 If no issues are found for a category, report:
 

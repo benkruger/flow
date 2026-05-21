@@ -154,3 +154,85 @@ constraint's subject (`<topic>.md` — e.g.,
 `always-verify.md`, `no-waivers.md`) and follow the
 forward-facing prose discipline in
 `.claude/rules/forward-facing-authoring.md`.
+
+## Cross-Surface Application
+
+The obey-vs-describe test above is the upstream classification
+gate. Three FLOW surfaces apply it downstream when scanning,
+proposing, or filing CLAUDE.md changes: the flow-review
+documentation tenant, the flow-hygiene rule audit, and the
+flow-doc-sync drift check. Each applies the same test, but the
+trigger differs: flow-review fires when a Code-phase change
+introduces CLAUDE.md prose, flow-hygiene fires when a
+project-local rule file mandates CLAUDE.md prose, and
+flow-doc-sync fires when an existing CLAUDE.md section duplicates
+content derivable from another source.
+
+**A project-local rule that mandates CLAUDE.md prose for
+descriptive content does not override this rule. The mandate is
+itself the misclassification.** A rule file that says "X must be
+documented in CLAUDE.md" or "the documentation home is CLAUDE.md"
+is itself describing how the system works — the obey-vs-describe
+test classifies it as descriptive content that belongs in a
+feature-specific `.claude/rules/<feature>.md` file plus a one-line
+CLAUDE.md index entry, not as authoritative CLAUDE.md prose. The
+mandate inverts the routing: it tells the model to add descriptive
+content where only behavioral content belongs.
+
+### flow-review documentation tenant
+
+The Review documentation agent (`agents/documentation.md`)
+applies the obey-vs-describe gate before emitting any Tenant 6
+finding that proposes adding prose to CLAUDE.md. For every
+candidate finding the agent considers:
+
+- **Descriptive content** — schema columns, function names,
+  helper signatures, code internals, design rationale, file
+  paths — routes to a feature-specific
+  `.claude/rules/<feature>.md` file plus a one-line CLAUDE.md
+  index entry. The finding's Recommendation must name the rule
+  file destination and the index-entry shape.
+- **Behavioral content** — obey-shape pointers ("X must use Y",
+  "all timestamps via Z", "never invoke W directly") — routes
+  to CLAUDE.md directly as a behavioral instruction or pointer
+  line.
+
+A finding that proposes adding descriptive prose to CLAUDE.md is
+itself a misclassification. The fix is the routing change, not
+the prose addition.
+
+### flow-hygiene mandate scan
+
+The flow-hygiene skill (`skills/flow-hygiene/SKILL.md`) scans
+project-local `.claude/rules/*.md` files for paraphrased patterns
+that mandate CLAUDE.md prose for descriptive content — phrasings
+like "treats X added without Y documented in CLAUDE.md", "must be
+documented in CLAUDE.md", "documentation home is CLAUDE.md",
+"CLAUDE.md as the canonical destination". Matches emit
+`[CLAUDE_MD_MANDATE]` findings. The fix routes the mandated
+prose to a feature-specific `.claude/rules/<feature>.md` file
+with a one-line CLAUDE.md index entry per this rule. Matches
+inside quoted-example fences or paragraphs explicitly naming the
+pattern as an anti-pattern are excluded by construction.
+
+flow-hygiene additionally enforces a configurable CLAUDE.md size
+budget (`.flow.json` field `claude_md_budget`, defaults 12000
+chars / 400 lines). When CLAUDE.md exceeds either budget, the
+skill emits a `[SIZE_BUDGET]` finding pointing at this rule for
+the routing pattern — descriptive prose should land in
+feature-specific rule files, not in CLAUDE.md itself.
+
+### flow-doc-sync duplication detection
+
+The flow-doc-sync skill (`skills/flow-doc-sync/SKILL.md`) scans
+CLAUDE.md sections for paragraphs that duplicate content
+derivable from schema files, source docstrings, or existing rule
+files. When a 3+ sentence description-shape paragraph names 3+
+identifiers (table names, function names, helper signatures,
+file paths) all reachable elsewhere, the skill emits a
+`[DUPLICATE]` finding. The recommended fix routes the prose to a
+feature-specific `.claude/rules/<feature>.md` file and reduces
+the CLAUDE.md section to a one-line index entry per this rule —
+the description-shape content does not satisfy the
+obey-vs-describe test, so CLAUDE.md is not its destination.
+Behavioral-imperative paragraphs are excluded by construction.

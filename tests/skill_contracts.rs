@@ -491,6 +491,192 @@ fn plan_reviewer_agent_declares_end_of_findings_marker() {
     assert_agent_output_format_declares_end_of_findings("plan-reviewer.md");
 }
 
+// --- documentation agent obey-vs-describe gate for CLAUDE.md findings ---
+//
+// The documentation agent's Workflow section must apply the
+// obey-vs-describe gate from
+// `.claude/rules/persistence-routing.md` "Cross-Surface Application"
+// before emitting any Tenant 6 finding that proposes adding prose
+// to CLAUDE.md. The gate distinguishes descriptive content (routes
+// to a feature-specific `.claude/rules/<feature>.md` file plus a
+// one-line CLAUDE.md index entry) from behavioral content (routes
+// to CLAUDE.md directly), and the agent must treat project-local
+// rules that mandate CLAUDE.md prose as suspect. The bounded slice
+// on `## Workflow` keeps the assertion scope tight per
+// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions
+// in Contract Tests".
+
+#[test]
+fn documentation_agent_applies_obey_vs_describe_gate_for_claude_md_findings() {
+    let c = common::read_agent("documentation.md");
+    let tail_at_heading = c
+        .split_once("## Workflow")
+        .map(|(_, tail)| tail.to_string())
+        .expect("documentation.md must have ## Workflow section");
+    let workflow = tail_at_heading
+        .split_once("\n## ")
+        .map(|(section, _)| section.to_string())
+        .unwrap_or(tail_at_heading);
+    const REQUIRED: &[&str] = &[
+        "obey-vs-describe",
+        ".claude/rules/persistence-routing.md",
+        "Cross-Surface Application",
+        "descriptive content",
+        "behavioral",
+        "feature-specific .claude/rules/",
+        "project-local rules",
+        "suspect",
+    ];
+    for needle in REQUIRED {
+        assert!(
+            workflow.contains(needle),
+            "documentation.md ## Workflow section must contain `{}` so the obey-vs-describe gate is applied before emitting CLAUDE.md findings (see .claude/rules/persistence-routing.md \"Cross-Surface Application\")",
+            needle
+        );
+    }
+}
+
+// --- flow-hygiene CLAUDE.md mandate and size-budget contracts ---
+//
+// The flow-hygiene skill scans project-local rules for paraphrased
+// patterns that mandate CLAUDE.md prose for descriptive content
+// (emits [CLAUDE_MD_MANDATE] findings) and enforces a configurable
+// CLAUDE.md size budget (emits [SIZE_BUDGET] findings). Per-file
+// siblings rather than a single coordinated test: each assertion
+// guards a distinct regression (taxonomy row missing, scan substring
+// missing, budget defaults missing). Failure output names the
+// specific assertion that drifted instead of forcing the maintainer
+// to read internals. Each bounded slice scopes the assertion per
+// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions
+// in Contract Tests".
+
+fn read_flow_hygiene_subsection(start_marker: &str, end_marker: &str) -> String {
+    let c = common::read_skill("flow-hygiene");
+    let tail = c
+        .split_once(start_marker)
+        .map(|(_, t)| t.to_string())
+        .unwrap_or_else(|| {
+            panic!(
+                "flow-hygiene/SKILL.md must contain `{}` heading",
+                start_marker
+            )
+        });
+    tail.split_once(end_marker)
+        .map(|(s, _)| s.to_string())
+        .unwrap_or(tail)
+}
+
+#[test]
+fn flow_hygiene_taxonomy_includes_claude_md_mandate() {
+    let taxonomy = read_flow_hygiene_subsection("## Finding Taxonomy", "\n## ");
+    for needle in ["[CLAUDE_MD_MANDATE]", "High", "mandate"] {
+        assert!(
+            taxonomy.contains(needle),
+            "flow-hygiene/SKILL.md `## Finding Taxonomy` must contain `{}` so the new finding type is registered with its severity tag (see .claude/rules/persistence-routing.md \"Cross-Surface Application\")",
+            needle
+        );
+    }
+}
+
+#[test]
+fn flow_hygiene_taxonomy_includes_size_budget() {
+    let taxonomy = read_flow_hygiene_subsection("## Finding Taxonomy", "\n## ");
+    for needle in ["[SIZE_BUDGET]", "Medium", "budget"] {
+        assert!(
+            taxonomy.contains(needle),
+            "flow-hygiene/SKILL.md `## Finding Taxonomy` must contain `{}` so the configurable CLAUDE.md size-budget finding is registered with its severity tag",
+            needle
+        );
+    }
+}
+
+#[test]
+fn flow_hygiene_step_3_scans_for_claude_md_mandate_patterns() {
+    let step3 = read_flow_hygiene_subsection("### Step 3", "\n### ");
+    const REQUIRED: &[&str] = &[
+        "treats X added without Y documented in CLAUDE.md",
+        "must be documented in CLAUDE.md",
+        "documentation home is CLAUDE.md",
+        "CLAUDE.md as the canonical destination",
+    ];
+    for needle in REQUIRED {
+        assert!(
+            step3.contains(needle),
+            "flow-hygiene/SKILL.md `### Step 3` must contain the canonical mandate-scan substring `{}` so the [CLAUDE_MD_MANDATE] scan covers the documented pattern surface",
+            needle
+        );
+    }
+}
+
+#[test]
+fn flow_hygiene_step_1_includes_size_budget_check() {
+    let step1 = read_flow_hygiene_subsection("### Step 1", "\n### ");
+    for needle in ["claude_md_budget", ".flow.json", "12000", "400"] {
+        assert!(
+            step1.contains(needle),
+            "flow-hygiene/SKILL.md `### Step 1` must contain `{}` so the CLAUDE.md size-budget check reads the documented `.flow.json` field with the documented default char/line caps",
+            needle
+        );
+    }
+}
+
+// --- flow-doc-sync [DUPLICATE] taxonomy and recommendation contracts ---
+//
+// The flow-doc-sync skill emits a [DUPLICATE] finding when a
+// CLAUDE.md section duplicates content derivable from schema files,
+// source docstrings, or existing rule files — the third downstream
+// surface applying the obey-vs-describe gate per
+// `.claude/rules/persistence-routing.md` "Cross-Surface Application".
+// Per-file siblings rather than a single coordinated test: the
+// taxonomy-row regression and the recommendation-routing regression
+// are independent failure modes whose drift signals must surface
+// individually. Each bounded slice scopes the assertion per
+// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions
+// in Contract Tests".
+
+fn read_flow_doc_sync_step_3() -> String {
+    let c = common::read_skill("flow-doc-sync");
+    let tail = c
+        .split_once("### Step 3")
+        .map(|(_, t)| t.to_string())
+        .expect("flow-doc-sync/SKILL.md must contain `### Step 3` heading");
+    tail.split_once("### Step 4")
+        .map(|(s, _)| s.to_string())
+        .unwrap_or(tail)
+}
+
+#[test]
+fn flow_doc_sync_taxonomy_includes_duplicate() {
+    let step3 = read_flow_doc_sync_step_3();
+    for needle in [
+        "[DUPLICATE]",
+        "derivable from schema files",
+        "source docstrings",
+        "existing rule files",
+    ] {
+        assert!(
+            step3.contains(needle),
+            "flow-doc-sync/SKILL.md `### Step 3` must contain `{}` so the [DUPLICATE] tag definition names every reachable-elsewhere source the duplication-detection heuristic searches against",
+            needle
+        );
+    }
+}
+
+#[test]
+fn flow_doc_sync_duplicate_recommendation_routes_to_feature_rule() {
+    let step3 = read_flow_doc_sync_step_3();
+    for needle in [
+        "move prose to a feature rule",
+        "one-line CLAUDE.md index entry",
+    ] {
+        assert!(
+            step3.contains(needle),
+            "flow-doc-sync/SKILL.md `### Step 3` must contain `{}` so a [DUPLICATE] finding's recommendation routes duplicated prose to a feature-specific rule file plus a CLAUDE.md index entry per .claude/rules/persistence-routing.md \"Cross-Surface Application\"",
+            needle
+        );
+    }
+}
+
 // --- code_read field contract ---
 //
 // The pre-mortem agent's safety value depends on the agent actually

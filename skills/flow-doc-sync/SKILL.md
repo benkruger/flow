@@ -82,10 +82,52 @@ actual source. Tag each finding:
   or deprecated pattern. The reference itself is the problem.
   Include: what the doc references and evidence it no longer exists.
 
+- **`[DUPLICATE]`** — a CLAUDE.md section's prose duplicates
+  content derivable from schema files, source docstrings, or existing rule files
+  (all three reachable-elsewhere sources). The section is a maintenance
+  burden because the same fact lives in two places and drifts
+  independently. The duplicated prose fails the obey-vs-describe
+  gate per `.claude/rules/persistence-routing.md` "Cross-Surface
+  Application" — descriptive content should not live in CLAUDE.md.
+  Include: the CLAUDE.md section, the alternative destinations
+  where the same identifiers already appear, and the recommended
+  fix (see "Duplication detection" below).
+
 Skip cosmetic differences (formatting, word choice) that do not
 affect accuracy. Focus on factual claims: commands, file paths,
 behavior descriptions, config options, step counts, and
 architectural statements.
+
+**Duplication detection.** For every paragraph in CLAUDE.md that
+runs at least three sentences in a description-shape (descriptive
+prose about how something works rather than a behavioral imperative
+like "do X" or "never Y"), extract the identifiers wrapped in
+backticks: table names, function names, helper signatures, file
+paths, type names. For each identifier, search via the Grep tool
+against the project's schema files, source files (`src/**`,
+`tests/**`), and existing `.claude/rules/*.md` files. When three or
+more identifiers in the same paragraph all appear elsewhere, emit a
+`[DUPLICATE]` finding that names the paragraph location and the
+alternative destinations.
+
+Behavioral-imperative paragraphs are excluded by construction — the
+description-shape filter rejects them before the identifier scan
+runs.
+
+Pointer-index entries are also excluded. A one-line cross-reference
+to a rule file (e.g. "**Tombstone tests** — see
+`.claude/rules/tombstone-tests.md`.") is CLAUDE.md's sanctioned
+content type per `.claude/rules/persistence-routing.md` "What
+CLAUDE.md Is For" — its identifiers naturally appear elsewhere
+because pointing at them is the entry's whole purpose. The
+three-sentence description-shape filter already rejects one-line
+pointers, but when a pointer-index section is read as a block, do
+not flag its constituent entries as `[DUPLICATE]`.
+
+Suggested-fix prose for each `[DUPLICATE]` finding:
+"move prose to a feature rule at `.claude/rules/<feature>.md`
+and reduce the CLAUDE.md section to a one-line CLAUDE.md index entry
+per `.claude/rules/persistence-routing.md` Cross-Surface Application."
 
 ### Step 4 — Report
 
@@ -93,7 +135,7 @@ Produce the drift report inline in the response.
 
 **Summary line.** Start with a one-line summary:
 
-> **Doc Sync: N findings (X stale, Y missing, Z outdated)**
+> **Doc Sync: N findings (X stale, Y missing, Z outdated, W duplicate)**
 
 If no findings, output:
 
