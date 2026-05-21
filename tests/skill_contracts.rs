@@ -665,7 +665,10 @@ fn flow_doc_sync_taxonomy_includes_duplicate() {
 #[test]
 fn flow_doc_sync_duplicate_recommendation_routes_to_feature_rule() {
     let step3 = read_flow_doc_sync_step_3();
-    for needle in ["move prose to a feature rule", "one-line CLAUDE.md index entry"] {
+    for needle in [
+        "move prose to a feature rule",
+        "one-line CLAUDE.md index entry",
+    ] {
         assert!(
             step3.contains(needle),
             "flow-doc-sync/SKILL.md `### Step 3` must contain `{}` so a [DUPLICATE] finding's recommendation routes duplicated prose to a feature-specific rule file plus a CLAUDE.md index entry per .claude/rules/persistence-routing.md \"Cross-Surface Application\"",
