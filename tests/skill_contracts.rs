@@ -556,7 +556,10 @@ fn read_flow_hygiene_subsection(start_marker: &str, end_marker: &str) -> String 
         .split_once(start_marker)
         .map(|(_, t)| t.to_string())
         .unwrap_or_else(|| {
-            panic!("flow-hygiene/SKILL.md must contain `{}` heading", start_marker)
+            panic!(
+                "flow-hygiene/SKILL.md must contain `{}` heading",
+                start_marker
+            )
         });
     tail.split_once(end_marker)
         .map(|(s, _)| s.to_string())
@@ -612,6 +615,60 @@ fn flow_hygiene_step_1_includes_size_budget_check() {
         assert!(
             step1.contains(needle),
             "flow-hygiene/SKILL.md `### Step 1` must contain `{}` so the CLAUDE.md size-budget check reads the documented `.flow.json` field with the documented default char/line caps",
+            needle
+        );
+    }
+}
+
+// --- flow-doc-sync [DUPLICATE] taxonomy and recommendation contracts ---
+//
+// The flow-doc-sync skill emits a [DUPLICATE] finding when a
+// CLAUDE.md section duplicates content derivable from schema files,
+// source docstrings, or existing rule files — the third downstream
+// surface applying the obey-vs-describe gate per
+// `.claude/rules/persistence-routing.md` "Cross-Surface Application".
+// Per-file siblings rather than a single coordinated test: the
+// taxonomy-row regression and the recommendation-routing regression
+// are independent failure modes whose drift signals must surface
+// individually. Each bounded slice scopes the assertion per
+// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions
+// in Contract Tests".
+
+fn read_flow_doc_sync_step_3() -> String {
+    let c = common::read_skill("flow-doc-sync");
+    let tail = c
+        .split_once("### Step 3")
+        .map(|(_, t)| t.to_string())
+        .expect("flow-doc-sync/SKILL.md must contain `### Step 3` heading");
+    tail.split_once("### Step 4")
+        .map(|(s, _)| s.to_string())
+        .unwrap_or(tail)
+}
+
+#[test]
+fn flow_doc_sync_taxonomy_includes_duplicate() {
+    let step3 = read_flow_doc_sync_step_3();
+    for needle in [
+        "[DUPLICATE]",
+        "derivable from schema files",
+        "source docstrings",
+        "existing rule files",
+    ] {
+        assert!(
+            step3.contains(needle),
+            "flow-doc-sync/SKILL.md `### Step 3` must contain `{}` so the [DUPLICATE] tag definition names every reachable-elsewhere source the duplication-detection heuristic searches against",
+            needle
+        );
+    }
+}
+
+#[test]
+fn flow_doc_sync_duplicate_recommendation_routes_to_feature_rule() {
+    let step3 = read_flow_doc_sync_step_3();
+    for needle in ["move prose to a feature rule", "one-line CLAUDE.md index entry"] {
+        assert!(
+            step3.contains(needle),
+            "flow-doc-sync/SKILL.md `### Step 3` must contain `{}` so a [DUPLICATE] finding's recommendation routes duplicated prose to a feature-specific rule file plus a CLAUDE.md index entry per .claude/rules/persistence-routing.md \"Cross-Surface Application\"",
             needle
         );
     }
