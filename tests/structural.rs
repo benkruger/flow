@@ -654,7 +654,7 @@ fn test_all_agents_specify_model() {
         ("pm.md", "haiku"),
         ("tech-lead.md", "sonnet"),
         ("cto.md", "opus"),
-        ("plan-reviewer.md", "haiku"),
+        ("plan-reviewer.md", "opus"),
     ]
     .into_iter()
     .collect();

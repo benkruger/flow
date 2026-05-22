@@ -1,8 +1,8 @@
 ---
 name: plan-reviewer
 description: "Cognitively isolated rule-adherence audit of a drafted Implementation Plan. Receives the drafted plan body, the parent acceptance criteria, and a pointer to the `.claude/rules/` directory. Produces a verdict in {pass, re-decompose} with a violations list naming the rule file, the plan location, and the adherence failure."
-# Haiku: Compliance audit against a fixed rule corpus — table-driven pattern matching, not novel reasoning.
-model: haiku
+# Opus: judging which of the project's rules apply to a drafted plan is open-ended reasoning across the full rule corpus, not fixed-table lookup.
+model: opus
 tools: Read, Glob, Grep, Bash
 maxTurns: 100
 ---
