@@ -2116,6 +2116,75 @@ fn flow_complete_mode_resolution_invokes_resolve_skill_mode() {
     );
 }
 
+/// flow-complete must resolve the autonomy mode OUTSIDE the SOFT-GATE.
+/// A `--continue-step` self-invocation skips the SOFT-GATE; if the
+/// `resolve-skill-mode` call lived there, the resumed run would depend
+/// on a mode flag threaded through the self-invocation instead of the
+/// state file — the exact non-determinism this feature closes.
+#[test]
+fn flow_complete_resolves_mode_outside_soft_gate() {
+    let c = common::read_skill("flow-complete");
+    let soft_gate = c
+        .split_once("<SOFT-GATE>")
+        .and_then(|(_, t)| t.split_once("</SOFT-GATE>"))
+        .map(|(block, _)| block)
+        .expect("flow-complete must have a SOFT-GATE block");
+    assert!(
+        !soft_gate.contains("resolve-skill-mode"),
+        "flow-complete must resolve mode in `## Mode Resolution`, not inside the \
+         SOFT-GATE — a `--continue-step` entry skips the SOFT-GATE and must still \
+         resolve mode from the state file"
+    );
+    // The Self-Invocation Check must direct the resumed run through
+    // Mode Resolution so `--continue-step` does not skip it.
+    let tail = c
+        .split_once("## Self-Invocation Check")
+        .map(|(_, t)| t)
+        .expect("flow-complete must have a Self-Invocation Check section");
+    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
+    assert!(
+        section.contains("Mode Resolution"),
+        "flow-complete Self-Invocation Check must run `## Mode Resolution` so a \
+         `--continue-step` entry resolves the mode"
+    );
+}
+
+/// flow-complete's Step 4 `Yes, merge` answer must invoke
+/// `bin/flow confirm-merge` to write the single-use merge-approval
+/// marker — the "proceed" half of the Complete-phase merge gate.
+#[test]
+fn flow_complete_step4_yes_invokes_confirm_merge() {
+    let c = common::read_skill("flow-complete");
+    let tail = c
+        .split_once("### Step 4 — Confirm with user")
+        .map(|(_, t)| t)
+        .expect("Step 4 heading must exist in flow-complete SKILL.md");
+    let step4 = tail.split_once("\n### ").map(|(s, _)| s).unwrap_or(tail);
+    assert!(
+        step4.contains("bin/flow confirm-merge"),
+        "Step 4's `Yes, merge` path must invoke `bin/flow confirm-merge` to write \
+         the merge-approval marker before the Step 5 squash-merge"
+    );
+}
+
+/// flow-complete's Step 5 `complete-merge` dispatch must handle the
+/// `merge_not_confirmed` error reason — the gate fires when a
+/// manual-configured flow reaches the merge with no approval marker,
+/// and Step 5 routes back to Step 4 to re-confirm.
+#[test]
+fn flow_complete_step5_handles_merge_not_confirmed() {
+    let c = common::read_skill("flow-complete");
+    let tail = c
+        .split_once("### Step 5 — Merge PR")
+        .map(|(_, t)| t)
+        .expect("Step 5 heading must exist in flow-complete SKILL.md");
+    let step5 = tail.split_once("\n### ").map(|(s, _)| s).unwrap_or(tail);
+    assert!(
+        step5.contains("merge_not_confirmed"),
+        "Step 5's complete-merge dispatch must handle the `merge_not_confirmed` reason"
+    );
+}
+
 #[test]
 fn flow_abort_mode_resolution_invokes_resolve_skill_mode() {
     // The flow-abort `## Mode Resolution` section must resolve the
@@ -3430,10 +3499,14 @@ fn flow_complete_skill_contains_ci_drift_handler_before_ci_failed() {
 
 #[test]
 fn continue_context_includes_mode_flag() {
+    // flow-complete is intentionally absent: its self-invocations
+    // drop the `--auto`/`--manual` flag so the resumed run
+    // re-resolves the mode from the state file via `## Mode
+    // Resolution`. The inverse contract is locked in by
+    // `flow_complete_continue_context_drops_mode_flag` below.
     let skills_with_min = [
         ("flow-code", 2),
         ("flow-review", 2),
-        ("flow-complete", 9),
         ("flow-learn", 2),
     ];
     let re = Regex::new(r#""_continue_context=([^"]+)""#).unwrap();
@@ -3462,6 +3535,29 @@ fn continue_context_includes_mode_flag() {
                 ctx
             );
         }
+    }
+}
+
+/// flow-complete's self-invocation `_continue_context` entries must
+/// NOT thread an `--auto`/`--manual` flag. A threaded flag would let
+/// the resumed run honor a stale mode instead of re-resolving the
+/// configured `skills.flow-complete` mode from the state file via
+/// `## Mode Resolution` — the non-determinism this feature closes.
+#[test]
+fn flow_complete_continue_context_drops_mode_flag() {
+    let content = common::read_skill("flow-complete");
+    let re = Regex::new(r#""_continue_context=([^"]+)""#).unwrap();
+    for cap in re.captures_iter(&content) {
+        let ctx = &cap[1];
+        if !ctx.contains("--continue-step") {
+            continue;
+        }
+        assert!(
+            !ctx.contains("--auto") && !ctx.contains("--manual"),
+            "flow-complete _continue_context must not thread a mode flag — \
+             Mode Resolution re-resolves on the resumed entry: {}",
+            ctx
+        );
     }
 }
 

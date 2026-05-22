@@ -69,14 +69,20 @@ launch the ci-fixer sub-agent to diagnose and fix.
 
 In manual mode (the default), explicit confirmation is required
 before the irreversible squash merge. Any warnings from the preflight
-are included in the confirmation message. Skipped when `--auto` is
-passed.
+are included in the confirmation message. On approval,
+`bin/flow confirm-merge` writes a single-use merge-approval marker
+that the merge step requires. Skipped when `--auto` is passed.
 
 ### 5. Merge PR
 
 `complete-merge` handles the freshness check and squash merge in a
 single script call. Verifies the branch is up-to-date with the
-integration branch before merging. If the integration branch has
+integration branch before merging. When `flow-complete` is configured
+manual, it resolves the mode from the state file and requires the
+single-use merge-approval marker — with no marker the merge is refused
+(`merge_not_confirmed`) and the skill loops back to step 4 to
+re-confirm. This structural gate means a lost mode flag cannot merge a
+manual-configured flow unconfirmed. If the integration branch has
 moved, merges the new commits and loops back to step 2 (CI gate) to
 re-test. A retry limit of 3 prevents
 infinite loops under high contention. Once up-to-date, squash-merges
@@ -179,4 +185,6 @@ one fails, continue to the next.
 - Missing state file is a warning, not a hard block
 - CI must pass before merge
 - Confirmation in manual mode (the default); skipped when `--auto` is passed
+- Manual-mode merge requires a single-use confirmation marker — both merge
+  surfaces resolve the mode and structurally refuse the squash-merge without it
 - Steps 1-5 run from the worktree; Step 6 (finalize) runs from the project root
