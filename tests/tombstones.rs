@@ -368,8 +368,8 @@ fn test_src_no_bump_install_path() {
 fn test_phase_config_no_auto_skills() {
     let root = common::repo_root();
     for rel in ["src/phase_config.rs", "src/commands/init_state.rs"] {
-        let content = fs::read_to_string(root.join(rel))
-            .unwrap_or_else(|_| panic!("{rel} must exist"));
+        let content =
+            fs::read_to_string(root.join(rel)).unwrap_or_else(|_| panic!("{rel} must exist"));
         assert!(
             !content.contains("auto_skills"),
             "{rel} must not contain `auto_skills` — the wholesale \

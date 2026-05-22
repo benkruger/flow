@@ -651,6 +651,38 @@ fn manual_config_with_valid_marker_merges_and_consumes() {
     ));
 }
 
+/// Regression: a `--continue-step` resume of Complete previously
+/// skipped the SOFT-GATE that resolved the mode, so a resumed merge
+/// depended on a model-threaded flag instead of the state file and
+/// could squash-merge a manual-configured flow unconfirmed. This
+/// reproduces that scenario end to end — a `flow-complete: manual`
+/// state file reached at the merge step (as a resumed run does) with
+/// no confirmation marker — and asserts `complete-merge` structurally
+/// refuses it with `merge_not_confirmed` rather than merging.
+#[test]
+fn regression_resumed_manual_merge_without_marker_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let flow_bin = parent.join("bin-flow-stub").join("flow");
+    write_flow_stub(&flow_bin);
+    let stubs = build_path_stubs(&parent);
+    let state_path = setup_flow_layout(&parent, "resumed-feature", "manual");
+
+    let (code, stdout, _) = run_complete_merge_sub(
+        &parent,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        &flow_bin,
+        &stubs,
+        &[("FAKE_FRESHNESS_JSON", r#"{"status":"up_to_date"}"#)],
+    );
+
+    assert_eq!(code, 1, "a manual flow with no marker must not merge");
+    let json = last_json_line(&stdout);
+    assert_eq!(json["status"], "error");
+    assert_eq!(json["reason"], "merge_not_confirmed");
+}
+
 #[test]
 fn manual_config_with_corrupt_marker_refuses_merge() {
     let dir = tempfile::tempdir().unwrap();
