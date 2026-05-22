@@ -249,6 +249,26 @@ fn resolve_nul_in_value_normalized() {
     assert_mode(&state, "flow-complete", "manual", "auto");
 }
 
+/// A hand-edited `.flow.json` may carry a mixed-case skill key. The
+/// resolver matches the `skills` object key case-insensitively, so
+/// the configured mode is read rather than silently falling to the
+/// per-skill default. Regression guard for the asymmetric-
+/// normalization finding (`security-gates.md` "Normalize Before
+/// Comparing"): the `--skill` arg was normalized but the state-file
+/// key lookup was case-sensitive. The state object also carries a
+/// non-matching sibling key so the case-insensitive match is
+/// exercised against both a miss and a hit.
+#[test]
+fn resolve_mixed_case_skills_key_matches() {
+    let state = json!({
+        "skills": {
+            "flow-start": {"commit": "manual", "continue": "manual"},
+            "Flow-Complete": {"commit": "auto", "continue": "manual"}
+        }
+    });
+    assert_mode(&state, "flow-complete", "auto", "manual");
+}
+
 // --- run_impl ---
 
 #[test]
@@ -279,6 +299,29 @@ fn run_impl_invalid_branch_empty_returns_error() {
 fn run_impl_invalid_branch_slash_returns_error() {
     let tmp = tempfile::tempdir().unwrap();
     let v = run_impl(&args("flow-complete", "feature/foo"), tmp.path());
+    assert_eq!(v["status"], "error");
+    assert_eq!(v["reason"], "invalid_branch");
+}
+
+/// `.claude/rules/branch-path-safety.md` mandates a rejection test
+/// for each of the four invalid branch inputs (empty, `.`, `..`,
+/// NUL) on every new public surface accepting a `--branch` override.
+/// A single-dot branch resolves the per-branch `.flow-states` path to
+/// the directory itself.
+#[test]
+fn run_impl_invalid_branch_dot_returns_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let v = run_impl(&args("flow-complete", "."), tmp.path());
+    assert_eq!(v["status"], "error");
+    assert_eq!(v["reason"], "invalid_branch");
+}
+
+/// `.claude/rules/branch-path-safety.md`: a NUL byte in the branch
+/// name must be rejected before any `.flow-states` path is built.
+#[test]
+fn run_impl_invalid_branch_nul_returns_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let v = run_impl(&args("flow-complete", "feat\0ure"), tmp.path());
     assert_eq!(v["status"], "error");
     assert_eq!(v["reason"], "invalid_branch");
 }

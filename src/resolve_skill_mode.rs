@@ -27,7 +27,10 @@
 //! axis value are normalized (NUL-stripped, trimmed, ASCII-lowercased
 //! via `normalize_gate_input`) and checked against a positive
 //! allowlist — `--skill` against [`ALLOWED_SKILLS`], each axis value
-//! against `MODE_VALUES`.
+//! against `MODE_VALUES`. The `skills.<name>` object key is matched
+//! case-insensitively against the normalized skill name — both sides
+//! of the lookup are normalized so a hand-edited `.flow.json` with a
+//! mixed-case skill key still resolves to its configured mode.
 //!
 //! `run_impl` returns `Value` unconditionally — every failure mode is
 //! a structured `{"status":"error",...}` payload or a fallback, so
@@ -134,10 +137,19 @@ fn resolve_axis(entry: Option<&Value>, axis: &str, default: &str) -> String {
 /// Resolve the `(commit, continue)` mode for `skill` from a parsed
 /// state file value.
 ///
-/// Reads `commit` and `continue` from the `skills.<skill>` object
-/// (`{"commit": .., "continue": ..}` or `{"continue": ..}`). Every
-/// non-object shape — a bare string, missing `skills` key, missing
-/// entry, `null`/number/array/bool entry — yields the per-skill
+/// `skill` is normalized via [`normalize_gate_input`], and the
+/// `skills` object key is matched case-insensitively against that
+/// normalized form — both sides of the comparison are normalized per
+/// `.claude/rules/security-gates.md` "Normalize Before Comparing", so
+/// a hand-edited `.flow.json` carrying a mixed-case skill key still
+/// resolves to its configured mode instead of silently falling to the
+/// per-skill default.
+///
+/// Reads `commit` and `continue` from the matched `skills.<skill>`
+/// object (`{"commit": .., "continue": ..}` or `{"continue": ..}`).
+/// Every non-object shape — a bare string, missing `skills` key, a
+/// `skills` value that is not an object, no matching entry,
+/// `null`/number/array/bool entry — yields the per-skill
 /// [`default_mode`] for both axes. An object missing one axis (or
 /// carrying a non-string / unparseable value for it) takes the
 /// default for that axis only. Each axis is normalized via
@@ -145,8 +157,17 @@ fn resolve_axis(entry: Option<&Value>, axis: &str, default: &str) -> String {
 /// returned pair is always exactly
 /// `("auto"|"manual", "auto"|"manual")`.
 pub fn resolve(state: &Value, skill: &str) -> (String, String) {
-    let (default_commit, default_continue) = default_mode(skill);
-    let entry = state.get("skills").and_then(|s| s.get(skill));
+    let skill = normalize_gate_input(skill);
+    let (default_commit, default_continue) = default_mode(&skill);
+    let entry = state
+        .get("skills")
+        .and_then(|s| s.as_object())
+        .and_then(|skills| {
+            skills
+                .iter()
+                .find(|&(k, _)| normalize_gate_input(k) == skill)
+                .map(|(_, v)| v)
+        });
     (
         resolve_axis(entry, "commit", default_commit),
         resolve_axis(entry, "continue", default_continue),

@@ -506,6 +506,55 @@ fn test_complete_fast_no_auto_manual_args() {
     );
 }
 
+// --- phase-enter resolve_mode removal ---
+//
+// `phase_enter::resolve_mode` read the autonomy mode from the state
+// file's skills block and embedded a `mode` object in the
+// phase-enter response. The single tested source of truth for skill
+// autonomy is now `resolve_skill_mode`, which every skill's
+// `## Mode Resolution` section calls directly — so phase-enter no
+// longer resolves or returns a mode. The pub fn and its `run_impl`
+// callsite are deleted. This tombstone catches a merge conflict or
+// accidental edit that re-introduces the function in
+// `src/phase_enter.rs`.
+
+/// Tombstone: removed in PR #1691. The `pub fn resolve_mode` in
+/// `src/phase_enter.rs` — which read `skills.<phase>` and embedded a
+/// `mode` object in the phase-enter response — is deleted. Skill
+/// autonomy is resolved exclusively through `resolve_skill_mode`.
+/// Must not return.
+///
+/// Asserts `src/phase_enter.rs` does NOT contain the identifier
+/// `resolve_mode`. The byte-substring shape holds because:
+///   1. `concat!` reassembly: a Rust function name cannot be
+///      assembled by `concat!` — re-introducing the function
+///      requires the literal `fn resolve_mode` in source.
+///   2. `format!` reassembly: function declarations and direct
+///      calls are not produced by `format!` interpolation.
+///   3. Named constant reference: a `const` aliasing the string
+///      would still place the literal `resolve_mode` in source, and
+///      the declaration / call site trips the byte check regardless.
+///   4. Method chains / split args: not applicable — the target is
+///      a function identifier, not a CLI argument passed via
+///      `.arg()`.
+///
+/// Scoped to `src/phase_enter.rs` only — a distinct `resolve_mode`
+/// (signature `fn resolve_mode(state: Option<&Value>) -> String`)
+/// legitimately survives in `src/complete_preflight.rs`, so a
+/// codebase-wide scan would false-positive.
+#[test]
+fn test_phase_enter_no_resolve_mode() {
+    let root = common::repo_root();
+    let content = fs::read_to_string(root.join("src").join("phase_enter.rs"))
+        .expect("src/phase_enter.rs must exist");
+    assert!(
+        !content.contains("resolve_mode"),
+        "src/phase_enter.rs must not contain `resolve_mode` — the \
+         function and its run_impl callsite were deleted; skill \
+         autonomy is resolved exclusively through `resolve_skill_mode`."
+    );
+}
+
 // --- flow-plan parent-issue closure ---
 //
 // The decomposed-child issue supersedes the vanilla parent's
