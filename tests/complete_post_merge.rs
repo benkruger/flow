@@ -126,7 +126,7 @@ case "$1" in
         if [ -n "$FAKE_ACP_OUT" ]; then
             printf '%s' "$FAKE_ACP_OUT"
         else
-            printf '%s' '{"status":"ok","parent_closed":false,"milestone_closed":false}'
+            printf '%s' '{"status":"ok","closed_issues":[],"milestone_closed":false}'
         fi
         exit 0
         ;;
@@ -515,7 +515,7 @@ fn post_merge_label_issues_failure_records_failure() {
 }
 
 #[test]
-fn post_merge_auto_close_parent_pushes_when_parent_closed() {
+fn post_merge_auto_close_parent_pushes_when_closed_issues_nonempty() {
     let dir = tempfile::tempdir().unwrap();
     let parent = dir.path().canonicalize().unwrap();
     let (repo, state_path, flow_bin, stubs) = setup(&parent, happy_state(BRANCH));
@@ -534,7 +534,7 @@ fn post_merge_auto_close_parent_pushes_when_parent_closed() {
             ),
             (
                 "FAKE_ACP_OUT",
-                r#"{"status":"ok","parent_closed":true,"milestone_closed":false}"#,
+                r#"{"status":"ok","closed_issues":[200,300],"milestone_closed":false}"#,
             ),
         ],
     );
@@ -566,7 +566,7 @@ fn post_merge_auto_close_parent_milestone_closed_pushes() {
             ),
             (
                 "FAKE_ACP_OUT",
-                r#"{"status":"ok","parent_closed":false,"milestone_closed":true}"#,
+                r#"{"status":"ok","closed_issues":[],"milestone_closed":true}"#,
             ),
         ],
     );
