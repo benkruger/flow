@@ -262,6 +262,46 @@ fn requires_reinit_when_setup_hash_mismatches() {
         .contains("/flow:flow-prime"));
 }
 
+/// A project primed before the `prime_setup.rs` block-shape change
+/// carries a `setup_hash` computed from the old source. `prime_setup.rs`
+/// is part of `compute_setup_hash`'s input, so the change moves the
+/// hash — and on a version upgrade `prime-check` must FORCE a re-prime
+/// (`status: error`), never silently auto-upgrade.
+///
+/// The resolver simplification (block-shape-only parsing) is safe
+/// ONLY because this re-prime is forced: a silent auto-upgrade would
+/// leave a project running the new plugin against a stale,
+/// mixed-shape `.flow.json`. The forced-error path must also leave
+/// `.flow.json` untouched — only the auto-upgrade path rewrites
+/// `flow_version` — so the project re-primes cleanly.
+#[test]
+fn stale_setup_hash_forces_reprime_and_does_not_rewrite_flow_json() {
+    let tmp = tempfile::tempdir().unwrap();
+    // config_hash matches; only setup_hash is stale, so the
+    // setup-hash mismatch is the sole cause of the forced re-prime.
+    let config_hash = computed_config_hash();
+    write_flow_json(
+        tmp.path(),
+        json!({
+            "flow_version": "0.0.1",
+            "config_hash": config_hash,
+            "setup_hash": "0000000000aa",
+        }),
+    );
+    let (data, _code) = run_prime_check(tmp.path());
+    assert_eq!(data["status"], "error");
+    assert!(
+        data.get("auto_upgraded").is_none(),
+        "a stale setup_hash must force a re-prime, never a silent auto-upgrade"
+    );
+    let after: Value =
+        serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
+    assert_eq!(
+        after["flow_version"], "0.0.1",
+        "the forced-re-prime error path must leave .flow.json's flow_version untouched"
+    );
+}
+
 // --- Infrastructure-failure branches in run_impl ---
 
 /// Subprocess: `prime-check` when `CLAUDE_PLUGIN_ROOT` points at a
