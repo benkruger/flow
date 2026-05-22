@@ -1,11 +1,11 @@
 ---
 name: flow-orchestrate
-description: "Process decomposed issues sequentially overnight via flow-start --auto, tracking outcomes and generating a morning report."
+description: "Process decomposed issues sequentially overnight via flow-start, tracking outcomes and generating a morning report."
 ---
 
 # FLOW Orchestrate
 
-Fetch all open issues labeled "Decomposed", filter out issues already in progress, and process each sequentially via `flow-start --auto`. Each invocation runs the full Start → Code → Review → Learn → Complete lifecycle. After all issues are processed, generate a summary report.
+Fetch all open issues labeled "Decomposed", filter out issues already in progress, and process each sequentially via `flow-start`. Each invocation runs the full Start → Code → Review → Learn → Complete lifecycle. Autonomy comes from the project's `.flow.json` `skills` config — for unattended overnight runs, configure it with the "Fully autonomous" preset from `/flow-prime`. After all issues are processed, generate a summary report.
 
 ## Usage
 
@@ -139,13 +139,14 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow log orchestrate "[Orchestrate] Starting #<issue_n
 
 **Invoke flow-start:**
 
-Invoke `flow:flow-start --auto <title> #<issue_number>` using the Skill tool.
+Invoke `flow:flow-start #<issue_number>` using the Skill tool.
 
 This runs the full lifecycle: Start, Plan, Code, Review, Learn, Complete.
+Each phase resolves its autonomy from the `.flow.json` `skills` config.
 
 **Detect outcome:**
 
-After `flow-start --auto` returns, determine the outcome by checking GitHub state.
+After `flow-start` returns, determine the outcome by checking GitHub state.
 
 Check the PR state for the branch. Use `gh pr view` with the branch name:
 
@@ -171,7 +172,7 @@ For failed outcomes, add `--reason "<reason>"`.
 
 **Clean up stuck features:**
 
-If the outcome is **failed** and a state file still exists for the branch, invoke `flow:flow-abort --auto` to clean up the worktree, close the PR, and remove the state file.
+If the outcome is **failed** and a state file still exists for the branch, invoke `flow:flow-abort` to clean up the worktree, close the PR, and remove the state file.
 
 **Log and continue:**
 

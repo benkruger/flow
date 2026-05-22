@@ -54,8 +54,8 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
     "flow-code": {"commit": "manual", "continue": "manual"},
     "flow-review": {"commit": "auto", "continue": "auto"},
     "flow-learn": {"commit": "auto", "continue": "auto"},
-    "flow-abort": "auto",
-    "flow-complete": "auto"
+    "flow-abort": {"continue": "auto"},
+    "flow-complete": {"continue": "auto"}
   },
   "phases": {
     "flow-start": {
@@ -278,7 +278,9 @@ Copied from `.flow.json` into the state file by `/flow-start`. Phase skills read
 
 Present only when `.flow.json` contains a `skills` key (i.e., after running `/flow-prime` with Customize or a preset). Phase skills that don't find a `skills` key in the state file fall back to built-in defaults.
 
-Each value is either a **bare string** (`"auto"` or `"manual"`) or an **object** with per-axis settings (e.g. `{"continue": "auto", "commit": "manual"}`). Skills with a single autonomy axis — `flow-abort`, `flow-complete` — typically use the bare form. Phase skills that expose both a commit axis (per-task commit approval) and a continue axis (phase transition approval) — `flow-code`, `flow-review`, `flow-learn` — use the object form. The two shapes are represented in Rust as `SkillConfig::Simple(String)` and `SkillConfig::Detailed(IndexMap<String, String>)` in `src/state.rs`; consumers that read the config via `serde_json::Value` (like the `validate-ask-user` PreToolUse hook) accept both shapes by checking `Value::as_str() == Some("auto")` OR `Value::get("continue").and_then(|c| c.as_str()) == Some("auto")`.
+Each value is an **object** with per-axis settings. `/flow-prime` normalizes every entry to the object shape before writing `.flow.json`, so `/flow-start` copies object-shaped entries into the state file for all six skills. The committing phase skills — `flow-code`, `flow-review`, `flow-learn` — carry both a commit axis (per-task commit approval) and a continue axis (phase transition approval): `{"commit": ..., "continue": ...}`. The single-axis skills — `flow-start`, `flow-abort`, `flow-complete` — carry only the continue axis: `{"continue": ...}`. The shared `resolve-skill-mode` subcommand reads `commit` and `continue` from the object and is the single resolution path for all six skills.
+
+The object shape is represented in Rust as `SkillConfig::Detailed(IndexMap<String, String>)` in `src/state.rs`; `SkillConfig::Simple(String)` remains as a tolerated parse for a hand-edited bare-string entry, and the `validate-ask-user` PreToolUse hook accepts either shape by checking `Value::as_str() == Some("auto")` OR `Value::get("continue").and_then(|c| c.as_str()) == Some("auto")`.
 
 ```json
 "skills": {
@@ -286,8 +288,8 @@ Each value is either a **bare string** (`"auto"` or `"manual"`) or an **object**
   "flow-code": {"commit": "manual", "continue": "manual"},
   "flow-review": {"commit": "auto", "continue": "auto"},
   "flow-learn": {"commit": "auto", "continue": "auto"},
-  "flow-abort": "auto",
-  "flow-complete": "auto"
+  "flow-abort": {"continue": "auto"},
+  "flow-complete": {"continue": "auto"}
 }
 ```
 

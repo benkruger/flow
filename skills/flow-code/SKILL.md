@@ -9,16 +9,10 @@ description: "Phase 2: Code — execute plan tasks one at a time with TDD. Revie
 
 ```text
 /flow:flow-code
-/flow:flow-code --auto
-/flow:flow-code --manual
 /flow:flow-code --continue-step
-/flow:flow-code --continue-step --auto
-/flow:flow-code --continue-step --manual
 ```
 
-- `/flow:flow-code` — uses configured mode from the state file (default: manual)
-- `/flow:flow-code --auto` — streamline mode active from task 1 (skip per-task approval, still show diffs), auto-advance to Review
-- `/flow:flow-code --manual` — requires explicit approval for each task
+- `/flow:flow-code` — uses the configured mode from the state file's `skills.flow-code` config
 - `/flow:flow-code --continue-step` — self-invocation: skip Announce and Update State, dispatch to the next task via Resume Check
 
 <HARD-GATE>
@@ -34,7 +28,8 @@ Parse the JSON output. If `"status": "error"`, STOP and show the error.
 If `"status": "ok"`, capture the returned fields:
 `project_root`, `branch`, `worktree_path`, `worktree_cwd`,
 `relative_cwd`, `pr_number`, `pr_url`, `feature`, `slack_thread_ts`,
-`plan_file`, and `mode` (commit + continue).
+and `plan_file`. The autonomy mode is resolved separately in the
+Mode Resolution section below via `resolve-skill-mode`.
 
 </HARD-GATE>
 
@@ -70,17 +65,38 @@ shared state must be idempotent.
 
 ## Mode Resolution
 
-1. If `--auto` was passed → commit=auto, continue=auto
-2. If `--manual` was passed → commit=manual, continue=manual
-3. Otherwise, use `mode.commit` and `mode.continue` from the `phase-enter` response.
-4. If `phase-enter` was skipped (self-invocation), use the mode from the flag that was passed.
+Resolve `commit` and `continue` on every entry — fresh invocation and
+`--continue-step` self-invocation alike — from the state file's
+`skills.flow-code` config via `resolve-skill-mode`. The state file is
+the single source of truth for skill autonomy; there are no
+`--auto`/`--manual` flags.
+
+Resolve the current branch first: run `git worktree list --porcelain`,
+note the project root (the path on the first `worktree` line), find
+the `worktree` entry whose path matches the current working directory,
+and take the `branch refs/heads/<name>` line from that entry (strip
+the `refs/heads/` prefix). Call this `<branch>`. Then run the resolver:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow resolve-skill-mode --skill flow-code --branch <branch>
+```
+
+Parse the JSON output. `commit` and `continue` are each `"auto"` or
+`"manual"`:
+
+- `commit=auto` — streamline mode active from task 1 (skip per-task
+  approval, still show diffs).
+- `commit=manual` — require explicit approval for each task.
+- `continue=auto` — auto-advance to Review once all tasks are committed.
+- `continue=manual` — prompt before advancing to Review.
 
 ## Self-Invocation Check
 
 If `--continue-step` was passed, this is a self-invocation from a
 previous task's commit. Skip the Announce banner and the `phase-enter`
-call (do not enter the phase again). Proceed directly to the Resume
-Check section.
+call (do not enter the phase again). Run `## Mode Resolution` above
+(it runs on every entry), then proceed directly to the Resume Check
+section.
 
 ## Announce
 
@@ -481,16 +497,12 @@ Record the completed task number:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set code_task=<n>
 ```
 
-Set the continuation context and flag before committing.
-
-If commit=auto, use the first form. If commit=manual, use the second:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-code --continue-step --auto."
-```
+Set the continuation context and flag before committing. The
+self-invocation carries no mode flag — the resumed run re-resolves
+`commit`/`continue` from the state file via `## Mode Resolution`:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-code --continue-step --manual."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-code --continue-step."
 ```
 
 ```bash
@@ -506,9 +518,8 @@ Add <what was built> — Task <n> of <total>
 ```
 
 To continue to the next task, invoke `flow:flow-code --continue-step`
-using the Skill tool as your final action. If commit=auto was resolved,
-pass `--auto` as well. Do not output anything else after this
-invocation.
+using the Skill tool as your final action. Do not output anything
+else after this invocation.
 
 ---
 
@@ -562,9 +573,9 @@ Output in your response (not via Bash) inside a fenced code block:
 STOP. Parse `continue_action` from the `phase-finalize` output above
 to determine how to advance.
 
-1. If `--auto` was passed to this skill invocation → continue=auto.
-   If `--manual` was passed → continue=manual.
-   Otherwise, use `continue_action` from the `phase-finalize` output.
+1. Use `continue_action` from the `phase-finalize` output —
+   `phase-finalize` computes it from the state file's
+   `skills.flow-code.continue` config.
    If `continue_action` is `"invoke"` → continue=auto.
    If `continue_action` is `"ask"` → continue=manual.
 2. If continue=auto → invoke `flow:flow-review` directly using the Skill tool.

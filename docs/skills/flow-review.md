@@ -8,7 +8,7 @@ parent: Skills
 
 **Phase:** 3 — Review
 
-**Usage:** `/flow-review`, `/flow-review --auto`, or `/flow-review --manual`
+**Usage:** `/flow-review` or `/flow-review --continue-step`
 
 Six tenants assessed by four cognitively isolated agents (reviewer,
 pre-mortem, adversarial, documentation) launched in parallel. The parent

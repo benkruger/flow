@@ -4,7 +4,11 @@
 //! into a single process. Returns a JSON `path` indicator so the skill can
 //! branch on the result instead of making 10 separate tool calls.
 //!
-//! Usage: bin/flow complete-fast [--branch <name>] [--auto] [--manual]
+//! Usage: bin/flow complete-fast [--branch <name>]
+//!
+//! The autonomy mode (`auto` / `manual`) is resolved from the state
+//! file's `skills.flow-complete` block via `resolve_skill_mode` —
+//! there are no `--auto` / `--manual` flags.
 //!
 //! Output (JSON to stdout):
 //!   Merged:       {"status": "ok", "path": "merged", ...}
@@ -51,12 +55,6 @@ pub struct Args {
     /// Override branch for state file lookup
     #[arg(long)]
     pub branch: Option<String>,
-    /// Force auto mode
-    #[arg(long)]
-    pub auto: bool,
-    /// Force manual mode
-    #[arg(long)]
-    pub manual: bool,
 }
 
 /// Read and parse a state file, returning (state_value, state_path).
@@ -173,15 +171,12 @@ fn ci_decider(root: &Path, cwd: &Path, branch: &str, tree_changed: bool) -> (boo
 
 /// Handle the freshness-check + squash-merge + mode-branch dispatch.
 ///
-/// `state` is the parsed state file: the merge-approval gate
-/// re-resolves the configured `flow-complete` mode from it (the
-/// authoritative source) before the freshness check, so a `--auto`
-/// flag that forced `mode == "auto"` cannot override a `manual` state
-/// config and merge unconfirmed.
+/// `mode` is the state-resolved `flow-complete` continue-mode:
+/// `manual` returns the `confirm` path for the skill to prompt the
+/// user; `auto` proceeds to the freshness check and squash-merge.
 #[allow(clippy::too_many_arguments)]
 fn freshness_and_merge(
     branch: &str,
-    state: &Value,
     state_path: &Path,
     mode: &str,
     pr_number: Option<i64>,
@@ -204,33 +199,6 @@ fn freshness_and_merge(
             "warnings": warnings,
             "ci_skipped": ci_skipped,
         });
-    }
-
-    // --- Merge-approval gate (belt-and-suspenders) ---
-    // The state config is the authority, not the flag-derived `mode`.
-    // A `--auto` flag can force `mode == "auto"` and reach this point
-    // even when the project configured `flow-complete: manual`;
-    // re-resolving from `state` catches that case. The marker is
-    // consumed here — before the freshness check — so every merge
-    // attempt consumes it, and a freshness outcome that loops back
-    // without merging (`ci_stale`, `conflict`) cannot leave a stale
-    // marker behind. The `merge_not_confirmed` envelope carries a
-    // `path` field so the skill's `path`-keyed Step 1 dispatch can
-    // branch on it.
-    if crate::resolve_skill_mode::resolve(state, "flow-complete") == "manual" {
-        let approved = state_path
-            .parent()
-            .map(crate::merge_approval::check_and_consume_approval)
-            .unwrap_or(false);
-        if !approved {
-            return json!({
-                "status": "error",
-                "reason": "merge_not_confirmed",
-                "path": "merge_not_confirmed",
-                "message": "flow-complete is configured manual; the squash-merge requires a confirmation marker written by `bin/flow confirm-merge` after the user confirms.",
-                "branch": branch,
-            });
-        }
     }
 
     // --- Freshness check + squash merge (auto mode) ---
@@ -325,9 +293,8 @@ fn freshness_and_merge(
             }),
         },
         "up_to_date" => {
-            // The merge-approval gate already ran before the freshness
-            // check, so a manual-configured flow reaching here is
-            // confirmed.
+            // Reaching here means mode == "auto" (manual returned the
+            // `confirm` path above), so the squash-merge proceeds.
             let pr_str = pr_number.unwrap_or(0).to_string();
             match crate::complete_merge::cmd_failure_message(run_cmd_with_timeout(
                 &["gh", "pr", "merge", &pr_str, "--squash"],
@@ -443,7 +410,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         }
     };
 
-    let mode = resolve_mode(args.auto, args.manual, Some(&state));
+    let mode = resolve_mode(Some(&state));
     let warnings = check_learn_phase(&state);
     let pr_number = state.get("pr_number").and_then(|v| v.as_i64());
     let pr_url = state
@@ -610,7 +577,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 
     Ok(freshness_and_merge(
         &branch,
-        &state,
         &state_path,
         &mode,
         pr_number,

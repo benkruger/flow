@@ -349,7 +349,7 @@ fn staging_lifecycle_complete_preflight_targets_staging() {
     let new_path = format!("{}:{}", stubs.display(), path);
 
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["complete-preflight", "--branch", BRANCH, "--auto"])
+        .args(["complete-preflight", "--branch", BRANCH])
         .current_dir(&repo)
         .env("PATH", new_path)
         .env("FLOW_BIN_PATH", &flow_stub)

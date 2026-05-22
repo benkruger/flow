@@ -5,7 +5,7 @@ nav_order: 6
 
 # Phase 5: Complete
 
-**Command:** `/flow-complete` or `/flow-complete --auto`
+**Command:** `/flow-complete`
 
 The final phase. Merges the PR into the integration branch (the
 `base_branch` captured at flow-start — `main` for standard repos,
@@ -13,9 +13,11 @@ The final phase. Merges the PR into the integration branch (the
 worktree, and deletes the state file and log file. This is what fully
 closes out a feature and resets the environment for the next one.
 
-By default, prompts for confirmation before the irreversible merge.
-Use `--auto` to skip confirmation and proceed directly to merge and cleanup.
-Best-effort on cleanup steps — warns if the state file is missing or
+The autonomy mode is resolved from the state file's `skills.flow-complete`
+config — the single source of truth for skill autonomy. In manual mode
+(the default) it prompts for confirmation before the irreversible merge;
+in auto mode it skips confirmation and proceeds directly to merge and
+cleanup. Best-effort on cleanup steps — warns if the state file is missing or
 Phase 5 is incomplete.
 
 ---
@@ -71,7 +73,7 @@ In manual mode (the default), explicit confirmation is required
 before the irreversible squash merge. Any warnings from the preflight
 are included in the confirmation message. On approval,
 `bin/flow confirm-merge` writes a single-use merge-approval marker
-that the merge step requires. Skipped when `--auto` is passed.
+that the merge step requires. Skipped in auto mode.
 
 ### 5. Merge PR
 
@@ -169,8 +171,8 @@ The skill is safe to re-invoke (e.g., via `/loop 15s /flow:flow-complete`):
 | Scenario | Behavior |
 |---|---|
 | State file exists, Learn (Phase 4) complete | Normal merge and cleanup — no warnings |
-| State file exists, Learn (Phase 4) incomplete | Warns, proceeds (confirms if `--manual`) |
-| State file missing | Warns, infers from git, proceeds (confirms if `--manual`) |
+| State file exists, Learn (Phase 4) incomplete | Warns, proceeds (confirms in manual mode) |
+| State file missing | Warns, infers from git, proceeds (confirms in manual mode) |
 | PR not open or merged | Hard block, does not proceed |
 
 Every operation inside `complete-finalize` (Step 6) is best-effort — if
@@ -184,7 +186,7 @@ one fails, continue to the next.
 - Learn (Phase 4) complete is a warning, not a hard block
 - Missing state file is a warning, not a hard block
 - CI must pass before merge
-- Confirmation in manual mode (the default); skipped when `--auto` is passed
+- Confirmation in manual mode (the default); skipped in auto mode
 - Mode is resolved from the state file on every skill entry, including
   `--continue-step` re-entries — neither the banner skip nor the SOFT-GATE
   skip bypasses it, so a resumed run cannot lose the configured mode

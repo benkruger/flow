@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use common::flow_states_dir;
-use flow_rs::phase_enter::resolve_mode;
 use serde_json::{json, Value};
 
 // --- Test helpers ---
@@ -192,8 +191,10 @@ fn test_code_phase_happy_path() {
     assert_eq!(data["feature"], "Test Feature");
     assert_eq!(data["slack_thread_ts"], "1234567890.123456");
     assert_eq!(data["plan_file"], ".flow-states/test-plan.md");
-    assert_eq!(data["mode"]["commit"], "manual");
-    assert_eq!(data["mode"]["continue"], "manual");
+    assert!(
+        data.get("mode").is_none(),
+        "phase-enter response must not carry a mode field"
+    );
 
     // State should be updated — phase entered
     let state_path = flow_states_dir(&repo).join(branch).join("state.json");
@@ -357,88 +358,6 @@ fn test_gate_failure_no_state_file() {
 }
 
 #[test]
-fn test_mode_resolution_from_state() {
-    let dir = tempfile::tempdir().unwrap();
-    let branch = "mode-state";
-    let repo = create_git_repo(dir.path(), branch);
-    let skills = json!({
-        "flow-code": {
-            "commit": "auto",
-            "continue": "auto"
-        }
-    });
-    create_state(&repo, branch, "flow-start", "complete", Some(skills));
-
-    let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
-    let data = parse_output(&output);
-    assert_eq!(data["status"], "ok");
-    assert_eq!(data["mode"]["commit"], "auto");
-    assert_eq!(data["mode"]["continue"], "auto");
-}
-
-#[test]
-fn test_mode_defaults_review() {
-    let dir = tempfile::tempdir().unwrap();
-    let branch = "mode-cr";
-    let repo = create_git_repo(dir.path(), branch);
-    // No skills config → defaults
-    create_state(&repo, branch, "flow-code", "complete", Some(json!({})));
-
-    let output = run_phase_enter(
-        &repo,
-        &[
-            "--phase",
-            "flow-review",
-            "--branch",
-            branch,
-            "--steps-total",
-            "4",
-        ],
-    );
-    let data = parse_output(&output);
-    assert_eq!(data["status"], "ok");
-    assert_eq!(
-        data["mode"]["commit"], "manual",
-        "Review should default to commit=manual"
-    );
-    assert_eq!(
-        data["mode"]["continue"], "manual",
-        "Review should default to continue=manual"
-    );
-}
-
-#[test]
-fn test_mode_defaults_learn() {
-    let dir = tempfile::tempdir().unwrap();
-    let branch = "mode-learn";
-    let repo = create_git_repo(dir.path(), branch);
-    // No skills config → defaults
-    create_state(&repo, branch, "flow-review", "complete", Some(json!({})));
-
-    let output = run_phase_enter(
-        &repo,
-        &[
-            "--phase",
-            "flow-learn",
-            "--branch",
-            branch,
-            "--steps-total",
-            "7",
-        ],
-    );
-    let data = parse_output(&output);
-    assert_eq!(data["status"], "ok");
-    assert_eq!(
-        data["mode"]["commit"], "auto",
-        "Learn should default to commit=auto"
-    );
-    assert_eq!(
-        data["mode"]["continue"], "auto",
-        "Learn should default to continue=auto"
-    );
-}
-
-#[test]
 fn test_step_counter_field_names() {
     // Verify the field name derivation for all 3 applicable phases
     let dir = tempfile::tempdir().unwrap();
@@ -540,24 +459,6 @@ fn test_corrupt_json_state_file_returns_error() {
 }
 
 #[test]
-fn test_mode_string_config_via_subprocess() {
-    // Exercises resolve_mode's `cfg.is_string()` branch through
-    // the subprocess path (run → run_impl → resolve_mode).
-    let dir = tempfile::tempdir().unwrap();
-    let branch = "mode-string";
-    let repo = create_git_repo(dir.path(), branch);
-    let skills = json!({"flow-code": "auto"});
-    create_state(&repo, branch, "flow-start", "complete", Some(skills));
-
-    let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
-    assert_eq!(output.status.code(), Some(0));
-    let data = parse_output(&output);
-    assert_eq!(data["status"], "ok");
-    assert_eq!(data["mode"]["commit"], "auto");
-    assert_eq!(data["mode"]["continue"], "auto");
-}
-
-#[test]
 fn test_mutate_state_failure_returns_error() {
     // Make the state file read-only after creation so mutate_state
     // fails when trying to write back. Exercises run_impl's
@@ -650,86 +551,6 @@ fn test_reenter_complete_phase_returns_gate_error() {
 // `run_impl` (the prefix values surface as state-file field names
 // written by phase-enter); `gate_check` is exercised through the
 // subprocess tests above that spawn `bin/flow phase-enter`.
-
-// --- resolve_mode (migrated from inline) ---
-
-#[test]
-fn resolve_mode_object_config() {
-    let state = json!({
-        "skills": {
-            "flow-code": {"commit": "auto", "continue": "manual"}
-        }
-    });
-    let (commit, cont) = resolve_mode(&state, "flow-code");
-    assert_eq!(commit, "auto");
-    assert_eq!(cont, "manual");
-}
-
-#[test]
-fn resolve_mode_string_config() {
-    let state = json!({"skills": {"flow-code": "auto"}});
-    let (commit, cont) = resolve_mode(&state, "flow-code");
-    assert_eq!(commit, "auto");
-    assert_eq!(cont, "auto");
-}
-
-#[test]
-fn resolve_mode_empty_string_falls_to_defaults() {
-    let state = json!({"skills": {"flow-code": ""}});
-    let (commit, cont) = resolve_mode(&state, "flow-code");
-    assert_eq!(commit, "manual");
-    assert_eq!(cont, "manual");
-}
-
-#[test]
-fn resolve_mode_no_skills_key() {
-    let state = json!({"branch": "test"});
-    let (commit, cont) = resolve_mode(&state, "flow-code");
-    assert_eq!(commit, "manual");
-    assert_eq!(cont, "manual");
-}
-
-#[test]
-fn resolve_mode_flow_learn_defaults() {
-    let state = json!({"skills": {}});
-    let (commit, cont) = resolve_mode(&state, "flow-learn");
-    assert_eq!(commit, "auto");
-    assert_eq!(cont, "auto");
-}
-
-#[test]
-fn resolve_mode_unexpected_type() {
-    let state = json!({"skills": {"flow-code": 42}});
-    let (commit, cont) = resolve_mode(&state, "flow-code");
-    assert_eq!(commit, "manual");
-    assert_eq!(cont, "manual");
-}
-
-#[test]
-fn resolve_mode_phase_not_in_skills() {
-    let state = json!({"skills": {"flow-start": {"continue": "auto"}}});
-    let (commit, cont) = resolve_mode(&state, "flow-code");
-    assert_eq!(commit, "manual");
-    assert_eq!(cont, "manual");
-}
-
-#[test]
-fn resolve_mode_object_config_partial_keys() {
-    let state = json!({"skills": {"flow-code": {"commit": "auto"}}});
-    let (commit, cont) = resolve_mode(&state, "flow-code");
-    assert_eq!(commit, "auto");
-    assert_eq!(cont, "manual");
-}
-
-#[test]
-fn resolve_mode_flow_learn_object_override() {
-    let state = json!({
-        "skills": {"flow-learn": {"commit": "manual", "continue": "manual"}}
-    });
-    let (commit, cont) = resolve_mode(&state, "flow-learn");
-    assert_eq!(commit, "manual");
-    assert_eq!(cont, "manual");
-}
 
 /// Covers the `Err(_) => return Err(...)` branch of `resolve_branch` in
 /// `resolve_state`. Spawning `phase-enter` from a non-git directory

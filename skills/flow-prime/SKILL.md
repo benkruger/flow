@@ -100,7 +100,7 @@ FLOW has two independent axes for skills that support them:
 - **Commit** — controls per-task review in phase skills (auto = skip review prompts, manual = require explicit approval before each commit).
 - **Continue** — whether to auto-advance to the next phase or prompt first.
 
-Phase skills that commit (code, review, learning) have both axes. Phase skills that don't commit (start) only have continue. Utility skills (complete, abort) have a single mode value.
+Phase skills that commit (code, review, learning) have both axes. Phase skills that don't commit (start) only have continue. Utility skills (complete, abort) have only the continue axis. Every skill's config is an object — `{"commit": ..., "continue": ...}` for the committing phases, `{"continue": ...}` for start, complete, and abort.
 
 Ask the user how much autonomy FLOW should have using AskUserQuestion:
 
@@ -114,19 +114,19 @@ Ask the user how much autonomy FLOW should have using AskUserQuestion:
 **Fully autonomous** — all auto:
 
 ```json
-{"flow-start": {"continue": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-complete": "auto", "flow-abort": "auto"}
+{"flow-start": {"continue": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-complete": {"continue": "auto"}, "flow-abort": {"continue": "auto"}}
 ```
 
 **Fully manual** — all manual:
 
 ```json
-{"flow-start": {"continue": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-review": {"commit": "manual", "continue": "manual"}, "flow-learn": {"commit": "manual", "continue": "manual"}, "flow-complete": "manual", "flow-abort": "manual"}
+{"flow-start": {"continue": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-review": {"commit": "manual", "continue": "manual"}, "flow-learn": {"commit": "manual", "continue": "manual"}, "flow-complete": {"continue": "manual"}, "flow-abort": {"continue": "manual"}}
 ```
 
 **Recommended** — safe defaults:
 
 ```json
-{"flow-start": {"continue": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-complete": "manual", "flow-abort": "manual"}
+{"flow-start": {"continue": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-complete": {"continue": "manual"}, "flow-abort": {"continue": "manual"}}
 ```
 
 **Customize** — ask per skill, in this order: code, review, learn, complete, abort.
@@ -183,12 +183,17 @@ Second question:
 > - **Auto (Recommended)** — "Auto-advance to next phase"
 > - **Manual** — "Prompt before advancing"
 
-For **complete** and **abort** (single mode), ask one AskUserQuestion each:
+For **complete** and **abort** (continue axis only), ask one
+AskUserQuestion each:
 
-> "Mode for /flow:flow-<skill>?"
+> "Continue mode for /flow:flow-<skill>?"
 >
 > - **Manual (Recommended)** — "Require confirmation prompt"
 > - **Auto** — "Skip confirmation prompt"
+
+Store each answer as `{"continue": "<mode>"}` — the same object shape
+the presets use — so `flow-complete` and `flow-abort` carry a
+`continue` axis in `skills_dict`.
 
 Store the result as `skills_dict` for Step 4.
 

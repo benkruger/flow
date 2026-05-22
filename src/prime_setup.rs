@@ -364,12 +364,43 @@ pub fn merge_settings_with(existing: Value, flow_allow: &[&str], flow_deny: &[&s
     settings
 }
 
+/// Normalize a `skills` config object to block (object) shape before
+/// it is written to `.flow.json`. Each bare-string entry (`"auto"`)
+/// becomes a `{"continue": "<string>"}` object; entries already in
+/// object shape pass through unchanged. A `skills` value that is not
+/// an object at all (a malformed `--skills-json` payload) is returned
+/// as-is. `resolve-skill-mode` reads only the block shape, so this
+/// keeps `.flow.json` in the single shape the resolver parses.
+fn normalize_skills_to_block_shape(skills: &Value) -> Value {
+    match skills.as_object() {
+        Some(obj) => {
+            let normalized: serde_json::Map<String, Value> = obj
+                .iter()
+                .map(|(k, v)| {
+                    let entry = match v.as_str() {
+                        Some(s) => json!({ "continue": s }),
+                        None => v.clone(),
+                    };
+                    (k.clone(), entry)
+                })
+                .collect();
+            Value::Object(normalized)
+        }
+        None => skills.clone(),
+    }
+}
+
 /// Write `.flow.json` with the plugin version and optional fields.
 ///
 /// `.flow.json` is the per-project FLOW marker file. It is gitignored
 /// and rewritten on every prime/upgrade. Consumers ignore unknown
 /// fields, so older `.flow.json` files with extra keys continue to
 /// parse cleanly during an in-place upgrade.
+///
+/// The `skills` value is normalized to block shape via
+/// [`normalize_skills_to_block_shape`] before it is written, so
+/// `.flow.json` always carries the `{commit, continue}` object shape
+/// that `resolve-skill-mode` parses.
 #[allow(clippy::too_many_arguments)]
 pub fn write_version_marker(
     project_root: &Path,
@@ -400,7 +431,7 @@ pub fn write_version_marker(
         data["plugin_root"] = json!(p);
     }
     if let Some(s) = skills {
-        data["skills"] = s.clone();
+        data["skills"] = normalize_skills_to_block_shape(s);
     }
     let flow_json = project_root.join(".flow.json");
     // `data` is constructed from `json!` literals and already-parsed

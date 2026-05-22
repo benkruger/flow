@@ -8,13 +8,14 @@ parent: Skills
 
 **Phase:** 5 — Complete
 
-**Usage:** `/flow-complete`, `/flow-complete --auto`, `/flow-complete --manual`, or `/flow-complete --continue-step`
+**Usage:** `/flow-complete` or `/flow-complete --continue-step`
 
 The final phase. Merges the PR into the integration branch (`base_branch`),
-removes the git worktree, and deletes the state file. Mode is configurable
-via `.flow.json`
-(default: manual, prompts for confirmation before the irreversible
-merge). Use `--auto` to skip confirmation and merge directly. The `--continue-step`
+removes the git worktree, and deletes the state file. Mode is resolved
+from the state file's `skills.flow-complete` config — the single source
+of truth for skill autonomy (default: manual, prompts for confirmation
+before the irreversible merge; auto skips confirmation and merges
+directly). There are no `--auto`/`--manual` flags. The `--continue-step`
 flag is used for self-invocation after mid-phase commits (merge
 conflict resolution or CI fix) — it skips the Announce banner and the
 SOFT-GATE's warning recording, but mode resolution still runs first on
@@ -83,8 +84,8 @@ file and exits cleanly.
 | Scenario | Behavior |
 |---|---|
 | State file exists, Learn (Phase 4) complete | Normal merge and cleanup — no warnings |
-| State file exists, Learn (Phase 4) incomplete | Warns, proceeds (confirms if `--manual`) |
-| State file missing | Warns, infers from git state, proceeds (confirms if `--manual`) |
+| State file exists, Learn (Phase 4) incomplete | Warns, proceeds (confirms in manual mode) |
+| State file missing | Warns, infers from git state, proceeds (confirms in manual mode) |
 | PR closed but not merged | Hard block, does not proceed |
 
 Every operation inside `complete-finalize` (Step 6) is best-effort. If
@@ -99,7 +100,7 @@ state file doesn't exist, it notes that and finishes.
 - CI must pass before merge
 - Learn (Phase 4) complete is a warning, not a hard block
 - Missing state file is a warning, not a hard block
-- Confirmation only when mode is manual (via `--manual` or `.flow.json`)
+- Confirmation only when mode is manual (via `.flow.json`)
 - Manual-mode merge requires a single-use confirmation marker — both merge
   surfaces resolve the mode and structurally refuse the squash-merge
   without it, so a lost mode flag cannot merge unconfirmed

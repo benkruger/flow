@@ -379,6 +379,182 @@ fn test_phase_config_no_auto_skills() {
     }
 }
 
+// --- resolve-skill-mode bare-string branch ---
+//
+// `resolve_skill_mode::resolve` parses ONLY the block-shape
+// `skills.<skill>` config object (`{commit, continue}`). The prior
+// `entry.as_str()` branch that treated a bare-string `skills.<skill>`
+// entry as a mode value is removed — every non-object entry now
+// clamps to the per-skill default. This tombstone catches a merge
+// conflict or accidental edit that re-introduces bare-string parsing
+// inside `resolve()`.
+
+/// Tombstone: removed in PR #1691. The bare-string-parsing arm of
+/// `resolve_skill_mode::resolve` — `entry.as_str()` treating a
+/// `skills.<skill>` bare string as a mode value — is deleted. The
+/// resolver reads only the block-shape `{commit, continue}` object.
+///
+/// Assertion kind: structural. The forbidden construct (consuming
+/// the `skills.<skill>` entry as a bare string) can be expressed
+/// many ways, so a byte-substring scan over the whole file is
+/// insufficient — a `concat!` / `format!`-reassembled literal would
+/// evade it, and prose elsewhere in the file legitimately mentions
+/// `as_str`. The scan is therefore bounded to the body of
+/// `resolve()` via `extract_fn_body` (brace-balanced from the
+/// signature marker `pub fn resolve(`) and asserts the body contains
+/// no `as_str(` call. The new `resolve()` delegates per-axis string
+/// extraction to the separate `resolve_axis` helper — which sits
+/// before `resolve` in the file and is outside the bounded slice —
+/// so `resolve()`'s own body carries no `as_str(`. Re-introducing
+/// `entry.as_str()` inside `resolve()` re-adds the call and trips
+/// this test.
+#[test]
+fn test_resolve_skill_mode_no_bare_string_branch() {
+    let root = common::repo_root();
+    let path = root.join("src").join("resolve_skill_mode.rs");
+    let content = fs::read_to_string(&path).expect("src/resolve_skill_mode.rs must exist");
+    const MARKER: &str = "pub fn resolve(";
+    let sig_start = content
+        .find(MARKER)
+        .expect("`pub fn resolve(` must exist in src/resolve_skill_mode.rs");
+    let body = extract_fn_body(&content, sig_start + MARKER.len())
+        .expect("resolve() body must be brace-balanced");
+    assert!(
+        !body.contains("as_str("),
+        "src/resolve_skill_mode.rs::resolve must not contain `as_str(` — \
+         the bare-string `skills.<skill>` parsing arm is removed; the \
+         resolver reads only the block-shape `{{commit, continue}}` \
+         object. Per-axis string extraction lives in the separate \
+         `resolve_axis` helper."
+    );
+}
+
+// --- complete-fast / complete-preflight mode-flag removal ---
+//
+// `--auto` and `--manual` clap arguments are removed from both
+// `complete-fast` and `complete-preflight`. The Complete-phase
+// autonomy mode is resolved purely from the state file's
+// `skills.flow-complete` block via `resolve_skill_mode`. These
+// tombstones catch a merge conflict or accidental edit that
+// re-introduces either clap field.
+
+/// Tombstone: removed in PR #1691. The `pub auto: bool` and
+/// `pub manual: bool` clap fields are removed from
+/// `src/complete_preflight.rs::Args`. The Complete-phase mode is
+/// resolved from the state file's `skills.flow-complete` block, not
+/// from CLI flags. Must not return.
+///
+/// Stability argument: the protected targets are Rust struct field
+/// declarations (`pub auto: bool`, `pub manual: bool`). A field
+/// declaration is Rust syntax — it cannot be assembled by `concat!`
+/// or produced by `format!` (those macros yield string values, not
+/// `struct` members), and it cannot be a named `constant` reference
+/// (a field is a declaration, not a value). rustfmt pins the single
+/// space in `pub auto: bool`, so the byte literal is canonical. A
+/// merge conflict can only resurrect the exact bytes, which this
+/// scan catches.
+#[test]
+fn test_complete_preflight_no_auto_manual_args() {
+    let root = common::repo_root();
+    let content = fs::read_to_string(root.join("src").join("complete_preflight.rs"))
+        .expect("src/complete_preflight.rs must exist");
+    assert!(
+        !content.contains("pub auto: bool"),
+        "src/complete_preflight.rs must not contain `pub auto: bool` — \
+         the `--auto` clap field is removed; mode is resolved from the \
+         state file's `skills.flow-complete` block."
+    );
+    assert!(
+        !content.contains("pub manual: bool"),
+        "src/complete_preflight.rs must not contain `pub manual: bool` — \
+         the `--manual` clap field is removed; mode is resolved from the \
+         state file's `skills.flow-complete` block."
+    );
+}
+
+/// Tombstone: removed in PR #1691. The `pub auto: bool` and
+/// `pub manual: bool` clap fields are removed from
+/// `src/complete_fast.rs::Args`. The Complete-phase mode is resolved
+/// from the state file's `skills.flow-complete` block, not from CLI
+/// flags. Must not return.
+///
+/// Stability argument: the protected targets are Rust struct field
+/// declarations (`pub auto: bool`, `pub manual: bool`). A field
+/// declaration is Rust syntax — it cannot be assembled by `concat!`
+/// or produced by `format!` (those macros yield string values, not
+/// `struct` members), and it cannot be a named `constant` reference
+/// (a field is a declaration, not a value). rustfmt pins the single
+/// space in `pub auto: bool`, so the byte literal is canonical. A
+/// merge conflict can only resurrect the exact bytes, which this
+/// scan catches.
+#[test]
+fn test_complete_fast_no_auto_manual_args() {
+    let root = common::repo_root();
+    let content = fs::read_to_string(root.join("src").join("complete_fast.rs"))
+        .expect("src/complete_fast.rs must exist");
+    assert!(
+        !content.contains("pub auto: bool"),
+        "src/complete_fast.rs must not contain `pub auto: bool` — \
+         the `--auto` clap field is removed; mode is resolved from the \
+         state file's `skills.flow-complete` block."
+    );
+    assert!(
+        !content.contains("pub manual: bool"),
+        "src/complete_fast.rs must not contain `pub manual: bool` — \
+         the `--manual` clap field is removed; mode is resolved from the \
+         state file's `skills.flow-complete` block."
+    );
+}
+
+// --- phase-enter resolve_mode removal ---
+//
+// `phase_enter::resolve_mode` read the autonomy mode from the state
+// file's skills block and embedded a `mode` object in the
+// phase-enter response. The single tested source of truth for skill
+// autonomy is now `resolve_skill_mode`, which every skill's
+// `## Mode Resolution` section calls directly — so phase-enter no
+// longer resolves or returns a mode. The pub fn and its `run_impl`
+// callsite are deleted. This tombstone catches a merge conflict or
+// accidental edit that re-introduces the function in
+// `src/phase_enter.rs`.
+
+/// Tombstone: removed in PR #1691. The `pub fn resolve_mode` in
+/// `src/phase_enter.rs` — which read `skills.<phase>` and embedded a
+/// `mode` object in the phase-enter response — is deleted. Skill
+/// autonomy is resolved exclusively through `resolve_skill_mode`.
+/// Must not return.
+///
+/// Asserts `src/phase_enter.rs` does NOT contain the identifier
+/// `resolve_mode`. The byte-substring shape holds because:
+///   1. `concat!` reassembly: a Rust function name cannot be
+///      assembled by `concat!` — re-introducing the function
+///      requires the literal `fn resolve_mode` in source.
+///   2. `format!` reassembly: function declarations and direct
+///      calls are not produced by `format!` interpolation.
+///   3. Named constant reference: a `const` aliasing the string
+///      would still place the literal `resolve_mode` in source, and
+///      the declaration / call site trips the byte check regardless.
+///   4. Method chains / split args: not applicable — the target is
+///      a function identifier, not a CLI argument passed via
+///      `.arg()`.
+///
+/// Scoped to `src/phase_enter.rs` only — a distinct `resolve_mode`
+/// (signature `fn resolve_mode(state: Option<&Value>) -> String`)
+/// legitimately survives in `src/complete_preflight.rs`, so a
+/// codebase-wide scan would false-positive.
+#[test]
+fn test_phase_enter_no_resolve_mode() {
+    let root = common::repo_root();
+    let content = fs::read_to_string(root.join("src").join("phase_enter.rs"))
+        .expect("src/phase_enter.rs must exist");
+    assert!(
+        !content.contains("resolve_mode"),
+        "src/phase_enter.rs must not contain `resolve_mode` — the \
+         function and its run_impl callsite were deleted; skill \
+         autonomy is resolved exclusively through `resolve_skill_mode`."
+    );
+}
+
 // --- flow-plan parent-issue closure ---
 //
 // The decomposed-child issue supersedes the vanilla parent's

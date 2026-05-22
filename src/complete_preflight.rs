@@ -4,7 +4,7 @@
 //! `merge_main`, and `run_cmd_with_timeout` — reused by `complete-fast`
 //! and available as a standalone subcommand for backward compatibility.
 //!
-//! Usage: bin/flow complete-preflight [--branch <name>] [--auto] [--manual]
+//! Usage: bin/flow complete-preflight [--branch <name>]
 //!
 //! Output (JSON to stdout):
 //!   Success:  {"status": "ok", "mode": "auto", "pr_state": "OPEN", "merge": "clean", "warnings": []}
@@ -67,12 +67,6 @@ pub struct Args {
     /// Override branch for state file lookup
     #[arg(long)]
     pub branch: Option<String>,
-    /// Force auto mode
-    #[arg(long)]
-    pub auto: bool,
-    /// Force manual mode
-    #[arg(long)]
-    pub manual: bool,
 }
 
 /// Run a subprocess command with a timeout. `args[0]` is the program.
@@ -138,24 +132,16 @@ pub fn run_cmd_with_timeout(args: &[&str], timeout_secs: u64) -> CmdResult {
     Ok((code, stdout, stderr))
 }
 
-/// Resolve mode from flags and state file.
+/// Resolve the `flow-complete` continue-mode from the state file.
 ///
-/// Priority: `--auto` > `--manual` > the state file's
-/// `skills.flow-complete` entry > the conservative fallback. The
-/// state-file read delegates to [`crate::resolve_skill_mode::resolve`],
-/// which tolerates every config shape, normalizes the value, and
-/// clamps it to `{auto, manual}`. When no state file was found, the
-/// same `FALLBACK_MODE` ("manual") applies — the safe default the
-/// terminal skills use before the irreversible Complete merge.
-pub fn resolve_mode(auto: bool, manual: bool, state: Option<&Value>) -> String {
-    if auto {
-        return "auto".to_string();
-    }
-    if manual {
-        return "manual".to_string();
-    }
+/// Delegates to [`crate::resolve_skill_mode::resolve`]'s `continue`
+/// axis for `flow-complete` — which tolerates every config shape,
+/// normalizes the value, and clamps it to `{auto, manual}`. When no
+/// state file was found, `FALLBACK_MODE` ("manual") applies — the
+/// conservative default before the irreversible Complete merge.
+pub fn resolve_mode(state: Option<&Value>) -> String {
     match state {
-        Some(st) => crate::resolve_skill_mode::resolve(st, "flow-complete"),
+        Some(st) => crate::resolve_skill_mode::resolve(st, "flow-complete").1,
         None => crate::resolve_skill_mode::FALLBACK_MODE.to_string(),
     }
 }
@@ -314,7 +300,7 @@ fn phase_transition_enter(branch: &str) -> Result<Value, String> {
         .map_err(|_| format!("Invalid JSON from phase-transition: {}", stdout))
 }
 
-fn preflight(branch: Option<&str>, auto: bool, manual: bool, root: &Path) -> Value {
+fn preflight(branch: Option<&str>, root: &Path) -> Value {
     // Resolve branch
     let branch = match branch {
         Some(b) if !b.is_empty() => b.to_string(),
@@ -365,7 +351,7 @@ fn preflight(branch: Option<&str>, auto: bool, manual: bool, root: &Path) -> Val
         inferred = true;
     }
 
-    let mode = resolve_mode(auto, manual, state.as_ref());
+    let mode = resolve_mode(state.as_ref());
 
     let warnings = match state.as_ref() {
         Some(s) => check_learn_phase(s),
@@ -505,7 +491,7 @@ pub fn run_impl_main(args: &Args) -> (serde_json::Value, i32) {
         Some(b) => Some(b.to_string()),
         None => current_branch(),
     };
-    let result = preflight(resolved_branch.as_deref(), args.auto, args.manual, &root);
+    let result = preflight(resolved_branch.as_deref(), &root);
     let code = if result["status"] == "ok" { 0 } else { 1 };
     (result, code)
 }

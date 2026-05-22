@@ -9,16 +9,10 @@ description: "Phase 5: Complete — merge the PR, remove the worktree, and delet
 
 ```text
 /flow:flow-complete
-/flow:flow-complete --auto
-/flow:flow-complete --manual
 /flow:flow-complete --continue-step
-/flow:flow-complete --continue-step --auto
-/flow:flow-complete --continue-step --manual
 ```
 
-- `/flow:flow-complete` — uses configured mode from the state file (default: manual)
-- `/flow:flow-complete --auto` — skips confirmation and proceeds directly
-- `/flow:flow-complete --manual` — prompts for user confirmation before merge
+- `/flow:flow-complete` — uses the configured mode from the state file's `skills.flow-complete` config
 - `/flow:flow-complete --continue-step` — self-invocation: skip Announce and SOFT-GATE, dispatch to the next step via Resume Check
 
 ## Concurrency
@@ -40,18 +34,20 @@ file rather than depending on a flag threaded through the
 self-invocation, so the configured `skills.flow-complete` mode stays
 authoritative across the whole Complete phase.
 
+There are no `--auto`/`--manual` flags — the state file's
+`skills.flow-complete` config is the single source of truth for
+skill autonomy.
+
 1. Resolve the current branch: run `git worktree list --porcelain`,
    note the project root (the path on the first `worktree` line),
    find the `worktree` entry whose path matches the current working
    directory, and take the `branch refs/heads/<name>` line from that
    entry (strip the `refs/heads/` prefix). Call this `<branch>`.
-2. If `--auto` was passed on **this** invocation → mode is **auto**.
-3. If `--manual` was passed on **this** invocation → mode is **manual**.
-4. Otherwise, run the resolver below and use the `mode` field from
-   its JSON output. It reads the `skills.flow-complete` entry in the
-   state file, tolerating every config shape (bare string, object
-   with `continue`, missing/null/wrong-type entry), and falls back
-   to **manual** when the config is missing or unparseable:
+2. Run the resolver below and use the `continue` field from its JSON
+   output as the Complete-phase mode. It reads the
+   `skills.flow-complete` entry in the state file, tolerating every
+   object config shape, and falls back to **manual** when the config
+   is missing or unparseable:
 
    ```bash
    ${CLAUDE_PLUGIN_ROOT}/bin/flow resolve-skill-mode --skill flow-complete --branch <branch>
@@ -153,28 +149,19 @@ detection, PR status check, merge main, local CI dirty check (without
 simulate-branch), GitHub CI check, and squash merge — all in a single
 call.
 
-Pass the mode flag resolved from Mode Resolution. Each variant below
-runs `complete-fast`, which dispatches to `ci::run_impl()` on a
-sentinel miss — each invocation needs a 10-minute Bash tool timeout
-so CI's 3–4 minute duration does not trip the default 2-minute Bash
-tool timeout and background the process, defeating the gate (per
-`.claude/rules/ci-is-a-gate.md`).
+`complete-fast` resolves the autonomy mode itself from the state
+file's `skills.flow-complete` config — the same source Mode
+Resolution reads — so it takes no mode flag. It dispatches to
+`ci::run_impl()` on a sentinel miss, so the invocation needs a
+10-minute Bash tool timeout so CI's 3–4 minute duration does not
+trip the default 2-minute Bash tool timeout and background the
+process, defeating the gate (per `.claude/rules/ci-is-a-gate.md`).
 
-**Auto mode.** Use a 10-minute Bash tool timeout (`timeout: 600000`).
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow complete-fast --branch <branch> --auto
-```
-
-**Manual mode.** Use a 10-minute Bash tool timeout (`timeout: 600000`).
+Use a 10-minute Bash tool timeout (`timeout: 600000`).
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow complete-fast --branch <branch> --manual
+${CLAUDE_PLUGIN_ROOT}/bin/flow complete-fast --branch <branch>
 ```
-
-Use the first form when mode is **auto**, the second when **manual**.
-Mode Resolution always resolves a definitive flag, so one of the two
-forms always applies.
 
 Parse the JSON output and dispatch on the `path` field:
 
@@ -194,8 +181,8 @@ tree changed. Set the resume step and self-invoke to run CI:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=2
 ```
 
-Set the continuation context. The self-invocation drops the
-`--auto`/`--manual` flag — Mode Resolution re-resolves the mode from
+Set the continuation context. The self-invocation carries no mode
+flag — Mode Resolution re-resolves the mode from
 the state file on the resumed entry:
 
 ```bash
@@ -295,8 +282,8 @@ step and the continuation flag:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=1
 ```
 
-Set the continuation context. The self-invocation drops the
-`--auto`/`--manual` flag — Mode Resolution re-resolves the mode from
+Set the continuation context. The self-invocation carries no mode
+flag — Mode Resolution re-resolves the mode from
 the state file on the resumed entry:
 
 ```bash
@@ -328,8 +315,8 @@ If fixed, set the resume step, continuation flags, and commit:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=2
 ```
 
-Set the continuation context. The self-invocation drops the
-`--auto`/`--manual` flag — Mode Resolution re-resolves the mode from
+Set the continuation context. The self-invocation carries no mode
+flag — Mode Resolution re-resolves the mode from
 the state file on the resumed entry:
 
 ```bash
@@ -368,8 +355,8 @@ Then invoke the `loop` skill via the Skill tool with args `15s /flow:flow-comple
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=2
 ```
 
-Set the continuation context. The self-invocation drops the
-`--auto`/`--manual` flag — Mode Resolution re-resolves the mode from
+Set the continuation context. The self-invocation carries no mode
+flag — Mode Resolution re-resolves the mode from
 the state file on the resumed entry:
 
 ```bash
@@ -390,21 +377,6 @@ the Skill tool as your final action. Do not output anything else after this invo
 > "High contention: main has moved 3 times since the CI gate. Another
 > engineer is merging frequently. Wait for a quieter window and
 > re-invoke `/flow:flow-complete`."
-
-**If `"path": "merge_not_confirmed"`** — `complete-fast` was invoked
-with an `--auto` flag against a project configured
-`flow-complete: manual`. The merge-approval gate re-resolved the mode
-from the state file (the authority) and refused the unconfirmed
-squash-merge. Route to Step 4 so the user explicitly confirms — a
-fresh confirmation writes the marker the merge requires:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
-```
-
-To confirm with the user, invoke `flow:flow-complete --continue-step`
-using the Skill tool as your final action. Do not output anything
-else after this invocation.
 
 **If `"status": "error"`** — stop and report the error to the user.
 Do not retry the command with any additional flags or elevated privileges.
@@ -438,8 +410,8 @@ self-invoke to re-check:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=2
 ```
 
-Set the continuation context. The self-invocation drops the
-`--auto`/`--manual` flag — Mode Resolution re-resolves the mode from
+Set the continuation context. The self-invocation carries no mode
+flag — Mode Resolution re-resolves the mode from
 the state file on the resumed entry:
 
 ```bash
@@ -495,8 +467,8 @@ committing:
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=2
 ```
 
-Set the continuation context. The self-invocation drops the
-`--auto`/`--manual` flag — Mode Resolution re-resolves the mode from
+Set the continuation context. The self-invocation carries no mode
+flag — Mode Resolution re-resolves the mode from
 the state file on the resumed entry:
 
 ```bash
@@ -665,8 +637,8 @@ conflicted files.
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=2
 ```
 
-Set the continuation context. The self-invocation drops the
-`--auto`/`--manual` flag — Mode Resolution re-resolves the mode from
+Set the continuation context. The self-invocation carries no mode
+flag — Mode Resolution re-resolves the mode from
 the state file on the resumed entry:
 
 ```bash

@@ -9,16 +9,10 @@ description: "Phase 3: Review — six tenants assessed by four cognitively isola
 
 ```text
 /flow:flow-review
-/flow:flow-review --auto
-/flow:flow-review --manual
 /flow:flow-review --continue-step
-/flow:flow-review --continue-step --auto
-/flow:flow-review --continue-step --manual
 ```
 
-- `/flow:flow-review` — uses configured mode from the state file (default: manual)
-- `/flow:flow-review --auto` — auto-fix and auto-commit all findings, auto-advance to Learn
-- `/flow:flow-review --manual` — requires explicit approval of changes and routing decisions
+- `/flow:flow-review` — uses the configured mode from the state file's `skills.flow-review` config
 - `/flow:flow-review --continue-step` — self-invocation: skip Announce and Update State, dispatch to the next step via Resume Check
 
 <HARD-GATE>
@@ -34,7 +28,8 @@ Parse the JSON output. If `"status": "error"`, STOP and show the error.
 If `"status": "ok"`, capture the returned fields:
 `project_root`, `branch`, `worktree_path`, `worktree_cwd`,
 `relative_cwd`, `pr_number`, `pr_url`, `feature`, `slack_thread_ts`,
-`plan_file`, and `mode` (commit + continue).
+and `plan_file`. The autonomy mode is resolved separately in the
+Mode Resolution section below via `resolve-skill-mode`.
 
 </HARD-GATE>
 
@@ -103,16 +98,37 @@ shared state must be idempotent.
 
 ## Mode Resolution
 
-1. If `--auto` was passed → commit=auto, continue=auto
-2. If `--manual` was passed → commit=manual, continue=manual
-3. Otherwise, use `mode.commit` and `mode.continue` from the `phase-enter` response.
-4. If `phase-enter` was skipped (self-invocation), use the mode from the flag that was passed.
+Resolve `commit` and `continue` on every entry — fresh invocation and
+`--continue-step` self-invocation alike — from the state file's
+`skills.flow-review` config via `resolve-skill-mode`. The state file
+is the single source of truth for skill autonomy; there are no
+`--auto`/`--manual` flags.
+
+Resolve the current branch first: run `git worktree list --porcelain`,
+note the project root (the path on the first `worktree` line), find
+the `worktree` entry whose path matches the current working directory,
+and take the `branch refs/heads/<name>` line from that entry (strip
+the `refs/heads/` prefix). Call this `<branch>`. Then run the resolver:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow resolve-skill-mode --skill flow-review --branch <branch>
+```
+
+Parse the JSON output. `commit` and `continue` are each `"auto"` or
+`"manual"`:
+
+- `commit=auto` — auto-fix and auto-commit all findings.
+- `commit=manual` — require explicit approval of changes and routing
+  decisions.
+- `continue=auto` — auto-advance to Learn when Review completes.
+- `continue=manual` — prompt before advancing to Learn.
 
 ## Self-Invocation Check
 
 If `--continue-step` was passed, this is a self-invocation from a
 previous step. Skip the Announce banner and the `phase-enter` call
-(do not enter the phase again). Proceed directly to the Resume Check
+(do not enter the phase again). Run `## Mode Resolution` above (it
+runs on every entry), then proceed directly to the Resume Check
 section.
 
 ## Announce
@@ -342,8 +358,8 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set review_step=1
 ```
 
 To continue to Step 2, invoke `flow:flow-review --continue-step`
-using the Skill tool as your final action. If commit=auto was resolved,
-pass `--auto` as well. Do not output anything else after this invocation.
+using the Skill tool as your final action. Do not output anything
+else after this invocation.
 
 ---
 
@@ -642,8 +658,8 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set review_step=2
 ```
 
 To continue to Step 3, invoke `flow:flow-review --continue-step`
-using the Skill tool as your final action. If commit=auto was resolved,
-pass `--auto` as well. Do not output anything else after this invocation.
+using the Skill tool as your final action. Do not output anything
+else after this invocation.
 
 ---
 
@@ -756,8 +772,8 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set review_step=3
 ```
 
 To continue to Step 4, invoke `flow:flow-review --continue-step`
-using the Skill tool as your final action. If commit=auto was resolved,
-pass `--auto` as well. Do not output anything else after this invocation.
+using the Skill tool as your final action. Do not output anything
+else after this invocation.
 
 ---
 
@@ -827,16 +843,12 @@ If commit=manual, use AskUserQuestion:
 
 ### Commit
 
-Set the continuation context and flag before committing.
-
-If commit=auto, use the first form. If commit=manual, use the second:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set review_step=4, then self-invoke flow:flow-review --continue-step --auto."
-```
+Set the continuation context and flag before committing. The
+self-invocation carries no mode flag — the resumed run re-resolves
+`commit`/`continue` from the state file via `## Mode Resolution`:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set review_step=4, then self-invoke flow:flow-review --continue-step --manual."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set review_step=4, then self-invoke flow:flow-review --continue-step."
 ```
 
 ```bash
@@ -852,8 +864,8 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set review_step=4
 ```
 
 To continue to Done, invoke `flow:flow-review --continue-step` using
-the Skill tool as your final action. If commit=auto was resolved, pass
-`--auto` as well. Do not output anything else after this invocation.
+the Skill tool as your final action. Do not output anything else
+after this invocation.
 
 ---
 
@@ -978,9 +990,9 @@ Output in your response (not via Bash) inside a fenced code block:
 STOP. Parse `continue_action` from the `phase-finalize` output above
 to determine how to advance.
 
-1. If `--auto` was passed to this skill invocation → continue=auto.
-   If `--manual` was passed → continue=manual.
-   Otherwise, use `continue_action` from the `phase-finalize` output.
+1. Use `continue_action` from the `phase-finalize` output —
+   `phase-finalize` computes it from the state file's
+   `skills.flow-review.continue` config.
    If `continue_action` is `"invoke"` → continue=auto.
    If `continue_action` is `"ask"` → continue=manual.
 2. If continue=auto → invoke `flow:flow-learn` directly using the Skill tool.

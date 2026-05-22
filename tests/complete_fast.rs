@@ -83,7 +83,7 @@ fn complete_fast_errors_when_default_branch_resolve_fails() {
         ("FAKE_PR_STATE", "OPEN"),
         ("FAKE_PR_CHECKS_OUT", "all-passing\tpass"),
     ];
-    let output = run_complete_fast(&repo, Some(BRANCH), Some("--auto"), &flow_bin, &stubs, &env);
+    let output = run_complete_fast(&repo, Some(BRANCH), &flow_bin, &stubs, &env);
     let stdout = String::from_utf8_lossy(&output.stdout);
     // Find the JSON line — last line that starts with `{`.
     let last_json_line = stdout
@@ -246,7 +246,6 @@ esac
 fn run_complete_fast(
     cwd: &Path,
     branch_arg: Option<&str>,
-    mode_flag: Option<&str>,
     flow_bin_path: &Path,
     stubs: &Path,
     env: &[(&str, &str)],
@@ -257,9 +256,6 @@ fn run_complete_fast(
     cmd.arg("complete-fast");
     if let Some(b) = branch_arg {
         cmd.arg("--branch").arg(b);
-    }
-    if let Some(flag) = mode_flag {
-        cmd.arg(flag);
     }
     cmd.current_dir(cwd)
         .env("PATH", new_path)
@@ -325,7 +321,7 @@ fn no_state_file_exits_1_with_error() {
     write_flow_stub(&flow_bin);
     let stubs = build_path_stubs(&parent);
 
-    let output = run_complete_fast(&repo, Some(BRANCH), Some("--auto"), &flow_bin, &stubs, &[]);
+    let output = run_complete_fast(&repo, Some(BRANCH), &flow_bin, &stubs, &[]);
     assert_eq!(output.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
@@ -345,14 +341,7 @@ fn slash_branch_exits_1_structured_error() {
     write_flow_stub(&flow_bin);
     let stubs = build_path_stubs(&parent);
 
-    let output = run_complete_fast(
-        &repo,
-        Some("feature/foo"),
-        Some("--auto"),
-        &flow_bin,
-        &stubs,
-        &[],
-    );
+    let output = run_complete_fast(&repo, Some("feature/foo"), &flow_bin, &stubs, &[]);
     assert_eq!(output.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
@@ -372,7 +361,7 @@ fn no_branch_argument_no_git_repo_errors() {
     write_flow_stub(&flow_bin);
     let stubs = build_path_stubs(&parent);
 
-    let output = run_complete_fast(&parent, None, None, &flow_bin, &stubs, &[]);
+    let output = run_complete_fast(&parent, None, &flow_bin, &stubs, &[]);
     assert_eq!(output.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
@@ -391,7 +380,7 @@ fn corrupt_state_returns_error() {
     write_flow_stub(&flow_bin);
     let stubs = build_path_stubs(&parent);
 
-    let output = run_complete_fast(&repo, Some(BRANCH), Some("--auto"), &flow_bin, &stubs, &[]);
+    let output = run_complete_fast(&repo, Some(BRANCH), &flow_bin, &stubs, &[]);
     assert_eq!(output.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
@@ -414,7 +403,7 @@ fn non_object_state_returns_corrupt_error() {
     write_flow_stub(&flow_bin);
     let stubs = build_path_stubs(&parent);
 
-    let output = run_complete_fast(&repo, Some(BRANCH), Some("--auto"), &flow_bin, &stubs, &[]);
+    let output = run_complete_fast(&repo, Some(BRANCH), &flow_bin, &stubs, &[]);
     assert_eq!(output.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
@@ -428,14 +417,7 @@ fn non_object_state_returns_corrupt_error() {
 #[test]
 fn learn_gate_pending_returns_error() {
     let fx = setup("pending", "auto");
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        Some("--auto"),
-        &fx.flow_bin,
-        &fx.stubs,
-        &[],
-    );
+    let output = run_complete_fast(&fx.repo, Some(BRANCH), &fx.flow_bin, &fx.stubs, &[]);
     // status="error" in JSON but exit code is 1 because run_impl returns Ok(error_value).
     assert_eq!(output.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -451,7 +433,6 @@ fn pr_status_runner_err_returns_error() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_VIEW_EXIT", "1")],
@@ -467,7 +448,6 @@ fn pr_state_merged_returns_already_merged_path() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_STATE", "MERGED")],
@@ -496,7 +476,6 @@ fn complete_fast_writes_phase_scoped_window_at_enter_for_flow_complete() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_STATE", "MERGED")],
@@ -536,7 +515,6 @@ fn pr_state_closed_returns_error() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_STATE", "CLOSED")],
@@ -557,7 +535,6 @@ fn merge_main_conflict_returns_conflict_path() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[
@@ -586,7 +563,6 @@ fn merge_main_error_returns_error() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_FETCH_EXIT", "1")],
@@ -603,7 +579,6 @@ fn tree_changed_returns_ci_stale() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[
@@ -623,14 +598,7 @@ fn ci_sentinel_hit_proceeds_with_ci_skipped() {
     let fx = setup("complete", "auto");
     seed_ci_sentinel(&fx.repo, BRANCH);
     // sentinel matches, merge_main="clean" (merge-base exit 0), up_to_date → merged success.
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        Some("--auto"),
-        &fx.flow_bin,
-        &fx.stubs,
-        &[],
-    );
+    let output = run_complete_fast(&fx.repo, Some(BRANCH), &fx.flow_bin, &fx.stubs, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
     assert_eq!(json["status"], "ok");
@@ -643,14 +611,7 @@ fn ci_sentinel_miss_runs_ci_and_fails() {
     // No sentinel → CI runs via ci::run_impl → bin/test (or bin/format etc)
     // are missing → ci::run_impl returns error → ci_failed path.
     let fx = setup("complete", "auto");
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        Some("--auto"),
-        &fx.flow_bin,
-        &fx.stubs,
-        &[],
-    );
+    let output = run_complete_fast(&fx.repo, Some(BRANCH), &fx.flow_bin, &fx.stubs, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
     assert_eq!(json["status"], "ok");
@@ -677,7 +638,6 @@ fn gh_ci_checks_fail_returns_ci_failed_github() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_CHECKS_OUT", "build\tfail\n")],
@@ -702,7 +662,6 @@ fn ci_drift_path_returns_when_local_sentinel_matches_and_remote_fails() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_CHECKS_OUT", "build\tfail\n")],
@@ -721,7 +680,6 @@ fn gh_ci_checks_pending_returns_ci_pending() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_CHECKS_OUT", "build\tpending\n")],
@@ -738,7 +696,6 @@ fn gh_ci_checks_pass_proceeds_to_merge() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_CHECKS_OUT", "build\tpass\nlint\tpass\n")],
@@ -765,7 +722,6 @@ fn gh_ci_checks_fail_trumps_pending() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_CHECKS_OUT", "build\tpending\nlint\tfail\n")],
@@ -784,7 +740,6 @@ fn gh_ci_checks_none_empty_output_proceeds() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_CHECKS_OUT", "")],
@@ -803,7 +758,6 @@ fn gh_ci_checks_line_without_tab_treated_as_none() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_CHECKS_OUT", "no-tab-line\n")],
@@ -817,14 +771,7 @@ fn gh_ci_checks_line_without_tab_treated_as_none() {
 fn mode_manual_returns_confirm() {
     let fx = setup("complete", "manual");
     seed_ci_sentinel(&fx.repo, BRANCH);
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        Some("--manual"),
-        &fx.flow_bin,
-        &fx.stubs,
-        &[],
-    );
+    let output = run_complete_fast(&fx.repo, Some(BRANCH), &fx.flow_bin, &fx.stubs, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
     assert_eq!(json["path"], "confirm");
@@ -838,7 +785,6 @@ fn freshness_status_max_retries_returns_max_retries_path() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_FRESHNESS_OUT", r#"{"status":"max_retries"}"#)],
@@ -855,7 +801,6 @@ fn freshness_status_error_with_message_returns_error() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[(
@@ -879,7 +824,6 @@ fn freshness_status_error_without_message_uses_fallback() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_FRESHNESS_OUT", r#"{"status":"error"}"#)],
@@ -900,7 +844,6 @@ fn freshness_status_conflict_returns_conflict_path() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[(
@@ -920,7 +863,6 @@ fn freshness_status_conflict_no_files_defaults_to_empty() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_FRESHNESS_OUT", r#"{"status":"conflict"}"#)],
@@ -938,7 +880,6 @@ fn freshness_status_merged_push_ok_returns_ci_stale() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[
@@ -962,7 +903,6 @@ fn freshness_status_merged_push_nonzero_returns_error() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[
@@ -984,94 +924,10 @@ fn freshness_status_merged_push_nonzero_returns_error() {
 fn freshness_status_up_to_date_merge_ok_returns_merged() {
     let fx = setup("complete", "auto");
     seed_ci_sentinel(&fx.repo, BRANCH);
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        Some("--auto"),
-        &fx.flow_bin,
-        &fx.stubs,
-        &[],
-    );
+    let output = run_complete_fast(&fx.repo, Some(BRANCH), &fx.flow_bin, &fx.stubs, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
     assert_eq!(json["path"], "merged");
-}
-
-#[test]
-fn up_to_date_manual_config_with_auto_flag_blocked_without_marker() {
-    // The state config is `manual`, but a `--auto` flag forces auto
-    // mode so freshness_and_merge reaches the up_to_date arm. The
-    // merge-approval gate re-resolves from the state config (the
-    // authority) and refuses the merge with no confirmation marker.
-    let fx = setup("complete", "manual");
-    seed_ci_sentinel(&fx.repo, BRANCH);
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        Some("--auto"),
-        &fx.flow_bin,
-        &fx.stubs,
-        &[],
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json = last_json_line(&stdout);
-    assert_eq!(json["status"], "error");
-    assert_eq!(json["reason"], "merge_not_confirmed");
-    // The envelope carries a `path` field so the skill's `path`-keyed
-    // Step 1 dispatch can branch on the refusal.
-    assert_eq!(json["path"], "merge_not_confirmed");
-}
-
-#[test]
-fn up_to_date_manual_config_with_auto_flag_proceeds_with_marker() {
-    // Same `manual` config + `--auto` flag, but a valid merge-approval
-    // marker is present: the gate consumes it and the merge proceeds.
-    let fx = setup("complete", "manual");
-    seed_ci_sentinel(&fx.repo, BRANCH);
-    let branch_dir = fx.repo.join(".flow-states").join(BRANCH);
-    flow_rs::merge_approval::write_approval(&branch_dir, BRANCH).unwrap();
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        Some("--auto"),
-        &fx.flow_bin,
-        &fx.stubs,
-        &[],
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json = last_json_line(&stdout);
-    assert_eq!(json["path"], "merged");
-}
-
-/// Regression: the merge-approval gate runs before the freshness
-/// check, so the marker is consumed on every merge attempt — a
-/// `merged` freshness outcome returns `ci_stale` (loop-back) without
-/// reaching the squash-merge, but the marker must still be consumed.
-/// Guards a regression where the gate is moved back into the
-/// `up_to_date` arm, leaving the marker live across a non-`up_to_date`
-/// freshness outcome.
-#[test]
-fn manual_config_marker_consumed_when_freshness_returns_merged() {
-    let fx = setup("complete", "manual");
-    seed_ci_sentinel(&fx.repo, BRANCH);
-    let branch_dir = fx.repo.join(".flow-states").join(BRANCH);
-    flow_rs::merge_approval::write_approval(&branch_dir, BRANCH).unwrap();
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        Some("--auto"),
-        &fx.flow_bin,
-        &fx.stubs,
-        &[("FAKE_FRESHNESS_OUT", r#"{"status":"merged"}"#)],
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json = last_json_line(&stdout);
-    // Freshness `merged` → ci_stale, no squash-merge reached.
-    assert_eq!(json["path"], "ci_stale");
-    // The marker was consumed before the freshness check.
-    assert!(!flow_rs::merge_approval::check_and_consume_approval(
-        &branch_dir
-    ));
 }
 
 #[test]
@@ -1081,7 +937,6 @@ fn freshness_status_up_to_date_base_branch_policy_returns_ci_pending() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[
@@ -1104,7 +959,6 @@ fn freshness_status_up_to_date_merge_generic_failure_returns_error() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[
@@ -1128,7 +982,6 @@ fn freshness_invalid_json_returns_error() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_FRESHNESS_OUT", "not-json")],
@@ -1146,7 +999,6 @@ fn freshness_unexpected_status_returns_error() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_FRESHNESS_OUT", r#"{"status":"frobnicate"}"#)],
@@ -1186,7 +1038,7 @@ fn no_pr_number_skips_gh_check_and_proceeds() {
     let stubs = build_path_stubs(&parent);
     seed_ci_sentinel(&repo, BRANCH);
 
-    let output = run_complete_fast(&repo, Some(BRANCH), Some("--auto"), &flow_bin, &stubs, &[]);
+    let output = run_complete_fast(&repo, Some(BRANCH), &flow_bin, &stubs, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
     // No pr_number → gh pr merge gets pr "0" which will fail with the stub exit=0 → merged
@@ -1208,7 +1060,7 @@ fn state_path_is_directory_returns_read_error() {
     write_flow_stub(&flow_bin);
     let stubs = build_path_stubs(&parent);
 
-    let output = run_complete_fast(&repo, Some(BRANCH), Some("--auto"), &flow_bin, &stubs, &[]);
+    let output = run_complete_fast(&repo, Some(BRANCH), &flow_bin, &stubs, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
     assert_eq!(json["status"], "error");
@@ -1232,14 +1084,7 @@ fn ci_decider_sentinel_miss_ci_passes_proceeds() {
         fs::write(&p, "#!/bin/sh\nexit 0\n").unwrap();
         fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
     }
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        Some("--auto"),
-        &fx.flow_bin,
-        &fx.stubs,
-        &[],
-    );
+    let output = run_complete_fast(&fx.repo, Some(BRANCH), &fx.flow_bin, &fx.stubs, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
     assert_eq!(json["status"], "ok");
@@ -1254,14 +1099,7 @@ fn freshness_spawn_err_returns_error() {
     let fx = setup("complete", "auto");
     seed_ci_sentinel(&fx.repo, BRANCH);
     let nonexistent = fx.repo.join("does-not-exist").join("flow");
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        Some("--auto"),
-        &nonexistent,
-        &fx.stubs,
-        &[],
-    );
+    let output = run_complete_fast(&fx.repo, Some(BRANCH), &nonexistent, &fx.stubs, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
     assert_eq!(json["status"], "error");
@@ -1283,7 +1121,6 @@ fn gh_ci_checks_unknown_status_proceeds() {
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_CHECKS_OUT", "check\tunknown\n")],
@@ -1308,14 +1145,7 @@ fn complete_fast_passes_ci_reason() {
         fs::write(&p, "#!/bin/sh\nexit 0\n").unwrap();
         fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
     }
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        Some("--auto"),
-        &fx.flow_bin,
-        &fx.stubs,
-        &[],
-    );
+    let output = run_complete_fast(&fx.repo, Some(BRANCH), &fx.flow_bin, &fx.stubs, &[]);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("CI: verifying tree is clean before Complete merge\n"),

@@ -8,7 +8,7 @@ parent: Skills
 
 **Phase:** 2 — Code
 
-**Usage:** `/flow-code`, `/flow-code --auto`, `/flow-code --manual`, or `/flow-code --continue-step`
+**Usage:** `/flow-code` or `/flow-code --continue-step`
 
 Executes the approved plan one task at a time. Each task goes through
 a full TDD cycle, user diff review, `bin/flow ci` gate, and commit before

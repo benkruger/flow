@@ -80,7 +80,6 @@ esac
         .arg("complete-preflight")
         .arg("--branch")
         .arg(BRANCH)
-        .arg("--auto")
         .current_dir(&repo)
         .env("PATH", path)
         .env("FLOW_BIN_PATH", &flow_bin)
@@ -208,7 +207,6 @@ esac
 fn run_preflight(
     cwd: &Path,
     branch_arg: Option<&str>,
-    mode_flag: Option<&str>,
     flow_bin_path: &Path,
     stubs: &Path,
     env: &[(&str, &str)],
@@ -219,9 +217,6 @@ fn run_preflight(
     cmd.arg("complete-preflight");
     if let Some(b) = branch_arg {
         cmd.arg("--branch").arg(b);
-    }
-    if let Some(flag) = mode_flag {
-        cmd.arg(flag);
     }
     cmd.current_dir(cwd)
         .env("PATH", new_path)
@@ -268,31 +263,24 @@ fn setup(learn_status: &str) -> Fixture {
 // --- Library-level tests for pure helpers ---
 
 #[test]
-fn resolve_mode_auto_flag_wins() {
-    assert_eq!(resolve_mode(true, false, None), "auto");
-}
-
-#[test]
-fn resolve_mode_manual_flag_wins() {
-    assert_eq!(resolve_mode(false, true, None), "manual");
-}
-
-#[test]
-fn resolve_mode_skill_string_used() {
-    let state = json!({"skills": {"flow-complete": "manual"}});
-    assert_eq!(resolve_mode(false, false, Some(&state)), "manual");
-}
-
-#[test]
 fn resolve_mode_skill_object_continue_used() {
-    let state = json!({"skills": {"flow-complete": {"continue": "manual"}}});
-    assert_eq!(resolve_mode(false, false, Some(&state)), "manual");
+    let state = json!({"skills": {"flow-complete": {"continue": "auto"}}});
+    assert_eq!(resolve_mode(Some(&state)), "auto");
+}
+
+#[test]
+fn resolve_mode_bare_string_not_used_falls_back_manual() {
+    // The block-shape-only resolver does not parse a bare-string
+    // `skills.flow-complete` entry — even `"auto"` clamps to the
+    // conservative `manual` fallback.
+    let state = json!({"skills": {"flow-complete": "auto"}});
+    assert_eq!(resolve_mode(Some(&state)), "manual");
 }
 
 #[test]
 fn resolve_mode_skill_object_missing_continue_falls_back_manual() {
     let state = json!({"skills": {"flow-complete": {"other": "x"}}});
-    assert_eq!(resolve_mode(false, false, Some(&state)), "manual");
+    assert_eq!(resolve_mode(Some(&state)), "manual");
 }
 
 #[test]
@@ -300,24 +288,24 @@ fn resolve_mode_skill_config_number_falls_back_manual() {
     // skill_config is neither string nor object — resolve_skill_mode
     // extracts an empty raw value, which clamps to the fallback.
     let state = json!({"skills": {"flow-complete": 42}});
-    assert_eq!(resolve_mode(false, false, Some(&state)), "manual");
+    assert_eq!(resolve_mode(Some(&state)), "manual");
 }
 
 #[test]
 fn resolve_mode_skill_config_array_falls_back_manual() {
     let state = json!({"skills": {"flow-complete": ["x"]}});
-    assert_eq!(resolve_mode(false, false, Some(&state)), "manual");
+    assert_eq!(resolve_mode(Some(&state)), "manual");
 }
 
 #[test]
 fn resolve_mode_no_skill_config_falls_back_manual() {
     let state = json!({});
-    assert_eq!(resolve_mode(false, false, Some(&state)), "manual");
+    assert_eq!(resolve_mode(Some(&state)), "manual");
 }
 
 #[test]
 fn resolve_mode_no_state_falls_back_manual() {
-    assert_eq!(resolve_mode(false, false, None), "manual");
+    assert_eq!(resolve_mode(None), "manual");
 }
 
 #[test]
@@ -398,14 +386,7 @@ fn slash_branch_returns_structured_error() {
     write_flow_stub(&flow_bin);
     let stubs = build_path_stubs(&parent);
 
-    let output = run_preflight(
-        &repo,
-        Some("feature/foo"),
-        Some("--auto"),
-        &flow_bin,
-        &stubs,
-        &[],
-    );
+    let output = run_preflight(&repo, Some("feature/foo"), &flow_bin, &stubs, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
     assert_eq!(json["status"], "error");
@@ -423,7 +404,7 @@ fn no_branch_and_no_git_returns_error() {
     write_flow_stub(&flow_bin);
     let stubs = build_path_stubs(&parent);
 
-    let output = run_preflight(&parent, None, None, &flow_bin, &stubs, &[]);
+    let output = run_preflight(&parent, None, &flow_bin, &stubs, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
     assert_eq!(json["status"], "error");
@@ -441,7 +422,6 @@ fn no_state_file_inferred_proceeds() {
     let output = run_preflight(
         &repo,
         Some(BRANCH),
-        Some("--auto"),
         &flow_bin,
         &stubs,
         &[("FAKE_PR_STATE", "MERGED")],
@@ -465,7 +445,7 @@ fn corrupt_state_file_returns_error() {
     write_flow_stub(&flow_bin);
     let stubs = build_path_stubs(&parent);
 
-    let output = run_preflight(&repo, Some(BRANCH), Some("--auto"), &flow_bin, &stubs, &[]);
+    let output = run_preflight(&repo, Some(BRANCH), &flow_bin, &stubs, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
     assert_eq!(json["status"], "error");
@@ -487,7 +467,7 @@ fn state_path_is_directory_returns_read_error() {
     write_flow_stub(&flow_bin);
     let stubs = build_path_stubs(&parent);
 
-    let output = run_preflight(&repo, Some(BRANCH), Some("--auto"), &flow_bin, &stubs, &[]);
+    let output = run_preflight(&repo, Some(BRANCH), &flow_bin, &stubs, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
     assert_eq!(json["status"], "error");
@@ -503,7 +483,6 @@ fn phase_transition_error_returns_error() {
     let output = run_preflight(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PT_EXIT", "1"), ("FAKE_PT_STDERR", "phase fail")],
@@ -523,7 +502,6 @@ fn phase_transition_invalid_json_returns_error() {
     let output = run_preflight(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PT_OUT", "not-json")],
@@ -543,7 +521,6 @@ fn pr_status_check_error_returns_error() {
     let output = run_preflight(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[
@@ -566,7 +543,6 @@ fn pr_status_check_error_empty_stderr_uses_fallback() {
     let output = run_preflight(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_VIEW_EXIT", "1")],
@@ -586,7 +562,6 @@ fn pr_state_merged_returns_ok_with_merged() {
     let output = run_preflight(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_STATE", "MERGED")],
@@ -603,7 +578,6 @@ fn pr_state_closed_returns_error() {
     let output = run_preflight(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_STATE", "CLOSED")],
@@ -620,7 +594,6 @@ fn pr_state_open_clean_merge_returns_ok() {
     let output = run_preflight(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_STATE", "OPEN")],
@@ -637,7 +610,6 @@ fn pr_state_open_merged_returns_ok() {
     let output = run_preflight(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[
@@ -659,7 +631,6 @@ fn pr_state_open_merge_conflict_returns_conflict() {
     let output = run_preflight(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[
@@ -687,7 +658,6 @@ fn pr_state_open_fetch_fail_returns_error() {
     let output = run_preflight(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[
@@ -708,7 +678,6 @@ fn pr_state_open_merge_error_no_conflicts_returns_error() {
     let output = run_preflight(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[
@@ -733,7 +702,6 @@ fn pr_state_open_push_fails_returns_error() {
     let output = run_preflight(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[
@@ -760,7 +728,6 @@ fn pr_state_unexpected_returns_error() {
     let output = run_preflight(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_STATE", "DRAFT")],
@@ -780,7 +747,6 @@ fn warnings_populated_when_learn_pending() {
     let output = run_preflight(
         &fx.repo,
         Some(BRANCH),
-        Some("--auto"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_STATE", "MERGED")],
@@ -811,7 +777,6 @@ fn gh_missing_from_path_returns_error() {
         .arg("complete-preflight")
         .arg("--branch")
         .arg(BRANCH)
-        .arg("--auto")
         .current_dir(&repo)
         .env("PATH", stubs.to_str().unwrap())
         .env("FLOW_BIN_PATH", &flow_bin)
@@ -861,7 +826,6 @@ esac
         .arg("complete-preflight")
         .arg("--branch")
         .arg(BRANCH)
-        .arg("--auto")
         .current_dir(&repo)
         .env("PATH", stubs.to_str().unwrap())
         .env("FLOW_BIN_PATH", &flow_bin)
@@ -895,7 +859,6 @@ fn phase_transition_spawn_error_returns_error() {
         .arg("complete-preflight")
         .arg("--branch")
         .arg(BRANCH)
-        .arg("--auto")
         .current_dir(&repo)
         .env(
             "PATH",
@@ -946,13 +909,16 @@ fn merge_main_library_call_with_git_absent() {
     );
 }
 
+/// With no `skills.flow-complete` config in the state file,
+/// `complete-preflight` resolves the mode to the conservative
+/// `manual` default — proving the mode comes from the state file,
+/// not from any flag.
 #[test]
-fn manual_flag_resolves_manual_mode() {
+fn mode_defaults_to_manual_without_skills_config() {
     let fx = setup("complete");
     let output = run_preflight(
         &fx.repo,
         Some(BRANCH),
-        Some("--manual"),
         &fx.flow_bin,
         &fx.stubs,
         &[("FAKE_PR_STATE", "MERGED")],
@@ -1032,7 +998,6 @@ esac
         .arg("complete-preflight")
         .arg("--branch")
         .arg(BRANCH)
-        .arg("--auto")
         .current_dir(&repo)
         .env("PATH", path)
         .env("FLOW_BIN_PATH", &flow_bin)

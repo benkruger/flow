@@ -9,16 +9,10 @@ description: "Phase 4: Learn — audit rule compliance and identify process gaps
 
 ```text
 /flow:flow-learn
-/flow:flow-learn --auto
-/flow:flow-learn --manual
 /flow:flow-learn --continue-step
-/flow:flow-learn --continue-step --auto
-/flow:flow-learn --continue-step --manual
 ```
 
-- `/flow:flow-learn` — uses configured mode from the state file (default: auto)
-- `/flow:flow-learn --auto` — skip permission promotion prompts, auto-advance to Complete
-- `/flow:flow-learn --manual` — prompt for permission promotion and phase transition
+- `/flow:flow-learn` — uses the configured mode from the state file's `skills.flow-learn` config
 - `/flow:flow-learn --continue-step` — self-invocation: skip Announce and Update State, dispatch to the next step via Resume Check
 
 <HARD-GATE>
@@ -34,7 +28,8 @@ Parse the JSON output. If `"status": "error"`, STOP and show the error.
 If `"status": "ok"`, capture the returned fields:
 `project_root`, `branch`, `worktree_path`, `worktree_cwd`,
 `relative_cwd`, `pr_number`, `pr_url`, `feature`, `slack_thread_ts`,
-`plan_file`, and `mode` (commit + continue).
+and `plan_file`. The autonomy mode is resolved separately in the
+Mode Resolution section below via `resolve-skill-mode`.
 
 </HARD-GATE>
 
@@ -97,16 +92,37 @@ shared state must be idempotent.
 
 ## Mode Resolution
 
-1. If `--auto` was passed → commit=auto, continue=auto
-2. If `--manual` was passed → commit=manual, continue=manual
-3. Otherwise, use `mode.commit` and `mode.continue` from the `phase-enter` response.
-4. If `phase-enter` was skipped (self-invocation), use the mode from the flag that was passed.
+Resolve `commit` and `continue` on every entry — fresh invocation and
+`--continue-step` self-invocation alike — from the state file's
+`skills.flow-learn` config via `resolve-skill-mode`. The state file is
+the single source of truth for skill autonomy; there are no
+`--auto`/`--manual` flags.
+
+Resolve the current branch first: run `git worktree list --porcelain`,
+note the project root (the path on the first `worktree` line), find
+the `worktree` entry whose path matches the current working directory,
+and take the `branch refs/heads/<name>` line from that entry (strip
+the `refs/heads/` prefix). Call this `<branch>`. Then run the resolver:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow resolve-skill-mode --skill flow-learn --branch <branch>
+```
+
+Parse the JSON output. `commit` and `continue` are each `"auto"` or
+`"manual"`:
+
+- `commit=auto` — skip permission-promotion prompts and commit
+  automatically.
+- `commit=manual` — prompt for permission promotion before committing.
+- `continue=auto` — auto-advance to Complete when Learn completes.
+- `continue=manual` — prompt before advancing to Complete.
 
 ## Self-Invocation Check
 
 If `--continue-step` was passed, this is a self-invocation from a
 previous step. Skip the Announce banner and the `phase-enter` call
-(do not enter the phase again). Proceed directly to the Resume Check
+(do not enter the phase again). Run `## Mode Resolution` above (it
+runs on every entry), then proceed directly to the Resume Check
 section.
 
 ## Announce
@@ -645,23 +661,19 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=5
 ```
 
 Then invoke `flow:flow-learn --continue-step` using the Skill tool as
-your final action. If commit=auto was resolved, pass `--auto` as well.
+your final action.
 
 If any changes were made (CLAUDE.md or `.claude/` files), commit once.
 Only CLAUDE.md and `.claude/` files are committed — never application
 code. If `git add -A` results in nothing staged (stealth user with
 excluded files), skip the commit gracefully — do not error.
 
-Set the continuation context and flag before committing.
-
-If commit=auto, use the first form. If commit=manual, use the second:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set learn_step=5, then self-invoke flow:flow-learn --continue-step --auto."
-```
+Set the continuation context and flag before committing. The
+self-invocation carries no mode flag — the resumed run re-resolves
+`commit`/`continue` from the state file via `## Mode Resolution`:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set learn_step=5, then self-invoke flow:flow-learn --continue-step --manual."
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Set learn_step=5, then self-invoke flow:flow-learn --continue-step."
 ```
 
 ```bash
@@ -677,8 +689,8 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=5
 ```
 
 To continue to Step 6, invoke `flow:flow-learn --continue-step` using
-the Skill tool as your final action. If commit=auto was resolved, pass
-`--auto` as well. Do not output anything else after this invocation.
+the Skill tool as your final action. Do not output anything else
+after this invocation.
 
 ---
 
@@ -881,9 +893,9 @@ Output in your response (not via Bash) inside a fenced code block:
 STOP. Parse `continue_action` from the `phase-finalize` output above
 to determine how to advance.
 
-1. If `--auto` was passed to this skill invocation → continue=auto.
-   If `--manual` was passed → continue=manual.
-   Otherwise, use `continue_action` from the `phase-finalize` output.
+1. Use `continue_action` from the `phase-finalize` output —
+   `phase-finalize` computes it from the state file's
+   `skills.flow-learn.continue` config.
    If `continue_action` is `"invoke"` → continue=auto.
    If `continue_action` is `"ask"` → continue=manual.
 2. If continue=auto → invoke `flow:flow-complete` directly using the Skill tool.
