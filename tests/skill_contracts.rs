@@ -6718,24 +6718,38 @@ fn flow_plan_skill_invokes_plan_review_with_capped_loop() {
         "skills/flow-plan/SKILL.md Plan Review subsection must route the re-decompose retry through `decompose:decompose` — the plan must never be hand-patched"
     );
 
-    // Failure path: COMPLETE-FAILED banner
+    // The two cap-exhausted assertions below verify content inside
+    // the `#### Plan-Reviewer Loop` sub-subsection specifically.
+    // Bound the slice to that sub-subsection per
+    // `.claude/rules/testing-gotchas.md` "Subsection-Local
+    // Assertions in Contract Tests" — a section-wide slice would
+    // still pass if a future edit moved the advisory prose out of
+    // the cap-exhausted branch into, e.g., the `VERDICT: pass`
+    // description while gutting the branch.
+    let cap_branch = subsection
+        .split_once("#### Plan-Reviewer Loop")
+        .map(|(_, t)| t)
+        .expect("`#### Plan-Reviewer Loop` sub-subsection must exist inside `### Plan Review`");
+
+    // Cap-exhausted path files anyway. Regression guarded: a future
+    // edit re-introduces a non-filing halt on cap exhaustion. The
+    // plan-reviewer is advisory — it never blocks filing. The
+    // cap-exhausted branch must state the path proceeds to file
+    // (or edit) the issue with the last drafted plan.
     assert!(
-        subsection.contains("COMPLETE-FAILED"),
-        "skills/flow-plan/SKILL.md Plan Review subsection must name the COMPLETE-FAILED banner as the cap-exhausted failure surface"
+        cap_branch.contains("filed with the last drafted plan"),
+        "skills/flow-plan/SKILL.md `#### Plan-Reviewer Loop` cap-exhausted branch must state the path files the issue with the last drafted plan — the reviewer is advisory and never blocks filing"
     );
 
-    // Failure path: marker-clear
+    // Cap-exhausted path surfaces violations as a non-blocking
+    // advisory warning. Regression guarded: a future edit drops the
+    // violations on cap exhaustion, filing the issue with no signal
+    // about which rules the plan repeatedly violated. The
+    // cap-exhausted branch must render the final violations as a
+    // non-blocking advisory warning.
     assert!(
-        subsection.contains("clear-utility-in-progress"),
-        "skills/flow-plan/SKILL.md Plan Review subsection must clear the utility-in-progress marker on cap exhaustion so the Stop hook does not refuse the surfaced failure"
-    );
-
-    // Failure path: do NOT file (covers both modes — bare-prompt files
-    // new and issue-input edits in place; neither should occur on cap
-    // exhaustion). The "Do NOT file or edit" wording satisfies both.
-    assert!(
-        subsection.contains("do not file") || subsection.contains("do NOT file") || subsection.contains("Do not file") || subsection.contains("Do NOT file"),
-        "skills/flow-plan/SKILL.md Plan Review subsection must explicitly state that the issue is NOT filed on cap exhaustion"
+        cap_branch.contains("advisory warning"),
+        "skills/flow-plan/SKILL.md `#### Plan-Reviewer Loop` cap-exhausted branch must surface the final violations as a non-blocking advisory warning on cap exhaustion so the user sees which rules the plan repeatedly violated"
     );
 
     // Adjacency check: no `### ` heading sits between Transform + Draft
