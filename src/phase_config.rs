@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 use serde_json::Value;
 
 use crate::flow_paths::{FlowPaths, FlowStatesDir};
-use crate::state::{Phase, PhaseState, PhaseStatus, SkillConfig};
+use crate::state::{Phase, PhaseState, PhaseStatus};
 
 /// Phase configuration loaded from flow-phases.json.
 #[derive(Debug, Clone)]
@@ -70,33 +70,6 @@ pub fn phase_numbers() -> IndexMap<String, usize> {
         .enumerate()
         .map(|(i, k)| (k.to_string(), i + 1))
         .collect()
-}
-
-/// Build the AUTO_SKILLS default configuration.
-pub fn auto_skills() -> IndexMap<String, SkillConfig> {
-    let mut m = IndexMap::new();
-    let mut start = IndexMap::new();
-    start.insert("continue".into(), "auto".into());
-    m.insert("flow-start".into(), SkillConfig::Detailed(start));
-
-    let mut code = IndexMap::new();
-    code.insert("commit".into(), "auto".into());
-    code.insert("continue".into(), "auto".into());
-    m.insert("flow-code".into(), SkillConfig::Detailed(code));
-
-    let mut review = IndexMap::new();
-    review.insert("commit".into(), "auto".into());
-    review.insert("continue".into(), "auto".into());
-    m.insert("flow-review".into(), SkillConfig::Detailed(review));
-
-    let mut learn = IndexMap::new();
-    learn.insert("commit".into(), "auto".into());
-    learn.insert("continue".into(), "auto".into());
-    m.insert("flow-learn".into(), SkillConfig::Detailed(learn));
-
-    m.insert("flow-complete".into(), SkillConfig::Simple("auto".into()));
-    m.insert("flow-abort".into(), SkillConfig::Simple("auto".into()));
-    m
 }
 
 /// Load phase config from a JSON file, returning a PhaseConfig struct.

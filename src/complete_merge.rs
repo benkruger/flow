@@ -26,6 +26,21 @@ use crate::lock::mutate_state;
 use crate::utils::bin_flow_path;
 const MERGE_STEP: i64 = 5;
 
+/// Resolve the configured `flow-complete` autonomy mode from the
+/// state file. Fails closed to `manual` when the file is missing,
+/// unreadable, or non-JSON — a degraded state file must not silently
+/// disable the merge-confirmation gate
+/// (`.claude/rules/security-gates.md` "Fail Closed When State Is
+/// Unreliable"). A non-object JSON root is handled inside
+/// `resolve_skill_mode::resolve`, which also returns `manual` for it.
+fn merge_mode(state_file: &str) -> String {
+    std::fs::read_to_string(state_file)
+        .ok()
+        .and_then(|c| serde_json::from_str::<Value>(&c).ok())
+        .map(|v| crate::resolve_skill_mode::resolve(&v, "flow-complete"))
+        .unwrap_or_else(|| crate::resolve_skill_mode::FALLBACK_MODE.to_string())
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "complete-merge", about = "FLOW Complete phase merge")]
 pub struct Args {
@@ -74,6 +89,31 @@ fn complete_merge(pr_number: i64, state_file: &str) -> Value {
             }
             s["complete_step"] = json!(MERGE_STEP);
         });
+    }
+
+    // Merge-approval gate: a manual-configured flow-complete must not
+    // squash-merge without an explicit confirmation marker. The marker
+    // is consumed here — before the freshness check — so EVERY merge
+    // attempt consumes it: a freshness outcome that returns before the
+    // squash (`ci_rerun`, `conflict`, `error`) still consumes the
+    // marker, so a loop-back through Step 4 requires a fresh
+    // confirmation rather than reusing a stale one. The marker sits in
+    // the per-branch state directory alongside the state file;
+    // `state_file` has no parent only for a filesystem-root path,
+    // which folds into the no-marker (refuse) outcome.
+    if merge_mode(state_file) == "manual" {
+        let approved = state_path
+            .parent()
+            .map(crate::merge_approval::check_and_consume_approval)
+            .unwrap_or(false);
+        if !approved {
+            return json!({
+                "status": "error",
+                "reason": "merge_not_confirmed",
+                "message": "flow-complete is configured manual; the squash-merge requires a confirmation marker written by `bin/flow confirm-merge` after the user confirms.",
+                "pr_number": pr_number,
+            });
+        }
     }
 
     let freshness_result = run_cmd_with_timeout(
@@ -135,7 +175,9 @@ fn complete_merge(pr_number: i64, state_file: &str) -> Value {
             }
         }
         "up_to_date" => {
-            // Proceed to squash merge
+            // The merge-approval gate already ran before the freshness
+            // check, so a manual-configured flow reaching here is
+            // confirmed. Proceed to squash merge.
             let pr_str = pr_number.to_string();
             match cmd_failure_message(run_cmd_with_timeout(
                 &["gh", "pr", "merge", &pr_str, "--squash"],

@@ -19,7 +19,7 @@ State files live under `.flow-states/<branch>/` at the project root, one subdire
 .flow-states/user-profile-redesign/ci-passed
 ```
 
-Each feature has up to four files inside its subdirectory: the state file (`state.json`), the log file (`log`), a frozen copy of `flow-phases.json` (`phases.json`), and a CI sentinel (`ci-passed`). A feature may also hold a `shared-config-approvals/` subdirectory of single-use approval markers — see [Shared-Config Approval Markers](#shared-config-approval-markers). The CI sentinel caches the last passing `bin/flow ci` snapshot so subsequent runs skip automatically when nothing changed (use `--force` to bypass). The sentinel is also automatically refreshed after `finalize-commit` when `git pull` does not introduce new content, preserving the optimization across commits. Multiple features can run simultaneously with no conflicts. The `.flow-states/` directory is added to `.git/info/exclude` by `/flow-start` (per-repo, not committed). Created by `/flow-start`, deleted by `/flow-complete` in a single `remove_dir_all(branch_dir)` call.
+Each feature has up to four files inside its subdirectory: the state file (`state.json`), the log file (`log`), a frozen copy of `flow-phases.json` (`phases.json`), and a CI sentinel (`ci-passed`). A feature may also hold a `shared-config-approvals/` subdirectory of single-use approval markers — see [Shared-Config Approval Markers](#shared-config-approval-markers) — and a single-use `merge-approval` marker file written when the user confirms a manual-mode squash-merge — see [Merge-Approval Marker](#merge-approval-marker). The CI sentinel caches the last passing `bin/flow ci` snapshot so subsequent runs skip automatically when nothing changed (use `--force` to bypass). The sentinel is also automatically refreshed after `finalize-commit` when `git pull` does not introduce new content, preserving the optimization across commits. Multiple features can run simultaneously with no conflicts. The `.flow-states/` directory is added to `.git/info/exclude` by `/flow-start` (per-repo, not committed). Created by `/flow-start`, deleted by `/flow-complete` in a single `remove_dir_all(branch_dir)` call.
 
 **State files are local to each machine.** In a multi-engineer team, each engineer's `.flow-states/` directory only contains their own features. GitHub (issues, PRs, labels) is the shared coordination layer visible to all engineers. The "Flow In-Progress" label on issues is the mechanism for cross-engineer WIP detection — see `/flow-issues`.
 
@@ -612,6 +612,46 @@ Lifecycle:
   bleed into a later phase.
 
 The directory is removed with the rest of `.flow-states/<branch>/` by
+`/flow-complete` / `/flow-abort` cleanup.
+
+---
+
+## Merge-Approval Marker
+
+When `flow-complete` is configured `manual`, the Phase 5 squash-merge
+is gated: it must not run without an explicit user confirmation. The
+"proceed" half is a branch-scoped, single-use approval marker at:
+
+```text
+.flow-states/<branch>/merge-approval
+```
+
+One marker file per branch directory. The marker body is:
+
+```json
+{"approved": true, "branch": "<branch>"}
+```
+
+Lifecycle:
+
+- **Created** by `bin/flow confirm-merge --branch <branch>`, which the
+  `flow-complete` skill invokes on the user's "Yes, merge" answer in
+  Step 4. The external `--branch` string reaches the `.flow-states/`
+  path only through `FlowPaths::try_new`, which rejects empty / `.` /
+  `..` / `/`-bearing / NUL-bearing branches.
+- **Consumed** (read, validated, then deleted — single-use) by both
+  merge surfaces — `complete-merge` and `complete-fast` — before the
+  freshness check that precedes the squash-merge. Because consumption
+  runs before the freshness check, every merge attempt consumes the
+  marker: a freshness outcome that loops back without merging
+  (`ci_rerun`/`ci_stale`) still requires a fresh confirmation on the
+  next attempt. Any unreadable, oversized (> 64 KB read cap),
+  unparseable, wrong-root-type, `approved != true`, or
+  branch-mismatched marker yields no approval and the merge stays
+  refused with `{"status":"error","reason":"merge_not_confirmed"}`
+  (fail-closed — a corrupt marker is never an escape hatch).
+
+The marker is removed with the rest of `.flow-states/<branch>/` by
 `/flow-complete` / `/flow-abort` cleanup.
 
 ---

@@ -614,40 +614,6 @@ fn test_plugin_root_undetectable_returns_exit_1() {
     );
 }
 
-/// --auto flag routes through to the init-state subprocess, which
-/// translates it into fully-autonomous skill config in the state file.
-#[test]
-fn test_auto_flag_produces_auto_skill_config_in_state() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), None);
-    let stub_dir = create_default_gh_stub(&repo);
-
-    let output = run_start_init(&repo, "auto-flag-feature", &["--auto"], &stub_dir);
-    let data = parse_output(&output);
-    assert_eq!(data["status"], "ready");
-
-    let branch = data["branch"].as_str().unwrap();
-    let state_path = flow_states_dir(&repo).join(branch).join("state.json");
-    let content = fs::read_to_string(&state_path).unwrap();
-    let state: serde_json::Value = serde_json::from_str(&content).unwrap();
-
-    // --auto → init-state sets every skill to "auto" continue mode.
-    let skills = state["skills"].as_object().expect("skills object present");
-    assert!(
-        !skills.is_empty(),
-        "skills config should be populated under --auto"
-    );
-    // At least one skill should be "auto" — verifies the flag propagated.
-    let any_auto = skills.values().any(|v| {
-        v.as_str() == Some("auto") || v.get("continue").and_then(|c| c.as_str()) == Some("auto")
-    });
-    assert!(
-        any_auto,
-        "at least one skill should resolve to auto continue mode under --auto"
-    );
-}
-
 /// cwd outside root: when the user runs start-init from a directory
 /// that isn't a subpath of the project root, `strip_prefix` returns Err
 /// and `relative_cwd` falls back to empty string. Exercised by spawning
@@ -819,16 +785,13 @@ fn test_args_parse_via_clap_derive() {
     use clap::Parser;
     use flow_rs::start_init::Args;
 
-    let args =
-        Args::try_parse_from(["start-init", "my-feature", "--auto"]).expect("clap should parse");
+    let args = Args::try_parse_from(["start-init", "my-feature"]).expect("clap should parse");
     assert_eq!(args.feature_name, "my-feature");
-    assert!(args.auto);
     assert!(args.prompt_file.is_none());
 
     let args2 =
         Args::try_parse_from(["start-init", "x", "--prompt-file", "/tmp/p"]).expect("clap parse");
     assert_eq!(args2.prompt_file.as_deref(), Some("/tmp/p"));
-    assert!(!args2.auto);
 
     // Exercise the derived Debug impl so its fmt method is counted as
     // covered. Without this, llvm-cov reports `Args` Debug::fmt as a
@@ -876,7 +839,6 @@ fn test_run_impl_main_library_call_exercises_test_binary_instantiation() {
 
     let args = Args {
         feature_name: "lib-test-feature".to_string(),
-        auto: false,
         prompt_file: None,
     };
 

@@ -998,6 +998,83 @@ fn freshness_status_up_to_date_merge_ok_returns_merged() {
 }
 
 #[test]
+fn up_to_date_manual_config_with_auto_flag_blocked_without_marker() {
+    // The state config is `manual`, but a `--auto` flag forces auto
+    // mode so freshness_and_merge reaches the up_to_date arm. The
+    // merge-approval gate re-resolves from the state config (the
+    // authority) and refuses the merge with no confirmation marker.
+    let fx = setup("complete", "manual");
+    seed_ci_sentinel(&fx.repo, BRANCH);
+    let output = run_complete_fast(
+        &fx.repo,
+        Some(BRANCH),
+        Some("--auto"),
+        &fx.flow_bin,
+        &fx.stubs,
+        &[],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["status"], "error");
+    assert_eq!(json["reason"], "merge_not_confirmed");
+    // The envelope carries a `path` field so the skill's `path`-keyed
+    // Step 1 dispatch can branch on the refusal.
+    assert_eq!(json["path"], "merge_not_confirmed");
+}
+
+#[test]
+fn up_to_date_manual_config_with_auto_flag_proceeds_with_marker() {
+    // Same `manual` config + `--auto` flag, but a valid merge-approval
+    // marker is present: the gate consumes it and the merge proceeds.
+    let fx = setup("complete", "manual");
+    seed_ci_sentinel(&fx.repo, BRANCH);
+    let branch_dir = fx.repo.join(".flow-states").join(BRANCH);
+    flow_rs::merge_approval::write_approval(&branch_dir, BRANCH).unwrap();
+    let output = run_complete_fast(
+        &fx.repo,
+        Some(BRANCH),
+        Some("--auto"),
+        &fx.flow_bin,
+        &fx.stubs,
+        &[],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["path"], "merged");
+}
+
+/// Regression: the merge-approval gate runs before the freshness
+/// check, so the marker is consumed on every merge attempt — a
+/// `merged` freshness outcome returns `ci_stale` (loop-back) without
+/// reaching the squash-merge, but the marker must still be consumed.
+/// Guards a regression where the gate is moved back into the
+/// `up_to_date` arm, leaving the marker live across a non-`up_to_date`
+/// freshness outcome.
+#[test]
+fn manual_config_marker_consumed_when_freshness_returns_merged() {
+    let fx = setup("complete", "manual");
+    seed_ci_sentinel(&fx.repo, BRANCH);
+    let branch_dir = fx.repo.join(".flow-states").join(BRANCH);
+    flow_rs::merge_approval::write_approval(&branch_dir, BRANCH).unwrap();
+    let output = run_complete_fast(
+        &fx.repo,
+        Some(BRANCH),
+        Some("--auto"),
+        &fx.flow_bin,
+        &fx.stubs,
+        &[("FAKE_FRESHNESS_OUT", r#"{"status":"merged"}"#)],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json = last_json_line(&stdout);
+    // Freshness `merged` → ci_stale, no squash-merge reached.
+    assert_eq!(json["path"], "ci_stale");
+    // The marker was consumed before the freshness check.
+    assert!(!flow_rs::merge_approval::check_and_consume_approval(
+        &branch_dir
+    ));
+}
+
+#[test]
 fn freshness_status_up_to_date_base_branch_policy_returns_ci_pending() {
     let fx = setup("complete", "auto");
     seed_ci_sentinel(&fx.repo, BRANCH);

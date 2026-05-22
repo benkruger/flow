@@ -7,10 +7,10 @@ use std::path::{Path, PathBuf};
 
 use flow_rs::flow_paths::{FlowPaths, FlowStatesDir};
 use flow_rs::phase_config::{
-    auto_skills, build_initial_phases, commands, find_state_files, freeze_phases,
-    load_phase_config, phase_names, phase_number, phase_numbers, read_flow_json, PHASE_ORDER,
+    build_initial_phases, commands, find_state_files, freeze_phases, load_phase_config,
+    phase_names, phase_number, phase_numbers, read_flow_json, PHASE_ORDER,
 };
-use flow_rs::state::{Phase, PhaseStatus, SkillConfig};
+use flow_rs::state::{Phase, PhaseStatus};
 
 // --- Constants ---
 
@@ -57,17 +57,6 @@ fn commands_map_all_phases() {
     assert_eq!(cmds.get("flow-start").unwrap(), "/flow:flow-start");
     assert_eq!(cmds.get("flow-complete").unwrap(), "/flow:flow-complete");
     assert_eq!(cmds.len(), 5);
-}
-
-#[test]
-fn auto_skills_has_six_entries() {
-    let skills = auto_skills();
-    assert_eq!(skills.len(), 6);
-    assert_eq!(
-        skills.get("flow-abort").unwrap(),
-        &SkillConfig::Simple("auto".to_string())
-    );
-    assert!(format!("{:?}", skills.get("flow-code").unwrap()).starts_with("Detailed("));
 }
 
 // --- load_phase_config ---
@@ -230,23 +219,6 @@ fn build_initial_phases_preserves_insertion_order() {
             &Phase::FlowReview,
             &Phase::FlowLearn,
             &Phase::FlowComplete,
-        ]
-    );
-}
-
-#[test]
-fn auto_skills_preserves_insertion_order() {
-    let skills = auto_skills();
-    let keys: Vec<&String> = skills.keys().collect();
-    assert_eq!(
-        keys,
-        vec![
-            "flow-start",
-            "flow-code",
-            "flow-review",
-            "flow-learn",
-            "flow-complete",
-            "flow-abort",
         ]
     );
 }

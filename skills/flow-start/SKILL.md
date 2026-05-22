@@ -81,7 +81,7 @@ shared state must be idempotent.
 
 ## Mode Resolution
 
-1. If `--auto` was passed → continue=auto AND override ALL skills to fully autonomous (all commits auto, all continues auto). The `--auto` flag is passed through to `start-init`, which writes the autonomous preset to the state file. All downstream phases inherit the override automatically.
+1. If `--auto` was passed → continue=auto for this Start phase, so the Done section auto-advances to Code without prompting. `--auto` does NOT override the skills config: the state file's `skills` section is always seeded from `.flow.json`, and each downstream phase honors its own configured autonomy.
 2. If `--manual` was passed → continue=manual
 3. Otherwise → resolved in the Done section by reading `skills.flow-start.continue` from `.flow-states/<branch>/state.json` (which exists after Step 1)
 
@@ -118,18 +118,16 @@ The bash block above is for reference only — all four commands call
 
 Write the user's original start prompt (verbatim, including `#N` issue references
 and any special characters) to `.flow-states/<feature-name>-start-prompt` using the
-Write tool. Then run start-init. If `--auto` was passed, also pass `--auto`:
+Write tool. Then run start-init:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow start-init <feature-name> --prompt-file .flow-states/<feature-name>-start-prompt
 ```
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow start-init <feature-name> --prompt-file .flow-states/<feature-name>-start-prompt --auto
-```
-
-Use the first form when no mode flag was passed or `--manual` was passed.
-Use the second form when `--auto` was passed.
+`start-init` takes no mode flag — the state file's `skills` section is
+always seeded from `.flow.json`. The Start phase's own continue mode
+is resolved from `--auto`/`--manual` (or the state file) in the Done
+section.
 
 Parse the JSON output and branch on `status`:
 

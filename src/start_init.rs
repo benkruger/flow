@@ -37,10 +37,6 @@ pub struct Args {
     /// Feature name (sanitized form for lock queue entry)
     pub feature_name: String,
 
-    /// Override all skills to fully autonomous preset
-    #[arg(long)]
-    pub auto: bool,
-
     /// Path to file containing start prompt
     #[arg(long = "prompt-file")]
     pub prompt_file: Option<String>,
@@ -229,9 +225,6 @@ fn run_impl(args: &Args, root: &Path, cwd: &Path) -> Result<Value, String> {
     if let Some(ref pf) = args.prompt_file {
         cmd_args.push("--prompt-file".to_string());
         cmd_args.push(pf.clone());
-    }
-    if args.auto {
-        cmd_args.push("--auto".to_string());
     }
 
     // Spawn `init-state` via our own binary. current_exe() fails only

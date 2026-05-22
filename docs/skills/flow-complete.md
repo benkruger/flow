@@ -16,8 +16,10 @@ via `.flow.json`
 (default: manual, prompts for confirmation before the irreversible
 merge). Use `--auto` to skip confirmation and merge directly. The `--continue-step`
 flag is used for self-invocation after mid-phase commits (merge
-conflict resolution or CI fix) — it skips the Announce banner and
-SOFT-GATE and dispatches via the Resume Check.
+conflict resolution or CI fix) — it skips the Announce banner and the
+SOFT-GATE's warning recording, but mode resolution still runs first on
+every entry (including `--continue-step` re-entries), and the run then
+dispatches via the Resume Check.
 
 ---
 
@@ -39,9 +41,13 @@ SOFT-GATE and dispatches via the Resume Check.
 3. **GitHub CI check** — `gh pr checks` waits for checks to pass. If pending,
    invokes `/loop` to auto-retry. If failed, ci-fixer commits a fix
 4. **Confirm** (manual mode only) — explicit confirmation before the
-   irreversible merge. Offers approve, decline, or feedback options. Skipped
-   by default
+   irreversible merge. On approval, `bin/flow confirm-merge` writes a
+   single-use merge-approval marker that the merge step requires.
+   Offers approve, decline, or feedback options. Skipped by default
 5. **Merge** — `complete-merge` handles the freshness check and squash merge.
+   When `flow-complete` is configured manual, it requires and consumes the
+   merge-approval marker; with no marker the merge is refused
+   (`merge_not_confirmed`) and the skill loops back to confirmation.
    If the integration branch moved, loops back through CI. Detects branch
    protection policy blocks and merge conflicts
 6. **Finalize** — `complete-finalize` handles phase completion, PR body
@@ -94,6 +100,9 @@ state file doesn't exist, it notes that and finishes.
 - Learn (Phase 4) complete is a warning, not a hard block
 - Missing state file is a warning, not a hard block
 - Confirmation only when mode is manual (via `--manual` or `.flow.json`)
+- Manual-mode merge requires a single-use confirmation marker — both merge
+  surfaces resolve the mode and structurally refuse the squash-merge
+  without it, so a lost mode flag cannot merge unconfirmed
 - Steps 1-5 run from the worktree; Step 6 (finalize) runs from the project root
 - Merge is irreversible; branch and worktree deletion is handled by `complete-finalize`
 - If merge fails, stop and report — never retry with additional flags or elevated privileges

@@ -38,6 +38,7 @@ use flow_rs::hooks;
 use flow_rs::issue;
 use flow_rs::label_issues;
 use flow_rs::link_blocked_by;
+use flow_rs::merge_approval;
 use flow_rs::notify_slack;
 use flow_rs::orchestrate_report;
 use flow_rs::orchestrate_state;
@@ -176,6 +177,13 @@ enum Commands {
     #[command(name = "approve-shared-config")]
     ApproveSharedConfig(approve_shared_config::Args),
 
+    /// Record a single-use user confirmation to squash-merge the
+    /// flow's PR. The "proceed" half of the Complete-phase merge
+    /// gate; the merge surfaces consult and consume the marker when
+    /// the resolved `flow-complete` mode is `manual`.
+    #[command(name = "confirm-merge")]
+    ConfirmMerge(merge_approval::Args),
+
     /// FLOW cleanup orchestrator (worktree, branches, state files).
     Cleanup(cleanup::Args),
 
@@ -263,9 +271,6 @@ enum Commands {
         /// Path to file containing start prompt (file is deleted after reading)
         #[arg(long = "prompt-file")]
         prompt_file: Option<String>,
-        /// Override all skills to fully autonomous preset
-        #[arg(long)]
-        auto: bool,
         /// Initial start_step value for TUI progress
         #[arg(long = "start-step")]
         start_step: Option<i64>,
@@ -677,6 +682,15 @@ fn main() {
             );
             flow_rs::dispatch::dispatch_json(value, code);
         }
+        Some(Commands::ConfirmMerge(args)) => {
+            let root = project_root();
+            let (value, code) = merge_approval::run_impl_main_with_cwd_result(
+                &args,
+                &root,
+                std::env::current_dir(),
+            );
+            flow_rs::dispatch::dispatch_json(value, code);
+        }
         Some(Commands::Issue(args)) => {
             let root = flow_rs::git::project_root();
             let root_for_state = root.clone();
@@ -777,7 +791,6 @@ fn main() {
         Some(Commands::InitState {
             feature_name,
             prompt_file,
-            auto,
             start_step,
             start_steps_total,
             branch,
@@ -793,7 +806,6 @@ fn main() {
             commands::init_state::run(
                 &feature_name,
                 prompt_file.as_deref(),
-                auto,
                 start_step,
                 start_steps_total,
                 branch.as_deref(),

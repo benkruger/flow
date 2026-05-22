@@ -11,7 +11,7 @@ use crate::hooks::capture_session::read_captured_session;
 use crate::label_issues::LABEL;
 use crate::lock::mutate_state;
 use crate::output::{json_error, json_ok};
-use crate::phase_config::{auto_skills, build_initial_phases, freeze_phases, read_flow_json};
+use crate::phase_config::{build_initial_phases, freeze_phases, read_flow_json};
 use crate::session_metrics::home_dir_or_empty;
 use crate::state::SkillConfig;
 use crate::utils::{
@@ -182,7 +182,6 @@ pub fn create_state(
 pub fn run(
     feature_name: &str,
     prompt_file: Option<&str>,
-    auto: bool,
     start_step: Option<i64>,
     start_steps_total: Option<i64>,
     branch_override: Option<&str>,
@@ -198,13 +197,12 @@ pub fn run(
         }
     };
 
-    let skills = if auto {
-        Some(auto_skills())
-    } else {
-        flow_json
-            .get("skills")
-            .and_then(|v| serde_json::from_value::<IndexMap<String, SkillConfig>>(v.clone()).ok())
-    };
+    // The state file's skills section is always seeded from
+    // `.flow.json`. The configured per-skill autonomy stays
+    // authoritative; no flag wholesale-overrides it.
+    let skills = flow_json
+        .get("skills")
+        .and_then(|v| serde_json::from_value::<IndexMap<String, SkillConfig>>(v.clone()).ok());
 
     // Read prompt first — needed for issue number extraction
     let prompt = if let Some(pf) = prompt_file {

@@ -50,7 +50,7 @@ If the referenced issue already carries the "Flow In-Progress" label, `start-ini
 
 Mode is configurable via `.flow.json` (default: manual) and cached in the state file during setup. The Done section reads the resolved mode from the state file, not `.flow.json` directly. In auto mode, the phase transition advances to Code without asking.
 
-When `--auto` is passed to `/flow-start`, it overrides ALL skill autonomy settings to fully autonomous for this feature — not just flow-start's own continue mode. Every phase will auto-commit and auto-continue. The override is written to the state file by `start-init` and propagates to all downstream phases automatically. This is equivalent to the "Fully autonomous" preset from `/flow-prime`, applied per-feature without changing `.flow.json`.
+When `--auto` is passed to `/flow-start`, it sets the Start phase's own continue mode to autonomous — the phase transition advances to Code without asking. It does NOT override the autonomy settings of the downstream phases: each phase reads its own `skills.<phase>` configuration, seeded verbatim from `.flow.json` into the state file at flow-start. To run every phase autonomously, configure the skills block in `.flow.json` (the "Fully autonomous" preset from `/flow-prime`).
 
 ---
 

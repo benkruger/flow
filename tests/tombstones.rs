@@ -344,6 +344,41 @@ fn test_src_no_bump_install_path() {
     );
 }
 
+/// Tombstone: removed in PR #1689. `phase_config::auto_skills` and the
+/// `init_state::run` branch that substituted it for the `.flow.json`
+/// skills block are deleted — the state file's skills section is
+/// always seeded from `.flow.json` so a `flow-start --auto` flag can
+/// no longer wholesale-override a configured `manual` mode. Must not
+/// return.
+///
+/// Asserts neither `src/phase_config.rs` nor `src/commands/init_state.rs`
+/// contains the identifier `auto_skills`. The byte-substring shape
+/// holds because:
+///   1. `concat!` reassembly: a Rust function name cannot be assembled
+///      by `concat!` — re-introducing the function requires the literal
+///      `fn auto_skills` in source.
+///   2. `format!` reassembly: function declarations and direct calls
+///      are not produced by `format!` interpolation.
+///   3. Named constant reference: a `const` aliasing the string would
+///      still place the literal `auto_skills` in source, and the
+///      declaration / call site trips the byte check regardless.
+///   4. Method chains / split args: not applicable — the target is a
+///      function identifier, not a CLI argument passed via `.arg()`.
+#[test]
+fn test_phase_config_no_auto_skills() {
+    let root = common::repo_root();
+    for rel in ["src/phase_config.rs", "src/commands/init_state.rs"] {
+        let content =
+            fs::read_to_string(root.join(rel)).unwrap_or_else(|_| panic!("{rel} must exist"));
+        assert!(
+            !content.contains("auto_skills"),
+            "{rel} must not contain `auto_skills` — the wholesale \
+             `flow-start --auto` skills-override was removed; the state \
+             file's skills section is always seeded from `.flow.json`."
+        );
+    }
+}
+
 // --- flow-plan parent-issue closure ---
 //
 // The decomposed-child issue supersedes the vanilla parent's

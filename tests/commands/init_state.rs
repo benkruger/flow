@@ -218,15 +218,16 @@ fn skills_omitted_when_not_in_flow_json() {
 }
 
 #[test]
-fn auto_flag_overrides_skills() {
+fn skills_seeded_from_flow_json_verbatim() {
+    // The state file's skills section is copied verbatim from
+    // `.flow.json` — no flag wholesale-overrides it, so a configured
+    // `manual` mode survives into the state file.
     let dir = tempfile::tempdir().unwrap();
     let skills = json!({"flow-start": {"continue": "manual"}});
     setup_project(dir.path(), "rails", Some(skills));
-    run_init_state(dir.path(), &["auto override", "--auto"]);
-    let state = read_state_file(dir.path(), "auto-override");
-    assert_eq!(state["skills"]["flow-start"]["continue"], "auto");
-    assert_eq!(state["skills"]["flow-code"]["commit"], "auto");
-    assert_eq!(state["skills"]["flow-review"]["commit"], "auto");
+    run_init_state(dir.path(), &["flow json skills"]);
+    let state = read_state_file(dir.path(), "flow-json-skills");
+    assert_eq!(state["skills"]["flow-start"]["continue"], "manual");
 }
 
 // --- Prompt ---
@@ -1054,9 +1055,29 @@ fn create_state_write_failure_returns_error() {
 // back to the parent's target dir.
 
 use flow_rs::commands::init_state::create_state;
-use flow_rs::phase_config::auto_skills;
 use flow_rs::state::SkillConfig;
 use indexmap::IndexMap;
+
+/// A non-empty skills map for driving `create_state` — the function
+/// records whatever map it is handed; the values here are arbitrary.
+fn sample_skills() -> IndexMap<String, SkillConfig> {
+    let mut m = IndexMap::new();
+    let mut start = IndexMap::new();
+    start.insert("continue".to_string(), "auto".to_string());
+    m.insert("flow-start".to_string(), SkillConfig::Detailed(start));
+    let mut code = IndexMap::new();
+    code.insert("commit".to_string(), "auto".to_string());
+    code.insert("continue".to_string(), "auto".to_string());
+    m.insert("flow-code".to_string(), SkillConfig::Detailed(code));
+    let mut review = IndexMap::new();
+    review.insert("commit".to_string(), "auto".to_string());
+    m.insert("flow-review".to_string(), SkillConfig::Detailed(review));
+    m.insert(
+        "flow-abort".to_string(),
+        SkillConfig::Simple("auto".to_string()),
+    );
+    m
+}
 
 fn read_state_direct(root: &std::path::Path, branch: &str) -> Value {
     let path = root.join(".flow-states").join(branch).join("state.json");
@@ -1241,12 +1262,12 @@ fn lib_create_state_skills_omitted_when_none() {
 }
 
 #[test]
-fn lib_create_state_auto_skills_values() {
+fn lib_create_state_writes_skills_map_verbatim() {
     let dir = tempfile::tempdir().unwrap();
-    let skills = auto_skills();
+    let skills = sample_skills();
     create_state(
         dir.path(),
-        "auto-test",
+        "skills-test",
         Some(&skills),
         "",
         None,
@@ -1255,7 +1276,7 @@ fn lib_create_state_auto_skills_values() {
         "",
     )
     .unwrap();
-    let state = read_state_direct(dir.path(), "auto-test");
+    let state = read_state_direct(dir.path(), "skills-test");
     assert_eq!(state["skills"]["flow-start"]["continue"], "auto");
     assert_eq!(state["skills"]["flow-code"]["commit"], "auto");
     assert_eq!(state["skills"]["flow-code"]["continue"], "auto");
@@ -1350,7 +1371,7 @@ fn lib_create_state_required_fields() {
 #[test]
 fn lib_create_state_key_order_matches_python() {
     let dir = tempfile::tempdir().unwrap();
-    let skills = auto_skills();
+    let skills = sample_skills();
     create_state(
         dir.path(),
         "order-test",
