@@ -185,6 +185,10 @@ one fails, continue to the next.
 - Missing state file is a warning, not a hard block
 - CI must pass before merge
 - Confirmation in manual mode (the default); skipped when `--auto` is passed
+- Mode is resolved from the state file on every skill entry, including
+  `--continue-step` re-entries — neither the banner skip nor the SOFT-GATE
+  skip bypasses it, so a resumed run cannot lose the configured mode
 - Manual-mode merge requires a single-use confirmation marker — both merge
-  surfaces resolve the mode and structurally refuse the squash-merge without it
+  surfaces consume it before the freshness check and structurally refuse the
+  squash-merge without it, so a lost mode flag cannot merge unconfirmed
 - Steps 1-5 run from the worktree; Step 6 (finalize) runs from the project root

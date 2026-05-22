@@ -148,9 +148,16 @@ fn setup(parent: &Path) -> (PathBuf, PathBuf, PathBuf) {
 }
 
 /// Build a canonical `<parent>/.flow-states/<branch>/state.json`
-/// layout with the given `flow-complete` continue mode, so the merge
-/// gate's marker lookup (the state file's parent directory) resolves
-/// to a real per-branch directory. Returns the state-file path.
+/// layout so the merge gate's marker lookup (the state file's parent
+/// directory) resolves to a real per-branch directory. Returns the
+/// state-file path.
+///
+/// `branch` names the per-branch subdirectory under `.flow-states/`.
+/// `skills_continue` is written verbatim into
+/// `skills.flow-complete.continue`: pass `"manual"` to arm the
+/// merge-approval gate (the merge then requires a confirmation
+/// marker) or `"auto"` to leave it inert (the merge proceeds with no
+/// marker).
 fn setup_flow_layout(parent: &Path, branch: &str, skills_continue: &str) -> PathBuf {
     let branch_dir = parent.join(".flow-states").join(branch);
     fs::create_dir_all(&branch_dir).unwrap();
@@ -712,6 +719,45 @@ fn manual_config_with_corrupt_marker_refuses_merge() {
     assert_eq!(json["reason"], "merge_not_confirmed");
 }
 
+/// Regression: the merge-approval marker must be consumed on EVERY
+/// merge attempt, not only when the freshness check returns
+/// `up_to_date`. A `merged` freshness outcome returns `ci_rerun`
+/// (loop-back through CI) without reaching the squash-merge — but the
+/// marker must still be consumed so the loop-back forces a fresh
+/// confirmation rather than reusing the stale approval. Guards a
+/// regression where the gate is moved back into the `up_to_date` arm,
+/// leaving the marker live across a `ci_rerun` loop-back.
+#[test]
+fn manual_config_marker_consumed_on_ci_rerun_loopback() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let flow_bin = parent.join("bin-flow-stub").join("flow");
+    write_flow_stub(&flow_bin);
+    let stubs = build_path_stubs(&parent);
+    let state_path = setup_flow_layout(&parent, "feat-merge", "manual");
+    let branch_dir = state_path.parent().unwrap().to_path_buf();
+    flow_rs::merge_approval::write_approval(&branch_dir, "feat-merge").unwrap();
+
+    let (code, stdout, _) = run_complete_merge_sub(
+        &parent,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        &flow_bin,
+        &stubs,
+        &[("FAKE_FRESHNESS_JSON", r#"{"status":"merged"}"#)],
+    );
+
+    // Freshness `merged` → ci_rerun, no squash-merge reached.
+    assert_eq!(code, 1);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["status"], "ci_rerun");
+    // The marker was consumed before the freshness check, so it is
+    // gone even though the merge did not happen.
+    assert!(!flow_rs::merge_approval::check_and_consume_approval(
+        &branch_dir
+    ));
+}
+
 #[test]
 fn freshness_spawn_error_returns_error_status() {
     // Point FLOW_BIN_PATH at a nonexistent binary → check-freshness
@@ -720,7 +766,13 @@ fn freshness_spawn_error_returns_error_status() {
     let parent = dir.path().canonicalize().unwrap();
     let stubs = build_path_stubs(&parent);
     let state_path = parent.join("state.json");
-    fs::write(&state_path, r#"{"branch":"feat"}"#).unwrap();
+    // `flow-complete: auto` so the merge-approval gate is inert and the
+    // run reaches the check-freshness spawn this test exercises.
+    fs::write(
+        &state_path,
+        r#"{"branch":"feat","skills":{"flow-complete":{"continue":"auto"}}}"#,
+    )
+    .unwrap();
     let nonexistent = parent.join("does-not-exist").join("flow");
 
     let (code, stdout, _) = run_complete_merge_sub(

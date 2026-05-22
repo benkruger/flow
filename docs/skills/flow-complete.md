@@ -16,8 +16,10 @@ via `.flow.json`
 (default: manual, prompts for confirmation before the irreversible
 merge). Use `--auto` to skip confirmation and merge directly. The `--continue-step`
 flag is used for self-invocation after mid-phase commits (merge
-conflict resolution or CI fix) — it skips the Announce banner and
-SOFT-GATE and dispatches via the Resume Check.
+conflict resolution or CI fix) — it skips the Announce banner and the
+SOFT-GATE's warning recording, but mode resolution still runs first on
+every entry (including `--continue-step` re-entries), and the run then
+dispatches via the Resume Check.
 
 ---
 

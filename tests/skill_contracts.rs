@@ -2185,6 +2185,26 @@ fn flow_complete_step5_handles_merge_not_confirmed() {
     );
 }
 
+/// flow-complete's Step 1 `complete-fast` dispatch must handle the
+/// `merge_not_confirmed` path — `complete-fast` emits it when an
+/// `--auto` flag is passed against a `manual`-configured project, and
+/// Step 1 routes back to Step 4 to re-confirm. Without the branch the
+/// refusal falls through to the generic error handler with no
+/// recovery path.
+#[test]
+fn flow_complete_step1_handles_merge_not_confirmed() {
+    let c = common::read_skill("flow-complete");
+    let tail = c
+        .split_once("### Step 1 — Run complete-fast")
+        .map(|(_, t)| t)
+        .expect("Step 1 heading must exist in flow-complete SKILL.md");
+    let step1 = tail.split_once("\n### ").map(|(s, _)| s).unwrap_or(tail);
+    assert!(
+        step1.contains("merge_not_confirmed"),
+        "Step 1's complete-fast dispatch must handle the `merge_not_confirmed` path"
+    );
+}
+
 #[test]
 fn flow_abort_mode_resolution_invokes_resolve_skill_mode() {
     // The flow-abort `## Mode Resolution` section must resolve the

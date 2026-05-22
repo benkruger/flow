@@ -391,6 +391,21 @@ the Skill tool as your final action. Do not output anything else after this invo
 > engineer is merging frequently. Wait for a quieter window and
 > re-invoke `/flow:flow-complete`."
 
+**If `"path": "merge_not_confirmed"`** — `complete-fast` was invoked
+with an `--auto` flag against a project configured
+`flow-complete: manual`. The merge-approval gate re-resolved the mode
+from the state file (the authority) and refused the unconfirmed
+squash-merge. Route to Step 4 so the user explicitly confirms — a
+fresh confirmation writes the marker the merge requires:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
+```
+
+To confirm with the user, invoke `flow:flow-complete --continue-step`
+using the Skill tool as your final action. Do not output anything
+else after this invocation.
+
 **If `"status": "error"`** — stop and report the error to the user.
 Do not retry the command with any additional flags or elevated privileges.
 

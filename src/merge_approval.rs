@@ -7,11 +7,16 @@
 //! configured per-project under `skills.flow-complete` and resolved
 //! at runtime via `resolve_skill_mode::resolve`. When the mode is
 //! `manual`, the squash-merge is gated: both merge surfaces
-//! (`complete_merge`, `complete_fast::freshness_and_merge`) require a
-//! merge-approval marker immediately before `gh pr merge` and refuse
-//! with `{"status":"error","reason":"merge_not_confirmed"}` when it
-//! is absent. `confirm-merge` is the "proceed" half — the
-//! flow-complete skill invokes it on the user's "Yes, merge" answer.
+//! (`complete_merge`, `complete_fast::freshness_and_merge`) consume a
+//! merge-approval marker before the freshness check that precedes the
+//! squash-merge, and refuse with
+//! `{"status":"error","reason":"merge_not_confirmed"}` when it is
+//! absent. Consuming before the freshness check means every merge
+//! attempt consumes the marker — a freshness outcome that loops back
+//! without merging (`ci_rerun`/`ci_stale`) still requires a fresh
+//! confirmation on the next attempt. `confirm-merge` is the "proceed"
+//! half — the flow-complete skill invokes it on the user's "Yes,
+//! merge" answer.
 //!
 //! The marker is keyed on the **branch directory** —
 //! `<project_root>/.flow-states/<branch>/` — because the two consumer
