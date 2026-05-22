@@ -37,7 +37,7 @@ fn merge_mode(state_file: &str) -> String {
     std::fs::read_to_string(state_file)
         .ok()
         .and_then(|c| serde_json::from_str::<Value>(&c).ok())
-        .map(|v| crate::resolve_skill_mode::resolve(&v, "flow-complete"))
+        .map(|v| crate::resolve_skill_mode::resolve(&v, "flow-complete").1)
         .unwrap_or_else(|| crate::resolve_skill_mode::FALLBACK_MODE.to_string())
 }
 

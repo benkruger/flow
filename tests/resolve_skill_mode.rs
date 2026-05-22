@@ -39,6 +39,15 @@ fn write_state(root: &Path, branch: &str, content: &str) {
     fs::write(dir.join("state.json"), content).unwrap();
 }
 
+/// Assert `resolve(state, skill)` returns `(commit, continue)`.
+fn assert_mode(state: &Value, skill: &str, commit: &str, cont: &str) {
+    assert_eq!(
+        resolve(state, skill),
+        (commit.to_string(), cont.to_string()),
+        "resolve({skill}) mismatch"
+    );
+}
+
 /// Initialize a git repo on the named branch with one empty commit.
 fn init_git_repo(dir: &Path, branch: &str) {
     let run = |a: &[&str]| {
@@ -93,136 +102,151 @@ fn normalize_gate_input_lowercases() {
 // --- resolve ---
 
 #[test]
-fn resolve_bare_string_manual() {
-    let state = json!({"skills": {"flow-complete": "manual"}});
-    assert_eq!(resolve(&state, "flow-complete"), "manual");
+fn resolve_block_commit_and_continue() {
+    let state = json!({"skills": {"flow-complete": {"commit": "auto", "continue": "auto"}}});
+    assert_mode(&state, "flow-complete", "auto", "auto");
 }
 
 #[test]
-fn resolve_bare_string_auto() {
-    let state = json!({"skills": {"flow-complete": "auto"}});
-    assert_eq!(resolve(&state, "flow-complete"), "auto");
-}
-
-#[test]
-fn resolve_dict_continue() {
-    let state = json!({"skills": {"flow-complete": {"continue": "auto"}}});
-    assert_eq!(resolve(&state, "flow-complete"), "auto");
-}
-
-#[test]
-fn resolve_dict_commit_and_continue_uses_continue() {
+fn resolve_block_mixed_axes() {
     let state = json!({"skills": {"flow-complete": {"commit": "manual", "continue": "auto"}}});
-    assert_eq!(resolve(&state, "flow-complete"), "auto");
+    assert_mode(&state, "flow-complete", "manual", "auto");
 }
 
 #[test]
-fn resolve_dict_no_continue_falls_back() {
+fn resolve_block_continue_only_uses_commit_default() {
+    // `flow-complete` commit default is `manual`.
+    let state = json!({"skills": {"flow-complete": {"continue": "auto"}}});
+    assert_mode(&state, "flow-complete", "manual", "auto");
+}
+
+#[test]
+fn resolve_block_commit_only_uses_continue_default() {
+    // `flow-complete` continue default is `manual`.
     let state = json!({"skills": {"flow-complete": {"commit": "auto"}}});
-    assert_eq!(resolve(&state, "flow-complete"), "manual");
+    assert_mode(&state, "flow-complete", "auto", "manual");
 }
 
 #[test]
-fn resolve_dict_continue_non_string_falls_back() {
-    let state = json!({"skills": {"flow-complete": {"continue": 5}}});
-    assert_eq!(resolve(&state, "flow-complete"), "manual");
+fn resolve_block_empty_object_falls_back() {
+    let state = json!({"skills": {"flow-complete": {}}});
+    assert_mode(&state, "flow-complete", "manual", "manual");
 }
 
 #[test]
-fn resolve_empty_string_falls_back() {
-    let state = json!({"skills": {"flow-complete": ""}});
-    assert_eq!(resolve(&state, "flow-complete"), "manual");
+fn resolve_block_continue_non_string_falls_back() {
+    let state = json!({"skills": {"flow-complete": {"commit": "auto", "continue": 5}}});
+    assert_mode(&state, "flow-complete", "auto", "manual");
+}
+
+/// A bare-string `skills.<skill>` entry is no longer parsed as a mode
+/// value — the block-shape-only resolver clamps it to the per-skill
+/// default. Guards the resolver tombstone
+/// `test_resolve_skill_mode_no_bare_string_branch`.
+#[test]
+fn resolve_bare_string_not_parsed() {
+    let state = json!({"skills": {"flow-complete": "auto"}});
+    assert_mode(&state, "flow-complete", "manual", "manual");
 }
 
 #[test]
-fn resolve_entry_absent_falls_back() {
-    let state = json!({"skills": {}});
-    assert_eq!(resolve(&state, "flow-complete"), "manual");
+fn resolve_bare_string_manual_not_parsed() {
+    let state = json!({"skills": {"flow-review": "manual"}});
+    assert_mode(&state, "flow-review", "manual", "manual");
 }
 
 #[test]
 fn resolve_skills_key_absent_falls_back() {
     let state = json!({});
-    assert_eq!(resolve(&state, "flow-complete"), "manual");
+    assert_mode(&state, "flow-complete", "manual", "manual");
+}
+
+#[test]
+fn resolve_entry_absent_falls_back() {
+    let state = json!({"skills": {}});
+    assert_mode(&state, "flow-complete", "manual", "manual");
 }
 
 #[test]
 fn resolve_entry_null_falls_back() {
     let state = json!({"skills": {"flow-complete": null}});
-    assert_eq!(resolve(&state, "flow-complete"), "manual");
+    assert_mode(&state, "flow-complete", "manual", "manual");
 }
 
 #[test]
 fn resolve_entry_number_falls_back() {
     let state = json!({"skills": {"flow-complete": 42}});
-    assert_eq!(resolve(&state, "flow-complete"), "manual");
+    assert_mode(&state, "flow-complete", "manual", "manual");
 }
 
 #[test]
 fn resolve_entry_array_falls_back() {
     let state = json!({"skills": {"flow-complete": []}});
-    assert_eq!(resolve(&state, "flow-complete"), "manual");
+    assert_mode(&state, "flow-complete", "manual", "manual");
 }
 
+/// `flow-learn` is the one skill whose per-skill default is fully
+/// autonomous — a missing entry resolves both axes to `auto`.
 #[test]
-fn resolve_falls_back_for_flow_abort() {
+fn resolve_flow_learn_default_is_auto() {
     let state = json!({});
-    assert_eq!(resolve(&state, "flow-abort"), "manual");
+    assert_mode(&state, "flow-learn", "auto", "auto");
 }
 
+/// Every skill resolves from its own `skills.<skill>` block entry.
 #[test]
-fn resolve_flow_abort_bare_string() {
-    let state = json!({"skills": {"flow-abort": "auto"}});
-    assert_eq!(resolve(&state, "flow-abort"), "auto");
+fn resolve_each_skill_reads_its_own_entry() {
+    for skill in [
+        "flow-start",
+        "flow-code",
+        "flow-review",
+        "flow-learn",
+        "flow-complete",
+        "flow-abort",
+    ] {
+        let state = json!({"skills": {skill: {"commit": "manual", "continue": "auto"}}});
+        assert_mode(&state, skill, "manual", "auto");
+    }
 }
 
-/// A bare-string config value outside `{auto, manual}` clamps to the
-/// fallback — guards the documented `mode ∈ {auto, manual}` contract
-/// against a typo'd or hand-edited config value reaching a terminal
-/// skill's mode branch verbatim.
+/// A garbage value on the `commit` axis clamps to the per-skill
+/// default rather than passing through verbatim.
 #[test]
-fn resolve_garbage_bare_string_clamps_to_fallback() {
-    let state = json!({"skills": {"flow-complete": "xyzzy"}});
-    assert_eq!(resolve(&state, "flow-complete"), "manual");
+fn resolve_garbage_commit_axis_clamps_to_default() {
+    let state = json!({"skills": {"flow-complete": {"commit": "xyzzy", "continue": "auto"}}});
+    assert_mode(&state, "flow-complete", "manual", "auto");
 }
 
-/// The same clamp applies to a garbage value on the object `continue`
-/// axis — `{"continue": "banana"}` is not a verbatim passthrough.
+/// A garbage value on the `continue` axis clamps to the per-skill
+/// default.
 #[test]
-fn resolve_garbage_continue_axis_clamps_to_fallback() {
+fn resolve_garbage_continue_axis_clamps_to_default() {
     let state = json!({"skills": {"flow-complete": {"continue": "banana"}}});
-    assert_eq!(resolve(&state, "flow-complete"), "manual");
+    assert_mode(&state, "flow-complete", "manual", "manual");
 }
 
-/// A case-variant value normalizes — `"AUTO"` resolves to `"auto"`
-/// rather than passing through with original casing.
+/// A case-variant axis value normalizes — `"AUTO"` resolves to
+/// `"auto"`.
 #[test]
 fn resolve_uppercase_value_normalized() {
-    let state = json!({"skills": {"flow-complete": "AUTO"}});
-    assert_eq!(resolve(&state, "flow-complete"), "auto");
+    let state = json!({"skills": {"flow-complete": {"commit": "AUTO", "continue": "MANUAL"}}});
+    assert_mode(&state, "flow-complete", "auto", "manual");
 }
 
-/// A case-variant `"MANUAL"` normalizes to `"manual"`.
-#[test]
-fn resolve_uppercase_manual_value_normalized() {
-    let state = json!({"skills": {"flow-complete": "MANUAL"}});
-    assert_eq!(resolve(&state, "flow-complete"), "manual");
-}
-
-/// A whitespace-padded value is trimmed before the allowlist check —
-/// `" auto "` resolves to `"auto"`.
+/// A whitespace-padded axis value is trimmed before the allowlist
+/// check.
 #[test]
 fn resolve_whitespace_padded_value_normalized() {
-    let state = json!({"skills": {"flow-complete": " auto "}});
-    assert_eq!(resolve(&state, "flow-complete"), "auto");
+    let state = json!({"skills": {"flow-complete": {"continue": " auto "}}});
+    assert_mode(&state, "flow-complete", "manual", "auto");
 }
 
-/// A NUL byte in the config value is stripped before the allowlist
-/// check — `"auto\0"` resolves to `"auto"`.
+/// A NUL byte in the axis value is stripped before the allowlist
+/// check.
 #[test]
 fn resolve_nul_in_value_normalized() {
-    let state = json!({"skills": {"flow-complete": "auto\0"}});
-    assert_eq!(resolve(&state, "flow-complete"), "auto");
+    let state = json!({"skills": {"flow-complete": {"continue": "auto\0"}}});
+    assert_mode(&state, "flow-complete", "manual", "auto");
 }
 
 // --- run_impl ---
@@ -230,7 +254,7 @@ fn resolve_nul_in_value_normalized() {
 #[test]
 fn run_impl_invalid_skill_returns_error() {
     let tmp = tempfile::tempdir().unwrap();
-    let v = run_impl(&args("flow-code", "feature"), tmp.path());
+    let v = run_impl(&args("flow-prime", "feature"), tmp.path());
     assert_eq!(v["status"], "error");
     assert_eq!(v["reason"], "invalid_skill");
 }
@@ -264,7 +288,17 @@ fn run_impl_missing_state_file_falls_back() {
     let tmp = tempfile::tempdir().unwrap();
     let v = run_impl(&args("flow-complete", "feature"), tmp.path());
     assert_eq!(v["status"], "ok");
-    assert_eq!(v["mode"], "manual");
+    assert_eq!(v["commit"], "manual");
+    assert_eq!(v["continue"], "manual");
+}
+
+#[test]
+fn run_impl_missing_state_file_flow_learn_default_auto() {
+    let tmp = tempfile::tempdir().unwrap();
+    let v = run_impl(&args("flow-learn", "feature"), tmp.path());
+    assert_eq!(v["status"], "ok");
+    assert_eq!(v["commit"], "auto");
+    assert_eq!(v["continue"], "auto");
 }
 
 #[test]
@@ -273,7 +307,8 @@ fn run_impl_empty_state_file_falls_back() {
     write_state(tmp.path(), "feature", "");
     let v = run_impl(&args("flow-complete", "feature"), tmp.path());
     assert_eq!(v["status"], "ok");
-    assert_eq!(v["mode"], "manual");
+    assert_eq!(v["commit"], "manual");
+    assert_eq!(v["continue"], "manual");
 }
 
 #[test]
@@ -282,7 +317,8 @@ fn run_impl_non_json_state_file_falls_back() {
     write_state(tmp.path(), "feature", "{ not json");
     let v = run_impl(&args("flow-complete", "feature"), tmp.path());
     assert_eq!(v["status"], "ok");
-    assert_eq!(v["mode"], "manual");
+    assert_eq!(v["commit"], "manual");
+    assert_eq!(v["continue"], "manual");
 }
 
 #[test]
@@ -291,33 +327,22 @@ fn run_impl_wrong_root_state_file_falls_back() {
     write_state(tmp.path(), "feature", "[]");
     let v = run_impl(&args("flow-complete", "feature"), tmp.path());
     assert_eq!(v["status"], "ok");
-    assert_eq!(v["mode"], "manual");
+    assert_eq!(v["commit"], "manual");
+    assert_eq!(v["continue"], "manual");
 }
 
 #[test]
-fn run_impl_valid_state_resolves_auto() {
+fn run_impl_valid_state_resolves_both_axes() {
     let tmp = tempfile::tempdir().unwrap();
     write_state(
         tmp.path(),
         "feature",
-        r#"{"skills": {"flow-complete": "auto"}}"#,
+        r#"{"skills": {"flow-complete": {"commit": "manual", "continue": "auto"}}}"#,
     );
     let v = run_impl(&args("flow-complete", "feature"), tmp.path());
     assert_eq!(v["status"], "ok");
-    assert_eq!(v["mode"], "auto");
-}
-
-#[test]
-fn run_impl_valid_state_resolves_manual() {
-    let tmp = tempfile::tempdir().unwrap();
-    write_state(
-        tmp.path(),
-        "feature",
-        r#"{"skills": {"flow-complete": "manual"}}"#,
-    );
-    let v = run_impl(&args("flow-complete", "feature"), tmp.path());
-    assert_eq!(v["status"], "ok");
-    assert_eq!(v["mode"], "manual");
+    assert_eq!(v["commit"], "manual");
+    assert_eq!(v["continue"], "auto");
 }
 
 #[test]
@@ -326,11 +351,12 @@ fn run_impl_skill_normalization_maps_to_state_key() {
     write_state(
         tmp.path(),
         "feature",
-        r#"{"skills": {"flow-complete": "auto"}}"#,
+        r#"{"skills": {"flow-complete": {"commit": "auto", "continue": "auto"}}}"#,
     );
     let v = run_impl(&args("  FLOW-COMPLETE  ", "feature"), tmp.path());
     assert_eq!(v["status"], "ok");
-    assert_eq!(v["mode"], "auto");
+    assert_eq!(v["commit"], "auto");
+    assert_eq!(v["continue"], "auto");
 }
 
 #[test]
@@ -339,24 +365,11 @@ fn run_impl_skill_nul_normalized_resolves() {
     write_state(
         tmp.path(),
         "feature",
-        r#"{"skills": {"flow-complete": "auto"}}"#,
+        r#"{"skills": {"flow-abort": {"continue": "auto"}}}"#,
     );
-    let v = run_impl(&args("flow-complete\0", "feature"), tmp.path());
+    let v = run_impl(&args("flow-abort\0", "feature"), tmp.path());
     assert_eq!(v["status"], "ok");
-    assert_eq!(v["mode"], "auto");
-}
-
-#[test]
-fn run_impl_flow_abort_resolves_from_state() {
-    let tmp = tempfile::tempdir().unwrap();
-    write_state(
-        tmp.path(),
-        "feature",
-        r#"{"skills": {"flow-abort": "auto"}}"#,
-    );
-    let v = run_impl(&args("flow-abort", "feature"), tmp.path());
-    assert_eq!(v["status"], "ok");
-    assert_eq!(v["mode"], "auto");
+    assert_eq!(v["continue"], "auto");
 }
 
 // --- run_impl_main ---
@@ -367,18 +380,19 @@ fn run_impl_main_returns_value_and_zero() {
     write_state(
         tmp.path(),
         "feature",
-        r#"{"skills": {"flow-complete": "auto"}}"#,
+        r#"{"skills": {"flow-complete": {"commit": "auto", "continue": "auto"}}}"#,
     );
     let (v, code) = run_impl_main(&args("flow-complete", "feature"), tmp.path());
     assert_eq!(code, 0);
     assert_eq!(v["status"], "ok");
-    assert_eq!(v["mode"], "auto");
+    assert_eq!(v["commit"], "auto");
+    assert_eq!(v["continue"], "auto");
 }
 
 #[test]
 fn run_impl_main_invalid_skill_still_exit_zero() {
     let tmp = tempfile::tempdir().unwrap();
-    let (v, code) = run_impl_main(&args("flow-code", "feature"), tmp.path());
+    let (v, code) = run_impl_main(&args("flow-prime", "feature"), tmp.path());
     assert_eq!(code, 0);
     assert_eq!(v["status"], "error");
     assert_eq!(v["reason"], "invalid_skill");
@@ -391,7 +405,11 @@ fn subcommand_resolves_from_state_file() {
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().canonicalize().unwrap();
     init_git_repo(&repo, "feature");
-    write_state(&repo, "feature", r#"{"skills": {"flow-complete": "auto"}}"#);
+    write_state(
+        &repo,
+        "feature",
+        r#"{"skills": {"flow-complete": {"commit": "manual", "continue": "auto"}}}"#,
+    );
 
     let output = run_subcommand(&repo, "flow-complete", None);
     assert_eq!(
@@ -402,7 +420,8 @@ fn subcommand_resolves_from_state_file() {
     );
     let v: Value = serde_json::from_slice(&output.stdout).expect("stdout is JSON");
     assert_eq!(v["status"], "ok");
-    assert_eq!(v["mode"], "auto");
+    assert_eq!(v["commit"], "manual");
+    assert_eq!(v["continue"], "auto");
 }
 
 #[test]
@@ -420,7 +439,8 @@ fn subcommand_no_current_branch_falls_back() {
     );
     let v: Value = serde_json::from_slice(&output.stdout).expect("stdout is JSON");
     assert_eq!(v["status"], "ok");
-    assert_eq!(v["mode"], "manual");
+    assert_eq!(v["commit"], "manual");
+    assert_eq!(v["continue"], "manual");
 }
 
 #[test]

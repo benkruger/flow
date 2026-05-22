@@ -379,6 +379,56 @@ fn test_phase_config_no_auto_skills() {
     }
 }
 
+// --- resolve-skill-mode bare-string branch ---
+//
+// `resolve_skill_mode::resolve` parses ONLY the block-shape
+// `skills.<skill>` config object (`{commit, continue}`). The prior
+// `entry.as_str()` branch that treated a bare-string `skills.<skill>`
+// entry as a mode value is removed — every non-object entry now
+// clamps to the per-skill default. This tombstone catches a merge
+// conflict or accidental edit that re-introduces bare-string parsing
+// inside `resolve()`.
+
+/// Tombstone: removed in PR #1691. The bare-string-parsing arm of
+/// `resolve_skill_mode::resolve` — `entry.as_str()` treating a
+/// `skills.<skill>` bare string as a mode value — is deleted. The
+/// resolver reads only the block-shape `{commit, continue}` object.
+///
+/// Assertion kind: structural. The forbidden construct (consuming
+/// the `skills.<skill>` entry as a bare string) can be expressed
+/// many ways, so a byte-substring scan over the whole file is
+/// insufficient — a `concat!` / `format!`-reassembled literal would
+/// evade it, and prose elsewhere in the file legitimately mentions
+/// `as_str`. The scan is therefore bounded to the body of
+/// `resolve()` via `extract_fn_body` (brace-balanced from the
+/// signature marker `pub fn resolve(`) and asserts the body contains
+/// no `as_str(` call. The new `resolve()` delegates per-axis string
+/// extraction to the separate `resolve_axis` helper — which sits
+/// before `resolve` in the file and is outside the bounded slice —
+/// so `resolve()`'s own body carries no `as_str(`. Re-introducing
+/// `entry.as_str()` inside `resolve()` re-adds the call and trips
+/// this test.
+#[test]
+fn test_resolve_skill_mode_no_bare_string_branch() {
+    let root = common::repo_root();
+    let path = root.join("src").join("resolve_skill_mode.rs");
+    let content = fs::read_to_string(&path).expect("src/resolve_skill_mode.rs must exist");
+    const MARKER: &str = "pub fn resolve(";
+    let sig_start = content
+        .find(MARKER)
+        .expect("`pub fn resolve(` must exist in src/resolve_skill_mode.rs");
+    let body = extract_fn_body(&content, sig_start + MARKER.len())
+        .expect("resolve() body must be brace-balanced");
+    assert!(
+        !body.contains("as_str("),
+        "src/resolve_skill_mode.rs::resolve must not contain `as_str(` — \
+         the bare-string `skills.<skill>` parsing arm is removed; the \
+         resolver reads only the block-shape `{{commit, continue}}` \
+         object. Per-axis string extraction lives in the separate \
+         `resolve_axis` helper."
+    );
+}
+
 // --- flow-plan parent-issue closure ---
 //
 // The decomposed-child issue supersedes the vanilla parent's

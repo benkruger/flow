@@ -155,7 +155,7 @@ pub fn resolve_mode(auto: bool, manual: bool, state: Option<&Value>) -> String {
         return "manual".to_string();
     }
     match state {
-        Some(st) => crate::resolve_skill_mode::resolve(st, "flow-complete"),
+        Some(st) => crate::resolve_skill_mode::resolve(st, "flow-complete").1,
         None => crate::resolve_skill_mode::FALLBACK_MODE.to_string(),
     }
 }

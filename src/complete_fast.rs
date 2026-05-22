@@ -217,7 +217,7 @@ fn freshness_and_merge(
     // marker behind. The `merge_not_confirmed` envelope carries a
     // `path` field so the skill's `path`-keyed Step 1 dispatch can
     // branch on it.
-    if crate::resolve_skill_mode::resolve(state, "flow-complete") == "manual" {
+    if crate::resolve_skill_mode::resolve(state, "flow-complete").1 == "manual" {
         let approved = state_path
             .parent()
             .map(crate::merge_approval::check_and_consume_approval)
