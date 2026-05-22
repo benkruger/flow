@@ -230,6 +230,38 @@ fn skills_seeded_from_flow_json_verbatim() {
     assert_eq!(state["skills"]["flow-start"]["continue"], "manual");
 }
 
+#[test]
+fn skills_block_shape_seeded_from_flow_json() {
+    // Post-prime, `.flow.json` carries every skills entry in block
+    // (object) shape. init_state copies the skills section verbatim,
+    // so the state file's skills section is block shape with no
+    // init_state code change — the resolver's single-shape contract
+    // holds end to end.
+    let dir = tempfile::tempdir().unwrap();
+    let skills = json!({
+        "flow-start": {"continue": "auto"},
+        "flow-code": {"commit": "auto", "continue": "auto"},
+        "flow-review": {"commit": "auto", "continue": "auto"},
+        "flow-learn": {"commit": "auto", "continue": "auto"},
+        "flow-complete": {"continue": "auto"},
+        "flow-abort": {"continue": "auto"}
+    });
+    setup_project(dir.path(), "rails", Some(skills));
+    run_init_state(dir.path(), &["block shape skills"]);
+    let state = read_state_file(dir.path(), "block-shape-skills");
+    let written = state["skills"]
+        .as_object()
+        .expect("state file skills section must be an object");
+    for (name, entry) in written {
+        assert!(
+            entry.is_object(),
+            "skills entry `{name}` must be block shape (object), got {entry}"
+        );
+    }
+    assert_eq!(state["skills"]["flow-code"]["commit"], "auto");
+    assert_eq!(state["skills"]["flow-complete"]["continue"], "auto");
+}
+
 // --- Prompt ---
 
 #[test]

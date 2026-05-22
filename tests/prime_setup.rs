@@ -425,7 +425,7 @@ fn version_marker_with_setup_hash() {
 }
 
 #[test]
-fn version_marker_with_skills() {
+fn version_marker_normalizes_bare_string_skills_to_block_shape() {
     let tmp = tempfile::tempdir().unwrap();
     let skills = json!({"flow-start": "manual", "flow-code": "auto"});
     prime_setup::write_version_marker(
@@ -441,7 +441,63 @@ fn version_marker_with_skills() {
     .unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
-    assert_eq!(data["skills"], skills);
+    assert_eq!(
+        data["skills"],
+        json!({
+            "flow-start": {"continue": "manual"},
+            "flow-code": {"continue": "auto"}
+        }),
+        "bare-string skills entries must be written as block-shape objects"
+    );
+}
+
+#[test]
+fn version_marker_passes_through_object_skills() {
+    let tmp = tempfile::tempdir().unwrap();
+    let skills = json!({
+        "flow-code": {"commit": "auto", "continue": "manual"},
+        "flow-complete": {"continue": "auto"}
+    });
+    prime_setup::write_version_marker(
+        tmp.path(),
+        "1.0.0",
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(&skills),
+    )
+    .unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
+    assert_eq!(
+        data["skills"], skills,
+        "object-shape skills entries pass through unchanged"
+    );
+}
+
+#[test]
+fn version_marker_non_object_skills_passes_through() {
+    // A malformed `--skills-json` payload that is not a JSON object
+    // (e.g. a bare string) is written as-is — normalization only
+    // rewrites per-entry values inside an object.
+    let tmp = tempfile::tempdir().unwrap();
+    let skills = json!("auto");
+    prime_setup::write_version_marker(
+        tmp.path(),
+        "1.0.0",
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(&skills),
+    )
+    .unwrap();
+    let data: Value =
+        serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
+    assert_eq!(data["skills"], json!("auto"));
 }
 
 #[test]
@@ -959,7 +1015,14 @@ fn cli_skills_json_written() {
     assert_eq!(data["status"], "ok");
     let flow_data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
-    assert_eq!(flow_data["skills"], skills);
+    assert_eq!(
+        flow_data["skills"],
+        json!({
+            "flow-start": {"continue": "manual"},
+            "flow-abort": {"continue": "auto"}
+        }),
+        "prime-setup normalizes bare-string --skills-json entries to block shape"
+    );
 }
 
 #[test]
