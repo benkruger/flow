@@ -2203,6 +2203,26 @@ fn flow_abort_mode_resolution_invokes_resolve_skill_mode() {
     );
 }
 
+/// flow-abort resolves the mode in the `## Mode Resolution` section,
+/// not inside the Entry Check. Both terminal skills (`flow-complete`,
+/// `flow-abort`) keep `## Mode Resolution` as the single runnable
+/// home for mode resolution so the pattern is consistent and a
+/// future entry-flow change cannot strand the resolution.
+#[test]
+fn flow_abort_resolves_mode_outside_entry_check() {
+    let c = common::read_skill("flow-abort");
+    let tail = c
+        .split_once("## Entry Check")
+        .map(|(_, t)| t)
+        .expect("flow-abort must have an Entry Check section");
+    let entry_check = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
+    assert!(
+        !entry_check.contains("resolve-skill-mode"),
+        "flow-abort must resolve mode in `## Mode Resolution`, not inside the \
+         Entry Check — the two terminal skills share one runnable resolution home"
+    );
+}
+
 #[test]
 fn prime_presets_cover_all_configurable_skills() {
     let c = common::read_skill("flow-prime");
@@ -3504,11 +3524,7 @@ fn continue_context_includes_mode_flag() {
     // re-resolves the mode from the state file via `## Mode
     // Resolution`. The inverse contract is locked in by
     // `flow_complete_continue_context_drops_mode_flag` below.
-    let skills_with_min = [
-        ("flow-code", 2),
-        ("flow-review", 2),
-        ("flow-learn", 2),
-    ];
+    let skills_with_min = [("flow-code", 2), ("flow-review", 2), ("flow-learn", 2)];
     let re = Regex::new(r#""_continue_context=([^"]+)""#).unwrap();
     for (skill, min_count) in skills_with_min {
         let content = common::read_skill(skill);

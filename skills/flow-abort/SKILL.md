@@ -32,13 +32,31 @@ shared state must be idempotent.
 
 ## Mode Resolution
 
-1. If `--auto` was passed → mode is **auto**
-2. If `--manual` was passed → mode is **manual**
-3. Otherwise, run `bin/flow resolve-skill-mode --skill flow-abort --branch <branch>` (prepended with the plugin root prefix) — it reads `skills.flow-abort` from the state file, tolerates every config shape (bare string, object with `continue`, missing/null/wrong-type entry), and falls back to **manual** when the config is missing or unparseable. Use the `mode` field from its JSON output. The Entry Check below runs this command after resolving `<branch>`.
+Resolve the mode as the first action on entry, after resolving the
+current branch. `## Mode Resolution` is the single runnable home for
+mode resolution — the same pattern `flow-complete` uses, so the two
+terminal skills stay consistent.
+
+1. Resolve the current branch: run `git worktree list --porcelain`,
+   note the project root (the path on the first `worktree` line),
+   find the `worktree` entry whose path matches the current working
+   directory, and take the `branch refs/heads/<name>` line from that
+   entry (strip the `refs/heads/` prefix). Call this `<branch>`.
+2. If `--auto` was passed → mode is **auto**.
+3. If `--manual` was passed → mode is **manual**.
+4. Otherwise, run the resolver below and use the `mode` field from
+   its JSON output. It reads the `skills.flow-abort` entry in the
+   state file, tolerating every config shape (bare string, object
+   with `continue`, missing/null/wrong-type entry), and falls back
+   to **manual** when the config is missing or unparseable:
+
+   ```bash
+   ${CLAUDE_PLUGIN_ROOT}/bin/flow resolve-skill-mode --skill flow-abort --branch <branch>
+   ```
 
 ## Entry Check
 
-Run this entry check as your very first action.
+Run this entry check immediately after Mode Resolution.
 
 1. Run `git worktree list --porcelain`. Note the path on the first
    `worktree` line (this is the project root). Find the `worktree` entry
@@ -62,15 +80,6 @@ If the Read tool fails for any other reason, stop and show the error.
 
 Use these values for all subsequent steps — do not re-read the state file
 or re-run git commands to gather the same information.
-
-Resolve the mode using the Mode Resolution rules above. When neither
-`--auto` nor `--manual` was passed, run the resolution command —
-`<branch>` is the value resolved in step 1 — and use the `mode` field
-from its JSON output:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow resolve-skill-mode --skill flow-abort --branch <branch>
-```
 
 ## Announce
 
