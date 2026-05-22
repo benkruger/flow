@@ -6718,24 +6718,25 @@ fn flow_plan_skill_invokes_plan_review_with_capped_loop() {
         "skills/flow-plan/SKILL.md Plan Review subsection must route the re-decompose retry through `decompose:decompose` — the plan must never be hand-patched"
     );
 
-    // Failure path: COMPLETE-FAILED banner
+    // Cap-exhausted path files anyway. Regression guarded: a future
+    // edit re-introduces a non-filing halt on cap exhaustion. The
+    // plan-reviewer is advisory — it never blocks filing. The
+    // subsection must state the cap-exhausted path proceeds to file
+    // (or edit) the issue with the last drafted plan.
     assert!(
-        subsection.contains("COMPLETE-FAILED"),
-        "skills/flow-plan/SKILL.md Plan Review subsection must name the COMPLETE-FAILED banner as the cap-exhausted failure surface"
+        subsection.contains("filed with the last drafted plan"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must state the cap-exhausted path files the issue with the last drafted plan — the reviewer is advisory and never blocks filing"
     );
 
-    // Failure path: marker-clear
+    // Cap-exhausted path surfaces violations as a non-blocking
+    // advisory warning. Regression guarded: a future edit drops the
+    // violations on cap exhaustion, filing the issue with no signal
+    // about which rules the plan repeatedly violated. The subsection
+    // must render the final violations as a non-blocking advisory
+    // warning.
     assert!(
-        subsection.contains("clear-utility-in-progress"),
-        "skills/flow-plan/SKILL.md Plan Review subsection must clear the utility-in-progress marker on cap exhaustion so the Stop hook does not refuse the surfaced failure"
-    );
-
-    // Failure path: do NOT file (covers both modes — bare-prompt files
-    // new and issue-input edits in place; neither should occur on cap
-    // exhaustion). The "Do NOT file or edit" wording satisfies both.
-    assert!(
-        subsection.contains("do not file") || subsection.contains("do NOT file") || subsection.contains("Do not file") || subsection.contains("Do NOT file"),
-        "skills/flow-plan/SKILL.md Plan Review subsection must explicitly state that the issue is NOT filed on cap exhaustion"
+        subsection.contains("advisory warning"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must surface the final violations as a non-blocking advisory warning on cap exhaustion so the user sees which rules the plan repeatedly violated"
     );
 
     // Adjacency check: no `### ` heading sits between Transform + Draft

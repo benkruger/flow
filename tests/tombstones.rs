@@ -3057,3 +3057,45 @@ fn test_flow_plan_no_decomposed_label_gate() {
         FORBIDDEN
     );
 }
+
+/// Tombstone: removed in PR #1687. Must not return.
+///
+/// `skills/flow-plan/SKILL.md` Step 6's "Plan-Reviewer Loop"
+/// cap-exhausted branch previously halted the skill with the
+/// structured error envelope
+/// `{"status":"error","reason":"plan_reviewer_max_retries",...}`
+/// and printed the COMPLETE-FAILED banner instead of filing the
+/// issue. The reviewer is advisory now: after 3 failed reviews
+/// the issue is filed with the last drafted plan and the
+/// violations are surfaced as a non-blocking warning. The
+/// `plan_reviewer_max_retries` error reason is gone entirely. A
+/// future regression would re-introduce the halt-and-fail
+/// envelope alongside this identifier.
+///
+/// Stability: byte-substring check against the error-reason
+/// identifier. The scanned file is Markdown — it has no `concat!`
+/// macro concatenation, no `format!` template reassembly, and no
+/// `constant` declaration that could synthesize the identifier
+/// without it appearing in source. Plausible bypasses considered
+/// and rejected: (1) `concat!("plan_reviewer", "_max_retries")` —
+/// Markdown has no `concat!`. (2) a `format!` template assembling
+/// the identifier — Markdown has no `format!`. (3) a Rust
+/// constant referenced by name — the identifier lives in SKILL.md
+/// Markdown prose, not Rust source, so no constant indirection is
+/// possible.
+#[test]
+fn test_flow_plan_no_plan_reviewer_max_retries() {
+    let content = fs::read_to_string("skills/flow-plan/SKILL.md")
+        .expect("skills/flow-plan/SKILL.md must exist");
+    const FORBIDDEN: &str = "plan_reviewer_max_retries";
+    assert!(
+        !content.contains(FORBIDDEN),
+        "skills/flow-plan/SKILL.md must not contain the \
+         error-reason identifier `{}` — the cap-exhausted \
+         halt-and-fail envelope was removed in PR #1687. The \
+         plan-reviewer is advisory now: after 3 failed reviews \
+         the issue is filed with the last drafted plan and the \
+         violations are surfaced as a non-blocking warning.",
+        FORBIDDEN
+    );
+}

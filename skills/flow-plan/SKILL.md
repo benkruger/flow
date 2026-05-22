@@ -744,35 +744,33 @@ For each retry attempt:
    through to `Validate the Body`. On `re-decompose`
    increment the attempt counter and continue.
 
-After 3 failed reviews, clear the utility-in-progress marker,
-halt the skill with the structured error envelope, print the
-final `Violations:` block, and print the COMPLETE-FAILED banner.
-Do NOT file or edit the issue. Do NOT loop further.
+After 3 failed reviews, do NOT loop further. The plan-reviewer
+advises — it never blocks filing. The issue is then
+filed with the last drafted plan; the final `Violations:` block
+is surfaced as a non-blocking advisory warning rather than a
+halt.
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow clear-utility-in-progress --skill flow:flow-plan
-```
-
-````markdown
-```json
-{"status":"error","reason":"plan_reviewer_max_retries","attempts":3}
-```
-````
+Print the advisory preface, then render the agent's final
+`Violations:` block verbatim:
 
 ````markdown
 ```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✗ FLOW v2.4.0 — flow:flow-plan — COMPLETE-FAILED
-  Plan reviewer rejected the draft 3 times. Issue not filed.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠ Plan Review advisory — the plan-reviewer returned
+  `re-decompose` on all 3 attempts. The issue is being filed
+  with the last drafted plan; the violations below are surfaced
+  for the user, not a block on filing.
 ```
 ````
 
-Render the final `Violations:` block verbatim so the user sees
-which rules the plan repeatedly violated. The user can then
-decide whether to invoke `/flow:flow-plan #N` again with
-additional discussion-mode context, abort the planning attempt,
-or escalate the rule design (if a rule itself is at fault).
+The user sees which rules the plan repeatedly violated and can
+decide whether to address them — by invoking `/flow:flow-plan #N`
+again with additional discussion-mode context, or by escalating
+the rule design if a rule itself is at fault — before the issue
+reaches `/flow:flow-start`.
+
+Then fall through to `Validate the Body` → `File or Edit` →
+`Finish` with the last drafted plan. The utility-in-progress
+marker clears at the normal `Finish` step.
 
 ### Validate the Body
 
