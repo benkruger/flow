@@ -122,49 +122,6 @@ fn gate_check(state: &Value, phase: &str) -> Result<(), Value> {
     Ok(())
 }
 
-/// Read mode config from state file's skills section. Exposed as a
-/// public seam so integration tests in `tests/phase_enter.rs` can
-/// drive every skills-config shape variant directly.
-///
-/// Returns (commit_mode, continue_mode) as strings.
-pub fn resolve_mode(state: &Value, phase: &str) -> (String, String) {
-    // Per-phase defaults when no skills config exists
-    let (default_commit, default_continue) = match phase {
-        "flow-learn" => ("auto", "auto"),
-        _ => ("manual", "manual"),
-    };
-
-    let skill_config = state.get("skills").and_then(|s| s.get(phase));
-
-    match skill_config {
-        Some(cfg) if cfg.is_object() => {
-            let commit = cfg
-                .get("commit")
-                .and_then(|v| v.as_str())
-                .unwrap_or(default_commit)
-                .to_string();
-            let cont = cfg
-                .get("continue")
-                .and_then(|v| v.as_str())
-                .unwrap_or(default_continue)
-                .to_string();
-            (commit, cont)
-        }
-        // Simple string config (e.g. "flow-abort": "auto") — applies to both axes.
-        // Empty strings fall through to defaults per the same discipline as
-        // missing-key: a config that is present but contentless is not a config.
-        Some(cfg) if cfg.is_string() => {
-            let s = cfg.as_str().unwrap_or("");
-            if s.is_empty() {
-                (default_commit.to_string(), default_continue.to_string())
-            } else {
-                (s.to_string(), s.to_string())
-            }
-        }
-        _ => (default_commit.to_string(), default_continue.to_string()),
-    }
-}
-
 /// Testable entry point.
 ///
 /// Returns Ok(json) for both success and application-level errors (status: error).
@@ -193,9 +150,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     if let Err(err_json) = gate_check(&state, &args.phase) {
         return Ok(err_json);
     }
-
-    // Resolve mode from state skills config
-    let (commit_mode, continue_mode) = resolve_mode(&state, &args.phase);
 
     // Extract state data before mutation (these don't change during enter)
     let pr_number = state.get("pr_number").and_then(|v| v.as_i64());
@@ -339,10 +293,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         "worktree_path": worktree_path.to_string_lossy(),
         "relative_cwd": relative_cwd,
         "worktree_cwd": worktree_cwd.to_string_lossy(),
-        "mode": {
-            "commit": commit_mode,
-            "continue": continue_mode,
-        },
     });
 
     // Add optional fields
