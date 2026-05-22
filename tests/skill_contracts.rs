@@ -2182,7 +2182,6 @@ fn flow_complete_step5_handles_merge_not_confirmed() {
     );
 }
 
-
 /// flow-abort resolves the mode in the `## Mode Resolution` section,
 /// not inside the Entry Check. Both terminal skills (`flow-complete`,
 /// `flow-abort`) keep `## Mode Resolution` as the single runnable

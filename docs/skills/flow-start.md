@@ -8,11 +8,9 @@ parent: Skills
 
 **Phase:** 1 — Start
 
-**Usage:** `/flow-start #N`, `/flow-start --auto #N`, or `/flow-start --manual #N`
+**Usage:** `/flow-start #N`
 
 **Example:** `/flow-start #1234`
-
-**Auto mode example:** `/flow-start --auto #1234`
 
 Begins a new feature against a pre-decomposed GitHub issue. The argument must match `^#[1-9][0-9]*$` — a literal `#` followed by a positive integer. `start-init` fetches the issue title and derives the branch name from it; `plan-from-issue` then extracts the implementation plan from the issue body's `<!-- FLOW-PLAN-BEGIN -->`/`<!-- FLOW-PLAN-END -->` sentinels. This is always the first command run for any piece of work. It sets up an isolated environment, ensures dependencies are current, and establishes the PR before any feature code is written.
 
@@ -48,9 +46,9 @@ If the referenced issue already carries the "Flow In-Progress" label, `start-ini
 
 ## Mode
 
-Mode is configurable via `.flow.json` (default: manual) and cached in the state file during setup. The Done section reads the resolved mode from the state file, not `.flow.json` directly. In auto mode, the phase transition advances to Code without asking.
+Mode is configurable via `.flow.json` — the single source of truth for skill autonomy — and cached in the state file during setup. There are no `--auto`/`--manual` flags. The Done section reads the Start phase's resolved `continue` mode from the state file's `skills.flow-start` config (via `phase-finalize`'s `continue_action`). In auto mode, the phase transition advances to Code without asking.
 
-When `--auto` is passed to `/flow-start`, it sets the Start phase's own continue mode to autonomous — the phase transition advances to Code without asking. It does NOT override the autonomy settings of the downstream phases: each phase reads its own `skills.<phase>` configuration, seeded verbatim from `.flow.json` into the state file at flow-start. To run every phase autonomously, configure the skills block in `.flow.json` (the "Fully autonomous" preset from `/flow-prime`).
+Each phase reads its own `skills.<phase>` configuration, seeded verbatim from `.flow.json` into the state file at flow-start. To run every phase autonomously, configure the skills block in `.flow.json` (the "Fully autonomous" preset from `/flow-prime`).
 
 ---
 

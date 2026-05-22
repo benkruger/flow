@@ -167,7 +167,7 @@ Every planning skill is role-bound: PM, Tech Lead, or CTO voices with their own 
 
 - **`/flow-issues`** — Group open issues by label into four sections (Blocked, Other, Vanilla, Decomposed) with mechanical sort and a copy-pasteable command per row.
 - **`/flow-triage-issue #N`** — PM-lens triage of a single issue; verdict in `{close, decompose}` with confidence and flip-condition.
-- **`/flow-orchestrate`** — Process every issue labeled "Decomposed" sequentially overnight via `flow-start --auto`. Progress and results land in `flow tui`'s Orchestration tab — completed flows with PR links, failed flows with reasons, total elapsed time.
+- **`/flow-orchestrate`** — Process every issue labeled "Decomposed" sequentially overnight via `flow-start`. Progress and results land in `flow tui`'s Orchestration tab — completed flows with PR links, failed flows with reasons, total elapsed time.
 
 ---
 
@@ -184,7 +184,7 @@ Run `/flow-skills` anytime to see the live catalog grouped by role.
 | `/flow-explore` | Open a problem-statement conversation (PM voice); file a vanilla `## What` / `## Why` / `## Acceptance Criteria` issue on signal |
 | `/flow-plan` | Produce an implementation plan and attach it to an issue (Tech Lead voice). `#N` re-plans the existing issue in place; a bare topic synthesizes `## What` / `## Why` / `## Acceptance Criteria` and files a new decomposed issue |
 | `/flow-decompose-project` | Decompose a large project into linked GitHub issues with sub-issue and blocked-by relationships |
-| `/flow-orchestrate` | Process decomposed issues sequentially overnight via `flow-start --auto` |
+| `/flow-orchestrate` | Process decomposed issues sequentially overnight via `flow-start` |
 
 ### Work
 

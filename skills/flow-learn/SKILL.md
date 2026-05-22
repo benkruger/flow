@@ -689,8 +689,8 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=5
 ```
 
 To continue to Step 6, invoke `flow:flow-learn --continue-step` using
-the Skill tool as your final action. If commit=auto was resolved, pass
-`--auto` as well. Do not output anything else after this invocation.
+the Skill tool as your final action. Do not output anything else
+after this invocation.
 
 ---
 

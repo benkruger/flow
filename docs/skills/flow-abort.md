@@ -8,7 +8,7 @@ parent: Skills
 
 **Phase:** Any (no phase gate)
 
-**Usage:** `/flow-abort`, `/flow-abort --auto`, or `/flow-abort --manual`
+**Usage:** `/flow-abort`
 
 The escape hatch. Abandons the current feature completely — closes the PR,
 deletes the remote branch, removes the worktree, and deletes the state file.
@@ -16,9 +16,10 @@ deletes the remote branch, removes the worktree, and deletes the state file.
 Available from any phase, no prerequisites. Best-effort — warns if the state
 file is missing.
 
-- `/flow-abort` — uses configured mode from `.flow.json` (default: manual)
-- `/flow-abort --auto` — skips confirmation and proceeds directly
-- `/flow-abort --manual` — prompts for user confirmation before any destructive action
+The abort-confirmation mode is resolved from the state file's
+`skills.flow-abort` config — the single source of truth for skill
+autonomy (default: manual, prompts before any destructive action; auto
+skips the confirmation). There are no `--auto`/`--manual` flags.
 
 ---
 
@@ -76,6 +77,6 @@ Use `/flow-abort` to walk away from a feature entirely.
 
 - No phase gate — available from any phase
 - State file not required — warns if missing, infers from git state
-- Requires user confirmation when mode is manual (via `--manual` or `.flow.json`)
+- Requires user confirmation when mode is manual (via `.flow.json`)
 - Must run from the project root — never from inside the worktree
 - All operations are irreversible

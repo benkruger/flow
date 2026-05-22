@@ -21,9 +21,9 @@ A table of all 7 configurable skills with their autonomy settings across two axe
 - **Commit** — controls per-task review in phase skills (auto = skip review prompts, manual = require explicit approval before each commit).
 - **Continue** — whether to auto-advance to the next phase or prompt first.
 
-Phase skills that commit (Code, Review, Learn) have both axes. Phase skills that don't commit (Start, Plan) only have Continue. Utility skills (Abort, Complete) have a single mode value shown under Commit.
+Phase skills that commit (Code, Review, Learn) have both axes. Phase skills that don't commit (Start, Plan) only have Continue. Utility skills (Abort, Complete) only have Continue.
 
-Phase skills can be overridden at invocation time with `--auto` or `--manual` flags.
+`.flow.json` is the single source of truth for skill autonomy — each skill resolves its mode from its `skills.<skill>` config. There are no `--auto`/`--manual` invocation flags.
 
 ---
 

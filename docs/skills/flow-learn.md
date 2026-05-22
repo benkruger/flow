@@ -8,7 +8,7 @@ parent: Skills
 
 **Phase:** 4 — Learn
 
-**Usage:** `/flow-learn`, `/flow-learn --auto`, `/flow-learn --manual`, or `/flow-learn --continue-step`
+**Usage:** `/flow-learn` or `/flow-learn --continue-step`
 
 Audits rule compliance, identifies process gaps, and creates missing
 rules. Gathers artifacts and passes them to a cognitively isolated

@@ -864,8 +864,8 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set review_step=4
 ```
 
 To continue to Done, invoke `flow:flow-review --continue-step` using
-the Skill tool as your final action. If commit=auto was resolved, pass
-`--auto` as well. Do not output anything else after this invocation.
+the Skill tool as your final action. Do not output anything else
+after this invocation.
 
 ---
 

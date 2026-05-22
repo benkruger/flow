@@ -93,7 +93,7 @@ plugin source.
 | `/flow:flow-explore` | Open a problem-statement conversation (PM voice) — discussion-mode by default, files a vanilla `## What` / `## Why` / `## Acceptance Criteria` issue on user signal |
 | `/flow:flow-plan` | Decompose a vanilla problem-statement issue into a linked decomposed issue ready for the start phase. Tech Lead voice, mandatory `decompose:decompose` pass, files with `--label decomposed` and `bin/flow link-blocked-by` |
 | `/flow:flow-decompose-project` | Decompose a large project into linked GitHub issues with sub-issue and blocked-by relationships |
-| `/flow:flow-orchestrate` | Process decomposed issues sequentially overnight via flow-start --auto |
+| `/flow:flow-orchestrate` | Process decomposed issues sequentially overnight via flow-start |
 
 #### Work
 
