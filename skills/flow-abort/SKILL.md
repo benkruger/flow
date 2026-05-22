@@ -1,6 +1,6 @@
 ---
 name: flow-abort
-description: "Abort the current FLOW feature. Closes the PR, deletes the remote branch, removes the worktree, and deletes the state file. Available from any phase. Use --manual for confirmation prompt."
+description: "Abort the current FLOW feature. Closes the PR, deletes the remote branch, removes the worktree, and deletes the state file. Available from any phase. The confirmation prompt is governed by the skills.flow-abort config in the state file."
 ---
 
 # FLOW Abort
@@ -12,13 +12,9 @@ from any phase, no prerequisites.
 
 ```text
 /flow:flow-abort
-/flow:flow-abort --auto
-/flow:flow-abort --manual
 ```
 
-- `/flow:flow-abort` — uses configured mode from the state file (default: manual)
-- `/flow:flow-abort --auto` — skips confirmation and proceeds directly to cleanup
-- `/flow:flow-abort --manual` — prompts for user confirmation before any destructive action
+- `/flow:flow-abort` — uses the configured mode from the state file's `skills.flow-abort` config
 
 ## Concurrency
 
@@ -35,20 +31,20 @@ shared state must be idempotent.
 Resolve the mode as the first action on entry, after resolving the
 current branch. `## Mode Resolution` is the single runnable home for
 mode resolution — the same pattern `flow-complete` uses, so the two
-terminal skills stay consistent.
+terminal skills stay consistent. There are no `--auto`/`--manual`
+flags — the state file's `skills.flow-abort` config is the single
+source of truth for skill autonomy.
 
 1. Resolve the current branch: run `git worktree list --porcelain`,
    note the project root (the path on the first `worktree` line),
    find the `worktree` entry whose path matches the current working
    directory, and take the `branch refs/heads/<name>` line from that
    entry (strip the `refs/heads/` prefix). Call this `<branch>`.
-2. If `--auto` was passed → mode is **auto**.
-3. If `--manual` was passed → mode is **manual**.
-4. Otherwise, run the resolver below and use the `mode` field from
-   its JSON output. It reads the `skills.flow-abort` entry in the
-   state file, tolerating every config shape (bare string, object
-   with `continue`, missing/null/wrong-type entry), and falls back
-   to **manual** when the config is missing or unparseable:
+2. Run the resolver below and use the `continue` field from its JSON
+   output as the abort-confirmation mode. It reads the
+   `skills.flow-abort` entry in the state file, tolerating every
+   object config shape, and falls back to **manual** when the config
+   is missing or unparseable:
 
    ```bash
    ${CLAUDE_PLUGIN_ROOT}/bin/flow resolve-skill-mode --skill flow-abort --branch <branch>

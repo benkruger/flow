@@ -9,12 +9,10 @@ description: "Phase 1: Start — begin a new feature. Creates a worktree, upgrad
 
 ```text
 /flow:flow-start #1234
-/flow:flow-start --auto #1234
-/flow:flow-start --manual #1234
 ```
 
-**Strict argument format:** After stripping flags (`--auto`, `--manual`),
-the remaining argument MUST match the regex `^#[1-9][0-9]*$` — a literal
+**Strict argument format:** The argument MUST match the regex
+`^#[1-9][0-9]*$` — a literal
 `#` followed by a positive integer. The argument names a GitHub issue
 that has been pre-decomposed via `/flow:flow-plan #N` and carries
 its plan wrapped between the literal sentinel markers
@@ -39,7 +37,7 @@ start-init returns a hard error — the issue is already being worked
 on by another flow (on this machine or another engineer's machine).
 
 <HARD-GATE>
-Do NOT proceed if no arguments were provided after the command (excluding flags).
+Do NOT proceed if no arguments were provided after the command.
 Output this error message and stop:
 
 > "Issue reference required. Usage: `/flow:flow-start #N` where N is the
@@ -50,8 +48,8 @@ No interactive prompt. The user re-runs the command with `#N`.
 </HARD-GATE>
 
 <HARD-GATE>
-Do NOT proceed if the argument does not match `^#[1-9][0-9]*$` after
-stripping flags. Reject free-text prompts, multi-token arguments, and
+Do NOT proceed if the argument does not match `^#[1-9][0-9]*$`.
+Reject free-text prompts, multi-token arguments, and
 any value that does not begin with `#` followed by a positive integer.
 Output this error message and stop:
 
@@ -81,9 +79,19 @@ shared state must be idempotent.
 
 ## Mode Resolution
 
-1. If `--auto` was passed → continue=auto for this Start phase, so the Done section auto-advances to Code without prompting. `--auto` does NOT override the skills config: the state file's `skills` section is always seeded from `.flow.json`, and each downstream phase honors its own configured autonomy.
-2. If `--manual` was passed → continue=manual
-3. Otherwise → resolved in the Done section by reading `skills.flow-start.continue` from `.flow-states/<branch>/state.json` (which exists after Step 1)
+The Start phase's `continue` mode governs whether the Done section
+auto-advances to Code or prompts the user. It is resolved from the
+state file's `skills.flow-start` config — the single source of
+truth for skill autonomy — and there are no `--auto`/`--manual`
+flags.
+
+Resolution is deferred to the Done section: the state file does not
+exist until `start-init` creates it in Step 1, so `resolve-skill-mode`
+cannot run at the top of the skill. The Done HARD-GATE resolves
+`continue` from the `phase-finalize` `continue_action` field, which
+`phase-finalize` computes from `skills.flow-start.continue`. The
+state file's `skills` section is always seeded from `.flow.json`,
+and each downstream phase honors its own configured autonomy.
 
 ## Announce
 
@@ -126,8 +134,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow start-init <feature-name> --prompt-file .flow-sta
 
 `start-init` takes no mode flag — the state file's `skills` section is
 always seeded from `.flow.json`. The Start phase's own continue mode
-is resolved from `--auto`/`--manual` (or the state file) in the Done
-section.
+is resolved from the state file in the Done section.
 
 Parse the JSON output and branch on `status`:
 
@@ -346,9 +353,9 @@ Output the following banner in your response (not via Bash) inside a fenced code
 STOP. Parse `continue_action` from the `phase-finalize` output above
 to determine how to advance.
 
-1. If `--auto` was passed to this skill invocation → continue=auto.
-   If `--manual` was passed → continue=manual.
-   Otherwise, use `continue_action` from the `phase-finalize` output.
+1. Use `continue_action` from the `phase-finalize` output —
+   `phase-finalize` computes it from the state file's
+   `skills.flow-start.continue` config.
    If `continue_action` is `"invoke"` → continue=auto.
    If `continue_action` is `"ask"` → continue=manual.
 2. If continue=auto → invoke `flow:flow-code` directly using the Skill tool.

@@ -2043,17 +2043,22 @@ fn generic_skills_have_no_language_conditionals() {
 // --- Configurable skills ---
 
 #[test]
-fn configurable_skills_support_both_flags() {
+fn configurable_skills_have_no_mode_flags_in_usage() {
+    // Every configurable skill resolves autonomy from the state file's
+    // `skills.<skill>` config via `resolve-skill-mode` — the single
+    // source of truth. The Usage section names no `--auto`/`--manual`
+    // flag. A regression that re-introduces a flag in a Usage block
+    // re-opens the flag-vs-state-config dual-source ambiguity.
+    let re = Regex::new(r"(?s)## Usage\n(.*?)(?:\n## |\z)").unwrap();
     for name in CONFIGURABLE_SKILLS {
         let c = common::read_skill(name);
+        let cap = re.captures(&c);
+        assert!(cap.is_some(), "{} has no Usage section", name);
+        let usage = &cap.unwrap()[1];
         assert!(
-            c.contains("--auto"),
-            "{} must mention --auto in Usage",
-            name
-        );
-        assert!(
-            c.contains("--manual"),
-            "{} must mention --manual in Usage",
+            !usage.contains("--auto") && !usage.contains("--manual"),
+            "{} Usage section must not mention --auto/--manual — mode is \
+             resolved from the state file's skills config",
             name
         );
     }
@@ -2072,48 +2077,40 @@ fn configurable_skills_have_mode_resolution() {
 }
 
 #[test]
-fn mode_resolution_references_config_source() {
+fn mode_resolution_invokes_resolve_skill_mode() {
+    // Every configurable skill resolves autonomy through
+    // `resolve-skill-mode`, which reads the state file's
+    // `skills.<skill>` config — the single source of truth. The five
+    // skills with a state file at Mode Resolution time (code, review,
+    // learn, complete, abort) invoke the resolver directly in their
+    // `## Mode Resolution` section. flow-start has no state file until
+    // `start-init` runs in Step 1, so it defers resolution to the Done
+    // section — its Mode Resolution section names the state file as
+    // the config source. A regression that hand-rolls the
+    // `skills.<skill>` read reintroduces the config-shape ambiguity
+    // the shared resolver closes.
     let re = Regex::new(r"(?s)## Mode Resolution\n(.*?)(?:\n## |\z)").unwrap();
     for name in CONFIGURABLE_SKILLS {
         let c = common::read_skill(name);
         let cap = re.captures(&c);
         assert!(cap.is_some(), "{} has no Mode Resolution section", name);
-        let text = &cap.unwrap()[1];
-        if PHASE_ENTER_PHASES.contains(name) {
+        let section = &cap.unwrap()[1];
+        if *name == "flow-start" {
             assert!(
-                text.contains("phase-enter"),
-                "{} Mode Resolution must reference phase-enter",
-                name
+                section.contains(".flow-states/") || section.contains("state file"),
+                "flow-start Mode Resolution must name the state file as the \
+                 config source (resolution is deferred to the Done section)"
             );
         } else {
+            let expected = format!("bin/flow resolve-skill-mode --skill {}", name);
             assert!(
-                text.contains(".flow-states/") || text.contains("state file"),
-                "{} Mode Resolution must reference state file",
-                name
+                section.contains(&expected),
+                "{} Mode Resolution must invoke `{}`",
+                name,
+                expected
             );
         }
     }
-}
-
-#[test]
-fn flow_complete_mode_resolution_invokes_resolve_skill_mode() {
-    // The flow-complete `## Mode Resolution` section must resolve the
-    // configured mode through `bin/flow resolve-skill-mode` rather than
-    // hand-rolling the `skills.flow-complete` state-file read. Regression:
-    // a future SKILL.md edit reverts the section to the hand-rolled prose,
-    // reintroducing the bare-string-vs-object shape ambiguity.
-    let c = common::read_skill("flow-complete");
-    let re = Regex::new(r"(?s)## Mode Resolution\n(.*?)(?:\n## |\z)").unwrap();
-    let cap = re.captures(&c);
-    assert!(
-        cap.is_some(),
-        "flow-complete has no Mode Resolution section"
-    );
-    let section = &cap.unwrap()[1];
-    assert!(
-        section.contains("bin/flow resolve-skill-mode --skill flow-complete"),
-        "flow-complete Mode Resolution must invoke `bin/flow resolve-skill-mode --skill flow-complete`"
-    );
 }
 
 /// flow-complete must resolve the autonomy mode OUTSIDE the SOFT-GATE.
@@ -2185,43 +2182,6 @@ fn flow_complete_step5_handles_merge_not_confirmed() {
     );
 }
 
-/// flow-complete's Step 1 `complete-fast` dispatch must handle the
-/// `merge_not_confirmed` path — `complete-fast` emits it when an
-/// `--auto` flag is passed against a `manual`-configured project, and
-/// Step 1 routes back to Step 4 to re-confirm. Without the branch the
-/// refusal falls through to the generic error handler with no
-/// recovery path.
-#[test]
-fn flow_complete_step1_handles_merge_not_confirmed() {
-    let c = common::read_skill("flow-complete");
-    let tail = c
-        .split_once("### Step 1 — Run complete-fast")
-        .map(|(_, t)| t)
-        .expect("Step 1 heading must exist in flow-complete SKILL.md");
-    let step1 = tail.split_once("\n### ").map(|(s, _)| s).unwrap_or(tail);
-    assert!(
-        step1.contains("merge_not_confirmed"),
-        "Step 1's complete-fast dispatch must handle the `merge_not_confirmed` path"
-    );
-}
-
-#[test]
-fn flow_abort_mode_resolution_invokes_resolve_skill_mode() {
-    // The flow-abort `## Mode Resolution` section must resolve the
-    // configured mode through `bin/flow resolve-skill-mode` rather than
-    // hand-rolling the `skills.flow-abort` state-file read. Regression:
-    // a future SKILL.md edit reverts the section to the hand-rolled prose,
-    // reintroducing the bare-string-vs-object shape ambiguity.
-    let c = common::read_skill("flow-abort");
-    let re = Regex::new(r"(?s)## Mode Resolution\n(.*?)(?:\n## |\z)").unwrap();
-    let cap = re.captures(&c);
-    assert!(cap.is_some(), "flow-abort has no Mode Resolution section");
-    let section = &cap.unwrap()[1];
-    assert!(
-        section.contains("bin/flow resolve-skill-mode --skill flow-abort"),
-        "flow-abort Mode Resolution must invoke `bin/flow resolve-skill-mode --skill flow-abort`"
-    );
-}
 
 /// flow-abort resolves the mode in the `## Mode Resolution` section,
 /// not inside the Entry Check. Both terminal skills (`flow-complete`,
@@ -2933,12 +2893,12 @@ fn flow_prime_recommended_preset_matches_new_shape() {
         "Recommended preset: flow-learn.continue must be 'auto'"
     );
     assert_eq!(
-        recommended["flow-complete"], "manual",
-        "Recommended preset: flow-complete must be 'manual'"
+        recommended["flow-complete"]["continue"], "manual",
+        "Recommended preset: flow-complete.continue must be 'manual'"
     );
     assert_eq!(
-        recommended["flow-abort"], "manual",
-        "Recommended preset: flow-abort must be 'manual'"
+        recommended["flow-abort"]["continue"], "manual",
+        "Recommended preset: flow-abort.continue must be 'manual'"
     );
 }
 
@@ -2996,12 +2956,12 @@ fn flow_prime_fully_manual_preset_keeps_start_continue_auto() {
         "Fully manual preset: flow-learn.continue must be 'manual'"
     );
     assert_eq!(
-        fully_manual["flow-complete"], "manual",
-        "Fully manual preset: flow-complete must be 'manual'"
+        fully_manual["flow-complete"]["continue"], "manual",
+        "Fully manual preset: flow-complete.continue must be 'manual'"
     );
     assert_eq!(
-        fully_manual["flow-abort"], "manual",
-        "Fully manual preset: flow-abort must be 'manual'"
+        fully_manual["flow-abort"]["continue"], "manual",
+        "Fully manual preset: flow-abort.continue must be 'manual'"
     );
 }
 
@@ -3537,63 +3497,30 @@ fn flow_complete_skill_contains_ci_drift_handler_before_ci_failed() {
     );
 }
 
+/// No configurable skill threads an `--auto`/`--manual` flag through
+/// a `_continue_context` self-invocation string. The resumed run
+/// re-resolves `commit`/`continue` from the state file's
+/// `skills.<skill>` config via `## Mode Resolution`, so a threaded
+/// flag would let a stale mode override the configured one — the
+/// non-determinism this feature closes.
 #[test]
-fn continue_context_includes_mode_flag() {
-    // flow-complete is intentionally absent: its self-invocations
-    // drop the `--auto`/`--manual` flag so the resumed run
-    // re-resolves the mode from the state file via `## Mode
-    // Resolution`. The inverse contract is locked in by
-    // `flow_complete_continue_context_drops_mode_flag` below.
-    let skills_with_min = [("flow-code", 2), ("flow-review", 2), ("flow-learn", 2)];
+fn continue_context_threads_no_mode_flag() {
     let re = Regex::new(r#""_continue_context=([^"]+)""#).unwrap();
-    for (skill, min_count) in skills_with_min {
-        let content = common::read_skill(skill);
-        let contexts: Vec<String> = re
-            .captures_iter(&content)
-            .map(|c| c[1].to_string())
-            .collect();
-        let step_contexts: Vec<&String> = contexts
-            .iter()
-            .filter(|c| c.contains("--continue-step"))
-            .collect();
-        assert!(
-            step_contexts.len() >= min_count,
-            "Expected >= {} _continue_context with --continue-step in {}, found {}",
-            min_count,
-            skill,
-            step_contexts.len()
-        );
-        for ctx in &step_contexts {
+    for name in CONFIGURABLE_SKILLS {
+        let content = common::read_skill(name);
+        for cap in re.captures_iter(&content) {
+            let ctx = &cap[1];
+            if !ctx.contains("--continue-step") {
+                continue;
+            }
             assert!(
-                ctx.contains("--auto") || ctx.contains("--manual"),
-                "_continue_context in {} must include --auto or --manual: {}",
-                skill,
+                !ctx.contains("--auto") && !ctx.contains("--manual"),
+                "{} _continue_context must not thread a mode flag — \
+                 Mode Resolution re-resolves on the resumed entry: {}",
+                name,
                 ctx
             );
         }
-    }
-}
-
-/// flow-complete's self-invocation `_continue_context` entries must
-/// NOT thread an `--auto`/`--manual` flag. A threaded flag would let
-/// the resumed run honor a stale mode instead of re-resolving the
-/// configured `skills.flow-complete` mode from the state file via
-/// `## Mode Resolution` — the non-determinism this feature closes.
-#[test]
-fn flow_complete_continue_context_drops_mode_flag() {
-    let content = common::read_skill("flow-complete");
-    let re = Regex::new(r#""_continue_context=([^"]+)""#).unwrap();
-    for cap in re.captures_iter(&content) {
-        let ctx = &cap[1];
-        if !ctx.contains("--continue-step") {
-            continue;
-        }
-        assert!(
-            !ctx.contains("--auto") && !ctx.contains("--manual"),
-            "flow-complete _continue_context must not thread a mode flag — \
-             Mode Resolution re-resolves on the resumed entry: {}",
-            ctx
-        );
     }
 }
 
