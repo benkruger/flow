@@ -1233,10 +1233,7 @@ fn bootstrap_carveout_applies(command: &str, transcript_path: Option<&Path>, hom
 /// CI still runs unconditionally inside `finalize_commit::run_impl`
 /// regardless of the carve-out, so the protective intent of Layer
 /// 10 (CI gate + reviewable choreography) is preserved.
-fn flow_commit_trunk_carveout_applies(
-    transcript_path: Option<&Path>,
-    home: &Path,
-) -> bool {
+fn flow_commit_trunk_carveout_applies(transcript_path: Option<&Path>, home: &Path) -> bool {
     let Some(path) = transcript_path else {
         return false;
     };
