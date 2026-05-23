@@ -53,9 +53,10 @@ dispatches via the Resume Check.
    protection policy blocks and merge conflicts
 6. **Finalize** — `complete-finalize` handles phase completion, PR body
    rendering, issues summary, closing referenced issues, summary generation,
-   label removal, auto-close parent issues, Slack notification, worktree
-   removal, state/log deletion, and git pull — all best-effort in a single
-   call
+   label removal, cascade-close of downstream issues whose blockers are now
+   all closed (walks the native blocked-by graph), Slack notification,
+   worktree removal, state/log deletion, and git pull — all best-effort in
+   a single call
 7. **Cleanup results** — reports what `complete-finalize` cleaned up: what
    was removed, what was already gone, and what failed
 

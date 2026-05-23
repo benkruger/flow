@@ -1044,6 +1044,20 @@ source naturally when the children eventually close.
    ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "<child_title>" --url "<child_url>" --phase flow-plan
    ```
 
+**Detect the repo.** `bin/flow link-blocked-by` requires
+`--repo <owner/name>`. Resolve it once from the worktree's
+git origin before any linking call:
+
+```bash
+git remote get-url origin
+```
+
+Parse the stdout — both SSH (`git@github.com:owner/name.git`)
+and HTTPS (`https://github.com/owner/name.git`) forms appear in
+practice. Strip the protocol/host prefix and the trailing `.git`
+to produce `owner/name`. Capture this value as `<repo>` and
+substitute it into every `link-blocked-by` invocation below.
+
 **Link the children to each other.** For every cross-component
 dependency edge `B → A` in the original DAG (component B's
 root depends on component A's root), link the two child

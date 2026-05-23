@@ -114,7 +114,7 @@ case "$1" in
         printf '%s' '{"status":"ok","summary":"done","issues_links":""}'
         ;;
     auto-close-parent)
-        printf '%s' '{"status":"ok","parent_closed":false,"milestone_closed":false}'
+        printf '%s' '{"status":"ok","closed_issues":[],"milestone_closed":false}'
         ;;
     notify-slack)
         printf '%s' '{"status":"ok","ts":"1234.5678"}'

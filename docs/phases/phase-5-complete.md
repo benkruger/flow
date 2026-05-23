@@ -109,7 +109,9 @@ rather than stranding the shell in a deleted directory.
 - Generate business-friendly summary (feature name, prompt,
   per-phase timeline, artifact counts)
 - Remove "Flow In-Progress" labels
-- Auto-close parent issues and milestones
+- Cascade-close downstream issues whose blockers are now all closed
+  (walks GitHub's native blocked-by dependency graph) and close
+  empty milestones
 - Post Slack notification
 - Worktree tmp directory removal, worktree removal, remote and
   local branch deletion, and deletion of the state file, plan file,

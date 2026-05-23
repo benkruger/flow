@@ -205,12 +205,17 @@ pub fn cascade_close_unblocked(
 /// - `depth` is the number of recursive frames between this call and
 ///   the original `cascade_close_unblocked` entry. A frame at depth
 ///   `MAX_CASCADE_DEPTH` halts before any side effect.
-/// - Every candidate Y is inserted into `visited` BEFORE its
-///   `blocked_by` lookup, so a sibling later in the same `blocking`
-///   list referencing the same Y is also skipped.
+/// - `visited` is written ONLY after a candidate Y has been
+///   successfully closed. Convergent (diamond) graphs where Y has
+///   multiple paths from `start_issue` must remain eligible for
+///   re-evaluation until one of Y's blockers has actually closed —
+///   otherwise the first branch that finds Y blocked would mark Y
+///   permanently visited and Y would stay open after every blocker
+///   closes.
 /// - `closed` is append-only and reflects close order; a failed
-///   `gh issue close` call leaves Y in `visited` but not in `closed`,
-///   so the cascade does not recurse into Y's downstream graph.
+///   `gh issue close` call leaves Y absent from `visited`, so the
+///   next branch that reaches Y will re-check its blocked-by list
+///   against the updated graph state.
 fn cascade_recurse(
     repo: &str,
     issue: i64,
@@ -243,7 +248,6 @@ fn cascade_recurse(
         if visited.contains(&y_num) {
             continue;
         }
-        visited.insert(y_num);
 
         let blocked_by_url = format!("repos/{}/issues/{}/dependencies/blocked_by", repo, y_num);
         let blocked_by_stdout = match runner(&["gh", "api", &blocked_by_url], cwd) {
@@ -274,6 +278,7 @@ fn cascade_recurse(
         }
 
         closed.push(y_num);
+        visited.insert(y_num);
         cascade_recurse(repo, y_num, cwd, runner, visited, closed, depth + 1);
     }
 }

@@ -330,6 +330,97 @@ fn cascade_candidate_without_number_is_skipped() {
     assert_eq!(closed, vec![7]);
 }
 
+/// Shared close ledger for `cascade_convergent_diamond_closes_all_three`.
+/// `OnceLock<Mutex<...>>` (used pervasively in `tests/common/mod.rs`)
+/// satisfies the `'static + Fn(...)` bound on `&GhApiRunner` without
+/// pulling in `thread_local!` std internals that the per-file
+/// coverage gate cannot cover. Only one test references this static.
+fn diamond_closed() -> &'static std::sync::Mutex<std::collections::HashSet<i64>> {
+    static CELL: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<i64>>> =
+        std::sync::OnceLock::new();
+    CELL.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+}
+
+/// Convergent (diamond) dependency graph: 5 → 6 → 8 and 5 → 7 → 8. The
+/// cascade closes 6 first. When walking 6's downstream, 8's blocked_by
+/// query returns [6 closed, 7 open] — Y is not yet closeable. The
+/// cascade must NOT permanently mark 8 as visited at that moment, or
+/// the next branch (5 → 7 → 8) would find 8 in the visited set and
+/// silently skip it, leaving 8 open after both its blockers closed.
+///
+/// Asserts the fix in `cascade_recurse`: candidates only enter
+/// `visited` after a successful `gh issue close`, so an unclose-able
+/// Y remains eligible for re-evaluation when the convergent branch
+/// closes Y's other blocker.
+#[test]
+fn cascade_convergent_diamond_closes_all_three() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+
+    {
+        let mut s = diamond_closed().lock().unwrap();
+        s.clear();
+        s.insert(5);
+    }
+
+    let runner: &GhApiRunner = &|args, _| {
+        let joined = args.join(" ");
+        if let Some(idx) = joined.find("issue close ") {
+            let rest = &joined[idx + "issue close ".len()..];
+            let end = rest.find(' ').unwrap_or(rest.len());
+            if let Ok(n) = rest[..end].trim().parse::<i64>() {
+                diamond_closed().lock().unwrap().insert(n);
+            }
+            return Ok(String::new());
+        }
+        let state_of = |n: i64| -> &'static str {
+            if diamond_closed().lock().unwrap().contains(&n) {
+                "closed"
+            } else {
+                "open"
+            }
+        };
+        if joined.contains("issues/5/dependencies/blocking") {
+            Ok(r#"[{"number":6},{"number":7}]"#.to_string())
+        } else if joined.contains("issues/6/dependencies/blocked_by") {
+            Ok(format!(r#"[{{"number":5,"state":"{}"}}]"#, state_of(5)))
+        } else if joined.contains("issues/6/dependencies/blocking") {
+            Ok(r#"[{"number":8}]"#.to_string())
+        } else if joined.contains("issues/7/dependencies/blocked_by") {
+            Ok(format!(r#"[{{"number":5,"state":"{}"}}]"#, state_of(5)))
+        } else if joined.contains("issues/7/dependencies/blocking") {
+            Ok(r#"[{"number":8}]"#.to_string())
+        } else if joined.contains("issues/8/dependencies/blocked_by") {
+            Ok(format!(
+                r#"[{{"number":6,"state":"{}"}},{{"number":7,"state":"{}"}}]"#,
+                state_of(6),
+                state_of(7),
+            ))
+        } else if joined.contains("issues/8/dependencies/blocking") {
+            Ok("[]".to_string())
+        } else {
+            Err(format!("unexpected: {}", joined))
+        }
+    };
+
+    let closed = cascade_close_unblocked("owner/repo", 5, &cwd, runner);
+    assert!(
+        closed.contains(&6),
+        "diamond closure: 6 must close (first branch). closed = {:?}",
+        closed
+    );
+    assert!(
+        closed.contains(&7),
+        "diamond closure: 7 must close (second branch). closed = {:?}",
+        closed
+    );
+    assert!(
+        closed.contains(&8),
+        "diamond closure: 8 must close after both blockers (6 and 7) close; got closed = {:?}",
+        closed
+    );
+}
+
 // --- run_impl_main output shape ---
 
 /// The output payload is `{status, closed_issues: [i64],

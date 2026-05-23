@@ -37,9 +37,14 @@ Your prompt contains three labeled sections:
 - **DRAFTED_PLAN** — the full body of the drafted Implementation
   Plan (Context, Exploration, Risks, Approach, Dependency Graph,
   Tasks). This is the artifact under review.
-- **ACCEPTANCE_CRITERIA** — the parent vanilla issue's Acceptance
-  Criteria, verbatim. These are the user-facing outcomes the plan
-  must satisfy.
+- **ACCEPTANCE_CRITERIA** — in single-track mode, the parent
+  vanilla issue's Acceptance Criteria, verbatim. In multi-track
+  mode (one reviewer invocation per disconnected DAG component
+  produced by `flow-plan` Step 6's Multi-Track Filing Pipeline),
+  a synthesized component-scoped subset of the parent's
+  Acceptance Criteria covering only this child's tasks. The plan
+  under review must satisfy the criteria provided; do not assume
+  the full parent corpus is present in multi-track invocations.
 - **RULES_DIR** — the path to the project's `.claude/rules/`
   directory (typically `.claude/rules/` relative to the project
   root). You read this directory yourself; do not assume rules
