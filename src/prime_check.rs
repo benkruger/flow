@@ -160,7 +160,6 @@ pub const UNIVERSAL_ALLOW: &[&str] = &[
     "Agent(flow:ci-fixer)",
     "Agent(flow:cto)",
     "Agent(flow:documentation)",
-    "Agent(flow:issue-triage)",
     "Agent(flow:learn-analyst)",
     "Agent(flow:pm)",
     "Agent(flow:pre-mortem)",

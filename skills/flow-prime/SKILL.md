@@ -364,7 +364,6 @@ All universal permissions written to `.claude/settings.json` for reference:
       "Agent(flow:ci-fixer)",
       "Agent(flow:cto)",
       "Agent(flow:documentation)",
-      "Agent(flow:issue-triage)",
       "Agent(flow:learn-analyst)",
       "Agent(flow:pm)",
       "Agent(flow:pre-mortem)",
