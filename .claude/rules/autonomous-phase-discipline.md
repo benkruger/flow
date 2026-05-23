@@ -267,6 +267,35 @@ two writers:
   belt-and-suspenders defense per
   `src/phase_transition.rs::phase_enter`.
 
+**Who writes `_halt_pending=true`.** The Stop hook
+(`stop_continue::check_autonomous_stop`) is the sole production
+writer of `_halt_pending=true`. It writes the field via in-process
+`mutate_state` calls in response to a real conversational-prose
+user turn — never via the CLI. The model is denied the
+`bin/flow set-timestamp` write path entirely:
+`src/commands/set_timestamp.rs::apply_updates` rejects every
+`--set <field>=...` whose field name (after NUL-strip + trim +
+ASCII-lowercase normalization per
+`.claude/rules/security-gates.md` "Normalize Before Comparing")
+matches an entry in the module-private `MODEL_DENIED_FIELDS`
+constant. `_halt_pending` is in that set, so a model invocation
+of `bin/flow set-timestamp --set _halt_pending=true` (or any
+case/whitespace/NUL-bypass variant, in either truthy or falsy
+direction) exits 1 with a structured error envelope naming the
+rejected field. The deny applies to single-segment paths only —
+nested attempts (`phases.X._halt_pending`) are a no-op for the
+Stop hook, which reads the top-level field only.
+
+The gate covers the `bin/flow set-timestamp` CLI write path only.
+Direct Edit/Write tool calls against
+`<project_root>/.flow-states/<branch>/state.json` from inside an
+active-flow worktree are not blocked by `validate-worktree-paths`
+(which only blocks misplaced worktree-internal copies under
+`.worktrees/<branch>/.flow-states/`) or `validate-claude-paths`
+(which protects `.claude/` paths, not `.flow-states/`), so a model
+with Edit/Write access remains a broader trust surface tracked
+separately from this gate.
+
 **State-field lifecycle.**
 
 - `_halt_pending: bool` — owned by `check_autonomous_stop` and
