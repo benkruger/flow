@@ -3,8 +3,7 @@
 //! `run()` evaluates them in order:
 //!
 //! 1. `check_in_progress_utility_skill` — when a multi-step utility
-//!    skill (`flow:flow-plan`, `flow:flow-decompose-project`) wrote
-//!    a per-session marker at
+//!    skill (`flow:flow-plan`) wrote a per-session marker at
 //!    `<home>/.claude/flow/utility-in-progress-<id>.json` AND
 //!    `decompose:decompose` is the most recent Skill `tool_use` in
 //!    the persisted transcript since the most recent real user
@@ -511,9 +510,9 @@ pub fn check_autonomous_stop(
 /// `decompose:decompose` sub-skill has just returned in the current
 /// model turn.
 ///
-/// Multi-step utility skills (`flow:flow-plan`,
-/// `flow:flow-decompose-project`) invoke `decompose:decompose` via
-/// the Skill tool mid-pipeline. The Skill tool's return is a
+/// Multi-step utility skills (`flow:flow-plan`) invoke
+/// `decompose:decompose` via the Skill tool mid-pipeline. The
+/// Skill tool's return is a
 /// structural surface where the model treats the handoff as a
 /// natural stopping point and returns control to the user — breaking
 /// the unattended-flow contract these skills promise. This
@@ -677,8 +676,8 @@ pub fn run() {
     };
 
     // Utility-skill marker guard: when a multi-step utility skill
-    // (`flow:flow-plan`, `flow:flow-decompose-project`) is in
-    // progress AND `decompose:decompose` is the most recent Skill
+    // (`flow:flow-plan`) is in progress AND `decompose:decompose`
+    // is the most recent Skill
     // since the user turn, refuse turn-end so the model continues
     // past decompose's return. Composed FIRST because its block
     // message is the verbatim encouraging string for that specific

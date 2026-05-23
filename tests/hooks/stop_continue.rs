@@ -875,7 +875,7 @@ fn run_subprocess_blocks_when_utility_marker_present() {
     let session_id = "abc12345";
     let marker_path = marker_dir.join(format!("utility-in-progress-{}.json", session_id));
     let payload = json!({
-        "skill": "flow:flow-decompose-project",
+        "skill": "flow:flow-plan",
         "session_id": session_id,
         "started_at": "2026-05-09T12:00:00-07:00",
     });
@@ -1286,7 +1286,7 @@ fn run_composition_emits_encouraging_message_for_utility_block() {
     let marker_dir = root.join(".claude").join("flow");
     fs::create_dir_all(&marker_dir).unwrap();
     let payload = json!({
-        "skill": "flow:flow-decompose-project",
+        "skill": "flow:flow-plan",
         "session_id": session_id,
         "started_at": "2026-05-09T12:00:00-07:00",
     });

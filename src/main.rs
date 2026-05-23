@@ -26,7 +26,6 @@ use flow_rs::complete_finalize;
 use flow_rs::complete_merge;
 use flow_rs::complete_post_merge;
 use flow_rs::complete_preflight;
-use flow_rs::create_sub_issue;
 use flow_rs::extract_release_notes;
 use flow_rs::finalize_commit;
 use flow_rs::format_complete_summary;
@@ -196,9 +195,6 @@ enum Commands {
     #[command(name = "close-issues")]
     CloseIssues(close_issues::Args),
 
-    /// Create a GitHub sub-issue relationship.
-    #[command(name = "create-sub-issue")]
-    CreateSubIssue(create_sub_issue::Args),
     /// Create a GitHub blocked-by dependency.
     #[command(name = "link-blocked-by")]
     LinkBlockedBy(link_blocked_by::Args),
@@ -717,10 +713,6 @@ fn main() {
         }
         Some(Commands::CloseIssues(args)) => {
             let (value, code) = close_issues::run_impl_main(args);
-            flow_rs::dispatch::dispatch_json(value, code);
-        }
-        Some(Commands::CreateSubIssue(args)) => {
-            let (value, code) = create_sub_issue::run_impl_main(&args);
             flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::LinkBlockedBy(args)) => {

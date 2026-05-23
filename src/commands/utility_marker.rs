@@ -1,8 +1,8 @@
 //! Per-session "utility skill in progress" marker file.
 //!
-//! Multi-step utility skills (`flow:flow-plan`,
-//! `flow:flow-decompose-project`) invoke `decompose:decompose` via
-//! the Skill tool mid-skill. The Skill tool's return is a structural
+//! Multi-step utility skills (`flow:flow-plan`) invoke
+//! `decompose:decompose` via the Skill tool mid-skill. The Skill
+//! tool's return is a structural
 //! surface where the model treats the handoff as a natural stopping
 //! point and returns control to the user — breaking the unattended-
 //! flow contract these skills promise to their consumers.
@@ -52,7 +52,7 @@ use crate::utils::now;
 /// `every_marker_writing_skill_is_in_multi_step_allowlist` contract
 /// test in `tests/skill_contracts.rs` scans every SKILL.md and
 /// locks the marker-writing invariant in mechanically.
-pub const MULTI_STEP_UTILITY_SKILLS: &[&str] = &["flow:flow-decompose-project", "flow:flow-plan"];
+pub const MULTI_STEP_UTILITY_SKILLS: &[&str] = &["flow:flow-plan"];
 
 /// Subdirectory under HOME where markers live. A future expansion to
 /// other FLOW machine-global state can share this directory.

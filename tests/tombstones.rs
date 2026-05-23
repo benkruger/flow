@@ -807,6 +807,161 @@ fn test_universal_allow_no_flow_bin_reset_wildcard() {
     );
 }
 
+// --- flow-decompose-project removal (issue #1590 AC#6) ---
+//
+// AC#6 of issue #1590 mandates the removal of the
+// `flow-decompose-project` skill: the multi-track filing branch
+// in `flow-plan` (AC#4) supersedes the prior six-step automated
+// pipeline. The skill directory, its doc page, every catalog row,
+// every `UNIVERSAL_ALLOW` / `MULTI_STEP_UTILITY_SKILLS` reference,
+// and every rule-file mention are removed in the same PR. This
+// tombstone catches a merge conflict or accidental edit that
+// re-introduces any of the bytes.
+
+/// Tombstone: removed in PR #1694. The `flow-decompose-project`
+/// skill and every reference to it are gone — `flow-plan`'s
+/// multi-track branch (AC#4) is the replacement. Must not return
+/// to `skills/`, `docs/skills/`, `README.md`,
+/// `skills/flow-skills/SKILL.md`, `skills/flow-prime/SKILL.md`,
+/// or any `.claude/rules/` file.
+///
+/// Stability argument: the protected target is a SKILL.md
+/// directory and its byte-string references. (a) `concat!` —
+/// N/A for Markdown corpus; (b) `format!` — N/A for Markdown;
+/// (c) split constant — N/A for Markdown; (d) `.arg()` split —
+/// N/A for Markdown. The file-existence half of the tombstone
+/// (`skills/flow-decompose-project/SKILL.md` absent) catches any
+/// Rust-side resurrection via `#[path]` aliases or otherwise; the
+/// byte-substring half catches Markdown prose resurrection.
+#[test]
+fn test_skills_no_flow_decompose_project() {
+    let skill_path = common::skills_dir()
+        .join("flow-decompose-project")
+        .join("SKILL.md");
+    assert!(
+        !skill_path.exists(),
+        "skills/flow-decompose-project/SKILL.md must not exist — the skill was removed in PR #1694 per AC#6 of issue #1590"
+    );
+
+    // Byte-substring scan: the literal `flow-decompose-project`
+    // must not appear in any of the user-facing surfaces. The
+    // `.claude/rules/`/`CLAUDE.md` corpus is excluded because rule
+    // prose may legitimately reference the removed skill in
+    // historical context (commit messages, change-log entries).
+    let scan_paths: Vec<PathBuf> = vec![
+        common::skills_dir(),
+        common::docs_dir().join("skills"),
+        common::repo_root().join("docs").join("phases"),
+        common::repo_root().join("README.md"),
+    ];
+    const FORBIDDEN: &str = "flow-decompose-project";
+    let mut violations: Vec<String> = Vec::new();
+    for path in scan_paths {
+        scan_for_substring(&path, FORBIDDEN, &mut violations);
+    }
+    assert!(
+        violations.is_empty(),
+        "Found {} reference(s) to the removed `flow-decompose-project` skill (PR #1694 removed it):\n  {}",
+        violations.len(),
+        violations.join("\n  ")
+    );
+}
+
+/// Helper for the flow-decompose-project tombstone — walks a path
+/// (file or directory) and pushes every line that contains the
+/// forbidden substring into `out`. Directories are walked
+/// recursively; non-text files are skipped silently. Used only by
+/// `test_skills_no_flow_decompose_project`.
+fn scan_for_substring(path: &Path, needle: &str, out: &mut Vec<String>) {
+    if path.is_file() {
+        if let Ok(content) = fs::read_to_string(path) {
+            for (lineno, line) in content.lines().enumerate() {
+                if line.contains(needle) {
+                    out.push(format!("{}:{} {}", path.display(), lineno + 1, line.trim()));
+                }
+            }
+        }
+        return;
+    }
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries.flatten() {
+            scan_for_substring(&entry.path(), needle, out);
+        }
+    }
+}
+
+// --- create-sub-issue removal (PR #1694 supersession) ---
+//
+// `bin/flow create-sub-issue` was invoked only by
+// `flow-decompose-project` Step 5. With `flow-decompose-project`
+// removed in this same PR (AC#6 of issue #1590), the
+// `create-sub-issue` subcommand has no callers and is orphan
+// infrastructure per `.claude/rules/supersession.md`. The
+// `src/create_sub_issue.rs` module, its tests, its dispatch arm,
+// and every doc reference are removed. This tombstone catches a
+// merge conflict or accidental edit that re-introduces the module
+// or the subcommand name.
+
+/// Tombstone: removed in PR #1694. The `src/create_sub_issue.rs`
+/// module and the `create-sub-issue` CLI subcommand are gone —
+/// the GitHub native blocked-by dependency graph (set via
+/// `bin/flow link-blocked-by`) is the surviving relationship
+/// mechanism. Must not return to `src/`, `tests/`, `README.md`,
+/// `docs/skills/`, or any catalog row.
+///
+/// Stability argument: the protected targets are a Rust source
+/// file path AND a CLI subcommand name. (a) `concat!` — a Rust
+/// author could `concat!("create_sub", "_issue")` but the
+/// file-existence assertion (`src/create_sub_issue.rs` absent)
+/// blocks the actual file from being committed; (b) `format!` —
+/// same, defeated by the file-existence half; (c) split constant
+/// — same; (d) `.arg()` split — clap subcommand registration
+/// cannot be reassembled across multiple `.arg()` calls and the
+/// file-existence half catches the underlying module file
+/// regardless. The file-existence assertion is load-bearing; the
+/// byte-substring assertion is the secondary guard against doc/
+/// catalog resurrection.
+#[test]
+fn test_src_no_create_sub_issue() {
+    let module_path = common::repo_root().join("src").join("create_sub_issue.rs");
+    assert!(
+        !module_path.exists(),
+        "src/create_sub_issue.rs must not exist — the module was removed in PR #1694 (orphaned after flow-decompose-project deletion)"
+    );
+
+    let test_path = common::repo_root()
+        .join("tests")
+        .join("create_sub_issue.rs");
+    assert!(
+        !test_path.exists(),
+        "tests/create_sub_issue.rs must not exist — the test module was removed in PR #1694 alongside its src/ counterpart"
+    );
+
+    // Byte-substring scan across the source/doc surfaces. The
+    // module name `create_sub_issue` (Rust snake_case) and the
+    // subcommand name `create-sub-issue` (CLI kebab-case) are
+    // both forbidden.
+    const FORBIDDEN_SUBSTRINGS: &[&str] = &["create_sub_issue", "create-sub-issue"];
+    let scan_paths: Vec<PathBuf> = vec![
+        common::repo_root().join("src"),
+        common::docs_dir().join("skills"),
+        common::repo_root().join("README.md"),
+        common::skills_dir().join("flow-skills"),
+    ];
+    let mut violations: Vec<String> = Vec::new();
+    for needle in FORBIDDEN_SUBSTRINGS {
+        for path in &scan_paths {
+            scan_for_substring(path, needle, &mut violations);
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "Found {} reference(s) to the removed create_sub_issue module / create-sub-issue subcommand (PR #1694 removed both):\n  {}",
+        violations.len(),
+        violations.join("\n  ")
+    );
+}
+
 // --- Weak-coverage prose loophole closure ---
 //
 // Weak-coverage language ("adequate test coverage", "adequately tested")
@@ -2040,7 +2195,7 @@ fn test_corpus_no_old_code_review_identifiers() {
 // --- Out of Scope template-section instruction tombstones ---
 //
 // The tests below assert that the surviving issue-filing skills
-// (flow-explore, flow-plan, flow-decompose-project) do NOT
+// (flow-explore, flow-plan) do NOT
 // contain a templated "Out of Scope" section instruction in any
 // markdown shape — bold heading, plain heading, italic,
 // list-item label, or body-draft enumeration entry. The
@@ -2058,39 +2213,6 @@ fn test_corpus_no_old_code_review_identifiers() {
 // `test_skills_no_flow_create_issue_dir`,
 // `test_docs_no_flow_create_issue_md`, and
 // `test_skills_no_flow_create_issue_references`.
-
-/// Tombstone: removed in PR #1427. Must not return.
-///
-/// Asserts `skills/flow-decompose-project/SKILL.md` does NOT
-/// contain the title-cased phrase `Out of Scope` in any form.
-/// Same structural shape as the sibling tombstone for
-/// flow-create-issue: every templated re-introduction (bold,
-/// heading, label, list entry, reordered list, singular form
-/// like "Out of Scope, Context section") contains the title-
-/// cased substring. The assertion catches every shape with one
-/// byte check.
-///
-/// The byte-substring shape holds because:
-///   1. `concat!` reassembly: not applicable to Markdown.
-///   2. `format!` reassembly: not applicable to Markdown.
-///   3. Named constant reference: not applicable to Markdown.
-///   4. Method chains / split args: not applicable to Markdown.
-///
-/// The assertion is case-sensitive on the title-cased phrase.
-/// Incidental lowercase prose is not matched and is
-/// intentionally permitted.
-#[test]
-fn test_flow_decompose_project_skill_no_out_of_scope_instruction() {
-    let content = common::read_skill("flow-decompose-project");
-    assert!(
-        !content.contains("Out of Scope"),
-        "skills/flow-decompose-project/SKILL.md must not contain \
-         the title-cased phrase `Out of Scope` in any markdown \
-         shape (bold heading, plain heading, italic, label, or \
-         list entry). See .claude/rules/include-bias-in-issues.md \
-         for the rule the tombstone enforces."
-    );
-}
 
 /// Tombstone: removed in PR #1435. Must not return.
 ///
@@ -2372,103 +2494,6 @@ fn test_flow_plan_no_wrap_up_ask_user_question() {
         !content.contains(forbidden),
         "skills/flow-plan/SKILL.md must not contain the wrap-up AskUserQuestion prompt `{}` (removed in PR #1489: Step 6 files directly after the decompose + transform pipeline)",
         forbidden,
-    );
-}
-
-/// Tombstone: removed in PR #1489. `skills/flow-decompose-project/SKILL.md`
-/// no longer presents a Step 1 DAG-review AskUserQuestion gate. The
-/// user's invocation of `/flow:flow-decompose-project` is the single
-/// authorization for the decompose-and-file pipeline; the
-/// "Review the decomposition" prompt that used to ask for a second
-/// approval between Step 1 and Step 2 broke AC#4 of issue #1488.
-/// The phrase is a stable source literal (a full English sentence
-/// appearing in the SKILL prose), not assembled via `concat!`,
-/// `format!`, or constant composition.
-#[test]
-fn test_flow_decompose_project_no_dag_review_gate() {
-    let content = common::read_skill("flow-decompose-project");
-    let forbidden = "Review the decomposition";
-    assert!(
-        !content.contains(forbidden),
-        "skills/flow-decompose-project/SKILL.md must not contain the Step 1 DAG-review prompt `{}` (removed in PR #1489)",
-        forbidden,
-    );
-}
-
-/// Tombstone: removed in PR #1489. The flow-decompose-project skill
-/// no longer asks the user for a milestone due date in Step 2. The
-/// `bin/flow create-milestone` subcommand and the `--milestone` flag
-/// on `bin/flow issue` are removed as orphan infrastructure per
-/// `.claude/rules/supersession.md` because the only consumer (this
-/// skill's Step 2 + Step 3 milestone path) has been deleted. The
-/// forbidden phrase is the exact AskUserQuestion prompt the removed
-/// gate used.
-///
-/// Stability: the forbidden phrase is a stable source constant
-/// (fragment of a literal English prompt string in the SKILL.md
-/// prose). It is never produced by `concat!`, `format!`, or any
-/// other runtime string composition — the SKILL.md corpus does
-/// not programmatically build prompt strings.
-#[test]
-fn test_flow_decompose_project_no_due_date_prompt() {
-    let content = common::read_skill("flow-decompose-project");
-    let forbidden = "milestone due date (YYYY-MM-DD)";
-    assert!(
-        !content.contains(forbidden),
-        "skills/flow-decompose-project/SKILL.md must not contain the Step 2 milestone-due-date prompt `{}` (removed in PR #1489)",
-        forbidden,
-    );
-}
-
-/// Tombstone: removed in PR #1489.
-/// `skills/flow-decompose-project/SKILL.md` no longer invokes
-/// `bin/flow create-milestone` in Step 3 and no longer passes
-/// `--milestone` to `bin/flow issue` in Step 3 or Step 4. The
-/// subcommand is deleted from `src/create_milestone.rs`,
-/// `src/lib.rs`, and `src/main.rs` (see
-/// `test_src_no_create_milestone_module`). Both forbidden
-/// substrings are stable source literals — exact CLI subcommand
-/// names and a flag name that appear in skill bash blocks.
-///
-/// Stability: the forbidden substrings are stable source constants
-/// (exact CLI subcommand and flag names that appear verbatim in
-/// SKILL.md bash blocks). They are never produced by `concat!`,
-/// `format!`, or other runtime composition — bash blocks in
-/// SKILL.md are written as literal command text, never assembled
-/// programmatically.
-#[test]
-fn test_flow_decompose_project_no_create_milestone_invocation() {
-    let content = common::read_skill("flow-decompose-project");
-    assert!(
-        !content.contains("create-milestone"),
-        "skills/flow-decompose-project/SKILL.md must not invoke `bin/flow create-milestone` (subcommand removed in PR #1489)"
-    );
-    assert!(
-        !content.contains("--milestone"),
-        "skills/flow-decompose-project/SKILL.md must not pass `--milestone` to `bin/flow issue` (flag removed in PR #1489)"
-    );
-}
-
-/// Tombstone: removed in PR #1489. The validator-failure
-/// AskUserQuestion gates in Steps 3 and 4 of
-/// `flow-decompose-project` are replaced by bounded auto-fix loops.
-/// The two forbidden phrasings are the exact AskUserQuestion option
-/// labels the removed gates used.
-///
-/// Stability: both forbidden phrasings are stable source constants
-/// (literal English option-label strings appearing verbatim in
-/// SKILL.md prose). They are never produced by `concat!`,
-/// `format!`, or other runtime string composition.
-#[test]
-fn test_flow_decompose_project_no_validator_failure_gates() {
-    let content = common::read_skill("flow-decompose-project");
-    assert!(
-        !content.contains("Revise the epic body and retry"),
-        "skills/flow-decompose-project/SKILL.md must not contain the Step 3 validator-failure prompt option (removed in PR #1489)"
-    );
-    assert!(
-        !content.contains("Revise this child body and retry"),
-        "skills/flow-decompose-project/SKILL.md must not contain the Step 4 validator-failure prompt option (removed in PR #1489)"
     );
 }
 

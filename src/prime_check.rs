@@ -171,7 +171,6 @@ pub const UNIVERSAL_ALLOW: &[&str] = &[
     "Skill(flow:flow-commit)",
     "Skill(flow:flow-complete)",
     "Skill(flow:flow-config)",
-    "Skill(flow:flow-decompose-project)",
     "Skill(flow:flow-doc-sync)",
     "Skill(flow:flow-explore)",
     "Skill(flow:flow-hygiene)",

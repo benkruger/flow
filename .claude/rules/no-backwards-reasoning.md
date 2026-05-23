@@ -138,11 +138,10 @@ durable output:
   should-questions.
 - **Issue drafting** (mechanical backstop). The
   `flow-plan` skill scans candidate issue bodies for
-  forbidden phrasings before presenting the draft, and the
-  `flow-decompose-project` skill scans each child issue body
-  before children are surfaced. The scan is a backstop for
-  cases where backward-facing reasoning slips into the prose
-  despite the primary discipline.
+  forbidden phrasings before presenting the draft (both
+  single-track and multi-track per-child bodies are scanned).
+  The scan is a backstop for cases where backward-facing
+  reasoning slips into the prose despite the primary discipline.
 - **Code phase is too late.** Once the implementation is
   written from a backward-facing premise, Review can
   catch the symptom but not the reasoning. The rule fires in
@@ -152,10 +151,9 @@ durable output:
 
 The mechanical backstop scans for these four canonical
 phrasings. Future changes to the scanned set must update both
-this enumeration and the corresponding subsections in
-`skills/flow-plan/SKILL.md` and
-`skills/flow-decompose-project/SKILL.md` so the rule remains
-the authoritative source for what the scans target:
+this enumeration and the corresponding subsection in
+`skills/flow-plan/SKILL.md` so the rule remains the
+authoritative source for what the scans target:
 
 - `"PR #<N> decided"` — historical decision cited as authority
 - `"kept for backward compatibility"` — preservation justified

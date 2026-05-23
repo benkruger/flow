@@ -155,13 +155,9 @@ The argument must match `^#[1-9][0-9]*$` — a pre-decomposed GitHub issue numbe
 
 ## More Planning Tools
 
-The three-command workflow handles single features. For bigger surfaces, FLOW adds two more shapes — whole-project decomposition, and working through an existing backlog.
+The three-command workflow handles single features. For bigger surfaces, FLOW adds another shape — working through an existing backlog.
 
 Every planning skill is role-bound: PM, Tech Lead, or CTO voices with their own scope authority. Each persona refuses overreach with a `## SCOPE REFUSAL` block that names the next tier. No auto-escalation — the user always directs.
-
-### Whole-project decomposition
-
-- **`/flow-decompose-project <description>`** — Decompose a large project into a fully linked GitHub issue graph: epic, sub-issues, blocked-by dependencies, and phase labels. Every issue is filed work-ready with acceptance criteria, file paths, and scope boundaries from real codebase exploration. Feeds directly into `/flow-orchestrate`.
 
 ### Working an existing backlog
 
@@ -183,7 +179,6 @@ Run `/flow-skills` anytime to see the live catalog grouped by role.
 | `/flow-triage-issue` | PM-lens triage of a single open issue — verdict in {close, decompose} |
 | `/flow-explore` | Open a problem-statement conversation (PM voice); file a vanilla `## What` / `## Why` / `## Acceptance Criteria` issue on signal |
 | `/flow-plan` | Produce an implementation plan and attach it to an issue (Tech Lead voice). `#N` re-plans the existing issue in place — OR files one child decomposed issue per disconnected DAG component (multi-track, AC#4) with cross-component `link-blocked-by` edges; a bare topic synthesizes `## What` / `## Why` / `## Acceptance Criteria` and files a new decomposed issue (always single-track per AC#8) |
-| `/flow-decompose-project` | Decompose a large project into linked GitHub issues with sub-issue and blocked-by relationships |
 | `/flow-orchestrate` | Process decomposed issues sequentially overnight via `flow-start` |
 
 ### Work
