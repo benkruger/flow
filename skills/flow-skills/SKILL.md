@@ -91,7 +91,7 @@ plugin source.
 | `/flow:flow-issues` | Group open issues by label into four sections (Blocked, Other, Vanilla, Decomposed) with mechanical sort and a copy-pasteable command per row |
 | `/flow:flow-triage-issue` | PM-lens triage of a single open issue — verdict in {close, decompose} |
 | `/flow:flow-explore` | Open a problem-statement conversation (PM voice) — discussion-mode by default, files a vanilla `## What` / `## Why` / `## Acceptance Criteria` issue on user signal |
-| `/flow:flow-plan` | Decompose a vanilla problem-statement issue into a linked decomposed issue ready for the start phase. Tech Lead voice, mandatory `decompose:decompose` pass, files with `--label decomposed` and `bin/flow link-blocked-by` |
+| `/flow:flow-plan` | Decompose a vanilla problem-statement issue into a decomposed issue ready for the start phase (or one child decomposed issue per disconnected DAG component when multi-track applies per AC#4). Tech Lead voice, mandatory `decompose:decompose` pass, files with `--label decomposed` and links cross-component dependencies via `bin/flow link-blocked-by` |
 | `/flow:flow-decompose-project` | Decompose a large project into linked GitHub issues with sub-issue and blocked-by relationships |
 | `/flow:flow-orchestrate` | Process decomposed issues sequentially overnight via flow-start |
 

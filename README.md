@@ -182,7 +182,7 @@ Run `/flow-skills` anytime to see the live catalog grouped by role.
 | `/flow-issues` | Group open issues by label into four sections (Blocked, Other, Vanilla, Decomposed) with mechanical sort and a copy-pasteable command per row |
 | `/flow-triage-issue` | PM-lens triage of a single open issue — verdict in {close, decompose} |
 | `/flow-explore` | Open a problem-statement conversation (PM voice); file a vanilla `## What` / `## Why` / `## Acceptance Criteria` issue on signal |
-| `/flow-plan` | Produce an implementation plan and attach it to an issue (Tech Lead voice). `#N` re-plans the existing issue in place; a bare topic synthesizes `## What` / `## Why` / `## Acceptance Criteria` and files a new decomposed issue |
+| `/flow-plan` | Produce an implementation plan and attach it to an issue (Tech Lead voice). `#N` re-plans the existing issue in place — OR files one child decomposed issue per disconnected DAG component (multi-track, AC#4) with cross-component `link-blocked-by` edges; a bare topic synthesizes `## What` / `## Why` / `## Acceptance Criteria` and files a new decomposed issue (always single-track per AC#8) |
 | `/flow-decompose-project` | Decompose a large project into linked GitHub issues with sub-issue and blocked-by relationships |
 | `/flow-orchestrate` | Process decomposed issues sequentially overnight via `flow-start` |
 

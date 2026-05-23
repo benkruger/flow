@@ -6823,6 +6823,213 @@ fn flow_plan_skill_invokes_plan_review_with_capped_loop() {
     );
 }
 
+// --- flow-plan multi-track Step 6 contracts (AC#4 + AC#8) ---
+//
+// AC#4 mandates that flow-plan inspect the DAG after `decompose:decompose`
+// returns; when the DAG partitions into two or more groups with zero
+// cross-group dependency edges, Step 6 files one child issue per
+// disconnected component instead of a single combined plan. AC#8
+// restricts multi-track to issue-input mode — a bare-prompt
+// invocation must always file exactly one issue. The six tests
+// below lock in the load-bearing invariants of the multi-track
+// branch: detection, mode-restriction, per-child validation, per-
+// child plan-review, link-blocked-by edges between children and
+// from the source issue, inline-rendered split with collapse-to-
+// single fallback, and the source-issue-as-plain-problem-statement
+// treatment. Each test bounds its assertions to the multi-track
+// region of Step 6 (subsection-local pattern per
+// `.claude/rules/testing-gotchas.md`) so an unrelated single-track
+// match cannot satisfy the test.
+
+/// Returns the slice of `c` from the first lowercase "multi-track"
+/// occurrence to the end of the file. Tests use this slice to bound
+/// their assertions to the multi-track branch of Step 6 — a single-
+/// track match elsewhere cannot satisfy a multi-track contract.
+fn multi_track_slice(c: &str) -> &str {
+    let lower = c.to_ascii_lowercase();
+    let idx = lower
+        .find("multi-track")
+        .expect("skills/flow-plan/SKILL.md must contain a `multi-track` anchor (Step 6 AC#4)");
+    &c[idx..]
+}
+
+#[test]
+fn flow_plan_step_6_detects_disconnected_components() {
+    // Regression: Step 6 must inspect the DAG after decompose returns
+    // and detect disconnected components — partitions with zero
+    // cross-group dependency edges. Without this detection the
+    // single-track path runs unconditionally and AC#4 cannot trigger.
+    //
+    // Consumer: AC#4 multi-track filing.
+    let c = common::read_skill("flow-plan");
+    let lower = c.to_ascii_lowercase();
+    assert!(
+        lower.contains("multi-track"),
+        "skills/flow-plan/SKILL.md Step 6 must name `multi-track` so the AC#4 branch is locked in"
+    );
+    assert!(
+        lower.contains("disconnected component") || lower.contains("disconnected components"),
+        "skills/flow-plan/SKILL.md Step 6 must reference disconnected-component detection (AC#4)"
+    );
+}
+
+#[test]
+fn flow_plan_step_6_multi_track_restricted_to_issue_input_mode() {
+    // Regression: AC#8 mandates that a bare-prompt invocation
+    // produces exactly one issue. Multi-track applies only when the
+    // skill was invoked with an issue reference. If the multi-track
+    // branch leaks into bare-prompt mode, every bare-prompt
+    // invocation that decompose partitions cleanly would explode
+    // into N issues — a UX regression the AC explicitly forbids.
+    //
+    // Consumer: AC#8 single-issue bare-prompt contract.
+    let c = common::read_skill("flow-plan");
+    let slice = multi_track_slice(&c);
+    let lower = slice.to_ascii_lowercase();
+    assert!(
+        lower.contains("issue-input") || lower.contains("issue input"),
+        "skills/flow-plan/SKILL.md multi-track branch must name issue-input mode as its scope (AC#8 forbids bare-prompt multi-track)"
+    );
+    assert!(
+        lower.contains("bare-prompt") || lower.contains("bare prompt"),
+        "skills/flow-plan/SKILL.md multi-track branch must explicitly note that bare-prompt mode stays single-track (AC#8)"
+    );
+}
+
+#[test]
+fn flow_plan_step_6_multi_track_validates_each_child_body() {
+    // Regression: each child issue body must pass
+    // `validate-issue-body --mode decomposed` before filing. Without
+    // per-child validation a child body could be filed missing the
+    // FLOW-PLAN sentinel pair or the Implementation Plan heading,
+    // breaking the downstream `bin/flow plan-from-issue` extraction
+    // at Phase 1 of every child flow.
+    //
+    // Consumer: `bin/flow plan-from-issue` (Phase 1 sentinel scan).
+    let c = common::read_skill("flow-plan");
+    let slice = multi_track_slice(&c);
+    assert!(
+        slice.contains("validate-issue-body"),
+        "skills/flow-plan/SKILL.md multi-track branch must invoke `bin/flow validate-issue-body` per child body"
+    );
+    assert!(
+        slice.contains("--mode decomposed"),
+        "skills/flow-plan/SKILL.md multi-track branch must pass `--mode decomposed` to validate-issue-body per child so the sentinel pair and Implementation Plan heading are enforced"
+    );
+}
+
+#[test]
+fn flow_plan_step_6_multi_track_reviews_each_child_plan() {
+    // Regression: each child's drafted Implementation Plan must be
+    // reviewed by `flow:plan-reviewer` before filing. The single-
+    // track Plan Review subsection already invokes the reviewer; the
+    // multi-track branch must apply the same gate per child plan
+    // (one reviewer invocation per child).
+    //
+    // Consumer: `agents/plan-reviewer.md` rule-adherence audit.
+    let c = common::read_skill("flow-plan");
+    let slice = multi_track_slice(&c);
+    assert!(
+        slice.contains("flow:plan-reviewer"),
+        "skills/flow-plan/SKILL.md multi-track branch must invoke `flow:plan-reviewer` per child plan so cognitive isolation applies to every child"
+    );
+}
+
+#[test]
+fn flow_plan_step_6_multi_track_links_blocked_by_edges() {
+    // Regression: cross-component DAG edges must be encoded as
+    // `bin/flow link-blocked-by` calls between children, and the
+    // source issue must be linked blocked-by its root children.
+    // Without these edges the native GitHub dependency graph cannot
+    // express the cross-component relationships and
+    // `flow-issues`/`flow-orchestrate` cannot detect blocked status
+    // on the children.
+    //
+    // Consumer: GitHub's native blocked-by dependency graph; the
+    // `flow-issues` skill reads this graph to render the Blocked
+    // section.
+    let c = common::read_skill("flow-plan");
+    let slice = multi_track_slice(&c);
+    assert!(
+        slice.contains("bin/flow link-blocked-by"),
+        "skills/flow-plan/SKILL.md multi-track branch must invoke `bin/flow link-blocked-by` to encode cross-component edges and source-issue blocked-by edges"
+    );
+    let lower = slice.to_ascii_lowercase();
+    assert!(
+        lower.contains("source issue") || lower.contains("source-issue"),
+        "skills/flow-plan/SKILL.md multi-track branch must name the source issue explicitly in the link-blocked-by treatment"
+    );
+}
+
+#[test]
+fn flow_plan_step_6_multi_track_renders_split_before_filing_with_collapse_fallback() {
+    // Regression: the proposed split must be presented to the user
+    // inline before any child is filed, with a documented fallback
+    // to collapse to single-track if multi-track is the wrong shape.
+    // Without inline presentation the user sees N filed issues and
+    // can only react after the fact; without the collapse fallback
+    // there is no documented recovery path.
+    //
+    // Consumer: the user's review window before filing — multi-track
+    // is a structural decision the user must be able to override.
+    let c = common::read_skill("flow-plan");
+    let slice = multi_track_slice(&c);
+    let lower = slice.to_ascii_lowercase();
+    assert!(
+        lower.contains("before filing")
+            || lower.contains("before any child")
+            || lower.contains("before each child")
+            || lower.contains("before the children"),
+        "skills/flow-plan/SKILL.md multi-track branch must render the proposed split BEFORE the children are filed so the user can intervene"
+    );
+    assert!(
+        lower.contains("collapse")
+            && (lower.contains("single-track") || lower.contains("single track")),
+        "skills/flow-plan/SKILL.md multi-track branch must document a collapse-to-single-track fallback so the user can override the structural decision"
+    );
+}
+
+#[test]
+fn flow_plan_step_6_multi_track_leaves_source_issue_as_plain_problem_statement() {
+    // Regression: in multi-track the source issue stays a plain
+    // problem statement — no Implementation Plan block, no
+    // `decomposed` label, not closed. Children carry the plan and
+    // the `decomposed` label. Without this treatment the source
+    // issue accumulates a plan block AND becomes blocked by its own
+    // children, producing a self-referential ready state that
+    // confuses `flow-issues` filtering.
+    //
+    // Consumer: `flow-issues` ready-work filter; the source issue
+    // remains "Vanilla" (ready for /flow:flow-plan re-decomposition)
+    // until the cascade closes it naturally via AC#5.
+    let c = common::read_skill("flow-plan");
+    let slice = multi_track_slice(&c);
+    let lower = slice.to_ascii_lowercase();
+    // The source-issue treatment must be named.
+    assert!(
+        lower.contains("source issue") || lower.contains("source-issue"),
+        "skills/flow-plan/SKILL.md multi-track branch must explicitly describe how the source issue is treated"
+    );
+    // No plan block on the source.
+    assert!(
+        lower.contains("no plan block")
+            || lower.contains("no implementation plan")
+            || lower.contains("plain problem statement"),
+        "skills/flow-plan/SKILL.md multi-track branch must state that the source issue stays a plain problem statement (no Implementation Plan block)"
+    );
+    // No `decomposed` label on the source, and not closed.
+    assert!(
+        lower.contains("no `decomposed` label")
+            || lower.contains("no decomposed label")
+            || lower.contains("not labeled decomposed"),
+        "skills/flow-plan/SKILL.md multi-track branch must state that the source issue does NOT receive the `decomposed` label"
+    );
+    assert!(
+        lower.contains("not closed") || lower.contains("never closed") || lower.contains("left open"),
+        "skills/flow-plan/SKILL.md multi-track branch must state that the source issue is not closed by multi-track filing (closure comes via AC#5 cascade)"
+    );
+}
+
 #[test]
 fn every_marker_writing_skill_is_in_multi_step_allowlist() {
     // Regression: a future utility skill writes a per-session

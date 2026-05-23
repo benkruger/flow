@@ -186,6 +186,21 @@ const PLACEHOLDER_SUBS: &[(&str, &str)] = &[
     // (pm, tech-lead, founder-solo); the test only needs a value
     // that exercises the prime-setup allow-list pattern.
     ("<role_value>", "pm"),
+    // Consumed by the Multi-Track Filing Pipeline subsection of
+    // skills/flow-plan/SKILL.md. The pipeline files one child
+    // decomposed issue per disconnected DAG component (AC#4 of
+    // issue #1590); the placeholders below substitute per-child
+    // titles, URLs, issue numbers, and the component identifier
+    // that suffixes each child's body file. The test only needs
+    // concrete values that exercise the bin/flow issue,
+    // add-issue, and link-blocked-by allow-list patterns.
+    ("<component>", "comp1"),
+    ("<child_title>", "Child issue title"),
+    ("<child_url>", "https://github.com/test/test/issues/5"),
+    ("<child_A>", "5"),
+    ("<child_B>", "6"),
+    ("<root_child>", "5"),
+    ("<source_issue>", "1"),
 ];
 
 fn substitute_placeholders(line: &str) -> Option<String> {
