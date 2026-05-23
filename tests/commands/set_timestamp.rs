@@ -232,6 +232,109 @@ fn test_apply_updates_invalid_format() {
     assert!(result.unwrap_err().contains("Invalid format"));
 }
 
+// --- apply_updates model-denied fields ---
+
+/// Model-direct writes to `_halt_pending=true` counterfeit the
+/// user-typed-halt signal that the autonomous Stop refusal trusts.
+/// `apply_updates` rejects this at the boundary so the CLI cannot
+/// be used to forge the signal.
+#[test]
+fn apply_updates_rejects_halt_pending_true() {
+    let mut state = json!({});
+    let result = apply_updates(&mut state, &["_halt_pending=true".to_string()]);
+    assert!(result.is_err());
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("_halt_pending"),
+        "error message must name the rejected field, got: {}",
+        msg
+    );
+}
+
+/// Clearing the halt by writing `_halt_pending=false` is the inverse
+/// counterfeiting shape (model unsetting a halt the user typed). The
+/// helper denies both directions — the model has no business writing
+/// the field at all.
+#[test]
+fn apply_updates_rejects_halt_pending_false() {
+    let mut state = json!({});
+    let result = apply_updates(&mut state, &["_halt_pending=false".to_string()]);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("_halt_pending"));
+}
+
+/// ASCII-case bypass: `_HALT_PENDING=true` must be rejected by the
+/// normalize-then-compare check. Per `.claude/rules/security-gates.md`
+/// "Normalize Before Comparing", normalization strips NULs, trims,
+/// and ASCII-lowercases before the equality check.
+#[test]
+fn apply_updates_rejects_halt_pending_uppercase() {
+    let mut state = json!({});
+    let result = apply_updates(&mut state, &["_HALT_PENDING=true".to_string()]);
+    assert!(result.is_err());
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("_HALT_PENDING") || msg.contains("_halt_pending"),
+        "error message must name the rejected field, got: {}",
+        msg
+    );
+}
+
+/// Whitespace-padding bypass: ` _halt_pending =true` must be rejected
+/// by the trim arm of the normalizer.
+#[test]
+fn apply_updates_rejects_halt_pending_whitespace_padded() {
+    let mut state = json!({});
+    let result = apply_updates(&mut state, &[" _halt_pending =true".to_string()]);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("_halt_pending"));
+}
+
+/// Embedded NUL bypass: `_halt_pending\0=true` must be rejected by
+/// the NUL-strip arm of the normalizer. Embedded NULs from truncated
+/// writes or editor artifacts otherwise defeat byte-equality.
+#[test]
+fn apply_updates_rejects_halt_pending_nul_embedded() {
+    let mut state = json!({});
+    let result = apply_updates(&mut state, &["_halt_pending\0=true".to_string()]);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("_halt_pending"));
+}
+
+/// `code_task` increment is unaffected by the deny check — `code_task`
+/// is not in the deny list, and the existing `validate_code_task`
+/// discipline continues to apply.
+#[test]
+fn apply_updates_allows_code_task_increment() {
+    let mut state = json!({"code_task": 0});
+    let updates = apply_updates(&mut state, &["code_task=1".to_string()]).unwrap();
+    assert_eq!(updates.len(), 1);
+    assert_eq!(state["code_task"], 1);
+}
+
+/// `_continue_pending=commit` is the load-bearing chain marker the
+/// commit-window skills set before invoking `/flow:flow-commit`. It
+/// is NOT in the deny list — only `_halt_pending` is denied in v1.
+#[test]
+fn apply_updates_allows_continue_pending_commit() {
+    let mut state = json!({});
+    let updates =
+        apply_updates(&mut state, &["_continue_pending=commit".to_string()]).unwrap();
+    assert_eq!(updates.len(), 1);
+    assert_eq!(state["_continue_pending"], "commit");
+}
+
+/// Arbitrary field names outside the deny list continue to work — the
+/// deny set is closed; fields not named in it pass through unchanged.
+#[test]
+fn apply_updates_allows_custom_field() {
+    let mut state = json!({});
+    let updates =
+        apply_updates(&mut state, &["arbitrary_field=value".to_string()]).unwrap();
+    assert_eq!(updates.len(), 1);
+    assert_eq!(state["arbitrary_field"], "value");
+}
+
 // --- validate_code_task tests ---
 
 #[test]
@@ -1020,5 +1123,31 @@ fn test_cli_set_nested_vivifies_missing_intermediate() {
     assert_eq!(
         on_disk["phases"]["flow-review"]["agent_retry_counts"]["reviewer"],
         1
+    );
+}
+
+/// CLI-level rejection of `_halt_pending` writes. Guards the
+/// model-side trust boundary at the actual subprocess surface a
+/// model would reach: `bin/flow set-timestamp --set
+/// _halt_pending=true` must exit 1 with a structured error envelope
+/// whose message names the rejected field. Issue #1695's repro is a
+/// CLI invocation, so the library-level test is not sufficient on
+/// its own.
+#[test]
+fn test_cli_rejects_halt_pending_write() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = make_cli_state();
+    setup_cli_state(dir.path(), "test-feature", &state);
+
+    let (code, output) = run_cli(dir.path(), &["--set", "_halt_pending=true"]);
+    assert_eq!(code, 1);
+    assert_eq!(output["status"], "error");
+    assert!(
+        output["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("_halt_pending"),
+        "error message must name the rejected field, got: {:?}",
+        output["message"]
     );
 }

@@ -108,6 +108,47 @@ pub fn set_nested(obj: &mut Value, path_parts: &[&str], value: Value) -> Result<
     Ok(())
 }
 
+/// Closed set of state fields the model is denied writing through
+/// the `bin/flow set-timestamp` CLI boundary. These fields carry
+/// trust signals that the autonomous `continue: auto` contract
+/// relies on — the model must not be able to counterfeit them
+/// through the CLI.
+///
+/// `_halt_pending` is set by the Stop hook
+/// (`stop_continue::check_autonomous_stop`) in response to a real
+/// user message and read by every subsequent Stop event to refuse
+/// the turn-end. The hook writes the field via in-process
+/// `mutate_state` calls — never via the CLI — so denying the CLI
+/// path leaves the legitimate writer untouched. See
+/// `.claude/rules/autonomous-phase-discipline.md` "Mechanical
+/// halt-pause contract".
+const MODEL_DENIED_FIELDS: &[&str] = &["_halt_pending"];
+
+/// Strip NULs, trim, and ASCII-lowercase the input so case,
+/// whitespace, and embedded-NUL bypass shapes are folded before
+/// the equality check in [`validate_model_denied_field`]. See
+/// `.claude/rules/security-gates.md` "Normalize Before Comparing".
+fn normalize_field_name(s: &str) -> String {
+    s.replace('\0', "").trim().to_ascii_lowercase()
+}
+
+/// Reject writes to fields in [`MODEL_DENIED_FIELDS`]. The deny
+/// applies to both truthy and falsy writes — the model has no
+/// business setting OR clearing these fields. The normalization
+/// closes case, whitespace, and embedded-NUL bypass shapes.
+fn validate_model_denied_field(field: &str) -> Result<(), String> {
+    let normalized = normalize_field_name(field);
+    if MODEL_DENIED_FIELDS.contains(&normalized.as_str()) {
+        return Err(format!(
+            "Field '{}' cannot be written via set-timestamp — it is owned by FLOW \
+             hooks. See .claude/rules/autonomous-phase-discipline.md \
+             'Mechanical halt-pause contract'.",
+            field
+        ));
+    }
+    Ok(())
+}
+
 /// Validate that code_task can only increment by 1 or reset to 0.
 pub fn validate_code_task(state: &Value, new_value: i64) -> Result<(), String> {
     if new_value == 0 {
@@ -161,6 +202,15 @@ pub fn apply_updates(state: &mut Value, set_args: &[String]) -> Result<Vec<Updat
         };
 
         let path_parts: Vec<&str> = path.split('.').collect();
+
+        // Reject CLI writes to model-denied top-level fields before
+        // any state mutation. Scoped to single-segment paths because
+        // the protected fields (e.g. `_halt_pending`) are read by
+        // hooks at the top level only; a nested attempt is a no-op
+        // for those readers.
+        if path_parts.len() == 1 {
+            validate_model_denied_field(path_parts[0])?;
+        }
 
         if path_parts == ["code_task"] {
             let int_val = match value.as_i64() {
