@@ -67,10 +67,10 @@ insufficient:
   (and any `-C <path>` target). The branch-arg extraction
   validates via `FlowPaths::is_valid_branch` so a `/`-,
   `.`/`..`-, or NUL-bearing arg cannot reach path
-  construction. Both dispatch paths share two context-
-  specific carve-outs that cover the legitimate skill-
-  driven commit paths; raw `git commit` is never carved out
-  in either context. The active-flow context's skill-commit
+  construction. The gate carries three context-specific
+  carve-outs that cover the legitimate skill-driven and
+  user-typed commit paths; raw `git commit` is never carved
+  out in any context. The active-flow context's skill-commit
   carve-out passes `bin/flow ... finalize-commit` when the
   state file has `_continue_pending == "commit"` AND the
   persisted transcript shows the most recent assistant Skill
@@ -87,10 +87,32 @@ insufficient:
   project-local maintainer skill at `.claude/skills/flow-release/`;
   the other two bootstrap parents are plugin-marketplace
   skills at `skills/<name>/` and carry the `flow:` prefix in
-  their emission. The carve-out is branch-agnostic —
-  `default_branch_in` resolves the actual integration trunk so
-  the carve-out applies identically to `main`, `staging`,
-  `master`, etc. The integration-branch context has no per-
+  their emission. The third (trunk) carve-out — wired ONLY
+  into the destination-path integration-branch arm via
+  `flow_commit_trunk_carveout_applies` — passes `bin/flow
+  ... finalize-commit <msg> <trunk>` when BOTH (a) the
+  caller's cwd is NOT inside an active-flow worktree
+  (`detect_branch_from_path(cwd)` + `is_flow_active(branch,
+  main_root)`) AND (b) the most recent real user turn in the
+  persisted transcript typed `/flow:flow-commit` as a slash
+  command. This is the supported on-trunk maintainer path
+  (bootstrap repair, follow-up after a hot patch). The
+  cwd-not-active-flow check is the structural bound that
+  prevents a feature-branch worktree's `/flow:flow-commit`
+  from spuriously authorizing a trunk commit — the user's
+  slash-command intent stays bound to the cwd it was typed
+  from. The user-typed slash command is the unforgeable
+  trust anchor; `/flow:flow-commit` itself supplies the diff
+  review and commit-message review choreography once the
+  carve-out lets the call through. The cwd-path arm is NOT
+  extended with this carve-out: raw `git commit` (or
+  `git -C <trunk> commit`) carries no slash-command marker
+  for the gate to anchor on. Both the
+  active-flow and bootstrap carve-outs apply branch-
+  agnostically — `default_branch_in` resolves the actual
+  integration trunk so they apply identically to `main`,
+  `staging`, `master`, etc.; the trunk carve-out is likewise
+  branch-agnostic. The integration-branch context has no per-
   branch state file at the trunk, so the bootstrap carve-out
   uses a SECOND walker condition where the active-flow
   carve-out uses a state-file marker — both walker conditions

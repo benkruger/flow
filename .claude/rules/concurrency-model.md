@@ -103,6 +103,22 @@ drafts release notes against that list, and Step 7 writes the
 explicit commit-message file. Each path's choreography substitutes
 for the other; both run the CI gate inside `finalize-commit`.
 
+Maintainer trunk carve-out: a maintainer who needs a non-bootstrap
+commit on the integration branch (bootstrap repair, follow-up
+after a hot patch, cleanup commit) types `/flow:flow-commit`
+directly on the trunk branch. Layer 10's trunk carve-out (see
+"Mechanical Enforcement" below) recognizes the user-typed slash
+command and lets the invocation through; `/flow:flow-commit`'s
+own diff review and commit-message review supply the choreography.
+This path is NOT a hook-level bypass — it is the supported
+on-trunk maintainer path, distinct from the rule-level "explicit
+user direction" exception below in that the model cannot
+synthesize the user-typed slash-command marker the carve-out
+anchors on. The carve-out is structurally bounded to cwds that
+are NOT inside an active-flow worktree, so a feature-branch
+worktree's `/flow:flow-commit` invocation cannot leak to authorize
+a trunk commit.
+
 The exception above is rule-level. The hook described in
 "Mechanical Enforcement" below is stricter: Layer 10 mechanically
 blocks any `git ... commit` or `bin/flow ... finalize-commit`
@@ -110,13 +126,15 @@ invocation whose effective destination resolves either to the
 integration branch OR to a feature branch with an active FLOW state
 file, even when the maintainer has explicitly directed an on-main
 or in-flow fix in the current session. A user direction that lifts
-the rule-level default does NOT lift the hook-level gate. To
-commit a maintainer carve-out fix, work on a feature branch and
-merge through the standard PR path; to commit during an active
-flow, route through `/flow:flow-commit`. This intentional
-strictness keeps the hook unambiguous: a single, mechanical
-answer for "is this commit allowed?" rather than a
-context-sensitive predicate the model could rationalize past.
+the rule-level default does NOT lift the hook-level gate — only
+typing `/flow:flow-commit` on the integration branch lifts the
+integration-branch arm (via the trunk carve-out below), and there
+is no analogous user-direction lift for the active-flow arm. To
+commit during an active flow, route through `/flow:flow-commit`
+from inside the worktree. This intentional strictness keeps the
+hook unambiguous: a single, mechanical answer for "is this commit
+allowed?" rather than a context-sensitive predicate the model
+could rationalize past.
 
 ### Mechanical Enforcement
 
@@ -176,10 +194,12 @@ For every other shape — `git commit`, `git -C <path> commit`,
 and any malformed `bin/flow finalize-commit` invocation (missing
 positional args) — Layer 10 falls back to the cwd path that
 checks the hook's process cwd and any `-C <path>` target. The
-two dispatch paths share both carve-outs documented below: the
 active-flow skill-commit carve-out and the integration-branch
-bootstrap-skill carve-out apply identically whether Layer 10
-routes on the branch arg or on the caller's cwd.
+bootstrap-skill carve-out apply identically across both dispatch
+paths. The trunk carve-out is destination-path-only — the
+cwd-path arm covers `git commit` shapes that carry no
+slash-command marker for the gate to anchor on, so the trunk
+carve-out has nothing to match there.
 
 ### Active-Flow Trigger
 
@@ -395,6 +415,92 @@ the window further — e.g., adding a per-machine
 `bootstrap-pending` marker that flow-start/flow-prime/flow-release
 set and finalize-commit clears — is a future design conversation,
 not a defect in v1.
+
+**Trunk carve-out (integration-branch context).** The
+integration-branch gate would also block a maintainer typing
+`/flow:flow-commit` directly on the trunk branch — a path the
+project supports for non-bootstrap commits (bootstrap repair,
+follow-up after a hot patch, a cleanup commit a maintainer wants
+to land on the trunk without spinning up a feature worktree).
+The trunk carve-out fires (suppresses the integration-branch
+block) iff TWO AND-combined conditions hold, in addition to the
+command-shape precondition the destination-path arm enforces via
+`extract_finalize_commit_branch_arg`:
+
+1. The caller's cwd is NOT inside an active-flow worktree.
+   Resolved via `detect_branch_from_path(cwd)` +
+   `is_flow_active(branch, main_root)`. The user typing
+   `/flow:flow-commit` from inside a feature-branch worktree
+   bound their intent to THAT worktree's branch — not to the
+   integration trunk. Without this check, a model on a
+   feature-branch worktree could fire `bin/flow finalize-commit
+   msg.txt <trunk>` and the user-typed slash command would
+   spuriously authorize a trunk commit (pre-mortem F1 bypass
+   shape). The active-flow arm's own carve-out
+   (`check_active_flow_at`) handles the legitimate feature-
+   branch commit path via the `_continue_pending=commit` marker
+   plus assistant-Skill `flow:flow-commit`; the trunk carve-out's
+   cwd-not-active-flow check is the structural bound that
+   prevents the user's feature-branch intent from leaking to
+   authorize a trunk commit. The bound is symmetric with the
+   bootstrap carve-out's cwd-only scope on the `-C` target
+   callsite — both serve to keep trust localized to the cwd
+   where the user-typed intent was genuinely formed.
+2. `last_user_message_invokes_skill(transcript_path,
+   "flow:flow-commit", home)` returns true — the most recent
+   real user turn in the persisted transcript STARTS with the
+   namespaced `<command-name>/flow:flow-commit</command-name>`
+   slash-command emission (or the two-line `<command-message>`
+   shape Claude Code 2.1.140+ emits). The user-typed slash command
+   is the unforgeable trust anchor: only a user-typed turn can
+   satisfy `last_user_message_invokes_skill`, so the model
+   cannot synthesize the marker and route around
+   `/flow:flow-commit`'s surrounding diff review and
+   commit-message review.
+
+Scoping: this carve-out is wired ONLY into the destination-path
+integration-branch arm of `check_commit_during_flow`. The
+active-flow arm is gated by `_continue_pending=commit` +
+assistant-Skill `flow:flow-commit`; weakening that to accept a
+user-typed slash command would let a maintainer skip the
+feature-branch flow-commit choreography entirely. The cwd-path
+arm covers `git commit` and `git -C <trunk> commit` shapes —
+neither carries a slash-command marker for the gate to anchor on,
+so the trunk carve-out has nothing to match there. Raw `git
+commit` on the integration branch therefore remains blocked
+unconditionally, even with a user-typed `/flow:flow-commit` turn
+earlier in the transcript: the finalize-commit invocation shape
+is itself the signal that the maintainer reached for
+`/flow:flow-commit` deliberately.
+
+The carve-out is branch-agnostic — like the bootstrap carve-out,
+the user-typed slash command is the trust anchor, not any
+particular branch name. The carve-out applies identically to
+`main`, `staging`, `master`, `develop`, and any other configured
+trunk.
+
+Trust contract: CI verifies code quality, not commit discipline.
+The reviewable choreography that Layer 10 protects is supplied
+by the `/flow:flow-commit` skill itself (`skills/flow-commit/SKILL.md`):
+diff review, commit-message review, user approval. The user's
+slash-command invocation triggers exactly that choreography for
+the on-trunk commit, identical to every feature-branch commit.
+CI runs unconditionally inside `finalize_commit::run_impl`
+regardless of the carve-out — that's the protective backstop for
+code quality. The skill's choreography is the protective frontstop
+for commit discipline. The carve-out preserves both because the
+same `/flow:flow-commit` skill that fires for feature-branch
+commits ALSO fires for the trunk commit when the cwd-not-active-
+flow check passes.
+
+Window bound: the carve-out's authorization window stays open
+from the user-typed `/flow:flow-commit` turn until the next real
+user turn — the same documented bound the bootstrap carve-out
+carries. A user message after `/flow:flow-commit` completes —
+followed by a separate `bin/flow finalize-commit msg.txt
+<trunk>` invocation — puts the slash-command turn OUTSIDE the
+carve-out window, so `last_user_message_invokes_skill` returns
+false and the block fires.
 
 ### Known Limitations
 
