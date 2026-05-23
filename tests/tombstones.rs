@@ -667,6 +667,58 @@ fn test_flow_reset_no_guard_prose() {
     );
 }
 
+// --- start_init label-apply removal ---
+//
+// The `label_issues` call that applied "Flow In-Progress" to
+// referenced issues was removed from `src/start_init.rs::run_impl`
+// and moved to the end of `src/start_workspace.rs`'s success path.
+// The label now means "a flow is live, worktree exists, PR exists"
+// rather than "a flow was attempted" — failed start-gate runs no
+// longer leave a sticky label that blocks the next retry.
+
+/// Tombstone: removed in PR #1697. The Flow In-Progress label
+/// apply moved from `start_init` to `start_workspace`'s
+/// trailing success block so the label means "a flow is live"
+/// rather than "a flow was attempted". Must not return inside
+/// `src/start_init.rs::run_impl`.
+///
+/// Assertion kind: structural. Function-body-scoped scan of
+/// `run_impl` in `src/start_init.rs`. The byte literal
+/// `label_issues(` is checked inside the bounded slice
+/// extracted via `extract_fn_body`. Stability argument: a Rust
+/// function call requires the callee identifier to appear as a
+/// literal token in source, so a `concat!`-assembled name
+/// cannot resurrect the call without the literal `label_issues(`
+/// returning to the body; `format!` produces strings, not call
+/// expressions; a named `constant` rebinding (`let f =
+/// label_issues; f(...)`) still places the identifier in source;
+/// a `.arg()` split is not applicable because the target is a
+/// function-call site, not a CLI argument chain. The bounded
+/// slice scope prevents the module-level `use
+/// crate::label_issues::LABEL;` import — which legitimately
+/// stays for the pre-lock guard — from satisfying the check,
+/// and prevents prose elsewhere in the file (module doc,
+/// sibling helpers, error messages) from accidental matches.
+#[test]
+fn test_start_init_no_label_apply() {
+    let root = common::repo_root();
+    let path = root.join("src").join("start_init.rs");
+    let content = fs::read_to_string(&path).expect("src/start_init.rs must exist");
+    const MARKER: &str = "fn run_impl(";
+    let sig_start = content
+        .find(MARKER)
+        .expect("`fn run_impl(` must exist in src/start_init.rs");
+    let body = extract_fn_body(&content, sig_start + MARKER.len())
+        .expect("run_impl() body must be brace-balanced");
+    assert!(
+        !body.contains("label_issues("),
+        "src/start_init.rs::run_impl must not contain `label_issues(` — \
+         the label apply moved to start_workspace per PR #1697 so the \
+         Flow In-Progress label means \"a flow is live, worktree exists, \
+         PR exists\" rather than \"a flow was attempted\"."
+    );
+}
+
 // --- FLOW_DENY escape-hatch entries ---
 //
 // The deny entries listed below block the canonical escape-hatch

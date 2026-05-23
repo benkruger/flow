@@ -122,7 +122,7 @@ The bash block above is for reference only — all four commands call
 
 ## Steps
 
-### Step 1 — Initialize (lock, version checks, state file, labels)
+### Step 1 — Initialize (lock, version checks, state file)
 
 Write the user's original start prompt (verbatim, including `#N` issue references
 and any special characters) to `.flow-states/<feature-name>-start-prompt` using the
@@ -247,7 +247,12 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow start-workspace "<feature-name>" --branch <branch
 ```
 
 The command creates the worktree, opens a PR, backfills the state file with
-PR fields, and releases the start lock as its final action.
+PR fields, applies the `Flow In-Progress` label to any referenced issues
+(best-effort, after every other step succeeds), and releases the start
+lock as its final action. The label apply lives here — not in Step 1 —
+so the label means "a flow is live, worktree exists, PR exists" rather
+than "a flow was attempted"; failed start-gate or start-workspace runs
+leave no sticky label that would block the next retry.
 
 **On success** — parse the JSON output. Capture the `worktree_cwd`
 field — this is the directory the agent should cd into. For root-level

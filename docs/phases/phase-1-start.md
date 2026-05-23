@@ -21,7 +21,7 @@ Four consolidated Rust commands handle the Start phase. Steps 1-3 serialize all 
 
 ### 1. Initialize (`start-init`)
 
-Acquires a queue-based lock, runs version gate and upgrade check, creates the early state file via `init-state`, and labels referenced issues with "Flow In-Progress". If the lock is already held, invokes `/loop 15s /flow:flow-start` to poll every 15 seconds. If version checks or init-state fail, releases the lock and stops.
+Acquires a queue-based lock, runs version gate and upgrade check, and creates the early state file via `init-state`. Consults the "Flow In-Progress" label on referenced issues as a pre-lock cross-machine WIP guard; the label apply happens later in Step 3 so a failed start-gate or start-workspace leaves no sticky label that would block the next retry. If the lock is already held, invokes `/loop 15s /flow:flow-start` to poll every 15 seconds. If version checks or init-state fail, releases the lock and stops.
 
 ### 2. CI and dependency gate (`start-gate`)
 
@@ -29,7 +29,7 @@ Pulls the latest integration branch (the `base_branch` from state), runs `bin/fl
 
 ### 3. Create workspace (`start-workspace`)
 
-Creates a git worktree at `.worktrees/<branch>`, makes an empty commit, pushes the branch, opens a PR via `gh pr create`, backfills the state file with PR fields, and releases the start lock as its final action. The lock is released even on error — main is untouched by worktree operations.
+Creates a git worktree at `.worktrees/<branch>`, makes an empty commit, pushes the branch, opens a PR via `gh pr create`, backfills the state file with PR fields, applies the "Flow In-Progress" label to referenced issues (best-effort, runs only on the success path), and releases the start lock as its final action. The lock is released even on error — main is untouched by worktree operations. Failure paths skip the label apply entirely so the label means "a flow is live, worktree exists, PR exists" rather than "a flow was attempted".
 
 ### 4. Change to worktree
 

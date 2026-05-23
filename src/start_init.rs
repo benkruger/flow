@@ -1,9 +1,15 @@
 //! Consolidated start-init: lock acquire + prime-check + upgrade-check +
-//! prompt write + init-state + label-issues in a single command.
+//! prompt write + init-state in a single command.
 //!
 //! Reduces the first ~8 tool calls of flow-start to 1. Returns JSON with
 //! status "ready" (proceed to start-gate), "locked" (another start holds
 //! the lock), or "error" (stop and report).
+//!
+//! Note: the `Flow In-Progress` label apply lives in `start_workspace`
+//! at the end of the success path so the label means "a flow is live,
+//! worktree exists, PR exists" rather than "a flow was attempted".
+//! `start_init` still consults the label as a pre-lock guard (cross-
+//! machine WIP detection) but no longer writes it.
 //!
 //! Return type of `run_impl_main` is `(Value, i32)`: status-error JSON
 //! goes through `Ok` with a `status: error` field; exit code `1` is
@@ -24,7 +30,7 @@ use crate::commands::log::append_log;
 use crate::commands::start_lock::{acquire, queue_path, release};
 use crate::commands::start_step::update_step;
 use crate::flow_paths::{FlowPaths, FlowStatesDir};
-use crate::label_issues::{label_issues, LABEL};
+use crate::label_issues::LABEL;
 use crate::prime_check;
 use crate::upgrade_check::{self, GhResult};
 use crate::utils::{
@@ -308,25 +314,6 @@ fn run_impl(args: &Args, root: &Path, cwd: &Path) -> Result<Value, String> {
             serde_json::to_value(&snap).expect("WindowSnapshot must serialize");
     });
 
-    // Step 5: Label issues (best-effort)
-    // issue_numbers already derived in the pre-lock section
-    let mut labels_result = json!({});
-    if !issue_numbers.is_empty() {
-        let result = label_issues(&issue_numbers, "add");
-        labels_result = json!({
-            "labeled": result.labeled,
-            "failed": result.failed,
-        });
-        let _ = append_log(
-            root,
-            &branch,
-            &format!(
-                "[Phase 1] start-init — label-issues (labeled: {:?}, failed: {:?})",
-                result.labeled, result.failed
-            ),
-        );
-    }
-
     // Build response
     let mut response = json!({
         "status": "ready",
@@ -344,10 +331,6 @@ fn run_impl(args: &Args, root: &Path, cwd: &Path) -> Result<Value, String> {
 
     if upgrade_result["status"] != "current" && upgrade_result["status"] != "unknown" {
         response["upgrade"] = upgrade_result;
-    }
-
-    if !issue_numbers.is_empty() {
-        response["labels"] = labels_result;
     }
 
     Ok(response)

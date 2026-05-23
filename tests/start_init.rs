@@ -310,32 +310,6 @@ fn test_upgrade_available() {
 }
 
 #[test]
-fn test_labels_best_effort() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), None);
-
-    // Create gh stub that fails on issue edit (label failure)
-    let stub_dir = create_gh_stub(
-        &repo,
-        "#!/bin/bash\n\
-         if [[ \"$1\" == \"issue\" && \"$2\" == \"view\" ]]; then exit 1; fi\n\
-         if [[ \"$1\" == \"issue\" && \"$2\" == \"edit\" ]]; then exit 1; fi\n\
-         echo \"https://github.com/test/repo/pull/42\"\n",
-    );
-
-    // The feature name has no #N references, so no labels to apply.
-    // This test verifies the command still returns "ready" even when
-    // label operations would fail.
-    let output = run_start_init(&repo, "labels-test", &[], &stub_dir);
-    let data = parse_output(&output);
-    assert_eq!(
-        data["status"], "ready",
-        "Label failure must not block start-init"
-    );
-}
-
-#[test]
 fn test_no_flow_json_returns_error() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());

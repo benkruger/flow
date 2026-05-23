@@ -1027,6 +1027,237 @@ fn test_no_state_file_skips_backfill() {
     assert!(!flow_states_dir(&repo).join("no-state-branch.json").exists());
 }
 
+// --- label_apply ---
+//
+// The Flow In-Progress label is applied at the END of the
+// start_workspace success path, AFTER worktree + PR + state
+// backfill all succeed and BEFORE the final lock release. Failure
+// paths skip the label entirely so a failed flow-start no longer
+// leaves a sticky label that blocks the next retry. Best-effort:
+// gh issue edit failures do not fail the flow.
+
+/// Create a recording gh stub that appends every invocation to a
+/// file and emits the same default behavior as `create_default_gh_stub`
+/// (exit 1 on `gh repo view`, echo a fake PR URL on every other call).
+/// Returns `(stub_dir, recorder_path)` — tests read `recorder_path`
+/// after running start-workspace to assert which gh commands fired.
+fn create_recording_gh_stub(repo: &Path) -> (PathBuf, PathBuf) {
+    let recorder_path = repo.join(".gh-args");
+    let script = format!(
+        "#!/bin/bash\n\
+         echo \"$@\" >> \"{}\"\n\
+         case \"$1\" in\n  \
+           repo) exit 1 ;;\n  \
+           *) echo \"https://github.com/test/repo/pull/42\" ;;\n\
+         esac\n",
+        recorder_path.to_string_lossy()
+    );
+    let stub_dir = create_gh_stub(repo, &script);
+    (stub_dir, recorder_path)
+}
+
+/// Set up a state file whose `prompt` field references issue #42 so
+/// `extract_issue_numbers` returns `[42]` and start_workspace's
+/// label-apply step fires the `gh issue edit 42 --add-label
+/// "Flow In-Progress"` call on the success path.
+fn create_state_file_with_issue(repo: &Path, branch: &str) {
+    let branch_dir = flow_states_dir(repo).join(branch);
+    fs::create_dir_all(&branch_dir).unwrap();
+    let state = json!({
+        "schema_version": 1,
+        "branch": branch,
+        "repo": null,
+        "pr_number": null,
+        "pr_url": null,
+        "started_at": "2026-01-01T00:00:00-08:00",
+        "current_phase": "flow-start",
+        "files": {
+            "plan": null,
+            "dag": null,
+            "log": format!(".flow-states/{}/log", branch),
+            "state": format!(".flow-states/{}/state.json", branch)
+        },
+        "session_tty": null,
+        "session_id": null,
+        "transcript_path": null,
+        "notes": [],
+        "prompt": "work on issue #42",
+        "phases": {},
+        "phase_transitions": [],
+        "start_step": 2,
+        "start_steps_total": 5
+    });
+    fs::write(
+        branch_dir.join("state.json"),
+        serde_json::to_string_pretty(&state).unwrap(),
+    )
+    .unwrap();
+}
+
+/// Run start-workspace with an explicit `--prompt-file` so the
+/// production code's `prompt` variable carries the #N reference for
+/// label-apply. The fixture writes the prompt content into the repo
+/// root; start_workspace reads and deletes it during the success
+/// path.
+fn run_start_workspace_with_prompt(
+    repo: &Path,
+    feature: &str,
+    branch: &str,
+    prompt_content: &str,
+    stub_dir: &Path,
+) -> Output {
+    let prompt_file = repo.join(format!(".flow-prompt-{}", branch));
+    fs::write(&prompt_file, prompt_content).unwrap();
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args([
+            "start-workspace",
+            feature,
+            "--branch",
+            branch,
+            "--prompt-file",
+            prompt_file.to_str().unwrap(),
+        ])
+        .current_dir(repo)
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                stub_dir.to_string_lossy(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        )
+        .env("CLAUDE_PLUGIN_ROOT", &manifest_dir)
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn label_apply_on_success_path() {
+    // Happy path: worktree + PR + backfill all succeed, prompt
+    // references issue #42, so start_workspace's trailing label-apply
+    // block calls `gh issue edit 42 --add-label "Flow In-Progress"`
+    // before releasing the lock. Guards against the apply being
+    // accidentally deleted from the success path.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let (stub_dir, recorder_path) = create_recording_gh_stub(&repo);
+    create_state_file_with_issue(&repo, "label-success");
+    create_lock_entry(&repo, "label-success");
+
+    let output = run_start_workspace_with_prompt(
+        &repo,
+        "Label Success",
+        "label-success",
+        "work on issue #42\n",
+        &stub_dir,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+
+    // Recorder must contain the issue-edit call with the label flag.
+    let recorded = fs::read_to_string(&recorder_path).expect("gh recorder file must exist");
+    assert!(
+        recorded.contains("issue edit 42 --add-label Flow In-Progress"),
+        "gh issue edit with --add-label must fire on success; got: {}",
+        recorded
+    );
+}
+
+#[test]
+fn label_not_applied_when_worktree_create_fails() {
+    // Failure path: pre-existing worktree path + same-name branch
+    // make `git worktree add -b` fail. start_workspace returns early
+    // with `step: "worktree"` and the label-apply block is never
+    // reached. Guards against the sticky-label bug shape re-emerging
+    // — failed start-workspace must leave no Flow In-Progress label.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let (stub_dir, recorder_path) = create_recording_gh_stub(&repo);
+    create_state_file_with_issue(&repo, "label-wt-fail");
+    create_lock_entry(&repo, "label-wt-fail");
+
+    // Pre-create the worktree directory AND the branch to force
+    // `git worktree add -b` to fail.
+    fs::create_dir_all(repo.join(".worktrees").join("label-wt-fail")).unwrap();
+    Command::new("git")
+        .args(["branch", "label-wt-fail"])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+
+    let output = run_start_workspace_with_prompt(
+        &repo,
+        "Label Wt Fail",
+        "label-wt-fail",
+        "work on issue #42\n",
+        &stub_dir,
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+
+    // Recorder must NOT contain any `--add-label` invocation.
+    let recorded = fs::read_to_string(&recorder_path).unwrap_or_default();
+    assert!(
+        !recorded.contains("--add-label"),
+        "gh issue edit --add-label must NOT fire when worktree create fails; got: {}",
+        recorded
+    );
+}
+
+#[test]
+fn label_not_applied_when_pr_create_fails() {
+    // Failure path: gh `pr create` exits non-zero. Worktree succeeds
+    // (no pre-existing dir), but PR creation fails inside
+    // `initial_commit_push_pr`; start_workspace returns early with
+    // `step: "pr_create"` and the label-apply block is never reached.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+
+    // Recording gh stub that fails on every invocation EXCEPT
+    // `repo view` (which the default stub already exits 1 on). The
+    // recorder captures every call so the assertion can confirm
+    // `gh issue edit --add-label` never fires.
+    let recorder_path = repo.join(".gh-args");
+    let script = format!(
+        "#!/bin/bash\n\
+         echo \"$@\" >> \"{}\"\n\
+         exit 1\n",
+        recorder_path.to_string_lossy()
+    );
+    let stub_dir = create_gh_stub(&repo, &script);
+
+    create_state_file_with_issue(&repo, "label-pr-fail");
+    create_lock_entry(&repo, "label-pr-fail");
+
+    let output = run_start_workspace_with_prompt(
+        &repo,
+        "Label PR Fail",
+        "label-pr-fail",
+        "work on issue #42\n",
+        &stub_dir,
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+
+    let recorded = fs::read_to_string(&recorder_path).unwrap_or_default();
+    assert!(
+        !recorded.contains("--add-label"),
+        "gh issue edit --add-label must NOT fire when PR create fails; got: {}",
+        recorded
+    );
+}
+
 // --- find_dep_parents walker (.venv target) ---
 
 /// Count `.venv` symlinks under `dir`, walking the directory tree but
