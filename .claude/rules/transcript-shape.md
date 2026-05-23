@@ -77,7 +77,7 @@ autonomous flow receives a model-initiated turn-end carries
 user turn, halts, and the downstream predicate fails open.
 
 The counter-example that motivates the dual check: a multi-step
-utility skill (`flow-plan`, `flow-decompose-project`) runs the
+utility skill (`flow-plan`) runs the
 decompose sub-skill, the model returns mid-pipeline with a
 text-only synthesis, the Stop hook refuses the turn-end, and the
 refusal injects a `type:"user"` turn with string content and

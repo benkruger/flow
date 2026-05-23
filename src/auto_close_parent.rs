@@ -1,22 +1,28 @@
-//! Auto-close parent issue and milestone.
+//! Cascade-close issues whose blockers are all closed, and close the
+//! issue's milestone when its open-issue count reaches zero.
 //!
 //! Usage:
 //!   bin/flow auto-close-parent --repo <owner/repo> --issue-number N
 //!
-//! Checks if the issue has a parent (sub-issue relationship). If so, checks
-//! whether all sibling sub-issues are closed. If all closed, closes the parent.
-//! Also checks the issue's milestone — if all milestone issues are closed,
-//! closes the milestone.
+//! On a just-closed issue X:
+//!   - Walks the blocked-by dependency graph:
+//!     `GET repos/{repo}/issues/{X}/dependencies/blocking` lists each
+//!     issue Y that X blocks. For every Y, fetch
+//!     `GET repos/{repo}/issues/{Y}/dependencies/blocked_by`; if every
+//!     blocker of Y is `state == "closed"`, close Y and recurse with
+//!     Y as the newly-closed seed. A visited set short-circuits cycles
+//!     and a defensive depth bound caps the walk.
+//!   - Also closes the issue's milestone when `open_issues == 0`.
 //!
-//! Best-effort throughout — any failure continues silently.
-//!
-//! Output (JSON to stdout):
-//!   {"status": "ok", "parent_closed": bool, "milestone_closed": bool}
-//!
+//! Best-effort throughout — any subprocess failure continues silently.
 //! Tests live at `tests/auto_close_parent.rs` per
 //! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]` in
 //! this file.
+//!
+//! Output (JSON to stdout):
+//!   `{"status": "ok", "closed_issues": [i64], "milestone_closed": bool}`
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::time::Duration;
 
@@ -29,7 +35,7 @@ use crate::utils::run_cmd;
 #[derive(Parser, Debug)]
 #[command(
     name = "auto-close-parent",
-    about = "Auto-close parent issue and milestone"
+    about = "Cascade-close blocked-by issues and close milestone when empty"
 )]
 pub struct Args {
     /// Repository (owner/name)
@@ -48,6 +54,14 @@ pub struct Args {
 /// spawns a real `gh` subprocess.
 pub type GhApiRunner = dyn Fn(&[&str], &Path) -> Result<String, String>;
 
+/// Defensive recursion bound for `cascade_close_unblocked`. A
+/// hand-edited or hostile dependency graph could form a chain longer
+/// than any realistic engineering tree; this constant halts the walk
+/// regardless. The visited set already terminates cycles in O(N)
+/// steps — this bound is the secondary guard for non-cyclic but
+/// excessively-deep DAGs.
+pub const MAX_CASCADE_DEPTH: usize = 50;
+
 /// Run a gh command, returning stdout on success or an error string on failure.
 pub fn run_api(args: &[&str], cwd: &Path) -> Result<String, String> {
     match run_cmd(args, cwd, "api", Some(Duration::from_secs(LOCAL_TIMEOUT))) {
@@ -56,79 +70,43 @@ pub fn run_api(args: &[&str], cwd: &Path) -> Result<String, String> {
     }
 }
 
-/// Parse parent_issue.number and milestone.number from a JSON issue response.
+/// Parse milestone.number from a JSON issue response.
 ///
-/// Returns (parent_number_or_None, milestone_number_or_None).
-pub fn parse_issue_fields(json_str: &str) -> (Option<i64>, Option<i64>) {
-    let data: serde_json::Value = match serde_json::from_str(json_str) {
-        Ok(v) => v,
-        Err(_) => return (None, None),
-    };
-
-    let parent_number = data
-        .get("parent_issue")
-        .and_then(|p| p.as_object())
-        .and_then(|obj| obj.get("number"))
-        .and_then(|n| n.as_i64());
-
-    let milestone_number = data
-        .get("milestone")
+/// Returns `None` when the JSON is malformed, the `milestone` field
+/// is absent / null / not an object, or `number` is not an integer.
+pub fn parse_milestone_number(json_str: &str) -> Option<i64> {
+    let data: serde_json::Value = serde_json::from_str(json_str).ok()?;
+    data.get("milestone")
         .and_then(|m| m.as_object())
         .and_then(|obj| obj.get("number"))
-        .and_then(|n| n.as_i64());
-
-    (parent_number, milestone_number)
+        .and_then(|n| n.as_i64())
 }
 
-/// Fetch parent_issue.number and milestone.number in one API call.
+/// Fetch milestone.number for an issue via one API call.
 ///
 /// Tests pass a mock `runner` so they never spawn `gh`; production
-/// callers pass `&run_api`. Per `.claude/rules/testability-means-simplicity.md`
-/// the runner is the only seam — no separate thin wrapper that binds
-/// `&run_api` exists, because it added an unused-in-tests monomorphization
-/// with no behavior of its own.
-pub fn fetch_issue_fields(
+/// callers pass `&run_api`.
+pub fn fetch_milestone_number(
     repo: &str,
     issue_number: i64,
     cwd: &Path,
     runner: &GhApiRunner,
-) -> (Option<i64>, Option<i64>) {
+) -> Option<i64> {
     let url = format!("repos/{}/issues/{}", repo, issue_number);
-    let stdout = match runner(&["gh", "api", &url], cwd) {
-        Ok(s) => s,
-        Err(_) => return (None, None),
-    };
-    parse_issue_fields(&stdout)
-}
-
-/// Check if all sub-issues are closed from a JSON array response.
-///
-/// Returns true if the list is non-empty and every item has state "closed".
-pub fn all_sub_issues_closed(json_str: &str) -> bool {
-    let sub_issues: Vec<serde_json::Value> = match serde_json::from_str(json_str) {
-        Ok(v) => v,
-        Err(_) => return false,
-    };
-
-    if sub_issues.is_empty() {
-        return false;
-    }
-
-    sub_issues
-        .iter()
-        .all(|si| si.get("state").and_then(|s| s.as_str()) == Some("closed"))
+    let stdout = runner(&["gh", "api", &url], cwd).ok()?;
+    parse_milestone_number(&stdout)
 }
 
 /// Check if a milestone should be closed based on its JSON response.
 ///
-/// Returns true if open_issues is 0.
+/// Returns true if `open_issues == 0`. Missing or non-numeric
+/// `open_issues` defaults to 1 (treated as open).
 pub fn should_close_milestone(json_str: &str) -> bool {
     let data: serde_json::Value = match serde_json::from_str(json_str) {
         Ok(v) => v,
         Err(_) => return false,
     };
 
-    // Default to 1 so a missing field is treated as open, never accidentally closing
     let open_issues = data
         .get("open_issues")
         .and_then(|v| v.as_i64())
@@ -137,64 +115,12 @@ pub fn should_close_milestone(json_str: &str) -> bool {
     open_issues == 0
 }
 
-/// Check if all sub-issues of the parent are closed; close parent if so.
-///
-/// If parent_number is provided, uses it directly (skips the lookup).
-/// Returns true if the parent was closed, false otherwise.
-/// Best-effort: any failure returns false. Tests pass a mock runner;
-/// production passes `&run_api`.
-pub fn check_parent_closed(
-    repo: &str,
-    issue_number: i64,
-    parent_number: Option<i64>,
-    cwd: &Path,
-    runner: &GhApiRunner,
-) -> bool {
-    let parent = match parent_number {
-        Some(n) => n,
-        None => {
-            // Standalone call — fetch the parent number
-            let url = format!("repos/{}/issues/{}", repo, issue_number);
-            let stdout = match runner(&["gh", "api", &url, "--jq", ".parent_issue.number"], cwd) {
-                Ok(s) => s,
-                Err(_) => return false,
-            };
-            let trimmed = stdout.trim();
-            if trimmed.is_empty() || trimmed == "null" {
-                return false;
-            }
-            match trimmed.parse::<i64>() {
-                Ok(n) => n,
-                Err(_) => return false,
-            }
-        }
-    };
-
-    // Get all sub-issues of the parent
-    let url = format!("repos/{}/issues/{}/sub_issues", repo, parent);
-    let stdout = match runner(&["gh", "api", &url], cwd) {
-        Ok(s) => s,
-        Err(_) => return false,
-    };
-
-    if !all_sub_issues_closed(&stdout) {
-        return false;
-    }
-
-    // All closed — close the parent
-    runner(
-        &["gh", "issue", "close", &parent.to_string(), "--repo", repo],
-        cwd,
-    )
-    .is_ok()
-}
-
 /// Check if all milestone issues are closed; close milestone if so.
 ///
-/// If milestone_number is provided, uses it directly (skips the lookup).
-/// Returns true if the milestone was closed, false otherwise.
-/// Best-effort: any failure returns false. Tests pass a mock runner;
-/// production passes `&run_api`.
+/// If `milestone_number` is provided, uses it directly (skips the
+/// lookup). Returns true if the milestone was closed, false
+/// otherwise. Best-effort: any failure returns false. Tests pass a
+/// mock runner; production passes `&run_api`.
 pub fn check_milestone_closed(
     repo: &str,
     issue_number: i64,
@@ -249,25 +175,129 @@ pub fn check_milestone_closed(
     .is_ok()
 }
 
+/// Walk the blocked-by dependency graph from `start_issue` and close
+/// every reachable issue whose remaining blockers are all closed.
+///
+/// Returns the list of newly-closed issue numbers in the order they
+/// were closed. The starting issue itself is NOT in the result
+/// because the caller closed it before invoking the cascade.
+///
+/// The walk uses a visited set so cycles terminate in O(N) steps.
+/// A defensive depth bound (`MAX_CASCADE_DEPTH`) caps the recursion
+/// in case the graph is hand-edited into an excessively deep chain.
+/// Best-effort: every API or close failure is swallowed and the
+/// cascade continues with the next candidate.
+pub fn cascade_close_unblocked(
+    repo: &str,
+    start_issue: i64,
+    cwd: &Path,
+    runner: &GhApiRunner,
+) -> Vec<i64> {
+    let mut visited: HashSet<i64> = HashSet::new();
+    let mut closed: Vec<i64> = Vec::new();
+    visited.insert(start_issue);
+    cascade_recurse(repo, start_issue, cwd, runner, &mut visited, &mut closed, 0);
+    closed
+}
+
+/// Recursive helper for `cascade_close_unblocked`. Documented invariants:
+///
+/// - `depth` is the number of recursive frames between this call and
+///   the original `cascade_close_unblocked` entry. A frame at depth
+///   `MAX_CASCADE_DEPTH` halts before any side effect.
+/// - `visited` is written ONLY after a candidate Y has been
+///   successfully closed. Convergent (diamond) graphs where Y has
+///   multiple paths from `start_issue` must remain eligible for
+///   re-evaluation until one of Y's blockers has actually closed —
+///   otherwise the first branch that finds Y blocked would mark Y
+///   permanently visited and Y would stay open after every blocker
+///   closes.
+/// - `closed` is append-only and reflects close order; a failed
+///   `gh issue close` call leaves Y absent from `visited`, so the
+///   next branch that reaches Y will re-check its blocked-by list
+///   against the updated graph state.
+fn cascade_recurse(
+    repo: &str,
+    issue: i64,
+    cwd: &Path,
+    runner: &GhApiRunner,
+    visited: &mut HashSet<i64>,
+    closed: &mut Vec<i64>,
+    depth: usize,
+) {
+    if depth >= MAX_CASCADE_DEPTH {
+        return;
+    }
+
+    let blocking_url = format!("repos/{}/issues/{}/dependencies/blocking", repo, issue);
+    let blocking_stdout = match runner(&["gh", "api", &blocking_url], cwd) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    let blocking: Vec<serde_json::Value> = match serde_json::from_str(&blocking_stdout) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    for y in blocking {
+        let y_num = match y.get("number").and_then(|n| n.as_i64()) {
+            Some(n) => n,
+            None => continue,
+        };
+        if visited.contains(&y_num) {
+            continue;
+        }
+
+        let blocked_by_url = format!("repos/{}/issues/{}/dependencies/blocked_by", repo, y_num);
+        let blocked_by_stdout = match runner(&["gh", "api", &blocked_by_url], cwd) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        let blockers: Vec<serde_json::Value> = match serde_json::from_str(&blocked_by_stdout) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let all_closed = !blockers.is_empty()
+            && blockers
+                .iter()
+                .all(|b| b.get("state").and_then(|s| s.as_str()) == Some("closed"));
+
+        if !all_closed {
+            continue;
+        }
+
+        let close_result = runner(
+            &["gh", "issue", "close", &y_num.to_string(), "--repo", repo],
+            cwd,
+        );
+        if close_result.is_err() {
+            continue;
+        }
+
+        closed.push(y_num);
+        visited.insert(y_num);
+        cascade_recurse(repo, y_num, cwd, runner, visited, closed, depth + 1);
+    }
+}
+
 /// Main-arm dispatcher with injected cwd and runner. Always returns
-/// `(Value, 0)` — auto-close is best-effort by design and the parent /
-/// milestone close decisions surface as boolean fields in the success
+/// `(Value, 0)` — auto-close is best-effort by design and the cascade
+/// outcome surfaces as a list of closed issue numbers in the success
 /// payload, never as an error exit. Tests pass a mock runner;
 /// production passes `&run_api`.
 pub fn run_impl_main(args: Args, cwd: &Path, runner: &GhApiRunner) -> (Value, i32) {
-    // Fetch both fields in one API call to avoid redundant requests
-    let (parent_number, milestone_number) =
-        fetch_issue_fields(&args.repo, args.issue_number, cwd, runner);
-
-    let parent_closed =
-        check_parent_closed(&args.repo, args.issue_number, parent_number, cwd, runner);
+    let closed_issues = cascade_close_unblocked(&args.repo, args.issue_number, cwd, runner);
+    let milestone_number = fetch_milestone_number(&args.repo, args.issue_number, cwd, runner);
     let milestone_closed =
         check_milestone_closed(&args.repo, args.issue_number, milestone_number, cwd, runner);
 
     (
         json!({
             "status": "ok",
-            "parent_closed": parent_closed,
+            "closed_issues": closed_issues,
             "milestone_closed": milestone_closed,
         }),
         0,
@@ -276,10 +306,10 @@ pub fn run_impl_main(args: Args, cwd: &Path, runner: &GhApiRunner) -> (Value, i3
 
 /// Best-effort safe-default payload when we can't determine cwd —
 /// auto-close-parent never fails the caller, so we return ok with
-/// both close flags false.
+/// an empty closed_issues list and milestone_closed false.
 pub fn safe_default_ok() -> (Value, i32) {
     (
-        json!({"status": "ok", "parent_closed": false, "milestone_closed": false}),
+        json!({"status": "ok", "closed_issues": [], "milestone_closed": false}),
         0,
     )
 }

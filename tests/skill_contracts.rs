@@ -2021,7 +2021,6 @@ fn generic_skills_have_no_language_conditionals() {
         "flow-issues",
         "flow-explore",
         "flow-plan",
-        "flow-decompose-project",
         "flow-doc-sync",
         "flow-orchestrate",
     ];
@@ -3905,17 +3904,6 @@ fn flow_abort_removes_labels() {
 // and replaced by file-existence and prose-absence tombstones in
 // tests/tombstones.rs.
 
-// --- More tombstones ---
-
-#[test]
-fn decompose_project_no_depends_on_text() {
-    let c = common::read_skill("flow-decompose-project");
-    assert!(
-        !c.contains("Depends on") || c.contains("Depends On"),
-        "Tombstone: 'Depends on' text removed from decompose-project"
-    );
-}
-
 // --- flow-continue skill contract ---
 //
 // `/flow:flow-continue` is the user-typed slash command that clears
@@ -5120,8 +5108,8 @@ fn phase_1_hard_gate_requires_rerun_with_arguments() {
 /// `bin/flow write-rule`.
 ///
 /// Branch-scoped and literal paths only. Session-scoped `-<id>` temp files
-/// used by `flow-explore`, `flow-plan`, and `flow-decompose-project` are
-/// excluded because the unique id makes cross-invocation collision unlikely.
+/// used by `flow-explore` and `flow-plan` are excluded because the unique
+/// id makes cross-invocation collision unlikely.
 /// Intermediate input files used BY `bin/flow write-rule` (e.g. paths
 /// ending in `-content.md` that the Rust code reads and deletes) are
 /// also not monitored — they are the Write-tool input, not a persistent
@@ -5859,64 +5847,6 @@ fn no_backwards_reasoning_rule_states_current_merits_principle() {
     }
 }
 
-// Three flow_create_issue contract tests retired alongside the
-// flow-create-issue skill — Tombstone: PR #1477 (covers
-// pre_draft_backwards_reasoning_scan, no_current_session_id_subcommand,
-// and marker_invocations_omit_session_id_flag).
-// The Pre-Draft Backwards-Reasoning Scan invariant is now pinned
-// for the surviving issue-filing skills (flow-explore via the new
-// flow_explore_skill_* tests above and flow-decompose-project via
-// flow_decompose_project_skill_has_backwards_reasoning_scan below).
-
-#[test]
-fn flow_decompose_project_skill_has_backwards_reasoning_scan() {
-    let content = common::read_skill("flow-decompose-project");
-
-    assert!(
-        content.contains("Backwards-Reasoning Scan"),
-        "flow-decompose-project SKILL.md must include a `Backwards-Reasoning Scan` step"
-    );
-    assert!(
-        content.contains(".claude/rules/no-backwards-reasoning.md"),
-        "scan step must cross-reference `.claude/rules/no-backwards-reasoning.md`"
-    );
-
-    let scan_idx = content
-        .find("Backwards-Reasoning Scan")
-        .expect("scan heading checked above");
-    let present_idx = content
-        .find("Present the full issue list")
-        .expect("flow-decompose-project must contain `Present the full issue list` where children are surfaced");
-    assert!(
-        scan_idx < present_idx,
-        "Backwards-Reasoning Scan must appear BEFORE child issues are presented"
-    );
-
-    // Bound to the scan's body so a future drift cannot leave a stub heading
-    // and move the body content elsewhere.
-    let scan_tail = &content[scan_idx..];
-    let after_heading = scan_tail
-        .split_once('\n')
-        .map(|(_, t)| t)
-        .expect("scan heading must be followed by content");
-    let mut body_end = after_heading.len();
-    for marker in &["\n### ", "\n## "] {
-        if let Some((before, _)) = after_heading.split_once(marker) {
-            if before.len() < body_end {
-                body_end = before.len();
-            }
-        }
-    }
-    let scan_body = &after_heading[..body_end];
-    for phrase in SCAN_PHRASINGS {
-        assert!(
-            scan_body.contains(phrase),
-            "Backwards-Reasoning Scan body must enumerate the canonical scan phrasing `{}` (a stub heading without the body content does not satisfy the contract)",
-            phrase
-        );
-    }
-}
-
 // --- include-bias rule + skill scans ---
 
 /// The four canonical scan phrasings the SKILL bodies enumerate. Each
@@ -5934,13 +5864,6 @@ const INCLUDE_BIAS_SCAN_PHRASINGS: &[&str] = &[
     "would expand scope",
     "separate code surface",
 ];
-
-/// Action-verb tokens that prove an include-bias scan SKILL section
-/// instructs the model to do something — not just enumerate the
-/// canonical phrasings. At least one must appear in each SKILL's
-/// scan body so a future stub-form rewrite (phrase list only) fails
-/// the contract test.
-const INCLUDE_BIAS_SCAN_ACTION_VERBS: &[&str] = &["scan", "revise", "evaluate", "convert"];
 
 #[test]
 fn include_bias_rule_states_inclusion_default_principle() {
@@ -5967,484 +5890,6 @@ fn include_bias_rule_states_inclusion_default_principle() {
             phrase
         );
     }
-}
-
-// flow_create_issue_skill_has_pre_draft_include_bias_scan retired
-// alongside the flow-create-issue skill — Tombstone: PR #1477.
-// The Include-Bias Scan invariant is now pinned for the surviving
-// issue-filing skills (flow-explore via the new flow_explore_skill_*
-// tests above and flow-decompose-project via
-// flow_decompose_project_skill_has_include_bias_scan below).
-
-#[test]
-fn flow_decompose_project_skill_has_include_bias_scan() {
-    let content = common::read_skill("flow-decompose-project");
-
-    let scan_idx = content
-        .find("\n### Include-Bias Scan\n")
-        .expect("flow-decompose-project SKILL.md missing `### Include-Bias Scan` heading");
-    assert!(
-        content.contains(".claude/rules/include-bias-in-issues.md"),
-        "Include-Bias Scan must cross-reference `.claude/rules/include-bias-in-issues.md`"
-    );
-
-    let present_idx = content
-        .find("Present the full issue list")
-        .expect("flow-decompose-project must contain `Present the full issue list` where children are surfaced");
-    assert!(
-        scan_idx < present_idx,
-        "Include-Bias Scan must appear BEFORE child issues are presented"
-    );
-
-    let scan_tail = &content[scan_idx + 1..];
-    let after_heading = scan_tail
-        .split_once('\n')
-        .map(|(_, t)| t)
-        .expect("scan heading must be followed by content");
-    let mut body_end = after_heading.len();
-    for marker in &["\n### ", "\n## "] {
-        if let Some((before, _)) = after_heading.split_once(marker) {
-            if before.len() < body_end {
-                body_end = before.len();
-            }
-        }
-    }
-    let scan_body = &after_heading[..body_end];
-    for phrase in INCLUDE_BIAS_SCAN_PHRASINGS {
-        assert!(
-            scan_body.contains(phrase),
-            "Include-Bias Scan body must enumerate the canonical scan phrasing `{}` (a stub heading without the body content does not satisfy the contract)",
-            phrase
-        );
-    }
-    let scan_body_lower = scan_body.to_ascii_lowercase();
-    let has_action_verb = INCLUDE_BIAS_SCAN_ACTION_VERBS
-        .iter()
-        .any(|verb| scan_body_lower.contains(verb));
-    assert!(
-        has_action_verb,
-        "Include-Bias Scan body must contain at least one action verb from {:?} so the section actually instructs the model — a bare phrase listing satisfies the phrase assertion but does not fulfill the scan's purpose",
-        INCLUDE_BIAS_SCAN_ACTION_VERBS
-    );
-}
-
-#[test]
-fn flow_decompose_project_announce_sets_utility_marker() {
-    // The Announce section must write the per-session
-    // "utility skill in progress" marker so the Stop hook's
-    // `check_in_progress_utility_skill` predicate refuses turn-end
-    // while the multi-step decompose-project skill is running. A
-    // missing marker breaks the unattended-flow contract whenever
-    // the decompose:decompose Skill tool returns mid-pipeline at
-    // Step 1, allowing the model to stop and return control to
-    // the user before the issue graph is filed.
-    //
-    // The `--session-id` flag is intentionally absent from the
-    // assertion set: Rust resolves the active session_id at the CLI
-    // boundary by reading the `CLAUDE_CODE_SESSION_ID` env var, so
-    // every multi-step utility skill's marker invocation omits it.
-    let c = common::read_skill("flow-decompose-project");
-    let tail = c
-        .split_once("\n## Announce\n")
-        .map(|(_, t)| t)
-        .expect("flow-decompose-project must have a `## Announce` section");
-    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
-    assert!(
-        section.contains("set-utility-in-progress"),
-        "`## Announce` must invoke `bin/flow set-utility-in-progress` so the Stop hook refuses turn-end while the multi-step skill is running"
-    );
-    assert!(
-        section.contains("--skill flow:flow-decompose-project"),
-        "`## Announce` must pass `--skill flow:flow-decompose-project` so the marker is scoped to this skill's identifier"
-    );
-}
-
-#[test]
-fn flow_decompose_project_step_1_no_dag_review_ask_user_question() {
-    // Regression: a future edit re-introduces the Step 1 DAG-review
-    // AskUserQuestion gate. Per AC#4 of issue #1488, the user's
-    // invocation of `/flow:flow-decompose-project` is the single
-    // authorization for the decompose-and-file pipeline; a second
-    // confirmation between Step 1 (decompose) and Step 2 (issue list)
-    // broke the single-signal contract. The forbidden phrasing is
-    // the exact AskUserQuestion option label the removed gate used.
-    let c = common::read_skill("flow-decompose-project");
-    assert!(
-        !c.contains("Proceed to review"),
-        "skills/flow-decompose-project/SKILL.md must not contain the Step 1 `Proceed to review` AskUserQuestion option — Step 2 fires directly after the DAG synthesis is presented"
-    );
-}
-
-#[test]
-fn flow_decompose_project_step_2_no_due_date_prompt() {
-    // Regression: a future edit re-introduces the Step 2 milestone
-    // due-date AskUserQuestion. The milestone path is removed
-    // entirely; the skill no longer creates milestones in Step 3
-    // and `bin/flow create-milestone` is deleted. A re-introduced
-    // due-date prompt would have no consumer for the captured
-    // value.
-    let c = common::read_skill("flow-decompose-project");
-    assert!(
-        !c.contains("milestone due date"),
-        "skills/flow-decompose-project/SKILL.md must not prompt for milestone due date — the milestone path is removed"
-    );
-}
-
-#[test]
-fn flow_decompose_project_step_2_no_milestone_mention() {
-    // Regression: a future edit re-introduces a milestone bullet,
-    // `--milestone` flag pass-through, or `due_date` session field
-    // in Step 2. With `bin/flow create-milestone` deleted, every
-    // milestone reference in the skill is orphan infrastructure.
-    let c = common::read_skill("flow-decompose-project");
-    let step2_tail = c
-        .split_once("\n## Step 2")
-        .map(|(_, t)| t)
-        .expect("flow-decompose-project must have a `## Step 2` section");
-    let step2 = step2_tail
-        .split_once("\n## Step ")
-        .map(|(s, _)| s)
-        .unwrap_or(step2_tail);
-    assert!(
-        !step2.to_ascii_lowercase().contains("milestone"),
-        "skills/flow-decompose-project/SKILL.md Step 2 must not mention milestones — the milestone path is removed"
-    );
-    assert!(
-        !step2.contains("due_date") && !step2.contains("due-date"),
-        "skills/flow-decompose-project/SKILL.md Step 2 must not carry a `due_date` session field — the milestone path is removed"
-    );
-}
-
-#[test]
-fn flow_decompose_project_step_3_no_create_milestone_call() {
-    // Regression: a future edit re-introduces the
-    // `bin/flow create-milestone` invocation in Step 3. The
-    // subcommand is deleted from `src/create_milestone.rs`,
-    // `src/lib.rs`, and `src/main.rs`; resurrecting the SKILL.md
-    // call would surface as a runtime error rather than a
-    // compile error.
-    let c = common::read_skill("flow-decompose-project");
-    assert!(
-        !c.contains("create-milestone"),
-        "skills/flow-decompose-project/SKILL.md must not invoke `bin/flow create-milestone` — the subcommand is deleted"
-    );
-}
-
-#[test]
-fn flow_decompose_project_step_3_validator_auto_fix_loop() {
-    // Regression: a future edit drops the bounded auto-fix loop on
-    // Step 3 epic-validator failure and replaces it with either an
-    // unbounded loop or a prompt-the-user gate. The
-    // `validator_max_retries` reason is the contract the
-    // COMPLETE-FAILED banner depends on.
-    let c = common::read_skill("flow-decompose-project");
-    let step3_tail = c
-        .split_once("\n## Step 3")
-        .map(|(_, t)| t)
-        .expect("flow-decompose-project must have a `## Step 3` section");
-    let step3 = step3_tail
-        .split_once("\n## Step ")
-        .map(|(s, _)| s)
-        .unwrap_or(step3_tail);
-    assert!(
-        step3.contains("validator_max_retries"),
-        "Step 3 must name `validator_max_retries` so the structured-error contract is locked in"
-    );
-    assert!(
-        step3.contains("5 attempts") || step3.contains("5 retries"),
-        "Step 3 must name the 5-attempt cap so the bounded-loop contract is locked in"
-    );
-}
-
-#[test]
-fn flow_decompose_project_step_4_validator_auto_fix_loop() {
-    // Regression: a future edit drops the Step 4 per-child auto-fix
-    // loop and replaces it with either an unbounded loop or a
-    // prompt-the-user gate. Step 4's failure mode is skip-on-cap
-    // (continue to next child) rather than halt-on-cap (Step 3's
-    // epic-failure path), so the prose must signal the skip
-    // semantics.
-    let c = common::read_skill("flow-decompose-project");
-    let step4_tail = c
-        .split_once("\n## Step 4")
-        .map(|(_, t)| t)
-        .expect("flow-decompose-project must have a `## Step 4` section");
-    let step4 = step4_tail
-        .split_once("\n## Step ")
-        .map(|(s, _)| s)
-        .unwrap_or(step4_tail);
-    assert!(
-        step4.contains("5 attempts") || step4.contains("5 retries"),
-        "Step 4 must name the 5-attempt cap so the bounded-loop contract is locked in"
-    );
-    assert!(
-        step4.to_ascii_lowercase().contains("skip"),
-        "Step 4 must name the skip-on-cap semantics so the child-failure recovery contract is locked in"
-    );
-}
-
-#[test]
-fn flow_decompose_project_step_3_no_milestone_flag_in_issue_call() {
-    // Regression: a future edit re-introduces `--milestone` on the
-    // Step 3 epic-filing `bin/flow issue` call. The flag is deleted
-    // from `src/issue.rs`; resurrecting the SKILL.md pass-through
-    // would surface as a runtime error.
-    let c = common::read_skill("flow-decompose-project");
-    let step3_tail = c
-        .split_once("\n## Step 3")
-        .map(|(_, t)| t)
-        .expect("flow-decompose-project must have a `## Step 3` section");
-    let step3 = step3_tail
-        .split_once("\n## Step ")
-        .map(|(s, _)| s)
-        .unwrap_or(step3_tail);
-    assert!(
-        !step3.contains("--milestone"),
-        "skills/flow-decompose-project/SKILL.md Step 3 must not pass `--milestone` to `bin/flow issue` — the flag is deleted"
-    );
-}
-
-#[test]
-fn flow_decompose_project_step_4_no_milestone_flag_in_issue_call() {
-    // Same regression guard as Step 3 but scoped to the per-child
-    // filing loop in Step 4.
-    let c = common::read_skill("flow-decompose-project");
-    let step4_tail = c
-        .split_once("\n## Step 4")
-        .map(|(_, t)| t)
-        .expect("flow-decompose-project must have a `## Step 4` section");
-    let step4 = step4_tail
-        .split_once("\n## Step ")
-        .map(|(s, _)| s)
-        .unwrap_or(step4_tail);
-    assert!(
-        !step4.contains("--milestone"),
-        "skills/flow-decompose-project/SKILL.md Step 4 must not pass `--milestone` to `bin/flow issue` — the flag is deleted"
-    );
-}
-
-#[test]
-fn flow_decompose_project_step6_clears_utility_marker() {
-    // Step 6 is the success path that finishes the multi-step
-    // skill. The marker must clear here so the Stop hook releases
-    // turn-end immediately after the COMPLETE banner — otherwise
-    // the user returns to a session that refuses to stop even
-    // though the skill has finished its work.
-    let c = common::read_skill("flow-decompose-project");
-    let tail = c
-        .split_once("\n## Step 6")
-        .map(|(_, t)| t)
-        .expect("flow-decompose-project must have a `## Step 6` section");
-    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
-    assert!(
-        section.contains("clear-utility-in-progress"),
-        "Step 6 success path must invoke `bin/flow clear-utility-in-progress` so the Stop hook releases turn-end after the skill completes"
-    );
-}
-
-#[test]
-fn flow_decompose_project_step2_names_sentinel_wrapping() {
-    // Step 2 drafts the body shape for both the parent epic and
-    // each child issue. The body must wrap its Implementation Plan
-    // in the FLOW-PLAN sentinel pair so `bin/flow plan-from-issue`
-    // can extract the plan at flow-start. A draft without the
-    // sentinels produces an issue that the decomposed-body
-    // validators (`bin/flow validate-issue-body --mode decomposed`)
-    // reject with `plan_markers_missing` — the issue files but
-    // cannot be consumed downstream.
-    // End delimiter is `\n## Step ` so an intra-section heading
-    // rendered inside a fenced markdown example block — like
-    // `## Implementation Plan` inside the Body Shape Contract
-    // example — cannot truncate the slice before the assertion
-    // targets.
-    let c = common::read_skill("flow-decompose-project");
-    let tail = c
-        .split_once("\n## Step 2")
-        .map(|(_, t)| t)
-        .expect("flow-decompose-project must have a `## Step 2` section");
-    let section = tail
-        .split_once("\n## Step ")
-        .map(|(s, _)| s)
-        .unwrap_or(tail);
-    assert!(
-        section.contains("FLOW-PLAN-BEGIN"),
-        "Step 2 must name the FLOW-PLAN-BEGIN sentinel that wraps the Implementation Plan block"
-    );
-    assert!(
-        section.contains("FLOW-PLAN-END"),
-        "Step 2 must name the FLOW-PLAN-END sentinel that closes the Implementation Plan block"
-    );
-}
-
-#[test]
-fn flow_decompose_project_step2_names_task_header_format() {
-    // The Implementation Plan's Tasks subsection uses `#### Task N:`
-    // headers — this is the heading shape `bin/flow plan-from-issue`
-    // counts via `count_tasks` to populate `code_tasks_total`. A
-    // future drift that reverted to numbered list items would break
-    // that count and produce a wrong X-of-Y annotation in the
-    // Code-phase TUI. The header presence locks the format.
-    // End delimiter is `\n## Step ` so an intra-section heading
-    // rendered inside a fenced markdown example block — like
-    // `## Implementation Plan` inside the Body Shape Contract
-    // example — cannot truncate the slice before the assertion
-    // targets.
-    let c = common::read_skill("flow-decompose-project");
-    let tail = c
-        .split_once("\n## Step 2")
-        .map(|(_, t)| t)
-        .expect("flow-decompose-project must have a `## Step 2` section");
-    let section = tail
-        .split_once("\n## Step ")
-        .map(|(s, _)| s)
-        .unwrap_or(tail);
-    let lower = section.to_ascii_lowercase();
-    assert!(
-        section.contains("#### Task "),
-        "Step 2 must name the `#### Task N:` header format used by the Tasks subsection"
-    );
-    assert!(
-        lower.contains("header"),
-        "Step 2 must describe `#### Task N:` as the header format (not a numbered list)"
-    );
-}
-
-#[test]
-fn flow_decompose_project_step2_names_paraphrase_rule() {
-    // Every prose reference to the FLOW-PLAN sentinel pair must
-    // paraphrase the marker strings so `bin/flow plan-from-issue`
-    // extraction matches the correct slice. A literal marker
-    // mid-prose silently redirects extraction to the wrong bytes
-    // and the validator rejects the body downstream.
-    // End delimiter is `\n## Step ` so an intra-section heading
-    // rendered inside a fenced markdown example block — like
-    // `## Implementation Plan` inside the Body Shape Contract
-    // example — cannot truncate the slice before the assertion
-    // targets.
-    let c = common::read_skill("flow-decompose-project");
-    let tail = c
-        .split_once("\n## Step 2")
-        .map(|(_, t)| t)
-        .expect("flow-decompose-project must have a `## Step 2` section");
-    let section = tail
-        .split_once("\n## Step ")
-        .map(|(s, _)| s)
-        .unwrap_or(tail);
-    let lower = section.to_ascii_lowercase();
-    assert!(
-        lower.contains("paraphrase"),
-        "Step 2 must name the paraphrase rule for sentinel-marker prose references"
-    );
-    assert!(
-        lower.contains("sentinel") || lower.contains("marker"),
-        "Step 2 must scope the paraphrase rule to the plan-sentinel/marker pair"
-    );
-}
-
-#[test]
-fn flow_decompose_project_step3_validates_before_issue() {
-    // The Step 3 epic-body filing path must invoke
-    // `bin/flow validate-issue-body` BEFORE `bin/flow issue` so a
-    // body that `bin/flow plan-from-issue` cannot consume at
-    // flow-start is rejected before it reaches GitHub. Ordering
-    // matters: validating after filing makes the gate post-hoc and
-    // useless. Regression: a future edit that moved the validator
-    // call below `bin/flow issue`, dropped it, or gated it behind
-    // a conditional would surface here.
-    //
-    // End delimiter `\n## Step ` bounds to Step 3 even when
-    // intra-section subheadings appear.
-    let c = common::read_skill("flow-decompose-project");
-    let tail = c
-        .split_once("\n## Step 3")
-        .map(|(_, t)| t)
-        .expect("flow-decompose-project must have a `## Step 3` section");
-    let section = tail
-        .split_once("\n## Step ")
-        .map(|(s, _)| s)
-        .unwrap_or(tail);
-    let validate_pos = section
-        .find("bin/flow validate-issue-body")
-        .expect("`## Step 3` must invoke `bin/flow validate-issue-body`");
-    let issue_pos = section
-        .find("bin/flow issue")
-        .expect("`## Step 3` must invoke `bin/flow issue`");
-    assert!(
-        validate_pos < issue_pos,
-        "`bin/flow validate-issue-body` (at {}) must appear BEFORE `bin/flow issue` (at {}) in the `## Step 3` section",
-        validate_pos,
-        issue_pos
-    );
-}
-
-#[test]
-fn flow_decompose_project_hard_rules_name_validator_and_sentinels() {
-    // The Hard Rules section enumerates load-bearing invariants —
-    // a future maintainer reading the section must see the four
-    // discipline anchors the rest of the SKILL.md depends on:
-    // validator-before-filer, FLOW-PLAN sentinel wrap, `#### Task N:`
-    // header format, paraphrase rule. Without these four entries
-    // a future paraphrase of Step 2/3/4 could silently drop the
-    // discipline and the Hard Rules wouldn't reveal the gap.
-    let c = common::read_skill("flow-decompose-project");
-    let tail = c
-        .split_once("\n## Hard Rules\n")
-        .map(|(_, t)| t)
-        .expect("flow-decompose-project must have a `## Hard Rules` section");
-    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
-    let lower = section.to_ascii_lowercase();
-    assert!(
-        section.contains("validate-issue-body"),
-        "Hard Rules must name `bin/flow validate-issue-body` so the pre-filing gate is locked into the discipline list"
-    );
-    assert!(
-        section.contains("FLOW-PLAN"),
-        "Hard Rules must name the FLOW-PLAN sentinel pair so the wrap discipline is locked in"
-    );
-    assert!(
-        section.contains("#### Task"),
-        "Hard Rules must name the `#### Task N:` header format so the count_tasks-compatible heading shape is locked in"
-    );
-    assert!(
-        lower.contains("paraphrase"),
-        "Hard Rules must name the paraphrase rule for sentinel-marker prose references"
-    );
-}
-
-#[test]
-fn flow_decompose_project_step4_validates_before_issue() {
-    // The Step 4 per-child filing loop must invoke
-    // `bin/flow validate-issue-body` BEFORE `bin/flow issue` for
-    // each child. Same gate-contract as Step 3 — every child body
-    // that `bin/flow plan-from-issue` cannot consume at flow-start
-    // is rejected before it reaches GitHub. The per-child loop
-    // pattern means an un-gated Step 4 would file an entire issue
-    // graph of unconsumable children, requiring manual cleanup of
-    // every one.
-    //
-    // End delimiter `\n## Step ` bounds to Step 4 even when
-    // intra-section subheadings appear.
-    let c = common::read_skill("flow-decompose-project");
-    let tail = c
-        .split_once("\n## Step 4")
-        .map(|(_, t)| t)
-        .expect("flow-decompose-project must have a `## Step 4` section");
-    let section = tail
-        .split_once("\n## Step ")
-        .map(|(s, _)| s)
-        .unwrap_or(tail);
-    let validate_pos = section
-        .find("bin/flow validate-issue-body")
-        .expect("`## Step 4` must invoke `bin/flow validate-issue-body`");
-    let issue_pos = section
-        .find("bin/flow issue")
-        .expect("`## Step 4` must invoke `bin/flow issue`");
-    assert!(
-        validate_pos < issue_pos,
-        "`bin/flow validate-issue-body` (at {}) must appear BEFORE `bin/flow issue` (at {}) in the `## Step 4` section",
-        validate_pos,
-        issue_pos
-    );
 }
 
 // --- include-bias-in-issues rule content contract ---
@@ -6820,6 +6265,213 @@ fn flow_plan_skill_invokes_plan_review_with_capped_loop() {
     assert!(
         !between_review_and_validate.contains("### Validate"),
         "skills/flow-plan/SKILL.md: no `### Validate*` subsection may appear between `### Plan Review` and `### Validate the Body`"
+    );
+}
+
+// --- flow-plan multi-track Step 6 contracts (AC#4 + AC#8) ---
+//
+// AC#4 mandates that flow-plan inspect the DAG after `decompose:decompose`
+// returns; when the DAG partitions into two or more groups with zero
+// cross-group dependency edges, Step 6 files one child issue per
+// disconnected component instead of a single combined plan. AC#8
+// restricts multi-track to issue-input mode — a bare-prompt
+// invocation must always file exactly one issue. The six tests
+// below lock in the load-bearing invariants of the multi-track
+// branch: detection, mode-restriction, per-child validation, per-
+// child plan-review, link-blocked-by edges between children and
+// from the source issue, inline-rendered split with collapse-to-
+// single fallback, and the source-issue-as-plain-problem-statement
+// treatment. Each test bounds its assertions to the multi-track
+// region of Step 6 (subsection-local pattern per
+// `.claude/rules/testing-gotchas.md`) so an unrelated single-track
+// match cannot satisfy the test.
+
+/// Returns the slice of `c` from the first lowercase "multi-track"
+/// occurrence to the end of the file. Tests use this slice to bound
+/// their assertions to the multi-track branch of Step 6 — a single-
+/// track match elsewhere cannot satisfy a multi-track contract.
+fn multi_track_slice(c: &str) -> &str {
+    let lower = c.to_ascii_lowercase();
+    let idx = lower
+        .find("multi-track")
+        .expect("skills/flow-plan/SKILL.md must contain a `multi-track` anchor (Step 6 AC#4)");
+    &c[idx..]
+}
+
+#[test]
+fn flow_plan_step_6_detects_disconnected_components() {
+    // Regression: Step 6 must inspect the DAG after decompose returns
+    // and detect disconnected components — partitions with zero
+    // cross-group dependency edges. Without this detection the
+    // single-track path runs unconditionally and AC#4 cannot trigger.
+    //
+    // Consumer: AC#4 multi-track filing.
+    let c = common::read_skill("flow-plan");
+    let lower = c.to_ascii_lowercase();
+    assert!(
+        lower.contains("multi-track"),
+        "skills/flow-plan/SKILL.md Step 6 must name `multi-track` so the AC#4 branch is locked in"
+    );
+    assert!(
+        lower.contains("disconnected component") || lower.contains("disconnected components"),
+        "skills/flow-plan/SKILL.md Step 6 must reference disconnected-component detection (AC#4)"
+    );
+}
+
+#[test]
+fn flow_plan_step_6_multi_track_restricted_to_issue_input_mode() {
+    // Regression: AC#8 mandates that a bare-prompt invocation
+    // produces exactly one issue. Multi-track applies only when the
+    // skill was invoked with an issue reference. If the multi-track
+    // branch leaks into bare-prompt mode, every bare-prompt
+    // invocation that decompose partitions cleanly would explode
+    // into N issues — a UX regression the AC explicitly forbids.
+    //
+    // Consumer: AC#8 single-issue bare-prompt contract.
+    let c = common::read_skill("flow-plan");
+    let slice = multi_track_slice(&c);
+    let lower = slice.to_ascii_lowercase();
+    assert!(
+        lower.contains("issue-input") || lower.contains("issue input"),
+        "skills/flow-plan/SKILL.md multi-track branch must name issue-input mode as its scope (AC#8 forbids bare-prompt multi-track)"
+    );
+    assert!(
+        lower.contains("bare-prompt") || lower.contains("bare prompt"),
+        "skills/flow-plan/SKILL.md multi-track branch must explicitly note that bare-prompt mode stays single-track (AC#8)"
+    );
+}
+
+#[test]
+fn flow_plan_step_6_multi_track_validates_each_child_body() {
+    // Regression: each child issue body must pass
+    // `validate-issue-body --mode decomposed` before filing. Without
+    // per-child validation a child body could be filed missing the
+    // FLOW-PLAN sentinel pair or the Implementation Plan heading,
+    // breaking the downstream `bin/flow plan-from-issue` extraction
+    // at Phase 1 of every child flow.
+    //
+    // Consumer: `bin/flow plan-from-issue` (Phase 1 sentinel scan).
+    let c = common::read_skill("flow-plan");
+    let slice = multi_track_slice(&c);
+    assert!(
+        slice.contains("validate-issue-body"),
+        "skills/flow-plan/SKILL.md multi-track branch must invoke `bin/flow validate-issue-body` per child body"
+    );
+    assert!(
+        slice.contains("--mode decomposed"),
+        "skills/flow-plan/SKILL.md multi-track branch must pass `--mode decomposed` to validate-issue-body per child so the sentinel pair and Implementation Plan heading are enforced"
+    );
+}
+
+#[test]
+fn flow_plan_step_6_multi_track_reviews_each_child_plan() {
+    // Regression: each child's drafted Implementation Plan must be
+    // reviewed by `flow:plan-reviewer` before filing. The single-
+    // track Plan Review subsection already invokes the reviewer; the
+    // multi-track branch must apply the same gate per child plan
+    // (one reviewer invocation per child).
+    //
+    // Consumer: `agents/plan-reviewer.md` rule-adherence audit.
+    let c = common::read_skill("flow-plan");
+    let slice = multi_track_slice(&c);
+    assert!(
+        slice.contains("flow:plan-reviewer"),
+        "skills/flow-plan/SKILL.md multi-track branch must invoke `flow:plan-reviewer` per child plan so cognitive isolation applies to every child"
+    );
+}
+
+#[test]
+fn flow_plan_step_6_multi_track_links_blocked_by_edges() {
+    // Regression: cross-component DAG edges must be encoded as
+    // `bin/flow link-blocked-by` calls between children, and the
+    // source issue must be linked blocked-by its root children.
+    // Without these edges the native GitHub dependency graph cannot
+    // express the cross-component relationships and
+    // `flow-issues`/`flow-orchestrate` cannot detect blocked status
+    // on the children.
+    //
+    // Consumer: GitHub's native blocked-by dependency graph; the
+    // `flow-issues` skill reads this graph to render the Blocked
+    // section.
+    let c = common::read_skill("flow-plan");
+    let slice = multi_track_slice(&c);
+    assert!(
+        slice.contains("bin/flow link-blocked-by"),
+        "skills/flow-plan/SKILL.md multi-track branch must invoke `bin/flow link-blocked-by` to encode cross-component edges and source-issue blocked-by edges"
+    );
+    let lower = slice.to_ascii_lowercase();
+    assert!(
+        lower.contains("source issue") || lower.contains("source-issue"),
+        "skills/flow-plan/SKILL.md multi-track branch must name the source issue explicitly in the link-blocked-by treatment"
+    );
+}
+
+#[test]
+fn flow_plan_step_6_multi_track_renders_split_before_filing_with_collapse_fallback() {
+    // Regression: the proposed split must be presented to the user
+    // inline before any child is filed, with a documented fallback
+    // to collapse to single-track if multi-track is the wrong shape.
+    // Without inline presentation the user sees N filed issues and
+    // can only react after the fact; without the collapse fallback
+    // there is no documented recovery path.
+    //
+    // Consumer: the user's review window before filing — multi-track
+    // is a structural decision the user must be able to override.
+    let c = common::read_skill("flow-plan");
+    let slice = multi_track_slice(&c);
+    let lower = slice.to_ascii_lowercase();
+    assert!(
+        lower.contains("before filing")
+            || lower.contains("before any child")
+            || lower.contains("before each child")
+            || lower.contains("before the children"),
+        "skills/flow-plan/SKILL.md multi-track branch must render the proposed split BEFORE the children are filed so the user can intervene"
+    );
+    assert!(
+        lower.contains("collapse")
+            && (lower.contains("single-track") || lower.contains("single track")),
+        "skills/flow-plan/SKILL.md multi-track branch must document a collapse-to-single-track fallback so the user can override the structural decision"
+    );
+}
+
+#[test]
+fn flow_plan_step_6_multi_track_leaves_source_issue_as_plain_problem_statement() {
+    // Regression: in multi-track the source issue stays a plain
+    // problem statement — no Implementation Plan block, no
+    // `decomposed` label, not closed. Children carry the plan and
+    // the `decomposed` label. Without this treatment the source
+    // issue accumulates a plan block AND becomes blocked by its own
+    // children, producing a self-referential ready state that
+    // confuses `flow-issues` filtering.
+    //
+    // Consumer: `flow-issues` ready-work filter; the source issue
+    // remains "Vanilla" (ready for /flow:flow-plan re-decomposition)
+    // until the cascade closes it naturally via AC#5.
+    let c = common::read_skill("flow-plan");
+    let slice = multi_track_slice(&c);
+    let lower = slice.to_ascii_lowercase();
+    // The source-issue treatment must be named.
+    assert!(
+        lower.contains("source issue") || lower.contains("source-issue"),
+        "skills/flow-plan/SKILL.md multi-track branch must explicitly describe how the source issue is treated"
+    );
+    // No plan block on the source.
+    assert!(
+        lower.contains("no plan block")
+            || lower.contains("no implementation plan")
+            || lower.contains("plain problem statement"),
+        "skills/flow-plan/SKILL.md multi-track branch must state that the source issue stays a plain problem statement (no Implementation Plan block)"
+    );
+    // No `decomposed` label on the source, and not closed.
+    assert!(
+        lower.contains("no `decomposed` label")
+            || lower.contains("no decomposed label")
+            || lower.contains("not labeled decomposed"),
+        "skills/flow-plan/SKILL.md multi-track branch must state that the source issue does NOT receive the `decomposed` label"
+    );
+    assert!(
+        lower.contains("not closed") || lower.contains("never closed") || lower.contains("left open"),
+        "skills/flow-plan/SKILL.md multi-track branch must state that the source issue is not closed by multi-track filing (closure comes via AC#5 cascade)"
     );
 }
 
@@ -7367,10 +7019,10 @@ fn flow_explore_skill_files_with_vanilla_label() {
 fn flow_explore_skill_files_without_decomposed_label() {
     // Regression: a future edit adds `--label decomposed` to the
     // flow-explore filing call. The `decomposed` label is reserved
-    // for issues filed by `/flow:flow-plan #N` and
-    // `/flow:flow-decompose-project`; flow-explore files vanilla
-    // problem statements that `flow-issues` and `flow-orchestrate`
-    // must not pick up as ready-for-flow-start work.
+    // for issues filed by `/flow:flow-plan` (single-track or
+    // multi-track); flow-explore files vanilla problem statements
+    // that `flow-issues` and `flow-orchestrate` must not pick up
+    // as ready-for-flow-start work.
     //
     // Consumer: `flow-issues` / `flow-orchestrate`, which select
     // `decomposed`-labeled issues. Mis-labeling a vanilla

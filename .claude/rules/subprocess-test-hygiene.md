@@ -99,7 +99,7 @@ reaches, and neutralize exactly those:
 
 | Subcommand family | Services reached | Required neutralizers |
 |---|---|---|
-| `bin/flow issue`, `close-issue`, `create-sub-issue`, `link-blocked-by`, `create-milestone`, `auto-close-parent`, `label-issues` | `gh` CLI → GitHub API | `GH_TOKEN=invalid`, `HOME=<tempdir>` |
+| `bin/flow issue`, `close-issue`, `close-issues`, `link-blocked-by`, `auto-close-parent`, `label-issues` | `gh` CLI → GitHub API | `GH_TOKEN=invalid`, `HOME=<tempdir>` |
 | `bin/flow notify-slack` | Slack webhook POST | `env_remove("SLACK_WEBHOOK_URL")`, `env_remove("SLACK_BOT_TOKEN")` |
 | `bin/flow ci`, `build`, `test`, `lint`, `format` | recursion guard | `env_remove("FLOW_CI_RUNNING")` |
 | `bin/flow hook <name>` | state file reads, stdin | `HOME=<tempdir>` if the hook might read ~/.config |

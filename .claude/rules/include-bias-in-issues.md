@@ -84,10 +84,9 @@ a bulleted list of "things we are not doing" is not.
 
 The mechanical backstop scans for these four canonical
 phrasings. Future changes to the scanned set must update both
-this enumeration and the corresponding subsections in
-`skills/flow-plan/SKILL.md` and
-`skills/flow-decompose-project/SKILL.md` so the rule remains
-the authoritative source for what the scans target. The SKILL
+this enumeration and the corresponding subsection in
+`skills/flow-plan/SKILL.md` so the rule remains the
+authoritative source for what the scans target. The SKILL
 scan instructions read case-flexibly in practice — the model
 interprets each phrasing as a concept and catches common
 section-heading title-case variants in issue bodies (e.g.

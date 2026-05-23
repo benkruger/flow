@@ -279,7 +279,7 @@ pub fn parse_issue_number(url: &str) -> Option<i64> {
 }
 
 /// Fetch the REST API database ID for an issue. Returns (id, error).
-/// Used cross-module by `create_sub_issue.rs` and `link_blocked_by.rs`.
+/// Used cross-module by `link_blocked_by.rs`.
 pub fn fetch_database_id(repo: &str, number: i64) -> (Option<i64>, Option<String>) {
     let api_path = format!("repos/{}/issues/{}", repo, number);
     match run_gh_cmd(&["gh", "api", &api_path, "--jq", ".id"]) {
@@ -392,8 +392,8 @@ fn build_issue_result(repo: &str, url: String) -> IssueResult {
 }
 
 /// Run a gh CLI command, returning stdout on success. Used cross-module
-/// by `create_sub_issue.rs` and `link_blocked_by.rs`. gh has its own
-/// network timeout so no hand-rolled loop is needed per
+/// by `link_blocked_by.rs`. gh has its own network timeout so no
+/// hand-rolled loop is needed per
 /// .claude/rules/testability-means-simplicity.md.
 pub fn run_gh_cmd(args: &[&str]) -> Result<String, String> {
     let output = Command::new(args[0])

@@ -303,8 +303,7 @@ for portability. Created by `/flow-start` with `plan` and `dag` set to `null`.
 which extracts the plan from the issue body's
 `<!-- FLOW-PLAN-BEGIN -->`/`<!-- FLOW-PLAN-END -->` sentinels and writes it to
 `.flow-states/<branch>/plan.md`. `files.dag` is written by the pre-decompose
-flow (`/flow-decompose-project` and `/flow-plan` utility skills) when a DAG
-analysis is produced.
+flow (the `/flow-plan` utility skill) when a DAG analysis is produced.
 
 ```json
 "files": {

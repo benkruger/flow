@@ -333,15 +333,16 @@ pub fn post_merge(pr_number: i64, state_file: &str, branch: &str) -> Value {
                 if let Some(acp_data) =
                     ok_stdout_as_json(run_cmd_with_timeout(&acp_args, NETWORK_TIMEOUT))
                 {
-                    let parent_closed = acp_data
-                        .get("parent_closed")
-                        .and_then(|v| v.as_bool())
+                    let closed_any = acp_data
+                        .get("closed_issues")
+                        .and_then(|v| v.as_array())
+                        .map(|a| !a.is_empty())
                         .unwrap_or(false);
                     let milestone_closed = acp_data
                         .get("milestone_closed")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);
-                    if parent_closed || milestone_closed {
+                    if closed_any || milestone_closed {
                         parents_closed.push(issue_num);
                     }
                 }

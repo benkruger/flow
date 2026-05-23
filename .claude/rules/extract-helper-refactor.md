@@ -110,6 +110,56 @@ Perpetuating an existing panic across an extraction boundary still
 counts as a new public callsite — the audit applies even when the
 extraction is not adding a new panic.
 
+## Recursive-Helper Topology Coverage
+
+When the extracted helper recurses over a data structure or graph
+— a tree walk, a dependency cascade, a transitive-closure
+traversal, a parent-chain walk, any function that calls itself
+with a derived input — the Plan-phase Branch Enumeration Table is
+not sufficient on its own. Control-flow branches enumerate WHAT
+the function does; data-shape topologies enumerate the INPUTS
+those branches actually run against. A correctness bug can hide
+inside a fully branch-covered helper when an unanticipated
+topology exercises a branch's interaction with the recursion's
+shared state (a `visited` set, an accumulator, a depth counter,
+a closure flag) in a way the branch tests did not.
+
+The plan must include a **Topology Enumeration Table** alongside
+the Branch Enumeration Table. The table has three columns:
+
+| Topology | Shape | Test |
+|---|---|---|
+| linear chain | A → B → C → … (each node has at most one parent and one child) | `<test_function_name_for_linear>` |
+| tree | one root, each non-root has exactly one parent (branching out) | `<test_function_name_for_tree>` |
+| convergent (diamond) | A node is reachable from the start via two or more disjoint paths (e.g. root → B → D and root → C → D) | `<test_function_name_for_diamond>` |
+| cycle | A node's path leads back to itself or to an earlier ancestor | `<test_function_name_for_cycle>` |
+| depth-bounded | A chain longer than the helper's defensive depth cap | `<test_function_name_for_depth_cap>` |
+
+The closed set above covers every topology a recursive walk over
+a directed graph can encounter. Plans MAY add rows for
+domain-specific shapes (e.g. "self-blocking node", "fan-out from
+a single ancestor"), but every row in the closed set above is
+mandatory — the recursive helper must have a named test for each
+topology its production callers can produce.
+
+The diamond row is the topology bug-finders catch most often: a
+helper that mutates a shared `visited` set BEFORE evaluating
+whether the current node is fully ready (all blockers closed,
+all parents visited, all preconditions met) silently marks the
+node as "considered" and the second branch that converges on the
+same node skips it — even though the first branch's later side
+effect would have made the node ready. The fix is the same in
+every shape: shared mutation runs AFTER the readiness check, not
+before. The diamond test in the topology table is the regression
+guard that catches the bug class.
+
+When the recursive helper takes external input (issue numbers,
+file paths, branch names, identifiers) and constructs API URLs
+or filesystem paths from that input, the Constructor Invariant
+Audit above applies to every recursive call's argument — not
+just the top-level entry. The recursion can amplify a single
+input-validation gap across many API/filesystem touches.
+
 ## Enforcement
 
 This rule is prose-only — there is no scanner that mechanically
@@ -121,7 +171,8 @@ Table. The enforcement layers are:
    Branch Enumeration Table against the landed tests and raises a
    Real finding when a plan-named test is missing.
 3. **The adversarial agent in Review** — writes failing tests
-   against uncovered branches.
+   against uncovered branches and uncovered topologies for
+   recursive helpers.
 
 ## Opt-Out Grammar
 
@@ -152,14 +203,21 @@ and every Approach paragraph for the trigger phrasings listed in
    design until every branch fits.
 6. Apply the Constructor Invariant Audit to every panicking
    constructor call inside the extracted block.
+7. If the extracted helper recurses over a data structure or graph,
+   build the Topology Enumeration Table per the Recursive-Helper
+   Topology Coverage section. Every topology in the closed set
+   (linear, tree, convergent/diamond, cycle, depth-bounded) needs
+   a named test.
 
 **Code phase.** Execute the plan tasks in order. For each branch the
 plan enumerated, write the named test before or alongside the
 implementation. For every panicking constructor in the extracted
 block, replace the call with the fallible variant per the
-Constructor Invariant Audit.
+Constructor Invariant Audit. For every topology in the Topology
+Enumeration Table, write the named test against the recursive
+helper's public surface.
 
 **Review phase.** The reviewer agent cross-references the plan's
-Branch Enumeration Table against the landed tests. Any plan-named
-test function missing from the codebase is a Real finding fixed in
-Step 4.
+Branch Enumeration Table AND Topology Enumeration Table against
+the landed tests. Any plan-named test function missing from the
+codebase is a Real finding fixed in Step 4.

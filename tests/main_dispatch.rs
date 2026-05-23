@@ -58,7 +58,6 @@ fn all_subcommands_have_working_help() {
         "issue",
         "close-issue",
         "close-issues",
-        "create-sub-issue",
         "link-blocked-by",
         "extract-release-notes",
         "prime-check",
@@ -1052,7 +1051,7 @@ fn main_arm_invocations_cover_dispatch() {
         cmd.current_dir(&root);
         cmd.env("GIT_CEILING_DIRECTORIES", &root);
         // Neutralize gh CLI auth so any subcommand that shells out to
-        // `gh` (close-issue, create-sub-issue, link-blocked-by,
+        // `gh` (close-issue, link-blocked-by,
         // auto-close-parent, label-issues) fails
         // with an immediate auth error rather than blocking on a
         // network timeout in CI environments without GitHub
@@ -1185,11 +1184,6 @@ fn main_arm_invocations_cover_dispatch() {
             None,
         ),
         ("close-issues", &[], None),
-        (
-            "create-sub-issue",
-            &["--repo", "x/y", "--parent", "1", "--child", "2"],
-            None,
-        ),
         (
             "link-blocked-by",
             &[

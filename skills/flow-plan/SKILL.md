@@ -28,13 +28,19 @@ issue body carries the implementation plan that
 The skill accepts two argument shapes:
 
 - **`#N`** — a literal `#` followed by a positive integer. Plans
-  against existing issue #N: Step 2 fetches the body and Step 6
-  edits the issue in place, preserving every byte above the
-  opening FLOW-PLAN sentinel.
+  against existing issue #N: Step 2 fetches the body. When the
+  DAG partitions cleanly into ≥ 2 disconnected components,
+  Step 6 runs multi-track filing — one child issue per
+  component with cross-component blocked-by links, leaving the
+  source issue as a plain problem statement (per AC#4 of issue
+  #1590). Otherwise Step 6 edits the issue in place,
+  preserving every byte above the opening FLOW-PLAN sentinel.
 - **`<topic>`** — any non-empty string that does not match the
   `#N` regex. Seeds discussion in Step 4; Step 6 synthesizes a
   brief `## What` / `## Why` / `## Acceptance Criteria` from the
-  conversation and files one new decomposed issue.
+  conversation and files one new decomposed issue. Bare-prompt
+  mode is always single-track per AC#8 — even when the DAG
+  partitions, exactly one issue is filed.
 
 The skill takes no flags. A missing argument is rejected at
 Step 1.
@@ -44,9 +50,14 @@ Step 1.
 The skill mutates shared GitHub state only at the very end of
 Step 6, on explicit user approval. In bare-prompt mode it files
 one new decomposed issue (creation is idempotent by title — warn
-the user before filing a duplicate). In issue-input mode it
-edits the existing issue's body and re-applies the `decomposed`
-label (the `gh issue edit --add-label` call is idempotent).
+the user before filing a duplicate). In issue-input single-track
+mode it edits the existing issue's body and re-applies the
+`decomposed` label (the `gh issue edit --add-label` call is
+idempotent). In issue-input multi-track mode it files one new
+decomposed issue per component AND encodes blocked-by edges via
+`bin/flow link-blocked-by` (the dependency endpoint is
+idempotent — re-applying the same edge is a no-op on GitHub's
+side).
 
 The intermediate side effect is the per-session
 utility-in-progress marker (scoped to the user's Claude home, not
@@ -459,14 +470,67 @@ invocation, you are still inside flow-plan. The Skill tool's
 return is NOT a stopping point — it is a mid-skill handoff. Do
 not stop, do not summarize, do not ask the user "want me to
 continue?", do not return control to the user. Proceed
-immediately to Transform + Draft below using the decompose output
-you just received.
+immediately to Multi-Track Detection below using the decompose
+output you just received.
 
 If you stop here, the user must prompt you again to continue,
 which breaks the unattended flow that flow-plan promises to its
 consumers.
 
 </HARD-GATE>
+
+### Multi-Track Detection
+
+Per AC#4 of issue #1590, after `decompose:decompose` returns,
+inspect the DAG before drafting the Implementation Plan. When
+the DAG partitions into two or more disconnected components
+(groups of nodes with zero cross-group dependency edges) AND
+the skill ran in issue-input mode, the work belongs in two or
+more separate issues — one child per component — rather than
+in a single combined plan. The multi-track branch is restricted
+to issue-input mode by design: bare-prompt mode is always
+single-track per AC#8 (a bare-prompt invocation must file
+exactly one issue, never multiple).
+
+**Detection algorithm.** Walk the DAG's `nodes` and `edges`
+fields from the decompose synthesis. Treat the edges as
+undirected and partition the node set into connected
+components via union-find or BFS. Count the distinct
+component IDs. When the count is ≥ 2 AND Step 1 recorded the
+issue-input mode, the run is multi-track. Otherwise the run is
+single-track and the rest of Step 6 continues unchanged from
+`### Transform + Draft` onward.
+
+**Render the proposed split inline.** Before any filing, output
+the proposed split to the user inside a fenced code block so
+the user sees the structural decision before any side effect:
+
+```text
+Multi-Track Filing — proposed split for source issue #N
+
+Component A (root: <node-id>):
+  - <task or node summary>
+  - <task or node summary>
+
+Component B (root: <node-id>):
+  - <task or node summary>
+
+Cross-component edges (will become blocked-by links between
+children): Component B blocked-by Component A.
+
+Source issue #N will receive blocked-by links from each root
+child and will stay a plain problem statement (no
+Implementation Plan block, no `decomposed` label, not closed).
+```
+
+The user may intervene to collapse the split back to
+single-track by typing a message before the multi-track filing
+pipeline runs. The flow halts on any real user turn; when the
+user collapses to single-track, re-route to **Transform + Draft**
+below and continue as if the DAG had a single component. When
+no override arrives, proceed to **Multi-Track Filing Pipeline**
+(later in this Step 6) and SKIP the single-track Transform +
+Draft / Plan Review / Validate / File-or-Edit chain entirely.
 
 ### Transform + Draft
 
@@ -910,6 +974,141 @@ active):
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "<issue_title>" --url "<issue_url>" --phase flow-plan
 ```
 
+### Multi-Track Filing Pipeline
+
+Runs only when **Multi-Track Detection** routed here — the DAG
+had ≥ 2 disconnected components AND the run is in issue-input
+mode (per AC#4 + AC#8). When the run is single-track, this
+subsection is skipped entirely; the single-track flow above
+(Transform + Draft through File or Edit) has already filed or
+edited the issue and the model falls through to **Finish**
+below.
+
+For each component in the detected partition, build, validate,
+plan-review, and file ONE child issue. After every child is
+filed, link the children together via `bin/flow link-blocked-by`
+to encode the cross-component edges, and link the source issue
+blocked-by each root child so the AC#5 cascade can close the
+source naturally when the children eventually close.
+
+**Per-child sub-flow.** Repeat the following for each component:
+
+1. Synthesize a child What/Why/Acceptance-Criteria header from
+   the component's nodes — the planning conversation already
+   established the parent's `## What` / `## Why`; the child
+   header narrows it to this component's scope only.
+2. Run the same Transform + Draft / Title Authoring /
+   Reconstruct Issue Body / Pre-Draft scans pipeline that the
+   single-track subsections describe, but constrained to THIS
+   component's nodes and dependency subgraph. Produce a
+   per-child issue body with the FLOW-PLAN sentinel pair and
+   the `## Implementation Plan` block covering only this
+   component's tasks.
+3. Write the child body to
+   `.flow-issue-body-multi-<id>-<component>` via the Write
+   tool. The unique suffix prevents collisions with the
+   single-track body file and with sibling children.
+4. Validate the child body BEFORE filing:
+
+   ```bash
+   ${CLAUDE_PLUGIN_ROOT}/bin/flow validate-issue-body --mode decomposed --body-file .flow-issue-body-multi-<id>-<component>
+   ```
+
+   The same Validator Auto-Fix Loop (max 5 attempts) applies
+   per child — when the validator returns `status: error`,
+   apply a mechanical fix and retry up to 5 times for this
+   child before halting.
+5. Review the child plan via `flow:plan-reviewer` (one Agent
+   tool invocation per child) BEFORE filing. The review
+   contract mirrors the single-track Plan Review subsection
+   above: the agent receives the DRAFTED_PLAN verbatim and the
+   absolute `<project_root>/.claude/rules/` corpus. Cap the
+   reviewer loop at 3 attempts per child; on cap exhaustion
+   file the child with the last drafted plan and surface the
+   violations as a non-blocking advisory warning, identical to
+   the single-track cap-exhausted behavior.
+6. File the child issue with the `decomposed` label and
+   `--assignee @me`:
+
+   ```bash
+   ${CLAUDE_PLUGIN_ROOT}/bin/flow issue --title "<child_title>" --body-file .flow-issue-body-multi-<id>-<component> --label decomposed --assignee @me
+   ```
+
+   Capture the new child's URL and issue number from the
+   filer's JSON output — both are needed for the linking step
+   below and for the recording call.
+7. Record the child in the state file (no-op outside an active
+   flow):
+
+   ```bash
+   ${CLAUDE_PLUGIN_ROOT}/bin/flow add-issue --label decomposed --title "<child_title>" --url "<child_url>" --phase flow-plan
+   ```
+
+**Detect the repo.** `bin/flow link-blocked-by` requires
+`--repo <owner/name>`. Resolve it once from the worktree's
+git origin before any linking call:
+
+```bash
+git remote get-url origin
+```
+
+Parse the stdout — both SSH (`git@github.com:owner/name.git`)
+and HTTPS (`https://github.com/owner/name.git`) forms appear in
+practice. Strip the protocol/host prefix and the trailing `.git`
+to produce `owner/name`. Capture this value as `<repo>` and
+substitute it into every `link-blocked-by` invocation below.
+
+**Link the children to each other.** For every cross-component
+dependency edge `B → A` in the original DAG (component B's
+root depends on component A's root), link the two child
+issues so GitHub's native blocked-by graph reflects the
+structural relationship:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow link-blocked-by --repo <repo> --blocked-number <child_B> --blocking-number <child_A>
+```
+
+**Link the source issue to its root children.** Cap the
+dependency graph by linking the source issue blocked-by every
+root child (a "root child" is a component whose root has no
+incoming cross-component edges). The source issue then awaits
+its children's closures:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow link-blocked-by --repo <repo> --blocked-number <source_issue> --blocking-number <root_child>
+```
+
+When every child has been filed and every blocked-by edge is
+encoded, the AC#5 cascade handles the eventual closure of the
+source issue: as each child PR merges and closes its child
+issue, `bin/flow auto-close-parent` walks the dependency
+graph; once every blocker of the source is closed, the cascade
+closes the source. No `--state-file` mutation is required at
+this skill — the cascade is wired in from
+`complete-post-merge` of each child's flow.
+
+**Source-issue treatment.** Multi-track leaves the source
+issue as a plain problem statement throughout filing:
+
+- The source issue body is NOT modified — it stays a plain
+  problem statement (no Implementation Plan block).
+- NO `decomposed` label is applied to the source issue —
+  only the children receive that label. `flow-issues` filters
+  the source as Vanilla (ready for re-planning) until the
+  cascade closes it.
+- The source issue is NOT closed by multi-track filing —
+  closure comes via the AC#5 blocked-by cascade only, after
+  every child PR merges.
+
+When the per-child loop is complete and every blocked-by edge
+is encoded, fall through to **Finish** below. SKIP the
+single-track **File or Edit** subsection — the children have
+already been filed and linked. The Finish banner and
+post-flow instruction text below render the same way; only
+the message text changes to name the multi-track outcome
+(filed children + linked source) instead of a single
+issue-edit or new-issue result.
+
 ### Finish
 
 Clear the utility-in-progress marker:
@@ -950,14 +1149,20 @@ slash command directly.
   in place) and bare non-empty prompts to bare-prompt mode (Step 2
   is skipped; Step 6 synthesizes a brief What/Why/AC and files
   one new decomposed issue).
-- **Issue-input mode edits #N in place; bare-prompt mode files
-  one new issue; never close a parent issue.** Issue-input mode
+- **Issue-input mode edits #N in place OR files one issue per
+  disconnected component; bare-prompt mode files one new
+  issue; never close a parent issue.** Issue-input single-track
   preserves every byte above the opening FLOW-PLAN sentinel
   (including the original `## What` / `## Why` /
   `## Acceptance Criteria`) and swaps the sentinel-delimited
-  plan block. Bare-prompt mode files one new decomposed issue
-  with `--label decomposed --assignee @me`. There is no
-  parent-closure step in either mode.
+  plan block. Issue-input multi-track (AC#4) files one child
+  per disconnected DAG component and leaves the source issue
+  as a plain problem statement (no Implementation Plan block,
+  no `decomposed` label, not closed) — closure of the source
+  comes via the AC#5 blocked-by cascade. Bare-prompt mode
+  files one new decomposed issue with `--label decomposed
+  --assignee @me` and is always single-track per AC#8. There
+  is no parent-closure step in any mode.
 - **Always file with `--label decomposed`.** Without the label,
   `flow-issues` and `flow-orchestrate` won't recognize the issue
   as ready-for-flow-start work.
