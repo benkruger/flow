@@ -17,16 +17,18 @@
 //! 1. **CI gate** — calls [`ci::run_impl`]. If CI fails, returns an error
 //!    and commits nothing. When the CI sentinel is fresh (CI already passed
 //!    for this tree state), the check noops instantly.
-//! 2. **Post-CI re-stage** — runs `git add -A` after CI completes. Project
+//! 2. **Post-CI re-stage** — runs `git add -u` after CI completes. Project
 //!    `bin/*` tools run in their default auto-fix mode during the commit-
 //!    time CI gate (CI=true is not set), so formatters like `ruff format`
 //!    and `prettier --write` modify tracked files in place. Re-staging
 //!    captures those modifications in the index so the commit records the
 //!    same bytes CI validated, and the plan-deviation gate inspects identical
-//!    content. Returns `step = "restage"` on `git add` failure. Files
-//!    matched by `.gitignore` are not swept (`git add -A` respects the
-//!    ignore list); un-ignored artifacts in the working tree land in the
-//!    commit just as they would with a manual `git add -A`.
+//!    content. `git add -u` updates already-tracked files only — it does
+//!    NOT sweep untracked files (commit-message files, scratch artifacts,
+//!    CI outputs the user has not yet `.gitignore`d), so the commit's
+//!    scope stays bounded to what the user staged in `/flow:flow-commit`
+//!    Round 3 plus any in-place modifications CI made to those tracked
+//!    files. Returns `step = "restage"` on `git add` failure.
 //! 3. **Plan-deviation gate** — calls [`plan_deviation::run_impl`] to
 //!    cross-reference plan-named test fixture values against the staged
 //!    diff. If an unacknowledged drift is detected, returns an error with
@@ -324,7 +326,7 @@ pub fn run_impl(args: &Args, root: &std::path::Path) -> Result<Value, String> {
                 &format!("[Phase {}] finalize-commit — ci (ok)", pn),
             );
 
-            // Re-stage every working-tree modification so the commit
+            // Re-stage tracked-file modifications so the commit
             // captures the bytes CI actually validated. Project `bin/*`
             // tools run in their default auto-fix mode during the
             // commit-time CI gate (CI=true is not set; see
@@ -332,12 +334,19 @@ pub fn run_impl(args: &Args, root: &std::path::Path) -> Result<Value, String> {
             // `prettier --write` modify tracked files in place. Without
             // this step, the staged-diff capture below would see the
             // pre-CI index bytes and `git commit -F` would record them
-            // — diverging from what CI tested. The working_tree_dirty
-            // gate at line 257 already proved git is alive, so
-            // `.expect()` is safe here in the same sense as the
-            // `git diff --cached` call below.
+            // — diverging from what CI tested. `git add -u` updates
+            // already-tracked files only: it does NOT sweep untracked
+            // files (the commit-message file under
+            // `.flow-states/<branch>/commit-msg.txt`, scratch files,
+            // CI artifacts the user has not yet `.gitignore`d), so the
+            // commit's scope stays bounded to what the user already
+            // staged in `/flow:flow-commit` Round 3 plus any in-place
+            // modifications CI made to those tracked files. The
+            // working_tree_dirty gate above already proved git is
+            // alive, so `.expect()` is safe here in the same sense as
+            // the `git diff --cached` call below.
             let (add_code, _, add_stderr) =
-                run_git_in_dir(&commit_cwd, &["add", "-A"], LOCAL_TIMEOUT)
+                run_git_in_dir(&commit_cwd, &["add", "-u"], LOCAL_TIMEOUT)
                     .expect("git located by working_tree_dirty gate");
             if add_code != 0 {
                 let _ = append_log(

@@ -1901,8 +1901,7 @@ fn finalize_commit_passes_ci_reason() {
 /// the pre-CI staged bytes.
 #[test]
 fn finalize_commit_restages_after_ci_modifies_tracked_file() {
-    let (clone_dir, _bare_dir, worktree_path) =
-        setup_worktree_fixture("restage-after-ci");
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("restage-after-ci");
     let clone_path = clone_dir.path();
     let wt_str = worktree_path.to_str().unwrap();
 
@@ -1920,8 +1919,7 @@ exit 0
     fs::write(&bin_test, auto_fix_script).unwrap();
     #[cfg(unix)]
     {
-        fs::set_permissions(&bin_test, fs::Permissions::from_mode(0o755))
-            .unwrap();
+        fs::set_permissions(&bin_test, fs::Permissions::from_mode(0o755)).unwrap();
     }
     git_assert_ok(
         &Command::new("git")
@@ -1961,8 +1959,7 @@ exit 0
         .output()
         .unwrap();
     git_assert_ok(&pre_fix_output);
-    let pre_fix_bytes =
-        String::from_utf8_lossy(&pre_fix_output.stdout).to_string();
+    let pre_fix_bytes = String::from_utf8_lossy(&pre_fix_output.stdout).to_string();
     let expected_post_fix_bytes = format!("{}\n", pre_fix_bytes);
 
     let msg_path = worktree_path.join(".flow-commit-msg");
@@ -1984,8 +1981,7 @@ exit 0
         .output()
         .unwrap();
     git_assert_ok(&head_readme);
-    let committed_bytes =
-        String::from_utf8_lossy(&head_readme.stdout).to_string();
+    let committed_bytes = String::from_utf8_lossy(&head_readme.stdout).to_string();
     assert_eq!(
         committed_bytes, expected_post_fix_bytes,
         "commit must capture post-CI bytes (re-staged) — pre={:?}, expected_post={:?}, committed={:?}",
@@ -2002,8 +1998,7 @@ exit 0
 /// includes.
 #[test]
 fn finalize_commit_restage_noop_when_ci_leaves_working_tree_clean() {
-    let (clone_dir, _bare_dir, worktree_path) =
-        setup_worktree_fixture("restage-noop");
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("restage-noop");
     let clone_path = clone_dir.path();
     let wt_str = worktree_path.to_str().unwrap();
 
@@ -2028,8 +2023,7 @@ fn finalize_commit_restage_noop_when_ci_leaves_working_tree_clean() {
     // which resolves under `.flow-states/<branch>/`; the test
     // fixture follows the same convention here so the no-op
     // invariant is exercised against the path the model uses.
-    let branch_state_dir =
-        clone_path.join(".flow-states").join("restage-noop");
+    let branch_state_dir = clone_path.join(".flow-states").join("restage-noop");
     fs::create_dir_all(&branch_state_dir).unwrap();
     let msg_path = branch_state_dir.join("commit-msg.txt");
     fs::write(&msg_path, "Add source.rs (no-op re-stage test).").unwrap();
@@ -2049,8 +2043,7 @@ fn finalize_commit_restage_noop_when_ci_leaves_working_tree_clean() {
         .output()
         .unwrap();
     git_assert_ok(&head_source);
-    let committed_bytes =
-        String::from_utf8_lossy(&head_source.stdout).to_string();
+    let committed_bytes = String::from_utf8_lossy(&head_source.stdout).to_string();
     assert_eq!(
         committed_bytes, staged_bytes,
         "committed bytes must match staged bytes when CI does not modify",
@@ -2106,8 +2099,7 @@ exec /usr/bin/git -C "$REPO_PATH" "$SUBCMD" "$@"
     fs::write(&git_path, script).unwrap();
     #[cfg(unix)]
     {
-        fs::set_permissions(&git_path, fs::Permissions::from_mode(0o755))
-            .unwrap();
+        fs::set_permissions(&git_path, fs::Permissions::from_mode(0o755)).unwrap();
     }
     stubs
 }
@@ -2116,13 +2108,22 @@ exec /usr/bin/git -C "$REPO_PATH" "$SUBCMD" "$@"
 /// re-stage. Skips CI via the sentinel, installs a `git` stub on
 /// PATH that fails on `add` invocations, and runs finalize-commit
 /// as a subprocess so the stub is reachable. Asserts the structured
-/// `step:"restage"` error envelope.
+/// `step:"restage"` error envelope AND the post-error side effect:
+/// the error-tail path at the end of `run_impl` must clear
+/// `_continue_pending` and `_continue_context` for every error
+/// status, restage included. Mirrors the assertion shape of the
+/// sibling `error_clears_continue_pending` test for the ci-fail
+/// branch so the restage-failure path is locked into the same
+/// state-clearing contract.
 #[test]
 fn finalize_commit_restage_failure_returns_step_restage() {
-    let (clone_dir, _bare_dir, worktree_path) =
-        setup_worktree_fixture("restage-fail");
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("restage-fail");
     let clone_path = clone_dir.path();
     let wt_str = worktree_path.to_str().unwrap();
+
+    // Seed _continue_pending="commit" so the post-error clearing
+    // assertion below has something to verify.
+    write_state_with_continue_pending(clone_path, "restage-fail");
 
     let staged_path = worktree_path.join("feature.rs");
     fs::write(&staged_path, "fn main() {}\n").unwrap();
@@ -2140,13 +2141,7 @@ fn finalize_commit_restage_failure_returns_step_restage() {
 
     let stubs = write_git_add_failing_stub(clone_path);
 
-    let output = run_finalize_with_stub(
-        clone_path,
-        &msg_path,
-        "restage-fail",
-        &stubs,
-        &[],
-    );
+    let output = run_finalize_with_stub(clone_path, &msg_path, "restage-fail", &stubs, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let result = last_json_line(&stdout);
 
@@ -2160,6 +2155,102 @@ fn finalize_commit_restage_failure_returns_step_restage() {
         "restage error message must be non-empty, got: {:?}",
         msg,
     );
+
+    // Verify the error-tail clearing fires on the restage-failure
+    // path. The stop-continue hook reads _continue_pending —
+    // leaving "commit" set after an error would force-advance the
+    // parent phase past the failed commit.
+    let state = read_state(clone_path, "restage-fail");
+    let pending = state
+        .get("_continue_pending")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    assert!(
+        pending.is_empty(),
+        "_continue_pending must be cleared on restage error, got: {:?}",
+        pending,
+    );
+    let ctx = state
+        .get("_continue_context")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    assert!(
+        ctx.is_empty(),
+        "_continue_context must be cleared on restage error, got: {:?}",
+        ctx,
+    );
+}
+
+/// Regression test: `git add -u` (the re-stage primitive) updates
+/// already-tracked files only. An untracked, non-gitignored file
+/// present in the worktree when CI completes must NOT land in the
+/// commit's tree — the bound prevents the re-stage from silently
+/// sweeping scratch files, generated artifacts, or editor-temp
+/// files into commits the user never reviewed in
+/// `/flow:flow-commit` Round 4. Also asserts the worktree-root
+/// commit-message file (`.flow-commit-msg`) stays out of HEAD even
+/// though it lives at a non-gitignored path inside the worktree.
+#[test]
+fn finalize_commit_restage_does_not_sweep_untracked_artifacts() {
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("restage-untracked-bound");
+    let clone_path = clone_dir.path();
+    let wt_str = worktree_path.to_str().unwrap();
+
+    // Stage a tracked source file so the commit has explicit
+    // user-staged content to land.
+    fs::write(worktree_path.join("feature.rs"), "fn main() {}\n").unwrap();
+    git_assert_ok(
+        &Command::new("git")
+            .args(["-C", wt_str, "add", "feature.rs"])
+            .output()
+            .unwrap(),
+    );
+
+    // Drop an untracked, non-gitignored scratch file in the
+    // worktree. With `git add -A` this would sweep into HEAD; with
+    // `git add -u` it must not.
+    fs::write(
+        worktree_path.join("scratch-notes.txt"),
+        "unrelated leftover\n",
+    )
+    .unwrap();
+
+    let msg_path = worktree_path.join(".flow-commit-msg");
+    fs::write(&msg_path, "Add feature.rs (untracked-bound test).").unwrap();
+
+    write_ci_sentinel_for_worktree(clone_path, "restage-untracked-bound", &worktree_path);
+
+    let args = Args {
+        message_file: msg_path.to_str().unwrap().to_string(),
+        branch: "restage-untracked-bound".to_string(),
+    };
+    let result = run_impl(&args, clone_path).unwrap();
+    assert_eq!(result["status"], "ok", "got: {}", result);
+
+    // Assert HEAD's tree does NOT include the untracked scratch
+    // file or the worktree-root commit-message file.
+    let tree_listing = Command::new("git")
+        .args(["-C", wt_str, "ls-tree", "-r", "--name-only", "HEAD"])
+        .output()
+        .unwrap();
+    git_assert_ok(&tree_listing);
+    let names = String::from_utf8_lossy(&tree_listing.stdout).to_string();
+    let listed: Vec<&str> = names.lines().collect();
+    assert!(
+        !listed.contains(&"scratch-notes.txt"),
+        "HEAD must not include untracked scratch file; tree was: {}",
+        names,
+    );
+    assert!(
+        !listed.contains(&".flow-commit-msg"),
+        "HEAD must not include untracked commit-message file; tree was: {}",
+        names,
+    );
+    assert!(
+        listed.contains(&"feature.rs"),
+        "HEAD must include the user-staged feature.rs; tree was: {}",
+        names,
+    );
 }
 
 /// Locks the invariant that the pre-existing working-tree-dirty gate
@@ -2169,8 +2260,7 @@ fn finalize_commit_restage_failure_returns_step_restage() {
 /// tree's unstaged edits in the commit; this test catches that.
 #[test]
 fn finalize_commit_working_tree_dirty_gate_still_fires_pre_ci() {
-    let (clone_dir, _bare_dir, worktree_path) =
-        setup_worktree_fixture("dirty-pre-ci");
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("dirty-pre-ci");
     let clone_path = clone_dir.path();
     let wt_str = worktree_path.to_str().unwrap();
 
@@ -2192,8 +2282,7 @@ fn finalize_commit_working_tree_dirty_gate_still_fires_pre_ci() {
 
     // Modify the working tree without staging — index still has the
     // baseline bytes, working tree has different bytes.
-    fs::write(worktree_path.join("README.md"), "unstaged user edit\n")
-        .unwrap();
+    fs::write(worktree_path.join("README.md"), "unstaged user edit\n").unwrap();
 
     let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "Baseline + dirty tree.").unwrap();
@@ -2216,8 +2305,7 @@ fn finalize_commit_working_tree_dirty_gate_still_fires_pre_ci() {
 /// (must not be swept)".
 #[test]
 fn finalize_commit_restage_respects_gitignore_for_ci_artifacts() {
-    let (clone_dir, _bare_dir, worktree_path) =
-        setup_worktree_fixture("restage-gitignore");
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("restage-gitignore");
     let clone_path = clone_dir.path();
     let wt_str = worktree_path.to_str().unwrap();
 
@@ -2250,8 +2338,7 @@ exit 0
     fs::write(&bin_test, artifact_script).unwrap();
     #[cfg(unix)]
     {
-        fs::set_permissions(&bin_test, fs::Permissions::from_mode(0o755))
-            .unwrap();
+        fs::set_permissions(&bin_test, fs::Permissions::from_mode(0o755)).unwrap();
     }
     git_assert_ok(
         &Command::new("git")
@@ -2261,7 +2348,13 @@ exit 0
     );
     git_assert_ok(
         &Command::new("git")
-            .args(["-C", wt_str, "commit", "-m", "Configure artifact-emitting bin/test"])
+            .args([
+                "-C",
+                wt_str,
+                "commit",
+                "-m",
+                "Configure artifact-emitting bin/test",
+            ])
             .output()
             .unwrap(),
     );
@@ -2301,8 +2394,7 @@ exit 0
         .output()
         .unwrap();
     git_assert_ok(&head_source);
-    let committed_bytes =
-        String::from_utf8_lossy(&head_source.stdout).to_string();
+    let committed_bytes = String::from_utf8_lossy(&head_source.stdout).to_string();
     assert_eq!(
         committed_bytes, staged_bytes,
         "committed bytes must match staged bytes",

@@ -19,7 +19,7 @@ Reviews all pending changes before committing. You see the full diff and propose
 1. Stages changes
 2. Shows `git status` and `git diff --cached` in parallel
 3. Proposes a commit message in the `tl;dr` format
-4. Commits, pulls, and pushes via `bin/flow finalize-commit` (which enforces CI internally)
+4. Commits, pulls, and pushes via `bin/flow finalize-commit` (which enforces CI internally and re-stages tracked-file modifications after CI so in-place auto-fixes are captured in the same commit)
 
 ---
 
@@ -61,8 +61,17 @@ The banner is versioned (`FLOW v1.1.0`) when a `.flow-states/*.json` state file 
 
 ---
 
+## Re-staging
+
+After CI completes (and only when CI passed), `finalize-commit` runs `git add -u` to capture in-place modifications CI made to already-tracked files. This handles the canonical pattern where `bin/format` and `bin/lint` auto-fix tracked files in their default non-`CI=1` mode: without re-staging, the commit would record the pre-CI bytes from the index while CI tested the post-CI bytes in the working tree, and remote strict CI would fail on the unfixed bytes.
+
+`git add -u` updates already-tracked files only — untracked artifacts (the commit-message file, scratch files, CI outputs the user has not yet `.gitignore`d) are NOT swept. The commit's scope stays bounded to what the user staged plus any in-place modifications CI made to those tracked files. A failed re-stage returns `step:"restage"` in the JSON envelope.
+
+---
+
 ## Gates
 
 - Never commits without showing the diff first
 - Never uses `--no-verify`
 - CI enforced inside `finalize-commit` before every commit
+- Post-CI re-stage captures tracked-file modifications via `git add -u`; untracked files are not swept
