@@ -11,7 +11,9 @@ use std::process::{Command, Stdio};
 
 use flow_rs::hooks::stop_continue::{
     capture_session_id, check_autonomous_stop, check_continue, check_in_progress_utility_skill,
-    format_block_output, set_blocked_idle, set_tab_color, RULE_1_STOP_REFUSED_MESSAGE,
+    format_block_output, set_blocked_idle, set_tab_color, CONSECUTIVE_UNCHANGED_COUNT_FIELD,
+    CONSECUTIVE_UNCHANGED_THRESHOLD, LAST_OBSERVED_CODE_TASK_FIELD, RULE_1_STOP_REFUSED_MESSAGE,
+    RULE_1_STOP_REFUSED_POINTED_MESSAGE,
 };
 use serde_json::{json, Value};
 
@@ -2098,6 +2100,273 @@ fn check_autonomous_stop_clears_stale_halt_when_phase_not_auto() {
     assert!(
         !read_halt_pending(&state_path),
         "stale halt must be cleared"
+    );
+}
+
+// --- counter-tracking + refusal-text swap ---
+//
+// The counter pair (`_last_observed_code_task`,
+// `_consecutive_unchanged_count`) tracks how many consecutive Stops in
+// autonomous flow-code have not advanced `code_task`. When the count
+// reaches `CONSECUTIVE_UNCHANGED_THRESHOLD`, the Rule 1 refusal text
+// swaps from the encouraging message to the pointed message that
+// names the stalling pattern.
+
+fn read_counter_state(state_path: &Path) -> (Option<i64>, Option<i64>) {
+    let state: Value =
+        serde_json::from_str(&fs::read_to_string(state_path).unwrap()).unwrap_or(Value::Null);
+    let last = state
+        .get(LAST_OBSERVED_CODE_TASK_FIELD)
+        .and_then(|v| v.as_i64());
+    let count = state
+        .get(CONSECUTIVE_UNCHANGED_COUNT_FIELD)
+        .and_then(|v| v.as_i64());
+    (last, count)
+}
+
+fn autonomous_stop_state_with_counter(
+    current_phase: &str,
+    code_task: Option<i64>,
+    last_observed: Option<i64>,
+    consecutive_unchanged: Option<i64>,
+    halt_pending: Value,
+) -> Value {
+    let mut state =
+        autonomous_stop_state(current_phase, "in_progress", json!("auto"), halt_pending);
+    if let Some(v) = code_task {
+        state["code_task"] = json!(v);
+    }
+    if let Some(v) = last_observed {
+        state[LAST_OBSERVED_CODE_TASK_FIELD] = json!(v);
+    }
+    if let Some(v) = consecutive_unchanged {
+        state[CONSECUTIVE_UNCHANGED_COUNT_FIELD] = json!(v);
+    }
+    state
+}
+
+/// Branch A — non-flow-code autonomous phases (flow-review, flow-learn,
+/// flow-complete) have no `code_task` analog, so the counter logic
+/// does NOT run. Pre-existing stale counter values must NOT be
+/// mutated by the Stop hook in those phases.
+#[test]
+fn check_autonomous_stop_does_not_track_counter_in_non_code_phases() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = auto_stop_transcript(dir.path(), "t.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&autonomous_stop_state_with_counter(
+            "flow-review",
+            Some(0),
+            Some(42),
+            Some(99),
+            json!(false),
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_auto_stop_transcript(&transcript, true, None);
+    let result = check_autonomous_stop(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+    assert!(result.should_block, "non-code autonomous still blocks");
+    let context = result.context.expect("rule 1 message");
+    assert_eq!(
+        context, RULE_1_STOP_REFUSED_MESSAGE,
+        "non-code phase keeps the encouraging text"
+    );
+    let (last, count) = read_counter_state(&state_path);
+    assert_eq!(last, Some(42), "non-code must not mutate counter state");
+    assert_eq!(count, Some(99), "non-code must not mutate counter state");
+}
+
+/// Branch B — first observation: `_last_observed_code_task` is
+/// absent. The hook initializes it to the current `code_task` and
+/// sets the count to 0. Encouraging text fires (count < threshold).
+#[test]
+fn check_autonomous_stop_initializes_counter_on_first_observation() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = auto_stop_transcript(dir.path(), "t.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&autonomous_stop_state_with_counter(
+            "flow-code",
+            Some(3),
+            None,
+            None,
+            json!(false),
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_auto_stop_transcript(&transcript, true, None);
+    let result = check_autonomous_stop(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+    assert!(result.should_block);
+    let (last, count) = read_counter_state(&state_path);
+    assert_eq!(last, Some(3), "initial observation captures code_task");
+    assert_eq!(count, Some(0), "initial observation resets count");
+}
+
+/// Branch C — `code_task` advanced since the last Stop. The counter
+/// resets to 0 and `_last_observed_code_task` updates to the new
+/// value. Encouraging text fires.
+#[test]
+fn check_autonomous_stop_resets_counter_when_code_task_advances() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = auto_stop_transcript(dir.path(), "t.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&autonomous_stop_state_with_counter(
+            "flow-code",
+            Some(5),
+            Some(2),
+            Some(7),
+            json!(false),
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_auto_stop_transcript(&transcript, true, None);
+    let result = check_autonomous_stop(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+    assert!(result.should_block);
+    let (last, count) = read_counter_state(&state_path);
+    assert_eq!(last, Some(5), "last_observed updates to new code_task");
+    assert_eq!(count, Some(0), "count resets to 0 on code_task advance");
+    let context = result.context.expect("rule 1 message");
+    assert_eq!(
+        context, RULE_1_STOP_REFUSED_MESSAGE,
+        "reset path uses encouraging text"
+    );
+}
+
+/// Branch D — `code_task` unchanged and count is below threshold.
+/// The counter increments by 1; encouraging text still fires.
+#[test]
+fn check_autonomous_stop_increments_counter_when_code_task_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = auto_stop_transcript(dir.path(), "t.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&autonomous_stop_state_with_counter(
+            "flow-code",
+            Some(2),
+            Some(2),
+            Some(1),
+            json!(false),
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_auto_stop_transcript(&transcript, true, None);
+    let result = check_autonomous_stop(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+    assert!(result.should_block);
+    let (last, count) = read_counter_state(&state_path);
+    assert_eq!(last, Some(2));
+    assert_eq!(count, Some(2), "count increments by 1");
+}
+
+/// Branch E — count reaches `CONSECUTIVE_UNCHANGED_THRESHOLD` after
+/// increment. The Rule 1 refusal swaps from the encouraging message
+/// to the pointed message that names the stalling pattern.
+#[test]
+fn check_autonomous_stop_uses_pointed_text_at_or_above_threshold() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = auto_stop_transcript(dir.path(), "t.jsonl");
+    // Pre-state count is THRESHOLD - 1; this Stop increments to
+    // THRESHOLD, which trips the pointed text.
+    let pre_count = CONSECUTIVE_UNCHANGED_THRESHOLD - 1;
+    fs::write(
+        &state_path,
+        serde_json::to_string(&autonomous_stop_state_with_counter(
+            "flow-code",
+            Some(1),
+            Some(1),
+            Some(pre_count),
+            json!(false),
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_auto_stop_transcript(&transcript, true, None);
+    let result = check_autonomous_stop(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+    assert!(result.should_block);
+    let context = result.context.expect("pointed message");
+    assert_eq!(
+        context, RULE_1_STOP_REFUSED_POINTED_MESSAGE,
+        "at threshold must use the pointed text"
+    );
+}
+
+/// Branch F — count below threshold after increment. Encouraging
+/// text fires.
+#[test]
+fn check_autonomous_stop_uses_encouraging_text_below_threshold() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = auto_stop_transcript(dir.path(), "t.jsonl");
+    // Pre-state count is below the threshold by 2 — even after the
+    // increment the count stays below threshold so encouraging
+    // text fires.
+    let pre_count = CONSECUTIVE_UNCHANGED_THRESHOLD - 3;
+    fs::write(
+        &state_path,
+        serde_json::to_string(&autonomous_stop_state_with_counter(
+            "flow-code",
+            Some(1),
+            Some(1),
+            Some(pre_count),
+            json!(false),
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_auto_stop_transcript(&transcript, true, None);
+    let result = check_autonomous_stop(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+    assert!(result.should_block);
+    let context = result.context.expect("encouraging message");
+    assert_eq!(
+        context, RULE_1_STOP_REFUSED_MESSAGE,
+        "below threshold must use the encouraging text"
+    );
+}
+
+/// Branch G — `_halt_pending=true` overrides the counter regardless
+/// of value. Rule 2 (halt-pending) text fires; the counter is NOT
+/// updated because the Rule 1 branch did not execute.
+#[test]
+fn check_autonomous_stop_uses_halt_pending_message_when_halt_set_regardless_of_counter() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let transcript = auto_stop_transcript(dir.path(), "t.jsonl");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&autonomous_stop_state_with_counter(
+            "flow-code",
+            Some(1),
+            Some(1),
+            Some(CONSECUTIVE_UNCHANGED_THRESHOLD + 10),
+            json!(true),
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    write_auto_stop_transcript(&transcript, true, None);
+    let result = check_autonomous_stop(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+    assert!(result.should_block);
+    let context = result.context.expect("rule 2 message");
+    assert!(
+        context.contains("/flow:flow-continue"),
+        "halt-set must emit Rule 2 regardless of counter; got: {}",
+        context
+    );
+    let (_, count) = read_counter_state(&state_path);
+    assert_eq!(
+        count,
+        Some(CONSECUTIVE_UNCHANGED_THRESHOLD + 10),
+        "counter must not advance when halt-set fires Rule 2"
     );
 }
 

@@ -50,7 +50,7 @@ use crate::github::detect_repo;
 use crate::hooks::transcript_walker::is_truthy;
 use crate::lock::mutate_state;
 use crate::phase_config::find_state_files;
-use crate::utils::{now, write_tab_sequences};
+use crate::utils::{now, tolerant_i64, write_tab_sequences};
 
 /// Result of `check_continue`.
 pub struct ContinueResult {
@@ -294,6 +294,53 @@ pub fn set_tab_color(root: &Path, branch: &str, state_path: &Path) {
 pub const RULE_1_STOP_REFUSED_MESSAGE: &str =
     "Stop Refused: Continue, you can do it. Don't give up, you got this! No excuses!";
 
+/// Threshold for swapping the encouraging Rule 1 message for the
+/// pointed message. After this many consecutive Stops in
+/// in-progress autonomous flow-code without advancing the
+/// `code_task` counter, the refusal text changes to one that names
+/// the stalling pattern. N=3 leaves headroom for legitimate
+/// multi-turn investigation while catching the loop pattern. See
+/// `.claude/rules/autonomous-phase-discipline.md` "Forbidden
+/// Stalling Frames".
+pub const CONSECUTIVE_UNCHANGED_THRESHOLD: i64 = 3;
+
+/// State field that records the `code_task` value observed at the
+/// most recent Stop event in autonomous flow-code. Compared on the
+/// next Stop to detect whether the model advanced the plan task.
+/// Hook-managed — see `MODEL_DENIED_FIELDS` in
+/// `src/commands/set_timestamp.rs` for the CLI write deny.
+pub const LAST_OBSERVED_CODE_TASK_FIELD: &str = "_last_observed_code_task";
+
+/// State field that records how many consecutive Stops in
+/// autonomous flow-code have observed an unchanged `code_task`.
+/// Hook-managed — paired with `LAST_OBSERVED_CODE_TASK_FIELD`.
+pub const CONSECUTIVE_UNCHANGED_COUNT_FIELD: &str = "_consecutive_unchanged_count";
+
+/// Pointed Rule 1 refusal text. Fired by `check_autonomous_stop`
+/// when the autonomous flow-code phase has produced
+/// `CONSECUTIVE_UNCHANGED_THRESHOLD` or more consecutive Stops
+/// without advancing the `code_task` counter. Names the stalling
+/// pattern explicitly so the model receives a sharper signal than
+/// the generic encouraging text. See
+/// `.claude/rules/autonomous-phase-discipline.md` "Forbidden
+/// Stalling Frames".
+pub const RULE_1_STOP_REFUSED_POINTED_MESSAGE: &str = "\
+Stop Refused: you have ended several turns in a row without advancing
+the plan task counter. This is the autonomous-stalling pattern.
+
+If you are still investigating, NAME the specific blocker that
+prevents you from producing an Edit or Write right now — what file,
+what unknown, what concrete dependency. Then resolve it on this turn.
+
+If you are not investigating, your next turn MUST produce a tool call
+that advances the plan task: a Read or Grep that reads new context,
+followed by an Edit or Write that lands code, followed by
+`bin/flow set-timestamp --set code_task=<n+1>` when the task lands.
+
+No rule in this project authorizes a halt in autonomous mode. Larger
+files are not harder; deliberation text without tool calls is a
+turn-end with no work. Keep going.";
+
 /// Block reason for Rule 2 (`_halt_pending=true`, no new user
 /// message). Names `/flow:flow-continue` and `/flow:flow-abort` as
 /// the only exits so the model holds position until the user picks
@@ -367,9 +414,18 @@ fn normalize_gate_input(s: &str) -> String {
 ///    `/flow:flow-continue` (which invokes `bin/flow clear-halt` to
 ///    set `_halt_pending=false`).
 /// 3. **Rule 1: no halt, no new user message, autonomous phase.**
-///    Refuse the Stop with `RULE_1_STOP_REFUSED_MESSAGE`. The
-///    autonomous flow must keep going — `continue: auto` already
-///    authorized continuous execution.
+///    Refuse the Stop with `RULE_1_STOP_REFUSED_MESSAGE` by default,
+///    OR with `RULE_1_STOP_REFUSED_POINTED_MESSAGE` when the model
+///    has produced `CONSECUTIVE_UNCHANGED_THRESHOLD` consecutive
+///    Stops in autonomous flow-code without advancing the
+///    `code_task` counter. The pointed text names the stalling
+///    pattern explicitly. The monotonic-+1 validator on `code_task`
+///    (`src/commands/set_timestamp.rs::validate_code_task`) plus
+///    the `MODEL_DENIED_FIELDS` deny on the counter pair ensure the
+///    only way to reset the count is to legitimately advance the
+///    plan task. See `.claude/rules/code-task-counter.md` and
+///    `.claude/rules/autonomous-phase-discipline.md` "Forbidden
+///    Stalling Frames".
 ///
 /// When the phase is not in-progress OR not autonomous, the
 /// predicate clears any stale `_halt_pending=true` left over from a
@@ -423,6 +479,7 @@ pub fn check_autonomous_stop(
 
     let mut should_block = false;
     let mut halt_set = false;
+    let mut pointed_text_required = false;
     let _ = mutate_state(state_path, &mut |state| {
         if !(state.is_object() || state.is_null()) {
             return;
@@ -430,18 +487,19 @@ pub fn check_autonomous_stop(
         let current_phase = state
             .get("current_phase")
             .and_then(|v| v.as_str())
-            .unwrap_or("");
+            .unwrap_or("")
+            .to_string();
         if current_phase.is_empty() {
             return;
         }
         let phase_status = state
             .get("phases")
-            .and_then(|p| p.get(current_phase))
+            .and_then(|p| p.get(&current_phase))
             .and_then(|p| p.get("status"))
             .and_then(|v| v.as_str())
             .map(normalize_gate_input)
             .unwrap_or_default();
-        let skill_entry = state.get("skills").and_then(|s| s.get(current_phase));
+        let skill_entry = state.get("skills").and_then(|s| s.get(&current_phase));
         let is_auto = match skill_entry {
             Some(v) if v.as_str().map(normalize_gate_input).as_deref() == Some("auto") => true,
             Some(v) => {
@@ -483,10 +541,47 @@ pub fn check_autonomous_stop(
             }
             None => {
                 // No user message since the most recent Skill action.
-                // Either Rule 2 (halt pending) or Rule 1 (encouraging)
-                // — both block, message selected by `halt_was_set` below.
+                // Either Rule 2 (halt pending) or Rule 1 (encouraging
+                // OR pointed) — all block, message selected below.
                 should_block = true;
                 halt_set = halt_was_set;
+                // Counter-tracking for the autonomous-mode stalling
+                // pattern (see `.claude/rules/autonomous-phase-discipline.md`
+                // "Forbidden Stalling Frames"). Scope: flow-code only
+                // (other autonomous phases have no `code_task`
+                // analog) AND only when Rule 1 would fire (no halt
+                // set yet). The monotonic-+1 validator on `code_task`
+                // (`src/commands/set_timestamp.rs::validate_code_task`)
+                // ensures the only way to reset the count is to
+                // legitimately advance the task — the model cannot
+                // counterfeit the reset because the counter fields
+                // themselves are in `MODEL_DENIED_FIELDS`.
+                if !halt_was_set && current_phase == "flow-code" {
+                    let code_task = tolerant_i64(state.get("code_task").unwrap_or(&Value::Null));
+                    let last_observed_raw = state.get(LAST_OBSERVED_CODE_TASK_FIELD).cloned();
+                    let prev_count = tolerant_i64(
+                        state
+                            .get(CONSECUTIVE_UNCHANGED_COUNT_FIELD)
+                            .unwrap_or(&Value::Null),
+                    );
+                    let new_count = match last_observed_raw.as_ref() {
+                        // Initial observation: field absent or null.
+                        // Initialize without firing the pointed text
+                        // on the first Stop a flow-code window sees.
+                        None | Some(Value::Null) => 0,
+                        // `code_task` advanced since the last Stop:
+                        // reset the count.
+                        Some(v) if tolerant_i64(v) != code_task => 0,
+                        // `code_task` unchanged: increment with
+                        // saturating arithmetic per
+                        // `.claude/rules/rust-patterns.md` "Saturating
+                        // Arithmetic on Counter Reads".
+                        _ => prev_count.saturating_add(1),
+                    };
+                    state[LAST_OBSERVED_CODE_TASK_FIELD] = json!(code_task);
+                    state[CONSECUTIVE_UNCHANGED_COUNT_FIELD] = json!(new_count);
+                    pointed_text_required = new_count >= CONSECUTIVE_UNCHANGED_THRESHOLD;
+                }
             }
         }
     });
@@ -496,6 +591,8 @@ pub fn check_autonomous_stop(
     }
     let context = if halt_set {
         RULE_2_HALT_PENDING_MESSAGE.to_string()
+    } else if pointed_text_required {
+        RULE_1_STOP_REFUSED_POINTED_MESSAGE.to_string()
     } else {
         RULE_1_STOP_REFUSED_MESSAGE.to_string()
     };
