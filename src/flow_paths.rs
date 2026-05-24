@@ -45,8 +45,20 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use serde_json::Value;
+
 use crate::git::default_branch_in;
 use crate::hooks::transcript_walker::normalize_gate_input;
+
+/// Byte cap for `<root>/.flow-states/<branch>/state.json` reads in
+/// `is_autonomous_flow_active`. 8 MB matches the cap in
+/// `src/hooks/validate_pretool.rs` per
+/// `.claude/rules/external-input-path-construction.md` so a
+/// corrupted or maliciously-large state file cannot OOM the hook
+/// path. Reads above the cap are silently truncated;
+/// `serde_json::from_str` downstream rejects mid-token truncations
+/// and the predicate falls through to its `false` result.
+const STATE_FILE_BYTE_CAP: u64 = 8 * 1024 * 1024;
 
 /// Directory-only handle for the `.flow-states/` directory. Use this
 /// for cross-branch operations (discovery scans, hook prefix checks,
@@ -326,6 +338,87 @@ impl FlowPaths {
     pub fn start_prompt(&self) -> PathBuf {
         self.branch_dir().join("start-prompt")
     }
+}
+
+/// Predicate: does the state file at
+/// `<project_root>/.flow-states/<branch>/state.json` describe an
+/// active autonomous phase?
+///
+/// Returns `true` iff ALL of:
+///
+/// - `branch` is `Some` and passes `FlowPaths::is_valid_branch` (the
+///   path-construction boundary required by
+///   `.claude/rules/branch-path-safety.md`).
+/// - The state file exists and parses as JSON within the
+///   `STATE_FILE_BYTE_CAP` byte cap.
+/// - `current_phase` is non-empty AND
+///   `phases.<current_phase>.status` equals `"in_progress"` (normalized
+///   per `.claude/rules/security-gates.md` "Normalize Before
+///   Comparing").
+/// - `skills.<current_phase>` resolves to `auto` — accepted in two
+///   shapes per `src/state.rs::SkillConfig`: the bare string form
+///   (`"auto"`) and the object form (`{"continue": "auto", ...}`).
+///   Comparisons run on normalized strings.
+///
+/// Fail-open on every error class — missing file, IO failure,
+/// non-JSON content, missing or wrong-type field — returns `false`
+/// per `.claude/rules/state-files.md` "Corruption Resilience" and
+/// `.claude/rules/hook-state-timing.md`. The `in_progress` status
+/// check is the stability guard for the transition-boundary window
+/// where `current_phase` has advanced but `phase_enter` has not yet
+/// flipped the new phase's status.
+pub fn is_autonomous_flow_active(project_root: &Path, branch: Option<&str>) -> bool {
+    let branch = match branch {
+        Some(b) => b,
+        None => return false,
+    };
+    let paths = match FlowPaths::try_new(project_root, branch) {
+        Some(p) => p,
+        None => return false,
+    };
+    let content = match read_state_file_capped(&paths.state_file()) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let state: Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let current_phase = match state.get("current_phase").and_then(|v| v.as_str()) {
+        Some(s) if !s.is_empty() => s.to_string(),
+        _ => return false,
+    };
+    let status = state
+        .get("phases")
+        .and_then(|p| p.get(&current_phase))
+        .and_then(|p| p.get("status"))
+        .and_then(|v| v.as_str())
+        .map(normalize_gate_input)
+        .unwrap_or_default();
+    if status != "in_progress" {
+        return false;
+    }
+    let skill_entry = state.get("skills").and_then(|s| s.get(&current_phase));
+    match skill_entry {
+        Some(v) if v.as_str().map(normalize_gate_input).as_deref() == Some("auto") => true,
+        Some(v) => {
+            v.get("continue")
+                .and_then(|c| c.as_str())
+                .map(normalize_gate_input)
+                .as_deref()
+                == Some("auto")
+        }
+        None => false,
+    }
+}
+
+/// Read a state file with the documented `STATE_FILE_BYTE_CAP`.
+fn read_state_file_capped(path: &Path) -> io::Result<String> {
+    use std::io::Read;
+    let file = fs::File::open(path)?;
+    let mut buf = String::new();
+    file.take(STATE_FILE_BYTE_CAP).read_to_string(&mut buf)?;
+    Ok(buf)
 }
 
 /// Compute the project root and worktree root from a cwd that lives

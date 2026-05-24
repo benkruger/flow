@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use flow_rs::flow_paths::{
-    compute_worktree_paths, compute_worktree_root, finalize_commit_destination, FlowPaths,
-    FlowStatesDir,
+    compute_worktree_paths, compute_worktree_root, finalize_commit_destination,
+    is_autonomous_flow_active, FlowPaths, FlowStatesDir,
 };
 
 mod common;
@@ -687,4 +687,171 @@ fn finalize_commit_destination_rejects_slash_branch() {
 fn finalize_commit_destination_rejects_nul_branch() {
     let root = Path::new("/tmp/proj");
     assert_eq!(finalize_commit_destination(root, "a\0b"), root);
+}
+
+// --- is_autonomous_flow_active ---
+
+/// Write a state file at `<root>/.flow-states/<branch>/state.json`
+/// with the given JSON content.
+fn write_state(root: &Path, branch: &str, content: &str) {
+    let dir = root.join(".flow-states").join(branch);
+    std::fs::create_dir_all(&dir).expect("create flow-states dir");
+    std::fs::write(dir.join("state.json"), content).expect("write state.json");
+}
+
+#[test]
+fn autonomous_flow_active_returns_false_for_missing_state_file() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    // No state file written.
+    assert!(!is_autonomous_flow_active(&root, Some("feat")));
+}
+
+#[test]
+fn autonomous_flow_active_returns_true_for_auto_in_progress() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    write_state(
+        &root,
+        "feat",
+        r#"{
+            "current_phase": "flow-code",
+            "phases": {"flow-code": {"status": "in_progress"}},
+            "skills": {"flow-code": {"continue": "auto"}}
+        }"#,
+    );
+    assert!(is_autonomous_flow_active(&root, Some("feat")));
+}
+
+#[test]
+fn autonomous_flow_active_returns_false_for_manual_phase() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    write_state(
+        &root,
+        "feat",
+        r#"{
+            "current_phase": "flow-code",
+            "phases": {"flow-code": {"status": "in_progress"}},
+            "skills": {"flow-code": {"continue": "manual"}}
+        }"#,
+    );
+    assert!(!is_autonomous_flow_active(&root, Some("feat")));
+}
+
+#[test]
+fn autonomous_flow_active_returns_false_for_completed_phase() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    write_state(
+        &root,
+        "feat",
+        r#"{
+            "current_phase": "flow-code",
+            "phases": {"flow-code": {"status": "complete"}},
+            "skills": {"flow-code": {"continue": "auto"}}
+        }"#,
+    );
+    assert!(!is_autonomous_flow_active(&root, Some("feat")));
+}
+
+#[test]
+fn autonomous_flow_active_fails_open_on_corrupt_state_file() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    write_state(&root, "feat", "{not valid json");
+    assert!(!is_autonomous_flow_active(&root, Some("feat")));
+}
+
+#[test]
+fn autonomous_flow_active_fails_open_on_non_utf8_state_file() {
+    // Open succeeds, read_to_string fails on invalid UTF-8 — exercises
+    // the second `?` operator in read_state_file_capped.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let dir = root.join(".flow-states").join("feat");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("state.json"), [0xFF, 0xFE, 0xFD]).unwrap();
+    assert!(!is_autonomous_flow_active(&root, Some("feat")));
+}
+
+#[test]
+fn autonomous_flow_active_returns_false_for_none_branch() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    assert!(!is_autonomous_flow_active(&root, None));
+}
+
+#[test]
+fn autonomous_flow_active_returns_false_for_invalid_branch() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    // Slash-containing branch fails FlowPaths::is_valid_branch.
+    assert!(!is_autonomous_flow_active(&root, Some("foo/bar")));
+}
+
+#[test]
+fn autonomous_flow_active_returns_false_when_current_phase_missing() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    write_state(&root, "feat", "{}");
+    assert!(!is_autonomous_flow_active(&root, Some("feat")));
+}
+
+#[test]
+fn autonomous_flow_active_returns_false_when_current_phase_empty_string() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    write_state(&root, "feat", r#"{"current_phase": ""}"#);
+    assert!(!is_autonomous_flow_active(&root, Some("feat")));
+}
+
+#[test]
+fn autonomous_flow_active_returns_false_when_skills_entry_missing() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    write_state(
+        &root,
+        "feat",
+        r#"{
+            "current_phase": "flow-code",
+            "phases": {"flow-code": {"status": "in_progress"}}
+        }"#,
+    );
+    assert!(!is_autonomous_flow_active(&root, Some("feat")));
+}
+
+#[test]
+fn autonomous_flow_active_returns_false_when_skill_object_lacks_continue() {
+    // Detailed-shape skills.<phase> object that's missing the
+    // `continue` key — exercises the second match arm's `None`
+    // result inside the v.get("continue") chain.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    write_state(
+        &root,
+        "feat",
+        r#"{
+            "current_phase": "flow-code",
+            "phases": {"flow-code": {"status": "in_progress"}},
+            "skills": {"flow-code": {}}
+        }"#,
+    );
+    assert!(!is_autonomous_flow_active(&root, Some("feat")));
+}
+
+#[test]
+fn autonomous_flow_active_accepts_bare_string_auto_skill_config() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    write_state(
+        &root,
+        "feat",
+        r#"{
+            "current_phase": "flow-code",
+            "phases": {"flow-code": {"status": "in_progress"}},
+            "skills": {"flow-code": "auto"}
+        }"#,
+    );
+    assert!(is_autonomous_flow_active(&root, Some("feat")));
 }
