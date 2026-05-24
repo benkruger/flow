@@ -354,6 +354,38 @@ pub fn validate(file_path: &str, cwd: &str) -> (bool, String) {
     let relative = &file_path[project_root.len() + 1..];
     let corrected = format!("{}/{}", worktree_root, relative);
 
+    // Issue #1704 branch C: autonomous-flow-strict response shape.
+    // When the active flow is configured for autonomous execution,
+    // a human-readable BLOCKED message would surface to the model
+    // as a Claude Code permission prompt mid-flow (defeating the
+    // autonomous-mode contract). Emit a structured JSON envelope
+    // instead so the model can parse the rejection and react.
+    // Default (non-autonomous-flow) behavior unchanged.
+    //
+    // Residual gap: this branch fires ONLY when the path is inside
+    // `project_root` but outside the worktree (the existing block
+    // path). Paths outside `project_root` (~/.config, /tmp, etc.)
+    // are allowed by validate() earlier and stay outside this
+    // hook's jurisdiction — see the `paths outside the project are
+    // always fine` branch above and the residual-gap negative test.
+    //
+    // `validate_claude_paths.rs` is deliberately NOT extended here
+    // per the plan's Mirror-Pattern Audit — its fail-closed
+    // posture and protected-path scope differ from this hook.
+    let branch = Path::new(worktree_root)
+        .file_name()
+        .and_then(|n| n.to_str());
+    if crate::flow_paths::is_autonomous_flow_active(Path::new(project_root), branch) {
+        let envelope = serde_json::json!({
+            "status": "error",
+            "reason": "out_of_worktree_in_autonomous",
+            "blocked_path": file_path,
+            "worktree": worktree_root,
+            "autonomous": true,
+        });
+        return (false, envelope.to_string());
+    }
+
     (
         false,
         format!(

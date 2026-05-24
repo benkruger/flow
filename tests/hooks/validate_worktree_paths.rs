@@ -164,6 +164,131 @@ fn validate_uses_rightmost_worktrees_segment_in_redirect() {
     assert!(msg.contains("/home/dev/my.worktrees/proj/.worktrees/feat/lib/foo.py"));
 }
 
+// --- validate() autonomous-strict branch (#1704 branch C) ---
+
+/// Plant a state file at `<root>/.flow-states/<branch>/state.json`.
+fn write_state_for(root: &std::path::Path, branch: &str, content: &str) {
+    let dir = root.join(".flow-states").join(branch);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("state.json"), content).unwrap();
+}
+
+const AUTO_IN_PROGRESS: &str = r#"{
+    "current_phase": "flow-code",
+    "phases": {"flow-code": {"status": "in_progress"}},
+    "skills": {"flow-code": {"continue": "auto"}}
+}"#;
+
+const MANUAL_IN_PROGRESS: &str = r#"{
+    "current_phase": "flow-code",
+    "phases": {"flow-code": {"status": "in_progress"}},
+    "skills": {"flow-code": {"continue": "manual"}}
+}"#;
+
+#[test]
+fn autonomous_strict_emits_json_envelope_on_existing_block_path() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    write_state_for(&root, "feat", AUTO_IN_PROGRESS);
+    let worktree = format!("{}/.worktrees/feat", root.display());
+    let file_path = format!("{}/lib/foo.py", root.display());
+    let (allowed, msg) = validate(&file_path, &worktree);
+    assert!(!allowed);
+    assert!(
+        msg.contains("\"reason\":\"out_of_worktree_in_autonomous\""),
+        "expected JSON envelope; got: {}",
+        msg
+    );
+    assert!(msg.contains("\"autonomous\":true"));
+    assert!(msg.contains(&file_path));
+}
+
+#[test]
+fn non_autonomous_preserves_existing_block_message_shape() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    write_state_for(&root, "feat", MANUAL_IN_PROGRESS);
+    let worktree = format!("{}/.worktrees/feat", root.display());
+    let file_path = format!("{}/lib/foo.py", root.display());
+    let (allowed, msg) = validate(&file_path, &worktree);
+    assert!(!allowed);
+    assert!(
+        msg.starts_with("BLOCKED:"),
+        "non-autonomous flow should preserve human-readable BLOCKED message; got: {}",
+        msg
+    );
+    assert!(!msg.contains("out_of_worktree_in_autonomous"));
+}
+
+#[test]
+fn autonomous_strict_allows_in_worktree_path() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    write_state_for(&root, "feat", AUTO_IN_PROGRESS);
+    let worktree = format!("{}/.worktrees/feat", root.display());
+    let file_path = format!("{}/.worktrees/feat/src/lib.rs", root.display());
+    let (allowed, msg) = validate(&file_path, &worktree);
+    assert!(allowed, "in-worktree path must be allowed; got msg={}", msg);
+}
+
+#[test]
+fn non_active_flow_preserves_existing_block_message_shape() {
+    // No state file written — is_autonomous_flow_active returns false.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let worktree = format!("{}/.worktrees/feat", root.display());
+    let file_path = format!("{}/lib/foo.py", root.display());
+    let (allowed, msg) = validate(&file_path, &worktree);
+    assert!(!allowed);
+    assert!(
+        msg.starts_with("BLOCKED:"),
+        "no active flow should preserve human-readable BLOCKED message; got: {}",
+        msg
+    );
+}
+
+#[test]
+fn autonomous_strict_preserves_flow_states_redirect_message() {
+    // Misplaced .flow-states/ write under the worktree — should
+    // route through the .flow-states/ redirect branch BEFORE the
+    // autonomous-strict check, preserving the existing redirect
+    // message regardless of autonomous mode.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    write_state_for(&root, "feat", AUTO_IN_PROGRESS);
+    let worktree = format!("{}/.worktrees/feat", root.display());
+    let file_path = format!("{}/.worktrees/feat/.flow-states/feat/log", root.display());
+    let (allowed, msg) = validate(&file_path, &worktree);
+    assert!(!allowed);
+    assert!(
+        msg.contains(".flow-states/"),
+        "misplaced .flow-states/ should still get its redirect message: {}",
+        msg
+    );
+    assert!(!msg.contains("out_of_worktree_in_autonomous"));
+}
+
+#[test]
+fn autonomous_strict_still_allows_paths_outside_project_root_documents_residual_gap() {
+    // Branch C residual gap: paths outside `project_root` (e.g.
+    // ~/.config) are still allowed by validate() even during
+    // autonomous flows. The hook layer disclaims jurisdiction over
+    // those paths (line 318-321 of the source). Closing this gap
+    // requires either a Claude Code feature or a project settings
+    // allow-list extension — outside the scope of this PR. See
+    // CLAUDE.md "Key Files" entry for `src/hooks/agent_prompt_scan.rs`.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    write_state_for(&root, "feat", AUTO_IN_PROGRESS);
+    let worktree = format!("{}/.worktrees/feat", root.display());
+    let (allowed, msg) = validate("/etc/hosts", &worktree);
+    assert!(
+        allowed,
+        "paths outside project_root remain allowed at this layer; got msg={}",
+        msg
+    );
+}
+
 // --- get_file_path tests ---
 
 #[test]
