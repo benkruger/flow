@@ -259,9 +259,11 @@ below) and demands a task-advancing tool call. The counter pair
 `_last_observed_code_task` and `_consecutive_unchanged_count`
 records the running state; both fields are in
 `MODEL_DENIED_FIELDS` (`src/commands/set_timestamp.rs`) so the
-model cannot counterfeit a reset, and `phase_enter()` clears the
-pair on every phase entry so a back-transition starts a fresh
-window.
+CLI write path cannot counterfeit a reset, and `phase_enter()`
+clears the pair on every phase entry so a back-transition starts
+a fresh window. The Edit/Write tool surface against the state
+file is a broader trust boundary inherited from `_halt_pending`
+— see the state-field lifecycle note below.
 
 **Who clears `_halt_pending`.** The flag is cleared by exactly
 two writers:
@@ -326,10 +328,14 @@ separately from this gate.
   `_consecutive_unchanged_count: integer` — owned by
   `check_autonomous_stop`'s Rule 1 branch and cleared by
   `phase_enter()` on every phase entry. Both fields are in
-  `MODEL_DENIED_FIELDS` so the model cannot reset them via CLI.
-  The only legitimate reset is to advance `code_task` via the
-  monotonic-+1 validator. See "Forbidden Stalling Frames"
-  below.
+  `MODEL_DENIED_FIELDS` so the CLI `bin/flow set-timestamp` path
+  cannot reset them. The only legitimate reset paths are: (a)
+  advance `code_task` via the monotonic-+1 validator, or (b)
+  enter a new phase via `phase_enter()`. The Edit/Write tool
+  surface against the state file is NOT blocked by
+  `MODEL_DENIED_FIELDS` — it inherits the same trust boundary
+  documented under "Who writes `_halt_pending=true`" above. See
+  "Forbidden Stalling Frames" below.
 
 **Synthetic-turn discrimination.** The walker filters out
 synthetic user turns (tool_result wrappers, hook-injected
@@ -393,12 +399,17 @@ itself into a halt mid-autonomous. Each one is forbidden.
 The mechanical backstop is the counter pair documented under
 "Mechanical halt-pause contract" above:
 `_last_observed_code_task` and `_consecutive_unchanged_count`
-track consecutive Stops without `code_task` advance. The model
-has no escape because the only way to reset the count is to
-advance `code_task` via the existing monotonic-+1 validator —
-the counter fields themselves are in `MODEL_DENIED_FIELDS` (see
-`src/commands/set_timestamp.rs`), so a CLI write to reset them
-is rejected.
+track consecutive Stops without `code_task` advance. The CLI
+`bin/flow set-timestamp` write path cannot reset them — both
+fields are in `MODEL_DENIED_FIELDS` (see
+`src/commands/set_timestamp.rs`). The Edit/Write tool surface
+against the state file inherits the same trust boundary
+documented for `_halt_pending` above ("Who writes
+`_halt_pending=true`"); the v1 threat model accepts that
+boundary because a model that has Edit/Write access to the
+state file is already outside the sanctioned action surface.
+The pointed-text swap raises the cost of routine stalling by
+the CLI path, not the cost of an adversarial state-file edit.
 
 Cross-reference: `work-as-partners.md` "Excuses framed as
 explanations" — when the user calls out a stall, naming the

@@ -155,8 +155,9 @@ fn validate_model_denied_field(field: &str) -> Result<(), String> {
     if MODEL_DENIED_FIELDS.contains(&normalized.as_str()) {
         return Err(format!(
             "Field '{}' cannot be written via set-timestamp — it is owned by FLOW \
-             hooks. See .claude/rules/autonomous-phase-discipline.md \
-             'Mechanical halt-pause contract'.",
+             hooks. See .claude/rules/autonomous-phase-discipline.md — \
+             'Mechanical halt-pause contract' for _halt_pending, \
+             'Forbidden Stalling Frames' for the counter-tracking fields.",
             field
         ));
     }

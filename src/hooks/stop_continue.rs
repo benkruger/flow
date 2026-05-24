@@ -556,7 +556,16 @@ pub fn check_autonomous_stop(
                 // legitimately advance the task — the model cannot
                 // counterfeit the reset because the counter fields
                 // themselves are in `MODEL_DENIED_FIELDS`.
-                if !halt_was_set && current_phase == "flow-code" {
+                //
+                // `current_phase` is normalized before the scope
+                // comparison so case-variant or whitespace-padded
+                // state-file values (hand edits, interrupted writes,
+                // schema drift) still match "flow-code". The sibling
+                // `phase_status` and `is_auto` checks above already
+                // normalize their inputs per
+                // `.claude/rules/security-gates.md` "Normalize Before
+                // Comparing"; this comparison joins them.
+                if !halt_was_set && normalize_gate_input(&current_phase) == "flow-code" {
                     let code_task = tolerant_i64(state.get("code_task").unwrap_or(&Value::Null));
                     let last_observed_raw = state.get(LAST_OBSERVED_CODE_TASK_FIELD).cloned();
                     let prev_count = tolerant_i64(

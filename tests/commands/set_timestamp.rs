@@ -314,7 +314,9 @@ fn apply_updates_allows_code_task_increment() {
 
 /// `_continue_pending=commit` is the load-bearing chain marker the
 /// commit-window skills set before invoking `/flow:flow-commit`. It
-/// is NOT in the deny list — only `_halt_pending` is denied in v1.
+/// is NOT in the deny list — the deny set covers hook-managed trust
+/// signals (`_halt_pending`, `_last_observed_code_task`,
+/// `_consecutive_unchanged_count`), not skill-set continuation flags.
 #[test]
 fn apply_updates_allows_continue_pending_commit() {
     let mut state = json!({});
