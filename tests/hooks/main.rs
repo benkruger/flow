@@ -14,6 +14,7 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+mod agent_prompt_scan;
 mod capture_session;
 mod dispatcher;
 mod post_compact;
