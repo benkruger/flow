@@ -372,6 +372,13 @@ pub fn validate(file_path: &str, cwd: &str) -> (bool, String) {
     // `validate_claude_paths.rs` is deliberately NOT extended here
     // per the plan's Mirror-Pattern Audit — its fail-closed
     // posture and protected-path scope differ from this hook.
+    // `worktree_root` is the canonical `<main_root>/.worktrees/<branch>/`
+    // path resolved upstream by `compute_worktree_root`. The basename
+    // (`file_name`) of that path is the branch — derived structurally
+    // from the worktree layout, not from a state-derived string. A
+    // detached HEAD or invalid branch makes `worktree_root` empty,
+    // in which case `is_autonomous_flow_active` receives `None` and
+    // returns false (fail-open).
     let branch = Path::new(worktree_root)
         .file_name()
         .and_then(|n| n.to_str());

@@ -200,7 +200,7 @@ insufficient:
   permission jurisdiction at this hook layer. Closing the
   gap entirely requires either a Claude Code feature or a
   project `settings.json` allow-list extension. See
-  `src/hooks/agent_prompt_scan.rs`.
+  `src/hooks/validate_worktree_paths.rs`.
 - **`AskUserQuestion` during an autonomous in-progress phase**
   — `validate-ask-user` rejects with exit 2 when
   `phases.<current_phase>.status == "in_progress"` AND

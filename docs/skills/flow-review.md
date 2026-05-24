@@ -88,6 +88,19 @@ across the multiple invocations. See
 `.claude/rules/cognitive-isolation.md` "Context Budget + Truncation
 Recovery".
 
+Every retry prompt — partitioned re-invocation or re-invocation
+after marker-absent detection — must scope every path it names to
+the active worktree. Out-of-worktree paths in an agent's `prompt`
+field would otherwise reach the sub-agent's Read tool and surface a
+Claude Code permission prompt mid-autonomous-flow. The constraint is
+backed by a Step 2 HARD-GATE plus two mechanical layers: the
+parent-side prompt scan in `validate-pretool`'s Agent branch
+(`agent_prompt_scan::validate_agent_prompt`) and the
+autonomous-flow-strict response shape in `validate-worktree-paths`.
+When in doubt, drop the path from the retry prompt entirely. See
+`.claude/rules/cognitive-isolation.md` "Retry-prompt path-scoping
+constraint".
+
 ### Step 3 — Triage
 
 Classify each finding as **Real** (fix) or **False positive**

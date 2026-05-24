@@ -17,12 +17,13 @@
 //!   check on the preceding byte so option-flag pairs (`-l/--long`)
 //!   and intra-token slashes do not produce false candidates. URL
 //!   shapes (`https://example.com/path`) are filtered when the
-//!   preceding byte is `:` — the scheme marker.
+//!   preceding byte is `:` AND the match begins with `//` (the
+//!   scheme delimiter), so plain colon-prefixed paths like
+//!   `time:/etc/hosts` still reach the validator.
 //! - `is_safe_path_candidate` — positive validator per
-//!   `.claude/rules/external-input-path-construction.md` (added in
-//!   Task 4).
-//! - `validate_agent_prompt` — the parent-side entry point (added in
-//!   Task 6). Composes the helpers, applies the byte cap, resolves
+//!   `.claude/rules/external-input-path-construction.md`.
+//! - `validate_agent_prompt` — the parent-side entry point.
+//!   Composes the helpers, applies the byte cap, resolves
 //!   relative candidates against the worktree root, lexically
 //!   normalizes the result (no disk touch), and prefix-compares
 //!   against the worktree root.
@@ -65,18 +66,6 @@ fn path_regex() -> &'static Regex {
     })
 }
 
-/// Extract path-shape substrings from a prompt body.
-///
-/// Pure tokenizer with no filesystem access. For every match of the
-/// path regex, applies a byte-boundary check on the preceding byte:
-///
-/// - Alphanumeric / `.` / `_` / `-` preceding → mid-token, skip.
-/// - `:` preceding → URL scheme marker (`http:`, `https:`, `file:`),
-///   skip.
-///
-/// Otherwise the match is captured as a candidate. The result vector
-/// preserves match order. Duplicates are NOT deduplicated — the
-/// downstream validator runs on each candidate individually.
 /// Positive validator for a path-shape candidate.
 ///
 /// Per `.claude/rules/external-input-path-construction.md` and
@@ -122,14 +111,19 @@ pub fn is_safe_path_candidate(s: &str) -> bool {
 /// `worktree.join(...)` joined results, or absolute candidate
 /// paths). The match therefore only needs to handle `ParentDir`
 /// and the catch-all normal/root components.
+///
+/// A root-adjacent `ParentDir` (where nothing remains to pop) is
+/// discarded: `is_safe_path_candidate` rejects leading `..` and
+/// interior `/../` upstream, so the only `ParentDir` that can reach
+/// here is a trailing one whose parent pops cleanly — and a token
+/// like `/..` normalizes to `/`, which fails the worktree-prefix
+/// check identically to any other out-of-worktree path.
 fn normalize_path_lexical(p: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for comp in p.components() {
         match comp {
             Component::ParentDir => {
-                if !out.pop() {
-                    out.push("..");
-                }
+                out.pop();
             }
             other => out.push(other.as_os_str()),
         }
@@ -214,6 +208,20 @@ pub fn validate_agent_prompt(
     (true, String::new())
 }
 
+/// Extract path-shape substrings from a prompt body.
+///
+/// Pure tokenizer with no filesystem access. For every match of the
+/// path regex, applies a byte-boundary check on the preceding byte:
+///
+/// - Alphanumeric / `.` / `_` / `-` preceding → mid-token, skip.
+/// - `:` preceding AND match begins with `//` → URL scheme marker
+///   (`http://`, `https://`, `file://`, `gs://`), skip. Plain
+///   `:`-preceded paths without the `//` prefix (e.g.,
+///   `time:/etc/hosts`) reach the validator.
+///
+/// Otherwise the match is captured as a candidate. The result vector
+/// preserves match order. Duplicates are NOT deduplicated — the
+/// downstream validator runs on each candidate individually.
 pub fn extract_path_candidates(prompt: &str) -> Vec<String> {
     let bytes = prompt.as_bytes();
     let mut out = Vec::new();
@@ -221,12 +229,22 @@ pub fn extract_path_candidates(prompt: &str) -> Vec<String> {
         let start = m.start();
         if start > 0 {
             let prev = bytes[start - 1];
-            if prev.is_ascii_alphanumeric()
-                || prev == b'.'
-                || prev == b'_'
-                || prev == b'-'
-                || prev == b':'
-            {
+            if prev.is_ascii_alphanumeric() || prev == b'.' || prev == b'_' || prev == b'-' {
+                continue;
+            }
+            // URL scheme post-filter: a `:` immediately before the
+            // match is a URL boundary ONLY when the match begins
+            // with `//` (the scheme-delimiter shape of
+            // `https://`, `file://`, `gs://`). Plain `:`-preceded
+            // paths like `time:/etc/hosts` or `log:/etc/passwd`
+            // are not URL schemes and must reach the validator —
+            // the prior filter rejected every `:`-preceded match
+            // unconditionally, which let a model bypass the
+            // worktree prefix check by composing prompts like
+            // `Read time:/etc/hosts`. The remaining URL coverage
+            // still rejects `https://example.com/path` because
+            // the candidate after the colon begins with `//`.
+            if prev == b':' && m.as_str().as_bytes().get(1) == Some(&b'/') {
                 continue;
             }
         }

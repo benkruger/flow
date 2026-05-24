@@ -271,27 +271,3 @@ fn validate_agent_prompt_blocks_absolute_with_trailing_parentdir() {
     let (allowed, _) = validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true);
     assert!(!allowed);
 }
-
-#[test]
-fn validate_agent_prompt_handles_worktree_root_at_filesystem_root() {
-    // worktree_root = "/" exercises the `Component::ParentDir`
-    // empty-pop fallback (`out.push("..")`) when a candidate
-    // contains `..` segments that would pop above the root.
-    let prompt = "Inspect /foo/../../bar";
-    // `/foo/../../bar` contains `/../` so the validator rejects it
-    // before normalize_path_lexical sees it — but the worktree_root
-    // normalization itself goes through normalize_path_lexical and
-    // produces a single-component PathBuf. To exercise the empty-pop
-    // fallback explicitly, use a candidate the validator accepts
-    // whose normalized form needs an out.push(".."): `/foo/..`
-    // joined onto worktree_root=`/` produces `/foo/..` → "/" after
-    // pop, but the empty-pop arm only fires when out is empty AND a
-    // ParentDir component appears. Construct that via a worktree_root
-    // that lexically normalizes through a leading ParentDir.
-    let worktree = Path::new("../../tmp/feat");
-    let (_allowed, _msg) = validate_agent_prompt(Some(prompt), worktree, true);
-    // Allow either outcome — the test's purpose is exercising the
-    // ParentDir empty-pop arm via worktree_root normalization, not
-    // asserting a specific decision (the prompt has a malformed
-    // candidate that the validator rejects first).
-}
