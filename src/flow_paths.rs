@@ -367,6 +367,16 @@ impl FlowPaths {
 /// check is the stability guard for the transition-boundary window
 /// where `current_phase` has advanced but `phase_enter` has not yet
 /// flipped the new phase's status.
+///
+/// Sibling predicates compute the same "autonomous + in-progress"
+/// condition for their own gates:
+/// `validate_ask_user::validate` (the AskUserQuestion block) and
+/// `stop_continue::check_autonomous_stop` (the Stop refusal), both
+/// documented in `.claude/rules/autonomous-phase-discipline.md`
+/// "Enforcement". This copy adds `normalize_gate_input` + the byte
+/// cap because it reads the state file fresh from a path-construction
+/// boundary; a future change to the autonomous-in-progress definition
+/// must be applied to all three.
 pub fn is_autonomous_flow_active(project_root: &Path, branch: Option<&str>) -> bool {
     let branch = match branch {
         Some(b) => b,

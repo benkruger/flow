@@ -82,6 +82,14 @@ fn path_regex() -> &'static Regex {
 /// `.`/`-`/`_`-bearing segments, and surrounding whitespace
 /// (normalized away by `normalize_gate_input` before the
 /// empty-after-trim check).
+///
+/// `normalize_gate_input` (NUL strip + trim) is defense-in-depth:
+/// this is a `pub` security predicate, and a future non-tokenizer
+/// caller may pass raw, un-tokenized strings. Candidates produced by
+/// `extract_path_candidates` already exclude whitespace and NUL by
+/// the regex character class, so the normalization is a no-op for the
+/// tokenizer path but keeps the validator robust for any direct
+/// caller.
 pub fn is_safe_path_candidate(s: &str) -> bool {
     if s.contains('\0') {
         return false;

@@ -172,7 +172,10 @@ to the SKILL.md HARD-GATE in `skills/flow-review/SKILL.md` Step 2:
   `worktree_root`, lexically normalizes the result, and rejects
   any candidate that does not start with `worktree_root`. Blocks
   with exit 2 and a structured message naming the offending path
-  and the worktree.
+  and the worktree. This is the layer that prevents the
+  permission-prompt scenario above: the out-of-worktree path
+  never reaches the sub-agent's prompt, so the sub-agent never
+  Reads it.
 - **Autonomous-flow-strict response shape** in
   `src/hooks/validate_worktree_paths.rs::validate()` at the
   existing out-of-worktree block path. When the flow is
@@ -180,9 +183,12 @@ to the SKILL.md HARD-GATE in `skills/flow-review/SKILL.md` Step 2:
   `crate::flow_paths::is_autonomous_flow_active`), the hook
   returns a structured JSON envelope keyed on
   `out_of_worktree_in_autonomous` instead of the
-  human-readable BLOCKED message. The model can parse the
-  envelope and react without the rejection surfacing as a
-  permission prompt.
+  human-readable BLOCKED message. Both forms are exit-2 blocks
+  fed back as a tool rejection (the block itself is identical);
+  the `reason` field lets the autonomous flow classify the
+  rejection programmatically rather than scraping the prose
+  message, and serves as the stable detection anchor for a
+  future system-initiated-prompt carve-out.
 
 Residual gap: paths outside `project_root` (`~/.config`, `/tmp`,
 `.venv` outside the worktree) remain in Claude Code's built-in

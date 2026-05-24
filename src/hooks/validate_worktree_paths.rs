@@ -355,12 +355,17 @@ pub fn validate(file_path: &str, cwd: &str) -> (bool, String) {
     let corrected = format!("{}/{}", worktree_root, relative);
 
     // Issue #1704 branch C: autonomous-flow-strict response shape.
-    // When the active flow is configured for autonomous execution,
-    // a human-readable BLOCKED message would surface to the model
-    // as a Claude Code permission prompt mid-flow (defeating the
-    // autonomous-mode contract). Emit a structured JSON envelope
-    // instead so the model can parse the rejection and react.
-    // Default (non-autonomous-flow) behavior unchanged.
+    // Both forms below are exit-2 blocks fed back to the model as a
+    // tool rejection; the block itself is identical. The difference
+    // is the message shape: when the active flow is configured for
+    // autonomous execution, emit a structured JSON envelope whose
+    // `reason` field (`out_of_worktree_in_autonomous`) lets the
+    // autonomous flow classify the rejection programmatically rather
+    // than scraping the human-readable prose. The `reason` field is
+    // the stable detection anchor for any future
+    // system-initiated-prompt carve-out (the other block returns in
+    // this hook use a `BLOCKED:` prose prefix). Default
+    // (non-autonomous-flow) behavior unchanged.
     //
     // Residual gap: this branch fires ONLY when the path is inside
     // `project_root` but outside the worktree (the existing block
