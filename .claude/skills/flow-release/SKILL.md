@@ -141,8 +141,8 @@ and all skill banners in one step.
 
 Config and setup hashes are not stored in `plugin.json` — they are computed
 dynamically by `compute_config_hash()` and `compute_setup_hash()` in
-`lib/prime-setup.py` at prime time and compared at start time by
-`lib/prime-check.py`. No manual hash updates are needed during releases.
+`src/prime_setup.rs` at prime time and compared at start time by
+`src/prime_check.rs`. No manual hash updates are needed during releases.
 
 ## Step 6 — Rebuild and stage the prebuilt binary
 
@@ -232,6 +232,80 @@ claude plugin marketplace update flow-marketplace
 `git push origin` needed.
 
 If the marketplace update fails, print the command for the user to run manually.
+
+## Step 10 — Render Slack notes for the team
+
+After the GitHub release publishes and the marketplace cache refreshes, render a copy-pasteable Slack announcement so the maintainer can post it directly without hand-translating the release notes. This Step turns the GFM-formatted `tmp/release-notes-v<new_version>.md` artifact (already produced by Step 9's `bin/flow extract-release-notes`) into Slack syntax and computes whether `/flow-prime` is needed this release.
+
+Run both in parallel (one response, one Read tool call + one Bash call):
+
+Use the Read tool on `tmp/release-notes-v<new_version>.md`.
+
+```bash
+git diff --name-only <last_tag>..HEAD
+```
+
+Parse the `git diff` output as a newline-separated file list. Check whether any line equals `src/prime_check.rs`, equals `src/prime_setup.rs`, or starts with `assets/bin-stubs/`. When any match → include the `/flow-prime` line in the footer (the non-empty-diff variant below). When no match → omit it (the empty-diff variant). The path-filter logic lives in this prose rather than as a `-- <paths>` argument on the bash command because `validate-pretool` Layer 6 (`src/hooks/validate_pretool.rs` lines 156-169) blocks `git diff` invocations carrying file-path arguments.
+
+### Translation rules
+
+1. **Lead with user value.** The headline is one sentence naming what shipped this release in user terms — what the user can now do, or what was fixed. Strip release-internal vocabulary.
+2. **Subsection mapping.** GFM `### New features` → Slack `*✨ New*`. GFM `### Fixes` → Slack `*🐛 Fixes*`. GFM `### Improvements` → Slack `*💎 Improvements*`. Drop empty subsections entirely (header and all).
+3. **Bullet shape.** `- **Title** — body` → `• *Title* — body`. Slack uses single-asterisk bold and the `•` glyph; markdown's double-asterisk and `-` do not render.
+4. **Inline code.** Backticks survive the translation as-is — Slack renders `` `name` `` the same way GFM does.
+5. **Issue-reference stripping.** Drop every trailing `(#NNNN)` PR reference at the end of a bullet body. The release notes link to GitHub already.
+6. **Jargon stripping.** Strip implementation-detail vocabulary readers outside the codebase do not share: layer numbers (e.g. `Layer 10`), internal function names (e.g. `compute_config_hash`, `validate-pretool`), transcript-walker identifiers, hook names, and similar. Rewrite the bullet in business-friendly terms.
+7. **Surface count.** Keep the top 2–4 most-impactful bullets per subsection. Relegate remaining items to a single one-line sweep (e.g. "…plus N small fixes and polish.") rather than itemizing every one.
+8. **Footer.** Always include the upgrade command. Conditionally include the `/flow-prime` re-prime line per the prime-input check above.
+
+### Footer template
+
+**Empty-diff variant** (no prime-input file changed):
+
+````markdown
+```text
+*Upgrade:*
+`claude plugin marketplace update flow-marketplace`
+```
+````
+
+**Non-empty-diff variant** (one or more of `src/prime_check.rs`, `src/prime_setup.rs`, or any path under `assets/bin-stubs/` changed):
+
+````markdown
+```text
+*Upgrade:*
+`claude plugin marketplace update flow-marketplace`
+*Then re-prime your project:* `/flow-prime`
+```
+````
+
+### Output
+
+Render the Slack message inline as a single fenced code block, ready for the maintainer to copy. Substitute `<new_version>`, the user-value headline, and the bullet bodies into this template:
+
+````markdown
+```text
+🚀 *FLOW v<new_version> shipped — <user-value headline>*
+
+*✨ New*
+• *<Title>* — <body>
+• *<Title>* — <body>
+
+*🐛 Fixes*
+• *<Title>* — <body>
+
+*💎 Improvements*
+• *<Title>* — <body>
+
+<footer per variant above>
+```
+````
+
+Drop subsections whose source GFM section was empty. Remove the entire emoji-headed block (header and bullets together) — Slack reads cleaner without a header that has no items underneath.
+
+### Failure handling
+
+If the Read tool on `tmp/release-notes-v<new_version>.md` fails (file missing, permission error, prior `bin/flow extract-release-notes` silently produced nothing), do not block the release. Print a one-line note in your response explaining the skip and proceed to Done. The release itself is already published; only the Slack announcement is missed, and the maintainer can hand-draft from `RELEASE-NOTES.md` if needed.
 
 ## Done
 
