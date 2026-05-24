@@ -333,6 +333,70 @@ fn apply_updates_allows_custom_field() {
     assert_eq!(state["arbitrary_field"], "value");
 }
 
+/// Model-direct writes to `_last_observed_code_task` counterfeit the
+/// hook-managed counter-tracking field that the autonomous-mode
+/// stalling-pattern refusal-text swap relies on for non-game-ability.
+/// Without the deny, a model could reset the counter without
+/// advancing `code_task` and silently bypass the pointed text.
+#[test]
+fn set_timestamp_rejects_last_observed_code_task_writes_by_model() {
+    let mut state = json!({});
+    let result = apply_updates(&mut state, &["_last_observed_code_task=5".to_string()]);
+    assert!(result.is_err());
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("_last_observed_code_task"),
+        "error message must name the rejected field, got: {}",
+        msg
+    );
+}
+
+/// Model-direct writes to `_consecutive_unchanged_count` counterfeit
+/// the paired counter the Stop hook increments on every Stop without
+/// `code_task` advance. The deny rejects both truthy and falsy writes
+/// — the model has no business writing the field at all.
+#[test]
+fn set_timestamp_rejects_consecutive_unchanged_count_writes_by_model() {
+    let mut state = json!({});
+    let result = apply_updates(&mut state, &["_consecutive_unchanged_count=0".to_string()]);
+    assert!(result.is_err());
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("_consecutive_unchanged_count"),
+        "error message must name the rejected field, got: {}",
+        msg
+    );
+}
+
+/// ASCII-case bypass: `_LAST_OBSERVED_CODE_TASK=5` must be rejected
+/// by the normalize-then-compare check per
+/// `.claude/rules/security-gates.md` "Normalize Before Comparing".
+#[test]
+fn set_timestamp_rejects_last_observed_code_task_case_variants() {
+    let mut state = json!({});
+    let result = apply_updates(&mut state, &["_LAST_OBSERVED_CODE_TASK=5".to_string()]);
+    assert!(result.is_err());
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("_LAST_OBSERVED_CODE_TASK") || msg.contains("_last_observed_code_task"),
+        "error message must name the rejected field, got: {}",
+        msg
+    );
+}
+
+/// Whitespace-padding bypass: ` _consecutive_unchanged_count =0`
+/// must be rejected by the trim arm of the normalizer.
+#[test]
+fn set_timestamp_rejects_consecutive_unchanged_count_whitespace_padded() {
+    let mut state = json!({});
+    let result = apply_updates(
+        &mut state,
+        &[" _consecutive_unchanged_count =0".to_string()],
+    );
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("_consecutive_unchanged_count"));
+}
+
 /// A `--set _halt_pending.=anything` argument splits on `.` into
 /// `["_halt_pending", ""]` (len=2), so the deny check (scoped to
 /// single-segment paths) is skipped. `set_nested` then tries to
