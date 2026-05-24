@@ -1,7 +1,7 @@
 //! Tests for `crate::hooks::agent_prompt_scan` — parent-side Agent
 //! tool prompt-body scanning per issue #1704 (branch B + C).
 
-use flow_rs::hooks::agent_prompt_scan::extract_path_candidates;
+use flow_rs::hooks::agent_prompt_scan::{extract_path_candidates, is_safe_path_candidate};
 
 // --- extract_path_candidates ---
 
@@ -113,4 +113,44 @@ fn extract_paths_handles_path_at_start_of_input() {
         "expected leading path captured with no preceding byte in {:?}",
         got
     );
+}
+
+// --- is_safe_path_candidate ---
+
+#[test]
+fn validator_rejects_empty() {
+    assert!(!is_safe_path_candidate(""));
+}
+
+#[test]
+fn validator_rejects_nul_byte() {
+    assert!(!is_safe_path_candidate("foo\0bar"));
+}
+
+#[test]
+fn validator_rejects_leading_double_dot() {
+    assert!(!is_safe_path_candidate("../etc/passwd"));
+}
+
+#[test]
+fn validator_rejects_interior_traversal() {
+    assert!(!is_safe_path_candidate("/Users/alice/../bob/notes.md"));
+}
+
+#[test]
+fn validator_accepts_normal_path_token() {
+    assert!(is_safe_path_candidate("src/hooks/agent_prompt_scan.rs"));
+}
+
+#[test]
+fn validator_accepts_absolute_path_token() {
+    assert!(is_safe_path_candidate("/Users/alice/notes.md"));
+}
+
+#[test]
+fn validator_normalizes_input_per_security_gates() {
+    // After trim, the input is non-empty, no NULs, no traversal — accept.
+    assert!(is_safe_path_candidate("  /Users/alice/notes.md  "));
+    // After trim, the input is empty — reject.
+    assert!(!is_safe_path_candidate("   "));
 }

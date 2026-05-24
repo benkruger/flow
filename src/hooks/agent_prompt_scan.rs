@@ -35,6 +35,7 @@
 //! reaches the filesystem — every path comparison runs on lexically
 //! normalized components.
 
+use crate::hooks::transcript_walker::normalize_gate_input;
 use regex::Regex;
 use std::sync::OnceLock;
 
@@ -65,6 +66,39 @@ fn path_regex() -> &'static Regex {
 /// Otherwise the match is captured as a candidate. The result vector
 /// preserves match order. Duplicates are NOT deduplicated — the
 /// downstream validator runs on each candidate individually.
+/// Positive validator for a path-shape candidate.
+///
+/// Per `.claude/rules/external-input-path-construction.md` and
+/// `.claude/rules/security-gates.md` "Normalize Before Comparing".
+///
+/// Rejects:
+/// - Empty input (after `normalize_gate_input` trim).
+/// - Embedded NUL bytes (defeats syscall path comparison in
+///   implementation-defined ways — checked on the raw input).
+/// - Leading `..` segment (`../foo`, `..`) — path traversal.
+/// - Interior `/../` traversal.
+///
+/// Accepts every other shape: absolute paths, relative paths with
+/// `.`/`-`/`_`-bearing segments, and surrounding whitespace
+/// (normalized away by `normalize_gate_input` before the
+/// empty-after-trim check).
+pub fn is_safe_path_candidate(s: &str) -> bool {
+    if s.contains('\0') {
+        return false;
+    }
+    let normalized = normalize_gate_input(s);
+    if normalized.is_empty() {
+        return false;
+    }
+    if s.trim().starts_with("..") {
+        return false;
+    }
+    if s.contains("/../") {
+        return false;
+    }
+    true
+}
+
 pub fn extract_path_candidates(prompt: &str) -> Vec<String> {
     let bytes = prompt.as_bytes();
     let mut out = Vec::new();
