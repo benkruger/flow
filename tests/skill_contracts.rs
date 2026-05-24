@@ -2517,11 +2517,17 @@ fn flow_release_skill_builds_and_commits_binary() {
 ///
 /// Regression guarded: a flow-release edit that drops Step 10
 /// (Slack notes never get rendered), an edit that loses one of
-/// the prime-input paths from the enumeration (the /flow-prime
+/// the prime-input paths from the enumeration (the /flow:flow-prime
 /// recommendation goes silently incomplete), an edit that drops
-/// the /flow-prime string entirely, an edit that drops the upgrade
-/// command, or an edit that reintroduces the Layer 6-triggering
-/// `git diff ... -- <paths>` shape.
+/// the load-bearing `git diff --name-only <last_tag>..HEAD` bash
+/// command (the prime-input check has no input to consume), an
+/// edit that drops the namespaced /flow:flow-prime command (users
+/// who copy the Slack message would type a command that does not
+/// exist), an edit that drops the upgrade command, or an edit that
+/// reintroduces a Layer 6-triggering `git diff ... -- <paths>`
+/// shape in ANY range notation (the original literal check only
+/// matched the `..` asymmetric form; this version structurally
+/// scans every `git diff` line for the Layer 6 pattern).
 #[test]
 fn flow_release_skill_renders_slack_notes() {
     let c = fs::read_to_string(
@@ -2549,17 +2555,53 @@ fn flow_release_skill_renders_slack_notes() {
          (src/prime_check.rs, src/prime_setup.rs, assets/bin-stubs/) \
          so the model can check the diff output for membership"
     );
+    // The load-bearing discovery command must be present in the
+    // section — substring presence of the prime-input paths alone
+    // is not sufficient because they also appear in the prose
+    // explanations, so a refactor that strips the bash block
+    // entirely would silently break the /flow:flow-prime check.
     assert!(
-        !section.contains("git diff --name-only <last_tag>..HEAD --"),
-        "flow-release Step 10 must not use `git diff ... -- <paths>` \
-         shape (validate-pretool Layer 6 blocks it); use `git diff \
-         --name-only <last_tag>..HEAD` and filter the output in prose \
-         instead"
+        section.contains("git diff --name-only <last_tag>..HEAD"),
+        "flow-release Step 10 must contain the prime-input discovery \
+         bash invocation `git diff --name-only <last_tag>..HEAD` (no \
+         `-- <paths>` filter — validate-pretool Layer 6 blocks that \
+         shape; the path-filter check moves to model prose instead)"
     );
+    // Structural scan for the Layer 6-triggering ` -- \S` pattern
+    // after any `git diff` invocation. The earlier literal check
+    // `!section.contains("git diff --name-only <last_tag>..HEAD --")`
+    // only matched the `..` asymmetric range form; a refactor to
+    // `...` symmetric range (or any other phrasing) carried the
+    // same Layer 6-blocked shape past the assertion. Scoping the
+    // scan to lines that start with `git diff` keeps the prose
+    // discussion of the `-- <paths>` shape (which uses backtick
+    // quoting) out of scope.
+    for line in section.lines() {
+        let trimmed = line.trim_start();
+        if !trimmed.starts_with("git diff") {
+            continue;
+        }
+        if let Some(idx) = line.find(" -- ") {
+            let after = &line[idx + 4..];
+            if let Some(c) = after.chars().next() {
+                assert!(
+                    c.is_whitespace(),
+                    "flow-release Step 10 bash invocation `{}` carries \
+                     the Layer 6-triggering ` -- <path>` shape \
+                     (validate-pretool `src/hooks/validate_pretool.rs` \
+                     Layer 6 blocks it regardless of range notation). \
+                     Use prose path-filter logic instead.",
+                    line.trim()
+                );
+            }
+        }
+    }
     assert!(
-        section.contains("/flow-prime"),
-        "flow-release Step 10 must include the conditional /flow-prime \
-         recommendation when prime-input files change"
+        section.contains("/flow:flow-prime"),
+        "flow-release Step 10 must include the conditional \
+         /flow:flow-prime recommendation (namespaced — per \
+         user-only-skills.md, the bare `/flow-prime` form does \
+         not exist) when prime-input files change"
     );
     assert!(
         section.contains("claude plugin marketplace update flow-marketplace"),

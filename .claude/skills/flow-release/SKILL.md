@@ -235,7 +235,7 @@ If the marketplace update fails, print the command for the user to run manually.
 
 ## Step 10 — Render Slack notes for the team
 
-After the GitHub release publishes and the marketplace cache refreshes, render a copy-pasteable Slack announcement so the maintainer can post it directly without hand-translating the release notes. This Step turns the GFM-formatted `tmp/release-notes-v<new_version>.md` artifact (already produced by Step 9's `bin/flow extract-release-notes`) into Slack syntax and computes whether `/flow-prime` is needed this release.
+After the GitHub release publishes and the marketplace cache refreshes, render a copy-pasteable Slack announcement so the maintainer can post it directly without hand-translating the release notes. This Step turns the GFM-formatted `tmp/release-notes-v<new_version>.md` artifact (already produced by Step 9's `bin/flow extract-release-notes`) into Slack syntax and computes whether `/flow:flow-prime` is needed this release.
 
 Run both in parallel (one response, one Read tool call + one Bash call):
 
@@ -245,7 +245,7 @@ Use the Read tool on `tmp/release-notes-v<new_version>.md`.
 git diff --name-only <last_tag>..HEAD
 ```
 
-Parse the `git diff` output as a newline-separated file list. Check whether any line equals `src/prime_check.rs`, equals `src/prime_setup.rs`, or starts with `assets/bin-stubs/`. When any match → include the `/flow-prime` line in the footer (the non-empty-diff variant below). When no match → omit it (the empty-diff variant). The path-filter logic lives in this prose rather than as a `-- <paths>` argument on the bash command because `validate-pretool` Layer 6 (`src/hooks/validate_pretool.rs` lines 156-169) blocks `git diff` invocations carrying file-path arguments.
+Parse the `git diff` output as a newline-separated file list. Check whether any line equals `src/prime_check.rs`, equals `src/prime_setup.rs`, or starts with `assets/bin-stubs/`. When any match → include the `/flow:flow-prime` line in the footer (the non-empty-diff variant below). When no match → omit it (the empty-diff variant). The path-filter logic lives in this prose rather than as a `-- <paths>` argument on the bash command because `validate-pretool` Layer 6 in `src/hooks/validate_pretool.rs` blocks `git diff` invocations carrying file-path arguments — grep for the `Layer 6` marker in that file to locate the current implementation.
 
 ### Translation rules
 
@@ -256,7 +256,7 @@ Parse the `git diff` output as a newline-separated file list. Check whether any 
 5. **Issue-reference stripping.** Drop every trailing `(#NNNN)` PR reference at the end of a bullet body. The release notes link to GitHub already.
 6. **Jargon stripping.** Strip implementation-detail vocabulary readers outside the codebase do not share: layer numbers (e.g. `Layer 10`), internal function names (e.g. `compute_config_hash`, `validate-pretool`), transcript-walker identifiers, hook names, and similar. Rewrite the bullet in business-friendly terms.
 7. **Surface count.** Keep the top 2–4 most-impactful bullets per subsection. Relegate remaining items to a single one-line sweep (e.g. "…plus N small fixes and polish.") rather than itemizing every one.
-8. **Footer.** Always include the upgrade command. Conditionally include the `/flow-prime` re-prime line per the prime-input check above.
+8. **Footer.** Always include the upgrade command. Conditionally include the `/flow:flow-prime` re-prime line per the prime-input check above.
 
 ### Footer template
 
@@ -275,7 +275,7 @@ Parse the `git diff` output as a newline-separated file list. Check whether any 
 ```text
 *Upgrade:*
 `claude plugin marketplace update flow-marketplace`
-*Then re-prime your project:* `/flow-prime`
+*Then re-prime your project:* `/flow:flow-prime`
 ```
 ````
 
