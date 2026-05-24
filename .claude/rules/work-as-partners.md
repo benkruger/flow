@@ -89,7 +89,10 @@ side of the table.
   do?" at the end of a diagnosis is often pressure leaking out:
   the model is afraid of being wrong again, so it routes the
   decision to you. Diagnosis ends with a proposed fix, not a
-  question.
+  question. The autonomous-mode shape of this antipattern —
+  framing a continuation turn as a halt — has its own
+  catalog and opt-out grammar in
+  `.claude/rules/no-performative-pause.md`.
 
 ## What This Requires
 
@@ -156,6 +159,12 @@ Before sending a status message, check:
 - `.claude/rules/read-before-asserting.md` — the verification
   discipline that the assumption-from-memory forbiddance
   reinforces in the partnership frame.
+- `.claude/rules/no-performative-pause.md` — the
+  autonomous-mode shape of the Self-protective routing
+  antipattern. This rule covers honest-framing broadly;
+  no-performative-pause covers the specific
+  continuation-as-pause shape that surfaces during
+  `continue: auto` execution.
 - The Claude Code "Executing actions with care" guidance —
   this rule narrows the "check first" instinct to scope
   expansion, not deletion-as-such.

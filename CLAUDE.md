@@ -139,3 +139,4 @@ When developing FLOW itself, point Claude Code at the local plugin source via `c
 - **Include bias in issues** — see `.claude/rules/include-bias-in-issues.md`.
 - **User evidence is ground truth** — when a user provides screenshots or logs that contradict your code analysis, trust the evidence. Your code reading is a hypothesis; the user's evidence is an observation.
 - **Transcript walker real-vs-synthetic discrimination** — see `.claude/rules/transcript-shape.md`.
+- **No performative pause** — see `.claude/rules/no-performative-pause.md`. <!-- no-performative-pause: legitimate-citation -->

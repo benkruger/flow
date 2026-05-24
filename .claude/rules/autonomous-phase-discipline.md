@@ -27,6 +27,13 @@ During any phase with `continue: auto`:
   (`stop_continue::check_autonomous_stop`) refuses a turn-end during
   an in-progress autonomous phase, so a model that "stops with
   text" gets blocked into continuing.
+- Never produce output that frames the turn as a halt when the
+  same turn ends with a tool call that re-fires the loop. Each
+  turn-end IS a stop; the Stop hook then asks the harness to
+  queue another turn with refusal feedback. Framing a
+  continuation as a halt is the performative-pause antipattern —
+  see `.claude/rules/no-performative-pause.md` for the catalog of
+  forbidden phrasings and the opt-out grammar.
 
 If Claude feels the urge to pause because of context pressure, a
 long-running task, or uncertainty about scope: commit the in-flight
@@ -130,6 +137,9 @@ Cross-references:
 - `.claude/rules/no-placeholder-anchors.md` — the rule that
   forbids placeholder-file-then-redirect anchoring as an
   unsanctioned operation, regardless of destination.
+- `.claude/rules/no-performative-pause.md` — the catalog and
+  opt-out grammar for the dishonest-framing antipattern named
+  by the new bullet in "The Rule" above.
 
 ## Enforcement
 
@@ -179,6 +189,16 @@ below — that together close the text-only-stop hole that
 tool calls, but the Stop hook fires on the Stop event itself, so a
 model that ends the turn with prose alone is still refused.
 
+The hook does NOT prevent the turn from ending. The turn ends;
+the hook then asks the harness to queue another turn with the
+refusal message as hook feedback. "Stop refused" means "the
+autonomous flow's end is refused" — it does NOT mean "the model
+cannot end the turn." A model framing its turn-end as "I am
+unable to stop" is misreading the hook semantics; the model
+ended every turn it has ever ended. The forbidden framing is
+positioning a re-fire as a halt — see
+`.claude/rules/no-performative-pause.md`.
+
 ## The Two-Exit Halt Model
 
 The autonomous-mode block above protects against model-initiated
@@ -220,6 +240,11 @@ set:
   `"Stop Refused: Continue, you can do it. Don't give up, you
   got this! No excuses!"`. The autonomous flow must keep going —
   `continue: auto` already authorized continuous execution.
+  The refusal fires AFTER the turn ends: the model's turn-end
+  was real, and the harness queues another turn carrying the
+  refusal text as the next turn's input. Framing this as "the
+  model cannot stop" inverts the semantics — see
+  `.claude/rules/no-performative-pause.md`.
 - **Rule 2 — halt pending, no new user message.** Refuse the
   Stop with a message naming the two exits: `/flow:flow-continue`
   to resume, `/flow:flow-abort` to close the flow. The block

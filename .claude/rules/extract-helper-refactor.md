@@ -5,6 +5,31 @@ function, the plan must enumerate the helper's internal branches at
 Plan time — before the Code phase runs into them — and commit to a
 concrete testing strategy for each branch.
 
+## Scope
+
+This rule applies during the Plan phase. The Branch Enumeration
+Table, the Constructor Invariant Audit, and the Topology
+Enumeration Table are Plan-phase artifacts the plan author
+produces before Code phase begins. They describe what the plan
+must contain.
+
+The rule is NOT a Code-phase exit. A Code-phase model
+encountering an extraction does the work the plan scopes; citing
+this rule mid-Code as permission to defer arbitrarily-sized files
+inverts the rule's intent. The Plan-phase enumeration is upstream;
+the Code-phase implementation is downstream of an enumeration the
+plan has already committed to.
+
+When a Code-phase model finds the plan's enumeration is missing or
+wrong (a branch not in the table, a topology not in the table, a
+constructor not audited), the correct response is to log a
+deviation per `.claude/rules/plan-commit-atomicity.md` "Plan
+Signature Deviations Must Be Logged" naming the gap, then proceed
+with the work the plan intended. A Plan-phase gap is not a
+Code-phase exit — see
+`.claude/rules/no-performative-pause.md` "Code-Phase
+Scope-Deferral Subcase".
+
 ## Vocabulary
 
 - **seam** — a parameterized injection point in a function's
