@@ -248,6 +248,21 @@ set:
   `.claude/rules/transcript-shape.md` "Real User Turns:
   Imperative vs Conversational Shapes".
 
+**Rule 1 — pointed-text swap.** When the current phase is
+flow-code AND the model has produced
+`CONSECUTIVE_UNCHANGED_THRESHOLD` consecutive Stops without
+advancing the `code_task` counter, the Rule 1 refusal swaps
+from the encouraging message to
+`RULE_1_STOP_REFUSED_POINTED_MESSAGE`. The pointed text names
+the autonomous-stalling pattern (see "Forbidden Stalling Frames"
+below) and demands a task-advancing tool call. The counter pair
+`_last_observed_code_task` and `_consecutive_unchanged_count`
+records the running state; both fields are in
+`MODEL_DENIED_FIELDS` (`src/commands/set_timestamp.rs`) so the
+model cannot counterfeit a reset, and `phase_enter()` clears the
+pair on every phase entry so a back-transition starts a fresh
+window.
+
 **Who clears `_halt_pending`.** The flag is cleared by exactly
 two writers:
 
@@ -307,6 +322,14 @@ separately from this gate.
   clear of `_halt_pending`. The cascade's multi-child-skill
   resume path reads `_continue_pending` once the halt is
   cleared, so trampling it would break the resume contract.
+- `_last_observed_code_task: integer` and
+  `_consecutive_unchanged_count: integer` — owned by
+  `check_autonomous_stop`'s Rule 1 branch and cleared by
+  `phase_enter()` on every phase entry. Both fields are in
+  `MODEL_DENIED_FIELDS` so the model cannot reset them via CLI.
+  The only legitimate reset is to advance `code_task` via the
+  monotonic-+1 validator. See "Forbidden Stalling Frames"
+  below.
 
 **Synthetic-turn discrimination.** The walker filters out
 synthetic user turns (tool_result wrappers, hook-injected
@@ -328,6 +351,60 @@ true.
 file, unparseable JSON, missing or invalid transcript path,
 walker `None`, missing `current_phase`. The Stop hook must never
 panic; a hook crash terminates the user's session.
+
+### Forbidden Stalling Frames
+
+`check_autonomous_stop`'s Rule 1 refusal swaps from the generic
+encouraging text to a pointed message after the model produces
+`CONSECUTIVE_UNCHANGED_THRESHOLD` consecutive Stops in autonomous
+flow-code without advancing the `code_task` counter. The pointed
+text exists to catch three specific frames the model uses to talk
+itself into a halt mid-autonomous. Each one is forbidden.
+
+- **"A rule authorizes me to halt."** No rule in this project
+  grants a halt. Only `_halt_pending=true` (set by
+  `check_autonomous_stop` in response to a real conversational-
+  prose user turn) or a system-initiated permission prompt
+  produces a halt. Reading any project rule —
+  `extract-helper-refactor.md`, `tombstone-tests.md`, or any
+  other — as halt-authorization is a misread. Rules describe
+  behavior the model follows during work; they don't authorize
+  stops. When the work the rule names belongs to a different
+  phase (e.g., a Plan-phase scoping discipline cited during
+  Code), the right response is to do the Code-phase work the
+  rule indirectly addresses, not to halt for Plan.
+
+- **"This task looks bigger than the previous one, so it must
+  be harder."** Larger file line counts, larger test-file
+  counts, and other size signals are not halt triggers. The
+  only way to know whether a task is harder than its
+  predecessor is to attempt it. The same execution pattern
+  that succeeded on the smaller task succeeds on the larger
+  one more often than not.
+
+- **"Writing about the work substitutes for doing it."** In
+  autonomous mode, deliberation-shaped text without tool calls
+  that advance the next plan task is a turn-end with no work —
+  indistinguishable from a real halt to the absent user.
+  Producing analysis paragraphs in place of Read/Grep/Edit/Write
+  calls that progress the plan is the failure mode the Stop
+  hook's pointed refusal text catches.
+
+The mechanical backstop is the counter pair documented under
+"Mechanical halt-pause contract" above:
+`_last_observed_code_task` and `_consecutive_unchanged_count`
+track consecutive Stops without `code_task` advance. The model
+has no escape because the only way to reset the count is to
+advance `code_task` via the existing monotonic-+1 validator —
+the counter fields themselves are in `MODEL_DENIED_FIELDS` (see
+`src/commands/set_timestamp.rs`), so a CLI write to reset them
+is rejected.
+
+Cross-reference: `work-as-partners.md` "Excuses framed as
+explanations" — when the user calls out a stall, naming the
+mechanism (a rule, the hook, the harness) is not the truth. The
+truth is "I chose to end the turn without working." Own that on
+the first correction.
 
 ### Defense in depth — halt gates on Skill and Bash
 

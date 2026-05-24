@@ -85,6 +85,23 @@ side of the table.
   "Honestly, ..." (which implies prior dishonesty), not "in
   retrospect ..." (which softens).
 
+  When you push back on a wrong framing, the next response must
+  be the truth — not a second wrong framing. The bullet above
+  names single excuses; the compounding pattern is the meta-
+  shape where each subsequent correction generates another
+  wrong framing until you have pushed back enough times to
+  extract the truth. The contract is to own the mistake on the
+  FIRST correction with "I was wrong" — not "you're right that
+  X, but actually Y", which substitutes a second wrong framing
+  for the first. A second framing that names a different
+  mechanism (the harness, a rule, an environment quirk) instead
+  of the choice is still an excuse; the only way out is the
+  direct admission. Cross-reference:
+  `.claude/rules/autonomous-phase-discipline.md` "Forbidden
+  Stalling Frames" — the same compounding-framing failure
+  recurs when the model evades in autonomous mode and is
+  called out.
+
 - **Self-protective routing.** Asking "what do you want me to
   do?" at the end of a diagnosis is often pressure leaking out:
   the model is afraid of being wrong again, so it routes the
