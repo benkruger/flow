@@ -182,22 +182,24 @@ fn phase_delta_cross_session_groups_then_sums() {
     let report = phase_delta(&phase).expect("populated");
     assert_eq!(report.input_tokens_delta, 11);
     assert_eq!(report.turn_count_delta, 11);
-    // snap() seeds session_cost_usd as `Some(n * 0.01)` so both
-    // session segments have populated cost endpoints. The plan
-    // (issue #1410) calls out this assertion as the test gap that
-    // allowed the asymmetric pre-fix `pair_delta` to ship: without
-    // a cost check, the buggy (Some, None)/(None, Some) arms would
-    // have silently fabricated deltas across the session boundary.
-    // S1: 0.08 - 0.05 = 0.03; S2: 0.10 - 0.02 = 0.08; Total: 0.11.
+    // Cost sums each session segment's token-derived price
+    // independently (the cross-session contract). snap() seeds
+    // by_model opus{input:n, output:n}, so each segment prices its
+    // own opus delta and `add` folds the Some contributions:
+    //   S1: opus{3,3} = 3*0.000015 + 3*0.000075 = 0.00027
+    //   S2: opus{8,8} = 8*0.000015 + 8*0.000075 = 0.00072
+    //   total                                     = 0.00099
+    // Without per-session grouping the naive complete-enter would
+    // mis-price across the boundary.
     let cost = report.cost_delta_usd.expect("cost is populated");
     assert!(
-        (cost - 0.11).abs() < 1e-9,
-        "cross-session cost must sum each session independently; got {}",
+        (cost - 0.00099).abs() < 1e-9,
+        "cross-session cost must sum each session's priced delta; got {}",
         cost
     );
     assert!(
         !report.total_partial,
-        "all four cost endpoints are Some, so total_partial must be false"
+        "every segment is priced (known model), so total_partial must be false"
     );
 }
 
@@ -390,182 +392,92 @@ fn flow_total_sticky_reset_flag_propagates() {
     assert!(report.window_reset_observed);
 }
 
-// --- pair_delta cost (Option<f64>) — issue #1410 ---
+// --- pair_delta cost (token-derived via by_model pricing) ---
 //
 // pair_delta is private; tests drive it through phase_delta with
 // fixtures that produce a single (enter, complete) pair, isolating
-// the cost-arm logic. The four named tests below replace the
-// pre-fix tests `phase_delta_cost_with_none_start_uses_end_value`
-// and `phase_delta_cost_with_both_none_contributes_zero`, which
-// asserted the buggy fabricate-on-missing behavior. Per
-// `.claude/rules/supersession.md` the pre-fix tests are deleted
-// because their assertion contracts are obsolete.
+// the cost arm. Cost is the per-model token delta priced through
+// `pricing::cost_for` and summed — one source (the captured
+// tokens), one capture instant — so the figure reconciles against
+// the tokens beside it.
 
-/// Both endpoints populated: cost delta is `Some(end - start)`.
+/// A by_model_delta of known (priced) models produces a
+/// token-derived cost: each bucket priced through the table and
+/// summed. Opus {input:1000, output:500, cache_create:200,
+/// cache_read:10000} = 0.07125 (the pricing.rs golden derivation).
 #[test]
-fn pair_delta_cost_both_present_returns_some_difference() {
+fn pair_delta_cost_known_model_prices_by_model_delta() {
     let mut enter = snap("S1", 0);
+    enter.by_model.clear(); // no model usage at enter
     let mut complete = snap("S1", 0);
-    enter.session_cost_usd = Some(0.5);
-    complete.session_cost_usd = Some(2.0);
+    let mut bm = IndexMap::new();
+    bm.insert(
+        "claude-opus-4-7".to_string(),
+        ModelTokens {
+            input: 1000,
+            output: 500,
+            cache_create: 200,
+            cache_read: 10_000,
+        },
+    );
+    complete.by_model = bm;
     let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
     let report = phase_delta(&phase).expect("populated");
-    assert_eq!(
-        report.cost_delta_usd,
-        Some(1.5),
-        "(Some, Some) must produce Some(end - start)"
+    let cost = report.cost_delta_usd.expect("known model is priced");
+    assert!(
+        (cost - 0.07125).abs() < 1e-9,
+        "known-model cost must be token-derived; got {cost}"
     );
 }
 
-/// End cost missing: pair_delta cannot infer a delta from a single
-/// endpoint, so the result is `None`. The pre-fix code returned
-/// `0.0`, silently dropping the start.
+/// A by_model_delta containing a model with no price-table entry
+/// yields cost `None` — the renderer shows `—` rather than
+/// under-counting the unpriced model. `try_fold` short-circuits on
+/// the first unpriced model.
 #[test]
-fn pair_delta_cost_end_missing_returns_none() {
+fn pair_delta_cost_unknown_model_yields_none() {
     let mut enter = snap("S1", 0);
+    enter.by_model.clear();
     let mut complete = snap("S1", 0);
-    enter.session_cost_usd = Some(0.5);
-    complete.session_cost_usd = None;
+    let mut bm = IndexMap::new();
+    bm.insert(
+        "gpt-4".to_string(),
+        ModelTokens {
+            input: 1000,
+            output: 500,
+            cache_create: 0,
+            cache_read: 0,
+        },
+    );
+    complete.by_model = bm;
     let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
     let report = phase_delta(&phase).expect("populated");
     assert_eq!(
         report.cost_delta_usd, None,
-        "(Some, None) must produce None — no fabricated delta"
+        "an unpriced model must yield None, not an under-count"
     );
 }
 
-/// Start cost missing: pair_delta cannot infer a delta. The pre-fix
-/// code returned the end's cumulative value, fabricating a delta
-/// from a session-total.
+/// Tombstone: pair_delta's cost source was repointed off the
+/// captured `session_cost_usd` field onto by_model_delta token
+/// pricing in PR #1714. A merge that re-introduces the field read
+/// would silently resurrect the two-clock cost bug. Scans
+/// pair_delta's body (bounded slice from its `fn` header to the
+/// next `\nfn `) for the field name; the byte-substring check is
+/// sound because a Rust field access requires the literal
+/// identifier `session_cost_usd` — it cannot be assembled via
+/// `concat!` or `format!` into a field access.
 #[test]
-fn pair_delta_cost_start_missing_returns_none() {
-    let mut enter = snap("S1", 0);
-    let mut complete = snap("S1", 0);
-    enter.session_cost_usd = None;
-    complete.session_cost_usd = Some(2.0);
-    let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
-    let report = phase_delta(&phase).expect("populated");
-    assert_eq!(
-        report.cost_delta_usd, None,
-        "(None, Some) must produce None — no fabricated delta from cumulative end"
-    );
-}
-
-/// Both endpoints missing: result is `None`.
-#[test]
-fn pair_delta_cost_both_missing_returns_none() {
-    let mut enter = snap("S1", 0);
-    let mut complete = snap("S1", 0);
-    enter.session_cost_usd = None;
-    complete.session_cost_usd = None;
-    let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
-    let report = phase_delta(&phase).expect("populated");
-    assert_eq!(report.cost_delta_usd, None);
-}
-
-// --- pair_delta cost freshness check (issue #1447) ---
-//
-// When two snapshots read the same frozen statusline-cost file
-// AND no new turn crossed the boundary, the (Some, Some) arm
-// produces `None` so the renderer shows `—` instead of a
-// misleading `$0.000`. The five tests below cover every branch
-// of the freshness check inside the `(Some, Some, Some, Some)`
-// arm of the four-tuple match.
-
-/// Both endpoints have identical cost AND identical turn_count:
-/// the statusline file is frozen — no new turn crossed the
-/// boundary so cost could not have advanced. Emit `None` so the
-/// renderer shows `—` rather than the misleading `$0.000`.
-#[test]
-fn pair_delta_emits_none_cost_when_both_cost_and_turn_count_equal() {
-    let mut enter = snap("S1", 0);
-    let mut complete = snap("S1", 0);
-    enter.session_cost_usd = Some(11.125);
-    complete.session_cost_usd = Some(11.125);
-    enter.turn_count = Some(42);
-    complete.turn_count = Some(42);
-    let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
-    let report = phase_delta(&phase).expect("populated");
-    assert_eq!(
-        report.cost_delta_usd, None,
-        "frozen-statusline pattern (equal cost AND equal turn_count) must emit None"
-    );
-}
-
-/// Equal cost but turn_count advanced: a real turn ran across
-/// the boundary, so the equal cost is the real-zero case
-/// (cached responses contributed no cost). Emit `Some(0.0)` —
-/// do not misclassify as frozen.
-#[test]
-fn pair_delta_emits_some_cost_when_turn_count_advanced() {
-    let mut enter = snap("S1", 0);
-    let mut complete = snap("S1", 0);
-    enter.session_cost_usd = Some(11.125);
-    complete.session_cost_usd = Some(11.125);
-    enter.turn_count = Some(42);
-    complete.turn_count = Some(43);
-    let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
-    let report = phase_delta(&phase).expect("populated");
-    assert_eq!(
-        report.cost_delta_usd,
-        Some(0.0),
-        "real-zero (equal cost but turn_count advanced) must emit Some(0.0)"
-    );
-}
-
-/// Costs differ: the happy path. Emit `Some(end - start)`
-/// regardless of turn_count.
-#[test]
-fn pair_delta_emits_some_cost_when_costs_differ() {
-    let mut enter = snap("S1", 0);
-    let mut complete = snap("S1", 0);
-    enter.session_cost_usd = Some(1.0);
-    complete.session_cost_usd = Some(1.5);
-    enter.turn_count = Some(10);
-    complete.turn_count = Some(12);
-    let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
-    let report = phase_delta(&phase).expect("populated");
-    assert_eq!(
-        report.cost_delta_usd,
-        Some(0.5),
-        "differing costs must emit Some(end - start)"
-    );
-}
-
-/// Start `turn_count` is None: the freshness signal is
-/// unavailable. Conservative fallback emits `None` so the
-/// renderer shows `—` rather than risk a misleading `$0.000`
-/// from a possibly-stale file.
-#[test]
-fn pair_delta_emits_none_cost_when_turn_count_missing_on_start() {
-    let mut enter = snap("S1", 0);
-    let mut complete = snap("S1", 0);
-    enter.session_cost_usd = Some(11.125);
-    complete.session_cost_usd = Some(11.125);
-    enter.turn_count = None;
-    complete.turn_count = Some(42);
-    let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
-    let report = phase_delta(&phase).expect("populated");
-    assert_eq!(
-        report.cost_delta_usd, None,
-        "missing start turn_count must emit None (conservative fallback)"
-    );
-}
-
-/// End `turn_count` is None: symmetric conservative fallback.
-#[test]
-fn pair_delta_emits_none_cost_when_turn_count_missing_on_end() {
-    let mut enter = snap("S1", 0);
-    let mut complete = snap("S1", 0);
-    enter.session_cost_usd = Some(11.125);
-    complete.session_cost_usd = Some(11.125);
-    enter.turn_count = Some(42);
-    complete.turn_count = None;
-    let phase = phase_with_snapshots(Some(enter), vec![], Some(complete));
-    let report = phase_delta(&phase).expect("populated");
-    assert_eq!(
-        report.cost_delta_usd, None,
-        "missing end turn_count must emit None (symmetric conservative fallback)"
+fn pair_delta_cost_path_excludes_session_cost_usd() {
+    let src = std::fs::read_to_string("src/window_deltas.rs").expect("source readable");
+    let tail = src
+        .split_once("fn pair_delta(")
+        .map(|(_, t)| t)
+        .expect("pair_delta is defined");
+    let body = tail.split_once("\nfn ").map(|(b, _)| b).unwrap_or(tail);
+    assert!(
+        !body.contains("session_cost_usd"),
+        "pair_delta must derive cost from by_model_delta pricing, not session_cost_usd"
     );
 }
 

@@ -241,22 +241,22 @@ fn token_cost_section_with_null_phases_value_returns_empty() {
 // the delta is zero. See the plan-named tests below for the new
 // "section omitted only when every phase is pending" semantics.
 
-/// Phase has snapshots with cost but no token delta → the row is
-/// kept (the cost arm of the AND-skip branch fires false).
+/// A phase with a positive token delta renders a Token Cost row
+/// whose cost is token-derived (priced from `by_model_delta`).
 #[test]
-fn token_cost_section_with_cost_but_no_token_delta_renders_row() {
+fn token_cost_section_renders_token_derived_cost_row() {
     let mut state = all_complete_state();
-    let mut enter = snapshot_value("S1", 0, "claude-opus-4-7");
-    let mut complete = snapshot_value("S1", 0, "claude-opus-4-7");
-    // Force cost to differ between enter and complete while
-    // keeping every token counter at zero.
-    enter["session_cost_usd"] = json!(0.0);
-    complete["session_cost_usd"] = json!(0.50);
-    state["phases"]["flow-code"]["window_at_enter"] = enter;
-    state["phases"]["flow-code"]["window_at_complete"] = complete;
+    // enter n=0 → complete n=1: opus by_model delta {input:100,
+    // output:50}. cost = 100*0.000015 + 50*0.000075 = 0.00525,
+    // rendered "{:.3}" → "$0.005".
+    add_phase_snapshots(&mut state, "flow-code", 0, 1);
     let result = format_complete_summary(&state, None);
     assert!(result.summary.contains("Token Cost"));
-    assert!(result.summary.contains("$0.500") || result.summary.contains("$0.5"));
+    assert!(
+        result.summary.contains("$0.005"),
+        "token-derived cost row must render; summary:\n{}",
+        result.summary
+    );
 }
 
 /// Phases value missing from state → token_cost_section short-
@@ -347,24 +347,22 @@ fn token_cost_section_renders_header_when_any_phase_has_run() {
     );
 }
 
-/// A phase whose snapshots have `session_cost_usd: None` produces
-/// an em-dash row instead of `$0.000`. The pre-fix code rendered
-/// `$0.000` for both "no cost" and "computed zero cost", erasing
-/// the distinction.
+/// A phase whose model has no price-table entry produces an em-dash
+/// row instead of a dollar figure — the cost is genuinely unknown,
+/// distinct from a computed `$0.000`.
 #[test]
 fn token_cost_section_renders_em_dash_for_unknown_cost() {
     let mut state = all_complete_state();
-    let mut enter = snapshot_value("S1", 1, "claude-opus-4-7");
-    let mut complete = snapshot_value("S1", 5, "claude-opus-4-7");
-    enter["session_cost_usd"] = json!(null);
-    complete["session_cost_usd"] = json!(null);
+    // An unpriced model → cost_for None → cost_delta_usd None → "—".
+    let enter = snapshot_value("S1", 1, "gpt-4");
+    let complete = snapshot_value("S1", 5, "gpt-4");
     state["phases"]["flow-code"]["window_at_enter"] = enter;
     state["phases"]["flow-code"]["window_at_complete"] = complete;
     let result = format_complete_summary(&state, None);
     assert!(result.summary.contains("Token Cost"));
     assert!(
         result.summary.contains("—"),
-        "em-dash placeholder must appear when cost data is unknown"
+        "em-dash placeholder must appear when the model is unpriced"
     );
 }
 
@@ -480,71 +478,6 @@ fn token_cost_section_total_marks_partial_when_any_unknown() {
     );
 }
 
-/// End-to-end render of the frozen statusline-cost pattern from
-/// issue #1447. When a phase's enter and complete snapshots
-/// share the same `session_cost_usd` AND the same `turn_count`,
-/// the cost source file was frozen across the boundary —
-/// `pair_delta` emits `None` so this renderer prints `—` instead
-/// of the misleading `$0.000`. The phase row falls through the
-/// `None` arm at `src/format_complete_summary.rs:179`, and the
-/// `* cost partial` footnote at `src/format_complete_summary.rs:223`
-/// appears because at least one phase contributed `None` cost.
-#[test]
-fn format_complete_summary_renders_dash_for_frozen_cost_pattern() {
-    let mut state = all_complete_state();
-    // Code phase: real cost data — costs differ between enter and
-    // complete, so pair_delta returns Some(cost diff).
-    add_phase_snapshots(&mut state, "flow-code", 0, 5);
-    // Review phase: frozen pattern — enter and complete share the
-    // same n, so session_cost_usd and turn_count match on both
-    // sides. pair_delta returns None for cost.
-    add_phase_snapshots(&mut state, "flow-review", 7, 7);
-    // Learn phase: frozen pattern — same shape as Review.
-    add_phase_snapshots(&mut state, "flow-learn", 9, 9);
-
-    let result = format_complete_summary(&state, None);
-
-    assert!(result.summary.contains("Token Cost"), "section header");
-    // The summary contains both a phase timeline (with rows like
-    // `Review: 12m`) and the Token Cost section (with rows like
-    // `Review:  <tokens>  <cost>`). The cost row is the one we
-    // need to inspect, so bound the search to the Token Cost
-    // section between its header and the closing separator.
-    let after_header = result
-        .summary
-        .split_once("Token Cost")
-        .map(|(_, rest)| rest)
-        .expect("Token Cost header must appear");
-    let token_section = after_header
-        .split_once("\n\n")
-        .map(|(section, _)| section)
-        .unwrap_or(after_header);
-    for phase_label in ["Review:", "Learn:"] {
-        let row = token_section
-            .lines()
-            .find(|line| line.contains(phase_label))
-            .unwrap_or_else(|| {
-                panic!(
-                    "missing `{}` row in Token Cost section:\n{}",
-                    phase_label, token_section
-                )
-            });
-        assert!(
-            row.ends_with('—'),
-            "row for `{}` must end in the em-dash that signals frozen cost; got `{}`",
-            phase_label,
-            row
-        );
-    }
-    // The frozen rows contributed None cost, so the total carries
-    // the partial marker and the footnote appears.
-    assert!(
-        result.summary.contains("cost partial"),
-        "footnote must appear when any phase contributes None cost; summary:\n{}",
-        result.summary
-    );
-}
-
 // --- compute_cost_breakdown structural API ---
 //
 // The structured intermediate `compute_cost_breakdown` returns the
@@ -602,14 +535,13 @@ fn compute_cost_breakdown_returns_none_when_all_phases_pending() {
     assert!(compute_cost_breakdown(&state).is_none());
 }
 
-/// A phase whose enter snapshot has `session_cost_usd = null` produces
-/// a row with `cost = None` and flips `total_partial`.
+/// A phase whose model has no price-table entry produces a row with
+/// `cost = None` and flips `total_partial`.
 #[test]
-fn compute_cost_breakdown_marks_partial_when_cost_missing() {
+fn compute_cost_breakdown_marks_partial_when_cost_unpriced() {
     let mut state = all_complete_state();
-    let mut enter = snapshot_value("S1", 1, "claude-opus-4-7");
-    let complete = snapshot_value("S1", 5, "claude-opus-4-7");
-    enter["session_cost_usd"] = json!(null);
+    let enter = snapshot_value("S1", 1, "gpt-4");
+    let complete = snapshot_value("S1", 5, "gpt-4");
     state["phases"]["flow-code"]["window_at_enter"] = enter;
     state["phases"]["flow-code"]["window_at_complete"] = complete;
     // Drop the other phases so flow-code is the only contributor.

@@ -24,6 +24,7 @@
 
 use indexmap::IndexMap;
 
+use crate::pricing::cost_for;
 use crate::state::{FlowState, ModelTokens, PhaseState, WindowSnapshot};
 
 /// Per-phase delta computed from a phase's enter / step / complete
@@ -36,14 +37,16 @@ use crate::state::{FlowState, ModelTokens, PhaseState, WindowSnapshot};
 /// whether any span observed a reset so a reader can switch to
 /// displaying the latest absolute pct instead.
 ///
-/// `cost_delta_usd: Option<f64>` — `None` means cost is unknown
-/// for this report (no Some-Some pair contributed). A delta is
-/// produced only when both endpoints carry a populated cost;
-/// any missing endpoint leaves cost as `None` so renderers can
-/// display `—` instead of inventing a number. Aggregation in
-/// [`DeltaReport::add`] sums Some contributions and sets
-/// `total_partial = true` when any folded contribution was
-/// `None`, signalling renderers to mark the total as approximate.
+/// `cost_delta_usd: Option<f64>` — token-derived cost for this
+/// report, computed by pricing the `by_model_delta` buckets through
+/// [`crate::pricing::cost_for`] and summing. `None` means at least
+/// one model present in the delta has no price-table entry, so the
+/// total cannot be stated; renderers display `—` rather than an
+/// under-count. A delta with no per-model buckets prices to
+/// `Some(0.0)`. Aggregation in [`DeltaReport::add`] sums `Some`
+/// contributions and sets `total_partial = true` when any folded
+/// contribution was `None`, signalling renderers to mark the total
+/// as approximate.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeltaReport {
     pub input_tokens_delta: i64,
@@ -244,10 +247,13 @@ fn deltas_from_snapshots(snapshots: &[&WindowSnapshot]) -> DeltaReport {
 }
 
 /// Compute the delta between two snapshots that belong to the same
-/// session. Token / cost / turn / tool counters are
-/// `end - start` (saturating). Pct deltas observe the reset rule:
-/// when end < start, the delta is `None` and `window_reset_observed`
-/// is `true`.
+/// session. Token / turn / tool counters are `end - start`
+/// (saturating). Cost is derived from the per-model token delta
+/// priced through [`crate::pricing::cost_for`] — never from a
+/// captured cost field — so the dollar figure always reconciles
+/// against the tokens beside it. Pct deltas observe the reset
+/// rule: when end < start, the delta is `None` and
+/// `window_reset_observed` is `true`.
 fn pair_delta(start: &WindowSnapshot, end: &WindowSnapshot) -> DeltaReport {
     let input_tokens_delta = sub_opt(end.session_input_tokens, start.session_input_tokens);
     let output_tokens_delta = sub_opt(end.session_output_tokens, start.session_output_tokens);
@@ -259,38 +265,6 @@ fn pair_delta(start: &WindowSnapshot, end: &WindowSnapshot) -> DeltaReport {
         end.session_cache_read_tokens,
         start.session_cache_read_tokens,
     );
-    // Cost is reported only when BOTH endpoints carry a populated
-    // value. Any missing endpoint produces `None` so renderers can
-    // mark the partial-data span with `—` instead of inventing a
-    // number from a cumulative session total.
-    //
-    // The freshness check guards against the frozen-statusline
-    // pattern: the source file `~/.claude/cost/<YYYY-MM>/<session_id>`
-    // is refreshed only when Claude Code redraws its statusline.
-    // During autonomous Skill→Skill chains the statusline never
-    // fires, so both endpoints sample the same stale value and a
-    // raw `e - s` would produce a misleading `Some(0.0)`. When
-    // costs are equal AND `turn_count` is also equal, no new
-    // assistant turn crossed the boundary — that is the frozen
-    // signature. Emit `None` so the renderer shows `—`. When
-    // `turn_count` advanced, the equal-cost case is a real-zero
-    // (cached responses); emit `Some(0.0)`. When `turn_count` is
-    // absent on either side, fall back conservatively to `None`.
-    let cost_delta_usd = match (
-        start.session_cost_usd,
-        end.session_cost_usd,
-        start.turn_count,
-        end.turn_count,
-    ) {
-        (Some(s), Some(e), Some(ts), Some(te)) => {
-            if (e - s).abs() < f64::EPSILON && ts == te {
-                None
-            } else {
-                Some(e - s)
-            }
-        }
-        _ => None,
-    };
     let (five_hour_pct_delta, five_reset) =
         pct_delta_with_reset(start.five_hour_pct, end.five_hour_pct);
     let (seven_day_pct_delta, seven_reset) =
@@ -318,6 +292,18 @@ fn pair_delta(start: &WindowSnapshot, end: &WindowSnapshot) -> DeltaReport {
             },
         );
     }
+
+    // Price the per-model token delta and sum. `try_fold` short-
+    // circuits to `None` the moment any present model has no
+    // price-table entry, so an unpriced model marks the whole span
+    // unknown (renderer shows `—`) rather than under-counting. An
+    // empty `by_model_delta` (no model activity) prices to
+    // `Some(0.0)`.
+    let cost_delta_usd = by_model_delta
+        .iter()
+        .try_fold(0.0_f64, |acc, (model, tokens)| {
+            cost_for(model, tokens).map(|c| acc + c)
+        });
 
     DeltaReport {
         input_tokens_delta,

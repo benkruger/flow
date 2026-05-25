@@ -1393,16 +1393,16 @@ fn cost_per_flow_token_cost_section_renders_phase_delta_end_to_end() {
         "window_at_start tokens must reflect the planted transcript via self-heal"
     );
 
-    // Simulate cost accruing during the Code phase: bump the
-    // cost file from 1.00 → 1.50 at phase-enter, then from 1.50
-    // → 2.50 at phase-finalize. Mutate the state file directly to
-    // add the phase snapshots that those subprocess calls would
-    // produce, with cost values mirroring the accrued totals.
+    // Mutate the state file directly to add the phase snapshots
+    // that the phase-enter / phase-finalize subprocess calls would
+    // produce. The cost file mirrors the month-to-date total; the
+    // per-phase Token Cost row is token-derived (priced from
+    // by_model), independent of the cost file.
     fs::write(&cost_file, "2.50\n").unwrap();
 
-    // Build window_at_enter (cost=1.50, captured mid-flow) and
-    // window_at_complete (cost=2.50). The computed delta is
-    // 2.50 - 1.50 = 1.00 for the flow-code phase.
+    // Build flow-code's enter/complete snapshots. The opus by_model
+    // input grows 100 → 500 (output flat at 50), so the token-
+    // derived cost delta is 400 input * $0.000015 = $0.006.
     let snap_template = serde_json::json!({
         "captured_at": "2026-01-01T00:00:00-08:00",
         "session_id": session_id,
@@ -1454,8 +1454,8 @@ fn cost_per_flow_token_cost_section_renders_phase_delta_end_to_end() {
         .unwrap_or(token_block.len());
     let code_row = &token_block[code_row_start..code_row_end];
     assert!(
-        code_row.contains("$1.000"),
-        "Code row must show the computed cost delta ($2.50 - $1.50 = $1.000); got: {:?}",
+        code_row.contains("$0.006"),
+        "Code row must show the token-derived cost (opus input delta 400 * $0.000015 = $0.006); got: {:?}",
         code_row
     );
     assert!(

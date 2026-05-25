@@ -216,9 +216,9 @@ fn cost_table_uses_em_dash_for_unknown_cost() {
     for key in PHASE_ORDER {
         state["phases"][key]["status"] = json!("complete");
     }
-    let mut enter = snapshot_value("S1", 1, "claude-opus-4-7");
-    let complete = snapshot_value("S1", 5, "claude-opus-4-7");
-    enter["session_cost_usd"] = json!(null);
+    // An unpriced model leaves the Code row's cost None → em-dash.
+    let enter = snapshot_value("S1", 1, "gpt-4");
+    let complete = snapshot_value("S1", 5, "gpt-4");
     state["phases"]["flow-code"]["window_at_enter"] = enter;
     state["phases"]["flow-code"]["window_at_complete"] = complete;
 
@@ -243,10 +243,9 @@ fn cost_table_appends_partial_marker_in_total() {
         state["phases"][key]["status"] = json!("complete");
     }
     add_phase_snapshots(&mut state, "flow-start", 0, 5);
-    // flow-code's enter has cost None → cost_delta_usd None → total_partial.
-    let mut enter = snapshot_value("S1", 1, "claude-opus-4-7");
-    let complete = snapshot_value("S1", 5, "claude-opus-4-7");
-    enter["session_cost_usd"] = json!(null);
+    // flow-code uses an unpriced model → cost_delta_usd None → total_partial.
+    let enter = snapshot_value("S1", 1, "gpt-4");
+    let complete = snapshot_value("S1", 5, "gpt-4");
     state["phases"]["flow-code"]["window_at_enter"] = enter;
     state["phases"]["flow-code"]["window_at_complete"] = complete;
 
@@ -479,10 +478,9 @@ fn cost_table_total_partial_marker_does_not_produce_triple_asterisk() {
         state["phases"][key]["status"] = json!("complete");
     }
     add_phase_snapshots(&mut state, "flow-start", 0, 5);
-    // flow-code's enter has null cost → total_partial flips on.
-    let mut enter = snapshot_value("S1", 1, "claude-opus-4-7");
-    let complete = snapshot_value("S1", 5, "claude-opus-4-7");
-    enter["session_cost_usd"] = json!(null);
+    // flow-code uses an unpriced model → cost None → total_partial flips on.
+    let enter = snapshot_value("S1", 1, "gpt-4");
+    let complete = snapshot_value("S1", 5, "gpt-4");
     state["phases"]["flow-code"]["window_at_enter"] = enter;
     state["phases"]["flow-code"]["window_at_complete"] = complete;
 
@@ -510,10 +508,10 @@ fn cost_table_total_partial_marker_does_not_produce_triple_asterisk() {
 /// `Some(cost)` AND `row_partial == true` renders the per-row
 /// cost cell as `${:.3}*` — the dollar value with the partial
 /// marker suffix. The fold groups by `session_id`: session S1
-/// (enter + step0) contributes a Some cost delta; session S2
-/// (step1 + complete-with-null-cost) contributes a None delta
-/// that flips `total_partial` while leaving the running `Some`
-/// cost in place.
+/// (enter + step0) uses a priced model and contributes a Some cost
+/// delta; session S2 (step1 + complete) uses an unpriced model and
+/// contributes a None delta that flips `total_partial` while
+/// leaving the running `Some` cost in place.
 #[test]
 fn cost_table_appends_partial_marker_to_row_when_cost_partial() {
     let mut state = make_test_state();
@@ -522,9 +520,11 @@ fn cost_table_appends_partial_marker_to_row_when_cost_partial() {
     }
     let enter = snapshot_value("S1", 1, "claude-opus-4-7");
     let step0 = snapshot_value("S1", 5, "claude-opus-4-7");
-    let step1 = snapshot_value("S2", 2, "claude-opus-4-7");
-    let mut complete = snapshot_value("S2", 6, "claude-opus-4-7");
-    complete["session_cost_usd"] = json!(null);
+    // S2 uses an unpriced model so its segment prices to None,
+    // flipping the phase's row_partial while S1's opus segment keeps
+    // a Some running cost.
+    let step1 = snapshot_value("S2", 2, "gpt-4");
+    let complete = snapshot_value("S2", 6, "gpt-4");
     state["phases"]["flow-code"]["window_at_enter"] = enter;
     state["phases"]["flow-code"]["window_at_complete"] = complete;
     state["phases"]["flow-code"]["step_snapshots"] = json!([

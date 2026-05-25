@@ -400,20 +400,15 @@ fn test_render_detail_panel_token_table_breaks_when_viewport_overflows() {
 fn test_render_detail_panel_token_row_kept_when_only_cost_changed() {
     let mut app = make_app();
     let mut flow = make_flow_with_token_snapshots();
-    // Force tokens to stay flat across the pair while cost grows.
+    // Force the session token totals flat across the pair so the
+    // row's `tokens` field is 0, but leave by_model growing so the
+    // token-derived cost stays Some(positive). This drives the cost
+    // arm of the active-rows filter: tokens == 0 falls through to the
+    // cost check, which keeps the row because cost is Some(non-zero).
     flow.state["phases"]["flow-code"]["window_at_complete"]["session_input_tokens"] =
         flow.state["phases"]["flow-code"]["window_at_enter"]["session_input_tokens"].clone();
     flow.state["phases"]["flow-code"]["window_at_complete"]["session_output_tokens"] =
         flow.state["phases"]["flow-code"]["window_at_enter"]["session_output_tokens"].clone();
-    flow.state["phases"]["flow-code"]["window_at_complete"]["by_model"]["claude-opus-4-7"]
-        ["input"] = flow.state["phases"]["flow-code"]["window_at_enter"]["by_model"]
-        ["claude-opus-4-7"]["input"]
-        .clone();
-    flow.state["phases"]["flow-code"]["window_at_complete"]["by_model"]["claude-opus-4-7"]
-        ["output"] = flow.state["phases"]["flow-code"]["window_at_enter"]["by_model"]
-        ["claude-opus-4-7"]["output"]
-        .clone();
-    // Cost stays Some(0.01)→Some(0.50) so cost delta is positive.
     app.flows = vec![flow];
     let output = render_to_string(&app, 100, 40);
     assert!(
@@ -429,20 +424,17 @@ fn test_render_detail_panel_token_row_kept_when_only_cost_changed() {
 }
 
 /// Token row renders the em-dash placeholder for cost when a
-/// phase grew tokens but lacks `session_cost_usd` data on either
-/// snapshot endpoint (issue #1410). Pre-fix the row showed
-/// `$0.000`, masking the unknown-cost condition.
+/// phase grew tokens but its model is unpriced. Cost is genuinely
+/// unknown, distinct from a literal `$0.000`.
 #[test]
 fn test_render_detail_panel_token_row_renders_em_dash_for_unknown_cost() {
     let mut app = make_app();
     let mut flow = make_flow_with_token_snapshots();
-    // Strip cost from both endpoints so phase_delta produces None
-    // for cost while tokens still grow → row stays in active_rows
-    // and reaches the cost rendering branch.
-    flow.state["phases"]["flow-code"]["window_at_enter"]["session_cost_usd"] =
-        serde_json::json!(null);
-    flow.state["phases"]["flow-code"]["window_at_complete"]["session_cost_usd"] =
-        serde_json::json!(null);
+    // Swap the by_model bucket to an unpriced model so phase_delta
+    // produces None for cost while tokens still grow → row stays in
+    // active_rows and reaches the em-dash cost branch.
+    flow.state["phases"]["flow-code"]["window_at_enter"]["by_model"] = serde_json::json!({"gpt-4": {"input": 100, "output": 50, "cache_create": 0, "cache_read": 0}});
+    flow.state["phases"]["flow-code"]["window_at_complete"]["by_model"] = serde_json::json!({"gpt-4": {"input": 5_000, "output": 2_500, "cache_create": 0, "cache_read": 0}});
     app.flows = vec![flow];
     let output = render_to_string(&app, 100, 40);
     assert!(
