@@ -51,6 +51,7 @@ pub mod phase_finalize;
 pub mod phase_transition;
 pub mod plan_deviation;
 pub mod plan_from_issue;
+pub mod pricing;
 pub mod prime_check;
 pub mod prime_setup;
 pub mod promote_permissions;
