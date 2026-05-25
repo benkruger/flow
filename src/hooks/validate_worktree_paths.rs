@@ -7,11 +7,11 @@
 //! 2. **Out-of-project fail-closed gate** — when the CWD is inside a worktree
 //!    (the flow-active proxy), a path outside `project_root` is allowed ONLY
 //!    if it falls in the small approved surface
-//!    (`is_approved_out_of_project_path`: auto-memory dir + `/tmp` scratch
-//!    matching `UNIVERSAL_ALLOW`). Every other out-of-project path is blocked
-//!    so an unattended autonomous flow never hangs on Claude Code's native
-//!    permission prompt for an out-of-project path. An unconditional allow
-//!    here (the prior behavior) deferred to that native prompt.
+//!    (`is_approved_out_of_project_path`: `/tmp` scratch + auto-memory dir, a
+//!    deliberate subset of `UNIVERSAL_ALLOW`'s out-of-project entries). Every
+//!    other out-of-project path is blocked (exit 2, no prompt) so an
+//!    unattended autonomous flow never hangs on Claude Code's native
+//!    permission prompt for an out-of-project path.
 //! 3. **Shared config protection** — blocks Edit/Write calls on shared
 //!    configuration files (`.gitignore`, `Cargo.toml`, `.github/`, etc.) when
 //!    the CWD is inside a `.worktrees/` directory (the flow-active proxy).
@@ -321,74 +321,116 @@ fn sanitize_canonical_suffix(suffix: &str) -> String {
 pub const APPROVED_TMP_EXTENSIONS: &[&str] = &["txt", "diff", "patch", "md", "json", "jsonl"];
 
 /// Decide whether an out-of-project `file_path` falls in the small
-/// approved surface that Claude Code's native permission system already
-/// allows without a prompt. Returns `true` for exactly two classes:
+/// approved surface an active flow legitimately reaches. Returns
+/// `true` for exactly two classes:
 ///
-/// 1. **Auto-memory dir** — a path rooted at
-///    `<home>/.claude/projects/<id>/memory/<file>`. Home-anchored
+/// 1. **`/tmp/` scratch** — a path whose collapsed, ASCII-lowercased
+///    form begins with `/tmp/` and whose extension (ASCII-lowercased)
+///    is in `APPROVED_TMP_EXTENSIONS`. This class is home-independent
+///    and is checked BEFORE the home guard so an unset or relative
+///    `$HOME` (CI/cron/launchd) does not suppress it. Extensionless
+///    and unapproved-extension `/tmp` paths return `false`. Matches
+///    the `/tmp` Read+Write entries in `UNIVERSAL_ALLOW`.
+/// 2. **Auto-memory dir** — a path rooted at
+///    `<home>/.claude/projects/<id>/memory/<file...>`. Home-anchored
 ///    (tight): the `<home>` prefix matches case-sensitively and must
 ///    be followed by a segment boundary, while the
 ///    `.claude/projects/<id>/memory/` structure matches
-///    ASCII-case-insensitively (macOS APFS is case-insensitive).
-///    Matches the `UNIVERSAL_ALLOW Read(~/.claude/projects/*/memory/*)`
-///    entry. A crafted path such as `/tmp/.claude/projects/x/memory/y`
-///    cannot masquerade as memory because it is not rooted at `<home>`.
-/// 2. **`/tmp/` scratch** — a path whose ASCII-lowercased form begins
-///    with `/tmp/` and whose extension (ASCII-lowercased) is in
-///    `APPROVED_TMP_EXTENSIONS`. Extensionless and unapproved-extension
-///    `/tmp` paths return `false`.
+///    ASCII-case-insensitively (macOS APFS is case-insensitive). Any
+///    empty, `.`, or `..` segment fails closed so a memory-rooted
+///    path cannot escape via traversal. Matches the
+///    `Read(~/.claude/projects/*/memory/*)` entry in `UNIVERSAL_ALLOW`.
+///    A crafted path such as `/tmp/.claude/projects/x/memory/y` cannot
+///    masquerade as memory because it is not rooted at `<home>`.
 ///
-/// Everything else out-of-project (plugin cache, arbitrary paths)
-/// returns `false` so the caller fail-closes the gate — the deliberate
-/// asymmetry from the loose out-of-worktree block, because an
-/// over-broad allow re-opens the native prompt this gate exists to
-/// suppress.
+/// The surface is a DELIBERATE SUBSET of `UNIVERSAL_ALLOW`'s
+/// out-of-project entries — the two path shapes a flow actually needs
+/// (its scratch files and its own memory). Everything else
+/// out-of-project (plugin cache, user rule files, arbitrary source
+/// paths) returns `false` so the caller fail-closes the gate.
+/// Over-blocking an out-of-project path is the safe direction: the
+/// model receives a recoverable exit-2 block instead of hanging on a
+/// native prompt. Over-allowing is the dangerous direction (it
+/// re-opens the prompt), so the surface stays narrow.
+///
+/// The check is path-shaped (tool-agnostic): it gates on the path, not
+/// the tool. The `UNIVERSAL_ALLOW` memory entry is Read-only, so an
+/// Edit/Write to the memory dir is outside what the native system
+/// grants silently; the gate does not specially gate that case — such
+/// a write is left to the native permission system to resolve.
 ///
 /// `home` is the env-var-derived `$HOME`. An empty or non-absolute
-/// `home` early-returns `false` per
-/// `.claude/rules/external-input-path-construction.md` item #5 — an
-/// unset or relative `HOME` would otherwise build a cwd-relative
-/// memory prefix that resolves against the worktree root, letting an
-/// in-worktree `.claude/projects/<id>/memory/...` masquerade as the
-/// approved surface. A `file_path` containing a NUL byte also
-/// fail-closes (a NUL truncates the path in syscalls).
+/// `home` fails the memory class closed (the `/tmp` class is reached
+/// first and is home-independent) per
+/// `.claude/rules/external-input-path-construction.md` item #5 — a
+/// relative `HOME` would otherwise build a cwd-relative memory prefix
+/// that resolves against the worktree root, letting an in-worktree
+/// `.claude/projects/<id>/memory/...` masquerade as the approved
+/// surface. A trailing-slash `home` names the same directory and is
+/// normalized before the prefix comparison. A `file_path` containing
+/// a NUL byte fails closed (a NUL truncates the path in syscalls).
 ///
 /// Pure string operations only — no `Path` construction or filesystem
 /// reads on `file_path` (untrusted model output) per the same rule.
 pub fn is_approved_out_of_project_path(file_path: &str, home: &str) -> bool {
-    if home.is_empty() || !home.starts_with('/') {
-        return false;
-    }
+    // A NUL byte truncates the path in syscalls; fail closed before any
+    // matching runs.
     if file_path.contains('\0') {
         return false;
     }
 
-    // Class 1: home-anchored auto-memory directory. The `<home>` prefix
-    // is case-sensitive (a different-cased home on a case-sensitive FS
-    // is a different location native would not allow); the structural
-    // segments are case-insensitive.
-    if let Some(rest) = file_path.strip_prefix(home) {
-        if let Some(rest) = rest.strip_prefix('/') {
-            let comps: Vec<&str> = rest.split('/').collect();
-            if comps.len() >= 5
-                && comps[0].eq_ignore_ascii_case(".claude")
-                && comps[1].eq_ignore_ascii_case("projects")
-                && !comps[2].is_empty()
-                && comps[3].eq_ignore_ascii_case("memory")
-                && !comps[4].is_empty()
-            {
+    // Doubled slashes resolve to the same path at the FS layer, so
+    // normalize once up front and match every class against the
+    // collapsed form. This keeps the two approved classes consistent —
+    // a doubled-slash memory path is treated the same as the
+    // single-slash form, the way the /tmp class already accepts
+    // `/tmp//x.md`.
+    let normalized = collapse_double_slashes(file_path);
+
+    // Class 1: /tmp/ scratch with an approved extension. Home-independent,
+    // so it is checked BEFORE the home guard below — an unset or relative
+    // $HOME must not suppress an approved /tmp path the native permission
+    // system grants regardless of $HOME. Prefix and extension are matched
+    // ASCII-case-insensitively.
+    let lower = normalized.to_ascii_lowercase();
+    if let Some(rest) = lower.strip_prefix("/tmp/") {
+        if let Some(dot) = rest.rfind('.') {
+            let ext = &rest[dot + 1..];
+            if !ext.is_empty() && APPROVED_TMP_EXTENSIONS.contains(&ext) {
                 return true;
             }
         }
     }
 
-    // Class 2: /tmp/ scratch with an approved extension. Prefix and
-    // extension are matched ASCII-case-insensitively.
-    let lower = file_path.to_ascii_lowercase();
-    if let Some(rest) = lower.strip_prefix("/tmp/") {
-        if let Some(dot) = rest.rfind('.') {
-            let ext = &rest[dot + 1..];
-            if !ext.is_empty() && APPROVED_TMP_EXTENSIONS.contains(&ext) {
+    // The remaining class is home-anchored, so it needs a valid absolute
+    // $HOME. Empty/relative fails closed (a relative $HOME would resolve
+    // cwd-relative against the worktree root). A trailing-slash $HOME
+    // names the same directory, so strip it before the prefix comparison
+    // rather than failing the segment-boundary check.
+    if home.is_empty() || !home.starts_with('/') {
+        return false;
+    }
+    let home = home.strip_suffix('/').unwrap_or(home);
+
+    // Class 2: home-anchored auto-memory directory. The `<home>` prefix
+    // is case-sensitive (a different-cased home on a case-sensitive FS
+    // is a different location native would not allow); the structural
+    // segments are case-insensitive. Any empty, `.`, or `..` segment
+    // fails closed so a memory-rooted path cannot escape via traversal.
+    if let Some(rest) = normalized.strip_prefix(home) {
+        if let Some(rest) = rest.strip_prefix('/') {
+            let comps: Vec<&str> = rest.split('/').collect();
+            if comps
+                .iter()
+                .any(|c| c.is_empty() || *c == "." || *c == "..")
+            {
+                return false;
+            }
+            if comps.len() >= 5
+                && comps[0].eq_ignore_ascii_case(".claude")
+                && comps[1].eq_ignore_ascii_case("projects")
+                && comps[3].eq_ignore_ascii_case("memory")
+            {
                 return true;
             }
         }

@@ -200,15 +200,15 @@ insufficient:
   in the approved memory + `/tmp` scratch surface). Default
   (non-autonomous-flow) behavior is the human-readable BLOCKED
   prose for either surface. During an active flow (cwd inside
-  a worktree) out-of-project paths are NO LONGER deferred to
-  Claude Code's native permission system — they are
-  fail-closed except the approved surface
-  (`is_approved_out_of_project_path`), closing the prior
-  residual gap that let those paths reach a native prompt and
-  hang an unattended flow. The remaining boundary is non-flow
-  contexts (cwd not inside a worktree), where the early "not
-  in a worktree" return leaves path jurisdiction to Claude
-  Code. See `src/hooks/validate_worktree_paths.rs`.
+  a worktree), out-of-project paths are fail-closed except the
+  approved surface (`is_approved_out_of_project_path`: memory
+  dir + `/tmp` scratch); a blocked path returns exit 2 with no
+  native prompt, so an unattended flow never hangs on a native
+  permission prompt for an out-of-project path. The remaining
+  boundary is non-flow contexts (cwd not inside a worktree),
+  where the early "not in a worktree" return leaves path
+  jurisdiction to Claude Code. See
+  `src/hooks/validate_worktree_paths.rs`.
 - **`AskUserQuestion` during an autonomous in-progress phase**
   — `validate-ask-user` rejects with exit 2 when
   `phases.<current_phase>.status == "in_progress"` AND

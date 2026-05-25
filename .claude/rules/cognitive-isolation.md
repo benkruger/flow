@@ -192,16 +192,15 @@ to the SKILL.md HARD-GATE in `skills/flow-review/SKILL.md` Step 2:
   message, and serves as the stable detection anchor for a
   future system-initiated-prompt carve-out.
 
-Residual gap: out-of-project paths (`~/.config`, `/tmp`, `.venv`
-outside the worktree) are now fail-closed during an active flow —
-allowed only for the approved memory + `/tmp` scratch surface
-(`is_approved_out_of_project_path`) and blocked otherwise, so the
-earlier "deferred to Claude Code's permission jurisdiction" gap
-is closed for the active-flow case. The remaining boundary is
-non-flow contexts (cwd not inside a worktree), where the early
-"not in a worktree" return leaves path jurisdiction to Claude
-Code. The retry-prompt HARD-GATE is the upstream defense — drop
-the requirement from the prompt rather than redirecting toward a
+Residual gap: out-of-project paths (`~/.config`, `.venv` outside
+the worktree, arbitrary source files) are fail-closed during an
+active flow — allowed only for the approved memory + `/tmp`
+scratch surface (`is_approved_out_of_project_path`) and blocked
+(exit 2, no prompt) otherwise. The remaining boundary is non-flow
+contexts (cwd not inside a worktree), where the early "not in a
+worktree" return leaves path jurisdiction to Claude Code. The
+retry-prompt HARD-GATE is the upstream defense — drop the
+requirement from the prompt rather than redirecting toward a
 different out-of-worktree path.
 
 When in doubt, drop the path from the retry prompt entirely.

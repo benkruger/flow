@@ -580,6 +580,93 @@ fn approved_oop_nul_byte_path_is_blocked() {
     ));
 }
 
+// --- out-of-project edge cases (A1/A2/A3/R2 regression guards) ---
+
+/// A1: the /tmp class is home-independent, so an empty $HOME must not
+/// suppress an approved /tmp scratch path. Regression: ordering the
+/// home guard ahead of the /tmp class blocks /tmp under an unset $HOME
+/// (CI/cron/launchd), forcing a native-prompt-equivalent block on a
+/// path UNIVERSAL_ALLOW grants regardless of $HOME.
+#[test]
+fn approved_oop_tmp_allowed_with_empty_home() {
+    assert!(is_approved_out_of_project_path("/tmp/scratch.md", ""));
+}
+
+/// A1: a relative $HOME likewise has no bearing on the /tmp class.
+#[test]
+fn approved_oop_tmp_allowed_with_relative_home() {
+    assert!(is_approved_out_of_project_path(
+        "/tmp/scratch.json",
+        "relative/home"
+    ));
+}
+
+/// A2: a doubled-slash memory path resolves to the same inode as the
+/// single-slash form, so it must be approved the way the /tmp class
+/// accepts /tmp//x.md. Regression: dropping the up-front slash collapse
+/// rejects the doubled-slash memory shape while approving the
+/// equivalent /tmp shape.
+#[test]
+fn approved_oop_memory_doubled_slash_is_allowed() {
+    assert!(is_approved_out_of_project_path(
+        "/Users/ben//.claude/projects/abc/memory/MEMORY.md",
+        "/Users/ben"
+    ));
+}
+
+/// A3: a trailing-slash $HOME names the same home directory; the memory
+/// class must still approve the path rather than failing the
+/// segment-boundary check. Regression: removing the home trailing-slash
+/// strip blocks a legitimate MEMORY.md under a trailing-slash $HOME.
+#[test]
+fn approved_oop_memory_trailing_slash_home_is_allowed() {
+    assert!(is_approved_out_of_project_path(
+        "/Users/ben/.claude/projects/abc/memory/MEMORY.md",
+        "/Users/ben/"
+    ));
+}
+
+/// R2: a `..` segment past memory/ escapes the memory dir and is not a
+/// native-allowed single-segment match, so it must fail closed.
+/// Regression: dropping the traversal-segment rejection approves a
+/// memory-rooted path that escapes via `..` (and defers to a native
+/// prompt that would hang an unattended flow).
+#[test]
+fn approved_oop_memory_parent_traversal_segment_is_blocked() {
+    assert!(!is_approved_out_of_project_path(
+        "/Users/ben/.claude/projects/abc/memory/../../../etc/passwd",
+        "/Users/ben"
+    ));
+}
+
+/// R2: a `.` segment likewise fails closed.
+#[test]
+fn approved_oop_memory_dot_segment_is_blocked() {
+    assert!(!is_approved_out_of_project_path(
+        "/Users/ben/.claude/projects/abc/memory/./notes.md",
+        "/Users/ben"
+    ));
+}
+
+/// A1 through the public validate() surface: an approved /tmp scratch
+/// path is allowed even when $HOME is empty (the /tmp class is
+/// home-independent). Drives the home-independence through validate()
+/// rather than the helper alone — no state file written, so the flow
+/// is non-autonomous and an over-block would surface as prose BLOCKED.
+#[test]
+fn validate_out_of_project_tmp_allowed_with_empty_home() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let worktree = format!("{}/.worktrees/feat", root.display());
+    let (allowed, msg) = validate("/tmp/flow-scratch.md", &worktree, "");
+    assert!(
+        allowed,
+        "approved /tmp scratch must be allowed with empty $HOME; got: {}",
+        msg
+    );
+    assert!(msg.is_empty());
+}
+
 // --- APPROVED_TMP_EXTENSIONS drift contract ---
 
 /// Named regression: a `/tmp` extension added to `UNIVERSAL_ALLOW`
@@ -599,7 +686,11 @@ fn approved_tmp_extensions_match_universal_allow() {
     use flow_rs::prime_check::UNIVERSAL_ALLOW;
     use std::collections::BTreeSet;
 
-    let marker = "//tmp/*.";
+    // Single-slash marker matches both the double-slash entries
+    // (`Read(//tmp/*.md)`) and a single-slash shape (`Read(/tmp/*.md)`),
+    // so a future /tmp entry in either shape is still extracted rather
+    // than silently missed by a shape-specific marker.
+    let marker = "/tmp/*.";
     let mut from_allow: BTreeSet<String> = BTreeSet::new();
     for entry in UNIVERSAL_ALLOW {
         if let Some(idx) = entry.find(marker) {
@@ -1358,6 +1449,32 @@ fn worktree_fixture(tmp: &tempfile::TempDir) -> (std::path::PathBuf, std::path::
     let worktree_cwd = root.join(".worktrees").join("feat");
     std::fs::create_dir_all(&worktree_cwd).expect("mkdir worktree");
     (root, worktree_cwd)
+}
+
+/// R3: drive run_impl_main's $HOME resolution into the memory-allow
+/// path. The helper unit tests pass `home` directly; only a subprocess
+/// test proves run_impl_main reads $HOME from the environment and
+/// threads it into validate() so an out-of-project memory Read under
+/// that $HOME is allowed (exit 0). Regression: a change that drops or
+/// mis-resolves $HOME in run_impl_main would block the approved memory
+/// surface even under a correct $HOME. The memory dir lives under a
+/// separate tempdir from the worktree root so it is genuinely
+/// out-of-project.
+#[test]
+fn validate_subprocess_memory_read_allowed_via_resolved_home() {
+    let home_tmp = tempfile::tempdir().expect("home tempdir");
+    let home = home_tmp.path().canonicalize().expect("canonicalize home");
+    let wt_tmp = tempfile::tempdir().expect("worktree tempdir");
+    let (_root, worktree_cwd) = worktree_fixture(&wt_tmp);
+    let memory_path = format!("{}/.claude/projects/abc/memory/MEMORY.md", home.display());
+    let (code, _stdout, stderr) =
+        spawn_hook_with_cwd(&worktree_cwd, &home, "Read", "file_path", &memory_path);
+    assert_eq!(
+        code, 0,
+        "an out-of-project memory Read under the resolved $HOME must be \
+         allowed (exit 0); stderr: {}",
+        stderr
+    );
 }
 
 #[test]

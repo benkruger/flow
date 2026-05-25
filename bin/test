@@ -459,7 +459,13 @@ if [ $# -eq 0 ]; then
   COV_ARGS+=(--fail-under-lines 100 --fail-under-regions 100 --fail-under-functions 100)
 fi
 echo "=== nextest: cargo llvm-cov nextest ==="
-time_start=$SECONDS
+# Suite wall-clock via date(1) (absolute epoch seconds) rather than
+# bash $SECONDS: $SECONDS can carry an inherited offset from a
+# long-lived parent shell that does not reflect this process's own
+# runtime, which would trip the gate below on an otherwise-fast suite.
+# date(1) is immune to that inheritance. The display-only timers in the
+# per-file/audit/meta modes above are non-gating and stay on $SECONDS.
+time_start=$(date +%s)
 # Heartbeat + coverage filter + failure classification. The pipeline:
 #   cargo llvm-cov ... 2>&1 | tee <log> | awk <filter>
 # (a) nextest sees a non-TTY and skips its multi-line animated progress
@@ -518,7 +524,7 @@ if [ "$rc" -ne 0 ]; then
 fi
 # Slow tests are terminated by nextest (terminate-after=1) and
 # appear as TIMEOUT failures, already caught by the rc check above.
-elapsed=$((SECONDS - time_start))
+elapsed=$(($(date +%s) - time_start))
 if [ "$elapsed" -gt "$SUITE_TIMEOUT_SECS" ]; then
   echo ""
   echo "=== FAIL: suite took ${elapsed}s, limit ${SUITE_TIMEOUT_SECS}s ==="
