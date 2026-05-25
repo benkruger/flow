@@ -14,7 +14,11 @@ use serde_json::json;
 
 #[test]
 fn test_allows_when_not_in_worktree() {
-    let (allowed, msg) = validate("/Users/ben/code/flow/lib/foo.py", "/Users/ben/code/flow");
+    let (allowed, msg) = validate(
+        "/Users/ben/code/flow/lib/foo.py",
+        "/Users/ben/code/flow",
+        "/Users/ben",
+    );
     assert!(allowed);
     assert!(msg.is_empty());
 }
@@ -24,6 +28,7 @@ fn test_allows_file_inside_worktree() {
     let (allowed, msg) = validate(
         "/Users/ben/code/flow/.worktrees/my-feature/lib/foo.py",
         "/Users/ben/code/flow/.worktrees/my-feature",
+        "/Users/ben",
     );
     assert!(allowed);
     assert!(msg.is_empty());
@@ -32,7 +37,7 @@ fn test_allows_file_inside_worktree() {
 #[test]
 fn test_blocks_main_repo_path_from_worktree() {
     let cwd = "/Users/ben/code/flow/.worktrees/my-feature";
-    let (allowed, msg) = validate("/Users/ben/code/flow/lib/foo.py", cwd);
+    let (allowed, msg) = validate("/Users/ben/code/flow/lib/foo.py", cwd, "/Users/ben");
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
     assert!(msg.contains(cwd));
@@ -43,26 +48,7 @@ fn test_allows_flow_states_path() {
     let (allowed, msg) = validate(
         "/Users/ben/code/flow/.flow-states/my-feature.json",
         "/Users/ben/code/flow/.worktrees/my-feature",
-    );
-    assert!(allowed);
-    assert!(msg.is_empty());
-}
-
-#[test]
-fn test_allows_home_directory_paths() {
-    let (allowed, msg) = validate(
-        "/Users/ben/.claude/plans/some-plan.md",
-        "/Users/ben/code/flow/.worktrees/my-feature",
-    );
-    assert!(allowed);
-    assert!(msg.is_empty());
-}
-
-#[test]
-fn test_allows_plugin_cache_paths() {
-    let (allowed, msg) = validate(
-        "/Users/ben/.claude/plugins/cache/flow/0.28.5/skills/flow-code/SKILL.md",
-        "/Users/ben/code/flow/.worktrees/my-feature",
+        "/Users/ben",
     );
     assert!(allowed);
     assert!(msg.is_empty());
@@ -72,7 +58,7 @@ fn test_allows_plugin_cache_paths() {
 fn test_error_message_includes_corrected_path() {
     let cwd = "/Users/ben/code/flow/.worktrees/my-feature";
     let file_path = "/Users/ben/code/flow/skills/flow-prime/SKILL.md";
-    let (allowed, msg) = validate(file_path, cwd);
+    let (allowed, msg) = validate(file_path, cwd, "/Users/ben");
     assert!(!allowed);
     let corrected = "/Users/ben/code/flow/.worktrees/my-feature/skills/flow-prime/SKILL.md";
     assert!(msg.contains(corrected));
@@ -81,14 +67,18 @@ fn test_error_message_includes_corrected_path() {
 
 #[test]
 fn test_allows_empty_file_path() {
-    let (allowed, _) = validate("", "/Users/ben/code/flow/.worktrees/my-feature");
+    let (allowed, _) = validate(
+        "",
+        "/Users/ben/code/flow/.worktrees/my-feature",
+        "/Users/ben",
+    );
     assert!(allowed);
 }
 
 #[test]
 fn test_allows_worktree_root_path_exactly() {
     let cwd = "/Users/ben/code/flow/.worktrees/my-feature";
-    let (allowed, _) = validate(cwd, cwd);
+    let (allowed, _) = validate(cwd, cwd, "/Users/ben");
     assert!(allowed);
 }
 
@@ -98,7 +88,7 @@ fn test_allows_worktree_root_path_exactly() {
 fn validate_allows_worktree_root_path_from_subdir_cwd() {
     let cwd = "/Users/ben/code/flow/.worktrees/my-feature/synapse";
     let file_path = "/Users/ben/code/flow/.worktrees/my-feature/CLAUDE.md";
-    let (allowed, msg) = validate(file_path, cwd);
+    let (allowed, msg) = validate(file_path, cwd, "/Users/ben");
     assert!(allowed);
     assert!(msg.is_empty());
 }
@@ -109,7 +99,7 @@ fn validate_allows_worktree_root_path_from_subdir_cwd() {
 fn validate_allows_claude_rules_path_from_subdir_cwd() {
     let cwd = "/Users/ben/code/flow/.worktrees/my-feature/cortex";
     let file_path = "/Users/ben/code/flow/.worktrees/my-feature/.claude/rules/testing-gotchas.md";
-    let (allowed, _) = validate(file_path, cwd);
+    let (allowed, _) = validate(file_path, cwd, "/Users/ben");
     assert!(allowed);
 }
 
@@ -119,7 +109,7 @@ fn validate_allows_claude_rules_path_from_subdir_cwd() {
 fn validate_redirect_uses_worktree_root_not_cwd_subdir() {
     let cwd = "/Users/ben/code/flow/.worktrees/my-feature/synapse";
     let file_path = "/Users/ben/code/flow/lib/foo.py";
-    let (allowed, msg) = validate(file_path, cwd);
+    let (allowed, msg) = validate(file_path, cwd, "/Users/ben");
     assert!(!allowed);
     assert!(msg.contains("/Users/ben/code/flow/.worktrees/my-feature/lib/foo.py"));
     assert!(!msg.contains("/synapse/.worktrees/"));
@@ -131,7 +121,7 @@ fn validate_redirect_uses_worktree_root_not_cwd_subdir() {
 fn validate_redirect_uses_worktree_root_multi_level_subdir() {
     let cwd = "/Users/ben/code/flow/.worktrees/my-feature/packages/api";
     let file_path = "/Users/ben/code/flow/lib/foo.py";
-    let (_, msg) = validate(file_path, cwd);
+    let (_, msg) = validate(file_path, cwd, "/Users/ben");
     assert!(msg.contains("/Users/ben/code/flow/.worktrees/my-feature/lib/foo.py"));
     assert!(!msg.contains("/packages/api/.worktrees/"));
 }
@@ -146,7 +136,7 @@ fn validate_redirect_uses_worktree_root_multi_level_subdir() {
 fn validate_allows_when_cwd_ends_in_marker_no_branch() {
     let cwd = "/proj/.worktrees/";
     let file_path = "/proj/lib/foo.py";
-    let (allowed, msg) = validate(file_path, cwd);
+    let (allowed, msg) = validate(file_path, cwd, "/Users/ben");
     assert!(allowed);
     assert!(msg.is_empty());
 }
@@ -160,7 +150,7 @@ fn validate_allows_when_cwd_ends_in_marker_no_branch() {
 fn validate_uses_rightmost_worktrees_segment_in_redirect() {
     let cwd = "/home/dev/my.worktrees/proj/.worktrees/feat/cortex";
     let file_path = "/home/dev/my.worktrees/proj/lib/foo.py";
-    let (allowed, msg) = validate(file_path, cwd);
+    let (allowed, msg) = validate(file_path, cwd, "/Users/ben");
     assert!(!allowed);
     assert!(msg.contains("/home/dev/my.worktrees/proj/.worktrees/feat/lib/foo.py"));
 }
@@ -193,7 +183,7 @@ fn autonomous_strict_emits_json_envelope_on_existing_block_path() {
     write_state_for(&root, "feat", AUTO_IN_PROGRESS);
     let worktree = format!("{}/.worktrees/feat", root.display());
     let file_path = format!("{}/lib/foo.py", root.display());
-    let (allowed, msg) = validate(&file_path, &worktree);
+    let (allowed, msg) = validate(&file_path, &worktree, "/Users/ben");
     assert!(!allowed);
     assert!(
         msg.contains("\"reason\":\"out_of_worktree_in_autonomous\""),
@@ -211,7 +201,7 @@ fn non_autonomous_preserves_existing_block_message_shape() {
     write_state_for(&root, "feat", MANUAL_IN_PROGRESS);
     let worktree = format!("{}/.worktrees/feat", root.display());
     let file_path = format!("{}/lib/foo.py", root.display());
-    let (allowed, msg) = validate(&file_path, &worktree);
+    let (allowed, msg) = validate(&file_path, &worktree, "/Users/ben");
     assert!(!allowed);
     assert!(
         msg.starts_with("BLOCKED:"),
@@ -228,7 +218,7 @@ fn autonomous_strict_allows_in_worktree_path() {
     write_state_for(&root, "feat", AUTO_IN_PROGRESS);
     let worktree = format!("{}/.worktrees/feat", root.display());
     let file_path = format!("{}/.worktrees/feat/src/lib.rs", root.display());
-    let (allowed, msg) = validate(&file_path, &worktree);
+    let (allowed, msg) = validate(&file_path, &worktree, "/Users/ben");
     assert!(allowed, "in-worktree path must be allowed; got msg={}", msg);
 }
 
@@ -239,7 +229,7 @@ fn non_active_flow_preserves_existing_block_message_shape() {
     let root = tmp.path().canonicalize().unwrap();
     let worktree = format!("{}/.worktrees/feat", root.display());
     let file_path = format!("{}/lib/foo.py", root.display());
-    let (allowed, msg) = validate(&file_path, &worktree);
+    let (allowed, msg) = validate(&file_path, &worktree, "/Users/ben");
     assert!(!allowed);
     assert!(
         msg.starts_with("BLOCKED:"),
@@ -259,7 +249,7 @@ fn autonomous_strict_preserves_flow_states_redirect_message() {
     write_state_for(&root, "feat", AUTO_IN_PROGRESS);
     let worktree = format!("{}/.worktrees/feat", root.display());
     let file_path = format!("{}/.worktrees/feat/.flow-states/feat/log", root.display());
-    let (allowed, msg) = validate(&file_path, &worktree);
+    let (allowed, msg) = validate(&file_path, &worktree, "/Users/ben");
     assert!(!allowed);
     assert!(
         msg.contains(".flow-states/"),
@@ -269,25 +259,125 @@ fn autonomous_strict_preserves_flow_states_redirect_message() {
     assert!(!msg.contains("out_of_worktree_in_autonomous"));
 }
 
+// --- validate() out-of-project gate matrix ---
+//
+// Out-of-project paths (not under project_root) are fail-closed during
+// an active flow (cwd inside a worktree). Only the approved surface
+// (auto-memory dir + /tmp scratch) is allowed; everything else is
+// blocked — autonomous flows get the `out_of_bounds_in_autonomous`
+// JSON envelope, manual flows get the prose BLOCKED message. Fixtures
+// canonicalize the tempdir root per
+// `.claude/rules/testing-gotchas.md` "macOS Subprocess Path
+// Canonicalization" so the project_root prefix comparison inside
+// validate() matches.
+
 #[test]
-fn autonomous_strict_still_allows_paths_outside_project_root_documents_residual_gap() {
-    // Branch C residual gap: paths outside `project_root` (e.g.
-    // ~/.config) are still allowed by validate() even during
-    // autonomous flows. The hook layer disclaims jurisdiction over
-    // those paths (line 318-321 of the source). Closing this gap
-    // requires either a Claude Code feature or a project settings
-    // allow-list extension — outside the scope of this PR. See
-    // CLAUDE.md "Key Files" entry for `src/hooks/agent_prompt_scan.rs`.
+fn validate_out_of_project_plugin_read_autonomous_emits_envelope() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().canonicalize().unwrap();
     write_state_for(&root, "feat", AUTO_IN_PROGRESS);
     let worktree = format!("{}/.worktrees/feat", root.display());
-    let (allowed, msg) = validate("/etc/hosts", &worktree);
+    // home is OUTSIDE the project root so the path reaches the
+    // out-of-project branch (a home under root would be in-project).
+    let home = "/Users/testuser";
+    let plugin_path = "/Users/testuser/.claude/plugins/cache/flow/0.1/SKILL.md";
+    let (allowed, msg) = validate(plugin_path, &worktree, home);
+    assert!(!allowed);
     assert!(
-        allowed,
-        "paths outside project_root remain allowed at this layer; got msg={}",
+        msg.contains("\"reason\":\"out_of_bounds_in_autonomous\""),
+        "expected out_of_bounds envelope; got: {}",
         msg
     );
+    assert!(msg.contains("\"autonomous\":true"));
+    assert!(msg.contains(plugin_path));
+}
+
+#[test]
+fn validate_out_of_project_plugin_read_manual_emits_prose() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    write_state_for(&root, "feat", MANUAL_IN_PROGRESS);
+    let worktree = format!("{}/.worktrees/feat", root.display());
+    let home = "/Users/testuser";
+    let plugin_path = "/Users/testuser/.claude/plugins/cache/flow/0.1/SKILL.md";
+    let (allowed, msg) = validate(plugin_path, &worktree, home);
+    assert!(!allowed);
+    assert!(
+        msg.starts_with("BLOCKED:"),
+        "manual flow should emit prose BLOCKED; got: {}",
+        msg
+    );
+    assert!(!msg.contains("out_of_bounds_in_autonomous"));
+}
+
+#[test]
+fn validate_out_of_project_memory_read_is_allowed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    write_state_for(&root, "feat", AUTO_IN_PROGRESS);
+    let worktree = format!("{}/.worktrees/feat", root.display());
+    let home = "/Users/testuser";
+    let memory_path = "/Users/testuser/.claude/projects/abc/memory/MEMORY.md";
+    let (allowed, msg) = validate(memory_path, &worktree, home);
+    assert!(
+        allowed,
+        "approved memory path must be allowed; got: {}",
+        msg
+    );
+}
+
+#[test]
+fn validate_out_of_project_tmp_scratch_is_allowed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    write_state_for(&root, "feat", AUTO_IN_PROGRESS);
+    let worktree = format!("{}/.worktrees/feat", root.display());
+    // /tmp/x.md is out-of-project relative to the tempdir root and in
+    // the approved extension set.
+    let (allowed, msg) = validate("/tmp/flow-scratch.md", &worktree, "/Users/ben");
+    assert!(
+        allowed,
+        "approved /tmp scratch must be allowed; got: {}",
+        msg
+    );
+}
+
+#[test]
+fn validate_out_of_project_arbitrary_path_is_blocked() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    // No state file → not autonomous → prose BLOCKED.
+    let worktree = format!("{}/.worktrees/feat", root.display());
+    let (allowed, msg) = validate("/etc/hosts", &worktree, "/Users/ben");
+    assert!(!allowed, "arbitrary out-of-project path must be blocked");
+    assert!(msg.starts_with("BLOCKED:"));
+}
+
+#[test]
+fn validate_cwd_not_in_worktree_allows_out_of_project_path() {
+    // The fail-closed gate is scoped to cwd-inside-a-worktree (the
+    // active-flow proxy). On a plain repo cwd, out-of-project behavior
+    // is unchanged — the "not in a worktree" early return allows.
+    let (allowed, msg) = validate("/etc/hosts", "/Users/ben/code/flow", "/Users/ben");
+    assert!(allowed, "non-worktree cwd must not block; got: {}", msg);
+    assert!(msg.is_empty());
+}
+
+#[test]
+fn validate_out_of_project_block_is_tool_agnostic() {
+    // validate() does not branch on tool name — an out-of-project path
+    // blocks identically whether the caller is a Read or an Edit/Write
+    // (run_impl_main reaches validate() before any tool-name check).
+    // The regression guard is against a future tool-name carve-out
+    // inside validate() that would let an out-of-project Edit slip.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let worktree = format!("{}/.worktrees/feat", root.display());
+    // Out-of-project (not under the tempdir root), not memory, not /tmp.
+    let edit_target = "/Users/someone/other-repo/config.toml";
+    let (allowed, msg) = validate(edit_target, &worktree, "/Users/ben");
+    assert!(!allowed, "out-of-project Edit/Write target must block");
+    assert!(msg.starts_with("BLOCKED:"));
 }
 
 // --- is_approved_out_of_project_path tests ---
@@ -1166,7 +1256,7 @@ fn detect_misplaced_collapses_doubled_slashes_inside_suffix() {
 fn validate_rejects_worktree_flow_states_write() {
     let cwd = "/Users/ben/code/flow/.worktrees/feat/api";
     let file_path = "/Users/ben/code/flow/.worktrees/feat/.flow-states/plan.md";
-    let (allowed, msg) = validate(file_path, cwd);
+    let (allowed, msg) = validate(file_path, cwd, "/Users/ben");
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
     assert!(msg.contains(".flow-states/"));
@@ -1178,7 +1268,7 @@ fn validate_rejects_worktree_flow_states_write() {
 fn validate_rejects_service_subdir_flow_states_write() {
     let cwd = "/Users/ben/code/flow/.worktrees/feat/api";
     let file_path = "/Users/ben/code/flow/.worktrees/feat/api/.flow-states/plan.md";
-    let (allowed, msg) = validate(file_path, cwd);
+    let (allowed, msg) = validate(file_path, cwd, "/Users/ben");
     assert!(!allowed);
     assert!(msg.contains("BLOCKED"));
     assert!(msg.contains("/Users/ben/code/flow/.flow-states/plan.md"));
@@ -1188,7 +1278,7 @@ fn validate_rejects_service_subdir_flow_states_write() {
 fn validate_accepts_main_repo_flow_states_write_from_subdir_cwd() {
     let cwd = "/Users/ben/code/flow/.worktrees/feat/api";
     let file_path = "/Users/ben/code/flow/.flow-states/feat/plan.md";
-    let (allowed, msg) = validate(file_path, cwd);
+    let (allowed, msg) = validate(file_path, cwd, "/Users/ben");
     assert!(allowed);
     assert!(msg.is_empty());
 }
@@ -1197,7 +1287,7 @@ fn validate_accepts_main_repo_flow_states_write_from_subdir_cwd() {
 fn validate_accepts_worktree_non_flow_states_write() {
     let cwd = "/Users/ben/code/flow/.worktrees/feat/api";
     let file_path = "/Users/ben/code/flow/.worktrees/feat/api/src/main.rs";
-    let (allowed, msg) = validate(file_path, cwd);
+    let (allowed, msg) = validate(file_path, cwd, "/Users/ben");
     assert!(allowed);
     assert!(msg.is_empty());
 }
@@ -1208,7 +1298,7 @@ fn validate_plain_repo_no_op() {
     // pre-existing "not in a worktree" early-return.
     let cwd = "/Users/ben/code/flow";
     let file_path = "/Users/ben/code/flow/.flow-states/feat/plan.md";
-    let (allowed, msg) = validate(file_path, cwd);
+    let (allowed, msg) = validate(file_path, cwd, "/Users/ben");
     assert!(allowed);
     assert!(msg.is_empty());
 }

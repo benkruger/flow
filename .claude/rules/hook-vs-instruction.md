@@ -184,23 +184,31 @@ insufficient:
   `src/hooks/agent_prompt_scan.rs` and
   `.claude/rules/cognitive-isolation.md` "Retry-prompt
   path-scoping constraint".
-- **Autonomous-flow-strict response shape on out-of-worktree
-  paths** — `validate-worktree-paths::validate()` at the
-  existing out-of-worktree block path checks
+- **Autonomous-flow-strict response shape on blocked paths** —
+  `validate-worktree-paths::validate()` checks
   `crate::flow_paths::is_autonomous_flow_active(project_root,
-  branch)` (branch derived from `worktree_root.file_name()`).
-  When the predicate returns true, the hook returns a
-  structured JSON envelope `{"status":"error","reason":
-  "out_of_worktree_in_autonomous","blocked_path":...,
+  branch)` (branch derived from `worktree_root.file_name()`)
+  at both block surfaces. When the predicate returns true, the
+  hook returns a structured JSON envelope
+  `{"status":"error","reason":...,"blocked_path":...,
   "worktree":...,"autonomous":true}` instead of the
-  human-readable BLOCKED message; exit 2 is preserved.
-  Default (non-autonomous-flow) behavior unchanged.
-  Residual gap: paths outside `project_root` (`~/.config`,
-  `/tmp`, `.venv`) remain in Claude Code's built-in
-  permission jurisdiction at this hook layer. Closing the
-  gap entirely requires either a Claude Code feature or a
-  project `settings.json` allow-list extension. See
-  `src/hooks/validate_worktree_paths.rs`.
+  human-readable BLOCKED message; exit 2 is preserved. The
+  `reason` is `out_of_worktree_in_autonomous` for the
+  in-project-but-out-of-worktree redirect and
+  `out_of_bounds_in_autonomous` for the out-of-project
+  fail-closed gate (a path outside `project_root` that is not
+  in the approved memory + `/tmp` scratch surface). Default
+  (non-autonomous-flow) behavior is the human-readable BLOCKED
+  prose for either surface. During an active flow (cwd inside
+  a worktree) out-of-project paths are NO LONGER deferred to
+  Claude Code's native permission system — they are
+  fail-closed except the approved surface
+  (`is_approved_out_of_project_path`), closing the prior
+  residual gap that let those paths reach a native prompt and
+  hang an unattended flow. The remaining boundary is non-flow
+  contexts (cwd not inside a worktree), where the early "not
+  in a worktree" return leaves path jurisdiction to Claude
+  Code. See `src/hooks/validate_worktree_paths.rs`.
 - **`AskUserQuestion` during an autonomous in-progress phase**
   — `validate-ask-user` rejects with exit 2 when
   `phases.<current_phase>.status == "in_progress"` AND

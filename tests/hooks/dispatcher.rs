@@ -1395,13 +1395,17 @@ fn validate_worktree_paths_inside_worktree_allows_flow_states() {
 }
 
 #[test]
-fn validate_worktree_paths_inside_worktree_allows_home_path() {
-    // Paths outside the project prefix are always allowed
-    // (~/.claude, plugin cache, /tmp, etc.). `/Users/example/...` is
+fn validate_worktree_paths_inside_worktree_blocks_out_of_project_home_path() {
+    // Out-of-project paths are fail-closed during an active flow (cwd
+    // inside a worktree). `/Users/example/.claude/plans/p.md` is not
+    // the approved auto-memory dir (`.claude/projects/<id>/memory/`)
+    // nor /tmp scratch, so the hook blocks it (exit 2) end-to-end
+    // through run_impl_main's $HOME read rather than deferring to a
+    // native permission prompt. No state file → human-readable prose
+    // BLOCKED, not the autonomous envelope. `/Users/example/...` is
     // never a prefix of the canonical `/private/var/folders/...`
-    // tempdir cwd, so this test exercises the real "outside project"
-    // allow branch whether or not the root is canonicalized. We still
-    // canonicalize for symmetry with the sibling tests.
+    // tempdir cwd, so the path genuinely lands in the out-of-project
+    // branch; canonicalize for symmetry with the sibling tests.
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     let worktree = root.join(".worktrees").join("feat");
@@ -1411,7 +1415,7 @@ fn validate_worktree_paths_inside_worktree_allows_home_path() {
     }))
     .unwrap();
     let output = run_worktree_hook(&worktree, &input);
-    assert_eq!(output.status.code().unwrap(), 0);
+    assert_eq!(output.status.code().unwrap(), 2);
 }
 
 // --- validate-worktree-paths shared-config integration tests (issue #1170) ---

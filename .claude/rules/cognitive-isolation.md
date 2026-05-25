@@ -177,12 +177,14 @@ to the SKILL.md HARD-GATE in `skills/flow-review/SKILL.md` Step 2:
   never reaches the sub-agent's prompt, so the sub-agent never
   Reads it.
 - **Autonomous-flow-strict response shape** in
-  `src/hooks/validate_worktree_paths.rs::validate()` at the
-  existing out-of-worktree block path. When the flow is
+  `src/hooks/validate_worktree_paths.rs::validate()` at both
+  block surfaces (the in-project-but-out-of-worktree redirect
+  and the out-of-project fail-closed gate). When the flow is
   configured for autonomous execution (per
   `crate::flow_paths::is_autonomous_flow_active`), the hook
   returns a structured JSON envelope keyed on
-  `out_of_worktree_in_autonomous` instead of the
+  `out_of_worktree_in_autonomous` (out-of-worktree) or
+  `out_of_bounds_in_autonomous` (out-of-project) instead of the
   human-readable BLOCKED message. Both forms are exit-2 blocks
   fed back as a tool rejection (the block itself is identical);
   the `reason` field lets the autonomous flow classify the
@@ -190,14 +192,17 @@ to the SKILL.md HARD-GATE in `skills/flow-review/SKILL.md` Step 2:
   message, and serves as the stable detection anchor for a
   future system-initiated-prompt carve-out.
 
-Residual gap: paths outside `project_root` (`~/.config`, `/tmp`,
-`.venv` outside the worktree) remain in Claude Code's built-in
-permission jurisdiction at this hook layer. Closing the gap
-entirely requires either a Claude Code feature or a project
-`settings.json` allow-list extension. The retry-prompt
-HARD-GATE is the upstream defense — drop the requirement from
-the prompt rather than redirecting toward a different
-out-of-worktree path.
+Residual gap: out-of-project paths (`~/.config`, `/tmp`, `.venv`
+outside the worktree) are now fail-closed during an active flow —
+allowed only for the approved memory + `/tmp` scratch surface
+(`is_approved_out_of_project_path`) and blocked otherwise, so the
+earlier "deferred to Claude Code's permission jurisdiction" gap
+is closed for the active-flow case. The remaining boundary is
+non-flow contexts (cwd not inside a worktree), where the early
+"not in a worktree" return leaves path jurisdiction to Claude
+Code. The retry-prompt HARD-GATE is the upstream defense — drop
+the requirement from the prompt rather than redirecting toward a
+different out-of-worktree path.
 
 When in doubt, drop the path from the retry prompt entirely.
 The agent's investigation can succeed by reading in-worktree
