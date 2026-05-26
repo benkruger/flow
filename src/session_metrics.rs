@@ -23,6 +23,7 @@
 //! sinks for the metrics-half of a `WindowSnapshot`; cost is
 //! patched in by `per_flow_capture` before either mutator runs.
 
+use std::collections::HashSet;
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -61,7 +62,9 @@ pub fn capture(
     let captured_at = now_fn();
 
     let (five_hour_pct, seven_day_pct) = read_rate_limits(home);
-    let agg = transcript_path.map(read_transcript).unwrap_or_default();
+    let agg = transcript_path
+        .map(|p| read_transcript(p, home))
+        .unwrap_or_default();
 
     let context_window_pct = agg.context_at_last_turn.and_then(|tokens| {
         agg.last_model
@@ -359,16 +362,68 @@ struct TranscriptAgg {
 /// process stays bounded.
 const TRANSCRIPT_BYTE_CAP: u64 = 50 * 1024 * 1024;
 
-/// Line-stream the transcript JSONL accumulating assistant-message
-/// usage. Lines that fail to parse as JSON are skipped silently —
-/// transcripts can include partial writes at the tail when a
-/// session is in flight. Reads at most `TRANSCRIPT_BYTE_CAP` bytes
-/// to bound I/O across long autonomous flows.
-fn read_transcript(path: &Path) -> TranscriptAgg {
+/// Accumulate token/turn usage from the parent session transcript
+/// AND every linked sub-agent sub-session transcript.
+///
+/// The parent transcript at `path` drives both the running totals
+/// and the context-window fields (`last_model`,
+/// `context_at_last_turn`). Claude Code also writes Task-tool
+/// sub-agent turns to `<project>/subagents/agent-<id>.jsonl`
+/// alongside the parent; those files are discovered, validated
+/// against the `~/.claude/projects/` prefix via
+/// [`is_safe_transcript_path`] (rejecting traversal/symlink
+/// escapes), and summed into the totals/`by_model` so per-flow cost
+/// and token figures include sub-agent usage. Sub-session reads do
+/// NOT update the context-window fields — those describe the parent
+/// session's current turn, not a sub-agent's separate context. A
+/// turn that appears both inlined in the parent (sidechain) and in
+/// a sub-session file shares its `message.id` and is folded to a
+/// single contribution. Each file is read under
+/// `TRANSCRIPT_BYTE_CAP`; a missing `subagents/` dir is a no-op
+/// (fail open).
+fn read_transcript(path: &Path, home: &Path) -> TranscriptAgg {
     let mut agg = TranscriptAgg::default();
+    let mut seen: HashSet<String> = HashSet::new();
+    accumulate_transcript_file(path, &mut agg, &mut seen, true);
+
+    let subagents_dir = path.parent().unwrap_or(Path::new("")).join("subagents");
+    if let Ok(entries) = fs::read_dir(&subagents_dir) {
+        for entry in entries.flatten() {
+            let sub_path = entry.path();
+            if sub_path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                continue;
+            }
+            if !is_safe_transcript_path(&sub_path, home) {
+                continue;
+            }
+            accumulate_transcript_file(&sub_path, &mut agg, &mut seen, false);
+        }
+    }
+    agg
+}
+
+/// Line-stream one transcript JSONL file, folding each assistant
+/// message's usage into `agg`. Lines that fail to parse as JSON are
+/// skipped silently — transcripts can include partial writes at the
+/// tail when a session is in flight. Reads at most
+/// `TRANSCRIPT_BYTE_CAP` bytes to bound I/O across long autonomous
+/// flows.
+///
+/// `seen` dedups by Anthropic `message.id`: a turn present in more
+/// than one file (parent inline + sub-session) is counted once.
+/// Turns without an `id` are always counted. `update_context`
+/// controls whether this file drives the context-window fields
+/// (`last_model`, `context_at_last_turn`) — true for the parent
+/// session, false for sub-agent sub-sessions.
+fn accumulate_transcript_file(
+    path: &Path,
+    agg: &mut TranscriptAgg,
+    seen: &mut HashSet<String>,
+    update_context: bool,
+) {
     let file = match fs::File::open(path) {
         Ok(f) => f,
-        Err(_) => return agg,
+        Err(_) => return,
     };
     let reader = BufReader::new(file.take(TRANSCRIPT_BYTE_CAP));
     for line in reader.lines() {
@@ -391,12 +446,24 @@ fn read_transcript(path: &Path) -> TranscriptAgg {
             None => continue,
         };
 
+        // Dedup by Anthropic message id: a turn that appears both
+        // inlined in the parent (sidechain) and in a sub-session
+        // file shares its `message.id`, so the second sighting is
+        // folded out. Turns without an id are always counted.
+        if let Some(id) = message.get("id").and_then(|i| i.as_str()) {
+            if !seen.insert(id.to_string()) {
+                continue;
+            }
+        }
+
         agg.totals_present = true;
         agg.turn_count = agg.turn_count.saturating_add(1);
 
         let model = message.get("model").and_then(|m| m.as_str());
-        if let Some(m) = model {
-            agg.last_model = Some(m.to_string());
+        if update_context {
+            if let Some(m) = model {
+                agg.last_model = Some(m.to_string());
+            }
         }
 
         let usage = message.get("usage");
@@ -429,12 +496,15 @@ fn read_transcript(path: &Path) -> TranscriptAgg {
         // context. `output_tokens` is generated by the model, not
         // part of the context window for this turn — including it
         // overcounts and produces context_window_pct values above
-        // 100% on real flows.
-        agg.context_at_last_turn = Some(
-            input
-                .saturating_add(cache_create)
-                .saturating_add(cache_read),
-        );
+        // 100% on real flows. Only the parent session drives this;
+        // sub-agent sub-sessions are separate contexts.
+        if update_context {
+            agg.context_at_last_turn = Some(
+                input
+                    .saturating_add(cache_create)
+                    .saturating_add(cache_read),
+            );
+        }
 
         if let Some(m) = model {
             let entry = agg.by_model.entry(m.to_string()).or_default();
@@ -452,7 +522,6 @@ fn read_transcript(path: &Path) -> TranscriptAgg {
             }
         }
     }
-    agg
 }
 
 /// Lookup table for known Claude model context-window sizes.

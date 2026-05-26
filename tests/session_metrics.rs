@@ -706,3 +706,164 @@ fn is_safe_transcript_path_rejects_when_path_canonicalize_fails() {
     assert!(!transcript.exists());
     assert!(!is_safe_transcript_path(&transcript, &home));
 }
+
+// --- sub-agent sub-session capture ---
+
+/// Plain assistant-message line carrying an Anthropic `message.id`,
+/// used to exercise dedup across the parent transcript and a
+/// sub-session file (a turn present in both is counted once).
+fn assistant_line_with_id(id: &str, model: &str, input: i64, output: i64) -> String {
+    format!(
+        r#"{{"type":"assistant","message":{{"id":"{id}","model":"{model}","role":"assistant","content":[{{"type":"text","text":"hi"}}],"usage":{{"input_tokens":{input},"output_tokens":{output},"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}}}}"#
+    )
+}
+
+/// Create `<home>/.claude/projects/<proj>/` and write the parent
+/// session transcript inside it, returning (home, parent_path). The
+/// project layout lets sub-session files under `subagents/` pass
+/// `is_safe_transcript_path`.
+fn projects_parent(tmp: &TempDir, proj: &str, lines: &[&str]) -> (PathBuf, PathBuf) {
+    let home = tmp.path().canonicalize().expect("canonicalize");
+    let proj_dir = home.join(".claude").join("projects").join(proj);
+    fs::create_dir_all(&proj_dir).expect("mkdir proj");
+    let parent = proj_dir.join("session.jsonl");
+    fs::write(&parent, lines.join("\n") + "\n").expect("write parent");
+    (home, parent)
+}
+
+/// Write a sub-agent sub-session transcript at
+/// `<home>/.claude/projects/<proj>/subagents/<name>` and return it.
+fn write_subagent(home: &std::path::Path, proj: &str, name: &str, lines: &[&str]) -> PathBuf {
+    let dir = home
+        .join(".claude")
+        .join("projects")
+        .join(proj)
+        .join("subagents");
+    fs::create_dir_all(&dir).expect("mkdir subagents");
+    let path = dir.join(name);
+    fs::write(&path, lines.join("\n") + "\n").expect("write subagent");
+    path
+}
+
+/// A sidechain-marked assistant turn in the parent transcript is
+/// counted in the totals — capture does not filter sidechain turns
+/// out, so sub-agent usage inlined into the parent contributes.
+#[test]
+fn capture_counts_sidechain_assistant_turns_in_parent() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let line = r#"{"type":"assistant","isSidechain":true,"message":{"id":"msg_side","model":"claude-opus-4-7","role":"assistant","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}"#;
+    let transcript = write_transcript(&root, "session.jsonl", &[line]);
+    let snap = capture(&root, Some(&transcript), Some("sid"), || "now".to_string());
+    assert_eq!(snap.turn_count, Some(1), "sidechain turn must be counted");
+    assert_eq!(snap.session_input_tokens, Some(100));
+    assert_eq!(
+        snap.by_model
+            .get("claude-opus-4-7")
+            .expect("opus entry")
+            .input,
+        100
+    );
+}
+
+/// A sub-agent sub-session file under `<project>/subagents/` is
+/// discovered and its usage summed into the snapshot totals and
+/// by_model, on top of the parent transcript.
+#[test]
+fn capture_sums_subagent_subsession_files() {
+    let tmp = TempDir::new().expect("tempdir");
+    let (home, parent) = projects_parent(
+        &tmp,
+        "proj",
+        &[&assistant_line_with_id(
+            "msg_parent",
+            "claude-opus-4-7",
+            100,
+            50,
+        )],
+    );
+    write_subagent(
+        &home,
+        "proj",
+        "agent-1.jsonl",
+        &[&assistant_line_with_id(
+            "msg_sub",
+            "claude-opus-4-7",
+            200,
+            100,
+        )],
+    );
+    // A non-.jsonl file in the same dir is skipped by the extension
+    // filter (it is not a transcript).
+    fs::write(
+        home.join(".claude")
+            .join("projects")
+            .join("proj")
+            .join("subagents")
+            .join("notes.txt"),
+        b"not a transcript",
+    )
+    .expect("write stray");
+    let snap = capture(&home, Some(&parent), Some("sid"), || "now".to_string());
+    // Parent (100/50) + sub-agent (200/100) summed.
+    assert_eq!(snap.session_input_tokens, Some(300));
+    assert_eq!(snap.session_output_tokens, Some(150));
+    assert_eq!(snap.turn_count, Some(2), "parent + sub-agent turns");
+    assert_eq!(
+        snap.by_model
+            .get("claude-opus-4-7")
+            .expect("opus entry")
+            .input,
+        300
+    );
+}
+
+/// A turn present in BOTH the parent (inlined sidechain) and a
+/// sub-session file — same `message.id` — is counted once.
+#[test]
+fn capture_dedups_turn_present_in_parent_and_subsession_by_message_id() {
+    let tmp = TempDir::new().expect("tempdir");
+    let dup = assistant_line_with_id("msg_dup", "claude-opus-4-7", 100, 50);
+    let (home, parent) = projects_parent(&tmp, "proj", &[&dup]);
+    write_subagent(&home, "proj", "agent-1.jsonl", &[&dup]);
+    let snap = capture(&home, Some(&parent), Some("sid"), || "now".to_string());
+    // The duplicate message id is folded — counted once, not twice.
+    assert_eq!(
+        snap.turn_count,
+        Some(1),
+        "duplicate message id must be counted once"
+    );
+    assert_eq!(snap.session_input_tokens, Some(100));
+}
+
+/// A `subagents/` file outside the `~/.claude/projects/` prefix is
+/// rejected by `is_safe_transcript_path` and contributes nothing —
+/// only the parent transcript's usage is counted.
+#[test]
+fn capture_rejects_subagent_files_outside_projects_prefix() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    // Parent lives at root/session.jsonl (NOT under .claude/projects/),
+    // so the sibling subagents dir is also outside the prefix.
+    let parent = write_transcript(
+        &root,
+        "session.jsonl",
+        &[&assistant_line_with_id(
+            "msg_parent",
+            "claude-opus-4-7",
+            100,
+            50,
+        )],
+    );
+    let subagents_dir = root.join("subagents");
+    fs::create_dir_all(&subagents_dir).expect("mkdir subagents");
+    fs::write(
+        subagents_dir.join("agent-1.jsonl"),
+        assistant_line_with_id("msg_sub", "claude-opus-4-7", 999, 999) + "\n",
+    )
+    .expect("write subagent");
+    let snap = capture(&root, Some(&parent), Some("sid"), || "now".to_string());
+    // Sub-agent file rejected (out of prefix) → only the parent counts.
+    assert_eq!(snap.session_input_tokens, Some(100));
+    assert_eq!(snap.turn_count, Some(1));
+}
