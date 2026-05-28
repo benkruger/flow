@@ -491,6 +491,51 @@ fn plan_reviewer_agent_declares_end_of_findings_marker() {
     assert_agent_output_format_declares_end_of_findings("plan-reviewer.md");
 }
 
+// --- plan-reviewer ternary verdict contract ---
+//
+// The plan-reviewer produces a verdict in {pass, re-decompose,
+// revise-transform}. The third value routes prose-artifact findings
+// (table placement, a missing required table, doc-surface
+// enumeration, prose wording) to an in-place Transform-step
+// correction instead of a decompose re-run that re-derives the same
+// DAG and re-authors the same non-compliant prose.
+//
+// Regression: a future edit drops the `revise-transform` verdict
+// value or the per-violation `Remediation:` classification field,
+// which would route every prose-artifact finding to a futile
+// decompose re-run that exhausts the 3-attempt cap and ships the
+// violation as a permanent advisory. Consumer:
+// skills/flow-plan/SKILL.md Step 6 Plan Review subsection, which
+// parses VERDICT: and branches three ways on the aggregate verdict.
+#[test]
+fn plan_reviewer_agent_declares_ternary_verdict() {
+    let c = common::read_agent("plan-reviewer.md");
+
+    // The third verdict value is named in the agent (Method step 4,
+    // Output Format, and Hard Rules all reference it).
+    assert!(
+        c.contains("revise-transform"),
+        "agents/plan-reviewer.md must name the third verdict value `revise-transform`"
+    );
+
+    // The Output Format VERDICT: line names all three verdict values
+    // so the parent skill can parse and route on any of them.
+    let subsection = read_agent_output_format_section("plan-reviewer.md");
+    assert!(
+        subsection.contains("pass")
+            && subsection.contains("re-decompose")
+            && subsection.contains("revise-transform"),
+        "agents/plan-reviewer.md Output Format VERDICT: line must name all three verdict values (pass, re-decompose, revise-transform)"
+    );
+
+    // Each violation block declares the per-violation `Remediation:`
+    // classification field so the orchestrator routes per-finding.
+    assert!(
+        subsection.contains("Remediation:"),
+        "agents/plan-reviewer.md Output Format must declare the per-violation `Remediation:` classification field so each violation carries its remediation class (re-decompose | revise-transform)"
+    );
+}
+
 // --- flow-review Step 2 out-of-worktree HARD-GATE (#1704) ---
 //
 // The truncation-recovery subsection of Step 2 must carry a HARD-GATE
@@ -6304,10 +6349,39 @@ fn flow_plan_skill_invokes_plan_review_with_capped_loop() {
         "skills/flow-plan/SKILL.md Plan Review subsection must name the loop cap as 3 attempts so a non-converging re-decompose loop halts cleanly"
     );
 
-    // Retry routes through decompose:decompose
+    // Retry routes through decompose:decompose. The re-decompose
+    // path never hand-patches the plan; the revise-transform path
+    // (asserted below) IS the sanctioned Transform-step prose fix.
     assert!(
         subsection.contains("decompose:decompose"),
-        "skills/flow-plan/SKILL.md Plan Review subsection must route the re-decompose retry through `decompose:decompose` — the plan must never be hand-patched"
+        "skills/flow-plan/SKILL.md Plan Review subsection must route the re-decompose retry through `decompose:decompose` — re-decompose-class findings are never hand-patched"
+    );
+
+    // The third verdict value is parsed and branched. Without it,
+    // prose-artifact findings route to a futile decompose re-run.
+    assert!(
+        subsection.contains("revise-transform"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must parse and branch on the `revise-transform` verdict so prose-artifact findings reach an in-place Transform-step fix"
+    );
+
+    // The revise-transform branch applies the prose fix WITHOUT
+    // re-running decompose — the property that distinguishes it from
+    // the re-decompose branch. A future edit that routes
+    // revise-transform back through decompose:decompose collapses the
+    // distinction and the third verdict becomes dead weight.
+    assert!(
+        subsection.contains("without re-running decompose"),
+        "skills/flow-plan/SKILL.md Plan Review subsection must state the revise-transform branch applies the prose fix `without re-running decompose` so the in-place remediation is distinct from the re-decompose path"
+    );
+
+    // The HARD-GATE carve-out sanctions the revise-transform prose
+    // fix while keeping the re-decompose hand-patch prohibition. The
+    // isolated reviewer has already classified the fix as mechanical
+    // prose, so applying it is the sanctioned remediation rather than
+    // an orchestrator self-decision that would break isolation.
+    assert!(
+        subsection.contains("sanctioned remediation"),
+        "skills/flow-plan/SKILL.md Plan Review subsection HARD-GATE must name the revise-transform prose fix as the `sanctioned remediation` (the carve-out from the re-decompose hand-patch prohibition)"
     );
 
     // The two cap-exhausted assertions below verify content inside

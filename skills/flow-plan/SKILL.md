@@ -765,48 +765,91 @@ the final user-visible violations block rather than splitting
 infinitely.
 
 When the marker is present, parse `VERDICT:` from the response.
+The reviewer classifies each violation per-finding (carried on a
+`Remediation:` line) and the aggregate verdict is the routing
+signal. Branch three ways:
 
 - **`VERDICT: pass`** → the plan satisfies the project rules. Fall
   through to `Validate the Body` unchanged.
-- **`VERDICT: re-decompose`** → at least one component is
-  unmotivated or one applicable rule is violated. Capture the
+- **`VERDICT: revise-transform`** → at least one applicable rule
+  is violated AND every violation is a Transform-step prose
+  artifact (table placement, a missing required table, doc-surface
+  enumeration, prose wording). Capture the `Violations:` block and
+  run the revise-transform branch of the loop below — apply the
+  reviewer's named prose fixes directly to the drafted body
+  **without re-running decompose**.
+- **`VERDICT: re-decompose`** → at least one violation requires a
+  task-DAG change (an unmotivated component, a missing task, wrong
+  ordering, a missing gate-consumer task). Capture the
   `Violations:` block from the agent's output and run the
-  re-decompose loop below.
+  re-decompose branch of the loop below.
 
 <HARD-GATE>
 Do NOT proceed to `Validate the Body` when the verdict is
-`re-decompose`. Do NOT hand-patch the plan to address violations.
-The plan must be re-derived through `decompose:decompose` with
-the violations fed back as input. Hand-patching defeats the
-cognitive-isolation contract — the orchestrating model would be
-editing its own output to satisfy the reviewer, reintroducing the
-bias the gate exists to break.
+`re-decompose` or `revise-transform` until the matching loop
+branch below has run.
+
+For `re-decompose`: do NOT hand-patch the plan. The plan must be
+re-derived through `decompose:decompose` with the violations fed
+back as input. Hand-patching a re-decompose-class finding defeats
+the cognitive-isolation contract — the orchestrating model would
+be editing its own output to satisfy the reviewer, reintroducing
+the bias the gate exists to break.
+
+For `revise-transform`: applying the reviewer's named prose fix
+in the Transform step IS the **sanctioned remediation** — not a
+hand-patch the orchestrator self-authorized. The cognitively
+isolated reviewer has already classified the fix as a mechanical
+prose correction with no design judgment; the orchestrator
+executes the reviewer's named instruction, it does not re-judge
+the plan's substance. Hand-patching a `re-decompose`-class finding
+remains forbidden in every context.
 </HARD-GATE>
 
 #### Plan-Reviewer Loop (max 3 attempts)
 
-When the verdict is `re-decompose`, run a bounded retry loop
-mirroring the Validator Auto-Fix Loop shape below. The cap is
-**3 attempts** including the first failed review.
+When the verdict is `re-decompose` or `revise-transform`, run a
+bounded retry loop mirroring the Validator Auto-Fix Loop shape
+below. A single cap of **3 attempts** (including the first failed
+review) is shared across both remediation branches — they never
+have separate budgets.
 
-For each retry attempt:
+For each retry attempt, run the remediation step matching the
+verdict the most recent review returned:
 
-1. Construct a fresh `decompose:decompose` prompt that includes
-   the parent vanilla issue context, the prior plan synthesis,
-   and the `Violations:` block returned by the reviewer.
-2. Invoke `decompose:decompose` via the Skill tool and wait for
-   the new synthesis.
-3. Re-run `Transform + Draft` on the new synthesis to produce a
-   revised Implementation Plan.
-4. Re-run the Pre-Draft scans on the revised body.
+- **`re-decompose` remediation** — the fix needs a task-DAG
+  change:
+  1. Construct a fresh `decompose:decompose` prompt that includes
+     the parent vanilla issue context, the prior plan synthesis,
+     and the `Violations:` block returned by the reviewer.
+  2. Invoke `decompose:decompose` via the Skill tool and wait for
+     the new synthesis.
+  3. Re-run `Transform + Draft` on the new synthesis to produce a
+     revised Implementation Plan.
+- **`revise-transform` remediation** — every violation is a
+  Transform-step prose artifact, so the fix is in-place prose
+  correction **without re-running decompose**:
+  1. Apply the reviewer's named prose fixes directly to the
+     already-drafted plan body (move the table to the Tasks
+     section, add the missing required table, fix the wording).
+     Do NOT invoke `decompose:decompose` — the task DAG is
+     already correct.
+  2. The prior synthesis carries forward unchanged; only the
+     orchestrator-authored prose is corrected.
+
+Then, regardless of which remediation branch ran:
+
+3. Re-run the Pre-Draft scans on the revised body.
+4. Re-validate readiness of the revised plan.
 5. Re-invoke `flow:plan-reviewer` against the revised plan via
    the Agent tool with `subagent_type: "flow:plan-reviewer"`.
 6. Check for the `## END-OF-FINDINGS` marker. If absent, re-invoke
    with narrower scope per the truncation-recovery path above
    before parsing `VERDICT:`.
 7. Parse `VERDICT:` again. On `pass` exit the loop and fall
-   through to `Validate the Body`. On `re-decompose`
-   increment the attempt counter and continue.
+   through to `Validate the Body`. On `re-decompose` or
+   `revise-transform` increment the shared attempt counter and
+   continue with the matching remediation branch.
 
 After 3 failed reviews, do NOT loop further. The plan-reviewer
 advises — it never blocks filing. The issue is then
@@ -819,10 +862,11 @@ Print the advisory preface, then render the agent's final
 
 ````markdown
 ```text
-⚠ Plan Review advisory — the plan-reviewer returned
-  `re-decompose` on all 3 attempts. The issue is being filed
-  with the last drafted plan; the violations below are surfaced
-  for the user, not a block on filing.
+⚠ Plan Review advisory — the plan-reviewer returned a non-pass
+  verdict (`re-decompose` or `revise-transform`) on all 3
+  attempts. The issue is being filed with the last drafted plan;
+  the violations below are surfaced for the user, not a block on
+  filing.
 ```
 ````
 
