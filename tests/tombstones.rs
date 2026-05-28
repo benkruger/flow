@@ -1113,11 +1113,12 @@ fn test_skills_no_flow_decompose_project() {
     );
 }
 
-/// Helper for the flow-decompose-project tombstone — walks a path
+/// Helper for the SKILL.md byte-substring tombstones — walks a path
 /// (file or directory) and pushes every line that contains the
 /// forbidden substring into `out`. Directories are walked
-/// recursively; non-text files are skipped silently. Used only by
-/// `test_skills_no_flow_decompose_project`.
+/// recursively; non-text files are skipped silently. Used by
+/// `test_skills_no_flow_decompose_project` and
+/// `test_skills_no_loop_token`.
 fn scan_for_substring(path: &Path, needle: &str, out: &mut Vec<String>) {
     if path.is_file() {
         if let Ok(content) = fs::read_to_string(path) {
@@ -1134,6 +1135,61 @@ fn scan_for_substring(path: &Path, needle: &str, out: &mut Vec<String>) {
             scan_for_substring(&entry.path(), needle, out);
         }
     }
+}
+
+// --- /loop skill removal (PR #1728) ---
+//
+// flow-start (locked→/loop), flow-release (null CI→/loop), and a
+// stale flow-complete Rules note all invoked the `loop` skill to
+// re-run a phase on a timer. With start-init and wait-for-release-ci
+// now blocking internally on a bounded cap, the `loop`-skill external
+// plugin dependency is removed from every SKILL.md. This tombstone
+// catches a merge conflict or accidental edit that re-introduces the
+// invocation token in any skill.
+
+/// Tombstone: removed in PR #1728. The `loop` skill is no longer
+/// invoked from any SKILL.md — start-init and wait-for-release-ci
+/// block internally, and the invoking skills re-run a single line on
+/// cap-exhaustion. Neither the slash-command token nor the
+/// backtick-quoted skill reference must reappear in any `skills/` or
+/// `.claude/skills/` SKILL.md. Bare-word "loop" (loop-guard, "Do not
+/// loop or retry", "loop back through CI") carries neither token and
+/// is intentionally not matched.
+///
+/// Stability argument: the protected targets are two literal tokens
+/// in the Markdown SKILL.md corpus. (a) `concat!` — N/A for Markdown
+/// prose, which has no string-assembly construct; (b) `format!` —
+/// N/A for Markdown; (c) split constant — N/A for Markdown; (d)
+/// `.arg()` split — N/A for Markdown. A Markdown author cannot
+/// synthesize either token without writing the literal bytes, so the
+/// byte-substring scan is exhaustive for this corpus. Re-introduction
+/// in a NEW skill is covered because the scan walks every file under
+/// both skill roots, not a fixed file list.
+#[test]
+fn test_skills_no_loop_token() {
+    let scan_paths: Vec<PathBuf> = vec![
+        common::skills_dir(),
+        common::repo_root().join(".claude").join("skills"),
+    ];
+    // The `loop` skill is reached two ways: as a slash command and as
+    // a backtick-quoted skill reference. Both tokens are forbidden;
+    // bare-word "loop" is not. The constants are built via `concat!`
+    // so this test file (scanned by the rust-source backward-comment
+    // tombstone, not by this scan) does not itself carry the literal
+    // slash-token on a source line.
+    let forbidden_slash = concat!("/", "loop");
+    let forbidden_backtick = concat!("`", "loop", "`");
+    let mut violations: Vec<String> = Vec::new();
+    for path in &scan_paths {
+        scan_for_substring(path, forbidden_slash, &mut violations);
+        scan_for_substring(path, forbidden_backtick, &mut violations);
+    }
+    assert!(
+        violations.is_empty(),
+        "Found {} `loop`-skill invocation token(s) in SKILL.md (PR #1728 removed every loop-skill site):\n  {}",
+        violations.len(),
+        violations.join("\n  ")
+    );
 }
 
 // --- create-sub-issue removal (PR #1694 supersession) ---
