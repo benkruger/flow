@@ -203,7 +203,7 @@ fn write_ci_sentinel_for_worktree(
 }
 
 /// Set up a real worktree fixture for tests of finalize-commit's
-/// branch-derived routing. The base call (`setup_integration_repo_with_ci`)
+/// git-resolved worktree routing. The base call (`setup_integration_repo_with_ci`)
 /// produces a clone on `main` with a controllable `bin/test` script.
 /// This helper then creates `branch` in the clone, pushes it to origin
 /// so `git pull` has an upstream, and `git worktree add`s a linked
@@ -556,14 +556,14 @@ fn finalize_commit_errors_when_worktree_resolution_fails() {
     );
 }
 
-// --- run_impl: branch-derived routing through worktree ---
+// --- run_impl: git-resolved worktree routing ---
 
-/// `run_impl` derives `commit_cwd` from `<branch>` + `<root>` via
-/// `FlowPaths::worktree()`, so the commit must land on the worktree's
-/// HEAD even when the caller's cwd is an unrelated sibling tempdir
-/// outside both the main clone and the worktree. The plan calls this
-/// the canonical fresh-worktree case: caller cwd is irrelevant; the
-/// branch argument is the routing key.
+/// `run_impl` resolves `commit_cwd` by asking git where the branch is
+/// checked out (`resolve_worktree_for_branch`), so the commit lands on
+/// the branch's worktree HEAD even when the caller's cwd is an
+/// unrelated sibling tempdir outside both the main clone and the
+/// worktree. The branch argument — not the caller cwd — determines the
+/// commit destination.
 #[test]
 fn finalize_commit_routes_to_worktree_when_caller_cwd_differs() {
     let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("feature-routing");
@@ -605,12 +605,11 @@ fn finalize_commit_routes_to_worktree_when_caller_cwd_differs() {
     );
 }
 
-/// Monorepo case: a checkout opened from a subdirectory of the main
-/// clone (e.g. `<clone>/hub/`) used to cause Layer 10 to read the wrong
-/// branch from the caller's cwd. With branch-derived routing, the
-/// `--branch` argument is the routing key and the commit lands on
-/// the feature-branch worktree regardless of where the caller's
-/// shell sits inside the main clone.
+/// Monorepo case: the caller's cwd is a subdirectory of the main
+/// clone (e.g. `<clone>/hub/`). `run_impl` resolves the commit
+/// destination from the `--branch` argument via git, so the commit
+/// lands on the feature-branch worktree regardless of where the
+/// caller's shell sits inside the main clone.
 #[test]
 fn finalize_commit_routes_to_worktree_when_caller_cwd_inside_main_subdir() {
     let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("feature-monorepo");
@@ -656,12 +655,11 @@ fn finalize_commit_routes_to_worktree_when_caller_cwd_inside_main_subdir() {
     );
 }
 
-/// Latent-bug case: two feature worktrees coexist (`branch-a` and
-/// `branch-b`). The branch argument routes the commit to the
-/// `branch-b` worktree even if a hypothetical caller cwd were inside
-/// the `branch-a` worktree. Layer 10 previously blocked this entire
-/// shape by refusing commits whose cwd resolved to a different active
-/// flow; with branch-derived routing the destination is unambiguous.
+/// Two feature worktrees coexist (`feature-a` and `feature-b`).
+/// `run_impl` resolves the destination from the `--branch` argument
+/// via git, so naming `feature-b` lands the commit on worktree B and
+/// leaves worktree A untouched — two active worktrees never produce
+/// an ambiguous destination.
 #[test]
 fn finalize_commit_routes_to_worktree_when_caller_cwd_on_other_feature_branch() {
     let (clone_dir, _bare_dir, worktree_a) = setup_worktree_fixture("feature-a");
