@@ -141,7 +141,7 @@ By the end of Phase 5:
 
 ## Idempotent Design
 
-The skill is safe to re-invoke (e.g., via `/loop 15s /flow:flow-complete`):
+The skill is safe to re-invoke:
 
 | State | Behavior |
 |---|---|
