@@ -43,6 +43,88 @@ fn project_root_with_stdout(stdout: &str) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// Resolve the worktree path where `branch` is currently checked out by
+/// asking git, rather than inferring the location from the branch name.
+///
+/// Runs `git -C <root> worktree list --porcelain` and returns:
+/// - `Ok(Some(path))` — `branch` is checked out at `path` (the repo root
+///   for a trunk/feature-at-root checkout, or a linked worktree path).
+/// - `Ok(None)` — `branch` is not checked out in any worktree.
+/// - `Err(msg)` — git could not be run (binary missing) or exited
+///   non-zero (cwd/`root` is not inside a git repository).
+///
+/// Mirrors the [`project_root`] three-layer split (`resolve` runs git →
+/// `from_output` interprets the raw result → `from_stdout` parses the
+/// text), but does NOT inherit that family's fail-open `"."` default:
+/// a silent fallback on git failure would route a commit to the wrong
+/// directory. Git failure surfaces as `Err`; absence surfaces as
+/// `Ok(None)`.
+pub fn resolve_worktree_for_branch(root: &Path, branch: &str) -> Result<Option<PathBuf>, String> {
+    worktree_for_branch_from_output(
+        Command::new("git")
+            .args([
+                "-C",
+                &root.to_string_lossy(),
+                "worktree",
+                "list",
+                "--porcelain",
+            ])
+            .output(),
+        branch,
+    )
+}
+
+/// Pure helper for [`resolve_worktree_for_branch`]: interpret the raw
+/// result of running `git worktree list --porcelain`. On success,
+/// delegates to [`worktree_for_branch_from_stdout`]. Any failure (spawn
+/// failure from a missing git binary, or a non-zero exit when the
+/// directory is not a git repository) collapses to `Err` with a message
+/// naming the command — never a fail-open default path.
+fn worktree_for_branch_from_output(
+    output: io::Result<Output>,
+    branch: &str,
+) -> Result<Option<PathBuf>, String> {
+    match output {
+        Ok(o) if o.status.success() => Ok(worktree_for_branch_from_stdout(
+            &String::from_utf8_lossy(&o.stdout),
+            branch,
+        )),
+        _ => Err(
+            "git worktree list --porcelain failed (git unavailable or not a git repository)"
+                .to_string(),
+        ),
+    }
+}
+
+/// Pure parser: take `git worktree list --porcelain` stdout and return
+/// the worktree path whose block carries `branch refs/heads/<branch>`,
+/// matched exactly. Porcelain blocks are separated by blank lines; each
+/// block has a `worktree <path>` line and, for a branch checkout, a
+/// `branch refs/heads/<name>` line. Blocks with no `branch` line
+/// (detached-HEAD worktrees, the bare main repo) carry no checked-out
+/// branch and are skipped. The `<name>` match is exact so a branch
+/// `feat` never matches a sibling `feat-2`. Returns `None` when no
+/// block's branch equals `branch`.
+fn worktree_for_branch_from_stdout(stdout: &str, branch: &str) -> Option<PathBuf> {
+    for block in stdout.split("\n\n") {
+        let mut path: Option<&str> = None;
+        let mut block_branch: Option<&str> = None;
+        for line in block.lines() {
+            if let Some(p) = line.strip_prefix("worktree ") {
+                path = Some(p.trim());
+            } else if let Some(b) = line.strip_prefix("branch refs/heads/") {
+                block_branch = Some(b.trim());
+            }
+        }
+        if let (Some(p), Some(b)) = (path, block_branch) {
+            if b == branch {
+                return Some(PathBuf::from(p));
+            }
+        }
+    }
+    None
+}
+
 /// Get the current git branch name.
 ///
 /// Returns None if not on a branch (e.g. detached HEAD) or if git fails.

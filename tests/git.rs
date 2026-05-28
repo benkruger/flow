@@ -6,12 +6,12 @@
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use flow_rs::git::{
     current_branch, current_branch_in, default_branch_in, project_root, resolve_branch,
-    resolve_branch_in,
+    resolve_branch_in, resolve_worktree_for_branch,
 };
 
 /// Initialize a git repo in the given directory with an initial commit
@@ -498,4 +498,131 @@ fn default_branch_in_returns_err_when_git_returns_empty_branch() {
         .output()
         .expect("spawn flow-rs base-branch");
     let _ = output;
+}
+
+// --- resolve_worktree_for_branch ---
+
+/// Add a linked worktree checked out on a new branch `<branch>` at
+/// `<path>`. Mirrors `flow-start`'s `git worktree add` for the feature
+/// branch. Returns once the worktree exists so the caller can query it.
+fn add_worktree_branch(root: &Path, path: &Path, branch: &str) {
+    let output = Command::new("git")
+        .args(["worktree", "add", &path.to_string_lossy(), "-b", branch])
+        .current_dir(root)
+        .output()
+        .expect("git worktree add failed to spawn");
+    assert!(
+        output.status.success(),
+        "git worktree add failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// Add a linked worktree with a detached HEAD at `<path>`. The porcelain
+/// block for a detached worktree carries a `detached` line in place of
+/// `branch refs/heads/<name>`, so the parser must skip it.
+fn add_detached_worktree(root: &Path, path: &Path) {
+    let output = Command::new("git")
+        .args(["worktree", "add", "--detach", &path.to_string_lossy()])
+        .current_dir(root)
+        .output()
+        .expect("git worktree add --detach failed to spawn");
+    assert!(
+        output.status.success(),
+        "git worktree add --detach failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn resolve_worktree_for_branch_returns_root_when_checked_out_at_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git_repo(&root, "main");
+    let result = resolve_worktree_for_branch(&root, "main");
+    assert_eq!(result, Ok(Some(root.clone())));
+}
+
+#[test]
+fn resolve_worktree_for_branch_returns_worktree_when_checked_out_in_linked_worktree() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git_repo(&root, "main");
+    let wt = root.join("wt-feat");
+    add_worktree_branch(&root, &wt, "feat");
+    let result = resolve_worktree_for_branch(&root, "feat");
+    let resolved = result.expect("Ok").expect("Some");
+    assert_eq!(resolved.canonicalize().unwrap(), wt.canonicalize().unwrap());
+}
+
+#[test]
+fn resolve_worktree_for_branch_returns_none_when_branch_not_checked_out() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git_repo(&root, "main");
+    let result = resolve_worktree_for_branch(&root, "ghost");
+    assert_eq!(result, Ok(None));
+}
+
+#[test]
+fn resolve_worktree_for_branch_skips_detached_worktree() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git_repo(&root, "main");
+    let detached = root.join("wt-detached");
+    add_detached_worktree(&root, &detached);
+    // The detached block carries no `branch refs/heads/` line; querying a
+    // branch not present anywhere returns None, exercising the skip path.
+    let result = resolve_worktree_for_branch(&root, "ghost");
+    assert_eq!(result, Ok(None));
+}
+
+#[test]
+fn resolve_worktree_for_branch_does_not_match_branch_prefix() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git_repo(&root, "main");
+    let wt = root.join("wt-feat2");
+    add_worktree_branch(&root, &wt, "feat-2");
+    // `feat` is a prefix of `feat-2`; the match must be exact, so the
+    // query for `feat` returns None.
+    let result = resolve_worktree_for_branch(&root, "feat");
+    assert_eq!(result, Ok(None));
+}
+
+#[test]
+fn resolve_worktree_for_branch_errors_in_non_git_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    // No `git init` — `git worktree list --porcelain` exits non-zero.
+    let result = resolve_worktree_for_branch(&root, "main");
+    assert!(result.is_err(), "expected Err, got {:?}", result);
+}
+
+#[test]
+fn resolve_worktree_for_branch_error_names_failure_class() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let result = resolve_worktree_for_branch(&root, "main");
+    let err = result.unwrap_err();
+    assert!(
+        err.contains("worktree") || err.contains("spawn"),
+        "expected error to name the git failure class, got: {}",
+        err
+    );
+}
+
+/// Forces `PathBuf` into use so the import does not go unused before the
+/// resolver impl lands. The resolver returns `Result<Option<PathBuf>, _>`;
+/// this asserts the success path yields a `PathBuf` whose value is the
+/// queried worktree root.
+#[test]
+fn resolve_worktree_for_branch_success_yields_pathbuf() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    init_git_repo(&root, "main");
+    let resolved: PathBuf = resolve_worktree_for_branch(&root, "main")
+        .expect("Ok")
+        .expect("Some");
+    assert_eq!(resolved, root);
 }
