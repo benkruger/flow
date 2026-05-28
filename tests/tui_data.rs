@@ -230,7 +230,7 @@ fn test_phase_step_counter_learn_missing() {
 fn test_phase_step_counter_complete_present() {
     let mut state = make_state("flow-complete", &[("flow-complete", "in_progress")]);
     state["complete_step"] = json!(4);
-    state["complete_steps_total"] = json!(6);
+    state["complete_steps_total"] = json!(5);
     let got = phase_step_counter(&state).expect("counter present");
     assert_eq!(
         got,
@@ -238,8 +238,8 @@ fn test_phase_step_counter_complete_present() {
             phase_label: "Complete",
             phase_number: 5,
             current: 4,
-            total: 6,
-            name: Some("confirming".to_string()),
+            total: 5,
+            name: Some("merging PR".to_string()),
         }
     );
 }
@@ -343,14 +343,14 @@ fn test_step_names_learn_has_entries() {
 fn test_step_names_complete_has_entries() {
     let names = step_names();
     let complete = names.get("flow-complete").unwrap();
-    for key in 1..=6 {
+    for key in 1..=5 {
         assert!(
             complete.contains_key(&key),
             "missing key {} in flow-complete",
             key
         );
     }
-    assert_eq!(complete.len(), 6);
+    assert_eq!(complete.len(), 5);
 }
 
 // --- status_icon ---
@@ -765,9 +765,9 @@ fn test_phase_timeline_complete_annotation() {
         ],
     );
     state["complete_step"] = json!(5);
-    state["complete_steps_total"] = json!(6);
+    state["complete_steps_total"] = json!(5);
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[4].annotation, "merging PR - step 5 of 6");
+    assert_eq!(timeline[4].annotation, "finalizing - step 5 of 5");
 }
 
 #[test]
@@ -782,7 +782,7 @@ fn test_phase_timeline_complete_step_zero() {
             ("flow-complete", "in_progress"),
         ],
     );
-    state["complete_steps_total"] = json!(6);
+    state["complete_steps_total"] = json!(5);
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
     assert_eq!(timeline[4].annotation, "");
 }
@@ -800,9 +800,9 @@ fn test_phase_timeline_complete_step_one() {
         ],
     );
     state["complete_step"] = json!(1);
-    state["complete_steps_total"] = json!(6);
+    state["complete_steps_total"] = json!(5);
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[4].annotation, "running checks - step 1 of 6");
+    assert_eq!(timeline[4].annotation, "running checks - step 1 of 5");
 }
 
 // --- phase_timeline: live elapsed for in-progress ---

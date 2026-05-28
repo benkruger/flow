@@ -21,7 +21,7 @@ use crate::flow_paths::FlowPaths;
 use crate::git::project_root;
 use crate::lock::mutate_state;
 use crate::utils::bin_flow_path;
-const POST_MERGE_STEP: i64 = 6;
+const POST_MERGE_STEP: i64 = 5;
 
 #[derive(Parser, Debug)]
 #[command(

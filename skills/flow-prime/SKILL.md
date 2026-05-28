@@ -312,7 +312,6 @@ All universal permissions written to `.claude/settings.json` for reference:
       "Bash(gh pr close *)",
       "Bash(gh pr list *)",
       "Bash(gh pr view *)",
-      "Bash(gh pr checks *)",
       "Bash(gh pr merge *)",
       "Bash(gh pr comment *)",
       "Bash(gh pr diff *)",

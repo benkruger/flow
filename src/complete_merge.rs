@@ -5,12 +5,18 @@
 //! Usage: bin/flow complete-merge --pr <number> --state-file <path>
 //!
 //! Output (JSON to stdout):
-//!   Merged:     {"status": "merged", "pr_number": N}
-//!   CI rerun:   {"status": "ci_rerun", "pushed": true, "pr_number": N}
-//!   Conflict:   {"status": "conflict", "conflict_files": [...], "pr_number": N}
-//!   CI pending: {"status": "ci_pending", "pr_number": N}
-//!   Max retry:  {"status": "max_retries", "pr_number": N}
-//!   Error:      {"status": "error", "message": "...", "pr_number": N}
+//!   Merged:        {"status": "merged", "pr_number": N}
+//!   CI rerun:      {"status": "ci_rerun", "pushed": true, "pr_number": N}
+//!   Conflict:      {"status": "conflict", "conflict_files": [...], "pr_number": N}
+//!   Not mergeable: {"status": "not_mergeable", "message": "...", "pr_number": N}
+//!   Max retry:     {"status": "max_retries", "pr_number": N}
+//!   Error:         {"status": "error", "message": "...", "pr_number": N}
+//!
+//! `complete-merge` does not make its own GitHub-CI determination. When
+//! `gh pr merge --squash` refuses the merge (a required GitHub check is
+//! failing or still pending), the verbatim gh stderr is surfaced as
+//! `status: "not_mergeable"` with a `message` field and `run_impl_main`
+//! routes the non-`merged` status to exit 1.
 //!
 //! Tests live in `tests/complete_merge.rs` per
 //! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]` block
@@ -24,7 +30,7 @@ use serde_json::{json, Value};
 use crate::complete_preflight::{run_cmd_with_timeout, NETWORK_TIMEOUT};
 use crate::lock::mutate_state;
 use crate::utils::bin_flow_path;
-const MERGE_STEP: i64 = 5;
+const MERGE_STEP: i64 = 4;
 
 /// Resolve the configured `flow-complete` autonomy mode from the
 /// state file. Fails closed to `manual` when the file is missing,
@@ -186,7 +192,11 @@ fn complete_merge(pr_number: i64, state_file: &str) -> Value {
                 None => json!({"status": "merged", "pr_number": pr_number}),
                 Some(msg) => {
                     if msg.contains("base branch policy") {
-                        json!({"status": "ci_pending", "pr_number": pr_number})
+                        // `gh pr merge --squash` refused: a required
+                        // GitHub check is failing or still pending. Carry
+                        // the verbatim gh stderr as `message` and stop —
+                        // gh is the authority, not a FLOW guess.
+                        json!({"status": "not_mergeable", "message": msg, "pr_number": pr_number})
                     } else {
                         error_result(&msg, pr_number)
                     }

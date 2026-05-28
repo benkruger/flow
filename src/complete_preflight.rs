@@ -34,7 +34,7 @@ pub const LOCAL_TIMEOUT: u64 = 30;
 /// Standard timeout for network subprocess calls (git fetch, gh api, etc.).
 pub const NETWORK_TIMEOUT: u64 = 60;
 /// Step counter total for complete phase.
-pub const COMPLETE_STEPS_TOTAL: i64 = 6;
+pub const COMPLETE_STEPS_TOTAL: i64 = 5;
 
 pub type CmdResult = Result<(i32, String, String), String>;
 

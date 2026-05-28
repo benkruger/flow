@@ -28,31 +28,22 @@ Phase 5 is incomplete.
 
 `complete-fast` consolidates phase entry, state detection, PR status
 check, merge of the integration branch into the feature branch, local
-CI dirty check, GitHub CI check, and squash merge into a single call. Returns a `path` field for dispatch:
+CI dirty check, and squash merge into a single call. Returns a `path` field for dispatch:
 `"merged"` (auto happy path), `"already_merged"`, `"confirm"` (manual
-mode), `"ci_stale"`, `"ci_drift"`, `"ci_failed"`, `"ci_pending"`,
+mode), `"ci_stale"`, `"ci_failed"`, `"not_mergeable"`,
 `"conflict"`, or `"max_retries"`. If the PR is already merged, skips
-to finalize (step 6). If there are merge conflicts, resolves them and
+to finalize (step 5). If there are merge conflicts, resolves them and
 self-invokes to continue.
 
-The `ci_drift` path fires when the local CI sentinel matches the
-current tree (the same bytes already passed `bin/flow ci` locally)
-AND `gh pr checks` reports failure — a structural signal that the
-developer toolchain and the CI runner have diverged
-(formatter/linter/language-runtime version skew). The recovery is
-deterministic and bypasses `ci-fixer`: refresh the local toolchain
-via `bin/dependencies`, invalidate the sentinel and re-run via
-`bin/flow ci --force`, commit any auto-fixes via
-`/flow:flow-commit`, and self-invoke to re-check both local and
-remote CI. If `bin/dependencies` is absent in the target project,
-the handler dispatches as `ci_failed` and hands the failure to
-`ci-fixer`. A second `ci_drift` detection in the same Complete
-invocation is guarded by `_drift_recovery_attempted` and escalates
-to the user because the cause is likely environmental (CI runtime
-version, missing env var, or platform-specific behavior) rather
-than something a toolchain bump can fix. See
-`skills/flow-complete/SKILL.md` Step 1 for the full dispatch
-sequence per `.claude/rules/docs-with-behavior.md`.
+`complete-fast` makes no GitHub-CI determination of its own. The full
+local CI gate runs at every commit, so the only authority on whether
+the PR can merge is `gh pr merge --squash`. When that command refuses
+the merge (a required GitHub check is failing or still pending), the
+verbatim `gh` stderr is surfaced as the `not_mergeable` path with a
+`reason` field, and the skill reports it and stops — FLOW does not
+poll GitHub CI on the PR's behalf. `ci_failed` covers only local-CI
+failure. See `skills/flow-complete/SKILL.md` Step 1 for the full
+dispatch sequence per `.claude/rules/docs-with-behavior.md`.
 
 ### 2. Run local CI gate
 
@@ -60,14 +51,7 @@ Runs `bin/flow ci` locally to catch test failures after merging the
 integration branch into the feature branch.
 If it fails, launch the ci-fixer sub-agent to diagnose and fix.
 
-### 3. Check GitHub CI status
-
-Checks the PR's GitHub CI checks via `gh pr checks`. If all pass,
-continue to merge. If any are pending, invoke
-`/loop 15s /flow:flow-complete` to auto-retry. If any have failed,
-launch the ci-fixer sub-agent to diagnose and fix.
-
-### 4. Confirm with user (manual mode)
+### 3. Confirm with user (manual mode)
 
 In manual mode (the default), explicit confirmation is required
 before the irreversible squash merge. Any warnings from the preflight
@@ -75,23 +59,24 @@ are included in the confirmation message. On approval,
 `bin/flow confirm-merge` writes a single-use merge-approval marker
 that the merge step requires. Skipped in auto mode.
 
-### 5. Merge PR
+### 4. Merge PR
 
 `complete-merge` handles the freshness check and squash merge in a
 single script call. Verifies the branch is up-to-date with the
 integration branch before merging. When `flow-complete` is configured
 manual, it resolves the mode from the state file and requires the
 single-use merge-approval marker — with no marker the merge is refused
-(`merge_not_confirmed`) and the skill loops back to step 4 to
+(`merge_not_confirmed`) and the skill loops back to step 3 to
 re-confirm. This structural gate means a lost mode flag cannot merge a
 manual-configured flow unconfirmed. If the integration branch has
 moved, merges the new commits and loops back to step 2 (CI gate) to
 re-test. A retry limit of 3 prevents
 infinite loops under high contention. Once up-to-date, squash-merges
-via `gh pr merge --squash`. Detects branch protection policy blocks
-and returns for CI wait.
+via `gh pr merge --squash`. When `gh pr merge` refuses (a required
+GitHub check is failing or pending), surfaces the verbatim stderr as
+`not_mergeable` and the skill reports it and stops.
 
-### 6. Finalize: post-merge + cleanup
+### 5. Finalize: post-merge + cleanup
 
 `complete-finalize` handles all post-merge work AND cleanup in a single
 best-effort call. Self-gates before any side effect: when the caller's
@@ -129,9 +114,9 @@ rather than stranding the shell in a deleted directory.
 
 Each cleanup step is best-effort — if one fails, the rest still run.
 
-### 7. Cleanup results
+### 6. Cleanup results
 
-Reports what `complete-finalize` cleaned up in Step 6: what was
+Reports what `complete-finalize` cleaned up in Step 5: what was
 removed, what was already gone, and what failed.
 
 ---

@@ -79,10 +79,7 @@ fn complete_fast_errors_when_default_branch_resolve_fails() {
     let flow_bin = parent.join("bin-flow-stub").join("flow");
     write_flow_stub(&flow_bin);
     let stubs = build_path_stubs(&parent);
-    let env = [
-        ("FAKE_PR_STATE", "OPEN"),
-        ("FAKE_PR_CHECKS_OUT", "all-passing\tpass"),
-    ];
+    let env = [("FAKE_PR_STATE", "OPEN")];
     let output = run_complete_fast(&repo, Some(BRANCH), &flow_bin, &stubs, &env);
     let stdout = String::from_utf8_lossy(&output.stdout);
     // Find the JSON line — last line that starts with `{`.
@@ -165,8 +162,6 @@ esac
 /// Build PATH stub dir with gh + git stubs.
 ///   FAKE_PR_STATE        → gh pr view state (default OPEN)
 ///   FAKE_PR_VIEW_EXIT    → gh pr view exit code (default 0)
-///   FAKE_PR_CHECKS_OUT   → gh pr checks stdout (default empty → "none")
-///   FAKE_PR_CHECKS_EXIT  → gh pr checks exit code (default 0)
 ///   FAKE_MERGE_EXIT      → gh pr merge exit code (default 0)
 ///   FAKE_MERGE_STDERR    → gh pr merge stderr (default empty)
 ///   FAKE_FETCH_EXIT      → git fetch exit code (default 0)
@@ -189,12 +184,6 @@ case "$1 $2" in
             printf '%s' 'OPEN'
         fi
         exit ${FAKE_PR_VIEW_EXIT:-0}
-        ;;
-    "pr checks")
-        if [ -n "$FAKE_PR_CHECKS_OUT" ]; then
-            printf '%s' "$FAKE_PR_CHECKS_OUT"
-        fi
-        exit ${FAKE_PR_CHECKS_EXIT:-0}
         ;;
     "pr merge")
         if [ -n "$FAKE_MERGE_STDERR" ]; then printf '%s' "$FAKE_MERGE_STDERR" >&2; fi
@@ -619,155 +608,6 @@ fn ci_sentinel_miss_runs_ci_and_fails() {
 }
 
 #[test]
-fn gh_ci_checks_fail_returns_ci_failed_github() {
-    // Sentinel-miss path: bin/* stubs succeed so ci_decider returns
-    // (ci_skipped=false, None), then gh pr checks reports "fail" →
-    // ci_failed/github. The sentinel-hit variant of the same gh-fail
-    // input is exercised by
-    // ci_drift_path_returns_when_local_sentinel_matches_and_remote_fails
-    // because the dispatch produces a distinct ci_drift path when
-    // ci_skipped is true.
-    let fx = setup("complete", "auto");
-    let bin_dir = fx.repo.join("bin");
-    fs::create_dir_all(&bin_dir).unwrap();
-    for tool in &["format", "lint", "build", "test"] {
-        let p = bin_dir.join(tool);
-        fs::write(&p, "#!/bin/sh\nexit 0\n").unwrap();
-        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        &fx.flow_bin,
-        &fx.stubs,
-        &[("FAKE_PR_CHECKS_OUT", "build\tfail\n")],
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json = last_json_line(&stdout);
-    assert_eq!(json["status"], "ok");
-    assert_eq!(json["path"], "ci_failed");
-    assert_eq!(json["source"], "github");
-}
-
-#[test]
-fn ci_drift_path_returns_when_local_sentinel_matches_and_remote_fails() {
-    // Tool version drift signal: local CI sentinel matches the current
-    // tree (ci_skipped=true) AND `gh pr checks` reports fail. The same
-    // code passed locally but failed remotely — formatter/linter/runtime
-    // version skew. Dispatch must produce path: "ci_drift" so the skill
-    // refreshes the toolchain rather than handing the failure to
-    // ci-fixer.
-    let fx = setup("complete", "auto");
-    seed_ci_sentinel(&fx.repo, BRANCH);
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        &fx.flow_bin,
-        &fx.stubs,
-        &[("FAKE_PR_CHECKS_OUT", "build\tfail\n")],
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json = last_json_line(&stdout);
-    assert_eq!(json["status"], "ok");
-    assert_eq!(json["path"], "ci_drift");
-    assert_eq!(json["mode"], "auto");
-}
-
-#[test]
-fn gh_ci_checks_pending_returns_ci_pending() {
-    let fx = setup("complete", "auto");
-    seed_ci_sentinel(&fx.repo, BRANCH);
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        &fx.flow_bin,
-        &fx.stubs,
-        &[("FAKE_PR_CHECKS_OUT", "build\tpending\n")],
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json = last_json_line(&stdout);
-    assert_eq!(json["path"], "ci_pending");
-}
-
-#[test]
-fn gh_ci_checks_pass_proceeds_to_merge() {
-    let fx = setup("complete", "auto");
-    seed_ci_sentinel(&fx.repo, BRANCH);
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        &fx.flow_bin,
-        &fx.stubs,
-        &[("FAKE_PR_CHECKS_OUT", "build\tpass\nlint\tpass\n")],
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json = last_json_line(&stdout);
-    assert_eq!(json["path"], "merged");
-}
-
-#[test]
-fn gh_ci_checks_fail_trumps_pending() {
-    // Asserts the parse_gh_checks_output precedence (fail > pending)
-    // routes through the ci_failed/github branch. Sentinel-miss path
-    // with succeeding bin/* stubs keeps ci_skipped=false so the
-    // dispatch lands on ci_failed rather than ci_drift.
-    let fx = setup("complete", "auto");
-    let bin_dir = fx.repo.join("bin");
-    fs::create_dir_all(&bin_dir).unwrap();
-    for tool in &["format", "lint", "build", "test"] {
-        let p = bin_dir.join(tool);
-        fs::write(&p, "#!/bin/sh\nexit 0\n").unwrap();
-        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        &fx.flow_bin,
-        &fx.stubs,
-        &[("FAKE_PR_CHECKS_OUT", "build\tpending\nlint\tfail\n")],
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json = last_json_line(&stdout);
-    assert_eq!(json["path"], "ci_failed");
-    assert_eq!(json["source"], "github");
-}
-
-#[test]
-fn gh_ci_checks_none_empty_output_proceeds() {
-    let fx = setup("complete", "auto");
-    seed_ci_sentinel(&fx.repo, BRANCH);
-    // Empty checks output → has_any=false → "none" → proceed.
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        &fx.flow_bin,
-        &fx.stubs,
-        &[("FAKE_PR_CHECKS_OUT", "")],
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json = last_json_line(&stdout);
-    assert_eq!(json["path"], "merged");
-}
-
-#[test]
-fn gh_ci_checks_line_without_tab_treated_as_none() {
-    // parse_gh_checks_output: line with no tab → parts.len() < 2 →
-    // skipped. All lines skipped → has_any=false → "none" → proceed.
-    let fx = setup("complete", "auto");
-    seed_ci_sentinel(&fx.repo, BRANCH);
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        &fx.flow_bin,
-        &fx.stubs,
-        &[("FAKE_PR_CHECKS_OUT", "no-tab-line\n")],
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json = last_json_line(&stdout);
-    assert_eq!(json["path"], "merged");
-}
-
-#[test]
 fn mode_manual_returns_confirm() {
     let fx = setup("complete", "manual");
     seed_ci_sentinel(&fx.repo, BRANCH);
@@ -931,7 +771,11 @@ fn freshness_status_up_to_date_merge_ok_returns_merged() {
 }
 
 #[test]
-fn freshness_status_up_to_date_base_branch_policy_returns_ci_pending() {
+fn auto_path_base_branch_policy_returns_not_mergeable() {
+    // `gh pr merge --squash` refuses with a base-branch-policy stderr
+    // (a required GitHub check is failing or pending). complete-fast
+    // surfaces the verbatim gh stderr as path: "not_mergeable" with a
+    // `reason` field rather than guessing pending vs. failed.
     let fx = setup("complete", "auto");
     seed_ci_sentinel(&fx.repo, BRANCH);
     let output = run_complete_fast(
@@ -949,7 +793,12 @@ fn freshness_status_up_to_date_base_branch_policy_returns_ci_pending() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
-    assert_eq!(json["path"], "ci_pending");
+    assert_eq!(json["status"], "ok");
+    assert_eq!(json["path"], "not_mergeable");
+    assert!(json["reason"]
+        .as_str()
+        .unwrap()
+        .contains("base branch policy"));
 }
 
 #[test]
@@ -1107,28 +956,6 @@ fn freshness_spawn_err_returns_error() {
         .as_str()
         .unwrap()
         .contains("check-freshness failed"));
-}
-
-#[test]
-fn gh_ci_checks_unknown_status_proceeds() {
-    // Unknown status field → parse returns "pass" because no "fail"/"pending"
-    // was seen. Covers the _ arm of the match gh_ci_status.
-    // To hit the _ arm we'd need gh_ci_status to not be pass/none/pending/fail.
-    // parse_gh_checks_output only produces those four values, so the _ arm
-    // is defensive-dead. Skip an explicit test for it.
-    let fx = setup("complete", "auto");
-    seed_ci_sentinel(&fx.repo, BRANCH);
-    let output = run_complete_fast(
-        &fx.repo,
-        Some(BRANCH),
-        &fx.flow_bin,
-        &fx.stubs,
-        &[("FAKE_PR_CHECKS_OUT", "check\tunknown\n")],
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json = last_json_line(&stdout);
-    // unknown in col 2 → not fail/pending → falls to "pass" arm → merged.
-    assert_eq!(json["path"], "merged");
 }
 
 // --- CI reason banner ---

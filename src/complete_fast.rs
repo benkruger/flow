@@ -1,8 +1,8 @@
 //! `bin/flow complete-fast` — consolidated Complete phase happy path.
 //!
-//! Absorbs SOFT-GATE + preflight + CI dirty check + GitHub CI check + merge
-//! into a single process. Returns a JSON `path` indicator so the skill can
-//! branch on the result instead of making 10 separate tool calls.
+//! Absorbs SOFT-GATE + preflight + CI dirty check + merge into a single
+//! process. Returns a JSON `path` indicator so the skill can branch on
+//! the result instead of making 10 separate tool calls.
 //!
 //! Usage: bin/flow complete-fast [--branch <name>]
 //!
@@ -11,23 +11,24 @@
 //! there are no `--auto` / `--manual` flags.
 //!
 //! Output (JSON to stdout):
-//!   Merged:       {"status": "ok", "path": "merged", ...}
-//!   Already:      {"status": "ok", "path": "already_merged", ...}
-//!   Confirm:      {"status": "ok", "path": "confirm", ...}
-//!   CI stale:     {"status": "ok", "path": "ci_stale", ...}
-//!   CI drift:     {"status": "ok", "path": "ci_drift", ...}
-//!   CI failed:    {"status": "ok", "path": "ci_failed", ...}
-//!   CI pending:   {"status": "ok", "path": "ci_pending", ...}
-//!   Conflict:     {"status": "ok", "path": "conflict", ...}
-//!   Max retries:  {"status": "ok", "path": "max_retries", ...}
-//!   Error:        {"status": "error", "message": "..."}
+//!   Merged:        {"status": "ok", "path": "merged", ...}
+//!   Already:       {"status": "ok", "path": "already_merged", ...}
+//!   Confirm:       {"status": "ok", "path": "confirm", ...}
+//!   CI stale:      {"status": "ok", "path": "ci_stale", ...}
+//!   CI failed:     {"status": "ok", "path": "ci_failed", ...}
+//!   Not mergeable: {"status": "ok", "path": "not_mergeable", "reason": "...", ...}
+//!   Conflict:      {"status": "ok", "path": "conflict", ...}
+//!   Max retries:   {"status": "ok", "path": "max_retries", ...}
+//!   Error:         {"status": "error", "message": "..."}
 //!
-//! `ci_drift` is emitted when the local CI sentinel matches the current
-//! tree (ci_skipped=true) AND `gh pr checks` reports failure. The same
-//! code passed locally and failed remotely — a tool-version-drift
-//! signal with a deterministic recovery (refresh local toolchain,
-//! invalidate the sentinel, re-run, commit auto-fixes) distinct from
-//! the generic ci_failed dispatch.
+//! `complete-fast` does not make its own determination about GitHub's CI
+//! state. The full local CI gate runs at every commit, so the only
+//! authority on whether the PR can merge is `gh pr merge --squash`
+//! itself. When that command refuses the merge (a required GitHub check
+//! is failing or still pending), the verbatim `gh` stderr is surfaced as
+//! `path: "not_mergeable"` with a `reason` field, and the skill reports
+//! it and stops. `ci_failed` covers only local-CI failure (the `gh pr
+//! merge` authority covers the remote side).
 //!
 //! Tests live in `tests/complete_fast.rs` per
 //! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]` block
@@ -86,36 +87,6 @@ fn read_state(root: &Path, branch: &str) -> Result<(Value, PathBuf), String> {
         ));
     }
     Ok((state, state_path))
-}
-
-/// Parse `gh pr checks` tab-separated output into a status string.
-/// Returns "pass", "pending", "fail", or "none".
-fn parse_gh_checks_output(stdout: &str) -> String {
-    let mut has_any = false;
-    let mut has_pending = false;
-    let mut has_fail = false;
-
-    for line in stdout.lines() {
-        let parts: Vec<&str> = line.split('\t').collect();
-        if parts.len() >= 2 {
-            has_any = true;
-            match parts[1] {
-                "fail" => has_fail = true,
-                "pending" => has_pending = true,
-                _ => {}
-            }
-        }
-    }
-
-    if !has_any {
-        "none".to_string()
-    } else if has_fail {
-        "fail".to_string()
-    } else if has_pending {
-        "pending".to_string()
-    } else {
-        "pass".to_string()
-    }
 }
 
 /// CI dirty-check decider. Returns `(ci_skipped, ci_failed_output)`:
@@ -302,7 +273,7 @@ fn freshness_and_merge(
             )) {
                 None => {
                     let _ = mutate_state(state_path, &mut |s| {
-                        s["complete_step"] = json!(6);
+                        s["complete_step"] = json!(5);
                     });
                     json!({
                         "status": "ok",
@@ -318,9 +289,15 @@ fn freshness_and_merge(
                 }
                 Some(msg) => {
                     if msg.contains("base branch policy") {
+                        // `gh pr merge --squash` refused: a required
+                        // GitHub check is failing or still pending. The
+                        // verbatim gh stderr is the authority — surface
+                        // it and stop, rather than guessing pending vs.
+                        // failed ourselves.
                         json!({
                             "status": "ok",
-                            "path": "ci_pending",
+                            "path": "not_mergeable",
+                            "reason": msg,
                             "mode": mode,
                             "pr_number": pr_number,
                             "pr_url": pr_url,
@@ -485,20 +462,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     let cwd = std::env::current_dir().unwrap_or(PathBuf::from("."));
     let (ci_skipped, ci_failed_output) = ci_decider(&root, &cwd, &branch, tree_changed);
 
-    // --- GitHub CI check ---
-    let gh_ci_status = pr_number
-        .map(|pr_num| {
-            let pr_str = pr_num.to_string();
-            // gh binary is proven alive by the earlier `check_pr_status`
-            // call; a subsequent Err is treated as programmer-visible
-            // per `.claude/rules/testability-means-simplicity.md`.
-            let (_, stdout, _) =
-                run_cmd_with_timeout(&["gh", "pr", "checks", &pr_str], NETWORK_TIMEOUT)
-                    .expect("gh located by earlier pr view call");
-            parse_gh_checks_output(&stdout)
-        })
-        .unwrap_or_else(|| "none".to_string());
-
     // --- tree_changed short-circuit to ci_stale ---
     if tree_changed {
         return Ok(json!({
@@ -519,53 +482,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
             "status": "ok",
             "path": "ci_failed",
             "output": output,
-            "mode": mode,
-            "pr_number": pr_number,
-            "pr_url": pr_url,
-            "branch": branch,
-            "worktree": worktree,
-            "warnings": warnings,
-        }));
-    }
-
-    // --- GitHub CI check dispatch ---
-    // parse_gh_checks_output returns one of: "pass", "pending", "fail",
-    // "none". "pass"/"none" fall through; the other two short-circuit.
-    if gh_ci_status == "pending" {
-        return Ok(json!({
-            "status": "ok",
-            "path": "ci_pending",
-            "mode": mode,
-            "pr_number": pr_number,
-            "pr_url": pr_url,
-            "branch": branch,
-            "worktree": worktree,
-            "warnings": warnings,
-        }));
-    }
-    // ci_drift: local sentinel valid for this tree but GitHub CI red.
-    // Same bytes passed locally and failed remotely → tool-version
-    // drift. Must precede the generic gh_ci_status == "fail" branch so
-    // the deterministic recovery (toolchain refresh + sentinel
-    // invalidate) handles the case before ci-fixer would.
-    if ci_skipped && gh_ci_status == "fail" {
-        return Ok(json!({
-            "status": "ok",
-            "path": "ci_drift",
-            "mode": mode,
-            "pr_number": pr_number,
-            "pr_url": pr_url,
-            "branch": branch,
-            "worktree": worktree,
-            "warnings": warnings,
-        }));
-    }
-    if gh_ci_status == "fail" {
-        return Ok(json!({
-            "status": "ok",
-            "path": "ci_failed",
-            "output": "GitHub CI checks failed",
-            "source": "github",
             "mode": mode,
             "pr_number": pr_number,
             "pr_url": pr_url,

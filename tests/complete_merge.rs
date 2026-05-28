@@ -342,7 +342,11 @@ fn freshness_error_without_message_uses_default() {
 }
 
 #[test]
-fn branch_protection_ci_pending() {
+fn branch_protection_not_mergeable() {
+    // `gh pr merge --squash` refused with a base-branch-policy stderr.
+    // complete-merge surfaces the verbatim gh stderr as status:
+    // "not_mergeable" with a `message` field; run_impl_main routes the
+    // non-`merged` status to exit 1.
     let dir = tempfile::tempdir().unwrap();
     let parent = dir.path().canonicalize().unwrap();
     let (state_path, flow_bin, stubs) = setup(&parent);
@@ -365,7 +369,11 @@ fn branch_protection_ci_pending() {
 
     assert_eq!(code, 1);
     let json = last_json_line(&stdout);
-    assert_eq!(json["status"], "ci_pending");
+    assert_eq!(json["status"], "not_mergeable");
+    assert!(json["message"]
+        .as_str()
+        .unwrap()
+        .contains("base branch policy"));
     assert_eq!(json["pr_number"], 42);
 }
 
@@ -516,7 +524,7 @@ fn step_counter_set_on_existing_state_file() {
 
     let state_content = fs::read_to_string(&state_path).unwrap();
     let state: Value = serde_json::from_str(&state_content).unwrap();
-    assert_eq!(state["complete_step"], 5);
+    assert_eq!(state["complete_step"], 4);
 }
 
 #[test]

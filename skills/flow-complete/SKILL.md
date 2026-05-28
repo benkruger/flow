@@ -81,22 +81,11 @@ confirmation step.
      not `"complete"`, record warning "Phase 4 not complete (status: <actual status>)."
    - If the file does not exist: record warning "No state file found for
      branch '<branch>'."
-3. Clear any fossil `_drift_recovery_attempted` flag. The SOFT-GATE
-   runs only on fresh, non-`--continue-step` invocations, so a flag
-   that survives into this step is a fossil from a previously aborted
-   Complete invocation that was killed mid-recovery. Clearing here
-   guarantees the next `ci_drift` dispatch can run recovery instead
-   of incorrectly escalating, regardless of what `complete_step` value
-   the state file carries.
-
-   ```bash
-   ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _drift_recovery_attempted=
-   ```
 
 Use these values for all subsequent steps — do not re-read the state file
 or re-run git commands to gather the same information.
 
-Carry any warnings forward to the confirmation step in Step 4.
+Carry any warnings forward to the confirmation step in Step 3.
 
 The mode is already resolved by `## Mode Resolution` above — this
 gate records warnings only and does not re-resolve the mode.
@@ -127,16 +116,11 @@ operation — writing log entries that are immediately deleted is pointless.
 Read `complete_step` from the state file (default `0` if absent).
 
 - If `complete_step` is `2`: skip to Step 2 (Run local CI gate).
-- If `complete_step` is `3`: skip to Step 3 (Check GitHub CI status).
-- If `complete_step` is `4`: skip to Step 4 (Confirm with user).
-- If `complete_step` is `5`: skip to Step 5 (Merge PR).
-- If `complete_step` is `6`: skip to Step 6 (Finalize).
+- If `complete_step` is `3`: skip to Step 3 (Confirm with user).
+- If `complete_step` is `4`: skip to Step 4 (Merge PR).
+- If `complete_step` is `5`: skip to Step 5 (Finalize).
 - If `complete_step` is `0`, `1`, or absent: proceed normally to
-  Step 1. (Fossil `_drift_recovery_attempted` cleanup happens in the
-  SOFT-GATE on fresh invocations; the legitimate post-ci_drift self-
-  invoke arrives via `--continue-step` with `complete_step=1` and
-  must NOT clear the flag, since the flag is the loop-guard that
-  fires escalation if drift persists after a toolchain refresh.)
+  Step 1.
 
 ---
 
@@ -146,8 +130,10 @@ Read `complete_step` from the state file (default `0` if absent).
 
 Run the consolidated fast-path command. It handles phase entry, state
 detection, PR status check, merge main, local CI dirty check (without
-simulate-branch), GitHub CI check, and squash merge — all in a single
-call.
+simulate-branch), and squash merge — all in a single call. It does not
+make its own GitHub-CI determination; `gh pr merge --squash` is the
+authority and surfaces a `not_mergeable` path when a required GitHub
+check is failing or pending.
 
 `complete-fast` resolves the autonomy mode itself from the state
 file's `skills.flow-complete` config — the same source Mode
@@ -166,13 +152,13 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow complete-fast --branch <branch>
 Parse the JSON output and dispatch on the `path` field:
 
 **If `"path": "merged"`** — the PR is merged (auto mode happy path).
-Skip directly to Step 6 (finalize).
+Skip directly to Step 5 (finalize).
 
 **If `"path": "already_merged"`** — the PR was already merged before
-this invocation. Skip directly to Step 6 (finalize).
+this invocation. Skip directly to Step 5 (finalize).
 
 **If `"path": "confirm"`** — manual mode. All CI checks passed. Skip
-to Step 4 (confirm with user).
+to Step 3 (confirm with user).
 
 **If `"path": "ci_stale"`** — main was merged into the branch and the
 tree changed. Set the resume step and self-invoke to run CI:
@@ -192,115 +178,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invok
 To continue, invoke `flow:flow-complete --continue-step` using
 the Skill tool as your final action. Do not output anything else after this invocation.
 
-**If `"path": "ci_drift"`** — local CI passed on this exact tree but
-GitHub CI failed. This signals tool version drift between the
-developer machine and the CI runner (formatter, linter, language
-runtime version skew). The recovery is deterministic — refresh the
-toolchain locally, invalidate the CI sentinel, re-run CI on the
-upgraded tools, commit any auto-fixes, and re-check. Do not invoke
-`ci-fixer`: the same reasoning already failed in the manual case.
-
-First, read `_drift_recovery_attempted` from the state file via the
-Read tool on `<project_root>/.flow-states/<branch>/state.json`. If
-the flag is set (non-empty), recovery already ran in this Complete
-invocation and the drift persists — escalate to the user:
-
-> "GitHub CI continues to fail after a local toolchain refresh. The
-> cause is likely environmental: CI runtime version, missing env var,
-> or platform-specific behavior. Inspect failing checks with
-> `gh pr checks <pr_number>` and resolve manually."
-
-Stop. Do not loop the recovery again.
-
-Otherwise, set the loop-guard flag BEFORE running the recovery so a
-kill-signal mid-recovery still produces a flagged state (the next
-entry escalates rather than re-loops):
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _drift_recovery_attempted=1
-```
-
-Check for `<worktree>/bin/dependencies` using the Read tool. If the
-file does NOT exist, the project has no dependency-refresh script —
-dispatch as if the path had been `ci_failed`: launch the `ci-fixer`
-sub-agent with the message "Local CI passed; GitHub CI failed.
-Project has no `bin/dependencies` script to refresh the toolchain.
-Diagnose GitHub CI failure directly." Then follow the `ci_failed`
-recovery path below.
-
-If `bin/dependencies` exists, refresh the toolchain from the worktree
-cwd:
-
-```bash
-bin/dependencies
-```
-
-Re-run CI with the upgraded toolchain. Use a 10-minute Bash tool
-timeout (`timeout: 600000`) — CI runs can take 3–4 minutes and the
-default 2-minute timeout would background the process, defeating the
-gate (per `.claude/rules/ci-is-a-gate.md`). The `--force` flag
-invalidates the existing sentinel so the new toolchain actually runs
-every tool:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci --force
-```
-
-If `bin/flow ci --force` exits non-zero, the toolchain refresh did
-NOT resolve the drift — it surfaced fresh local breakage on the
-upgraded tools (a yanked dependency, a breaking version bump, a
-formatter that disagrees with existing code, etc.). Launch the
-`ci-fixer` sub-agent to diagnose and fix. Use the Agent tool:
-
-- `subagent_type`: `"flow:ci-fixer"`
-- `description`: `"Fix CI failures after toolchain refresh"`
-
-Provide the `bin/flow ci --force` output in the prompt with the
-context "Local CI passed against the previous toolchain but failed
-remotely (ci_drift). Toolchain refresh via `bin/dependencies` ran;
-the post-refresh `bin/flow ci --force` failed locally." so the
-sub-agent knows the dependency state changed.
-
-If the sub-agent fixes CI, fall through to the working-tree check
-below (the fixes typically dirty the tree, so the commit path
-catches them). If not fixed after 3 attempts, stop and report.
-
-If `bin/dependencies` or `bin/flow ci --force` produced working-tree
-changes (auto-formatter / linter rewrites are common after a
-toolchain bump, and ci-fixer changes are also captured here),
-commit them. Otherwise, skip directly to the self-invoke. Check
-via:
-
-```bash
-git diff --quiet
-```
-
-If the exit code is non-zero (working tree dirty), set the resume
-step and the continuation flag:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=1
-```
-
-Set the continuation context. The self-invocation carries no mode
-flag — Mode Resolution re-resolves the mode from
-the state file on the resumed entry:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step."
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
-```
-
-Commit the auto-fixes via `/flow:flow-commit`.
-
-To re-check both local and remote CI on the refreshed toolchain,
-invoke `flow:flow-complete --continue-step` using the Skill tool as
-your final action. Do not output anything else after this invocation.
-
-**If `"path": "ci_failed"`** — local CI or GitHub CI failed. Launch the
+**If `"path": "ci_failed"`** — local CI failed. Launch the
 `ci-fixer` sub-agent to diagnose and fix. Use the Agent tool:
 
 - `subagent_type`: `"flow:ci-fixer"`
@@ -334,14 +212,18 @@ the Skill tool as your final action. Do not output anything else after this invo
 
 If not fixed after 3 attempts, stop and report.
 
-**If `"path": "ci_pending"`** — GitHub CI has not finished. Record the
-resume step:
+**If `"path": "not_mergeable"`** — `gh pr merge --squash` refused the
+merge: a required GitHub check is failing or still pending. The
+`reason` field carries the verbatim `gh` stderr. Stop and report to
+the user:
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=3
-```
+> "GitHub blocked the merge: `<reason>`. A required check is failing
+> or pending on GitHub. Inspect with `gh pr checks <pr_number>` /
+> `gh pr view <pr_number>`, resolve on GitHub, then re-invoke
+> `/flow:flow-complete`."
 
-Then invoke the `loop` skill via the Skill tool with args `15s /flow:flow-complete` and return. The loop will re-invoke the complete skill automatically until CI completes.
+Do not loop or retry — `gh pr merge` is the authority on whether the
+PR can merge, and FLOW does not poll GitHub CI on its behalf.
 
 **If `"path": "conflict"`** — merge conflicts detected. The
 `conflict_files` array lists the conflicted files.
@@ -382,7 +264,7 @@ the Skill tool as your final action. Do not output anything else after this invo
 Do not retry the command with any additional flags or elevated privileges.
 
 Check the `warnings` array from the output. Carry any warnings forward
-to the confirmation step in Step 4.
+to the confirmation step in Step 3.
 
 ### Step 2 — Run local CI gate
 
@@ -428,72 +310,12 @@ Self-invoke `flow:flow-complete --continue-step` to re-run Step 2.
 
 If not fixed after 3 attempts, stop and report.
 
-### Step 3 — Check GitHub CI status
+### Step 3 — Confirm with user (manual mode only)
 
-Check the CI status on the PR:
-
-```bash
-gh pr checks <pr_number>
-```
-
-Parse the output. Each check has a status: pass, fail, or pending.
-
-**If all checks pass** — continue to Step 4.
-
-**If any check is pending** — record the resume step so re-entry skips
-straight to Step 3:
+Skip this step if mode is **auto** — proceed directly to Step 4.
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=3
-```
-
-Then invoke the `loop` skill via the Skill tool with args `15s /flow:flow-complete` and return. The loop will re-invoke the complete skill automatically until CI completes.
-
-**If any check has failed** — launch the `ci-fixer` sub-agent to diagnose
-and fix. Use the Agent tool:
-
-- `subagent_type`: `"flow:ci-fixer"`
-- `description`: `"Fix CI failures on PR branch"`
-
-Provide the full `gh pr checks` output in the prompt so the sub-agent
-knows what failed.
-
-Wait for the sub-agent to return.
-
-- **Fixed** — record the resume step and set continuation flags before
-committing:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=2
-```
-
-Set the continuation context. The self-invocation carries no mode
-flag — Mode Resolution re-resolves the mode from
-the state file on the resumed entry:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step."
-```
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
-```
-
-Commit the fixes via `/flow:flow-commit`.
-
-To re-check CI, invoke `flow:flow-complete --continue-step` using
-the Skill tool as your final action. Do not output anything else after this invocation.
-
-If still failing after 3 attempts, stop and report.
-
-- **Not fixed** — stop and report to the user.
-
-### Step 4 — Confirm with user (manual mode only)
-
-Skip this step if mode is **auto** — proceed directly to Step 5.
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
 ```
 
 **Resolve the integration branch.** Before composing the prompt,
@@ -522,19 +344,19 @@ If no warnings:
 
 Options:
 
-- **Yes, merge and clean up** — proceed to Step 5
+- **Yes, merge and clean up** — proceed to Step 4
 - **No, not yet** — stop here
 - **I have feedback on the code** — describe the issue
 
-Do NOT proceed to Step 5, do NOT merge, do NOT take any action outside
+Do NOT proceed to Step 4, do NOT merge, do NOT take any action outside
 this step until the user explicitly selects an option. Freeform text
 that is not one of the listed options is feedback — treat it the same
 as selecting "I have feedback on the code".
 
 **If "Yes, merge and clean up"** — record the user's confirmation by
-writing the merge-approval marker, then proceed to Step 5. The marker
+writing the merge-approval marker, then proceed to Step 4. The marker
 is the "proceed" half of the Complete-phase merge gate: when
-`flow-complete` is configured manual, Step 5's `complete-merge` (and
+`flow-complete` is configured manual, Step 4's `complete-merge` (and
 `complete-fast` in the auto path) require and consume it before the
 squash-merge.
 
@@ -573,7 +395,7 @@ after this invocation.
 
 </HARD-GATE>
 
-### Step 5 — Merge PR
+### Step 4 — Merge PR
 
 Skip this step if the PR was already merged in Step 1 (complete-fast
 returned `"merged"` or `"already_merged"`).
@@ -589,7 +411,7 @@ staging`; a standard repo produces `<base_branch> = main`.
 ${CLAUDE_PLUGIN_ROOT}/bin/flow base-branch
 ```
 
-For manual mode (after Step 4 confirmation), run the merge command:
+For manual mode (after Step 3 confirmation), run the merge command:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow complete-merge --pr <pr_number> --state-file <project_root>/.flow-states/<branch>/state.json
@@ -602,7 +424,7 @@ using the `<base_branch>` value resolved at the top of this step:
 
 > "PR #<pr_number> merged into <base_branch>."
 
-Continue to Step 6.
+Continue to Step 5.
 
 **If `"status": "ci_rerun"`** — main had new commits that were merged
 into the branch without conflicts. The branch was pushed. Loop back
@@ -615,15 +437,18 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=2
 To re-run CI, invoke `flow:flow-complete --continue-step` using the
 Skill tool as your final action. Do not output anything else after this invocation.
 
-**If `"status": "ci_pending"`** — GitHub CI has not finished on the
-latest commits. Set the resume step and self-invoke to wait for CI:
+**If `"status": "not_mergeable"`** — `gh pr merge --squash` refused the
+merge: a required GitHub check is failing or still pending. The
+`message` field carries the verbatim `gh` stderr. Stop and report to
+the user:
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=3
-```
+> "GitHub blocked the merge: `<message>`. A required check is failing
+> or pending on GitHub. Inspect with `gh pr checks <pr_number>` /
+> `gh pr view <pr_number>`, resolve on GitHub, then re-invoke
+> `/flow:flow-complete`."
 
-Invoke `flow:flow-complete --continue-step` using the Skill tool as
-your final action. Do not output anything else after this invocation.
+Do not loop or retry — `gh pr merge` is the authority on whether the
+PR can merge.
 
 **If `"status": "conflict"`** — the `conflict_files` array lists the
 conflicted files.
@@ -664,11 +489,11 @@ the Skill tool as your final action. Do not output anything else after this invo
 merge-approval gate fired: `flow-complete` is configured manual and no
 unconsumed confirmation marker was present. The marker is single-use,
 so a prior merge attempt that looped back through this step already
-consumed it. Return to Step 4 to re-confirm with the user — a fresh
+consumed it. Return to Step 3 to re-confirm with the user — a fresh
 confirmation writes a new marker:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=4
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=3
 ```
 
 To re-confirm, invoke `flow:flow-complete --continue-step` using the
@@ -679,7 +504,7 @@ this invocation.
 Do not retry the merge command with any additional flags or elevated
 privileges.
 
-### Step 6 — Finalize: post-merge + cleanup
+### Step 5 — Finalize: post-merge + cleanup
 
 The next step removes the worktree. Navigate to the project root first
 so the shell does not end up stranded inside a deleted directory.
@@ -723,7 +548,7 @@ intervention is needed.
 **On success** — keep `formatted_time`, `cumulative_seconds`,
 `summary`, `issues_links`, and `banner_line` for the Done banner.
 
-The `cleanup` field contains the results of Step 7 (cleanup operations):
+The `cleanup` field contains the results of Step 6 (cleanup operations):
 worktree removal, state file and log deletion, local branch cleanup, and
 git pull. Report the results to the user: what was cleaned, what was
 already gone, and what failed.
@@ -731,10 +556,10 @@ already gone, and what failed.
 If the output has a non-empty `post_merge_failures` dict, note the
 failures but continue — all post-merge operations are best-effort.
 
-### Step 7 — Cleanup results
+### Step 6 — Cleanup results
 
 The cleanup operations were performed as part of the complete-finalize
-call in Step 6. The `cleanup` field in the JSON output shows what
+call in Step 5. The `cleanup` field in the JSON output shows what
 happened to each resource (pr\_close, worktree\_tmp, worktree,
 remote\_branch, local\_branch, state\_file, plan\_file, dag\_file,
 log\_file, frozen\_phases, ci\_sentinel, timings\_file,
@@ -750,7 +575,7 @@ and what failed.
 
 ### Done — Print banner
 
-Output the COMPLETE banner line, the summary from Step 6, and cleanup
+Output the COMPLETE banner line, the summary from Step 5, and cleanup
 status in your response (not via Bash) inside a single fenced code block:
 
 ````markdown
@@ -814,11 +639,11 @@ commands. This is a narrative recap, not a structured template.
 
 ## Rules
 
-- Steps 1-5 run from the worktree (feature branch); Step 6 (finalize) runs from the project root
+- Steps 1-4 run from the worktree (feature branch); Step 5 (finalize) runs from the project root
 - If the merge fails, never retry with additional flags or elevated privileges — report to the user and stop
 - Confirm with the user only when mode is **manual**
 - State file deletion is what resets the session hook — do not skip it
-- Every operation inside `complete-finalize` (Step 6) is best-effort — if one fails, continue to the next
+- Every operation inside `complete-finalize` (Step 5) is best-effort — if one fails, continue to the next
 - The skill is idempotent: safe to re-invoke via `/loop` after a "pending CI" stop
 - Never use `general-purpose` sub-agents — use `"flow:ci-fixer"` for CI failures
 - Never use Bash to print banners — output them as text in your response

@@ -53,10 +53,9 @@ pub fn step_names() -> HashMap<&'static str, HashMap<i64, &'static str>> {
     let mut complete = HashMap::new();
     complete.insert(1, "running checks");
     complete.insert(2, "local CI");
-    complete.insert(3, "GitHub CI");
-    complete.insert(4, "confirming");
-    complete.insert(5, "merging PR");
-    complete.insert(6, "finalizing");
+    complete.insert(3, "confirming");
+    complete.insert(4, "merging PR");
+    complete.insert(5, "finalizing");
     map.insert("flow-complete", complete);
 
     map

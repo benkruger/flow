@@ -2185,39 +2185,39 @@ fn flow_complete_resolves_mode_outside_soft_gate() {
     );
 }
 
-/// flow-complete's Step 4 `Yes, merge` answer must invoke
+/// flow-complete's Step 3 `Yes, merge` answer must invoke
 /// `bin/flow confirm-merge` to write the single-use merge-approval
 /// marker — the "proceed" half of the Complete-phase merge gate.
 #[test]
-fn flow_complete_step4_yes_invokes_confirm_merge() {
+fn flow_complete_step3_yes_invokes_confirm_merge() {
     let c = common::read_skill("flow-complete");
     let tail = c
-        .split_once("### Step 4 — Confirm with user")
+        .split_once("### Step 3 — Confirm with user")
+        .map(|(_, t)| t)
+        .expect("Step 3 heading must exist in flow-complete SKILL.md");
+    let step3 = tail.split_once("\n### ").map(|(s, _)| s).unwrap_or(tail);
+    assert!(
+        step3.contains("bin/flow confirm-merge"),
+        "Step 3's `Yes, merge` path must invoke `bin/flow confirm-merge` to write \
+         the merge-approval marker before the Step 4 squash-merge"
+    );
+}
+
+/// flow-complete's Step 4 `complete-merge` dispatch must handle the
+/// `merge_not_confirmed` error reason — the gate fires when a
+/// manual-configured flow reaches the merge with no approval marker,
+/// and Step 4 routes back to Step 3 to re-confirm.
+#[test]
+fn flow_complete_step4_handles_merge_not_confirmed() {
+    let c = common::read_skill("flow-complete");
+    let tail = c
+        .split_once("### Step 4 — Merge PR")
         .map(|(_, t)| t)
         .expect("Step 4 heading must exist in flow-complete SKILL.md");
     let step4 = tail.split_once("\n### ").map(|(s, _)| s).unwrap_or(tail);
     assert!(
-        step4.contains("bin/flow confirm-merge"),
-        "Step 4's `Yes, merge` path must invoke `bin/flow confirm-merge` to write \
-         the merge-approval marker before the Step 5 squash-merge"
-    );
-}
-
-/// flow-complete's Step 5 `complete-merge` dispatch must handle the
-/// `merge_not_confirmed` error reason — the gate fires when a
-/// manual-configured flow reaches the merge with no approval marker,
-/// and Step 5 routes back to Step 4 to re-confirm.
-#[test]
-fn flow_complete_step5_handles_merge_not_confirmed() {
-    let c = common::read_skill("flow-complete");
-    let tail = c
-        .split_once("### Step 5 — Merge PR")
-        .map(|(_, t)| t)
-        .expect("Step 5 heading must exist in flow-complete SKILL.md");
-    let step5 = tail.split_once("\n### ").map(|(s, _)| s).unwrap_or(tail);
-    assert!(
-        step5.contains("merge_not_confirmed"),
-        "Step 5's complete-merge dispatch must handle the `merge_not_confirmed` reason"
+        step4.contains("merge_not_confirmed"),
+        "Step 4's complete-merge dispatch must handle the `merge_not_confirmed` reason"
     );
 }
 
@@ -3556,95 +3556,6 @@ fn complete_uses_complete_finalize() {
     );
 }
 
-/// flow-complete's Step 1 must dispatch `ci_drift` before `ci_failed`,
-/// since the drift signal (sentinel-hit + remote-fail) is a subset of
-/// what the generic `ci_failed` would otherwise consume. The handler
-/// must also reference `bin/dependencies` (the toolchain refresh
-/// surface), `bin/flow ci --force` (the sentinel invalidate + re-run),
-/// and carry a 10-minute Bash timeout preamble for the CI re-run per
-/// `.claude/rules/ci-is-a-gate.md`.
-#[test]
-fn flow_complete_skill_contains_ci_drift_handler_before_ci_failed() {
-    let content = common::read_skill("flow-complete");
-
-    // Bounded slice: just Step 1. Pattern from
-    // .claude/rules/testing-gotchas.md "Subsection-Local Assertions".
-    let tail = content
-        .split_once("### Step 1")
-        .map(|(_, t)| t)
-        .expect("Step 1 heading must exist in flow-complete SKILL.md");
-    let step1 = tail
-        .split_once("\n### Step 2")
-        .map(|(s, _)| s)
-        .unwrap_or(tail);
-
-    let drift_marker = r#"`"path": "ci_drift"`"#;
-    let failed_marker = r#"`"path": "ci_failed"`"#;
-    let drift_off = step1.find(drift_marker).unwrap_or_else(|| {
-        panic!(
-            "Step 1 must contain `\"path\": \"ci_drift\"` marker — \
-             handler missing for the toolchain-drift recovery path"
-        )
-    });
-    let failed_off = step1.find(failed_marker).unwrap_or_else(|| {
-        panic!(
-            "Step 1 must contain `\"path\": \"ci_failed\"` marker — \
-             handler missing for the generic ci_failed dispatch"
-        )
-    });
-    assert!(
-        drift_off < failed_off,
-        "ci_drift handler must appear before ci_failed handler in Step 1 \
-         (drift_off={}, failed_off={}). Order matters: ci_drift is a \
-         specialization of the local-pass + remote-fail combination and \
-         must be dispatched before the generic ci_failed branch.",
-        drift_off,
-        failed_off
-    );
-
-    assert!(
-        step1.contains("bin/dependencies"),
-        "Step 1 ci_drift handler must invoke `bin/dependencies` to \
-         refresh the local toolchain"
-    );
-    assert!(
-        step1.contains("bin/flow ci --force"),
-        "Step 1 ci_drift handler must run `bin/flow ci --force` to \
-         invalidate the local CI sentinel and re-run on the refreshed \
-         toolchain"
-    );
-
-    // Timeout preamble: within 5 non-blank lines before the
-    // `bin/flow ci --force` opening fence, expect either the numeric
-    // `timeout: 600000` form or the canonical prose phrase.
-    let force_marker = "bin/flow ci --force";
-    let force_off = step1
-        .find(force_marker)
-        .expect("bin/flow ci --force must appear in ci_drift handler");
-    // Find the opening ```bash fence immediately preceding force_off.
-    let prefix = &step1[..force_off];
-    let fence_off = prefix
-        .rfind("```bash")
-        .expect("bin/flow ci --force must be inside a ```bash fence");
-    let preamble_slice = &step1[..fence_off];
-    let preamble_lines: Vec<&str> = preamble_slice
-        .lines()
-        .rev()
-        .filter(|l| !l.trim().is_empty())
-        .take(5)
-        .collect();
-    let has_timeout = preamble_lines
-        .iter()
-        .any(|l| l.contains("timeout: 600000") || l.contains("10-minute Bash tool timeout"));
-    assert!(
-        has_timeout,
-        "Step 1 ci_drift handler must include a 10-minute Bash timeout \
-         preamble within the 5 non-blank lines preceding the \
-         `bin/flow ci --force` block (looked for `timeout: 600000` or \
-         `10-minute Bash tool timeout`)"
-    );
-}
-
 /// No configurable skill threads an `--auto`/`--manual` flag through
 /// a `_continue_context` self-invocation string. The resumed run
 /// re-resolves `commit`/`continue` from the state file's
@@ -4208,7 +4119,7 @@ fn documentation_agent_no_two_dot_diff() {
 
 // --- base_branch flows through to Phase 6 prompt and success message ---
 
-/// flow-complete's Step 4 squash-merge prompt interpolates the
+/// flow-complete's Step 3 squash-merge prompt interpolates the
 /// integration branch from `bin/flow base-branch` rather than the
 /// literal `main`. A non-main-trunk repo asking the user
 /// "Squash-merge into main?" misleads them about which branch the
@@ -4228,7 +4139,7 @@ fn flow_complete_prompt_interpolates_base_branch() {
     );
 }
 
-/// flow-complete's Step 5 success message interpolates the
+/// flow-complete's Step 4 success message interpolates the
 /// integration branch via `<base_branch>` rather than the literal
 /// `main`, so a staging-trunked repo reports `merged into staging`
 /// after the merge — not a misleading `merged into main`.
@@ -4241,21 +4152,21 @@ fn flow_complete_success_message_interpolates_base_branch() {
          interpolate the integration branch via `<base_branch>`"
     );
 
-    // Bound the assertion scope to Step 5 so a stray
+    // Bound the assertion scope to Step 4 so a stray
     // `<base_branch>` mention elsewhere cannot satisfy the check —
     // see `.claude/rules/testing-gotchas.md` Subsection-Local
     // Assertions in Contract Tests.
     let tail_at_heading = c
-        .split_once("### Step 5 — Merge PR")
+        .split_once("### Step 4 — Merge PR")
         .map(|(_, tail)| tail)
-        .expect("Step 5 heading must exist in flow-complete SKILL.md");
-    let step5 = tail_at_heading
+        .expect("Step 4 heading must exist in flow-complete SKILL.md");
+    let step4 = tail_at_heading
         .split_once("\n### ")
         .map(|(section, _)| section)
         .unwrap_or(tail_at_heading);
     assert!(
-        step5.contains("merged into <base_branch>."),
-        "Step 5 must contain the literal `merged into <base_branch>.` \
+        step4.contains("merged into <base_branch>."),
+        "Step 4 must contain the literal `merged into <base_branch>.` \
          success message so a future edit cannot drop the placeholder \
          while the negative assertion above still passes"
     );

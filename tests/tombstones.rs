@@ -555,6 +555,200 @@ fn test_phase_enter_no_resolve_mode() {
     );
 }
 
+// --- Complete-phase GitHub-CI determination removal ---
+//
+// Phase 5 Complete no longer makes its own determination about a PR's
+// GitHub CI state. `gh pr merge --squash` is the sole merge authority;
+// when it refuses, the verbatim stderr surfaces as a `not_mergeable`
+// stop-and-report. The deleted surface: `parse_gh_checks_output` and
+// the `ci_drift` / `ci_pending` dispatch arms in the two complete
+// modules, the `gh pr checks` permission, the `_drift_recovery_attempted`
+// loop-guard field, and the "Check GitHub CI status" SKILL step. These
+// tombstones catch a merge conflict or accidental edit re-introducing
+// any of them.
+
+/// Tombstone: removed in PR #1726. The `fn parse_gh_checks_output` in
+/// `src/complete_fast.rs` — which parsed `gh pr checks` tab-separated
+/// output into a status string — is deleted along with the GitHub-CI
+/// determination it fed. `gh pr merge --squash` is now the sole merge
+/// authority. Must not return.
+///
+/// Stability argument: the protected target is a Rust function
+/// definition (`fn parse_gh_checks_output`). A function item cannot be
+/// assembled by `concat!` or produced by `format!` (those macros yield
+/// string values, not items), and it cannot be a named `constant`
+/// reference (a `const` cannot be an `fn`). Re-introducing the function
+/// requires the literal `parse_gh_checks_output` identifier in source,
+/// which this byte scan catches.
+#[test]
+fn test_complete_fast_no_parse_gh_checks_output() {
+    let root = common::repo_root();
+    let content = fs::read_to_string(root.join("src").join("complete_fast.rs"))
+        .expect("src/complete_fast.rs must exist");
+    assert!(
+        !content.contains("parse_gh_checks_output"),
+        "src/complete_fast.rs must not contain `parse_gh_checks_output` — \
+         the GitHub-CI parse helper is deleted; `gh pr merge --squash` is \
+         the merge authority and surfaces `not_mergeable` on refusal."
+    );
+}
+
+/// Tombstone: removed in PR #1726. The `ci_drift` and `ci_pending`
+/// dispatch arms are deleted from the Complete-phase merge dispatch
+/// functions — `freshness_and_merge` and `run_impl` in
+/// `src/complete_fast.rs`, and `complete_merge` in
+/// `src/complete_merge.rs`. The base-policy arm now emits
+/// `not_mergeable` carrying the verbatim `gh pr merge` stderr. Must
+/// not return.
+///
+/// Structural fn-body scan: the assertion bounds to each dispatch
+/// function's body (from `fn <name>(` to the next `\nfn `) so a
+/// legitimate mention elsewhere cannot satisfy the check, and so a
+/// re-introduced dispatch arm is caught regardless of whether the
+/// path string is written as a literal or assembled via `concat!` /
+/// `format!` — the body scan catches the dispatch arm by its location
+/// in the merge functions, not only by the exact literal bytes.
+#[test]
+fn test_complete_dispatch_no_ci_drift_or_ci_pending() {
+    let root = common::repo_root();
+    let fast = fs::read_to_string(root.join("src").join("complete_fast.rs"))
+        .expect("src/complete_fast.rs must exist");
+    let merge = fs::read_to_string(root.join("src").join("complete_merge.rs"))
+        .expect("src/complete_merge.rs must exist");
+
+    let scan = |content: &str, marker: &str| -> String {
+        let tail = content
+            .split_once(marker)
+            .map(|(_, t)| t)
+            .unwrap_or_else(|| panic!("{} must exist", marker));
+        tail.split_once("\nfn ")
+            .map(|(b, _)| b)
+            .unwrap_or(tail)
+            .to_string()
+    };
+
+    for (label, body) in [
+        (
+            "complete_fast::freshness_and_merge",
+            scan(&fast, "fn freshness_and_merge("),
+        ),
+        ("complete_fast::run_impl", scan(&fast, "fn run_impl(")),
+        (
+            "complete_merge::complete_merge",
+            scan(&merge, "fn complete_merge("),
+        ),
+    ] {
+        assert!(
+            !body.contains("ci_drift"),
+            "{} must not dispatch `ci_drift` — the toolchain-drift path is \
+             deleted; `gh pr merge --squash` is the merge authority.",
+            label
+        );
+        assert!(
+            !body.contains("ci_pending"),
+            "{} must not dispatch `ci_pending` — the GitHub-CI-pending path is \
+             deleted; `gh pr merge --squash` returns `not_mergeable` instead.",
+            label
+        );
+    }
+}
+
+/// Tombstone: removed in PR #1726. The `_drift_recovery_attempted`
+/// loop-guard field is deleted along with the `ci_drift` recovery
+/// path it guarded. It must not appear in either of its former
+/// documentation homes — `skills/flow-complete/SKILL.md` (the
+/// SOFT-GATE clearing and Step 1 dispatch) or
+/// `docs/reference/flow-state-schema.md` (the field row). Must not
+/// return.
+///
+/// Stability argument: both targets are flat Markdown byte streams.
+/// The literal `_drift_recovery_attempted` cannot be reassembled at
+/// runtime — Markdown has no `concat!` macro, no `format!`
+/// interpolation, and no named `constant` references. A merge
+/// conflict can only resurrect the exact bytes, which this scan
+/// catches in each file.
+#[test]
+fn test_flow_complete_no_drift_recovery_attempted() {
+    let skill = fs::read_to_string(common::skills_dir().join("flow-complete").join("SKILL.md"))
+        .expect("skills/flow-complete/SKILL.md must exist");
+    assert!(
+        !skill.contains("_drift_recovery_attempted"),
+        "skills/flow-complete/SKILL.md must not reference \
+         `_drift_recovery_attempted` — the ci_drift loop-guard is deleted."
+    );
+    let schema = fs::read_to_string(
+        common::repo_root()
+            .join("docs")
+            .join("reference")
+            .join("flow-state-schema.md"),
+    )
+    .expect("docs/reference/flow-state-schema.md must exist");
+    assert!(
+        !schema.contains("_drift_recovery_attempted"),
+        "docs/reference/flow-state-schema.md must not document \
+         `_drift_recovery_attempted` — the field is deleted."
+    );
+}
+
+/// Tombstone: removed in PR #1726. The `Bash(gh pr checks *)` entry is
+/// deleted from `UNIVERSAL_ALLOW` in `src/prime_check.rs` — the only
+/// FLOW consumer (the Complete-phase GitHub-CI check) is gone, so the
+/// permission is orphaned. `gh pr checks` survives only as user-facing
+/// diagnostic prose the user runs manually, which needs no allow
+/// entry. Must not return.
+///
+/// Stability argument: `UNIVERSAL_ALLOW` entries are plain `&str`
+/// literals by project convention, so the byte-substring is stable. A
+/// `concat!("Bash(gh pr ", "checks *)")` reassembly is non-idiomatic
+/// (every other entry is a single literal), and `format!`
+/// interpolation does not appear in the const array. A named
+/// `constant` aliasing the string would still place the literal in
+/// source. The matching prime-SKILL block is independently enforced by
+/// `tests/permissions.rs`.
+#[test]
+fn test_prime_check_no_gh_pr_checks_permission() {
+    let root = common::repo_root();
+    let content = fs::read_to_string(root.join("src").join("prime_check.rs"))
+        .expect("src/prime_check.rs must exist");
+    assert!(
+        !content.contains("Bash(gh pr checks *)"),
+        "src/prime_check.rs must not contain `Bash(gh pr checks *)` in \
+         UNIVERSAL_ALLOW — the Complete-phase GitHub-CI check that needed \
+         it is deleted; `gh pr merge --squash` is the merge authority."
+    );
+}
+
+/// Tombstone: removed in PR #1726. The "Check GitHub CI status" step
+/// is deleted from `skills/flow-complete/SKILL.md` — Complete makes no
+/// GitHub-CI determination of its own. The literal heading must not
+/// return, AND no SKILL step may dispatch on the deleted `ci_pending`
+/// path value (the `gh pr merge --squash` authority returns
+/// `not_mergeable` instead).
+///
+/// Stability argument: the protected targets are flat Markdown byte
+/// strings (a step heading and a `"path": "ci_pending"` dispatch
+/// marker). Markdown has no `concat!` macro, no `format!`
+/// interpolation, and no named `constant` references, so neither can
+/// be reassembled at runtime. The paired no-dispatch assertion covers
+/// a reworded heading: a renamed GitHub-CI step is still the deleted
+/// feature, and re-introducing its dispatch requires the
+/// `ci_pending` path marker this scan catches.
+#[test]
+fn test_flow_complete_no_github_ci_status_step() {
+    let content = fs::read_to_string(common::skills_dir().join("flow-complete").join("SKILL.md"))
+        .expect("skills/flow-complete/SKILL.md must exist");
+    assert!(
+        !content.contains("Check GitHub CI status"),
+        "skills/flow-complete/SKILL.md must not contain the `Check GitHub CI \
+         status` step heading — Complete makes no GitHub-CI determination."
+    );
+    assert!(
+        !content.contains(r#"`"path": "ci_pending"`"#),
+        "skills/flow-complete/SKILL.md must not dispatch on the `ci_pending` \
+         path — `gh pr merge --squash` returns `not_mergeable` instead."
+    );
+}
+
 // --- exhausted-retry note path ---
 //
 // The `agent_exhausted_retries` state-note path is gone. The
