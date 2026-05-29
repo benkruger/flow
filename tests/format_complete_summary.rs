@@ -344,24 +344,28 @@ fn token_cost_section_renders_header_when_any_phase_has_run() {
     );
 }
 
-/// A phase whose snapshots have `session_cost_usd: None` produces
-/// an em-dash row instead of `$0.000`. The pre-fix code rendered
-/// `$0.000` for both "no cost" and "computed zero cost", erasing
-/// the distinction.
+/// A phase whose per-phase `by_model_delta` references only an
+/// unpriced model produces an em-dash cost row instead of `$0.000`.
+/// Rendering `$0.000` for both "not priceable" and "computed zero
+/// cost" would erase the distinction; unknown cost renders as an
+/// em-dash. Cost is token-derived (`pricing::cost_for` over the
+/// by_model_delta), so an unpriced model is the way to drive the
+/// unknown-cost branch.
 #[test]
 fn token_cost_section_renders_em_dash_for_unknown_cost() {
     let mut state = all_complete_state();
-    let mut enter = snapshot_value("S1", 1, "claude-opus-4-7");
-    let mut complete = snapshot_value("S1", 5, "claude-opus-4-7");
-    enter["session_cost_usd"] = json!(null);
-    complete["session_cost_usd"] = json!(null);
+    // Non-`claude-` model → `pricing::price_for` returns None, so
+    // the by_model_delta is unpriceable and the cost column is
+    // unknown (em-dash) even though token deltas are present.
+    let enter = snapshot_value("S1", 1, "gpt-4o-unpriced");
+    let complete = snapshot_value("S1", 5, "gpt-4o-unpriced");
     state["phases"]["flow-code"]["window_at_enter"] = enter;
     state["phases"]["flow-code"]["window_at_complete"] = complete;
     let result = format_complete_summary(&state, None);
     assert!(result.summary.contains("Token Cost"));
     assert!(
         result.summary.contains("—"),
-        "em-dash placeholder must appear when cost data is unknown"
+        "em-dash placeholder must appear when cost is not priceable"
     );
 }
 

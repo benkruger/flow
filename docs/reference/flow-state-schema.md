@@ -497,7 +497,6 @@ Every numeric field is optional so a missing or unreadable input source (rate-li
   "session_output_tokens": 67890,
   "session_cache_creation_tokens": 100,
   "session_cache_read_tokens": 9876,
-  "session_cost_usd": 0.987654,
   "by_model": {
     "claude-opus-4-7": {"input": 12345, "output": 67890, "cache_create": 100, "cache_read": 9876}
   },
@@ -519,8 +518,7 @@ Every numeric field is optional so a missing or unreadable input source (rate-li
 | `session_output_tokens` | integer / null | Sum of `message.usage.output_tokens` |
 | `session_cache_creation_tokens` | integer / null | Sum of `message.usage.cache_creation_input_tokens` |
 | `session_cache_read_tokens` | integer / null | Sum of `message.usage.cache_read_input_tokens` |
-| `session_cost_usd` | number / null | Cost for the current session (USD), read from `.claude/cost/<YYYY-MM>/<session_id>.txt` |
-| `by_model` | object | Per-model token totals — see [Model Tokens](#model-tokens). Empty when the transcript could not be read |
+| `by_model` | object | Per-model token totals — see [Model Tokens](#model-tokens). Empty when the transcript could not be read. Per-phase cost is token-derived downstream: `window_deltas::pair_delta` prices the per-phase `by_model` delta through `pricing::cost_for` |
 | `turn_count` | integer / null | Number of `assistant` messages observed in the transcript |
 | `tool_call_count` | integer / null | Number of `tool_use` blocks observed across all `assistant` messages |
 | `context_at_last_turn_tokens` | integer / null | Total context window utilization (input + cache_read + cache_create + output) at the most recent assistant turn |

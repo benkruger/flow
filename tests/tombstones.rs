@@ -313,6 +313,34 @@ fn test_src_no_window_snapshot_file() {
     );
 }
 
+/// Tombstone: removed in PR #1730. The `session_cost_usd` field was
+/// removed from `WindowSnapshot` in `src/state.rs` when per-phase cost
+/// and month-to-date became token-derived (priced from `by_model` via
+/// `src/pricing.rs`), orphaning the statusline cost-file read the field
+/// held. Must not return.
+///
+/// Literal byte-substring scan of `src/state.rs`. Stability checklist,
+/// all four answers "no": a `#[derive(Serialize, Deserialize)]` struct
+/// field is a Rust identifier the compiler requires verbatim — it
+/// cannot be assembled by `concat!` or `format!`, cannot be a named
+/// `constant` substituted in later, and is not a split method chain.
+/// The `#[serde(rename = "...")]` / `#[serde(alias = "...")]` bypass
+/// still re-introduces the literal `session_cost_usd` (as the rename
+/// or alias string), so the substring scan catches every resurrection
+/// shape. File-resurrection pair: none — `src/state.rs` is not deleted.
+#[test]
+fn test_state_no_session_cost_usd_field() {
+    let root = common::repo_root();
+    let content =
+        fs::read_to_string(root.join("src").join("state.rs")).expect("src/state.rs must exist");
+    assert!(
+        !content.contains("session_cost_usd"),
+        "src/state.rs must not declare session_cost_usd — per-phase cost \
+         and month-to-date are token-derived (priced from by_model via \
+         src/pricing.rs); the snapshot cost field was removed."
+    );
+}
+
 /// Tombstone: removed in PR #1567. The `bump_install_path` function and
 /// its two `run_impl` callsites are deleted from `src/bump_version.rs` —
 /// the `flow-marketplace/flow/<version>/bin/setup` install-path

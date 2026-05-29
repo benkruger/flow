@@ -1,18 +1,14 @@
-//! Cost-file reads — the statusline-coupled half of account-window
-//! capture. Reads per-session cost values from
+//! Cost-file path resolution and month-to-date aggregation. The
+//! per-session cost file lives at
 //! `<project_root>/.claude/cost/<YYYY-MM>/<session_id>` (no
-//! extension — matches the producer in
-//! `~/.claude/statusline-command.sh`). Cost files are written by
-//! Claude Code's statusline lifecycle and are frozen during
-//! autonomous chains; consumers fall back to `None` rather than
-//! failing when the file is absent or stale.
+//! extension). FLOW's `write-session-cost` SessionStart hook writes
+//! a token-derived cost there (priced from the session's `by_model`
+//! token rollup via `pricing`), so month-to-date spend reconciles
+//! with the token counts. Consumers fall back to `0.0` rather than
+//! failing when a file is absent or stale.
 //!
-//! Two consumer shapes:
+//! Consumer:
 //!
-//! - **Per-flow** — `per_flow_capture::capture_for_active_state`
-//!   calls [`read_cost_file`] keyed by the active session_id and
-//!   patches the result into the snapshot's `session_cost_usd`
-//!   field.
 //! - **Status-bar aggregation** — `tui_data::load_account_metrics`
 //!   calls [`read_monthly_aggregate`] to total every session's
 //!   cost for the current month, displayed in the TUI header
@@ -31,10 +27,9 @@ use crate::session_metrics::is_safe_session_id;
 /// file (a symlink pointed at a large system log, a
 /// multi-megabyte padding attack) while leaving generous headroom
 /// for any future single-line cost format. The cap applies to
-/// every per-session read AND to every per-entry read in
-/// [`read_monthly_aggregate`]'s directory walk, per
-/// `.claude/rules/external-input-path-construction.md` "Enforce
-/// a documented size cap on every external read".
+/// every per-entry read in [`read_monthly_aggregate`]'s directory
+/// walk, per `.claude/rules/external-input-path-construction.md`
+/// "Enforce a documented size cap on every external read".
 const COST_FILE_BYTE_CAP: u64 = 1024;
 
 /// Resolve the per-session cost-file path
@@ -67,29 +62,6 @@ pub fn cost_file_path(project_root: &Path, session_id: &str) -> Option<PathBuf> 
             .join(year_month)
             .join(session_id),
     )
-}
-
-/// Read a per-session cost file (a single floating-point number).
-/// Missing file, malformed content, or non-finite parse returns
-/// `None`. The fail-open semantics let producers continue to emit
-/// snapshots even when the statusline never wrote a cost value for
-/// the current session.
-///
-/// Read is capped at [`COST_FILE_BYTE_CAP`] (1 KB) via
-/// `file.take(COST_FILE_BYTE_CAP)` so a runaway or hostile file
-/// cannot OOM the producer.
-pub fn read_cost_file(path: &Path) -> Option<f64> {
-    let file = fs::File::open(path).ok()?;
-    let mut content = String::new();
-    file.take(COST_FILE_BYTE_CAP)
-        .read_to_string(&mut content)
-        .ok()?;
-    let parsed: f64 = content.trim().parse().ok()?;
-    if parsed.is_finite() {
-        Some(parsed)
-    } else {
-        None
-    }
 }
 
 /// Sum every per-session cost file under

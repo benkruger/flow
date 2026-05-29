@@ -88,7 +88,6 @@ fn snap(session: &str, n: i64) -> WindowSnapshot {
         session_output_tokens: Some(n),
         session_cache_creation_tokens: Some(0),
         session_cache_read_tokens: Some(0),
-        session_cost_usd: Some(n as f64 * 0.01),
         by_model,
         turn_count: Some(n),
         tool_call_count: Some(n * 2),
@@ -578,8 +577,6 @@ fn deltas_from_snapshots_two_none_session_ids_treated_as_distinct_sessions() {
     let mut s_b = snap("ignored", 12);
     s_a.session_id = None;
     s_b.session_id = None;
-    s_a.session_cost_usd = Some(0.5);
-    s_b.session_cost_usd = Some(2.0);
     let phase = phase_with_snapshots(Some(s_a), vec![], Some(s_b));
     let report = phase_delta(&phase).expect("populated");
     assert_eq!(
@@ -588,7 +585,7 @@ fn deltas_from_snapshots_two_none_session_ids_treated_as_distinct_sessions() {
     );
     assert_eq!(
         report.cost_delta_usd, None,
-        "two distinct None sessions must not fabricate a cost delta from cumulative values"
+        "two distinct None sessions form no pair, so by_model_delta is empty and no cost is derived"
     );
 }
 
@@ -640,13 +637,11 @@ fn deltas_from_snapshots_some_then_none_then_some_treated_as_three_sessions() {
 fn deltas_from_snapshots_synthetic_key_disjoint_from_real_underscore_id() {
     let mut s0 = snap("ignored", 5);
     s0.session_id = None; // → synthetic key "\0__none_0"
-    s0.session_cost_usd = Some(0.50);
 
     // Real session_id literally equal to "__none_0" — passes
     // is_safe_session_id (alphanumeric + underscore) but is
     // distinct from the synthetic "\0__none_0".
-    let mut s1 = snap("__none_0", 12);
-    s1.session_cost_usd = Some(2.00);
+    let s1 = snap("__none_0", 12);
 
     let phase = phase_with_snapshots(Some(s0), vec![], Some(s1));
     let report = phase_delta(&phase).expect("populated");

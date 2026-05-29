@@ -66,30 +66,7 @@ fn assistant_line_with_tools(model: &str, tool_count: usize) -> String {
 
 // --- capture ---
 
-/// Task 1: `session_metrics::capture` does not read cost file.
-/// Plant a cost file at the per-session location; assert the
-/// returned snapshot's `session_cost_usd` is `None` because
-/// session_metrics never opens it. Structural decoupling proof.
-#[test]
-fn session_metrics_capture_does_not_read_cost_file() {
-    let tmp = TempDir::new().expect("tempdir");
-    let root = tmp.path().canonicalize().expect("canonicalize");
-    // Plant a readable cost file at the canonical location.
-    let now = chrono::Local::now();
-    let year_month = now.format("%Y-%m").to_string();
-    let cost_dir = root.join(".claude").join("cost").join(&year_month);
-    fs::create_dir_all(&cost_dir).expect("mkdir cost");
-    fs::write(cost_dir.join("sid-decouple"), "3.14").expect("write cost");
-
-    let snap = capture(&root, None, Some("sid-decouple"), || "t".to_string());
-    assert_eq!(
-        snap.session_cost_usd, None,
-        "session_metrics::capture must never read cost files"
-    );
-}
-
-/// All inputs present and valid → every numeric field populated
-/// (cost stays None because session_metrics does not read cost).
+/// All inputs present and valid → every numeric field populated.
 #[test]
 fn capture_with_all_inputs_populates_full_snapshot() {
     let tmp = TempDir::new().expect("tempdir");
@@ -114,7 +91,6 @@ fn capture_with_all_inputs_populates_full_snapshot() {
     assert_eq!(snap.session_output_tokens, Some(50));
     assert_eq!(snap.session_cache_creation_tokens, Some(10));
     assert_eq!(snap.session_cache_read_tokens, Some(20));
-    assert_eq!(snap.session_cost_usd, None);
     assert_eq!(snap.turn_count, Some(1));
     assert_eq!(snap.tool_call_count, Some(0));
     // Context = input + cache_create + cache_read = 100 + 10 + 20 = 130

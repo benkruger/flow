@@ -448,7 +448,6 @@ pub fn snapshot_value(session: &str, n: i64, model: &str) -> Value {
         "session_output_tokens": n * 50,
         "session_cache_creation_tokens": 0,
         "session_cache_read_tokens": 0,
-        "session_cost_usd": n as f64 * 0.01,
         "by_model": {
             model: {"input": n * 100, "output": n * 50, "cache_create": 0, "cache_read": 0}
         },

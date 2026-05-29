@@ -262,7 +262,6 @@ fn make_flow_with_token_snapshots() -> FlowSummary {
         "session_output_tokens": 50,
         "session_cache_creation_tokens": 0,
         "session_cache_read_tokens": 0,
-        "session_cost_usd": 0.01,
         "by_model": {
             "claude-opus-4-7": {"input": 100, "output": 50, "cache_create": 0, "cache_read": 0}
         },
@@ -281,7 +280,6 @@ fn make_flow_with_token_snapshots() -> FlowSummary {
         "session_output_tokens": 2_500,
         "session_cache_creation_tokens": 0,
         "session_cache_read_tokens": 0,
-        "session_cost_usd": 0.50,
         "by_model": {
             "claude-opus-4-7": {"input": 5_000, "output": 2_500, "cache_create": 0, "cache_read": 0}
         },

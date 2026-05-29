@@ -38,10 +38,10 @@ use crate::state::{ModelTokens, StepSnapshot, WindowSnapshot};
 use crate::utils::tolerant_i64_opt;
 
 /// Capture an account-window snapshot from rate-limits + transcript
-/// inputs only. `session_cost_usd` in the returned snapshot is
-/// always `None` — the cost field is the responsibility of
-/// `per_flow_capture`, which calls `session_cost::read_cost_file`
-/// and patches the result onto the snapshot returned here.
+/// inputs only. The snapshot carries token counts and per-model
+/// rollups (`by_model`); cost is not stored on the snapshot —
+/// `window_deltas` derives it from `by_model` via the `pricing`
+/// table at read time.
 ///
 /// `home` — directory holding `.claude/rate-limits.json`. Pass the
 /// real `$HOME` in production; tests pass a tempdir.
@@ -86,7 +86,6 @@ pub fn capture(
         session_output_tokens: agg.totals_present.then_some(agg.output_tokens),
         session_cache_creation_tokens: agg.totals_present.then_some(agg.cache_creation_tokens),
         session_cache_read_tokens: agg.totals_present.then_some(agg.cache_read_tokens),
-        session_cost_usd: None,
         by_model: agg.by_model,
         turn_count: agg.totals_present.then_some(agg.turn_count),
         tool_call_count: agg.totals_present.then_some(agg.tool_call_count),

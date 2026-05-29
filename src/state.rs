@@ -35,13 +35,12 @@ pub enum PhaseStatus {
 /// `per_flow_capture::capture_for_active_state` helper invoked from
 /// `phase_enter`, `phase_finalize`, `phase_transition`, and
 /// `set_timestamp` (when the mutated field names a step counter).
-/// `session_metrics::capture` produces the metrics half;
-/// `session_cost::read_cost_file` produces the cost half. Readers
-/// in `window_deltas`
-/// derive per-phase deltas, by-model rollups, and reset detection
-/// from these raw snapshots — all numeric snapshot fields are
-/// `Option<_>` so missing inputs (no rate-limits file, missing
-/// transcript, no cost file) surface as `None` rather than panics.
+/// `session_metrics::capture` produces the metrics. Readers in
+/// `window_deltas` derive per-phase deltas, by-model rollups, reset
+/// detection, and token-derived cost (priced from `by_model` via
+/// `pricing::cost_for`) from these raw snapshots — all numeric
+/// snapshot fields are `Option<_>` so missing inputs (no rate-limits
+/// file, missing transcript) surface as `None` rather than panics.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PhaseState {
     pub name: String,
@@ -106,8 +105,6 @@ pub struct WindowSnapshot {
     pub session_cache_creation_tokens: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_cache_read_tokens: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session_cost_usd: Option<f64>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub by_model: IndexMap<String, ModelTokens>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -1,9 +1,10 @@
 //! Integration tests for `src/per_flow_capture.rs` — the
-//! orchestrator that bundles `session_metrics::capture` and
-//! `session_cost::read_cost_file` into a final `WindowSnapshot`
-//! for state-mutating callers. Every fixture path is canonicalized
-//! at construction per `.claude/rules/testing-gotchas.md` "macOS
-//! Subprocess Path Canonicalization".
+//! orchestrator that produces a `WindowSnapshot` via
+//! `session_metrics::capture` for state-mutating callers (cost is
+//! token-derived downstream in `window_deltas`, not captured here).
+//! Every fixture path is canonicalized at construction per
+//! `.claude/rules/testing-gotchas.md` "macOS Subprocess Path
+//! Canonicalization".
 
 use std::fs;
 use std::path::PathBuf;
@@ -58,12 +59,12 @@ fn encode_project_root_for_projects_dir(project_root: &std::path::Path) -> Strin
 
 // --- capture_for_active_state ---
 
-/// Task 5: `capture_for_active_state` bundles metrics and cost.
-/// Fixture with both transcript and cost file populated; assert
-/// the returned snapshot has both token fields (from
-/// session_metrics) and cost field (from session_cost).
+/// `capture_for_active_state` produces a metrics snapshot from the
+/// transcript + rate-limits inputs. Asserts session_id, token
+/// fields (from session_metrics), and rate-limit pcts are all
+/// populated.
 #[test]
-fn capture_for_active_state_bundles_metrics_and_cost() {
+fn capture_for_active_state_produces_metrics_snapshot() {
     let tmp = TempDir::new().expect("tempdir");
     let root = tmp.path().canonicalize().expect("canonicalize");
     write_rate_limits(&root, 33, 9);
@@ -76,12 +77,6 @@ fn capture_for_active_state_bundles_metrics_and_cost() {
         &[&assistant_line("claude-opus-4-7", 100, 50, 0, 0)],
     );
 
-    let now = chrono::Local::now();
-    let year_month = now.format("%Y-%m").to_string();
-    let cost_dir = root.join(".claude").join("cost").join(&year_month);
-    fs::create_dir_all(&cost_dir).expect("mkdir cost");
-    fs::write(cost_dir.join("sid-abc"), "0.42").expect("write cost");
-
     let state = json!({
         "session_id": "sid-abc",
         "transcript_path": transcript.to_string_lossy(),
@@ -90,37 +85,7 @@ fn capture_for_active_state_bundles_metrics_and_cost() {
     let snap = capture_for_active_state(&root, &state, &root);
     assert_eq!(snap.session_id.as_deref(), Some("sid-abc"));
     assert_eq!(snap.session_input_tokens, Some(100));
-    assert_eq!(snap.session_cost_usd, Some(0.42));
     assert_eq!(snap.five_hour_pct, Some(33));
-}
-
-/// Task 6: `capture_for_active_state` returns snapshot when cost
-/// file absent. Fixture with transcript but no cost file; assert
-/// snapshot has tokens but `session_cost_usd: None` (fail-open
-/// semantics preserved).
-#[test]
-fn capture_for_active_state_returns_snapshot_when_cost_file_absent() {
-    let tmp = TempDir::new().expect("tempdir");
-    let root = tmp.path().canonicalize().expect("canonicalize");
-
-    let projects_dir = root.join(".claude").join("projects");
-    fs::create_dir_all(&projects_dir).expect("mkdir projects");
-    let transcript = write_transcript(
-        &projects_dir,
-        "session.jsonl",
-        &[&assistant_line("claude-opus-4-7", 200, 80, 0, 0)],
-    );
-
-    // Note: NO cost file written.
-    let state = json!({
-        "session_id": "sid-nocost",
-        "transcript_path": transcript.to_string_lossy(),
-    });
-
-    let snap = capture_for_active_state(&root, &state, &root);
-    assert_eq!(snap.session_input_tokens, Some(200));
-    assert_eq!(snap.session_output_tokens, Some(80));
-    assert_eq!(snap.session_cost_usd, None);
 }
 
 /// `capture_for_active_state` with empty state JSON (no session
@@ -134,20 +99,19 @@ fn capture_for_active_state_with_empty_state_returns_minimal_snapshot() {
     let snap = capture_for_active_state(&root, &state, &root);
     assert_eq!(snap.session_id, None);
     assert_eq!(snap.session_input_tokens, None);
-    assert_eq!(snap.session_cost_usd, None);
 }
 
 /// State carrying only `session_id` (no transcript yet) → the
-/// capture still produces a snapshot. The cost-file path is
-/// derived from session_id; absent file leaves cost as None.
+/// capture still produces a snapshot with the session_id copied
+/// through; absent transcript leaves the token fields as None.
 #[test]
-fn capture_for_active_state_with_session_id_only_derives_cost_path() {
+fn capture_for_active_state_with_session_id_only_produces_snapshot() {
     let tmp = TempDir::new().expect("tempdir");
     let root = tmp.path().canonicalize().expect("canonicalize");
     let state = json!({"session_id": "sid-xyz"});
     let snap = capture_for_active_state(&root, &state, &root);
     assert_eq!(snap.session_id.as_deref(), Some("sid-xyz"));
-    assert_eq!(snap.session_cost_usd, None);
+    assert_eq!(snap.session_input_tokens, None);
 }
 
 // --- Validation guards ---
@@ -270,29 +234,6 @@ fn capture_for_active_state_rejects_transcript_path_when_canonicalize_fails() {
     });
     let snap = capture_for_active_state(&root, &state, &root);
     assert_eq!(snap.session_input_tokens, None);
-}
-
-// --- cost_file_path producer-naming contract ---
-
-/// Regression: the per-session cost file produced by the
-/// statusline is named without a `.txt` extension.
-#[test]
-fn capture_for_active_state_reads_cost_file_without_txt_extension() {
-    let tmp = TempDir::new().expect("tempdir");
-    let root = tmp.path().canonicalize().expect("canonicalize");
-    let session_id = "sid-no-ext";
-    let year_month = chrono::Local::now().format("%Y-%m").to_string();
-    let cost_dir = root.join(".claude").join("cost").join(&year_month);
-    fs::create_dir_all(&cost_dir).expect("mkdir cost");
-    fs::write(cost_dir.join(session_id), "2.50").expect("write cost");
-
-    let state = json!({"session_id": session_id});
-    let snap = capture_for_active_state(&root, &state, &root);
-    assert_eq!(
-        snap.session_cost_usd,
-        Some(2.50),
-        "cost_file_path must match the producer's no-extension naming"
-    );
 }
 
 // --- self-healing transcript path ---

@@ -243,10 +243,10 @@ fn cost_table_appends_partial_marker_in_total() {
         state["phases"][key]["status"] = json!("complete");
     }
     add_phase_snapshots(&mut state, "flow-start", 0, 5);
-    // flow-code's enter has cost None → cost_delta_usd None → total_partial.
-    let mut enter = snapshot_value("S1", 1, "claude-opus-4-7");
-    let complete = snapshot_value("S1", 5, "claude-opus-4-7");
-    enter["session_cost_usd"] = json!(null);
+    // flow-code uses an unpriced model family → token-derived cost is
+    // None → cost_delta_usd None → Total marked partial.
+    let enter = snapshot_value("S1", 1, "gpt-4o-unpriced");
+    let complete = snapshot_value("S1", 5, "gpt-4o-unpriced");
     state["phases"]["flow-code"]["window_at_enter"] = enter;
     state["phases"]["flow-code"]["window_at_complete"] = complete;
 
@@ -479,10 +479,10 @@ fn cost_table_total_partial_marker_does_not_produce_triple_asterisk() {
         state["phases"][key]["status"] = json!("complete");
     }
     add_phase_snapshots(&mut state, "flow-start", 0, 5);
-    // flow-code's enter has null cost → total_partial flips on.
-    let mut enter = snapshot_value("S1", 1, "claude-opus-4-7");
-    let complete = snapshot_value("S1", 5, "claude-opus-4-7");
-    enter["session_cost_usd"] = json!(null);
+    // flow-code uses an unpriced model family → token-derived cost is
+    // None → total_partial flips on.
+    let enter = snapshot_value("S1", 1, "gpt-4o-unpriced");
+    let complete = snapshot_value("S1", 5, "gpt-4o-unpriced");
     state["phases"]["flow-code"]["window_at_enter"] = enter;
     state["phases"]["flow-code"]["window_at_complete"] = complete;
 
@@ -540,7 +540,6 @@ fn cost_table_appends_partial_marker_to_row_when_cost_partial() {
             "session_output_tokens": step0["session_output_tokens"],
             "session_cache_creation_tokens": step0["session_cache_creation_tokens"],
             "session_cache_read_tokens": step0["session_cache_read_tokens"],
-            "session_cost_usd": step0["session_cost_usd"],
             "by_model": step0["by_model"],
             "turn_count": step0["turn_count"],
             "tool_call_count": step0["tool_call_count"],
@@ -559,7 +558,6 @@ fn cost_table_appends_partial_marker_to_row_when_cost_partial() {
             "session_output_tokens": step1["session_output_tokens"],
             "session_cache_creation_tokens": step1["session_cache_creation_tokens"],
             "session_cache_read_tokens": step1["session_cache_read_tokens"],
-            "session_cost_usd": step1["session_cost_usd"],
             "by_model": step1["by_model"],
             "turn_count": step1["turn_count"],
             "tool_call_count": step1["tool_call_count"],

@@ -1078,51 +1078,6 @@ fn window_at_start_carries_session_id_when_populated() {
     );
 }
 
-#[test]
-fn window_at_start_reads_cost_when_session_id_and_cost_file_present() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = create_git_repo_with_remote(dir.path());
-    write_flow_json(&repo, &current_plugin_version(), None);
-    let stub_dir = create_default_gh_stub(&repo);
-    let home = dir.path().join("home");
-    fs::create_dir_all(&home).unwrap();
-    let home = home.canonicalize().unwrap();
-    let session_id = "cost-test-sid";
-    write_capture_file(&home, session_id, None);
-
-    // Pre-create the cost file at <repo>/.claude/cost/<YYYY-MM>/<session_id>
-    // (no extension — matches the producer in
-    // `~/.claude/statusline-command.sh`). The year-month component matches
-    // `chrono::Local::now().format("%Y-%m")` which is what `cost_file_path`
-    // in src/session_cost.rs computes.
-    let year_month = chrono::Local::now().format("%Y-%m").to_string();
-    let cost_dir = repo.join(".claude").join("cost").join(&year_month);
-    fs::create_dir_all(&cost_dir).unwrap();
-    fs::write(cost_dir.join(session_id), "1.42\n").unwrap();
-
-    let output = run_start_init_with_home(&repo, "cost-test", &home, &stub_dir);
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let data = parse_output(&output);
-    let branch = data["branch"].as_str().unwrap();
-    let state = read_state_for_branch(&repo, branch);
-    let cost = state["window_at_start"]["session_cost_usd"].as_f64();
-    assert!(
-        cost.is_some(),
-        "window_at_start.session_cost_usd must be populated when cost file exists; window_at_start: {}",
-        state["window_at_start"]
-    );
-    assert!(
-        (cost.unwrap() - 1.42).abs() < 1e-9,
-        "cost mismatch: expected 1.42, got {}",
-        cost.unwrap()
-    );
-}
-
 /// `start_init` writes the account-window snapshot to BOTH the
 /// top-level `window_at_start` field AND the phase-scoped
 /// `phases.flow-start.window_at_enter` field. Without the dual
@@ -1296,18 +1251,17 @@ fn start_init_session_id_remains_null_when_capture_file_unparseable() {
     );
 }
 
-/// Cost-per-flow integration test (issue #1410, plan Task 10):
-/// proves the SessionStart capture path → init-state seeding →
-/// window_at_start cost capture → format_complete_summary
-/// rendering chain works end-to-end. Pre-fix the chain broke at
-/// the first step (session_id stayed Null), which masked every
-/// downstream lookup as "no cost data" and silently hid the
-/// Token Cost section. Had this test existed before the fix, the
-/// bug would have failed CI.
+/// Cost-per-flow integration test: proves the SessionStart capture
+/// path → init-state seeding → window_at_start token capture (via
+/// the self-healing transcript fallback) → format_complete_summary
+/// rendering chain works end-to-end. The Token Cost section's cost
+/// is token-derived: `phase_delta` prices the per-phase
+/// `by_model_delta` through `pricing::cost_for`. If the capture
+/// chain broke at the first step (session_id stayed Null), every
+/// downstream lookup would mask as "no cost data" and silently hide
+/// the Token Cost section.
 #[test]
 fn cost_per_flow_token_cost_section_renders_phase_delta_end_to_end() {
-    use chrono::Local;
-
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -1317,17 +1271,6 @@ fn cost_per_flow_token_cost_section_renders_phase_delta_end_to_end() {
     let home = home.canonicalize().unwrap();
     let session_id = "cost-flow-sid";
     write_capture_file(&home, session_id, None);
-
-    // Pre-create the cost file at <repo>/.claude/cost/<YYYY-MM>/<session_id>
-    // (no extension — matches the producer in
-    // `~/.claude/statusline-command.sh`) with an initial value.
-    // capture_for_active_state reads this file when start-init writes
-    // window_at_start, so this seeds the start anchor with cost=1.00.
-    let year_month = Local::now().format("%Y-%m").to_string();
-    let cost_dir = repo.join(".claude").join("cost").join(&year_month);
-    fs::create_dir_all(&cost_dir).unwrap();
-    let cost_file = cost_dir.join(session_id);
-    fs::write(&cost_file, "1.00\n").unwrap();
 
     // Plant a transcript file at the canonical Claude Code location
     // `<home>/.claude/projects/<encoded-project-root>/<session_id>.jsonl`.
@@ -1370,18 +1313,8 @@ fn cost_per_flow_token_cost_section_renders_phase_delta_end_to_end() {
     let data = parse_output(&output);
     let branch = data["branch"].as_str().expect("branch field present");
 
-    // Confirm the start anchor carries the cost — without the
-    // session_id seed, this would be Null and every downstream
-    // delta would compute None.
     let mut state = read_state_for_branch(&repo, branch);
-    assert_eq!(
-        state["window_at_start"]["session_cost_usd"]
-            .as_f64()
-            .expect("start cost populated"),
-        1.00,
-        "window_at_start cost must reflect the pre-flow cost file value"
-    );
-    // Confirm the start anchor also carries token usage — the
+    // Confirm the start anchor carries token usage — the
     // self-healing transcript fallback in `capture_for_active_state`
     // discovered the planted transcript at the canonical path,
     // bypassed the null `transcript_path` in state, and read the
@@ -1393,18 +1326,10 @@ fn cost_per_flow_token_cost_section_renders_phase_delta_end_to_end() {
         "window_at_start tokens must reflect the planted transcript via self-heal"
     );
 
-    // Simulate cost accruing during the Code phase: bump the
-    // cost file from 1.00 → 1.50 at phase-enter, then from 1.50
-    // → 2.50 at phase-finalize. Mutate the state file directly to
-    // add the phase snapshots that those subprocess calls would
-    // produce, with cost values mirroring the accrued totals.
-    fs::write(&cost_file, "2.50\n").unwrap();
-
     // Build window_at_enter and window_at_complete with a
     // 400-input-token opus delta (input 100 → 500). Cost is
-    // token-derived: 400 × $5/MTok = $0.002 for the flow-code phase.
-    // The cost file and session_cost_usd values are vestigial (cost
-    // no longer reads them); they are removed with the field later.
+    // token-derived: 400 × $5/MTok = $0.002 for the flow-code phase,
+    // priced from the per-phase by_model_delta.
     let snap_template = serde_json::json!({
         "captured_at": "2026-01-01T00:00:00-08:00",
         "session_id": session_id,
@@ -1424,10 +1349,8 @@ fn cost_per_flow_token_cost_section_renders_phase_delta_end_to_end() {
         "context_window_pct": 0.05,
     });
     let mut enter_snap = snap_template.clone();
-    enter_snap["session_cost_usd"] = serde_json::json!(1.50);
     enter_snap["session_input_tokens"] = serde_json::json!(100);
     let mut complete_snap = snap_template.clone();
-    complete_snap["session_cost_usd"] = serde_json::json!(2.50);
     complete_snap["session_input_tokens"] = serde_json::json!(500);
     complete_snap["by_model"]["claude-opus-4-7"]["input"] = serde_json::json!(500);
     state["phases"]["flow-code"]["status"] = serde_json::json!("complete");

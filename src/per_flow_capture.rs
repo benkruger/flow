@@ -1,10 +1,10 @@
 //! Per-flow snapshot orchestrator. Reads `session_id` and
 //! `transcript_path` from the in-memory state JSON, validates them
 //! against the path-construction discipline in
-//! `.claude/rules/external-input-path-construction.md`, derives the
-//! per-session cost-file path, and bundles
-//! [`session_metrics::capture`] with [`session_cost::read_cost_file`]
-//! into a final [`WindowSnapshot`].
+//! `.claude/rules/external-input-path-construction.md`, and produces
+//! a [`WindowSnapshot`] via [`session_metrics::capture`]. Cost is
+//! token-derived downstream in `window_deltas` from the snapshot's
+//! `by_model` rollup, not captured here.
 //!
 //! Producers (`phase_enter`, `phase_finalize`, `phase_transition`,
 //! `set_timestamp`, `start_init`, `complete_finalize`,
@@ -18,7 +18,6 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use crate::session_cost;
 use crate::session_metrics::{self, is_safe_session_id, is_safe_transcript_path};
 use crate::state::WindowSnapshot;
 use crate::utils::now;
@@ -61,19 +60,7 @@ pub fn capture_for_active_state(home: &Path, state: &Value, project_root: &Path)
                 .map(|sid| derive_transcript_path(home, project_root, sid))
                 .filter(|p| is_safe_transcript_path(p, home))
         });
-    let mut snap =
-        session_metrics::capture(home, transcript_path.as_deref(), session_id.as_deref(), now);
-    if let Some(sid) = session_id.as_deref() {
-        // `session_id` has already passed `is_safe_session_id` on
-        // line 51, and `cost_file_path` uses the same validator, so
-        // this branch is unreachable per
-        // `.claude/rules/reachable-is-testable.md` "When the test
-        // resists the real production path".
-        let cost_path = session_cost::cost_file_path(project_root, sid)
-            .expect("sid passed is_safe_session_id upstream");
-        snap.session_cost_usd = session_cost::read_cost_file(&cost_path);
-    }
-    snap
+    session_metrics::capture(home, transcript_path.as_deref(), session_id.as_deref(), now)
 }
 
 /// Derive the canonical transcript path Claude Code writes to:
