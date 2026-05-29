@@ -79,7 +79,7 @@ Maintainer-only commands (private to this repo): `/flow-qa` files a pre-decompos
 - **TDD always** — test must fail before implementation is written; test must pass before commit.
 - **No lint suppression** — fix the code, not the linter. No exclusions, no suppression comments.
 - **Worktree isolation** — your team's trunk is never touched directly; multiple features run in parallel.
-- **Commit discipline** — imperative verb + tl;dr + per-file breakdown, every commit.
+- **Commit discipline** — Conventional Commits (`type(scope): description`) + body + per-file breakdown, every commit.
 
 ---
 

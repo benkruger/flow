@@ -341,8 +341,7 @@ fn is_subsumed_skips_malformed_existing_entry() {
 #[test]
 fn version_marker_created() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None, None)
-        .unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None).unwrap();
     assert!(tmp.path().join(".flow.json").exists());
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
@@ -357,8 +356,7 @@ fn version_marker_writes_minimal_json() {
     // with the key still parse cleanly because every consumer ignores
     // unknown JSON fields.
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None, None)
-        .unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None).unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert!(
@@ -370,8 +368,7 @@ fn version_marker_writes_minimal_json() {
 #[test]
 fn version_marker_trailing_newline() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None, None)
-        .unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None).unwrap();
     let content = fs::read_to_string(tmp.path().join(".flow.json")).unwrap();
     assert!(content.ends_with('\n'));
 }
@@ -387,7 +384,6 @@ fn version_marker_with_config_hash() {
         None,
         None,
         None,
-        None,
     )
     .unwrap();
     let data: Value =
@@ -398,8 +394,7 @@ fn version_marker_with_config_hash() {
 #[test]
 fn version_marker_without_config_hash() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None, None)
-        .unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None).unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert!(data.get("config_hash").is_none());
@@ -416,7 +411,6 @@ fn version_marker_with_setup_hash() {
         None,
         None,
         None,
-        None,
     )
     .unwrap();
     let data: Value =
@@ -428,17 +422,8 @@ fn version_marker_with_setup_hash() {
 fn version_marker_normalizes_bare_string_skills_to_block_shape() {
     let tmp = tempfile::tempdir().unwrap();
     let skills = json!({"flow-start": "manual", "flow-code": "auto"});
-    prime_setup::write_version_marker(
-        tmp.path(),
-        "1.0.0",
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(&skills),
-    )
-    .unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, Some(&skills))
+        .unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert_eq!(
@@ -458,17 +443,8 @@ fn version_marker_passes_through_object_skills() {
         "flow-code": {"commit": "auto", "continue": "manual"},
         "flow-complete": {"continue": "auto"}
     });
-    prime_setup::write_version_marker(
-        tmp.path(),
-        "1.0.0",
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(&skills),
-    )
-    .unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, Some(&skills))
+        .unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert_eq!(
@@ -484,17 +460,8 @@ fn version_marker_non_object_skills_passes_through() {
     // rewrites per-entry values inside an object.
     let tmp = tempfile::tempdir().unwrap();
     let skills = json!("auto");
-    prime_setup::write_version_marker(
-        tmp.path(),
-        "1.0.0",
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(&skills),
-    )
-    .unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, Some(&skills))
+        .unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert_eq!(data["skills"], json!("auto"));
@@ -503,30 +470,10 @@ fn version_marker_non_object_skills_passes_through() {
 #[test]
 fn version_marker_without_skills() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None, None)
-        .unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None).unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert!(data.get("skills").is_none());
-}
-
-#[test]
-fn version_marker_with_commit_format() {
-    let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(
-        tmp.path(),
-        "1.0.0",
-        None,
-        None,
-        Some("full"),
-        None,
-        None,
-        None,
-    )
-    .unwrap();
-    let data: Value =
-        serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
-    assert_eq!(data["commit_format"], "full");
 }
 
 #[test]
@@ -535,7 +482,6 @@ fn version_marker_with_plugin_root() {
     prime_setup::write_version_marker(
         tmp.path(),
         "1.0.0",
-        None,
         None,
         None,
         None,
@@ -551,17 +497,8 @@ fn version_marker_with_plugin_root() {
 #[test]
 fn write_version_marker_writes_role_when_provided() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(
-        tmp.path(),
-        "1.0.0",
-        None,
-        None,
-        None,
-        Some("pm"),
-        None,
-        None,
-    )
-    .unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, Some("pm"), None, None)
+        .unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert_eq!(data["role"], "pm");
@@ -573,7 +510,6 @@ fn write_version_marker_writes_tech_lead_role() {
     prime_setup::write_version_marker(
         tmp.path(),
         "1.0.0",
-        None,
         None,
         None,
         Some("tech-lead"),
@@ -594,7 +530,6 @@ fn write_version_marker_writes_founder_solo_role() {
         "1.0.0",
         None,
         None,
-        None,
         Some("founder-solo"),
         None,
         None,
@@ -608,8 +543,7 @@ fn write_version_marker_writes_founder_solo_role() {
 #[test]
 fn write_version_marker_omits_role_when_none() {
     let tmp = tempfile::tempdir().unwrap();
-    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None, None)
-        .unwrap();
+    prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None).unwrap();
     let data: Value =
         serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
     assert!(data.get("role").is_none());
@@ -767,7 +701,7 @@ fn version_marker_write_failure_returns_error() {
     let flow_json_as_dir = tmp.path().join(".flow.json");
     fs::create_dir(&flow_json_as_dir).unwrap();
     let result =
-        prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None, None);
+        prime_setup::write_version_marker(tmp.path(), "1.0.0", None, None, None, None, None);
     assert!(
         result.is_err(),
         "expected Err when .flow.json is a directory"
@@ -1023,24 +957,6 @@ fn cli_skills_json_written() {
         }),
         "prime-setup normalizes bare-string --skills-json entries to block shape"
     );
-}
-
-#[test]
-fn cli_commit_format_written() {
-    let tmp = tempfile::tempdir().unwrap();
-    make_git_repo(tmp.path());
-    let output = flow_rs()
-        .arg("prime-setup")
-        .arg(tmp.path())
-        .arg("--commit-format")
-        .arg("title-only")
-        .output()
-        .unwrap();
-    let data = parse_stdout(&output.stdout);
-    assert_eq!(data["status"], "ok");
-    let flow_data: Value =
-        serde_json::from_str(&fs::read_to_string(tmp.path().join(".flow.json")).unwrap()).unwrap();
-    assert_eq!(flow_data["commit_format"], "title-only");
 }
 
 #[test]
@@ -1675,7 +1591,6 @@ fn run_impl_library_happy_path_covers_all_callees() {
     let args = prime_setup::Args {
         project_root: project.to_string_lossy().to_string(),
         skills_json: None,
-        commit_format: Some("full".to_string()),
         role: None,
         plugin_root: None,
     };
@@ -1705,7 +1620,6 @@ fn run_impl_library_project_root_not_dir_errors() {
     let args = prime_setup::Args {
         project_root: missing.to_string_lossy().to_string(),
         skills_json: None,
-        commit_format: None,
         role: None,
         plugin_root: None,
     };
@@ -1726,7 +1640,6 @@ fn run_impl_library_invalid_skills_json_errors() {
     let args = prime_setup::Args {
         project_root: project.to_string_lossy().to_string(),
         skills_json: Some("not json {".to_string()),
-        commit_format: None,
         role: None,
         plugin_root: None,
     };
@@ -1748,7 +1661,6 @@ fn run_impl_library_invalid_role_errors() {
     let args = prime_setup::Args {
         project_root: project.to_string_lossy().to_string(),
         skills_json: None,
-        commit_format: None,
         role: Some("ic-engineer".to_string()),
         plugin_root: None,
     };
@@ -1812,7 +1724,6 @@ fn run_impl_library_merge_settings_err_path() {
     let args = prime_setup::Args {
         project_root: project.to_string_lossy().to_string(),
         skills_json: None,
-        commit_format: None,
         role: None,
         plugin_root: None,
     };
@@ -1839,7 +1750,6 @@ fn run_impl_library_write_version_marker_err_path() {
     let args = prime_setup::Args {
         project_root: project.to_string_lossy().to_string(),
         skills_json: None,
-        commit_format: None,
         role: None,
         plugin_root: None,
     };
@@ -1863,7 +1773,6 @@ fn run_impl_library_install_pre_commit_hook_err_path() {
     let args = prime_setup::Args {
         project_root: project.to_string_lossy().to_string(),
         skills_json: None,
-        commit_format: None,
         role: None,
         plugin_root: None,
     };

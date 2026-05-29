@@ -390,7 +390,7 @@ to confirm the identifier appears as a definition (e.g.
 
 The autonomy config chain is: prime presets → `.flow.json` → state file → skill reads.
 `/flow-prime` writes defaults to `.flow.json`. The user customizes `.flow.json`.
-`/flow-start` copies settings (`skills`, `commit_format`) from `.flow.json` into
+`/flow-start` copies settings (`skills`) from `.flow.json` into
 the state file. Phase skills read only from the state file — never `.flow.json`
 (which lives at the project root and is inaccessible from worktrees).
 When a phase skill's config is missing at runtime, the fix is always at the source

@@ -113,7 +113,6 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `session_id` | string / null | Claude Code session UUID — set by Stop hook from hook stdin |
 | `transcript_path` | string / null | Absolute path to session transcript .jsonl — set by Stop hook from hook stdin |
 | `skills` | object / absent | Per-skill autonomy settings copied from `.flow.json` by `/flow-start` — see [Skills Object](#skills-object) |
-| `commit_format` | string / absent | Commit message format: `"full"` or `"title-only"`. Copied from `.flow.json` by `/flow-start`. Absent when `.flow.json` has no `commit_format` key — skills default to `"full"` |
 | `start_step` | integer | Current Start phase step (0-5). Set by `init-state --start-step` at creation, then updated by `start-step` subcommand at each step boundary. Used by the TUI to show "step 3 of 5" in the Start phase annotation. Absent when Start is not in progress |
 | `start_steps_total` | integer | Total number of Start phase steps (hardcoded 5). Set by `init-state --start-steps-total` at creation. Used by the TUI for "step N of M" display |
 | `review_step` | integer | Last completed Review step (0-4). Set to 0 on phase entry, incremented after each step (1=Gather, 2=Launch, 3=Triage, 4=Fix). Used by the TUI and for resume after context compaction |

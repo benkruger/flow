@@ -12,24 +12,23 @@ parent: Skills
 
 One-time project setup. Configures workspace permissions in `.claude/settings.json`, sets up git excludes, installs the `bin/{format,lint,build,test}` delegation stubs, and writes a version marker. Run once after installing FLOW and again after each upgrade.
 
-`--reprime` skips all questions and reuses the existing `.flow.json` config — same autonomy and commit format, just new artifacts installed. Use this for upgrades where your config hasn't changed.
+`--reprime` skips all questions and reuses the existing `.flow.json` config — same autonomy, just new artifacts installed. Use this for upgrades where your config hasn't changed.
 
 ---
 
 ## What It Does
 
 1. Asks the user for their primary role — PM, Tech Lead (recommended), or Founder / Solo Dev. The selection is recorded as the `role` field in `.flow.json` and sets a default planning persona for future planning conversations.
-2. Asks the user to choose a commit message format (full or title-only).
-3. Asks the user to choose an autonomy level (fully autonomous, fully manual, recommended, or customize per skill).
-4. Runs a single setup script that handles all configuration in one call:
+2. Asks the user to choose an autonomy level (fully autonomous, fully manual, recommended, or customize per skill).
+3. Runs a single setup script that handles all configuration in one call:
    - Reads or creates `.claude/settings.json` and merges FLOW universal allow/deny permissions
-   - Writes `.flow.json` with version, config hash, commit format, role (when set), and skills configuration
+   - Writes `.flow.json` with version, config hash, role (when set), and skills configuration
    - Adds `.flow-states/`, `.worktrees/`, `.flow.json`, `.claude/cost/`, `.claude/scheduled_tasks.lock`, `test_adversarial_flow.*`, `adversarial_flow_test.go`, `adversarial_flow_test.rb`, `adversarial_flow_spec.rb`, and `AdversarialFlowTests.swift` to `.git/info/exclude`
    - Installs a pre-commit hook that blocks direct `git commit` during active FLOW features and requires `/flow:flow-commit`
    - Installs a global launcher at `~/.local/bin/flow`
    - Installs `bin/{format,lint,build,test}` stubs from `assets/bin-stubs/<tool>.sh` into `<project_root>/bin/<tool>` when absent. Pre-existing `bin/*` scripts are never overwritten so users who already configured their own toolchain keep their work.
-5. Installs the `decompose` plugin from the `matt-k-wong/mkw-DAG-architect` marketplace
-6. Commits generated files (`.claude/settings.json` and any newly-installed `bin/<tool>` stubs) to version control
+4. Installs the `decompose` plugin from the `matt-k-wong/mkw-DAG-architect` marketplace
+5. Commits generated files (`.claude/settings.json` and any newly-installed `bin/<tool>` stubs) to version control
 
 After prime, the user is responsible for editing each `bin/<tool>` to wire it to their actual toolchain (cargo, pytest, go test, npm, etc.). The default stubs exit 0 with a stderr reminder so a fresh prime never blocks CI.
 

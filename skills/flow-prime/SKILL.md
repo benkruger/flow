@@ -14,7 +14,7 @@ description: "One-time project setup — configure and commit workspace permissi
 
 Run once after installing FLOW, and again after each FLOW upgrade. Configures workspace permissions, git excludes, installs the bin/* delegation stubs, and writes a version marker so `/flow:flow-start` knows the project is initialized.
 
-`--reprime` skips all questions and reuses the existing `.flow.json` config. Use this for upgrades where you want the same autonomy and commit format — just new artifacts installed.
+`--reprime` skips all questions and reuses the existing `.flow.json` config. Use this for upgrades where you want the same autonomy — just new artifacts installed.
 
 ## Announce
 
@@ -34,12 +34,12 @@ If `--reprime` was passed:
 
 1. Use the Read tool to read `.flow.json` from the project root.
    - If the file does not exist, stop with: "No existing config to reprime from. Run `/flow:flow-prime` instead."
-2. Extract `skills`, `commit_format`, and `role` from the JSON. The
+2. Extract `skills` and `role` from the JSON. The
    `role` field is optional — `.flow.json` files written before the
    role-selection step omit it, in which case treat it as unset and
    omit `--role` from the setup-script call.
-3. Run `claude plugin list` to check plugin state (needed for Step 5).
-4. Skip Steps 1–3 entirely. Jump to Step 4 with the extracted values.
+3. Run `claude plugin list` to check plugin state (needed for Step 4).
+4. Skip Steps 1–2 entirely. Jump to Step 3 with the extracted values.
 
 ## Steps
 
@@ -74,26 +74,7 @@ Store the result as `role_value`:
 - "PM" → `"pm"`
 - "Founder / Solo Dev" → `"founder-solo"`
 
-### Step 2 — Choose commit message format
-
-FLOW supports two commit message formats:
-
-- **Full** — subject + tl;dr + explanation + file list (detailed seven-element format)
-- **Title only** — subject line + file list (minimal, no tl;dr section)
-
-Ask the user which format to use with AskUserQuestion:
-
-> "What commit message format should FLOW use?"
->
-> - **Full format (Recommended)** — "Subject + tl;dr + explanation + file list (detailed)"
-> - **Title only** — "Subject line + file list, no tl;dr section"
-
-Store the result as `commit_format`:
-
-- "Full format" → `"full"`
-- "Title only" → `"title-only"`
-
-### Step 3 — Choose autonomy level
+### Step 2 — Choose autonomy level
 
 FLOW has two independent axes for skills that support them:
 
@@ -131,7 +112,7 @@ Ask the user how much autonomy FLOW should have using AskUserQuestion:
 
 **Customize** — ask per skill, in this order: code, review, learn, complete, abort.
 
-Start is exempt from the Customize loop because every preset fixes its continue mode to `auto` — Start has no useful interaction to gate on, so prompting for it would only add friction. Before asking the per-skill questions below, **seed `skills_dict` with `{"flow-start": {"continue": "auto"}}`** so the resulting JSON carries Start's continue mode through to Step 4.
+Start is exempt from the Customize loop because every preset fixes its continue mode to `auto` — Start has no useful interaction to gate on, so prompting for it would only add friction. Before asking the per-skill questions below, **seed `skills_dict` with `{"flow-start": {"continue": "auto"}}`** so the resulting JSON carries Start's continue mode through to Step 3.
 
 For each remaining skill, ask about only the applicable axes. List the recommended option first with "(Recommended)" in the label:
 
@@ -195,12 +176,11 @@ Store each answer as `{"continue": "<mode>"}` — the same object shape
 the presets use — so `flow-complete` and `flow-abort` carry a
 `continue` axis in `skills_dict`.
 
-Store the result as `skills_dict` for Step 4.
+Store the result as `skills_dict` for Step 3.
 
-### Step 4 — Run prime setup script
+### Step 3 — Run prime setup script
 
-Serialize `skills_dict` from Step 3 as a JSON string for the `--skills-json` argument.
-Pass the `commit_format` value from Step 2 via `--commit-format`.
+Serialize `skills_dict` from Step 2 as a JSON string for the `--skills-json` argument.
 Pass the concrete `role_value` from Step 1 via `--role`.
 
 **Do not pass the literal string `<role_value>` as the flag argument** —
@@ -208,7 +188,7 @@ the role-selection step yielded a concrete value (pm, tech-lead,
 founder-solo) that goes after `--role`.
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --skills-json '<skills_dict_json>' --commit-format <commit_format> --role <role_value> --plugin-root ${CLAUDE_PLUGIN_ROOT}
+${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --skills-json '<skills_dict_json>' --role <role_value> --plugin-root ${CLAUDE_PLUGIN_ROOT}
 ```
 
 When the Reprime path carries forward a legacy `.flow.json` that has
@@ -216,7 +196,7 @@ no `role` field (written before role selection existed), omit
 `--role` entirely:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --skills-json '<skills_dict_json>' --commit-format <commit_format> --plugin-root ${CLAUDE_PLUGIN_ROOT}
+${CLAUDE_PLUGIN_ROOT}/bin/flow prime-setup <project_root> --skills-json '<skills_dict_json>' --plugin-root ${CLAUDE_PLUGIN_ROOT}
 ```
 
 The script handles everything in a single call:
@@ -224,7 +204,7 @@ The script handles everything in a single call:
 - Reading or creating `.claude/settings.json`
 - Merging FLOW universal permissions (additive only — preserves existing entries)
 - Setting `defaultMode` to `acceptEdits` (overrides existing values — FLOW requires this for state file writes without prompts)
-- Writing `.flow.json` with version marker, config hash, skills config, and commit format
+- Writing `.flow.json` with version marker, config hash, and skills config
 - Adding `.flow-states/`, `.worktrees/`, `.flow.json`, `.claude/cost/`, `.claude/scheduled_tasks.lock`, `test_adversarial_flow.*`, `adversarial_flow_test.go`, `adversarial_flow_test.rb`, `adversarial_flow_spec.rb`, and `AdversarialFlowTests.swift` to `.git/info/exclude`
 - Installing a pre-commit hook at `.git/hooks/pre-commit` that blocks direct `git commit` during active FLOW features and requires commits to go through `/flow:flow-commit`
 - Installing a global `flow` launcher at `~/.local/bin/flow` that delegates to the plugin cache, and warning if `~/.local/bin` is not in PATH
@@ -500,7 +480,7 @@ All universal permissions written to `.claude/settings.json` for reference:
 }
 ```
 
-### Step 5 — Install plugins
+### Step 4 — Install plugins
 
 Run `claude plugin list` to check the current plugin state.
 
@@ -520,7 +500,7 @@ claude plugin install decompose@decompose-marketplace
 
 If all plugins are already present, skip silently.
 
-### Step 6 — Commit generated files
+### Step 5 — Commit generated files
 
 Check if the working tree has changes by running `git status`. If the output contains "working tree clean", skip to Done.
 
@@ -545,7 +525,7 @@ Report:
 - Git excludes configured for `.flow-states/`, `.worktrees/`, `.flow.json`, `.claude/cost/`, `.claude/scheduled_tasks.lock`, `test_adversarial_flow.*`, `adversarial_flow_test.go`, `adversarial_flow_test.rb`, `adversarial_flow_spec.rb`, and `AdversarialFlowTests.swift`
 - Pre-commit hook installed — blocks direct `git commit`, requires `/flow:flow-commit`
 - Global launcher installed at `~/.local/bin/flow` — run `flow tui` from any primed project
-- bin/* stubs installed (list whichever names appear in `stubs_installed` from Step 4); remind the user to edit each one to wire it to their actual toolchain
+- bin/* stubs installed (list whichever names appear in `stubs_installed` from Step 3); remind the user to edit each one to wire it to their actual toolchain
 - Decompose plugin installed (or already present) — DAG planning support from the `matt-k-wong/mkw-DAG-architect` marketplace
 - Generated files committed and pushed
 
@@ -562,4 +542,4 @@ Display the skills configuration as a pipe-delimited markdown table with exactly
 | abort       | manual | —        |
 ```
 
-Use the actual values from `skills_dict` (Step 3). The table above is just an example. Show `—` for axes that don't apply to a skill. The table must use pipe `|` delimiters — never render as a bullet list.
+Use the actual values from `skills_dict` (Step 2). The table above is just an example. Show `—` for axes that don't apply to a skill. The table must use pipe `|` delimiters — never render as a bullet list.
