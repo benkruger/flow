@@ -255,7 +255,18 @@ Wait for the agent to return its structured findings.
 
 **Truncation check.** Detect truncation by the absence of the literal
 `END-OF-FINDINGS` completion marker as the final structural element of
-the agent's output. Marker absence alone means the agent was truncated
+the agent's output — with one exception. If the markerless response
+ALSO has zero `**Finding` blocks AND carries an external-failure marker
+(`rate_limit`, `429`, `usage_limit`, `API Error`), it is an upstream
+API/quota failure, NOT `maxTurns` truncation. Route that case to the
+**External failure** path in Per-agent accounting below
+(retry-3-then-skip), not to partition-and-combine: partitioning a
+rate-limited agent only re-fails inside the same quota window, whereas
+retry-then-skip waits the failure out. This mirrors the Review skill's
+Class 2 (external failure) precondition — zero findings plus a failure
+marker — taking priority over the markerless-truncation routing.
+
+Otherwise, marker absence means the agent was truncated
 by `maxTurns` exhaustion — regardless of whether any partial `**Finding`
 block was produced. An agent that exhausts its turn budget DURING
 investigation (before producing any finding) is the case this check

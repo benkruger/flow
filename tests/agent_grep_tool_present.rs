@@ -24,7 +24,7 @@ use common::read_agent;
 /// so each must keep `Grep` in its `tools:` allow-list for the
 /// Read-the-file-then-investigate workflow described in its Input
 /// section to run.
-const REVIEW_AGENTS: &[&str] = &[
+const DIFF_HANDOFF_AGENTS: &[&str] = &[
     "reviewer.md",
     "pre-mortem.md",
     "adversarial.md",
@@ -75,7 +75,7 @@ fn frontmatter_tools(content: &str) -> Option<String> {
 
 #[test]
 fn review_agents_frontmatter_declares_grep() {
-    for agent_file in REVIEW_AGENTS {
+    for agent_file in DIFF_HANDOFF_AGENTS {
         let content = read_agent(agent_file);
         let tools = frontmatter_tools(&content).unwrap_or_else(|| {
             panic!(

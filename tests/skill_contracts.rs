@@ -918,23 +918,56 @@ fn learn_uses_learn_analyst_subagent() {
     );
 }
 
+/// Extract the flow-learn Step 1 section ("Gather and launch agent"), where
+/// the learn-analyst prompt is constructed. Agent-prompt-construction
+/// assertions are scoped to this slice so they do not false-positive on later
+/// steps — Step 5 rule-routing legitimately discusses "rules files" and
+/// "Project CLAUDE.md". Bounded-slice pattern per
+/// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions".
+fn flow_learn_step1(skill: &str) -> &str {
+    skill
+        .split_once("## Step 1 — Gather and launch agent")
+        .and_then(|(_, t)| t.split_once("\n## Step 2").map(|(s, _)| s))
+        .expect("flow-learn must have Step 1 and Step 2 section headers")
+}
+
 #[test]
 fn learn_analyst_input_uses_diff_file_handoff() {
     // The learn-analyst agent receives the diff as a file path it Reads
     // (the context-sparse shape the Phase 3 Review agents already use),
     // not as inline `git diff` bytes embedded in the prompt. Regression:
-    // a revert to the inline `**DIFF**` Input entry re-introduces the
+    // a revert to an inline diff Input entry re-introduces the
     // prompt-overflow floor that returns `Prompt is too long` with zero
     // findings on large diffs. Consumer: the context-sparse Learn
     // architecture in `.claude/rules/cognitive-isolation.md`.
+    //
+    // The guard binds the file-handoff SEMANTICS, not a single literal: it
+    // requires the read-and-do-not-embed instruction and rejects the inline
+    // diff revert under any bolded label casing (`**DIFF**`, `**Full diff**`)
+    // and the `(full diff output)` dump marker the pre-PR prompt used — so a
+    // reworded revert cannot evade an exact-literal check.
     let c = common::read_agent("learn-analyst.md");
+    let lc = c.to_ascii_lowercase();
+    // Whitespace-normalized form: the agent prose line-wraps, so a phrase
+    // check against the raw text is wrap-fragile (`do\n   not embed`).
+    // Collapse runs of whitespace before matching multi-word phrases.
+    let lc_ws: String = lc.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
         c.contains("SUBSTANTIVE_DIFF_FILE"),
         "learn-analyst Input must name the SUBSTANTIVE_DIFF_FILE file-path handoff"
     );
     assert!(
-        !c.contains("**DIFF**"),
-        "learn-analyst Input must not carry an inline `**DIFF**` block — the diff is a file handoff"
+        lc_ws.contains("do not embed"),
+        "learn-analyst Input must instruct reading the diff file without embedding its \
+         contents in the prompt — the file-handoff semantics, not just the token name"
+    );
+    assert!(
+        !c.contains("**DIFF**") && !lc.contains("**full diff**") && !lc.contains("**diff**"),
+        "learn-analyst Input must not carry an inline diff block under any bolded `**…diff…**` label"
+    );
+    assert!(
+        !lc.contains("(full diff") && !lc.contains("diff output)"),
+        "learn-analyst Input must not inline a diff dump (`(full diff output)`-style marker)"
     );
 }
 
@@ -946,11 +979,28 @@ fn learn_step1_invokes_capture_diff() {
     // Regression: a revert to the inline `git diff origin/...HEAD` capture
     // re-introduces the prompt-overflow floor. Consumer: the bounded
     // agent-prompt budget the context-sparse handoff preserves.
+    //
+    // The command must appear inside a ```bash fence, not merely as prose —
+    // a bare substring check would pass on a prose sentence describing the
+    // old command while the actual capture reverted to an inline `git diff`.
     let c = common::read_skill("flow-learn");
+    let step1 = flow_learn_step1(&c);
+    let cmd = "capture-diff --branch <branch> --base <base_branch>";
+    let idx = step1.find(cmd).unwrap_or_else(|| {
+        panic!(
+            "flow-learn Step 1 must invoke `bin/flow capture-diff --branch <branch> \
+             --base <base_branch>` so the learn-analyst agent receives the substantive \
+             diff via file handoff"
+        )
+    });
+    let fence_open = step1[..idx].rfind("```").unwrap_or_else(|| {
+        panic!("the capture-diff command must sit inside a fenced code block, not prose")
+    });
     assert!(
-        c.contains("capture-diff --branch <branch> --base <base_branch>"),
-        "flow-learn Step 1 must invoke `bin/flow capture-diff --branch <branch> --base <base_branch>` \
-         so the learn-analyst agent receives the substantive diff via file handoff"
+        step1[fence_open..].starts_with("```bash"),
+        "the capture-diff invocation must be inside a ```bash fence (a real invocation), \
+         not a prose mention — the nearest preceding fence is a closing fence, so the \
+         command is in prose"
     );
 }
 
@@ -958,19 +1008,26 @@ fn learn_step1_invokes_capture_diff() {
 fn learn_prompt_has_no_inline_rule_corpus() {
     // The agent reads CLAUDE.md and the `.claude/rules/` corpus itself on
     // demand; the skill no longer inlines them into the agent prompt.
-    // Regression: re-adding the `PROJECT CLAUDE.MD:` / `RULES FILES:`
-    // inline blocks restores the overflow floor that defeats the audit on
-    // large rule corpora. Consumer: the inline-floor elimination that is
-    // the primary fix of this change.
+    // Regression: re-adding an inline CLAUDE.md / rule-corpus block restores
+    // the overflow floor that defeats the audit on large rule corpora.
+    // Consumer: the inline-floor elimination that is the primary fix.
+    //
+    // Scoped to Step 1 (the prompt-construction block) and matched
+    // case-insensitively across `rule file`/`rules file` and `project
+    // claude.md` so a reworded/recased inline-corpus revert (`Rule files:`,
+    // `Project CLAUDE.md:`) cannot evade an uppercased exact-literal check.
+    // Later steps legitimately say "rules files", which is why the slice is
+    // bounded.
     let c = common::read_skill("flow-learn");
+    let lc = flow_learn_step1(&c).to_ascii_lowercase();
     assert!(
-        !c.contains("RULES FILES"),
-        "flow-learn must not inline a `RULES FILES` block — the agent globs and reads \
-         `.claude/rules/` itself"
+        !lc.contains("rule file") && !lc.contains("rules file"),
+        "flow-learn Step 1 must not inline a rule-corpus block (any case of \
+         `rule file`/`rules file`) — the agent globs and reads `.claude/rules/` itself"
     );
     assert!(
-        !c.contains("PROJECT CLAUDE.MD"),
-        "flow-learn must not inline a `PROJECT CLAUDE.MD` block — the agent reads CLAUDE.md itself"
+        !lc.contains("project claude.md"),
+        "flow-learn Step 1 must not inline a `Project CLAUDE.md` block — the agent reads CLAUDE.md itself"
     );
 }
 
@@ -979,24 +1036,35 @@ fn learn_uses_partition_truncation_recovery() {
     // Truncation recovery detects an absent `END-OF-FINDINGS` marker and
     // re-invokes the agent against a narrowed partition, combining
     // findings — the same recovery the Review skill implements. Regression:
-    // a revert to the no-op identity re-invoke (re-sending the same prompt)
-    // makes recovery impossible, so a truncated agent silently produces
-    // zero findings. Consumer: the partition-and-combine recovery in
-    // `.claude/rules/cognitive-isolation.md` "Context Budget + Truncation
+    // a revert to the no-op identity re-invoke (re-sending an unchanged
+    // prompt) makes recovery impossible, so a truncated agent silently
+    // produces zero findings. Consumer: the partition-and-combine recovery
+    // in `.claude/rules/cognitive-isolation.md` "Context Budget + Truncation
     // Recovery".
+    //
+    // The no-op-retry negative is matched case-insensitively across every
+    // phrasing of "unchanged prompt" (`the same prompt`, `identical prompt`,
+    // `prompt unchanged`, `re-send the prompt`) so a synonym revert cannot
+    // evade the single-literal check.
     let c = common::read_skill("flow-learn");
+    let step1 = flow_learn_step1(&c);
+    let lc = step1.to_ascii_lowercase();
     assert!(
-        c.contains("END-OF-FINDINGS"),
+        step1.contains("END-OF-FINDINGS"),
         "flow-learn must detect truncation via the absent `END-OF-FINDINGS` marker"
     );
     assert!(
-        c.contains("partition"),
+        lc.contains("partition"),
         "flow-learn must describe partition-and-combine truncation recovery"
     );
     assert!(
-        !c.contains("the same prompt"),
-        "flow-learn must not re-invoke the agent with the same prompt — that no-op retry \
-         cannot recover from prompt-overflow truncation"
+        !lc.contains("same prompt")
+            && !lc.contains("identical prompt")
+            && !lc.contains("prompt unchanged")
+            && !lc.contains("re-send the prompt")
+            && !lc.contains("resend the prompt"),
+        "flow-learn must not re-invoke the agent with an unchanged prompt (any phrasing) — \
+         that no-op retry cannot recover from prompt-overflow truncation"
     );
 }
 

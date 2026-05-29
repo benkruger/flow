@@ -31,7 +31,7 @@ merges.
 
 | Source | What | Survives compaction? |
 |--------|------|---------------------|
-| CLAUDE.md and rules files | Project rules and conventions that should have been followed | Yes |
+| CLAUDE.md and rules files | Project rules and conventions that should have been followed — NOT gathered or passed inline; the agent Globs and Reads `.claude/rules/*.md` and CLAUDE.md itself on demand | N/A (agent reads directly) |
 | State file and plan data | Visit counts, timing, notes, plan risks | Yes |
 | Correction notes | `state.notes` entries with `type == "correction"`, captured by `/flow:flow-note` — mandatory user directives routed to a durable rule before agent-finding triage | Yes |
 | Substantive diff | `git diff origin/<base_branch>...HEAD -w` (whitespace-only changes filtered) captured to `.flow-states/<branch>/substantive-diff.diff` via `bin/flow capture-diff`; the agent Reads the file | Yes |
