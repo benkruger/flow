@@ -2,8 +2,16 @@
 //! prompt write + init-state in a single command.
 //!
 //! Reduces the first ~8 tool calls of flow-start to 1. Returns JSON with
-//! status "ready" (proceed to start-gate), "locked" (another start holds
-//! the lock), or "error" (stop and report).
+//! status "ready" (proceed to start-gate), "locked" (another start still
+//! holds the lock after the bounded wait), or "error" (stop and report).
+//!
+//! The lock acquire blocks via `start_lock::acquire_with_wait` rather than
+//! the immediate `acquire`: it polls the start queue with a real
+//! `thread::sleep` (default cap ~8 min, `--lock-timeout`/`--lock-interval`
+//! tunable) until the lock frees or the cap is exhausted. On cap
+//! exhaustion start-init returns the "locked" status and the flow-start
+//! skill re-runs the single start-init line — there is no `/loop`
+//! re-invocation.
 //!
 //! Note: the `Flow In-Progress` label apply lives in `start_workspace`
 //! at the end of the success path so the label means "a flow is live,
@@ -27,7 +35,7 @@ use clap::Parser;
 use serde_json::{json, Value};
 
 use crate::commands::log::append_log;
-use crate::commands::start_lock::{acquire, queue_path, release};
+use crate::commands::start_lock::{acquire_with_wait, queue_path, release};
 use crate::commands::start_step::update_step;
 use crate::flow_paths::{FlowPaths, FlowStatesDir};
 use crate::label_issues::LABEL;
@@ -46,6 +54,19 @@ pub struct Args {
     /// Path to file containing start prompt
     #[arg(long = "prompt-file")]
     pub prompt_file: Option<String>,
+
+    /// Max seconds to wait for the start lock before reporting locked
+    /// (default 480 = 8 min). The lock acquire blocks via
+    /// `acquire_with_wait` and polls every `--lock-interval` seconds;
+    /// the skill re-runs start-init on the lock-held status after the
+    /// cap is exhausted. Tests pass a short value to exercise the
+    /// cap-exhaustion path without blocking for the production default.
+    #[arg(long = "lock-timeout", default_value = "480")]
+    pub lock_timeout: u64,
+
+    /// Seconds between start-lock retry attempts (default 10).
+    #[arg(long = "lock-interval", default_value = "10")]
+    pub lock_interval: u64,
 }
 
 /// Upgrade-check binder. Resolves the plugin.json path and runs the
@@ -126,8 +147,13 @@ fn run_impl(args: &Args, root: &Path, cwd: &Path) -> Result<Value, String> {
         }
     }
 
-    // Step 1: Acquire lock (on canonical branch name)
-    let lock_result = acquire(&branch, &queue_dir);
+    // Step 1: Acquire lock (on canonical branch name) with a bounded
+    // wait. acquire_with_wait polls the queue with a real thread::sleep
+    // until the lock frees or the cap is exhausted, returning "acquired"
+    // or "timeout". On cap exhaustion the skill re-runs the single
+    // start-init line, so a non-"acquired" result surfaces as the
+    // lock-held status the skill recognizes.
+    let lock_result = acquire_with_wait(&branch, &queue_dir, args.lock_timeout, args.lock_interval);
     let _ = append_log(
         root,
         &branch,
@@ -137,7 +163,7 @@ fn run_impl(args: &Args, root: &Path, cwd: &Path) -> Result<Value, String> {
         ),
     );
 
-    if lock_result["status"] == "locked" {
+    if lock_result["status"] != "acquired" {
         return Ok(json!({
             "status": "locked",
             "feature": lock_result["feature"],

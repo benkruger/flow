@@ -1444,6 +1444,129 @@ fn skill_ci_invocations_specify_long_timeout() {
     );
 }
 
+/// Sibling of `skill_ci_invocations_specify_long_timeout` with a SECOND
+/// command regex covering the long-running foreground POLL subcommand
+/// family (`bin/flow start-init`, `bin/flow wait-for-release-ci`). These
+/// do not run CI — each blocks on a real `thread::sleep` retry loop with
+/// a bounded cap (~8 min) until an external condition resolves (the start
+/// lock frees; the latest integration-branch CI run for HEAD concludes).
+/// Without the adjacent 10-minute-timeout prose, the default 2-minute
+/// Bash tool timeout backgrounds them mid-poll, defeating the wait (see
+/// `.claude/rules/ci-is-a-gate.md` "Long-Running Foreground Poll
+/// Subcommands").
+///
+/// Unlike the CI-running sibling, this scans BOTH `skills/` (where
+/// `start-init` lives, in flow-start) AND `.claude/skills/` (where
+/// `wait-for-release-ci` lives, in the project-local flow-release
+/// maintainer skill) — the poll family spans both skill roots. The
+/// scan window and backward-walk semantics are identical to the sibling.
+#[test]
+fn skill_poll_invocations_specify_long_timeout() {
+    // Long-running foreground poll subcommand family. Each blocks on a
+    // bounded real-sleep retry loop; none runs CI:
+    //
+    // - `start-init`          — blocks on the start lock via
+    //                           acquire_with_wait (default cap ~8 min)
+    // - `wait-for-release-ci` — polls `gh run list` until the latest
+    //                           integration-branch run for HEAD reaches
+    //                           a terminal conclusion (default cap ~8 min)
+    //
+    // When adding a new poll `bin/flow` subcommand, extend this regex in
+    // the same PR and update the list above.
+    let poll_re = Regex::new(r"bin/flow (start-init|wait-for-release-ci)\b").unwrap();
+    let timeout_num_re = Regex::new(r"timeout:\s*600000(\D|$)").unwrap();
+    const TIMEOUT_PROSE: &str = "10-minute Bash tool timeout";
+    const WINDOW_NON_BLANK_LINES: usize = 5;
+
+    let mut violations: Vec<String> = Vec::new();
+
+    let mut scan_dir = |dir: PathBuf, label: &str| {
+        let files = common::collect_md_files(&dir);
+        for (rel, content) in &files {
+            if !rel.ends_with("SKILL.md") {
+                continue;
+            }
+            let lines: Vec<&str> = content.lines().collect();
+
+            let mut in_bash = false;
+            let mut bash_body = String::new();
+            let mut fence_line: usize = 0;
+            let mut prev_prose: Vec<String> = Vec::new();
+            let mut saw_opening_fence = false;
+
+            let check_coverage = |prev_prose: &[String],
+                                  violations: &mut Vec<String>,
+                                  fence_line: usize| {
+                let has_instruction = prev_prose
+                    .iter()
+                    .any(|l| timeout_num_re.is_match(l) || l.contains(TIMEOUT_PROSE));
+                if !has_instruction {
+                    violations.push(format!(
+                        "{}/{}:{} — bash block invokes a long-running poll `bin/flow` subcommand but the preceding {} non-blank prose lines (stopping at any prior fence) do not mention `timeout: 600000` or `10-minute Bash tool timeout`",
+                        label, rel, fence_line, WINDOW_NON_BLANK_LINES
+                    ));
+                }
+            };
+
+            for (idx, line) in lines.iter().enumerate() {
+                let trimmed_left = line.trim_start();
+                if !in_bash && trimmed_left.starts_with("```bash") {
+                    in_bash = true;
+                    saw_opening_fence = true;
+                    bash_body.clear();
+                    fence_line = idx + 1;
+                    prev_prose.clear();
+                    let mut j = idx;
+                    while j > 0 && prev_prose.len() < WINDOW_NON_BLANK_LINES {
+                        j -= 1;
+                        let prev = lines[j];
+                        let prev_t = prev.trim();
+                        if prev_t.is_empty() {
+                            continue;
+                        }
+                        if prev_t.starts_with("```") {
+                            break;
+                        }
+                        prev_prose.push(prev.to_string());
+                    }
+                    continue;
+                }
+                if in_bash && trimmed_left.starts_with("```") {
+                    in_bash = false;
+                    if poll_re.is_match(&bash_body) {
+                        check_coverage(&prev_prose, &mut violations, fence_line);
+                    }
+                    bash_body.clear();
+                    continue;
+                }
+                if in_bash {
+                    bash_body.push_str(line);
+                    bash_body.push('\n');
+                }
+            }
+
+            if in_bash && saw_opening_fence && poll_re.is_match(&bash_body) {
+                violations.push(format!(
+                    "{}/{}:{} — unclosed ```bash fence at EOF contains a long-running poll `bin/flow` invocation. Close the fence or restore the truncated content.",
+                    label, rel, fence_line
+                ));
+            }
+        }
+    };
+
+    scan_dir(common::skills_dir(), "skills");
+    scan_dir(
+        common::repo_root().join(".claude").join("skills"),
+        ".claude/skills",
+    );
+
+    assert!(
+        violations.is_empty(),
+        "SKILL.md bash blocks invoke long-running poll commands without an adjacent 10-minute timeout instruction (see .claude/rules/ci-is-a-gate.md):\n{}",
+        violations.join("\n")
+    );
+}
+
 #[test]
 fn phase_transition_names_current_phase() {
     let ps = phase_skills_map();

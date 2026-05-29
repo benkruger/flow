@@ -644,7 +644,6 @@ commands. This is a narrative recap, not a structured template.
 - Confirm with the user only when mode is **manual**
 - State file deletion is what resets the session hook — do not skip it
 - Every operation inside `complete-finalize` (Step 5) is best-effort — if one fails, continue to the next
-- The skill is idempotent: safe to re-invoke via `/loop` after a "pending CI" stop
 - Never use `general-purpose` sub-agents — use `"flow:ci-fixer"` for CI failures
 - Never use Bash to print banners — output them as text in your response
 - Never use Bash for file reads — use Glob, Read, and Grep tools instead of ls, cat, head, tail, find, or grep

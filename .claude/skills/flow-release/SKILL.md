@@ -47,15 +47,7 @@ If `git pull` produced changes, warn the user that new commits were pulled.
 
 ## Step 2 — Verify CI, find last release, and gather inputs
 
-Run all five in parallel (one response, three Bash calls + two Reads):
-
-```bash
-gh run list --branch main --limit 1 --json conclusion,headSha,status
-```
-
-```bash
-git rev-parse HEAD
-```
+Run `git describe` and the two Reads in parallel (one response, one Bash call + two Reads):
 
 ```bash
 git describe --tags --abbrev=0
@@ -63,16 +55,25 @@ git describe --tags --abbrev=0
 
 Also use the Read tool to read `.claude-plugin/plugin.json` and `RELEASE-NOTES.md`.
 
-First verify the run's `headSha` matches `git rev-parse HEAD`.
-If not, CI hasn't run on the latest commit — tell the user and stop.
-
-Then check `conclusion`:
-
-- `"success"` → proceed
-- `"failure"` or `"cancelled"` → stop: "CI failed on main. Fix tests before releasing."
-- `null` (in_progress/queued) → invoke the `loop` skill via the Skill tool with args `15s /flow-release` and return. The loop will re-invoke the release skill automatically until CI completes.
-
 If `git describe` fails (no tags exist), set `<last_tag>` to `HEAD~20`.
+
+Then verify CI on main is green and finished for the current HEAD. Use a
+10-minute Bash tool timeout (`timeout: 600000`) — wait-for-release-ci
+blocks until the latest main run reaches a terminal conclusion (polling
+for up to ~8 minutes), and the default 2-minute timeout would background
+the process, defeating the wait (per `.claude/rules/ci-is-a-gate.md`).
+
+```bash
+bin/flow wait-for-release-ci --base main
+```
+
+Parse the JSON output and branch on `status`:
+
+- `"ready"` → CI finished for the current HEAD. Check `conclusion`:
+  - `"success"` → proceed
+  - `"failure"`, `"cancelled"`, or any other terminal conclusion → stop: "CI failed on main. Fix tests before releasing."
+- `"still_pending"` → CI did not finish within the cap. Re-run the single `bin/flow wait-for-release-ci --base main` line above (again with the 10-minute Bash tool timeout) until it returns `ready`.
+- `"error"` → show the `message` and stop. The latest run may be for a different commit (CI has not run on the latest commit yet), there may be no runs yet, or gh/git failed.
 
 ## Step 3 — Show what changed
 
@@ -333,4 +334,4 @@ Print:
 - Always tag before pushing — the tag is what humans see on GitHub
 - Always create a GitHub Release — it's the public changelog
 - Never add Co-Authored-By trailers or attribution lines
-- The skill is idempotent: safe to re-invoke via `/loop` after a "pending CI" stop
+- The skill is idempotent: safe to re-run after a `wait-for-release-ci` `still_pending` result, which blocks internally and never leaves partial state

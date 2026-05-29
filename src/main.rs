@@ -64,6 +64,7 @@ use flow_rs::update_deps;
 use flow_rs::update_pr_body;
 use flow_rs::upgrade_check;
 use flow_rs::validate_issue_body;
+use flow_rs::wait_for_release_ci;
 use flow_rs::write_rule;
 
 #[derive(Parser)]
@@ -413,6 +414,10 @@ enum Commands {
     /// Print the integration branch this flow coordinates against.
     #[command(name = "base-branch")]
     BaseBranch,
+
+    /// Poll the latest integration-branch CI run until it concludes.
+    #[command(name = "wait-for-release-ci")]
+    WaitForReleaseCi(wait_for_release_ci::Args),
 
     /// Wipe `.flow-states/` on this machine. Thin Rust shim that
     /// exec's the existing `bin/reset` bash script (resolved via the
@@ -911,6 +916,11 @@ fn main() {
                     process::exit(code);
                 }
             }
+        }
+        Some(Commands::WaitForReleaseCi(args)) => {
+            let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
+            let (value, code) = wait_for_release_ci::run_impl_main(&args, &cwd);
+            flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::Reset(_args)) => {
             let (value, code) = reset::run_impl_main(flow_rs::utils::plugin_root());

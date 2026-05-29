@@ -66,6 +66,40 @@ reason`, `… on every invocation`) are fine as long as the `timeout:
 600000` numeric form or the `10-minute Bash tool timeout` prose form
 is present in the window.
 
+## Long-Running Foreground Poll Subcommands
+
+A second family of `bin/flow` subcommands runs long in the
+foreground not because they compute, but because they POLL: each
+blocks on a real `thread::sleep` retry loop with a bounded cap until
+an external condition resolves. They do NOT run CI.
+
+- `bin/flow start-init` — blocks on the start lock via
+  `acquire_with_wait` (default cap ~8 min) until the lock frees or
+  the cap is exhausted, then returns `ready` / `locked` / `error`.
+- `bin/flow wait-for-release-ci` — polls `gh run list` (default cap
+  ~8 min) until the latest integration-branch run for HEAD reaches a
+  terminal conclusion, then returns `ready` / `still_pending` /
+  `error`.
+
+Both disciplines from the CI-running family apply unchanged:
+
+1. **Never background.** The `run_in_background` block in
+   Enforcement below fires on `bin/flow` regardless of subcommand,
+   so a poll subcommand can never be backgrounded.
+2. **10-minute Bash tool timeout.** Every SKILL.md bash block that
+   invokes one of these must carry the `timeout: 600000` preamble in
+   the 5 non-blank lines before the fence — the cap can run to ~8
+   minutes and the default 2-minute Bash timeout would background
+   the process mid-poll, defeating the wait.
+
+The one difference is the closing advice below: a CI run that feels
+slow is a signal to speed up the command, but a poll subcommand's
+wall-clock time is an INTENTIONAL bounded cap — there is nothing to
+speed up. On cap exhaustion the invoking skill re-runs the single
+line (flow-start re-runs `start-init` on `locked`; flow-release
+re-runs `wait-for-release-ci` on `still_pending`); it never
+backgrounds and never falls back to a timer-based re-invocation.
+
 ## Enforcement
 
 The `validate-pretool` PreToolUse hook blocks any Bash tool call
@@ -75,19 +109,27 @@ first whitespace-separated token is `bin/flow` (or any absolute
 path ending in `/bin/flow`). Bypass attempts fail with exit 2 and
 a message feeding back to the caller.
 
-The 10-minute timeout instruction is backed by a contract test —
-`skill_ci_invocations_specify_long_timeout` in
-`tests/skill_contracts.rs` — that scans every SKILL.md under both
-`skills/` and `.claude/skills/` for fenced bash blocks matching the
-CI-running regex and asserts the preceding 5 non-blank prose lines
-contain `timeout: 600000` (exact numeric, enforced with a trailing
-non-digit anchor so typo'd values like `timeout: 6000000` are
-rejected) OR the literal prose phrase `10-minute Bash tool timeout`.
-The backward walk stops at any prior fence, so unrelated
-intermediate bash blocks cannot chain preamble coverage to distant
-CI calls. Unclosed ```bash fences at EOF are surfaced as violations
-rather than silently passing.
+The 10-minute timeout instruction is backed by two contract tests
+in `tests/skill_contracts.rs`. Both scan fenced bash blocks and
+assert the preceding 5 non-blank prose lines contain `timeout:
+600000` (exact numeric, enforced with a trailing non-digit anchor
+so typo'd values like `timeout: 6000000` are rejected) OR the
+literal prose phrase `10-minute Bash tool timeout`. The backward
+walk stops at any prior fence, so unrelated intermediate bash blocks
+cannot chain preamble coverage to distant calls. Unclosed ```bash
+fences at EOF are surfaced as violations rather than silently
+passing.
 
-If a command takes long enough to feel like it warrants
+- `skill_ci_invocations_specify_long_timeout` — the CI-running
+  regex `bin/flow (ci|start-gate|finalize-commit|complete-fast)\b`,
+  scanning `skills/`.
+- `skill_poll_invocations_specify_long_timeout` — the poll-subcommand
+  regex `bin/flow (start-init|wait-for-release-ci)\b`, scanning both
+  `skills/` (where `start-init` lives) and `.claude/skills/` (where
+  the project-local `flow-release` invokes `wait-for-release-ci`).
+
+If a CI-running command takes long enough to feel like it warrants
 backgrounding, that is a signal to speed up the command — not to
-hide its gate.
+hide its gate. Poll subcommands are the exception: their wall-clock
+time is an intentional bounded cap, so the response is to wait (and,
+on cap exhaustion, re-run the single line), never to background.

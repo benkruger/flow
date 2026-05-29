@@ -71,8 +71,8 @@ commands (phase gates, status, TUI) rely on to detect an active flow.
 
 ## Idempotent Design
 
-The skill is safe to re-invoke (e.g., via `/loop 15s /flow:flow-complete`).
-Each step checks its precondition and skips if already done: merged PRs
+The skill is safe to re-invoke. Each step checks its precondition and
+skips if already done: merged PRs
 skip to finalize, up-to-date branches skip the merge, passing CI skips
 the wait. After finalize completes, the next invocation finds no state
 file and exits cleanly.
