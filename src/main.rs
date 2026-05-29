@@ -65,6 +65,7 @@ use flow_rs::update_pr_body;
 use flow_rs::upgrade_check;
 use flow_rs::validate_issue_body;
 use flow_rs::write_rule;
+use flow_rs::write_session_cost;
 
 #[derive(Parser)]
 #[command(name = "flow-rs", version, about = "FLOW CLI (Rust)")]
@@ -450,6 +451,11 @@ enum Commands {
     /// Write content to a target file path.
     #[command(name = "write-rule")]
     WriteRule(write_rule::Args),
+
+    /// Write the active session's token-derived cost to the
+    /// per-session cost file (SessionStart capture hook).
+    #[command(name = "write-session-cost")]
+    WriteSessionCost,
 
     /// Generic phase entry: gate + enter + step counters + return state data.
     #[command(name = "phase-enter")]
@@ -956,6 +962,7 @@ fn main() {
             let (value, code) = write_rule::run_impl_main(&args);
             flow_rs::dispatch::dispatch_json(value, code);
         }
+        Some(Commands::WriteSessionCost) => write_session_cost::run(),
         Some(Commands::PhaseEnter(args)) => {
             flow_rs::dispatch::dispatch_ok_result_json(phase_enter::run_impl(&args));
         }
