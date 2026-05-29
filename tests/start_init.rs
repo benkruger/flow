@@ -1400,9 +1400,11 @@ fn cost_per_flow_token_cost_section_renders_phase_delta_end_to_end() {
     // produce, with cost values mirroring the accrued totals.
     fs::write(&cost_file, "2.50\n").unwrap();
 
-    // Build window_at_enter (cost=1.50, captured mid-flow) and
-    // window_at_complete (cost=2.50). The computed delta is
-    // 2.50 - 1.50 = 1.00 for the flow-code phase.
+    // Build window_at_enter and window_at_complete with a
+    // 400-input-token opus delta (input 100 → 500). Cost is
+    // token-derived: 400 × $5/MTok = $0.002 for the flow-code phase.
+    // The cost file and session_cost_usd values are vestigial (cost
+    // no longer reads them); they are removed with the field later.
     let snap_template = serde_json::json!({
         "captured_at": "2026-01-01T00:00:00-08:00",
         "session_id": session_id,
@@ -1454,8 +1456,8 @@ fn cost_per_flow_token_cost_section_renders_phase_delta_end_to_end() {
         .unwrap_or(token_block.len());
     let code_row = &token_block[code_row_start..code_row_end];
     assert!(
-        code_row.contains("$1.000"),
-        "Code row must show the computed cost delta ($2.50 - $1.50 = $1.000); got: {:?}",
+        code_row.contains("$0.002"),
+        "Code row must show the token-derived cost (400 input tokens × $5/MTok = $0.002); got: {:?}",
         code_row
     );
     assert!(

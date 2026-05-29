@@ -216,9 +216,9 @@ fn cost_table_uses_em_dash_for_unknown_cost() {
     for key in PHASE_ORDER {
         state["phases"][key]["status"] = json!("complete");
     }
-    let mut enter = snapshot_value("S1", 1, "claude-opus-4-7");
-    let complete = snapshot_value("S1", 5, "claude-opus-4-7");
-    enter["session_cost_usd"] = json!(null);
+    // An unpriced model family yields a token-derived cost of None.
+    let enter = snapshot_value("S1", 1, "gpt-4o-unpriced");
+    let complete = snapshot_value("S1", 5, "gpt-4o-unpriced");
     state["phases"]["flow-code"]["window_at_enter"] = enter;
     state["phases"]["flow-code"]["window_at_complete"] = complete;
 
@@ -509,9 +509,10 @@ fn cost_table_total_partial_marker_does_not_produce_triple_asterisk() {
 /// A phase whose multi-session snapshot fold produces
 /// `Some(cost)` AND `row_partial == true` renders the per-row
 /// cost cell as `${:.3}*` — the dollar value with the partial
-/// marker suffix. The fold groups by `session_id`: session S1
-/// (enter + step0) contributes a Some cost delta; session S2
-/// (step1 + complete-with-null-cost) contributes a None delta
+/// marker suffix. Cost is token-derived: the fold groups by
+/// `session_id`, session S1 (enter + step0, a priced opus model)
+/// contributes a Some cost delta, and session S2 (step1 +
+/// complete, an unpriced model family) contributes a None delta
 /// that flips `total_partial` while leaving the running `Some`
 /// cost in place.
 #[test]
@@ -522,9 +523,8 @@ fn cost_table_appends_partial_marker_to_row_when_cost_partial() {
     }
     let enter = snapshot_value("S1", 1, "claude-opus-4-7");
     let step0 = snapshot_value("S1", 5, "claude-opus-4-7");
-    let step1 = snapshot_value("S2", 2, "claude-opus-4-7");
-    let mut complete = snapshot_value("S2", 6, "claude-opus-4-7");
-    complete["session_cost_usd"] = json!(null);
+    let step1 = snapshot_value("S2", 2, "gpt-4o-unpriced");
+    let complete = snapshot_value("S2", 6, "gpt-4o-unpriced");
     state["phases"]["flow-code"]["window_at_enter"] = enter;
     state["phases"]["flow-code"]["window_at_complete"] = complete;
     state["phases"]["flow-code"]["step_snapshots"] = json!([

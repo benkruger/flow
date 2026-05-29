@@ -1184,18 +1184,16 @@ impl TuiApp {
         row += 1;
 
         // Per-phase token cost table — rendered when at least one
-        // phase carries non-zero token activity, cost, or a window
-        // reset. Empty otherwise so legacy state without snapshots
-        // preserves the existing detail panel layout.
+        // phase carries non-zero token activity or a window reset.
+        // Cost is token-derived, so a non-zero cost always implies
+        // non-zero token activity; the token-activity arm already
+        // covers it. Empty otherwise so legacy state without
+        // snapshots preserves the existing detail panel layout.
         if row < max_y.saturating_sub(2) {
             let token_rows = tui_data::phase_token_table(&flow.state);
             let active_rows: Vec<&tui_data::PhaseTokenRow> = token_rows
                 .iter()
-                .filter(|r| {
-                    r.tokens > 0
-                        || r.cost_usd.is_some_and(|c| c.abs() > f64::EPSILON)
-                        || r.window_reset_observed
-                })
+                .filter(|r| r.tokens > 0 || r.window_reset_observed)
                 .collect();
             if !active_rows.is_empty() {
                 let header = Paragraph::new(Line::from(Span::styled(

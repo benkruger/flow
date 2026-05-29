@@ -994,21 +994,20 @@ fn tokens_block_renders_for_in_progress_phase_with_step_snapshots() {
     assert!(panel.contains("Tokens  :"), "Panel:\n{}", panel);
 }
 
-/// Tokens line renders the em-dash placeholder for cost when every
-/// snapshot pair lacks `session_cost_usd` but tokens grew (issue
-/// #1410). The pre-fix code rendered `$0.000` here, masking the
-/// "no cost data" condition behind a literal-zero value.
+/// Tokens line renders the em-dash placeholder for cost when the
+/// per-model token delta is unprice-able (an unknown model family)
+/// but tokens grew. Cost is token-derived, so an unpriced model is
+/// the "no cost data" signal — the renderer shows `(—)` rather than
+/// masking it behind a literal `$0.000`.
 #[test]
 fn tokens_block_renders_em_dash_when_cost_unknown_but_tokens_grew() {
     let mut state = make_state("flow-code", &[("flow-code", "in_progress")]);
-    let mut enter = snapshot_value("S1", 0, "claude-opus-4-7");
-    let mut complete = snapshot_value("S1", 5, "claude-opus-4-7");
-    // Force tokens to grow so the line is not omitted; clear cost on
-    // both endpoints so the cost arm produces None.
+    let mut enter = snapshot_value("S1", 0, "gpt-4o-unpriced");
+    let mut complete = snapshot_value("S1", 5, "gpt-4o-unpriced");
+    // Force tokens to grow so the line is not omitted; the unpriced
+    // model family makes the token-derived cost None.
     enter["session_input_tokens"] = json!(100);
     complete["session_input_tokens"] = json!(500);
-    enter["session_cost_usd"] = json!(null);
-    complete["session_cost_usd"] = json!(null);
     state["phases"]["flow-code"]["window_at_enter"] = enter;
     state["phases"]["flow-code"]["window_at_complete"] = complete;
     let panel = format_panel(&state, VERSION, None, false, None);
