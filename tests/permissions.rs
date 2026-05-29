@@ -142,7 +142,6 @@ const PLACEHOLDER_SUBS: &[(&str, &str)] = &[
         "<skills_dict_json>",
         r#"{"flow-start":{"continue":"manual"}}"#,
     ),
-    ("<commit_format>", "full"),
     ("<role_value>", "pm"),
     ("<index>", "0"),
     ("<outcome>", "completed"),

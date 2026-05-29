@@ -78,7 +78,7 @@ Modifications take effect immediately for the active session.
 
 Read at flow-start by `start-init`/`init_state` and copied into
 the per-flow state file. After `flow-start`, the running flow
-reads its preferences (`skills`, `commit_format`, etc.) from
+reads its preferences (`skills`, etc.) from
 `.flow-states/<branch>/state.json`, never from `.flow.json`
 directly.
 

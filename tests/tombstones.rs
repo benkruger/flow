@@ -1081,6 +1081,79 @@ fn test_universal_allow_no_flow_bin_reset_wildcard() {
     );
 }
 
+/// Tombstone: removed in PR #1743. The `commit_format` configuration
+/// axis is gone — Conventional Commits is the single always-on commit
+/// format. `src/prime_setup.rs` must not re-introduce the
+/// `commit_format` field/key or the `--commit-format` CLI flag.
+///
+/// Protection target: the config-key literal `commit_format` and the
+/// CLI-flag literal `--commit-format` (whose `commit-format` substring
+/// the hyphen check catches). Assertion kind: literal byte-substring.
+/// Stability argument — the byte check holds because:
+///   1. `concat!` reassembly: a clap `#[arg]` flag name and a JSON key
+///      are written as plain string literals, never assembled from
+///      fragments by `concat!`.
+///   2. `format!` reassembly: a flag name / config key is matched where
+///      it appears verbatim in source, not produced by interpolation.
+///   3. Named constant reference: a `const` aliasing the value would
+///      still place the literal `commit_format` in source.
+///   4. `.arg()` split: N/A — the target is a struct field / flag name,
+///      not a value passed across multiple `.arg()` calls.
+///
+/// No file-resurrection pair: no source file was deleted (field/flag
+/// removal within `src/prime_setup.rs`).
+#[test]
+fn test_prime_setup_no_commit_format_flag() {
+    let root = common::repo_root();
+    let content =
+        fs::read_to_string(root.join("src/prime_setup.rs")).expect("src/prime_setup.rs must exist");
+    assert!(
+        !content.contains("commit_format"),
+        "src/prime_setup.rs must not contain `commit_format` — the \
+         configuration axis was removed; Conventional Commits is the \
+         single always-on commit format."
+    );
+    assert!(
+        !content.contains("commit-format"),
+        "src/prime_setup.rs must not contain the `--commit-format` CLI \
+         flag — the commit-format choice was removed."
+    );
+}
+
+/// Tombstone: removed in PR #1743. `skills/flow-prime/SKILL.md` no
+/// longer asks the commit-format question — the `commit_format`
+/// configuration axis was removed and Conventional Commits is the
+/// single always-on commit format. The prime skill must not
+/// re-introduce the prompt.
+///
+/// Protection target: the config-key literal `commit_format` and the
+/// CLI-flag literal `commit-format`. Assertion kind: literal
+/// byte-substring. Stability argument — the byte check holds because:
+///   1. `concat!` reassembly: a SKILL.md prose mention / bash flag is
+///      written verbatim in Markdown, never assembled by `concat!`.
+///   2. `format!` reassembly: Markdown prose is not produced by
+///      `format!` interpolation.
+///   3. Named constant reference: N/A for Markdown corpus.
+///   4. `.arg()` split: N/A for Markdown corpus.
+///
+/// No file-resurrection pair: `skills/flow-prime/SKILL.md` survives;
+/// only the commit-format prompt and the `--commit-format` invocation
+/// flag were removed from it.
+#[test]
+fn test_prime_no_commit_format_question() {
+    let c = common::read_skill("flow-prime");
+    assert!(
+        !c.contains("commit_format"),
+        "flow-prime SKILL must not contain `commit_format` — the \
+         commit-format choice was removed."
+    );
+    assert!(
+        !c.contains("commit-format"),
+        "flow-prime SKILL must not contain `--commit-format` — the \
+         prime-setup invocation no longer passes the flag."
+    );
+}
+
 // --- flow-decompose-project removal (issue #1590 AC#6) ---
 //
 // AC#6 of issue #1590 mandates the removal of the

@@ -3206,15 +3206,6 @@ fn prime_step_6_commits_generated_files() {
 }
 
 #[test]
-fn prime_has_commit_format_prompt() {
-    let c = common::read_skill("flow-prime");
-    assert!(
-        c.contains("commit_format") || c.contains("commit format"),
-        "flow-prime must prompt for commit message format"
-    );
-}
-
-#[test]
 fn flow_prime_has_role_selection_step() {
     let c = common::read_skill("flow-prime");
     let role_marker = c
@@ -3262,7 +3253,7 @@ fn flow_prime_has_role_selection_step() {
 }
 
 #[test]
-fn flow_prime_step_headings_in_role_commit_autonomy_order() {
+fn flow_prime_step_headings_in_role_autonomy_setup_order() {
     let c = common::read_skill("flow-prime");
     let tail_at_steps = c
         .split_once("\n## Steps\n")
@@ -3294,13 +3285,13 @@ fn flow_prime_step_headings_in_role_commit_autonomy_order() {
         step1
     );
     assert!(
-        step2.contains("Choose commit message format"),
-        "Step 2 must be 'Choose commit message format'; got: {}",
+        step2.contains("Choose autonomy level"),
+        "Step 2 must be 'Choose autonomy level'; got: {}",
         step2
     );
     assert!(
-        step3.contains("Choose autonomy level"),
-        "Step 3 must be 'Choose autonomy level'; got: {}",
+        step3.contains("Run prime setup script"),
+        "Step 3 must be 'Run prime setup script'; got: {}",
         step3
     );
 }
@@ -3309,9 +3300,9 @@ fn flow_prime_step_headings_in_role_commit_autonomy_order() {
 fn flow_prime_recommended_preset_matches_new_shape() {
     let c = common::read_skill("flow-prime");
     let tail_at_step3 = c
-        .split_once("### Step 3 — Choose autonomy level")
+        .split_once("### Step 2 — Choose autonomy level")
         .map(|(_, tail)| tail)
-        .expect("flow-prime must declare a `### Step 3 — Choose autonomy level` heading");
+        .expect("flow-prime must declare a `### Step 2 — Choose autonomy level` heading");
     let step3_section = tail_at_step3
         .split_once("\n### ")
         .map(|(section, _)| section)
@@ -3320,7 +3311,7 @@ fn flow_prime_recommended_preset_matches_new_shape() {
         .split_once("**Recommended** — safe defaults:")
         .map(|(_, tail)| tail)
         .expect(
-            "Step 3 Autonomy section must label the Recommended preset \
+            "Step 2 Autonomy section must label the Recommended preset \
              with '**Recommended** — safe defaults:'",
         );
     let re = Regex::new(r"```json\n(\{[\s\S]*?\})\n```").unwrap();
@@ -3372,9 +3363,9 @@ fn flow_prime_recommended_preset_matches_new_shape() {
 fn flow_prime_fully_manual_preset_keeps_start_continue_auto() {
     let c = common::read_skill("flow-prime");
     let tail_at_step3 = c
-        .split_once("### Step 3 — Choose autonomy level")
+        .split_once("### Step 2 — Choose autonomy level")
         .map(|(_, tail)| tail)
-        .expect("flow-prime must declare a `### Step 3 — Choose autonomy level` heading");
+        .expect("flow-prime must declare a `### Step 2 — Choose autonomy level` heading");
     let step3_section = tail_at_step3
         .split_once("\n### ")
         .map(|(section, _)| section)
@@ -3383,7 +3374,7 @@ fn flow_prime_fully_manual_preset_keeps_start_continue_auto() {
         .split_once("**Fully manual** — all manual:")
         .map(|(_, tail)| tail)
         .expect(
-            "Step 3 Autonomy section must label the Fully manual preset \
+            "Step 2 Autonomy section must label the Fully manual preset \
              with '**Fully manual** — all manual:'",
         );
     let re = Regex::new(r"```json\n(\{[\s\S]*?\})\n```").unwrap();
@@ -3435,9 +3426,9 @@ fn flow_prime_fully_manual_preset_keeps_start_continue_auto() {
 fn flow_prime_customize_section_never_prompts_for_flow_start() {
     let c = common::read_skill("flow-prime");
     let tail_at_step3 = c
-        .split_once("### Step 3 — Choose autonomy level")
+        .split_once("### Step 2 — Choose autonomy level")
         .map(|(_, tail)| tail)
-        .expect("flow-prime must declare a `### Step 3 — Choose autonomy level` heading");
+        .expect("flow-prime must declare a `### Step 2 — Choose autonomy level` heading");
     let step3_section = tail_at_step3
         .split_once("\n### ")
         .map(|(section, _)| section)
@@ -3446,7 +3437,7 @@ fn flow_prime_customize_section_never_prompts_for_flow_start() {
         .split_once("**Customize** — ask per skill")
         .map(|(_, tail)| tail)
         .expect(
-            "Step 3 Autonomy section must declare the Customize branch \
+            "Step 2 Autonomy section must declare the Customize branch \
              with '**Customize** — ask per skill'",
         );
     let askuser_re = Regex::new(r#">[^\n]*"[^"\n]*/flow:flow-start[^"\n]*\?""#).unwrap();
@@ -3476,11 +3467,11 @@ fn flow_prime_reprime_extracts_role() {
         .unwrap_or(tail_at_heading);
     assert!(
         reprime.contains("role"),
-        "Reprime Check must mention extracting `role` alongside skills and commit_format"
+        "Reprime Check must mention extracting `role` alongside skills"
     );
     assert!(
-        reprime.contains("skills") && reprime.contains("commit_format"),
-        "Reprime Check still extracts skills and commit_format"
+        reprime.contains("skills"),
+        "Reprime Check still extracts skills"
     );
 }
 

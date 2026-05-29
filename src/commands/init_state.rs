@@ -67,10 +67,6 @@ fn seed_session_id_from_capture(project_root: &Path, branch: &str) {
 /// state files rely on the deterministic order. Writes to
 /// `.flow-states/<branch>.json`.
 ///
-/// `commit_format` — optional commit message format (`"full"` or `"title-only"`)
-/// extracted from `.flow.json` during prime. Written to state file when present;
-/// the commit skill reads it at runtime.
-///
 /// `relative_cwd` — relative path inside the worktree where the agent
 /// should operate. Empty string means worktree root. Captured by
 /// `start_init` from the user's cwd at flow-start time so mono-repo
@@ -83,7 +79,6 @@ pub fn create_state(
     branch: &str,
     skills: Option<&IndexMap<String, SkillConfig>>,
     prompt: &str,
-    commit_format: Option<&str>,
     start_step: Option<i64>,
     start_steps_total: Option<i64>,
     relative_cwd: &str,
@@ -129,9 +124,6 @@ pub fn create_state(
         // non-serializable fields. Always serializes.
         let skills_value = serde_json::to_value(s).expect("SkillConfig map always serializes");
         state.insert("skills".into(), skills_value);
-    }
-    if let Some(f) = commit_format {
-        state.insert("commit_format".into(), json!(f));
     }
     if let Some(step) = start_step {
         state.insert("start_step".into(), json!(step));
@@ -272,18 +264,11 @@ pub fn run(
         derived
     };
 
-    let commit_format_owned = flow_json
-        .get("commit_format")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    let commit_format = commit_format_owned.as_deref();
-
     if let Err(e) = create_state(
         &root,
         &branch,
         skills.as_ref(),
         &prompt,
-        commit_format,
         start_step,
         start_steps_total,
         relative_cwd,

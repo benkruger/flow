@@ -407,7 +407,6 @@ pub fn write_version_marker(
     version: &str,
     config_hash: Option<&str>,
     setup_hash: Option<&str>,
-    commit_format: Option<&str>,
     role: Option<&str>,
     plugin_root_path: Option<&str>,
     skills: Option<&Value>,
@@ -420,9 +419,6 @@ pub fn write_version_marker(
     }
     if let Some(h) = setup_hash {
         data["setup_hash"] = json!(h);
-    }
-    if let Some(f) = commit_format {
-        data["commit_format"] = json!(f);
     }
     if let Some(r) = role {
         data["role"] = json!(r);
@@ -579,10 +575,6 @@ pub struct Args {
     #[arg(long = "skills-json")]
     pub skills_json: Option<String>,
 
-    /// Commit message format (full or title-only)
-    #[arg(long = "commit-format")]
-    pub commit_format: Option<String>,
-
     /// User's primary role (pm, tech-lead, founder-solo)
     #[arg(long = "role")]
     pub role: Option<String>,
@@ -686,7 +678,6 @@ pub fn run_impl(args: &Args) -> Result<Value, Value> {
         &version,
         Some(&config_hash),
         Some(&setup_hash),
-        args.commit_format.as_deref(),
         normalized_role.as_deref(),
         args.plugin_root.as_deref(),
         skills.as_ref(),

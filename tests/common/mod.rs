@@ -397,7 +397,7 @@ pub fn make_complete_state(
 /// Write .flow.json with version and optional skills config.
 ///
 /// `prime_setup` writes the file with these two keys (plus hashes,
-/// commit_format, and plugin_root when provided). Older callers that
+/// role, and plugin_root when provided). Older callers that
 /// passed a positional language name should drop the argument.
 pub fn write_flow_json(repo: &Path, version: &str, skills: Option<&Value>) {
     let mut data = json!({
