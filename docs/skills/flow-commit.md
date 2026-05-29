@@ -18,38 +18,27 @@ Reviews all pending changes before committing. You see the full diff and propose
 
 1. Stages changes
 2. Shows `git status` and `git diff --cached` in parallel
-3. Proposes a commit message in the `tl;dr` format
+3. Proposes a commit message in the Conventional Commits format
 4. Commits, pulls, and pushes via `bin/flow finalize-commit` (which enforces CI internally and re-stages tracked-file modifications after CI so in-place auto-fixes are captured in the same commit)
 
 ---
 
 ## Commit Message Format
 
-The format is determined by the `commit_format` setting, copied from `.flow.json` into the state file by `/flow-start`. Defaults to `"full"` when no state file exists.
-
-**Full format** (`"full"`):
+FLOW commits follow the [Conventional Commits v1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) specification. There is a single always-on format — no per-project choice — so downstream CHANGELOG tooling matches every merge.
 
 ```text
-Full-sentence subject line (imperative verb + what + why, ends with a period.)
+type(scope): description
 
-tl;dr
-
-One or two sentences explaining the WHY.
+Free-form body paragraph explaining the WHY.
 
 - path/to/file.rb: What changed and why
 - path/to/other.rb: What changed and why
+
+BREAKING CHANGE: description of the incompatible change
 ```
 
-**Title-only format** (`"title-only"`):
-
-```text
-Full-sentence subject line (imperative verb + what + why, ends with a period.)
-
-- path/to/file.rb: What changed and why
-- path/to/other.rb: What changed and why
-```
-
-Subject starts with an imperative verb — Add, Fix, Update, Remove, Refactor. Includes the business reason. Ends with a period. No prefix jargon.
+The subject is `type(scope): description` — the `type` is required (`feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`), the `(scope)` is optional, and the lowercase imperative `description` has no trailing period. Append a `BREAKING CHANGE:` footer (or a `!` after the type) only when the change is backwards-incompatible.
 
 ---
 

@@ -27,16 +27,9 @@ whose path matches your current working directory — the
 
 Keep the project root and branch in context for the rest of this skill.
 
-## Round 2 — Banner and Format Detection
+## Round 2 — Banner Detection
 
-**Step 1.** Use the Glob tool: pattern `*.json`, path `<project_root>/.flow-states` — if any results, a FLOW phase is active (used for banner selection only).
-
-**Step 2.** If any `.flow-states/*.json` results exist, use the Read tool to read the state file for the current branch at `<project_root>/.flow-states/<branch>/state.json`.
-
-- Parse `commit_format`: `"title-only"` or `"full"`.
-- If no state file exists or the state file has no `commit_format` key → use `"full"`.
-
-Keep `commit_format` in context.
+Use the Glob tool: pattern `*.json`, path `<project_root>/.flow-states` — if any results, a FLOW phase is active (used for banner selection only).
 
 ## Announce
 
@@ -145,68 +138,60 @@ The `diff` code block renders red/green in most markdown environments.
 
 Write a commit message that a developer reading `git log` six months from now would find genuinely useful.
 
-Use the `commit_format` from Round 2 to determine the structure.
+FLOW commits follow the [Conventional Commits v1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) specification so downstream CHANGELOG tooling matches every merge. There is one format — no per-project choice.
 
-**If `commit_format` is `"full"`:**
+Structure:
 
 ```text
-Full-sentence subject line (imperative verb + what + why, ends with a period.)
+type(scope): description
 
-tl;dr
-
-One or two sentences explaining the WHY — what problem this solves,
+Free-form body paragraph explaining the WHY — what problem this solves,
 what behaviour changes, or what was wrong before.
 
 - path/to/file.rb: What changed and why
 - path/to/other.rb: What changed and why
 - path/to/another.rb: What changed and why
+
+BREAKING CHANGE: description of the incompatible change
 ```
+
+**Subject line.**
+
+- Shape: `type(scope): description`. The `type` is required; the `(scope)` is optional and omitted unless one obvious scope applies.
+- `description` is lowercase, imperative mood, and has no trailing period.
+- Infer `type` from the diff, using the standard set:
+  - `feat` — a new user-facing capability (minor version bump)
+  - `fix` — a bug fix (patch version bump)
+  - `docs` — documentation only
+  - `refactor` — a change that neither fixes a bug nor adds a feature
+  - `perf` — a performance improvement
+  - `test` — adding or correcting tests only
+  - `build` — build system or dependency changes
+  - `ci` — CI configuration changes
+  - `chore` — anything else that does not change src or test behaviour
+- Capture the business reason in the description or body — why this change matters, not just what changed.
+
+**Body.**
+
+- Blank line between the subject and the body.
+- A free-form paragraph explaining the motivation — what prompted this change.
+- A per-file bullet list: one bullet per changed file with a plain-English reason. Call out explicitly if the diff includes migrations, schema changes, or dependency-manifest changes.
+- Do not pad with obvious restatements of the diff.
+
+**Breaking changes.**
+
+- When the diff introduces a backwards-incompatible change, append a `BREAKING CHANGE: <description>` footer (or mark the type with `!`, e.g. `feat!: ...`). This drives the major-version bump in CHANGELOG tooling. Omit the footer entirely when nothing breaks.
 
 Before displaying your draft, verify it contains all of these in order:
 
-1. Subject line — imperative verb, what + why in one sentence, ends with a period
+1. Subject line — `type(scope): description`, lowercase imperative description, no trailing period
 2. Blank line
-3. The literal word `tl;dr` on its own line — no colon, no elaboration, just `tl;dr`
+3. Body paragraph — the WHY, not the what
 4. Blank line
-5. Explanation paragraph — the WHY, not the what
-6. Blank line
-7. File list — one bullet per changed file with reason
+5. File list — one bullet per changed file with reason
+6. A `BREAKING CHANGE:` footer ONLY when the diff is backwards-incompatible
 
 If any element is missing or out of order, rewrite before displaying.
-
-**If `commit_format` is `"title-only"`:**
-
-```text
-Full-sentence subject line (imperative verb + what + why, ends with a period.)
-
-- path/to/file.rb: What changed and why
-- path/to/other.rb: What changed and why
-- path/to/another.rb: What changed and why
-```
-
-Before displaying your draft, verify it contains all of these in order:
-
-1. Subject line — imperative verb, what + why in one sentence, ends with a period
-2. Blank line
-3. File list — one bullet per changed file with reason
-
-If any element is missing or out of order, rewrite before displaying.
-
-**Subject line rules (both formats):**
-- Start with an imperative verb: Add, Fix, Update, Remove, Refactor, Extract
-- Include the business reason — why this change matters, not just what changed. "Add Slack thread replies because operators want phase updates without polling the PR."
-- Describe the goal, not the mechanism — when a change has both, the subject says why it matters
-- No prefix jargon (no `feat:`, `chore:`, `fix:` — just the verb)
-- Ends with a period (it is a full sentence)
-
-**Body rules (both formats):**
-- Blank line between subject and body
-- List each meaningful change with its file and a plain-English reason
-- Call out explicitly if the diff includes migrations, schema changes, or Gemfile changes
-- Do not pad with obvious restatements of the diff
-
-**Additional body rules (full format only):**
-- Explain the motivation — what prompted this change?
 
 Display the full message under the heading **Commit Message**.
 

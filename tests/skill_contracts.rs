@@ -2132,15 +2132,40 @@ fn commit_no_separate_ci_step() {
 }
 
 #[test]
-fn commit_has_commit_format_support() {
+fn commit_specifies_conventional_commits() {
     let c = common::read_skill("flow-commit");
     assert!(
-        c.contains("commit_format"),
-        "Commit must support commit_format"
+        c.contains("type(scope): description"),
+        "flow-commit must specify the Conventional Commits `type(scope): description` subject shape"
+    );
+    for ty in [
+        "`feat`",
+        "`fix`",
+        "`docs`",
+        "`refactor`",
+        "`perf`",
+        "`test`",
+        "`build`",
+        "`ci`",
+        "`chore`",
+    ] {
+        assert!(
+            c.contains(ty),
+            "flow-commit must enumerate the conventional type {}",
+            ty
+        );
+    }
+    assert!(
+        c.contains("no trailing period"),
+        "flow-commit must specify the no-trailing-period subject rule"
     );
     assert!(
-        c.contains("title-only") || c.contains("full"),
-        "Commit must support format options"
+        c.contains("BREAKING CHANGE"),
+        "flow-commit must document the BREAKING CHANGE footer for major bumps"
+    );
+    assert!(
+        !c.contains("title-only") && !c.contains("commit_format"),
+        "flow-commit must not branch on the removed commit_format axis"
     );
 }
 

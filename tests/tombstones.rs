@@ -1154,6 +1154,39 @@ fn test_prime_no_commit_format_question() {
     );
 }
 
+/// Tombstone: removed in PR #1743. `skills/flow-commit/SKILL.md` no
+/// longer branches on the `commit_format` axis (`full` vs
+/// `title-only`) — Conventional Commits is the single always-on
+/// format. The commit skill must not re-introduce the format choice.
+///
+/// Protection target: the format-value literal `title-only` and the
+/// config-key literal `commit_format`. Assertion kind: literal
+/// byte-substring. Stability argument — the byte check holds because:
+///   1. `concat!` reassembly: a SKILL.md format-value mention is
+///      written verbatim in Markdown, never assembled by `concat!`.
+///   2. `format!` reassembly: Markdown prose is not produced by
+///      `format!` interpolation.
+///   3. Named constant reference: N/A for Markdown corpus.
+///   4. `.arg()` split: N/A for Markdown corpus.
+///
+/// No file-resurrection pair: `skills/flow-commit/SKILL.md` survives;
+/// only the per-project format branch was removed from it.
+#[test]
+fn test_commit_no_title_only_or_full_format() {
+    let c = common::read_skill("flow-commit");
+    assert!(
+        !c.contains("title-only"),
+        "flow-commit SKILL must not contain `title-only` — the \
+         per-project commit-format choice was removed in favor of \
+         Conventional Commits."
+    );
+    assert!(
+        !c.contains("commit_format"),
+        "flow-commit SKILL must not contain `commit_format` — the \
+         configuration axis was removed."
+    );
+}
+
 // --- flow-decompose-project removal (issue #1590 AC#6) ---
 //
 // AC#6 of issue #1590 mandates the removal of the
