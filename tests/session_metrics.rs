@@ -706,3 +706,188 @@ fn is_safe_transcript_path_rejects_when_path_canonicalize_fails() {
     assert!(!transcript.exists());
     assert!(!is_safe_transcript_path(&transcript, &home));
 }
+
+// --- sub-agent (sidechain + sub-session-file) capture ---
+//
+// Cost is token-derived, so a flow's cost is only correct when the
+// per-model usage of its Task-tool sub-agents is folded into the
+// snapshot. Sub-agent turns persist in one of two shapes: inlined in
+// the parent transcript flagged `isSidechain:true`, or in separate
+// `agent-<agentId>.jsonl` sibling files linked by an `agentId` the
+// parent references. `capture` counts both and dedups by message id
+// so an overlap (a turn that appears inlined AND in the sub-session
+// file) is counted once.
+
+/// Helper: an assistant-message JSON line carrying a `message.id`
+/// (used to exercise the cross-source dedup).
+fn assistant_line_with_id(model: &str, input: i64, output: i64, id: &str) -> String {
+    format!(
+        r#"{{"type":"assistant","message":{{"id":"{id}","model":"{model}","role":"assistant","content":[{{"type":"text","text":"hi"}}],"usage":{{"input_tokens":{input},"output_tokens":{output},"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}}}}"#
+    )
+}
+
+/// Helper: a sidechain marker line that references a sub-agent by
+/// `agentId` without itself being an assistant turn — the link the
+/// parent carries so `capture` discovers `agent-<id>.jsonl`.
+fn agent_marker_line(agent_id: &str) -> String {
+    format!(
+        r#"{{"type":"user","isSidechain":true,"agentId":"{agent_id}","message":{{"role":"user","content":"spawn"}}}}"#
+    )
+}
+
+/// Build `<home>/.claude/projects/<project>/` and return it. The
+/// canonical transcript location so sub-session paths pass
+/// `is_safe_transcript_path`.
+fn projects_dir(home: &std::path::Path, project: &str) -> PathBuf {
+    let dir = home.join(".claude").join("projects").join(project);
+    fs::create_dir_all(&dir).expect("mkdir projects dir");
+    dir
+}
+
+/// An inlined sidechain assistant turn in the parent transcript is
+/// counted toward token totals and by_model — no separate file
+/// needed when the sub-agent's turns are inlined.
+#[test]
+fn capture_counts_inlined_sidechain_assistant_turn() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let sidechain_turn = r#"{"type":"assistant","isSidechain":true,"agentId":"A","message":{"model":"claude-opus-4-7","role":"assistant","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":40,"output_tokens":20,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}"#;
+    let transcript = write_transcript(
+        &root,
+        "session.jsonl",
+        &[
+            &assistant_line("claude-opus-4-7", 100, 50, 0, 0),
+            sidechain_turn,
+        ],
+    );
+    let snap = capture(&root, Some(&transcript), Some("sid"), || "now".to_string());
+    // Parent turn (100/50) + inlined sidechain turn (40/20).
+    assert_eq!(snap.session_input_tokens, Some(140));
+    assert_eq!(snap.session_output_tokens, Some(70));
+    assert_eq!(snap.turn_count, Some(2));
+    assert_eq!(snap.by_model.get("claude-opus-4-7").unwrap().input, 140);
+}
+
+/// A sub-agent whose turns live in a separate `agent-<id>.jsonl`
+/// sibling is discovered via the `agentId` the parent references,
+/// and its usage is summed into the snapshot.
+#[test]
+fn capture_sums_linked_sub_session_file_usage() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let dir = projects_dir(&root, "proj");
+    let transcript = write_transcript(
+        &dir,
+        "session.jsonl",
+        &[
+            &assistant_line("claude-opus-4-7", 100, 50, 0, 0),
+            &agent_marker_line("A"),
+        ],
+    );
+    write_transcript(
+        &dir,
+        "agent-A.jsonl",
+        &[&assistant_line("claude-sonnet-4-6", 30, 15, 0, 0)],
+    );
+    let snap = capture(&root, Some(&transcript), Some("sid"), || "now".to_string());
+    // Parent opus (100/50) + sub-session sonnet (30/15).
+    assert_eq!(snap.session_input_tokens, Some(130));
+    assert_eq!(snap.session_output_tokens, Some(65));
+    assert_eq!(snap.turn_count, Some(2));
+    assert_eq!(snap.by_model.get("claude-opus-4-7").unwrap().input, 100);
+    assert_eq!(snap.by_model.get("claude-sonnet-4-6").unwrap().input, 30);
+}
+
+/// A turn that appears BOTH inlined in the parent AND in the
+/// sub-session file (same `message.id`) is counted exactly once.
+#[test]
+fn capture_dedups_message_id_across_parent_and_sub_session() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let dir = projects_dir(&root, "proj");
+    let shared = assistant_line_with_id("claude-opus-4-7", 30, 15, "msg-shared");
+    let transcript = write_transcript(
+        &dir,
+        "session.jsonl",
+        &[
+            &assistant_line("claude-opus-4-7", 100, 50, 0, 0),
+            &agent_marker_line("A"),
+            &shared,
+        ],
+    );
+    write_transcript(&dir, "agent-A.jsonl", &[&shared]);
+    let snap = capture(&root, Some(&transcript), Some("sid"), || "now".to_string());
+    // Parent (100/50) + shared turn once (30/15) = 130/65, NOT
+    // double-counted to 160/80.
+    assert_eq!(snap.session_input_tokens, Some(130));
+    assert_eq!(snap.session_output_tokens, Some(65));
+    assert_eq!(snap.turn_count, Some(2));
+}
+
+/// An `agentId` that fails `is_safe_session_id` is not used to
+/// construct a sub-session path — only the parent is counted, and no
+/// traversal is attempted. Two rejection classes are exercised: a
+/// traversal segment (`.`, caught by the empty/dot guard) and a
+/// path separator (`a/b`, caught by the character allowlist).
+#[test]
+fn capture_skips_sub_session_with_unsafe_agent_id() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let dir = projects_dir(&root, "proj");
+    let transcript = write_transcript(
+        &dir,
+        "session.jsonl",
+        &[
+            &assistant_line("claude-opus-4-7", 100, 50, 0, 0),
+            &agent_marker_line("."),
+            &agent_marker_line("a/b"),
+        ],
+    );
+    let snap = capture(&root, Some(&transcript), Some("sid"), || "now".to_string());
+    assert_eq!(snap.session_input_tokens, Some(100));
+    assert_eq!(snap.turn_count, Some(1));
+}
+
+/// A transcript path with no parent directory (e.g. an empty path
+/// from a corrupted state file) yields no sub-session discovery —
+/// `path.parent()` is `None`, so the discovery loop is skipped and
+/// the snapshot carries no token data.
+#[test]
+fn capture_with_parentless_transcript_path_reads_no_sub_sessions() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    let snap = capture(&root, Some(std::path::Path::new("")), Some("sid"), || {
+        "now".to_string()
+    });
+    assert_eq!(snap.session_input_tokens, None);
+    assert_eq!(snap.turn_count, None);
+    assert!(snap.by_model.is_empty());
+}
+
+/// When the parent transcript is not under `<home>/.claude/projects/`,
+/// the sibling `agent-<id>.jsonl` path fails `is_safe_transcript_path`
+/// and is not read — only the parent is counted.
+#[test]
+fn capture_skips_sub_session_when_path_out_of_prefix() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = tmp.path().canonicalize().expect("canonicalize");
+    // Parent at root/session.jsonl — NOT under .claude/projects/.
+    let transcript = write_transcript(
+        &root,
+        "session.jsonl",
+        &[
+            &assistant_line("claude-opus-4-7", 100, 50, 0, 0),
+            &agent_marker_line("A"),
+        ],
+    );
+    // Even though a sibling agent file exists, its path is rejected.
+    write_transcript(
+        &root,
+        "agent-A.jsonl",
+        &[&assistant_line("claude-sonnet-4-6", 30, 15, 0, 0)],
+    );
+    let snap = capture(&root, Some(&transcript), Some("sid"), || "now".to_string());
+    assert_eq!(snap.session_input_tokens, Some(100));
+    assert_eq!(snap.turn_count, Some(1));
+    assert!(snap.by_model.get("claude-sonnet-4-6").is_none());
+}

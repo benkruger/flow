@@ -1,9 +1,12 @@
 //! Token and rate-limit capture — the statusline-independent half of
 //! account-window snapshots. Reads the rate-limits JSON in
-//! `~/.claude` and the session transcript JSONL. Does NOT read the
-//! per-session cost file under `.claude/cost/`; that surface lives
-//! in `session_cost`, and `per_flow_capture` orchestrates both into
-//! a final [`WindowSnapshot`].
+//! `~/.claude`, the session transcript JSONL, AND the linked
+//! `agent-<id>.jsonl` sub-session files of any Task-tool sub-agents
+//! the transcript references — so token totals and `by_model` reflect
+//! sub-agent work and the token-derived cost reconciles. Does NOT
+//! read the per-session cost file under `.claude/cost/`; that surface
+//! lives in `session_cost`, and `per_flow_capture` orchestrates both
+//! into a final [`WindowSnapshot`].
 //!
 //! The capture function is invoked by every state-mutating
 //! transition through `per_flow_capture::capture_for_active_state`,
@@ -23,11 +26,12 @@
 //! sinks for the metrics-half of a `WindowSnapshot`; cost is
 //! patched in by `per_flow_capture` before either mutator runs.
 
+use std::collections::HashSet;
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use serde_json::Value;
 
 use crate::state::{ModelTokens, StepSnapshot, WindowSnapshot};
@@ -61,7 +65,9 @@ pub fn capture(
     let captured_at = now_fn();
 
     let (five_hour_pct, seven_day_pct) = read_rate_limits(home);
-    let agg = transcript_path.map(read_transcript).unwrap_or_default();
+    let agg = transcript_path
+        .map(|p| read_transcript(p, home))
+        .unwrap_or_default();
 
     let context_window_pct = agg.context_at_last_turn.and_then(|tokens| {
         agg.last_model
@@ -359,16 +365,80 @@ struct TranscriptAgg {
 /// process stays bounded.
 const TRANSCRIPT_BYTE_CAP: u64 = 50 * 1024 * 1024;
 
-/// Line-stream the transcript JSONL accumulating assistant-message
-/// usage. Lines that fail to parse as JSON are skipped silently —
-/// transcripts can include partial writes at the tail when a
-/// session is in flight. Reads at most `TRANSCRIPT_BYTE_CAP` bytes
-/// to bound I/O across long autonomous flows.
-fn read_transcript(path: &Path) -> TranscriptAgg {
+/// Aggregate assistant-message usage from the parent transcript AND
+/// its linked Task-tool sub-agent sessions, so a flow's
+/// token-derived cost reflects the work its sub-agents did.
+///
+/// Sub-agent turns persist in one of two shapes: inlined in the
+/// parent transcript flagged `isSidechain:true` (counted directly
+/// during the parent scan), or in separate `agent-<agentId>.jsonl`
+/// sibling files linked by an `agentId` the parent references. The
+/// parent scan collects every referenced `agentId`; each linked
+/// `agent-<id>.jsonl` is then folded into the same aggregate.
+/// Assistant turns are deduplicated by `message.id` across all
+/// sources, so a turn appearing both inlined and in a sub-session
+/// file is counted once. Turns without an `id` are always counted
+/// (a partial tail row or a fixture without ids cannot be deduped).
+///
+/// Path safety per `.claude/rules/external-input-path-construction.md`:
+/// each `agentId` is validated by [`is_safe_session_id`] before the
+/// path is constructed, and the constructed `agent-<id>.jsonl` path
+/// is re-validated by [`is_safe_transcript_path`] against the
+/// canonical `<home>/.claude/projects/` prefix before it is opened.
+/// Every file read is bounded at `TRANSCRIPT_BYTE_CAP`. Missing
+/// files and malformed lines fail open (contribute nothing).
+///
+/// `last_model` and `context_at_last_turn` reflect the PARENT's last
+/// assistant turn only — context-window utilization measures the
+/// parent session's context, not a sub-agent's — so sub-session
+/// scans do not update them.
+fn read_transcript(path: &Path, home: &Path) -> TranscriptAgg {
     let mut agg = TranscriptAgg::default();
+    let mut seen_ids: HashSet<String> = HashSet::new();
+    // IndexSet dedups referenced agentIds while preserving discovery
+    // order, so reading is deterministic and a single agent file is
+    // never read twice.
+    let mut agent_ids: IndexSet<String> = IndexSet::new();
+    accumulate_transcript_file(path, &mut agg, &mut seen_ids, Some(&mut agent_ids), true);
+
+    if let Some(parent_dir) = path.parent() {
+        for agent_id in &agent_ids {
+            if !is_safe_session_id(agent_id) {
+                continue;
+            }
+            let sub_path = parent_dir.join(format!("agent-{}.jsonl", agent_id));
+            if !is_safe_transcript_path(&sub_path, home) {
+                continue;
+            }
+            accumulate_transcript_file(&sub_path, &mut agg, &mut seen_ids, None, false);
+        }
+    }
+    agg
+}
+
+/// Line-stream one transcript JSONL file into `agg`, accumulating
+/// assistant-message usage. Lines that fail to parse as JSON are
+/// skipped silently — transcripts can include partial writes at the
+/// tail when a session is in flight. Reads at most
+/// `TRANSCRIPT_BYTE_CAP` bytes to bound I/O across long autonomous
+/// flows. A missing file contributes nothing (fail-open).
+///
+/// `seen_ids` deduplicates assistant turns by `message.id` across
+/// every file folded into one aggregate. When `collect_agent_ids`
+/// is `Some`, top-level `agentId` references on any line are
+/// gathered for sub-session discovery (parent scan only).
+/// `update_last` gates the `last_model` / `context_at_last_turn`
+/// fields to the parent scan.
+fn accumulate_transcript_file(
+    path: &Path,
+    agg: &mut TranscriptAgg,
+    seen_ids: &mut HashSet<String>,
+    mut collect_agent_ids: Option<&mut IndexSet<String>>,
+    update_last: bool,
+) {
     let file = match fs::File::open(path) {
         Ok(f) => f,
-        Err(_) => return agg,
+        Err(_) => return,
     };
     let reader = BufReader::new(file.take(TRANSCRIPT_BYTE_CAP));
     for line in reader.lines() {
@@ -383,6 +453,15 @@ fn read_transcript(path: &Path) -> TranscriptAgg {
             Ok(v) => v,
             Err(_) => continue,
         };
+
+        // Gather sub-agent references (parent scan only). IndexSet
+        // dedups, so duplicate references collapse to one read.
+        if let Some(ids) = collect_agent_ids.as_deref_mut() {
+            if let Some(aid) = value.get("agentId").and_then(|v| v.as_str()) {
+                ids.insert(aid.to_string());
+            }
+        }
+
         if value.get("type").and_then(|v| v.as_str()) != Some("assistant") {
             continue;
         }
@@ -391,12 +470,22 @@ fn read_transcript(path: &Path) -> TranscriptAgg {
             None => continue,
         };
 
+        // Dedup by message id across parent + sub-session files. A
+        // turn already counted from another source is skipped.
+        if let Some(id) = message.get("id").and_then(|v| v.as_str()) {
+            if !seen_ids.insert(id.to_string()) {
+                continue;
+            }
+        }
+
         agg.totals_present = true;
         agg.turn_count = agg.turn_count.saturating_add(1);
 
         let model = message.get("model").and_then(|m| m.as_str());
-        if let Some(m) = model {
-            agg.last_model = Some(m.to_string());
+        if update_last {
+            if let Some(m) = model {
+                agg.last_model = Some(m.to_string());
+            }
         }
 
         let usage = message.get("usage");
@@ -429,12 +518,15 @@ fn read_transcript(path: &Path) -> TranscriptAgg {
         // context. `output_tokens` is generated by the model, not
         // part of the context window for this turn — including it
         // overcounts and produces context_window_pct values above
-        // 100% on real flows.
-        agg.context_at_last_turn = Some(
-            input
-                .saturating_add(cache_create)
-                .saturating_add(cache_read),
-        );
+        // 100% on real flows. Parent scan only — a sub-agent's
+        // context is not the parent session's context.
+        if update_last {
+            agg.context_at_last_turn = Some(
+                input
+                    .saturating_add(cache_create)
+                    .saturating_add(cache_read),
+            );
+        }
 
         if let Some(m) = model {
             let entry = agg.by_model.entry(m.to_string()).or_default();
@@ -452,7 +544,6 @@ fn read_transcript(path: &Path) -> TranscriptAgg {
             }
         }
     }
-    agg
 }
 
 /// Lookup table for known Claude model context-window sizes.
