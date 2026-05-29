@@ -155,17 +155,13 @@ Read `learn_step` from the state file (default `0` if absent).
 
 ## Step 1 — Gather and launch agent
 
-Gather all artifacts, then launch the learn-analyst agent for
+Gather the small inline artifacts (state file data and plan), capture
+the diff to a file, then launch the learn-analyst agent for
 cognitively isolated analysis. The agent receives only persisted
 artifacts — never conversation history. This structural separation
 eliminates self-reporting bias: the session that built the feature
 cannot honestly assess its own compliance because it carries forward
 the emotional arc of the work.
-
-**Read project rules.** Read the project's `CLAUDE.md` at
-`<worktree_path>/CLAUDE.md`. Note every rule and convention entry. The
-global CLAUDE.md is already loaded in conversation context — no separate
-read is needed.
 
 **Read state file data.** Read the state file at
 `<project_root>/.flow-states/<branch>/state.json`. Extract: `notes`, phase
@@ -174,14 +170,17 @@ read is needed.
 **Read the plan file.** Read the plan file at
 `<project_root>/<files.plan path>`.
 
-**Read rules files.** Use the Glob tool at
-`<worktree_path>/.claude/rules/*.md`, then read each file.
+CLAUDE.md and the `.claude/rules/` corpus are NOT gathered here — the
+learn-analyst agent reads them on demand. Inlining the full rule corpus
+into the agent prompt overflows the sub-agent context window on large
+diffs; the agent globs and reads `.claude/rules/*.md` itself instead, so
+it must read the whole corpus rather than a diff-narrowed subset.
 
 **Resolve the integration branch.** Run `bin/flow base-branch` to
 retrieve the base branch the flow coordinates against (the
 integration branch captured at flow-start). Capture its stdout —
 call the value `<base_branch>` — and substitute it into the
-`git diff` command below. A repo whose default branch is `staging`
+`capture-diff` command below. A repo whose default branch is `staging`
 produces `<base_branch> = staging`; a standard repo produces
 `<base_branch> = main`.
 
@@ -189,12 +188,25 @@ produces `<base_branch> = staging`; a standard repo produces
 ${CLAUDE_PLUGIN_ROOT}/bin/flow base-branch
 ```
 
-**Get the branch diff.** Substitute `<base_branch>` with the value
-you just captured.
+**Capture the substantive diff to a file.** `bin/flow capture-diff`
+runs `git diff origin/<base_branch>...HEAD -w` (whitespace-only changes
+filtered) and writes the result to a canonical
+`.flow-states/<branch>/substantive-diff.diff` file. The agent reads
+that file via the Read tool instead of receiving the diff bytes inline,
+keeping the agent prompt bounded as PR size grows. Substitute `<branch>`
+with the flow's branch name and `<base_branch>` with the value captured
+above.
 
 ```bash
-git diff origin/<base_branch>...HEAD
+${CLAUDE_PLUGIN_ROOT}/bin/flow capture-diff --branch <branch> --base <base_branch>
 ```
+
+Parse the JSON output. The `substantive` field is the path to the
+substantive diff file — call it `<substantive_diff_file>` and pass it
+to the learn-analyst agent (context-sparse). The path lives under
+`.flow-states/<branch>/`, the sanctioned agent-prompt path surface, so
+embedding it in the agent prompt does not trip the
+`validate-pretool` Agent-prompt path scan.
 
 **Launch learn-analyst.** Launch the learn-analyst agent using the Agent
 tool:
@@ -202,9 +214,10 @@ tool:
 - `subagent_type`: `"flow:learn-analyst"`
 - `description`: `"Compliance audit and process analysis"`
 
-Provide all artifacts in the prompt with labeled sections, plus
-the framing block below so the agent rewards filtering rather
-than producing:
+Provide the inline artifacts and the diff file path in the prompt with
+labeled sections, plus the framing block below so the agent rewards
+filtering rather than producing. The diff is passed as a file path the
+agent Reads via the Read tool rather than as inline bytes:
 
 > FRAMING:
 > Most Learn phases produce zero findings. Your job is to filter,
@@ -219,33 +232,59 @@ than producing:
 > produce zero, say so explicitly with "No findings" markers — do
 > NOT invent findings to fill sections.
 >
-> DIFF:
-> (full diff output)
+> SUBSTANTIVE_DIFF_FILE: <substantive_diff_file>
 >
 > STATE FILE DATA:
 > (notes array, phase timings, visit counts)
 >
 > PLAN:
 > (full plan file content)
->
-> PROJECT CLAUDE.MD:
-> (full CLAUDE.md content)
->
-> RULES FILES:
-> (each .claude/rules/ file, with its filename as a header)
+
+Prefix the prompt with an instruction that the agent reads the diff
+file and the rule corpus itself:
+
+> "Read the substantive diff file (SUBSTANTIVE_DIFF_FILE) via the Read
+> tool before analyzing. The state file data and plan are inline. Read
+> CLAUDE.md and Glob+Read the full `.claude/rules/*.md` corpus yourself
+> — do not narrow the rule set to diff-relevant rules, because a diff
+> under `src/` can violate a prose-authoring rule no path heuristic
+> would surface. Audit the three Learn tenants: process gaps, rule
+> compliance, and missing rules."
 
 Wait for the agent to return its structured findings.
 
-**Truncation check.** Examine the learn-analyst output for expected
-structure. Valid output contains `**Finding` blocks with category labels
-(Process gap, Rule compliance, Missing rule) or explicit "No findings"
-markers for each category. If the output contains some but not all
-categories, the agent truncated mid-analysis — use the findings from
-completed categories and note the incomplete categories for the Step 7
-report. If the output contains no `**Finding` blocks and no category
-markers, the agent exhausted its turn budget without producing structured
-output. Note for the Step 2 synthesis: "Learn-analyst agent exhausted
-turn budget without producing structured findings."
+**Truncation check.** Detect truncation by the absence of the literal
+`END-OF-FINDINGS` completion marker as the final structural element of
+the agent's output. Marker absence alone means the agent was truncated
+by `maxTurns` exhaustion — regardless of whether any partial `**Finding`
+block was produced. An agent that exhausts its turn budget DURING
+investigation (before producing any finding) is the case this check
+most needs to catch: requiring a partial finding to trigger detection
+would silently classify early-truncation as "found nothing." See
+`.claude/rules/cognitive-isolation.md` "Context Budget + Truncation
+Recovery".
+
+When the marker is absent, recover via partition-and-combine — the same
+recovery the Review skill implements:
+
+1. Re-invoke the learn-analyst agent once per partition, with the scope
+   narrowed to that partition only. Partition by tenant (process gap,
+   rule compliance, missing rule) or by diff file family (`src/`,
+   `tests/`, `agents/`, `skills/`, `.claude/`, `docs/`). Keep the
+   agent's other inputs unchanged: the same `<substantive_diff_file>`
+   path, the inline state file data, and the plan. Every path named in
+   a re-invocation prompt must stay under `.flow-states/<branch>/` (the
+   `<substantive_diff_file>` already does) so the `validate-pretool`
+   Agent-prompt path scan does not block the call.
+2. Combine the findings from every partition run as if they came from a
+   single run. Each finding still maps to one of the three Learn
+   tenants for the Step 2 synthesis.
+
+If a re-invocation itself returns without the `END-OF-FINDINGS` marker,
+that is double-truncation — the partition was still too large. Note the
+agent as truncated for the Step 7 report rather than splitting
+infinitely; the user decides whether to accept partial coverage or
+rerun Learn against a smaller diff subset.
 
 ### Per-agent accounting (record + retry-3-then-skip)
 
@@ -271,12 +310,16 @@ Parse the JSON output. If `status==ok`, the agent is accounted
 for. If `status==error` (reason `transcript_verification_failed`
 or any other), enter the retry path below.
 
-**Truncation, external failure, or recording failure — retry up
-to 3 attempts, then note.** Read
+**External failure or recording failure — retry up to 3 attempts,
+then skip.** Truncation is handled by the partition-and-combine
+recovery in the Truncation check above, not here. This path handles
+`record-agent-return` returning `status==error` and upstream API/quota
+failures (the agent's response carries `rate_limit`, `429`,
+`usage_limit`, or `API Error` with zero `**Finding` blocks). Read
 `phases.flow-learn.agent_retry_counts.learn-analyst` from state
 (default `0`). If the count is less than 3, increment via
-`bin/flow set-timestamp` and re-invoke the agent with the same
-prompt:
+`bin/flow set-timestamp` and re-invoke the agent from the Step 1
+prompt template above:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set phases.flow-learn.agent_retry_counts.learn-analyst=<count+1>
@@ -409,9 +452,10 @@ assessment:
 **Tenant 3 — Missing rules.** Findings where no rule covers the
 situation but should. Route to Step 3 (create new rule).
 
-If the learn-analyst was truncated and some categories are missing,
-note which categories are unavailable at the top of the synthesis.
-Use only the findings from completed categories.
+If the Step 1 partition-and-combine recovery still ended in
+double-truncation (a partition re-invocation itself returned without
+the `END-OF-FINDINGS` marker), note the agent as truncated at the top
+of the synthesis and use the combined findings gathered so far.
 
 ---
 
@@ -785,8 +829,8 @@ Present the full report to the user:
 
   Truncated agent
   ---------------
-  ⚠ learn-analyst — partial findings (N of 3 categories
-    completed)
+  ⚠ learn-analyst — double-truncation (partition recovery
+    still returned no END-OF-FINDINGS marker)
 
   Changes applied
   ---------------
@@ -941,8 +985,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 ## Hard Rules
 
 - Never commit application code in Learn — only CLAUDE.md and .claude/
-- Always read CLAUDE.md and rules files before launching the learn-analyst agent
-- Gather all artifacts (CLAUDE.md, state file, plan, rules, diff) before launching the agent
+- Gather the inline artifacts (state file, plan) and capture the diff to a file via `bin/flow capture-diff` before launching the learn-analyst agent; the agent reads CLAUDE.md and the `.claude/rules/` corpus itself
 - Follow the learning process (Steps 1 through 7) exactly — do not skip or reorder steps
 - Every finding must map to one of the three tenants — findings that do not map are dropped
 - Apply the generalization filter to all findings — no backward-looking output about already-fixed code

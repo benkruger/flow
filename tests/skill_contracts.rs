@@ -919,6 +919,88 @@ fn learn_uses_learn_analyst_subagent() {
 }
 
 #[test]
+fn learn_analyst_input_uses_diff_file_handoff() {
+    // The learn-analyst agent receives the diff as a file path it Reads
+    // (the context-sparse shape the Phase 3 Review agents already use),
+    // not as inline `git diff` bytes embedded in the prompt. Regression:
+    // a revert to the inline `**DIFF**` Input entry re-introduces the
+    // prompt-overflow floor that returns `Prompt is too long` with zero
+    // findings on large diffs. Consumer: the context-sparse Learn
+    // architecture in `.claude/rules/cognitive-isolation.md`.
+    let c = common::read_agent("learn-analyst.md");
+    assert!(
+        c.contains("SUBSTANTIVE_DIFF_FILE"),
+        "learn-analyst Input must name the SUBSTANTIVE_DIFF_FILE file-path handoff"
+    );
+    assert!(
+        !c.contains("**DIFF**"),
+        "learn-analyst Input must not carry an inline `**DIFF**` block — the diff is a file handoff"
+    );
+}
+
+#[test]
+fn learn_step1_invokes_capture_diff() {
+    // Step 1 captures the diff via `bin/flow capture-diff` (which writes
+    // the substantive diff to a canonical `.flow-states/<branch>/` path)
+    // rather than embedding `git diff` output inline in the agent prompt.
+    // Regression: a revert to the inline `git diff origin/...HEAD` capture
+    // re-introduces the prompt-overflow floor. Consumer: the bounded
+    // agent-prompt budget the context-sparse handoff preserves.
+    let c = common::read_skill("flow-learn");
+    assert!(
+        c.contains("capture-diff --branch <branch> --base <base_branch>"),
+        "flow-learn Step 1 must invoke `bin/flow capture-diff --branch <branch> --base <base_branch>` \
+         so the learn-analyst agent receives the substantive diff via file handoff"
+    );
+}
+
+#[test]
+fn learn_prompt_has_no_inline_rule_corpus() {
+    // The agent reads CLAUDE.md and the `.claude/rules/` corpus itself on
+    // demand; the skill no longer inlines them into the agent prompt.
+    // Regression: re-adding the `PROJECT CLAUDE.MD:` / `RULES FILES:`
+    // inline blocks restores the overflow floor that defeats the audit on
+    // large rule corpora. Consumer: the inline-floor elimination that is
+    // the primary fix of this change.
+    let c = common::read_skill("flow-learn");
+    assert!(
+        !c.contains("RULES FILES"),
+        "flow-learn must not inline a `RULES FILES` block — the agent globs and reads \
+         `.claude/rules/` itself"
+    );
+    assert!(
+        !c.contains("PROJECT CLAUDE.MD"),
+        "flow-learn must not inline a `PROJECT CLAUDE.MD` block — the agent reads CLAUDE.md itself"
+    );
+}
+
+#[test]
+fn learn_uses_partition_truncation_recovery() {
+    // Truncation recovery detects an absent `END-OF-FINDINGS` marker and
+    // re-invokes the agent against a narrowed partition, combining
+    // findings — the same recovery the Review skill implements. Regression:
+    // a revert to the no-op identity re-invoke (re-sending the same prompt)
+    // makes recovery impossible, so a truncated agent silently produces
+    // zero findings. Consumer: the partition-and-combine recovery in
+    // `.claude/rules/cognitive-isolation.md` "Context Budget + Truncation
+    // Recovery".
+    let c = common::read_skill("flow-learn");
+    assert!(
+        c.contains("END-OF-FINDINGS"),
+        "flow-learn must detect truncation via the absent `END-OF-FINDINGS` marker"
+    );
+    assert!(
+        c.contains("partition"),
+        "flow-learn must describe partition-and-combine truncation recovery"
+    );
+    assert!(
+        !c.contains("the same prompt"),
+        "flow-learn must not re-invoke the agent with the same prompt — that no-op retry \
+         cannot recover from prompt-overflow truncation"
+    );
+}
+
+#[test]
 fn review_agents_have_sufficient_max_turns() {
     for agent in &[
         "reviewer.md",

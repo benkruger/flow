@@ -1,8 +1,8 @@
 ---
 name: learn-analyst
-description: "Cognitively isolated compliance audit and process analysis. Receives diff, state file data, plan, and project rules. Produces findings categorized by the three Learn tenants: process gaps, rule compliance, and missing rules."
-# Haiku: Compliance audit against a fixed rule corpus — table-driven pattern matching, not novel reasoning.
-model: haiku
+description: "Cognitively isolated compliance audit and process analysis. Receives the substantive diff as a file path plus state file data and plan inline; reads CLAUDE.md and the .claude/rules/ corpus on demand. Produces findings categorized by the three Learn tenants: process gaps, rule compliance, and missing rules."
+# Opus: stronger compliance and process-audit judgment, plus a larger context window that keeps a large diff from overflowing the prompt and starving the audit of findings.
+model: opus
 tools: Read, Glob, Grep, Bash
 maxTurns: 100
 ---
@@ -52,19 +52,28 @@ not map to a tenant, discard it.
 
 Your prompt contains these labeled sections:
 
-- **DIFF** — the full `git diff origin/<base_branch>...HEAD`, where
-  `<base_branch>` is the integration branch the flow coordinates
-  against (resolved at runtime via `bin/flow base-branch` — usually
-  `main`, but `staging`/`develop`/etc. for repos whose default
-  branch is not `main`)
+- **SUBSTANTIVE_DIFF_FILE** — the path to the substantive
+  `git diff origin/<base_branch>...HEAD -w` (whitespace-only changes
+  filtered) written to a file under
+  `.flow-states/<branch>/substantive-diff.diff`, where `<base_branch>`
+  is the integration branch the flow coordinates against (resolved at
+  runtime via `bin/flow base-branch` — usually `main`, but
+  `staging`/`develop`/etc. for repos whose default branch is not
+  `main`). Read this file via the Read tool once before analyzing — do
+  not embed its contents in any prompt summary or follow-up tool call.
+  Keeping the diff out of subsequent prompts preserves your turn budget
+  for investigation on larger PRs.
 - **STATE FILE DATA** — phase timings, visit counts, and notes from
   `/flow:flow-note` captured during the session
 - **PLAN** — the implementation plan the developer followed
-- **PROJECT CLAUDE.MD** — the project-wide rules and conventions
-- **RULES FILES** — domain-specific rules from `.claude/rules/`
 
-Use Read, Glob, and Grep tools to investigate the surrounding codebase
-for additional context.
+The project `CLAUDE.md` and the `.claude/rules/` corpus are NOT inline.
+Read `CLAUDE.md` and Glob+Read the full `.claude/rules/*.md` set
+yourself — do not narrow the rule set to "diff-relevant" rules. A diff
+under `src/` can violate a prose-authoring rule that no path heuristic
+would surface, so every rule is in scope regardless of which files the
+diff touches. Use Read, Glob, and Grep to investigate the surrounding
+codebase for additional context.
 
 After you return cleanly, the calling skill records your return via
 `bin/flow record-agent-return --branch <branch> --agent
@@ -79,12 +88,14 @@ session after your `tool_result` lands.
 
 ## Design Note
 
-This agent receives inline context (diff, state file data, plan,
-project rules) because its task is checking against known standards —
-conventions, plan alignment, rule compliance, and process discipline.
-Having the standards at hand makes the analysis faster and more
-accurate.
+This agent investigates the standards itself rather than receiving the
+diff and the full rule corpus inline. The diff arrives as a file path
+the agent Reads; `CLAUDE.md` and the `.claude/rules/` corpus are read
+on demand. A file handoff keeps the prompt bounded regardless of diff
+size, so a large diff cannot overflow the prompt and starve the audit
+of findings.
 
+Only the small artifacts stay inline: the state file data and the plan.
 The state file data (visit counts, cumulative timings, session notes)
 is only meaningful when compared against known process expectations —
 a high visit count signals friction only if you know the expected
@@ -106,20 +117,23 @@ a contract, not a failure to work around.
 
 ## Workflow
 
-**All artifacts are in your prompt.** The diff, state file data, plan,
-CLAUDE.md, and rules files are provided inline below. Do not Glob or
-Read these files again — they are already in your context. Reserve
-tool calls for investigating source files, test files, and patterns
-in the codebase that are NOT provided inline.
+**Read the diff file first.** The SUBSTANTIVE_DIFF_FILE path is in your
+prompt — Read it via the Read tool before any analysis. The state file
+data and plan are inline. `CLAUDE.md` and the `.claude/rules/` corpus
+are NOT inline: read `CLAUDE.md` and Glob+Read every `.claude/rules/*.md`
+file before auditing compliance. Do not narrow the rule set — every rule
+is in scope regardless of which files the diff touches. Reserve the
+remaining tool calls for investigating source files, test files, and
+patterns in the codebase.
 
 **Budget your turns.** You have limited turns. Spend at most half your
 turns on codebase investigation. Reserve the remainder for analysis
 and writing findings. If you run out of turns mid-analysis, partially
 written findings are lost.
 
-**Read the rules.** Note every convention and constraint from the
-PROJECT CLAUDE.MD and RULES FILES sections in your prompt. These are
-the standards the code must meet.
+**Read the rules.** Read `CLAUDE.md` and every `.claude/rules/*.md`
+file, and note every convention and constraint. These are the
+standards the code must meet.
 
 **Read the plan.** Note the approach, risks, and task descriptions.
 Check whether the plan's risks materialized — look for evidence in the

@@ -1,7 +1,9 @@
-//! Frontmatter contract test: every Review-tier agent that consumes
-//! a diff via file handoff (`DIFF_FILE` / `SUBSTANTIVE_DIFF_FILE`)
-//! must declare `Grep` in its `tools:` allow-list so the agent can
-//! search the codebase for context.
+//! Frontmatter contract test: every FLOW sub-agent that consumes the
+//! diff via file handoff (`DIFF_FILE` / `SUBSTANTIVE_DIFF_FILE`) must
+//! declare `Grep` in its `tools:` allow-list so the agent can search
+//! the codebase for context. The set spans the Phase 3 Review agents
+//! and the Phase 4 Learn agent (`learn-analyst`), which reads the
+//! substantive diff from a file the same way the Review agents do.
 //!
 //! Runtime verification of the actual Grep tool dispatch from inside
 //! a sub-agent is deferred per
@@ -16,15 +18,18 @@ mod common;
 
 use common::read_agent;
 
-/// The four Review-phase sub-agents that receive the diff via file
-/// handoff. Each must keep `Grep` in its `tools:` allow-list so the
-/// Read-the-file-then-investigate workflow described in the agent's
-/// Input section can actually run.
+/// The five diff-file-handoff sub-agents — the four Phase 3 Review
+/// agents plus the Phase 4 Learn agent (`learn-analyst`). Each
+/// receives the diff via a file path and Reads it before analyzing,
+/// so each must keep `Grep` in its `tools:` allow-list for the
+/// Read-the-file-then-investigate workflow described in its Input
+/// section to run.
 const REVIEW_AGENTS: &[&str] = &[
     "reviewer.md",
     "pre-mortem.md",
     "adversarial.md",
     "documentation.md",
+    "learn-analyst.md",
 ];
 
 /// Extract the `tools:` value from a markdown file's YAML frontmatter.

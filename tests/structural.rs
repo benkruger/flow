@@ -648,7 +648,7 @@ fn test_all_agents_specify_model() {
         ("adversarial.md", "opus"),
         ("reviewer.md", "opus"),
         ("pre-mortem.md", "opus"),
-        ("learn-analyst.md", "haiku"),
+        ("learn-analyst.md", "opus"),
         ("documentation.md", "sonnet"),
         ("pm.md", "haiku"),
         ("tech-lead.md", "sonnet"),

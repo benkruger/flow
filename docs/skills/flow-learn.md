@@ -34,11 +34,19 @@ merges.
 | CLAUDE.md and rules files | Project rules and conventions that should have been followed | Yes |
 | State file and plan data | Visit counts, timing, notes, plan risks | Yes |
 | Correction notes | `state.notes` entries with `type == "correction"`, captured by `/flow:flow-note` — mandatory user directives routed to a durable rule before agent-finding triage | Yes |
-| Branch diff | Full `git diff origin/<base_branch>...HEAD` | Yes |
+| Substantive diff | `git diff origin/<base_branch>...HEAD -w` (whitespace-only changes filtered) captured to `.flow-states/<branch>/substantive-diff.diff` via `bin/flow capture-diff`; the agent Reads the file | Yes |
 | Learn-analyst agent | Categorized findings from cognitively isolated compliance audit | N/A (agent output) |
 
-All artifacts are passed inline to the learn-analyst agent. The agent
-writes findings incrementally — partial findings survive turn budget
+The substantive diff is passed as a file path the learn-analyst agent
+Reads; the small artifacts (state file data and plan) are passed
+inline; and the agent reads CLAUDE.md and the full `.claude/rules/`
+corpus on demand. Keeping the diff and rule corpus out of the prompt
+keeps it bounded so a large diff cannot overflow it and starve the
+audit of findings. When the agent's output omits the `END-OF-FINDINGS`
+completion marker, the skill recovers via partition-and-combine —
+re-invoking the agent against a narrowed partition (by tenant or by
+diff file family) and combining findings across runs. The agent writes
+findings incrementally — partial findings survive turn budget
 exhaustion.
 
 ---
@@ -84,7 +92,7 @@ are recorded via `bin/flow add-finding` for the Complete phase banner.
 **Report** — presented after all changes are applied:
 
 - Findings (3 categories matching tenants: process gaps, rule compliance, missing rules)
-- Truncated agent (if learn-analyst exhausted its turn budget)
+- Truncated agent (if partition recovery still ended in double-truncation)
 - Changes applied (file path + summary for each destination)
 - Issues filed (issue number + title, tagged by type)
 

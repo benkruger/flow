@@ -27,17 +27,23 @@ Learn is an audit, not a retrospective. It asks three specific questions:
 
 ## Sources
 
-Learn gathers artifacts and passes them to the learn-analyst agent for
-cognitively isolated analysis:
+Learn passes the small artifacts to the learn-analyst agent inline and
+hands off the diff as a file path; the agent reads the project rules
+itself for cognitively isolated analysis:
 
-1. **CLAUDE.md and rules files** — the project's rules and conventions that should have been followed
-2. **State file and plan data** — visit counts, timing, captured `/flow-note` entries, plan file risks
-3. **Branch diff** — the full `git diff origin/<base_branch>...HEAD`
+1. **CLAUDE.md and rules files** — the project's rules and conventions that should have been followed; the agent reads CLAUDE.md and the full `.claude/rules/` corpus on demand rather than receiving them inline
+2. **State file and plan data** — visit counts, timing, captured `/flow-note` entries, plan file risks (passed inline)
+3. **Substantive diff** — `git diff origin/<base_branch>...HEAD -w` (whitespace-only changes filtered) captured to `.flow-states/<branch>/substantive-diff.diff` via `bin/flow capture-diff`; the agent Reads the file
 
-All artifacts are passed inline to the learn-analyst agent, which
-produces structured findings categorized by the three tenants. The agent
-writes findings incrementally — if it exhausts its turn budget, partial
-findings are preserved.
+Keeping the diff and rule corpus out of the prompt keeps it bounded so a
+large diff cannot overflow it and starve the audit of findings. The
+agent produces structured findings categorized by the three tenants and
+writes them incrementally — if it exhausts its turn budget, partial
+findings are preserved. When the agent's output omits the
+`END-OF-FINDINGS` completion marker, the skill recovers via
+partition-and-combine: re-invoking the agent against a narrowed
+partition (by tenant or by diff file family) and combining findings
+across runs.
 
 ---
 

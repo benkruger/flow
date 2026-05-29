@@ -19,21 +19,30 @@ assumptions feel like facts and go unexamined.
 Not all sub-agents receive the same artifacts. The amount of
 context is a design choice matched to the agent's task:
 
-- **Context-rich** (reviewer, learn-analyst) — receives full diff,
-  plan, CLAUDE.md, and rules inline. Its task is checking against
-  known standards where having the standards at hand saves turns.
-  Learn-analyst additionally receives state file data (visit counts,
-  timings, session notes) to detect process friction and rule
-  violations.
-- **Context-sparse** (pre-mortem, adversarial, documentation) — receives
-  only the substantive diff (`git diff -w`, whitespace-only changes
-  filtered) and must investigate the codebase itself. Less context
-  forces independent investigation, surfacing risks and coverage gaps
-  that pre-supplied context would mask. The whitespace filter preserves
-  turn budget on PRs with formatting changes. The documentation agent
-  receives a narrowed list of doc paths derived from the diff (see
-  `skills/flow-review/SKILL.md` Step 1) so its investigation
-  surface stays bounded on moderately-sized PRs.
+- **Context-rich** (reviewer) — receives the full diff (as a file
+  path it Reads) plus the plan, CLAUDE.md, and the rule corpus
+  inline. Its task is checking against known standards where having
+  the standards at hand saves turns.
+- **Context-sparse** (pre-mortem, adversarial, documentation,
+  learn-analyst) — receive the substantive diff as a file path
+  (`git diff -w`, whitespace-only changes filtered) and must
+  investigate the standards themselves. Less context forces
+  independent investigation, surfacing risks and coverage gaps that
+  pre-supplied context would mask, and keeps the prompt bounded so a
+  large diff cannot overflow it and starve the agent of findings.
+  The whitespace filter preserves turn budget on PRs with formatting
+  changes. The documentation agent receives a narrowed list of doc
+  paths derived from the diff (see `skills/flow-review/SKILL.md`
+  Step 1) so its investigation surface stays bounded on
+  moderately-sized PRs. Learn-analyst keeps two small artifacts
+  inline — the state file data (visit counts, timings, session
+  notes) and the plan — but reads CLAUDE.md and the full
+  `.claude/rules/` corpus on demand; it must read the whole corpus
+  rather than a diff-narrowed subset, because a diff under `src/`
+  can violate a prose-authoring rule no path heuristic would
+  surface. The state file data is only meaningful against known
+  process expectations — a high visit count signals friction only
+  if you know the expected count is one.
 
 This asymmetry is intentional. See `agents/pre-mortem.md` Design
 Note for the full rationale and `agents/reviewer.md` Design Note
@@ -287,17 +296,21 @@ history by design, not by instruction.
 
 ## Reference Implementation
 
-The learn-analyst agent (`agents/learn-analyst.md`) demonstrates
-the context-rich pattern: it runs in the foreground during Learn,
-receives the full diff, state data, plan, and all project rules,
-and returns structured compliance findings to the parent session.
-Its prompt explicitly states it has no knowledge of the conversation
-that produced the changes.
+The reviewer agent (`agents/reviewer.md`) demonstrates the
+context-rich pattern: it runs in the foreground during Review,
+receives the full diff (as a file path it Reads) plus the plan,
+CLAUDE.md, and the rule corpus inline, and returns structured
+findings to the parent session.
 
-The documentation agent (`agents/documentation.md`) demonstrates the
-context-sparse pattern in Review (Phase 3): it assesses
-maintainability (comprehension barriers) and documentation accuracy
-(drift between docs and code behavior).
+The documentation and learn-analyst agents (`agents/documentation.md`,
+`agents/learn-analyst.md`) demonstrate the context-sparse pattern:
+documentation assesses maintainability and documentation drift in
+Review (Phase 3); learn-analyst audits rule compliance and process
+gaps in Learn (Phase 4). Both receive the substantive diff as a file
+path and investigate the standards themselves — learn-analyst reads
+CLAUDE.md and the `.claude/rules/` corpus on demand rather than
+inline. Each agent's prompt states it has no knowledge of the
+conversation that produced the changes.
 
 ## Checklist for New Consumers
 
