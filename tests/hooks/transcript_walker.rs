@@ -3572,6 +3572,216 @@ fn last_user_message_invokes_skill_skips_user_turn_with_missing_content() {
     ));
 }
 
+// --- is_compact_summary_turn discriminator ---
+//
+// After a mid-flow conversation compaction, Claude Code injects a
+// `type:"user"` continuation turn carrying the summary text. That
+// turn has string `message.content` and NO `isMeta` field, so it
+// looks like a real user turn to every walker — but it carries the
+// dedicated `isCompactSummary:true` marker. Treating it as real
+// latches the autonomous-stop conversation-pass-through branch into
+// a permanent voluntary-stop state and silently masks the user-only
+// and bootstrap carve-outs. Every walker that decides on user-turn
+// boundaries must classify the compaction-summary turn as synthetic.
+//
+// The tests below place a compaction-summary turn (string content,
+// `isCompactSummary:true`, no `isMeta`) AT THE TAIL of the JSONL so
+// each walker hits it first while iterating backward — the
+// configuration that reproduces the post-compaction backstop loss.
+// Two of the tests give the surviving real user turn an explicit
+// `isCompactSummary:false` / `isCompactSummary:null` so the
+// discriminator's `Bool(false)` and `Null` arms are exercised
+// through the public surface. The `None` arm is exercised by every
+// real user turn that omits the field; the `Some(_)` arm by the
+// `isCompactSummary:true` tail turn in each test. Per
+// `.claude/rules/transcript-shape.md`.
+
+#[test]
+fn last_user_message_invokes_skill_skips_compact_summary_turn() {
+    // Real user invocation of `/flow:flow-abort` → assistant Skill →
+    // compaction-summary continuation turn at the tail. The walker
+    // must skip the synthetic compaction-summary turn and match the
+    // slash-command marker on the real turn. The real turn carries
+    // explicit `isCompactSummary:false` — the discriminator's
+    // `Bool(false)` arm — and must still register as real.
+    //
+    // Regression guard: without the compact-summary skip in
+    // `is_real_user_turn`, the walker stops at the compaction-summary
+    // turn (string content, no `isMeta`), whose content is not a
+    // slash-command marker, and Layer 1 user-only-skill enforcement
+    // fails open. Named consumer: `validate-skill` Layer 1.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"isCompactSummary\":false,\"message\":{\"role\":\"user\",\"content\":\"<command-name>/flow:flow-abort</command-name>\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-abort\"}}]}}\n\
+{\"type\":\"user\",\"isCompactSummary\":true,\"message\":{\"role\":\"user\",\"content\":\"This session is being continued from a previous conversation that ran out of context.\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(last_user_message_invokes_skill(
+        &path,
+        "flow:flow-abort",
+        home,
+    ));
+}
+
+#[test]
+fn most_recent_skill_in_user_only_set_skips_compact_summary_turn() {
+    // Real user prose → assistant Skill tool_use for `flow:flow-abort`
+    // → compaction-summary continuation turn at the tail. Iterating
+    // backward, the walker must skip the synthetic compaction-summary
+    // turn, reach the assistant Skill call, and return true (Layer 2
+    // carve-out fires). Without the skip, the walker stops at the
+    // compaction-summary turn and returns false, deadlocking the
+    // abort-during-autonomous-flow AskUserQuestion.
+    //
+    // Named consumer: the user-only-skill carve-out in
+    // `validate-ask-user`.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"abort the flow\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-abort\"}}]}}\n\
+{\"type\":\"user\",\"isCompactSummary\":true,\"message\":{\"role\":\"user\",\"content\":\"This session is being continued from a previous conversation that ran out of context.\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(most_recent_skill_in_user_only_set(&path, home));
+}
+
+#[test]
+fn any_skill_in_set_since_user_skips_compact_summary_turn() {
+    // Real user prose → assistant Skill tool_use for `flow:flow-start`
+    // → compaction-summary continuation turn at the tail. Iterating
+    // backward, the walker must skip the synthetic compaction-summary
+    // turn, reach the assistant Skill call, and return true (Layer 10
+    // bootstrap carve-out fires). Without the skip, the walker stops
+    // at the compaction-summary turn and returns false, blocking a
+    // legitimate flow-start commit on the integration branch after a
+    // compaction.
+    //
+    // Named consumer: the Layer 10 bootstrap carve-out in
+    // `validate_pretool::bootstrap_carveout_applies`.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"start it\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-start\"}}]}}\n\
+{\"type\":\"user\",\"isCompactSummary\":true,\"message\":{\"role\":\"user\",\"content\":\"This session is being continued from a previous conversation that ran out of context.\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(any_skill_in_set_since_user(
+        &path,
+        home,
+        &["flow:flow-start", "flow:flow-prime"],
+    ));
+}
+
+#[test]
+fn most_recent_skill_since_user_skips_compact_summary_turn() {
+    // Canonical #1507-shaped transcript with a compaction-summary
+    // turn at the tail: real user prose → assistant Skill call
+    // (`decompose:decompose`) → tool_result-wrapped user turn →
+    // assistant text → compaction-summary continuation turn. The
+    // walker must skip the compaction-summary turn AND the
+    // tool_result-wrapped turn to find the real user turn, returning
+    // `Some("decompose:decompose")`. Without the compact-summary
+    // skip, the walker stops at the compaction-summary turn and
+    // returns `None` — the predicate fails open and the Stop hook
+    // lets the turn end mid-utility-skill.
+    //
+    // Named consumer: `stop_continue::check_in_progress_utility_skill`.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"sounds good. proceed\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"decompose:decompose\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_d1\",\"content\":\"decompose output\"}]}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"synthesis prose\"}]}}\n\
+{\"type\":\"user\",\"isCompactSummary\":true,\"message\":{\"role\":\"user\",\"content\":\"This session is being continued from a previous conversation that ran out of context.\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_skill_since_user(&path, home),
+        Some("decompose:decompose".to_string()),
+    );
+}
+
+#[test]
+fn most_recent_user_message_since_skill_action_skips_compact_summary_turn() {
+    // The reported bug: real user prose → assistant Skill →
+    // compaction-summary continuation turn. The walker iterates
+    // FORWARD capturing the most recent conversational-prose user
+    // turn after a Skill. With the compact-summary skip, the
+    // compaction-summary turn is filtered (synthetic) and the
+    // candidate stays `None` — so the next Stop fires Rule 1
+    // (encouraging refusal) and the autonomous backstop holds.
+    // Without the skip, the compaction-summary turn is captured as a
+    // real conversational message, the pass-through branch sets
+    // `_halt_pending`, and the flow latches into a permanent
+    // voluntary-stop state with no user-visible signal.
+    //
+    // Named consumer: `stop_continue::check_autonomous_stop`
+    // conversation pass-through.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"keep going\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"flow:flow-code\"}}]}}\n\
+{\"type\":\"user\",\"isCompactSummary\":true,\"message\":{\"role\":\"user\",\"content\":\"This session is being continued from a previous conversation that ran out of context.\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert_eq!(
+        most_recent_user_message_since_skill_action(&path, home),
+        None,
+    );
+}
+
+#[test]
+fn user_approved_shared_config_edit_skips_compact_summary_turn() {
+    // Real user request → assistant Edit on a shared-config path →
+    // shared-config BLOCKED tool_result → user approval prose →
+    // compaction-summary continuation turn at the tail. The walker
+    // must skip the synthetic compaction-summary turn so the most
+    // recent real user turn is the approval, then corroborate the
+    // block. The approval turn carries explicit `isCompactSummary:null`
+    // — the discriminator's `Null` arm — and must still register as
+    // real. Without the compact-summary skip, the walker treats the
+    // compaction-summary turn as the most recent real user turn,
+    // finds no approval phrase, and returns false.
+    //
+    // Named consumer: the shared-config approval gate
+    // (`bin/flow approve-shared-config`).
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let approval_with_null = "{\"type\":\"user\",\"isCompactSummary\":null,\"message\":{\"role\":\"user\",\"content\":\"approve shared-config: /repo/Cargo.toml\"}}\n";
+    let compact_summary = "{\"type\":\"user\",\"isCompactSummary\":true,\"message\":{\"role\":\"user\",\"content\":\"This session is being continued from a previous conversation that ran out of context.\"}}\n";
+    let jsonl = format!(
+        "{REQ}{EDIT}{}{approval_with_null}{compact_summary}",
+        block_turn("/repo/Cargo.toml"),
+    );
+    let path = crate::common::transcript_fixture(home, "p", &jsonl);
+    assert!(user_approved_shared_config_edit(
+        &path,
+        home,
+        "/repo/Cargo.toml"
+    ));
+}
+
+#[test]
+fn recent_edit_blocked_on_shared_config_skips_compact_summary_turn() {
+    // Real user prose → assistant Edit tool_use on a shared-config
+    // path → tool_result-wrapped user turn carrying the shared-config
+    // BLOCKED message → compaction-summary continuation turn at the
+    // tail. This walker uses an INLINE synthetic-turn skip (not
+    // `is_real_user_turn`), so it needs its own compact-summary skip.
+    // With the skip, the walker passes the compaction-summary turn
+    // and reaches the array-content tool_result turn to detect the
+    // shared-config block. Without it, the walker stops at the
+    // compaction-summary turn (string content, no block) and returns
+    // false, deadlocking the system-initiated AskUserQuestion.
+    //
+    // Named consumer: the shared-config carve-out in
+    // `validate-ask-user::run_impl_main`.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"please update reqs\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Edit\",\"id\":\"toolu_01\",\"input\":{\"file_path\":\"/p/requirements.txt\",\"old_string\":\"a\",\"new_string\":\"b\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_01\",\"content\":\"BLOCKED: requirements.txt is a shared configuration file that affects every engineer in the repository.\",\"is_error\":true}]}}\n\
+{\"type\":\"user\",\"isCompactSummary\":true,\"message\":{\"role\":\"user\",\"content\":\"This session is being continued from a previous conversation that ran out of context.\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(recent_edit_blocked_on_shared_config(&path, home));
+}
+
 // --- read_full / read_recency_window / read_recent_turns ---
 
 #[test]

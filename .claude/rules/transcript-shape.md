@@ -12,18 +12,26 @@ invocation.
 
 ## The Closed Catalog of Synthetic User Turns
 
-Claude Code emits user-role turns in two synthetic shapes alongside
-user-typed prose. Both shapes carry `type:"user"` at the top level,
-so a walker that discriminates only on `type` cannot tell them
-apart from real user input.
+Claude Code emits user-role turns in three synthetic shapes alongside
+user-typed prose. All three shapes carry `type:"user"` at the top
+level, so a walker that discriminates only on `type` cannot tell
+them apart from real user input.
 
-| Shape | `message.content` | `isMeta` | Examples |
+| Shape | `message.content` | Marker | Examples |
 |---|---|---|---|
-| Tool-result wrapper | Array of `tool_result` blocks | absent / false | Tool-call results, slash-command expansions |
-| Hook-injected feedback | String (e.g. `"Stop hook feedback:\n..."`) | `true` | Stop-hook refusals, PreToolUse rejections |
+| Tool-result wrapper | Array of `tool_result` blocks | `isMeta` absent / false | Tool-call results, slash-command expansions |
+| Hook-injected feedback | String (e.g. `"Stop hook feedback:\n..."`) | `isMeta:true` | Stop-hook refusals, PreToolUse rejections |
+| Compaction continuation | String (the carried-over summary text) | `isCompactSummary:true` (no `isMeta`) | Post-compaction continuation turn |
 
-Real user turns have string `content` AND no `isMeta:true` field.
-Both checks must pass — neither suffices alone.
+The compaction-continuation shape is the trap that string-only
+filters miss: it has string `content` and NO `isMeta` field, so a
+walker that filters only on `isMeta` treats it as a real user turn.
+The dedicated `isCompactSummary` marker is the only field that
+distinguishes it from user-typed prose.
+
+Real user turns have string `content`, no `isMeta:true` field, AND
+no `isCompactSummary:true` field. All three checks must pass — none
+suffices alone.
 
 ## Real User Turns: Imperative vs Conversational Shapes
 
@@ -67,7 +75,7 @@ pass-through" carries the consumer-side picture of how the
 walker's `Some`/`None` returns drive the three rules of
 `check_autonomous_stop`.
 
-## Why Both Checks Are Required
+## Why All Three Checks Are Required
 
 A walker that filters only on `content.as_str().is_some()` catches
 the tool-result-wrapper shape but misses the hook-injected feedback
@@ -89,21 +97,33 @@ predicate decides "no Skill since the user spoke" — fails open,
 the model's text-only turn-end is permitted, the flow halts
 mid-pipeline.
 
-The same shape breaks every other walker downstream:
+A walker that filters on both `content.as_str()` AND `isMeta`
+still misses the compaction-continuation shape, because that turn
+carries string content and no `isMeta`. After a mid-flow
+compaction, Claude Code injects a `type:"user"` continuation turn
+carrying the summary text. The autonomous-stop conversation
+pass-through branch
+(`most_recent_user_message_since_skill_action`) captures it as a
+real conversational user message, sets `_halt_pending`, and latches
+the flow into a permanent voluntary-stop state with no user-visible
+signal that the backstop is gone. The `isCompactSummary:true`
+filter closes this third surface.
+
+The same shapes break every other walker downstream:
 
 - `last_user_message_invokes_skill` (Layer 1 user-only-skill
-  enforcement) — stops at the refusal, never sees the real
+  enforcement) — stops at the synthetic turn, never sees the real
   invocation, silently blocks legitimate Skill calls.
 - `most_recent_skill_in_user_only_set` (Layer 2 carve-out for
   in-progress autonomous AskUserQuestion) — stops at the
-  refusal, never sees the assistant Skill call before it, the
-  carve-out fails to fire, the user-confirmation prompt
+  synthetic turn, never sees the assistant Skill call before it,
+  the carve-out fails to fire, the user-confirmation prompt
   deadlocks.
 - `recent_edit_blocked_on_shared_config` (shared-config
   carve-out for autonomous AskUserQuestion) — stops at the
-  refusal, never reaches the tool_result-wrapped user turn that
-  carries the BLOCKED message, the carve-out fails to fire, the
-  system-initiated confirmation prompt deadlocks.
+  synthetic turn, never reaches the tool_result-wrapped user turn
+  that carries the BLOCKED message, the carve-out fails to fire,
+  the system-initiated confirmation prompt deadlocks.
 
 ## The Mechanical Contract
 
@@ -114,24 +134,28 @@ Walkers that look for the most recent REAL user turn `continue`
 past synthetic turns; walkers that look for the most recent user
 turn of a SPECIFIC synthetic kind (e.g.,
 `recent_edit_blocked_on_shared_config` which needs the array-
-content tool_result wrapper) may filter on the specific shape
-they consume but must still skip the unrelated hook-feedback
-shape.
+content tool_result wrapper) may filter on the specific shapes
+they consume but must still skip the unrelated string-content
+synthetic shapes (hook-feedback AND compaction-continuation).
 
 Two filtering patterns satisfy the contract:
 
 - **Helper-based skip.** `if !is_real_user_turn(&turn) { continue; }`
-  — used when the walker needs the real user turn. Skips both
-  array-content AND `isMeta:true` shapes.
-- **Targeted skip.** Manually check `content.as_str().is_some() &&
-  isMeta == Some(true)` to skip ONLY the hook-feedback shape —
-  used when the walker legitimately consumes array-content user
-  turns (the shared-config carve-out is the canonical example).
+  — used when the walker needs the real user turn. Skips the
+  array-content, `isMeta:true`, AND `isCompactSummary:true` shapes.
+- **Targeted skip.** Manually skip the string-content synthetic
+  shapes via `is_meta_marker_present(turn.get("isMeta"))` AND
+  `is_compact_summary_turn(&turn)` — used when the walker
+  legitimately consumes array-content user turns (the shared-config
+  carve-out is the canonical example: it inline-skips both
+  string-content synthetic shapes while still examining the
+  array-content tool_result wrapper).
 
-A walker that inlines the discrimination is forbidden. Inlining
-hides the contract from future readers and produces drift the
-moment a new synthetic shape is added — the helper is the single
-point of update.
+A walker that inlines the discrimination from scratch is forbidden.
+Inlining hides the contract from future readers and produces drift
+the moment a new synthetic shape is added — the shared predicates
+(`is_real_user_turn`, `is_meta_marker_present`,
+`is_compact_summary_turn`) are the single point of update.
 
 ## How to Apply
 
@@ -146,8 +170,8 @@ doc comment.
 user-boundary logic in any walker, identify which of the two
 patterns the walker uses and preserve the discrimination
 property. A change that filters only on `content.as_str()` (or
-only on `isMeta`) re-opens the bypass surface and must be
-rejected.
+only on `isMeta`, missing the `isCompactSummary` shape) re-opens
+the bypass surface and must be rejected.
 
 **Adding a new walker callsite.** When a new hook or subcommand
 calls one of the walkers, no action is needed — the walker
@@ -160,14 +184,16 @@ The rule is enforced primarily by the discipline of this file and
 the integration test corpus in
 `tests/hooks/transcript_walker.rs`. Per-walker regression tests
 named
-`<walker>_skips_hook_feedback_string_content_ismeta_true` lock the
-discrimination property in for each walker. A future edit that
-removes the `is_real_user_turn` call (or the targeted
-hook-feedback skip) trips the matching test.
+`<walker>_skips_hook_feedback_string_content_ismeta_true` and
+`<walker>_skips_compact_summary_turn` lock the discrimination
+property in for each walker. A future edit that removes the
+`is_real_user_turn` call (or either targeted string-content skip)
+trips the matching test.
 
 The Review reviewer agent flags any new walker that inlines the
-content/isMeta discrimination as a Real finding — the helper is
-the only sanctioned filter path.
+content/`isMeta`/`isCompactSummary` discrimination as a Real
+finding — the shared predicates are the only sanctioned filter
+path.
 
 ## Cross-References
 
