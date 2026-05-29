@@ -1785,6 +1785,60 @@ fn check_autonomous_stop_skills_entry_missing_treats_as_not_auto() {
 }
 
 #[test]
+fn check_autonomous_stop_does_not_pass_through_on_compact_summary_turn() {
+    // Regression for the post-compaction backstop loss: in an
+    // in-progress autonomous flow-code phase, the most recent
+    // user-shaped turn after the model's Skill action is a
+    // compaction-summary continuation turn (string content,
+    // `isCompactSummary:true`, no `isMeta`). The walker
+    // `most_recent_user_message_since_skill_action` must classify it
+    // as synthetic and return `None`, so `check_autonomous_stop`
+    // fires Rule 1 (encouraging refusal) WITHOUT setting
+    // `_halt_pending` — the conversation pass-through must NOT latch
+    // the flow into a voluntary-stop state. Without the
+    // `is_compact_summary_turn` discriminator, the walker captures the
+    // summary text as a real conversational message, the pass-through
+    // branch sets `_halt_pending`, and the next Stop fires Rule 2,
+    // trapping the flow permanently.
+    //
+    // Named consumer: the autonomous-stop backstop
+    // (`stop_continue::check_autonomous_stop`).
+    let dir = tempfile::tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    fs::write(
+        &state_path,
+        serde_json::to_string(&autonomous_stop_state(
+            "flow-code",
+            "in_progress",
+            json!("auto"),
+            json!(false),
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let transcript = auto_stop_transcript(dir.path(), "t.jsonl");
+    let body = format!(
+        "{}\n{}\n",
+        json!({
+            "type": "assistant",
+            "message": {"content": [{"type": "tool_use", "name": "Skill", "input": {"skill": "flow:flow-code"}}]}
+        }),
+        json!({
+            "type": "user",
+            "isCompactSummary": true,
+            "message": {"content": "This session is being continued from a previous conversation that ran out of context."}
+        }),
+    );
+    fs::write(&transcript, body).unwrap();
+    let result = check_autonomous_stop(&state_path, Some(transcript.to_str().unwrap()), dir.path());
+    // Pass-through did NOT fire: Rule 1 blocks with the encouraging
+    // message and `_halt_pending` stays false.
+    assert!(result.should_block);
+    assert_eq!(result.context.as_deref(), Some(RULE_1_STOP_REFUSED_MESSAGE));
+    assert!(!read_halt_pending(&state_path));
+}
+
+#[test]
 fn check_autonomous_stop_wrong_root_type_no_block() {
     // State file root is a JSON array rather than an object.
     // `mutate_state`'s closure must short-circuit via the

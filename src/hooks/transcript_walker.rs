@@ -262,25 +262,32 @@ pub fn normalize_gate_input(s: &str) -> String {
 ///   system-generated turn with `isMeta:true` even when the
 ///   content shape is a string — most notably, Stop-hook refusal
 ///   feedback ("Stop hook feedback:\n...").
+/// - `isCompactSummary` must NOT be `true`. After a mid-flow
+///   conversation compaction, Claude Code injects a string-content
+///   continuation turn carrying the summary text. It has no
+///   `isMeta`, so only this marker distinguishes it from real user
+///   prose.
 ///
-/// Both checks must pass. A missing `message`, missing `content`,
-/// or non-string `content` returns `false`. A missing `isMeta`
-/// is treated as `false` (real user turn — older Claude Code
-/// transcripts that lack the field carry real user turns with
-/// no `isMeta`).
+/// All three checks must pass. A missing `message`, missing
+/// `content`, or non-string `content` returns `false`. A missing
+/// `isMeta` / `isCompactSummary` is treated as `false` (real user
+/// turn — older Claude Code transcripts that lack the fields carry
+/// real user turns without them).
 ///
 /// Caller contract: walkers that need to find the most recent
 /// real user turn must consult this helper and `continue` past
 /// synthetic turns rather than stopping at them. A per-walker
 /// inline `content.as_str()` check only filters the array-content
 /// shape; this helper additionally filters the string-content +
-/// `isMeta:true` shape that hook-feedback turns take, closing the
-/// bypass surface where a Stop-hook refusal silently masks every
-/// downstream walker's view of the real user invocation.
+/// `isMeta:true` hook-feedback shape AND the string-content +
+/// `isCompactSummary:true` compaction-continuation shape, closing
+/// the bypass surface where a Stop-hook refusal or a post-compaction
+/// summary silently masks every downstream walker's view of the
+/// real user invocation.
 ///
 /// See `.claude/rules/transcript-shape.md` for the platform-fact
-/// rationale, the closed catalog of `isMeta:true` shapes, and the
-/// mechanical contract that every walker MUST call this helper
+/// rationale, the closed catalog of synthetic user turn shapes, and
+/// the mechanical contract that every walker MUST call this helper
 /// rather than inlining the check.
 fn is_real_user_turn(turn: &Value) -> bool {
     let content_is_string = turn
@@ -310,7 +317,14 @@ fn is_real_user_turn(turn: &Value) -> bool {
     // Per `.claude/rules/transcript-shape.md` "The Closed Catalog
     // of Synthetic User Turns".
     let is_meta = is_meta_marker_present(turn.get("isMeta"));
-    content_is_string && !is_meta
+    // The compaction-summary continuation turn is the third synthetic
+    // `type:"user"` shape: string content, no `isMeta`, but a
+    // dedicated `isCompactSummary:true` marker. Without this check a
+    // post-compaction continuation turn poses as real user prose,
+    // latching the autonomous-stop pass-through into a permanent
+    // voluntary-stop state. Per `.claude/rules/transcript-shape.md`.
+    let is_compact_summary = is_compact_summary_turn(turn);
+    content_is_string && !is_meta && !is_compact_summary
 }
 
 /// Asymmetric truthy check for the `isMeta` discriminator. Returns
@@ -331,6 +345,27 @@ fn is_meta_marker_present(v: Option<&Value>) -> bool {
         Some(Value::Bool(false)) => false,
         Some(_) => true,
     }
+}
+
+/// Return `true` when `turn` is a post-compaction continuation turn —
+/// the third synthetic `type:"user"` shape alongside the array-content
+/// tool_result wrapper and the string-content `isMeta:true`
+/// hook-feedback turn. Claude Code injects this turn after a mid-flow
+/// conversation compaction; it carries string `message.content` (the
+/// summary text) and no `isMeta` field, so only the dedicated
+/// `isCompactSummary` marker distinguishes it from real user prose.
+///
+/// The discrimination reuses the asymmetric fail-closed semantics of
+/// `is_meta_marker_present`: any value other than explicit absence
+/// (`None`), `null`, or `Bool(false)` classifies the turn as
+/// synthetic. A crafted `isCompactSummary:[true]` / `"yes"` / `1`
+/// line is therefore still treated as synthetic, while a real user
+/// turn (no marker, or explicit `null` / `false`) is untouched.
+///
+/// Per `.claude/rules/transcript-shape.md` "The Closed Catalog of
+/// Synthetic User Turns".
+fn is_compact_summary_turn(turn: &Value) -> bool {
+    is_meta_marker_present(turn.get("isCompactSummary"))
 }
 
 /// Return `true` when `content_norm` — a user turn's
@@ -1392,6 +1427,26 @@ pub fn recent_edit_blocked_on_shared_config(transcript_path: &Path, home: &Path)
         // `.claude/rules/transcript-shape.md`.
         let is_meta = is_meta_marker_present(turn.get("isMeta"));
         if is_string_content && is_meta {
+            continue;
+        }
+        // Skip the post-compaction continuation turn (string content,
+        // `isCompactSummary:true`, no `isMeta`). It is synthetic, so
+        // the walker must not stop at it and miss a shared-config
+        // block carried in an array-content tool_result turn behind
+        // it. This site uses an inline skip rather than
+        // `is_real_user_turn` because it legitimately consumes the
+        // array-content tool_result wrapper that `is_real_user_turn`
+        // would reject. Per `.claude/rules/transcript-shape.md`.
+        //
+        // Maintainer note: this function inline-skips BOTH
+        // string-content synthetic shapes (hook-feedback above,
+        // compaction-continuation here) precisely because it cannot
+        // delegate to `is_real_user_turn` (which rejects the
+        // array-content tool_result turn this walker needs). Any
+        // future string-content synthetic shape added to
+        // `is_real_user_turn` must also be added as an inline skip
+        // here, or this walker will stop at it and miss the block.
+        if is_string_content && is_compact_summary_turn(&turn) {
             continue;
         }
         // Most recent non-hook-feedback user-role turn reached.
