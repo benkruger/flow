@@ -113,6 +113,8 @@ Module-level doc comments in `src/*.rs` describe each file's purpose. Discover v
 Permanent on-main artifacts that future-session readers should know about by name + one-line purpose. Architecture detail lives in each artifact's module doc comment.
 
 - `src/hooks/agent_prompt_scan.rs` — scans Agent tool prompts for out-of-worktree path tokens during active flows and blocks the Agent call before a sub-agent Read would surface a permission prompt.
+- `src/pricing.rs` — model→per-token USD price table; `cost_for(model, &ModelTokens)` derives per-phase and month-to-date cost from captured token counts, so cost has one source and one capture instant.
+- `bin/flow write-session-cost` (`src/write_session_cost.rs`) — SessionStart hook subcommand that writes the active session's token-derived cost to `.claude/cost/<YYYY-MM>/<session_id>` so month-to-date spend reconciles with the token counts.
 
 ## Maintainer Skills (private to this repo)
 
