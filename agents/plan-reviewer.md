@@ -1,6 +1,6 @@
 ---
 name: plan-reviewer
-description: "Cognitively isolated rule-adherence audit of a drafted Implementation Plan. Receives the drafted plan body, the parent acceptance criteria, and a pointer to the `.claude/rules/` directory. Produces a verdict in {pass, re-decompose} with a violations list naming the rule file, the plan location, and the adherence failure."
+description: "Cognitively isolated rule-adherence audit of a drafted Implementation Plan. Receives the drafted plan body, the parent acceptance criteria, and a pointer to the `.claude/rules/` directory. Produces a verdict in {pass, re-decompose, revise-transform} with a violations list naming the rule file, the plan location, the adherence failure, and the per-violation remediation class."
 # Opus: judging which of the project's rules apply to a drafted plan is open-ended reasoning across the full rule corpus, not fixed-table lookup.
 model: opus
 tools: Read, Glob, Grep, Bash
@@ -108,15 +108,43 @@ Follow these steps in order. Each step builds on the previous one.
    This list is illustrative, not exhaustive. Every rule whose
    triggers match the plan is in scope.
 
-4. **Produce the verdict.** Decide between:
+4. **Classify each violation, then produce the verdict.** First
+   classify every violation found in Steps 2–3 as one of two
+   remediation classes:
+
+   - **revise-transform-class** — the fix is orchestrator-authored
+     prose the Transform step produces — the step where the
+     orchestrator authors the plan body (Context, Exploration,
+     Risks, Approach, Tasks) from the decompose synthesis — not a
+     change to the task DAG: a Consumer Enumeration Table placement per
+     `gate-consumer-enumeration.md`, the Mirror Audit Table per
+     `mirror-pattern-rule-audit.md`, a doc-surface enumeration,
+     prose wording, or a forward-facing / include-bias phrasing.
+     The orchestrator can correct this in place without re-running
+     `decompose:decompose`.
+   - **re-decompose-class** — the fix requires changing the task
+     DAG itself: an unmotivated component, a missing task, wrong
+     task ordering, or a missing gate-consumer *task*. Only a fresh
+     `decompose:decompose` run can supply this.
+
+   Carry each violation's class on a `Remediation:` line in its
+   block (see Output Format). Then decide the aggregate verdict:
+
    - **pass** — every component traces to an acceptance criterion
      or a cited rule, AND no applicable rule is violated.
-   - **re-decompose** — at least one component is unmotivated,
-     OR at least one applicable rule is violated. The plan must
-     be re-decomposed through `decompose:decompose` with the
-     violations fed back as input. Hand-patching the plan is
-     forbidden — the re-decompose path routes only through
-     `decompose:decompose`.
+   - **revise-transform** — at least one applicable rule is
+     violated AND **every** violation is revise-transform-class.
+     The orchestrator applies the reviewer's named prose fixes
+     directly in the Transform step — no `decompose:decompose`
+     re-run.
+   - **re-decompose** — at least one violation is
+     re-decompose-class (mixed findings always yield
+     `re-decompose`, because a decompose re-run also re-runs
+     Transform, so the prose findings get a fresh pass anyway).
+     The plan must be re-decomposed through `decompose:decompose`
+     with the violations fed back as input. Hand-patching a
+     re-decompose-class finding is forbidden — that path routes
+     only through `decompose:decompose`.
 
 ## Output Format
 
@@ -125,16 +153,18 @@ shape below — the verdict marker and the violations block are
 locked in by contract tests.
 
 ```text
-VERDICT: {pass | re-decompose}
+VERDICT: {pass | re-decompose | revise-transform}
 
 Violations:
 - **Rule:** <rule file relative to .claude/rules/>
   **Plan location:** <section + paragraph or task number>
   **Failure:** <one-paragraph description of the adherence failure>
+  **Remediation:** {re-decompose | revise-transform}
 
 - **Rule:** <rule file>
   **Plan location:** <section + paragraph or task number>
   **Failure:** <one-paragraph description>
+  **Remediation:** {re-decompose | revise-transform}
 
 [... one block per violation ...]
 ```
@@ -142,10 +172,13 @@ Violations:
 When the verdict is `pass`, render `Violations:` followed by a
 single line: `(none)`.
 
-When the verdict is `re-decompose`, render at least one
-violation block. Every violation must name a specific rule file
-or acceptance-criterion identifier — never bare aesthetic
-judgement.
+When the verdict is `re-decompose` or `revise-transform`, render
+at least one violation block, each carrying its `Remediation:`
+class. The aggregate verdict is `revise-transform` only when every
+violation's `Remediation:` is `revise-transform`; any
+`re-decompose`-class violation makes the aggregate `re-decompose`.
+Every violation must name a specific rule file or
+acceptance-criterion identifier — never bare aesthetic judgement.
 
 ### Component Inventory (debug)
 
@@ -184,9 +217,12 @@ Truncation Recovery".
   other way around.
 - Cite a rule file path for every violation. A violation without
   a citation is speculation.
-- Pick a verdict from the closed set `{pass, re-decompose}`. The
-  two canonical values are the entire allowed set; never invent
-  additional values.
+- Pick a verdict from the closed set
+  `{pass, re-decompose, revise-transform}`. The three canonical
+  values are the entire allowed set; never invent additional
+  values. Classify every violation as `re-decompose` or
+  `revise-transform` on its `Remediation:` line before choosing
+  the aggregate.
 - Do NOT infer intent from prose tone. If a claim is not stated,
   it is not present.
 - Do NOT propose code changes, fixes, or refactorings. Your

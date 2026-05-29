@@ -94,6 +94,12 @@ fn test_ready_path_happy() {
 
 #[test]
 fn test_locked_path() {
+    // Held-past-cap: another feature holds the lock and never releases
+    // it. start-init now blocks via acquire_with_wait, so the test passes
+    // a short bounded cap (--lock-timeout 1) to exercise the
+    // cap-exhaustion path without blocking for the production 8-minute
+    // default. After the bounded wait, start-init reports the lock-held
+    // status the skill re-runs on.
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     write_flow_json(&repo, &current_plugin_version(), None);
@@ -104,7 +110,12 @@ fn test_locked_path() {
     fs::create_dir_all(&queue_dir).unwrap();
     fs::write(queue_dir.join("other-feature"), "").unwrap();
 
-    let output = run_start_init(&repo, "my-feature", &[], &stub_dir);
+    let output = run_start_init(
+        &repo,
+        "my-feature",
+        &["--lock-timeout", "1", "--lock-interval", "1"],
+        &stub_dir,
+    );
     assert_eq!(
         output.status.code(),
         Some(0),
@@ -113,8 +124,60 @@ fn test_locked_path() {
     );
 
     let data = parse_output(&output);
-    assert_eq!(data["status"], "locked");
+    assert_eq!(
+        data["status"], "locked",
+        "an unreleased lock past the cap must report locked; got: {}",
+        data
+    );
     assert_eq!(data["feature"], "other-feature");
+}
+
+#[test]
+fn test_locked_then_freed_within_cap_acquires_and_proceeds() {
+    // Held-then-freed-within-cap: another feature holds the lock at
+    // start-init time, but a background thread releases it shortly after.
+    // The blocking acquire_with_wait must poll, see the lock freed within
+    // the cap, acquire under the canonical branch, and proceed to a ready
+    // status — NOT return locked. Guards the regression where start-init
+    // reports locked even though the lock freed within the wait window.
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    write_flow_json(&repo, &current_plugin_version(), None);
+    let stub_dir = create_default_gh_stub(&repo);
+
+    let queue_dir = flow_states_dir(&repo).join("start-queue");
+    fs::create_dir_all(&queue_dir).unwrap();
+    let competitor = queue_dir.join("other-feature");
+    fs::write(&competitor, "").unwrap();
+
+    // Release the competing lock ~1s into the wait. start-init polls at
+    // --lock-interval 1 with a generous --lock-timeout 15, so it acquires
+    // shortly after the release with wide margin.
+    let releaser = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        let _ = fs::remove_file(&competitor);
+    });
+
+    let output = run_start_init(
+        &repo,
+        "my-feature",
+        &["--lock-timeout", "15", "--lock-interval", "1"],
+        &stub_dir,
+    );
+    releaser.join().unwrap();
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(
+        data["status"], "ready",
+        "lock freed within the cap must let start-init acquire and proceed; got: {}",
+        data
+    );
 }
 
 #[test]
@@ -816,6 +879,8 @@ fn test_run_impl_main_library_call_exercises_test_binary_instantiation() {
     let args = Args {
         feature_name: "lib-test-feature".to_string(),
         prompt_file: None,
+        lock_timeout: 480,
+        lock_interval: 10,
     };
 
     // run_impl_main may panic at the init-state subprocess parse step

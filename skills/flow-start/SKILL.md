@@ -126,7 +126,12 @@ The bash block above is for reference only — all four commands call
 
 Write the user's original start prompt (verbatim, including `#N` issue references
 and any special characters) to `.flow-states/<feature-name>-start-prompt` using the
-Write tool. Then run start-init:
+Write tool. Then run start-init.
+
+Use a 10-minute Bash tool timeout (`timeout: 600000`) — start-init blocks
+on the start lock for up to ~8 minutes (polling internally), and the
+default 2-minute timeout would background the process, defeating the wait
+(per `.claude/rules/ci-is-a-gate.md`).
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow start-init <feature-name> --prompt-file .flow-states/<feature-name>-start-prompt
@@ -169,23 +174,26 @@ the upgrade notice:
 
 Continue to Step 2.
 
-**If `"status": "locked"`** — another start holds the lock. Invoke the `loop`
-skill via the Skill tool with args `15s /flow:flow-start` and return.
-The loop re-invokes the entire skill every 15 seconds. Since nothing has
-executed yet, re-running is safe. When the lock is eventually acquired,
-the skill proceeds through all steps normally.
+**If `"status": "locked"`** — start-init already blocked on the start lock
+for the full cap (~8 minutes, polling internally) and another start still
+holds it. Re-run the single `bin/flow start-init` line above (the same
+command shown in the Step 1 bash block, again with the 10-minute Bash tool
+timeout). start-init blocks on the lock again and proceeds through all
+steps when the lock frees. Nothing else has executed yet, so re-running is
+safe.
 
 <HARD-GATE>
-When the status is "locked", the ONLY permitted action is to invoke
-the loop skill as described above. The start-init command has built-in
-staleness detection (30-minute timeout) that handles genuinely dead sessions.
+When the status is "locked", the ONLY permitted action is to re-run the
+single start-init line above and wait. The start-init command blocked for
+the full cap before returning, and has built-in staleness detection
+(30-minute timeout) that handles genuinely dead sessions.
 
 Do NOT speculate about whether the lock is stale.
 Do NOT offer to release, reset, or clean up the lock.
 Do NOT suggest any workaround that bypasses the lock.
-Do NOT take any action other than invoking the loop skill and returning.
+Do NOT take any action other than re-running the single start-init line and waiting.
 
-Trust the tool output. Poll and wait.
+Trust the tool output. Re-run and wait.
 
 </HARD-GATE>
 

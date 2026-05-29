@@ -115,6 +115,7 @@ Permanent on-main artifacts that future-session readers should know about by nam
 - `src/hooks/agent_prompt_scan.rs` — scans Agent tool prompts for out-of-worktree path tokens during active flows and blocks the Agent call before a sub-agent Read would surface a permission prompt.
 - `src/pricing.rs` — model→per-token USD price table; `cost_for(model, &ModelTokens)` derives per-phase and month-to-date cost from captured token counts, so cost has one source and one capture instant.
 - `bin/flow write-session-cost` (`src/write_session_cost.rs`) — SessionStart hook subcommand that writes the active session's token-derived cost to `.claude/cost/<YYYY-MM>/<session_id>` so month-to-date spend reconciles with the token counts.
+- `src/wait_for_release_ci.rs` — `bin/flow wait-for-release-ci` polls the latest integration-branch GitHub Actions run for the current HEAD with a bounded real-sleep loop until it reaches a terminal conclusion, so flow-release reads the CI result from a single bounded command.
 
 ## Maintainer Skills (private to this repo)
 

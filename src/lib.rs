@@ -79,6 +79,7 @@ pub mod update_pr_body;
 pub mod upgrade_check;
 pub mod utils;
 pub mod validate_issue_body;
+pub mod wait_for_release_ci;
 pub mod window_deltas;
 pub mod write_rule;
 pub mod write_session_cost;
