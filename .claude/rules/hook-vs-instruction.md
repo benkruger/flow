@@ -290,7 +290,8 @@ insufficient:
       prose** user message appeared since the model's most
       recent Skill action (detected via
       `transcript_walker::most_recent_user_message_since_skill_action`,
-      which filters synthetic `isMeta:true` turns per
+      which filters synthetic `isMeta:true` and
+      `isCompactSummary:true` turns per
       `.claude/rules/transcript-shape.md` AND filters
       imperative slash-command shapes
       `<command-name>/<skill></command-name>` or the

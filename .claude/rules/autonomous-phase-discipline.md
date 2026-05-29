@@ -364,11 +364,13 @@ separately from this gate.
 
 **Synthetic-turn discrimination.** The walker filters out
 synthetic user turns (tool_result wrappers, hook-injected
-feedback turns carrying `isMeta:true`) via
+feedback turns carrying `isMeta:true`, and compaction-continuation
+turns carrying `isCompactSummary:true`) via
 `transcript_walker::is_real_user_turn` per
 `.claude/rules/transcript-shape.md`. Without that filter, a
-Stop-hook refusal turn would be misclassified as a real user
-message and set `_halt_pending` spuriously.
+Stop-hook refusal or post-compaction summary turn would be
+misclassified as a real user message and set `_halt_pending`
+spuriously.
 
 **Persistence across multiple Stops.** When the user has typed a
 non-continue message and `_halt_pending=true` is set, every

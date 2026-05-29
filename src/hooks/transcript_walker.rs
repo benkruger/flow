@@ -1437,6 +1437,15 @@ pub fn recent_edit_blocked_on_shared_config(transcript_path: &Path, home: &Path)
         // `is_real_user_turn` because it legitimately consumes the
         // array-content tool_result wrapper that `is_real_user_turn`
         // would reject. Per `.claude/rules/transcript-shape.md`.
+        //
+        // Maintainer note: this function inline-skips BOTH
+        // string-content synthetic shapes (hook-feedback above,
+        // compaction-continuation here) precisely because it cannot
+        // delegate to `is_real_user_turn` (which rejects the
+        // array-content tool_result turn this walker needs). Any
+        // future string-content synthetic shape added to
+        // `is_real_user_turn` must also be added as an inline skip
+        // here, or this walker will stop at it and miss the block.
         if is_string_content && is_compact_summary_turn(&turn) {
             continue;
         }
