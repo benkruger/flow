@@ -2209,6 +2209,46 @@ fn setup_repo_on_branch(branch: &str) -> (tempfile::TempDir, std::path::PathBuf)
     (dir, root)
 }
 
+// --- run_impl_main cwd-seam contract (Task 4) ---
+
+/// The validate-pretool decision logic lives in a private
+/// `run_impl_main(hook_input, cwd)` core; `run()` resolves the cwd and
+/// delegates. This guards the delegation contract: the core's outcome
+/// is a function of the cwd it receives. A regression that dropped the
+/// cwd thread (run_impl_main ignoring its cwd parameter) would make the
+/// Layer 10 commit gate stop depending on the working directory's
+/// branch — this test trips on that by asserting the same input
+/// produces opposite outcomes under two different cwds.
+///
+/// This is a delegation-contract test for a behavior-preserving
+/// extraction, so it passes both before and after the refactor (per
+/// `.claude/rules/skill-authoring.md` "Delegation Path Tests Need No
+/// Migration"). It is not a TDD-red test — there is no new behavior to
+/// red, only a preserved delegation path.
+#[test]
+fn validate_pretool_run_impl_main_accepts_cwd() {
+    let input = r#"{"tool_input": {"command": "git commit -m \"x\""}}"#;
+
+    // cwd on the integration branch → Layer 10 commit gate fires.
+    let (_dir_main, root_main) = setup_repo_on_branch("main");
+    let (code_main, _o, stderr_main) = run_hook_with_input(input, Some(&root_main));
+    assert_eq!(
+        code_main, 2,
+        "core must consume cwd: git commit with cwd on main blocks; stderr={stderr_main}"
+    );
+    assert!(stderr_main.contains("BLOCKED"));
+
+    // Same input, cwd on a feature branch → Layer 10 does not fire.
+    // Opposite outcome under a different cwd proves the threaded cwd is
+    // the discriminator the core acts on.
+    let (_dir_feat, root_feat) = setup_repo_on_branch("feat-x");
+    let (code_feat, _o2, stderr_feat) = run_hook_with_input(input, Some(&root_feat));
+    assert_eq!(
+        code_feat, 0,
+        "core must consume cwd: git commit with cwd on feature branch allows; stderr={stderr_feat}"
+    );
+}
+
 #[test]
 fn t1_bare_git_commit_on_main_blocks() {
     let (_dir, root) = setup_repo_on_branch("main");
