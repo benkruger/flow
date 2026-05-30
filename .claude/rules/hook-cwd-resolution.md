@@ -52,18 +52,26 @@ back rather than producing an empty path.
 Once the worktree gate resolves correctly from the payload cwd, the
 parent-side Agent prompt scan (`validate_agent_prompt`) engages on
 every Review sub-agent launch. The reviewer launch's prompt carries
-the substantive-diff path under `<project_root>/.flow-states/`, which
-is outside the worktree. Without a carve-out, engaging the gate would
-hard-block every Review sub-agent launch — trading the native-prompt
-failure for a hard-block failure.
+the substantive-diff path under `<project_root>/.flow-states/<branch>/`,
+which is outside the worktree. Without a carve-out, engaging the gate
+would hard-block every Review sub-agent launch — trading the
+native-prompt failure for a hard-block failure.
 
 `validate_agent_prompt` therefore allows candidates that normalize
-under `<project_root>/.flow-states/`. project_root is derived by
-reusing `compute_worktree_paths` on the `worktree_root` (no disk
-access); its rightmost-occurrence `rfind` resolves a project_root
-that itself contains `.worktrees/`. When `worktree_root` lacks the
-`/.worktrees/` anchor the derivation yields `None` and the carve-out
-does not apply — the candidate stays blocked.
+under this flow's own `<project_root>/.flow-states/<branch>/` subtree
+— scoped to the current branch, NOT the whole `.flow-states/` root
+that every concurrent flow shares, so a sub-agent prompt cannot be
+pointed at another concurrent flow's per-branch state. project_root
+and the branch are derived by reusing `compute_worktree_paths` on the
+`worktree_root` (no disk access): it returns
+`(project_root, <project_root>/.worktrees/<branch>)`, and the branch
+is the tail after the `/.worktrees/` anchor (sliced, not via
+`Path::file_name`, so the derivation is branchless and the 100%
+coverage gate has no unreachable arm). Its rightmost-occurrence
+`rfind` resolves a project_root that itself contains `.worktrees/`.
+When `worktree_root` lacks the `/.worktrees/` anchor the derivation
+yields `None` and the carve-out does not apply — the candidate stays
+blocked.
 
 ## How to Apply
 
@@ -74,8 +82,10 @@ When authoring or modifying a PreToolUse hook:
    cannot diverge.
 2. Never call `env::current_dir()` directly for the gate cwd.
 3. When the hook scans Agent prompts for out-of-worktree paths, allow
-   `<project_root>/.flow-states/` so legitimate sub-agent launches
-   (which carry the diff path there) are not hard-blocked.
+   the current flow's own `<project_root>/.flow-states/<branch>/`
+   subtree so legitimate sub-agent launches (which carry the diff
+   path there) are not hard-blocked — scoped to the branch, not the
+   whole `.flow-states/` root.
 
 ## Cross-References
 
@@ -84,8 +94,8 @@ When authoring or modifying a PreToolUse hook:
   `validate_agent_prompt`.
 - `.claude/rules/cognitive-isolation.md` "Retry-prompt path-scoping
   constraint" — the retry-prompt discipline the carve-out interacts
-  with: a `.flow-states/` diff path need not be dropped from a retry
-  prompt because the scan now allows it.
+  with: a `.flow-states/<branch>/` diff path need not be dropped from
+  a retry prompt because the scan now allows it.
 - `.claude/rules/hook-state-timing.md` — the sibling discipline for
   WHEN hooks read state fields; this rule covers WHICH directory the
   reads resolve against.
