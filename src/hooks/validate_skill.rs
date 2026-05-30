@@ -218,14 +218,21 @@ pub fn run_impl_main(
 }
 
 /// Run the validate-skill hook (entry point from CLI). Reads stdin,
-/// resolves `$HOME` via `home_dir_or_empty()` and the current
-/// working directory via `std::env::current_dir()`, calls
-/// `run_impl_main`, writes any block message to stderr, and exits
-/// with the returned code.
+/// resolves `$HOME` via `home_dir_or_empty()` and the working
+/// directory from the payload `cwd` field via `resolve_hook_cwd`
+/// (fallback `std::env::current_dir()`), calls `run_impl_main`, writes
+/// any block message to stderr, and exits with the returned code. The
+/// payload `cwd` is the session/sub-agent worktree; the hook
+/// subprocess's own `env::current_dir()` can resolve to the main repo
+/// root, where the state file (and thus the halt gate) would not
+/// resolve mid-flow.
 pub fn run() {
     let input = read_hook_input();
     let home = home_dir_or_empty();
-    let cwd = std::env::current_dir().ok();
+    let cwd: Option<PathBuf> = input
+        .as_ref()
+        .and_then(crate::hooks::resolve_hook_cwd)
+        .map(PathBuf::from);
     let (code, message) = run_impl_main(input, cwd.as_deref(), &home);
     if let Some(m) = message {
         eprintln!("{}", m);

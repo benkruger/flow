@@ -1895,23 +1895,34 @@ fn is_flow_advancing_bash_command(cmd: &str) -> bool {
     }
 }
 
-/// Run the validate-pretool hook (entry point from CLI).
-pub fn run() {
-    let hook_input = match read_hook_input() {
+/// Decision core for the validate-pretool hook. Returns
+/// `(exit_code, Option<stderr_message>)` so `run()` can translate the
+/// decision into `eprintln!` + `process::exit` side effects.
+///
+/// `cwd` is the resolved working directory the hook reasons about —
+/// `run()` supplies it. Every cwd-derived consumer (settings/project
+/// root discovery, branch detection, `main_root`, the agent-prompt
+/// `worktree_root`, and the Layer 10/11 + halt gates) reads the single
+/// `cwd` value threaded here so they cannot diverge. A `None` cwd
+/// (env::current_dir() failed upstream) makes each consumer fall
+/// through to its no-flow default. Integration tests drive every
+/// branch through the hook subprocess with fixture stdin payloads.
+fn run_impl_main(hook_input: Option<Value>, cwd: Option<String>) -> (i32, Option<String>) {
+    let hook_input = match hook_input {
         Some(input) => input,
-        None => std::process::exit(0),
+        None => return (0, None),
     };
 
-    // Resolve cwd ONCE and reuse for both settings discovery and
-    // branch detection. env::current_dir() can fail when the cwd
-    // inode has been unlinked (e.g. the stale-cwd adversarial path);
-    // in that case both settings and branch fall through to None.
-    // Per `.claude/rules/testability-means-simplicity.md` the prior
-    // `find_settings_and_root`/`detect_branch_from_cwd` generic seams
-    // have been removed because their per-monomorphization Err arms
-    // were unreachable through any production callsite — the
+    // Resolve cwd-derived inputs ONCE from the single threaded `cwd`
+    // value and reuse for settings discovery and branch detection. A
+    // `None` cwd (env::current_dir() failed upstream, e.g. the
+    // stale-cwd adversarial path) makes both settings and branch fall
+    // through to None. Per `.claude/rules/testability-means-simplicity.md`
+    // the prior `find_settings_and_root`/`detect_branch_from_cwd`
+    // generic seams have been removed because their per-monomorphization
+    // Err arms were unreachable through any production callsite — the
     // stale-cwd subprocess test covers the failure path here instead.
-    let cwd = std::env::current_dir().ok();
+    let cwd: Option<PathBuf> = cwd.map(PathBuf::from);
     let (settings, project_root) = cwd
         .as_deref()
         .map(find_settings_and_root_from)
@@ -1951,8 +1962,7 @@ pub fn run() {
     if let Some(bg) = tool_input.get("run_in_background") {
         if is_bg_truthy(bg) {
             if let Some(msg) = should_block_background(command, flow_active) {
-                eprintln!("{}", msg);
-                std::process::exit(2);
+                return (2, Some(msg));
             }
         }
     }
@@ -1967,8 +1977,7 @@ pub fn run() {
         let subagent_type = tool_input.get("subagent_type").and_then(|v| v.as_str());
         let (allowed, message) = validate_agent(subagent_type, flow_active);
         if !allowed {
-            eprintln!("{}", message);
-            std::process::exit(2);
+            return (2, Some(message));
         }
         let prompt_field = tool_input.get("prompt").and_then(|v| v.as_str());
         let worktree_root = cwd.as_deref().and_then(|c| {
@@ -1982,17 +1991,15 @@ pub fn run() {
                     flow_active,
                 );
             if !prompt_allowed {
-                eprintln!("{}", prompt_message);
-                std::process::exit(2);
+                return (2, Some(prompt_message));
             }
         }
-        std::process::exit(0);
+        return (0, None);
     }
 
     let (allowed, message) = validate(command, settings.as_ref(), flow_active);
     if !allowed {
-        eprintln!("{}", message);
-        std::process::exit(2);
+        return (2, Some(message));
     }
 
     // Layer 10: block direct commit invocations when the hook's
@@ -2010,8 +2017,7 @@ pub fn run() {
         if let Some(msg) =
             check_commit_during_flow(command, cwd_path, transcript_path.as_deref(), &home)
         {
-            eprintln!("{}", msg);
-            std::process::exit(2);
+            return (2, Some(msg));
         }
     }
 
@@ -2025,8 +2031,7 @@ pub fn run() {
     // unaffected. See `.claude/rules/per-file-coverage-iteration.md`.
     if let Some(cwd_path) = cwd.as_deref() {
         if let Some(msg) = check_ci_during_code_phase(command, cwd_path) {
-            eprintln!("{}", msg);
-            std::process::exit(2);
+            return (2, Some(msg));
         }
     }
 
@@ -2053,18 +2058,46 @@ pub fn run() {
                 .map(|paths| is_halt_set(&paths.state_file()))
                 .unwrap_or(false);
             if halt {
-                eprintln!(
-                    "BLOCKED: this flow is halted. The autonomous flow paused after a user \
-                     message and stays paused until the user explicitly resumes or aborts. \
-                     The model cannot advance the flow (counter, phase, commit, marker) \
-                     while halted. Two exits are available — only the user can take them: \
-                     type `/flow:flow-continue` to resume, or `/flow:flow-abort` to close \
-                     the flow. See .claude/rules/autonomous-phase-discipline.md."
+                return (
+                    2,
+                    Some(
+                        "BLOCKED: this flow is halted. The autonomous flow paused after a user \
+                         message and stays paused until the user explicitly resumes or aborts. \
+                         The model cannot advance the flow (counter, phase, commit, marker) \
+                         while halted. Two exits are available — only the user can take them: \
+                         type `/flow:flow-continue` to resume, or `/flow:flow-abort` to close \
+                         the flow. See .claude/rules/autonomous-phase-discipline.md."
+                            .to_string(),
+                    ),
                 );
-                std::process::exit(2);
             }
         }
     }
 
-    std::process::exit(0);
+    (0, None)
+}
+
+/// Run the validate-pretool hook (entry point from CLI). Thin wrapper
+/// around `run_impl_main` that resolves the cwd and translates the
+/// decision into stderr + exit-code side effects.
+///
+/// The cwd is resolved from the hook payload's `cwd` field via
+/// `resolve_hook_cwd`, with `std::env::current_dir()` as fallback. The
+/// payload `cwd` is the session/sub-agent worktree; the hook
+/// subprocess's own `env::current_dir()` can resolve to the main repo
+/// root, where the five cwd consumers (branch detection, `main_root`,
+/// `flow_active`, the agent-prompt `worktree_root`, and the
+/// Layer 10/11 and halt gates) would all see the wrong directory —
+/// most visibly the agent-prompt scan would resolve no worktree and
+/// skip, letting an out-of-worktree path reach a sub-agent. The
+/// fallback's `.ok()` None arm (cwd inode unlinked) is covered by the
+/// stale-cwd subprocess test.
+pub fn run() {
+    let hook_input = read_hook_input();
+    let cwd = hook_input.as_ref().and_then(crate::hooks::resolve_hook_cwd);
+    let (code, message) = run_impl_main(hook_input, cwd);
+    if let Some(msg) = message {
+        eprintln!("{}", msg);
+    }
+    std::process::exit(code);
 }

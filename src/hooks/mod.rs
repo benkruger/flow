@@ -169,6 +169,37 @@ pub fn read_hook_input() -> Option<Value> {
     serde_json::from_str(&input).ok()
 }
 
+/// Resolve the working directory a hook should reason about.
+///
+/// Returns the payload `cwd` field when present and non-empty, else
+/// falls back to `std::env::current_dir()`.
+///
+/// The payload `cwd` is the authoritative source: Claude Code sends
+/// the session's (and a sub-agent's) working directory in the hook
+/// payload, which during an active flow is the worktree. The hook
+/// subprocess's own `std::env::current_dir()` is the directory Claude
+/// Code spawned the hook in, which can resolve to the main repo root
+/// rather than the worktree — when it does, worktree-derived gates
+/// (`compute_worktree_paths` and branch detection) silently see the
+/// wrong directory and self-disable. Reading the payload `cwd` first
+/// keeps those gates anchored to the worktree; the `env::current_dir()`
+/// fallback preserves behavior when no payload `cwd` is supplied.
+///
+/// An empty `cwd` string is treated as absent (filtered) so a
+/// degenerate payload falls back rather than producing an empty path.
+pub fn resolve_hook_cwd(hook_input: &Value) -> Option<String> {
+    hook_input
+        .get("cwd")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            std::env::current_dir()
+                .ok()
+                .map(|p| p.to_string_lossy().into_owned())
+        })
+}
+
 pub mod agent_prompt_scan;
 pub mod capture_session;
 pub mod post_compact;

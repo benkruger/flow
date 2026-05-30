@@ -276,6 +276,43 @@ fn test_build_permission_regexes_missing_key() {
     assert!(regexes.is_empty());
 }
 
+// === resolve_hook_cwd ===
+
+#[test]
+fn resolve_hook_cwd_returns_payload_cwd_when_present() {
+    // A non-empty payload `cwd` is the authoritative source — it reflects
+    // the session/sub-agent worktree, whereas env::current_dir() is the
+    // hook spawn cwd and can drift to the main repo root.
+    let input = json!({"cwd": "/Users/dev/project/.worktrees/feat"});
+    assert_eq!(
+        hooks::resolve_hook_cwd(&input),
+        Some("/Users/dev/project/.worktrees/feat".to_string())
+    );
+}
+
+#[test]
+fn resolve_hook_cwd_falls_back_when_absent() {
+    // No `cwd` field — falls back to std::env::current_dir(). Capture the
+    // same syscall at the same instant; no env-var mutation, so the two
+    // adjacent reads agree (no chdir occurs in this test binary).
+    let input = json!({"tool_input": {"file_path": "/x"}});
+    let expected = std::env::current_dir()
+        .ok()
+        .map(|p| p.to_string_lossy().to_string());
+    assert_eq!(hooks::resolve_hook_cwd(&input), expected);
+}
+
+#[test]
+fn resolve_hook_cwd_falls_back_when_empty() {
+    // An empty `cwd` string is treated as absent (filtered) — falls back
+    // to env::current_dir() rather than returning Some("").
+    let input = json!({"cwd": ""});
+    let expected = std::env::current_dir()
+        .ok()
+        .map(|p| p.to_string_lossy().to_string());
+    assert_eq!(hooks::resolve_hook_cwd(&input), expected);
+}
+
 // --- Library-level tests (migrated from src/hooks/mod.rs) ---
 
 use flow_rs::flow_paths::FlowPaths;

@@ -212,10 +212,17 @@ retry-prompt HARD-GATE is the upstream defense — drop the
 requirement from the prompt rather than redirecting toward a
 different out-of-worktree path.
 
-When in doubt, drop the path from the retry prompt entirely.
-The agent's investigation can succeed by reading in-worktree
-files alone; out-of-worktree references are almost always
-incidental to the actual review task.
+The one sanctioned exception is a path under this flow's own
+`<project_root>/.flow-states/<branch>/` subtree: `agent_prompt_scan`
+carves that subtree out (see `.claude/rules/hook-cwd-resolution.md`
+"agent_prompt_scan `.flow-states/` Carve-Out"), so a Review retry
+prompt carrying the substantive-diff path there need not drop it —
+the scan allows it even though it sits outside the worktree.
+
+When in doubt about any OTHER out-of-worktree path, drop it from the
+retry prompt entirely. The agent's investigation can succeed by
+reading in-worktree files alone; out-of-worktree references are
+almost always incidental to the actual review task.
 
 ## Never Supplement Agent Work From the Parent Session
 

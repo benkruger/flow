@@ -657,11 +657,17 @@ fn run_impl_main(hook_input: Option<Value>, cwd: Option<String>) -> (i32, Option
 /// Run the validate-worktree-paths hook (entry point from CLI). Thin
 /// wrapper around `run_impl_main` that translates decisions into
 /// stderr + exit code side effects.
+///
+/// The cwd is resolved from the hook payload's `cwd` field via
+/// `resolve_hook_cwd` (with `std::env::current_dir()` as fallback),
+/// not directly from `env::current_dir()`. The payload `cwd` is the
+/// session/sub-agent worktree; the hook subprocess's own
+/// `env::current_dir()` can resolve to the main repo root, which would
+/// make `compute_worktree_paths` self-disable and let out-of-worktree
+/// tool calls fall through to a native permission prompt mid-flow.
 pub fn run() {
     let hook_input = read_hook_input();
-    let cwd = std::env::current_dir()
-        .ok()
-        .map(|p| p.to_string_lossy().to_string());
+    let cwd = hook_input.as_ref().and_then(crate::hooks::resolve_hook_cwd);
     let (code, message) = run_impl_main(hook_input, cwd);
     if let Some(msg) = message {
         eprintln!("{}", msg);

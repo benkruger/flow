@@ -499,6 +499,71 @@ fn write_jsonl_fixture(home: &Path, jsonl: &str) -> std::path::PathBuf {
     crate::common::transcript_fixture(home, "p", jsonl)
 }
 
+/// Spawn validate-skill with an explicit payload `cwd` field while the
+/// process's real cwd (`.current_dir`) is a DIFFERENT directory.
+/// Proves `run()` resolves the state file's worktree from the payload
+/// `cwd`, not env::current_dir(). HOME is pinned to `real_cwd` per
+/// `.claude/rules/subprocess-test-hygiene.md`. Returns (exit, stderr).
+fn spawn_skill_with_payload_cwd(real_cwd: &Path, stdin_input: &str) -> (i32, String) {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["hook", "validate-skill"])
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", real_cwd)
+        .current_dir(real_cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn flow-rs");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(stdin_input.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().expect("wait");
+    (
+        output.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&output.stderr).to_string(),
+    )
+}
+
+#[test]
+fn validate_skill_reads_payload_cwd_engages_gate() {
+    // The halt gate must resolve the state file's worktree from the
+    // payload `cwd` field, not env::current_dir(). Real cwd is the
+    // project root (non-worktree): branch detection fails there,
+    // state_path stays None, and the halt gate passes through. The
+    // payload cwd points at the worktree whose flow has
+    // `_halt_pending=true`. With the payload honored, a non-user-only
+    // Skill call is blocked (exit 2). Reading env::current_dir() (the
+    // project root) would allow (exit 0).
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    std::fs::create_dir_all(root.join(".claude")).unwrap();
+    std::fs::write(root.join(".claude").join("settings.json"), "{}").unwrap();
+    let worktree = root.join(".worktrees").join("feat");
+    std::fs::create_dir_all(&worktree).unwrap();
+    std::fs::write(worktree.join(".git"), "gitdir: fake\n").unwrap();
+    let branch_dir = root.join(".flow-states").join("feat");
+    std::fs::create_dir_all(&branch_dir).unwrap();
+    std::fs::write(
+        branch_dir.join("state.json"),
+        json!({"_halt_pending": true}).to_string(),
+    )
+    .unwrap();
+    let input = format!(
+        r#"{{"cwd":"{}","tool_input":{{"skill":"flow:flow-status"}}}}"#,
+        worktree.to_string_lossy()
+    );
+    let (code, stderr) = spawn_skill_with_payload_cwd(&root, &input);
+    assert_eq!(
+        code, 2,
+        "payload cwd must engage the halt gate; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+}
+
 #[test]
 fn subprocess_validate_skill_blocks_user_only_invocation_without_user_command() {
     let dir = tempfile::tempdir().unwrap();

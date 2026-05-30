@@ -1451,6 +1451,73 @@ fn worktree_fixture(tmp: &tempfile::TempDir) -> (std::path::PathBuf, std::path::
     (root, worktree_cwd)
 }
 
+// --- payload-cwd gate engagement (Task 6) ---
+
+/// Spawn validate-worktree-paths with an explicit payload `cwd` field
+/// while the process's real cwd (`.current_dir`) is a DIFFERENT
+/// directory. Proves `run()` resolves the worktree from the payload
+/// `cwd`, not `std::env::current_dir()`. Returns `(exit_code, stderr)`.
+///
+/// Env hygiene per `.claude/rules/subprocess-test-hygiene.md`: removes
+/// `FLOW_CI_RUNNING` and pins `HOME` to `real_cwd` so the child reads
+/// no user dotfiles.
+fn spawn_with_payload_cwd(
+    real_cwd: &std::path::Path,
+    payload_cwd: &str,
+    file_path: &str,
+) -> (i32, String) {
+    let stdin_input = format!(
+        r#"{{"cwd":"{}","tool_name":"Read","tool_input":{{"file_path":"{}"}}}}"#,
+        payload_cwd, file_path
+    );
+    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["hook", "validate-worktree-paths"])
+        .env_remove("FLOW_CI_RUNNING")
+        .env("HOME", real_cwd)
+        .current_dir(real_cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn flow-rs");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(stdin_input.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().expect("wait");
+    (
+        output.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&output.stderr).to_string(),
+    )
+}
+
+#[test]
+fn validate_worktree_paths_reads_payload_cwd_engages_gate() {
+    // The worktree gate must resolve the worktree from the payload
+    // `cwd` field, not the hook's env::current_dir(). Real cwd is the
+    // (non-worktree) project root where compute_worktree_paths returns
+    // None and the gate self-disables; the payload cwd points at the
+    // worktree. With the payload cwd honored, an out-of-worktree
+    // file_path engages the gate (exit 2). If the hook read
+    // env::current_dir() instead, the gate would self-disable and
+    // allow (exit 0) — the Review-phase halt this fix targets.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (root, worktree_cwd) = worktree_fixture(&tmp);
+    let file_path = root.join("Cargo.toml");
+    let (code, stderr) = spawn_with_payload_cwd(
+        &root,                           // real cwd: non-worktree project root
+        &worktree_cwd.to_string_lossy(), // payload cwd: the worktree
+        &file_path.to_string_lossy(),    // out-of-worktree, in-project target
+    );
+    assert_eq!(
+        code, 2,
+        "payload cwd must engage the worktree gate on an out-of-worktree \
+         path; stderr={stderr}"
+    );
+}
+
 /// R3: drive run_impl_main's $HOME resolution into the memory-allow
 /// path. The helper unit tests pass `home` directly; only a subprocess
 /// test proves run_impl_main reads $HOME from the environment and

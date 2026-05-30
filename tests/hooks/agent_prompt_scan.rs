@@ -271,3 +271,85 @@ fn validate_agent_prompt_blocks_absolute_with_trailing_parentdir() {
     let (allowed, _) = validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true);
     assert!(!allowed);
 }
+
+// --- .flow-states/ carve-out (Task 10 Branch Enumeration Table) ---
+
+#[test]
+fn agent_prompt_allows_flow_states_diff_path() {
+    // Branch A: the reviewer launch passes the substantive-diff path
+    // (under this flow's own <project_root>/.flow-states/<branch>/,
+    // outside the worktree) in the agent prompt. The carve-out derives
+    // project_root (/Users/alice) and branch (feat) from the
+    // worktree_root and allows the .flow-states/feat/ candidate so
+    // engaging the worktree gate does not hard-block Review sub-agent
+    // launches.
+    let prompt = "Read the substantive diff at \
+                  /Users/alice/.flow-states/feat/full-diff.diff and review it.";
+    let (allowed, msg) = validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true);
+    assert!(allowed, "flow-states diff path must be allowed; msg={msg}");
+}
+
+#[test]
+fn agent_prompt_blocks_arbitrary_out_of_worktree_path() {
+    // Branch B: a candidate that is outside the worktree AND outside
+    // this flow's <project_root>/.flow-states/<branch>/ subtree is
+    // still blocked. The carve-out is scoped to the branch subtree
+    // only — it does not widen to the whole project root.
+    let prompt = "Read /Users/alice/src/other.rs and report.";
+    let (allowed, _) = validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true);
+    assert!(!allowed, "non-.flow-states out-of-worktree path must block");
+}
+
+#[test]
+fn agent_prompt_flow_states_derive_handles_no_worktrees_segment() {
+    // Branch C: when worktree_root lacks the /.worktrees/ anchor,
+    // compute_worktree_paths returns None, so project_root cannot be
+    // derived and the carve-out does not apply — the out-of-worktree
+    // candidate (even a .flow-states/-shaped one) is blocked rather
+    // than crashing.
+    let worktree_root = Path::new("/Users/alice/plainroot");
+    let prompt = "Read /Users/alice/elsewhere/.flow-states/x and report.";
+    let (allowed, _) = validate_agent_prompt(Some(prompt), worktree_root, true);
+    assert!(
+        !allowed,
+        "no-/.worktrees/ worktree_root yields no project_root → block"
+    );
+}
+
+#[test]
+fn agent_prompt_flow_states_derive_uses_rightmost_worktrees() {
+    // Branch D: a worktree_root whose project_root itself contains a
+    // `/.worktrees/` directory must resolve project_root at the
+    // RIGHTMOST anchor (via compute_worktree_paths' rfind). The
+    // carve-out's branch subtree is therefore
+    // /home/dev/.worktrees/outer/.flow-states/feat, not
+    // /home/dev/.flow-states/feat. A diff path under the rightmost
+    // project_root's .flow-states/<branch>/ is allowed; a leftmost
+    // derivation would have blocked it.
+    let worktree_root = Path::new("/home/dev/.worktrees/outer/.worktrees/feat");
+    let prompt = "Review /home/dev/.worktrees/outer/.flow-states/feat/full-diff.diff now.";
+    let (allowed, msg) = validate_agent_prompt(Some(prompt), worktree_root, true);
+    assert!(
+        allowed,
+        "rightmost project_root .flow-states/<branch>/ must be allowed; msg={msg}"
+    );
+}
+
+#[test]
+fn agent_prompt_blocks_other_branch_flow_states() {
+    // Branch-scope regression guard: a `.flow-states/` candidate under
+    // a DIFFERENT branch than the current worktree (worktree_root =
+    // /Users/alice/.worktrees/feat → branch `feat`) must be blocked.
+    // `/Users/alice/.flow-states/other-branch/state.json` is under the
+    // shared `.flow-states/` root but NOT under `.flow-states/feat/`,
+    // so the branch-scoped carve-out does not admit it — preventing a
+    // sub-agent prompt from being pointed at another concurrent flow's
+    // per-branch state. A whole-`.flow-states/`-root carve-out would
+    // have allowed it.
+    let prompt = "Read /Users/alice/.flow-states/other-branch/state.json and report.";
+    let (allowed, _) = validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true);
+    assert!(
+        !allowed,
+        "a .flow-states/ path under a different branch must be blocked"
+    );
+}

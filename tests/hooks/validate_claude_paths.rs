@@ -529,6 +529,33 @@ fn run_hook_subprocess(cwd: &Path, stdin_input: &str) -> (i32, String, String) {
     )
 }
 
+#[test]
+fn validate_claude_paths_reads_payload_cwd_engages_gate() {
+    // The `.claude/` redirect must resolve flow_active from the
+    // payload `cwd` field, not env::current_dir(). Real cwd is the
+    // project root (non-worktree): branch detection fails there,
+    // flow_active stays false, and the redirect self-disables. The
+    // payload cwd points at the active-flow worktree where flow_active
+    // is true. With the payload honored, editing a protected .claude/
+    // path blocks (exit 2). Reading env::current_dir() (the project
+    // root) would allow (exit 0).
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let worktree = seed_active_flow_fixture(&root, "feat");
+    let target = worktree.join(".claude/rules/foo.md");
+    let input = format!(
+        r#"{{"cwd":"{}","tool_name":"Edit","tool_input":{{"file_path":"{}"}}}}"#,
+        worktree.to_string_lossy(),
+        target.to_string_lossy()
+    );
+    let (code, _stdout, stderr) = run_hook_subprocess(&root, &input);
+    assert_eq!(
+        code, 2,
+        "payload cwd must engage the .claude/ redirect; stderr={stderr}"
+    );
+    assert!(stderr.contains("BLOCKED"));
+}
+
 /// `run()` with no active flow silently allows (exit 0, no stderr).
 #[test]
 fn run_subprocess_exits_0_when_no_flow_active() {

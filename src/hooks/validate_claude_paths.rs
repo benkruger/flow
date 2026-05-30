@@ -322,12 +322,20 @@ pub fn run_impl_main(
 
 /// Run the validate-claude-paths hook (entry point from CLI).
 ///
-/// Thin wrapper: reads stdin, resolves `std::env::current_dir()`,
+/// Thin wrapper: reads stdin, resolves the cwd from the payload `cwd`
+/// field via `resolve_hook_cwd` (fallback `std::env::current_dir()`),
 /// calls `run_impl_main`, writes any block message to stderr, and
-/// exits with the returned code.
+/// exits with the returned code. The payload `cwd` is the
+/// session/sub-agent worktree; the hook subprocess's own
+/// `env::current_dir()` can resolve to the main repo root, where
+/// `flow_active` would stay false and the `.claude/` redirect would
+/// silently disable mid-flow.
 pub fn run() {
     let input = read_hook_input();
-    let cwd = std::env::current_dir().ok();
+    let cwd: Option<std::path::PathBuf> = input
+        .as_ref()
+        .and_then(crate::hooks::resolve_hook_cwd)
+        .map(std::path::PathBuf::from);
     let (code, message) = run_impl_main(input, cwd.as_deref());
     if let Some(m) = message {
         eprintln!("{}", m);
