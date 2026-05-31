@@ -117,6 +117,7 @@ Permanent on-main artifacts that future-session readers should know about by nam
 - `bin/flow write-session-cost` (`src/write_session_cost.rs`) — SessionStart hook subcommand that writes the active session's token-derived cost to `.claude/cost/<YYYY-MM>/<session_id>` so month-to-date spend reconciles with the token counts.
 - `src/wait_for_release_ci.rs` — `bin/flow wait-for-release-ci` polls the latest integration-branch GitHub Actions run for the current HEAD with a bounded real-sleep loop until it reaches a terminal conclusion, so flow-release reads the CI result from a single bounded command.
 - `src/phase_anchor.rs` — writes a session-keyed `<home>/.claude/flow/phase-anchor-<session_id>.json` marker at `phase-enter` so a later `--continue-step` resume can recover `worktree_cwd` after a same-session cwd reset, breaking the cwd-dependent branch-detection cycle.
+- `bin/flow resume-anchor` (`src/resume_anchor.rs`) — read-side resolver for the phase-anchor marker; recovers `worktree_cwd` from the session-keyed marker so a `--continue-step` resume re-anchors cwd, emitting `ok`/`no_marker`/`error` (fail-closed on a corrupt marker).
 
 ## Maintainer Skills (private to this repo)
 

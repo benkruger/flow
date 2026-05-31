@@ -83,6 +83,45 @@ fn exit_code_passes_through() {
     assert_ne!(output.status.code(), Some(0));
 }
 
+/// `bin/flow resume-anchor` resolves end-to-end through the bash
+/// dispatcher to the Rust `Commands::ResumeAnchor` arm. With HOME set
+/// to a fixture and no session id available, it returns the graceful
+/// `no_marker` outcome at exit 0. Regression: dropping the enum variant
+/// or the dispatch arm would make the bash dispatcher surface a clap
+/// "unknown subcommand" error instead — this test exercises the full
+/// bash → rust → clap chain that the CARGO_BIN_EXE subprocess tests in
+/// tests/resume_anchor.rs (which skip the bash layer) do not.
+#[test]
+fn resume_anchor_resolves_through_dispatcher() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let script = common::bin_dir().join("flow");
+    let output = Command::new("bash")
+        .arg(&script)
+        .arg("resume-anchor")
+        .current_dir(dir.path())
+        .env("HOME", &home)
+        .env_remove("CLAUDE_CODE_SESSION_ID")
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let last = stdout.trim().lines().last().unwrap_or("");
+    let data: serde_json::Value = serde_json::from_str(last).unwrap();
+    assert_eq!(
+        data["status"], "no_marker",
+        "resume-anchor with no session id must return no_marker; stdout: {}",
+        stdout
+    );
+}
+
 // --- Dispatcher tests with fixture projects ---
 
 /// Creates a self-contained project for dispatcher tests.

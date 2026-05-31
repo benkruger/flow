@@ -62,6 +62,7 @@ pub mod render_pr_body;
 pub mod required_agents;
 pub mod reset;
 pub mod resolve_skill_mode;
+pub mod resume_anchor;
 pub mod session_cost;
 pub mod session_metrics;
 pub mod shared_config_approval;

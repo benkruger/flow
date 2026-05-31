@@ -53,6 +53,7 @@ use flow_rs::record_agent_return;
 use flow_rs::render_pr_body;
 use flow_rs::reset;
 use flow_rs::resolve_skill_mode;
+use flow_rs::resume_anchor;
 use flow_rs::start_finalize;
 use flow_rs::start_gate;
 use flow_rs::start_init;
@@ -339,6 +340,15 @@ enum Commands {
     /// capture file directly.
     #[command(name = "current-session-id")]
     CurrentSessionId,
+
+    /// Recover `worktree_cwd` from the session-keyed phase-anchor
+    /// marker (`src/phase_anchor.rs`) so a `--continue-step` resume can
+    /// re-anchor cwd after a same-session cwd reset. Resolves the
+    /// session id from `$CLAUDE_CODE_SESSION_ID` (or the SessionStart
+    /// capture file). Emits `{status:"ok",worktree_cwd}`,
+    /// `{status:"no_marker"}`, or `{status:"error",message}`.
+    #[command(name = "resume-anchor")]
+    ResumeAnchor,
 
     /// Serialize flow-start with a queue directory.
     #[command(name = "start-lock")]
@@ -847,6 +857,15 @@ fn main() {
             let home = utility_marker_home();
             let (text, code) = commands::utility_marker::run_current_session_id_main(&home);
             flow_rs::dispatch::dispatch_text(&text, code);
+        }
+        Some(Commands::ResumeAnchor) => {
+            // Resolve HOME the same way phase_anchor wrote the marker
+            // (home_dir_or_empty), so the read side resolves the exact
+            // path the write side produced.
+            let home = flow_rs::session_metrics::home_dir_or_empty();
+            let env_sid = std::env::var("CLAUDE_CODE_SESSION_ID").ok();
+            let (value, code) = resume_anchor::run_impl_main(&home, env_sid.as_deref());
+            flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::StartLock {
             acquire,
