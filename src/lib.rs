@@ -45,6 +45,7 @@ pub mod orchestrate_report;
 pub mod orchestrate_state;
 pub mod output;
 pub mod per_flow_capture;
+pub mod phase_anchor;
 pub mod phase_config;
 pub mod phase_enter;
 pub mod phase_finalize;

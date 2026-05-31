@@ -3,6 +3,12 @@
 //! Replaces the per-skill entry ceremony (git worktree list + git branch + Read state +
 //! gate check + phase-transition enter + set steps_total) with a single command
 //! parameterized by `--phase`.
+//!
+//! Side effect: after computing `worktree_cwd`, writes the session-keyed
+//! phase-anchor marker (`src/phase_anchor.rs`) so a later
+//! `--continue-step` resume can recover `worktree_cwd` even after a
+//! same-session cwd reset. The write is best-effort and never blocks
+//! phase entry.
 
 use std::path::PathBuf;
 
@@ -283,6 +289,21 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     } else {
         worktree_path.join(&relative_cwd)
     };
+
+    // Write the session-keyed phase-anchor marker so a later
+    // `--continue-step` resume can recover `worktree_cwd` even after a
+    // same-session cwd reset (`src/phase_anchor.rs` documents the
+    // circular-dependency break). Best-effort: `write_anchor_if_resolvable`
+    // swallows every error and skips silently when no session_id
+    // resolves, so a marker-write problem never blocks phase entry.
+    let env_sid = std::env::var("CLAUDE_CODE_SESSION_ID").ok();
+    crate::phase_anchor::write_anchor_if_resolvable(
+        &home,
+        env_sid.as_deref(),
+        &branch,
+        &worktree_cwd.to_string_lossy(),
+        &relative_cwd,
+    );
 
     // Build response with all state data the skill needs
     let mut response = json!({

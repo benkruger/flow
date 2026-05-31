@@ -935,6 +935,116 @@ fn phase_enter_response_includes_worktree_cwd_for_subdir_flow() {
     );
 }
 
+// --- phase anchor marker ---
+
+/// phase-enter writes the session-keyed phase-anchor marker at
+/// `<home>/.claude/flow/phase-anchor-<session_id>.json` carrying
+/// `branch`, `worktree_cwd`, and `relative_cwd`. Regression: a session
+/// that resets cwd to the main-repo root on `--continue-step` resume
+/// recovers `worktree_cwd` from this marker (keyed by session id, not
+/// cwd), breaking the circular dependency where branch detection itself
+/// needs the cwd. Consumer: `bin/flow resume-anchor` reads this marker.
+#[test]
+fn phase_enter_writes_phase_anchor_marker() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "anchor-write";
+    let repo = create_git_repo(dir.path(), branch);
+    create_state(&repo, branch, "flow-start", "complete", None);
+
+    let home_dir = dir.path().join("home");
+    fs::create_dir_all(&home_dir).unwrap();
+    let session_id = "test-session-abc";
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["phase-enter", "--phase", "flow-code", "--branch", branch])
+        .current_dir(&repo)
+        .env("HOME", &home_dir)
+        .env("CLAUDE_CODE_SESSION_ID", session_id)
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+
+    let marker = home_dir
+        .join(".claude")
+        .join("flow")
+        .join(format!("phase-anchor-{}.json", session_id));
+    assert!(
+        marker.exists(),
+        "phase-enter must write the phase-anchor marker at {}",
+        marker.display()
+    );
+    let marker_json: Value = serde_json::from_str(&fs::read_to_string(&marker).unwrap()).unwrap();
+    assert_eq!(
+        marker_json["branch"], branch,
+        "marker must record the branch"
+    );
+    assert_eq!(
+        marker_json["worktree_cwd"], data["worktree_cwd"],
+        "marker worktree_cwd must match the phase-enter response"
+    );
+    assert_eq!(
+        marker_json["relative_cwd"], data["relative_cwd"],
+        "marker relative_cwd must match the phase-enter response"
+    );
+}
+
+/// phase-enter writes NO marker and returns no error when the session
+/// id is unresolvable (no `CLAUDE_CODE_SESSION_ID` env var and no
+/// SessionStart capture file under HOME). Regression: a fresh session
+/// that cannot resolve a session id must degrade gracefully — the
+/// read-side resolver falls back to today's cwd-based branch detection
+/// rather than the flow blocking. Mirrors the utility-marker
+/// graceful-skip behavior.
+#[test]
+fn phase_enter_writes_no_marker_when_session_unresolvable() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "anchor-no-session";
+    let repo = create_git_repo(dir.path(), branch);
+    create_state(&repo, branch, "flow-start", "complete", None);
+
+    let home_dir = dir.path().join("home");
+    fs::create_dir_all(&home_dir).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
+        .args(["phase-enter", "--phase", "flow-code", "--branch", branch])
+        .current_dir(&repo)
+        .env("HOME", &home_dir)
+        .env_remove("CLAUDE_CODE_SESSION_ID")
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env_remove("FLOW_CI_RUNNING")
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "graceful skip must not error; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(parse_output(&output)["status"], "ok");
+
+    let flow_dir = home_dir.join(".claude").join("flow");
+    let marker_present = fs::read_dir(&flow_dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .any(|e| e.file_name().to_string_lossy().starts_with("phase-anchor-"))
+        })
+        .unwrap_or(false);
+    assert!(
+        !marker_present,
+        "no phase-anchor marker may be written when the session id is unresolvable"
+    );
+}
+
 /// Covers the implicit `None` arm of all five `if let Some(x) = field`
 /// blocks that build the response (pr_number, pr_url, feature,
 /// slack_thread_ts, plan_file). State has none of the optional fields
