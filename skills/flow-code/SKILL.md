@@ -71,6 +71,28 @@ Resolve `commit` and `continue` on every entry — fresh invocation and
 the single source of truth for skill autonomy; there are no
 `--auto`/`--manual` flags.
 
+On a `--continue-step` self-invocation, recover the worktree directory
+before resolving the branch. The resume path skips `phase-enter` (which
+normally `cd`s into the worktree), and the branch resolution just below
+is cwd-dependent — so a session whose cwd reset to the main-repo root
+would otherwise resolve the integration branch instead of the feature
+branch. `bin/flow resume-anchor` reads the session-keyed phase-anchor
+marker and returns the recovered `worktree_cwd`:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow resume-anchor
+```
+
+Parse the JSON output and branch on `status`:
+
+- `"ok"` — `cd` into the returned `worktree_cwd`, then resolve the
+  branch below from the recovered directory.
+- `"no_marker"` — no marker to recover; proceed with the cwd-based
+  branch detection below as-is.
+- `"error"` — the marker was corrupt; do NOT `cd` to any returned
+  path. Treat it exactly like `no_marker` and proceed with the
+  cwd-based detection below.
+
 Resolve the current branch first: run `git worktree list --porcelain`,
 note the project root (the path on the first `worktree` line), find
 the `worktree` entry whose path matches the current working directory,

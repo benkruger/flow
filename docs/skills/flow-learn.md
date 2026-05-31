@@ -17,6 +17,11 @@ promotes session permissions, files GitHub issues for plugin
 improvements, and presents a comprehensive report. Runs before the PR
 merges.
 
+On a `--continue-step` resume, the skill first recovers the worktree
+directory from a session-keyed anchor (`bin/flow resume-anchor`) so it
+re-anchors to the correct working directory before detecting the branch,
+even when the working directory drifted between invocations.
+
 ---
 
 ## Three Tenants

@@ -146,6 +146,11 @@ a conversation turn boundary. The `--continue-step` flag skips the
 Announce banner and phase entry update, proceeding directly to the Resume
 Check which dispatches to the next step.
 
+On a `--continue-step` resume, the skill first recovers the worktree
+directory from a session-keyed anchor (`bin/flow resume-anchor`) so it
+re-anchors to the correct working directory before detecting the branch,
+even when the working directory drifted between invocations.
+
 ---
 
 ## Gates

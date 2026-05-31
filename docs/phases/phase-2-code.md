@@ -20,6 +20,11 @@ committing, the skill self-invokes (`--continue-step`) to handle the
 next task in a fresh invocation. The `code_task` field in the state
 file is validated to increment by exactly 1 — preventing task batching.
 
+On a `--continue-step` resume, the skill first recovers the worktree
+directory from a session-keyed anchor (`bin/flow resume-anchor`) so it
+re-anchors before detecting the branch, even when the working directory
+drifted between invocations.
+
 For the current task:
 
 1. **Architecture check** — read what needs to be read before writing anything
