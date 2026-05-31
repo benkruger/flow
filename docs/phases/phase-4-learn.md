@@ -33,7 +33,7 @@ itself for cognitively isolated analysis:
 
 1. **CLAUDE.md and rules files** — the project's rules and conventions that should have been followed; the agent reads CLAUDE.md and the full `.claude/rules/` corpus on demand rather than receiving them inline
 2. **State file and plan data** — visit counts, timing, captured `/flow-note` entries, plan file risks (passed inline)
-3. **Substantive diff** — `git diff origin/<base_branch>...HEAD -w` (whitespace-only changes filtered) captured to `.flow-states/<branch>/substantive-diff.diff` via `bin/flow capture-diff`; the agent Reads the file
+3. **Substantive diff** — `git diff origin/<base_branch>...HEAD -w` (whitespace-only changes filtered) captured to `.flow-states/<branch>/substantive-diff.diff` via `bin/flow capture-diff`; the agent Reads the file. If `capture-diff` reports a missing base ref (`origin/<base_branch>` not fetched into the worktree), Step 1 runs a single `git fetch origin <base_branch>` and retries once, halting rather than launching the agent with a missing diff
 
 Keeping the diff and rule corpus out of the prompt keeps it bounded so a
 large diff cannot overflow it and starve the audit of findings. The

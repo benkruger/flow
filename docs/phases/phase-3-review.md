@@ -38,9 +38,12 @@ full (`full-diff.diff`) and substantive (`substantive-diff.diff`,
 whitespace-only changes filtered via `git diff -w`). Agents receive
 the diff via file handoff (`DIFF_FILE` / `SUBSTANTIVE_DIFF_FILE`) and
 Read the bytes themselves, keeping the parent skill's prompt budget
-bounded as PR size grows. Step 1 also collects the plan file,
-CLAUDE.md, `.claude/rules/` files, and checks that `bin/flow ci
---test` exists for adversarial testing.
+bounded as PR size grows. If `capture-diff` reports a missing base
+ref (`origin/<base>` not fetched into the worktree), Step 1 runs a
+single `git fetch origin <base>` and retries once, halting rather
+than launching the agents with a missing diff. Step 1 also collects
+the plan file, CLAUDE.md, `.claude/rules/` files, and checks that
+`bin/flow ci --test` exists for adversarial testing.
 
 ### Step 2 — Launch
 

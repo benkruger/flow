@@ -251,8 +251,9 @@ fn delete_adversarial_probe(project_root: &Path, worktree: &str) -> String {
 /// `None` when the file is absent, unparseable, or carries no
 /// `session_id` string. Used to resolve which phase-anchor marker to
 /// delete before the state file itself is removed. Reads via
-/// `fs::read_to_string` (the state file is FLOW-managed, matching the
-/// unbounded read in `phase_enter::run_impl`).
+/// `fs::read_to_string` — the state file is a FLOW-managed artifact
+/// written only by FLOW's own subcommands, not external input, so the
+/// read carries no byte cap.
 fn read_state_session_id(state_file: &Path) -> Option<String> {
     let content = fs::read_to_string(state_file).ok()?;
     let parsed: Value = serde_json::from_str(&content).ok()?;
