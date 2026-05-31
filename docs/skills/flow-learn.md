@@ -47,7 +47,11 @@ Reads; the small artifacts (state file data and plan) are passed
 inline; and the agent reads CLAUDE.md and the full `.claude/rules/`
 corpus on demand. Keeping the diff and rule corpus out of the prompt
 keeps it bounded so a large diff cannot overflow it and starve the
-audit of findings. When the agent's output omits the `END-OF-FINDINGS`
+audit of findings. If `capture-diff` reports a missing base ref
+(`origin/<base>` not fetched into the worktree), Step 1 runs a single
+`git fetch origin <base>` and retries once, halting rather than
+launching the agent with a missing diff. When the agent's output omits
+the `END-OF-FINDINGS`
 completion marker, the skill recovers via partition-and-combine —
 re-invoking the agent against a narrowed partition (by tenant or by
 diff file family) and combining findings across runs. The agent writes

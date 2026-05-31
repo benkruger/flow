@@ -2614,6 +2614,58 @@ fn flow_learn_resume_anchor_precedes_branch_detection() {
     assert_resume_anchor_wiring("flow-learn");
 }
 
+/// Shared assertions for the Gap B `capture-diff` error handling in a
+/// phase skill's Step 1. `bin/flow capture-diff` returns
+/// `{status:"error", message}` when `origin/<base>` is not present
+/// locally; without handling, the skill launches its agents with a
+/// missing diff. Step 1 must surface the error, run a single
+/// `git fetch origin <base>` + retry, and HALT on a second failure.
+fn assert_capture_diff_error_handling(skill: &str) {
+    let c = common::read_skill(skill);
+    let tail = c
+        .split_once("## Step 1")
+        .map(|(_, t)| t)
+        .unwrap_or_else(|| panic!("{} must have a `## Step 1` section", skill));
+    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
+
+    assert!(
+        section.contains("capture-diff"),
+        "{} Step 1 must invoke capture-diff",
+        skill
+    );
+    assert!(
+        section.contains("git fetch origin"),
+        "{} Step 1 must run `git fetch origin <base>` on a missing-revision \
+         capture-diff error",
+        skill
+    );
+    assert!(
+        section.contains("retry") && section.contains("once"),
+        "{} Step 1 must retry capture-diff exactly once after the fetch",
+        skill
+    );
+    assert!(
+        section.contains("HALT"),
+        "{} Step 1 must HALT on a second capture-diff failure rather than \
+         launch the agent with a missing diff",
+        skill
+    );
+}
+
+#[test]
+fn flow_review_step1_handles_capture_diff_error() {
+    // Regression: an unhandled capture-diff error would hand the four
+    // review agents a missing diff. Step 1 must fetch+retry once, then halt.
+    assert_capture_diff_error_handling("flow-review");
+}
+
+#[test]
+fn flow_learn_step1_handles_capture_diff_error() {
+    // Regression: an unhandled capture-diff error would hand the
+    // learn-analyst a missing diff. Step 1 must fetch+retry once, then halt.
+    assert_capture_diff_error_handling("flow-learn");
+}
+
 /// flow-complete's Step 3 `Yes, merge` answer must invoke
 /// `bin/flow confirm-merge` to write the single-use merge-approval
 /// marker — the "proceed" half of the Complete-phase merge gate.

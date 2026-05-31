@@ -230,6 +230,20 @@ to the learn-analyst agent (context-sparse). The path lives under
 embedding it in the agent prompt does not trip the
 `validate-pretool` Agent-prompt path scan.
 
+**On `capture-diff` error.** When the JSON `status` is `"error"`,
+surface the `message`. A missing-revision message — the base ref
+`origin/<base_branch>` is not present in this worktree (git reports
+"unknown revision" or "ambiguous argument") — means the integration
+ref was never fetched here. Fetch it once and retry `capture-diff`:
+
+```bash
+git fetch origin <base_branch>
+```
+
+Then re-run the `capture-diff` command above exactly once. If the
+retry still returns `status == "error"`, HALT with a structured error
+and report the message — do not launch the agent with a missing diff.
+
 **Launch learn-analyst.** Launch the learn-analyst agent using the Agent
 tool:
 

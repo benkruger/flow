@@ -49,7 +49,10 @@ the diff (derived from `git diff --name-only` via filename
 heuristics — passed to the documentation agent in Step 2 so it
 investigates only those paths instead of the full docs tree). Run
 `tombstone-audit` to identify stale tombstones for removal in Step 4.
-No analysis.
+No analysis. If `capture-diff` reports a missing base ref
+(`origin/<base>` not fetched into the worktree), Step 1 runs a single
+`git fetch origin <base>` and retries once, halting rather than
+launching the agents with a missing diff.
 
 ### Step 2 — Launch
 

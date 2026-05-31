@@ -239,6 +239,20 @@ black) reformat many files, the substantive diff excludes
 formatting noise and preserves the agents' turn budget for
 behavioral analysis.
 
+**On `capture-diff` error.** When the JSON `status` is `"error"`,
+surface the `message`. A missing-revision message — the base ref
+`origin/<base_branch>` is not present in this worktree (git reports
+"unknown revision" or "ambiguous argument") — means the integration
+ref was never fetched here. Fetch it once and retry `capture-diff`:
+
+```bash
+git fetch origin <base_branch>
+```
+
+Then re-run the `capture-diff` command above exactly once. If the
+retry still returns `status == "error"`, HALT with a structured error
+and report the message — do not launch the agents with a missing diff.
+
 **Compute affected doc paths.**
 
 The documentation agent's turn budget is bounded; pointing it at the
