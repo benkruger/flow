@@ -194,7 +194,6 @@ fn make_state_lib() -> Value {
         "current_phase": "flow-start",
         "files": {
             "plan": null,
-            "dag": null,
             "log": ".flow-states/test-feature/log",
             "state": ".flow-states/test-feature/state.json"
         },

@@ -7,7 +7,7 @@ attempted before a prior Read on the target. FLOW skills that write to
 persistent branch-scoped or project-root paths must route those writes
 through the `bin/flow write-rule` Rust subcommand, which does `fs::write`
 unconditionally so the preflight cannot fire. Skills that instruct Edits
-against named plan or DAG files must precede the Edit with an explicit
+against named plan files must precede the Edit with an explicit
 Read-tool instruction so the Edit preflight is satisfied even when the
 model has not naturally read the file in the current turn.
 
@@ -38,7 +38,6 @@ files with a unique `-<id>` suffix are excluded because the id makes
 cross-invocation collision unlikely. Writes to the monitored set must
 route through `bin/flow write-rule`:
 
-- `.flow-states/<branch>/dag.md` — the decompose-produced DAG file
 - `.flow-states/<branch>/plan.md` — the Plan-phase implementation plan
 - `.flow-states/<branch>/commit-msg.txt` — the commit skill's message
   file consumed by `bin/flow finalize-commit`. Branch-scoped so
@@ -54,7 +53,7 @@ unique id prevents cross-invocation collision.
 
 Intermediate content files that the model Writes as input to
 `bin/flow write-rule` (for example
-`.flow-states/<branch>/dag-content.md`) are also not monitored — they
+`.flow-states/<branch>/plan-content.md`) are also not monitored — they
 are the Write-tool input, not a persistent target. The `write-rule`
 subcommand reads and deletes them unconditionally.
 
@@ -95,13 +94,12 @@ that names a FLOW-managed artifact, write-rule rejects any path that
 isn't the canonical destination computed from
 `(project_root, current_branch)` via `FlowPaths`.
 
-**The managed-artifact set.** Five basenames are managed; every other
+**The managed-artifact set.** Four basenames are managed; every other
 basename passes through unchanged:
 
 | Basename | Variant | Canonical destination |
 |---|---|---|
 | `plan.md` | `PlanMd` | `<project_root>/.flow-states/<branch>/plan.md` |
-| `dag.md` | `DagMd` | `<project_root>/.flow-states/<branch>/dag.md` |
 | `commit-msg.txt` | `CommitMsgTxt` | `<project_root>/.flow-states/<branch>/commit-msg.txt` |
 | `.flow-issue-body` | `FlowIssueBody` | `<project_root>/.flow-issue-body` |
 | `orchestrate-queue.json` | `OrchestrateQueue` | `<project_root>/.flow-states/orchestrate-queue.json` |
@@ -130,7 +128,7 @@ against the process cwd at write time.
   "message": "write-rule rejects --path <provided> for managed artifact <art>: canonical destination is <canonical>",
   "provided": "<provided>",
   "canonical": "<canonical>",
-  "artifact_kind": "PlanMd|DagMd|CommitMsgTxt|FlowIssueBody|OrchestrateQueue"
+  "artifact_kind": "PlanMd|CommitMsgTxt|FlowIssueBody|OrchestrateQueue"
 }
 ```
 
@@ -141,7 +139,7 @@ the path verbatim. This is the path the `flow-learn` rule-routing
 pattern depends on.
 
 **Pass-through for branch-unavailable contexts.** Branch-scoped
-artifacts (`PlanMd`, `DagMd`, `CommitMsgTxt`) require a valid
+artifacts (`PlanMd`, `CommitMsgTxt`) require a valid
 non-empty branch. In detached-HEAD or invalid-branch (slash-
 containing) contexts, `canonical_path` returns `None` and the gate
 stays silent.
@@ -172,7 +170,7 @@ on the final target.
 
 Intermediate content files follow the pattern
 `.flow-states/<branch>/<purpose>-content.<ext>` where `<purpose>`
-matches the basename of the final target (e.g. `dag`, `plan`,
+matches the basename of the final target (e.g. `plan`,
 `commit-msg`, `issue-body`, `orchestrate-queue`) and `<ext>` matches the
 target's extension (`.md`, `.json`, `.txt`). The `write-rule` subcommand
 deletes the intermediate file after a successful routing; on error the
@@ -208,7 +206,7 @@ the rule:
   a monitored path, and asserts a `bin/flow write-rule --path <same-path>`
   call appears on a SINGLE line within the next 30 lines.
 - `file_tool_preflight_edit_paths_preceded_by_read` — scans every
-  SKILL.md for Edit-tool instructions on named plan or DAG files and
+  SKILL.md for Edit-tool instructions on named plan files and
   asserts a Read-tool instruction on the same file appears within the
   preceding 12 non-blank lines. The backward scan stops at any `## ` or
   `### ` heading so a Read in a prior step cannot credit an Edit in a

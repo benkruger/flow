@@ -24,7 +24,6 @@ fn empty_state() -> FlowState {
         current_phase: "flow-start".to_string(),
         files: StateFiles {
             plan: None,
-            dag: None,
             log: ".flow-states/test/log".to_string(),
             state: ".flow-states/test/state.json".to_string(),
         },
@@ -36,7 +35,6 @@ fn empty_state() -> FlowState {
         phases: IndexMap::new(),
         phase_transitions: vec![],
         plan_file: None,
-        dag_file: None,
         skills: None,
         issues_filed: vec![],
         slack_thread_ts: None,

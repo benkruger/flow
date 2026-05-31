@@ -70,7 +70,7 @@ arises:
    without an empty placeholder intermediate step. The Write
    tool creates the file in one atomic action; there is no
    "anchor then fill" middle state.
-4. **For FLOW-managed artifacts** (`plan.md`, `dag.md`,
+4. **For FLOW-managed artifacts** (`plan.md`,
    `commit-msg.txt`, `.flow-issue-body`, `orchestrate-queue.json`),
    route through `bin/flow write-rule` per
    `.claude/rules/file-tool-preflights.md`. That subcommand reads

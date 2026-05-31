@@ -5798,12 +5798,12 @@ fn phase_1_hard_gate_requires_rerun_with_arguments() {
 //
 // Code path that produces the regression:
 //   - Write side: a SKILL.md instructs the model to Write to one of the
-//     persistent monitored paths (plan/DAG file, commit-msg, issue-body,
+//     persistent monitored paths (plan file, commit-msg, issue-body,
 //     orchestrate queue) without first routing through the
 //     `bin/flow write-rule` subcommand, whose `fs::write` call bypasses
 //     the preflight.
-//   - Edit side: a SKILL.md instructs the model to Edit a named plan or
-//     DAG file without a preceding explicit Read-tool instruction on
+//   - Edit side: a SKILL.md instructs the model to Edit a named plan
+//     file without a preceding explicit Read-tool instruction on
 //     the same file in the same `### Step` block.
 //
 // Consumers:
@@ -5826,7 +5826,6 @@ fn phase_1_hard_gate_requires_rerun_with_arguments() {
 /// also not monitored — they are the Write-tool input, not a persistent
 /// target.
 const WRITE_MONITORED_PATHS: &[&str] = &[
-    ".flow-states/<branch>-dag.md",
     ".flow-states/<branch>-plan.md",
     ".flow-states/<branch>-commit-msg.txt",
     ".flow-issue-body",
@@ -5974,10 +5973,7 @@ fn file_tool_preflight_write_paths_route_through_write_rule() {
 /// before editing") fires when the model has not naturally Read the
 /// file in the current turn — for example, re-entering the plan-check
 /// fix loop after a `--continue-step` resume.
-const EDIT_MONITORED_PATHS: &[&str] = &[
-    ".flow-states/<branch>-plan.md",
-    ".flow-states/<branch>-dag.md",
-];
+const EDIT_MONITORED_PATHS: &[&str] = &[".flow-states/<branch>-plan.md"];
 
 /// Non-blank lines backward from an Edit-tool instruction to look for
 /// a paired Read-tool instruction on the same path. Twelve lines covers
@@ -6068,7 +6064,7 @@ fn file_tool_preflight_edit_paths_preceded_by_read() {
 
     assert!(
         violations.is_empty(),
-        "SKILL.md Edit-tool instructions on named plan/DAG files must be preceded by an explicit Read-tool instruction to satisfy Claude Code's Edit preflight. See `.claude/rules/file-tool-preflights.md`:\n{}",
+        "SKILL.md Edit-tool instructions on named plan files must be preceded by an explicit Read-tool instruction to satisfy Claude Code's Edit preflight. See `.claude/rules/file-tool-preflights.md`:\n{}",
         violations.join("\n")
     );
 }

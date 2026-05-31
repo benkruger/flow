@@ -46,7 +46,6 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
         "current_phase": current_phase,
         "files": {
             "plan": "",
-            "dag": "",
             "log": "",
             "state": ""
         },

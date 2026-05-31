@@ -35,12 +35,7 @@ fn resolve_path(path_str: Option<&str>, project_dir: &Path) -> Option<PathBuf> {
 fn build_artifacts(state: &serde_json::Value) -> Vec<String> {
     if let Some(files) = state.get("files").and_then(|v| v.as_object()) {
         let mut rows = vec!["| File | Path |".to_string(), "|------|------|".to_string()];
-        let labels = [
-            ("Plan", "plan"),
-            ("DAG", "dag"),
-            ("Log", "log"),
-            ("State", "state"),
-        ];
+        let labels = [("Plan", "plan"), ("Log", "log"), ("State", "state")];
         for (label, key) in &labels {
             if let Some(path) = files.get(*key).and_then(|v| v.as_str()) {
                 if !path.is_empty() {
@@ -247,19 +242,14 @@ pub fn render_body(state: &serde_json::Value, project_dir: &Path) -> Result<Stri
     }
     section_names.push("Artifacts".to_string());
 
-    // Resolve artifact paths from files block with legacy fallback
+    // Resolve the plan path from the files block with legacy fallback
     let files = state.get("files");
     let plan_path_str = files
         .and_then(|f| f.get("plan"))
         .and_then(|v| v.as_str())
         .or_else(|| state.get("plan_file").and_then(|v| v.as_str()));
-    let dag_path_str = files
-        .and_then(|f| f.get("dag"))
-        .and_then(|v| v.as_str())
-        .or_else(|| state.get("dag_file").and_then(|v| v.as_str()));
 
     let plan_path = resolve_path(plan_path_str, project_dir);
-    let dag_path = resolve_path(dag_path_str, project_dir);
 
     // 3. Plan (conditional)
     if let Some(ref pp) = plan_path {
@@ -275,23 +265,6 @@ pub fn render_body(state: &serde_json::Value, project_dir: &Path) -> Result<Stri
                 "text",
             ));
             section_names.push("Plan".to_string());
-        }
-    }
-
-    // 4. DAG Analysis (conditional, always text format)
-    if let Some(ref dp) = dag_path {
-        if dp.exists() {
-            let content = std::fs::read_to_string(dp)
-                .map_err(|e| e.to_string())?
-                .trim_end_matches('\n')
-                .to_string();
-            sections.push(build_details_block(
-                "DAG Analysis",
-                "Decompose plugin output",
-                &content,
-                "text",
-            ));
-            section_names.push("DAG Analysis".to_string());
         }
     }
 

@@ -63,7 +63,6 @@ fn create_state(repo: &Path, branch: &str, current_phase: &str, skills_continue:
         "current_phase": current_phase,
         "files": {
             "plan": null,
-            "dag": null,
             "log": format!(".flow-states/{}.log", branch),
             "state": format!(".flow-states/{}.json", branch)
         },

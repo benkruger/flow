@@ -367,7 +367,6 @@ fn cleanup_removes_branch_dir_with_seeded_artifacts() {
     // Seed every per-branch artifact the production layout supports
     // so the single recursive remove is exercised across the full set.
     fs::write(branch_dir.join("plan.md"), "# Plan\n").unwrap();
-    fs::write(branch_dir.join("dag.md"), "# DAG\n").unwrap();
     fs::write(
         branch_dir.join("phases.json"),
         r#"{"phases":{},"order":[]}"#,
@@ -700,7 +699,6 @@ fn cleanup_invalid_branch_skips_branch_dir() {
     for legacy_key in [
         "state_file",
         "plan_file",
-        "dag_file",
         "log_file",
         "frozen_phases",
         "ci_sentinel",

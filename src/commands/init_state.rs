@@ -99,7 +99,6 @@ pub fn create_state(
         "files".into(),
         json!({
             "plan": null,
-            "dag": null,
             "log": format!(".flow-states/{}/log", branch),
             "state": format!(".flow-states/{}/state.json", branch),
         }),

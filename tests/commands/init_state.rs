@@ -464,7 +464,10 @@ fn state_file_has_files_block() {
     let state = read_state_file(dir.path(), "files-block-test");
     let files = &state["files"];
     assert!(files["plan"].is_null());
-    assert!(files["dag"].is_null());
+    // init_state no longer writes a `dag` key — assert its absence
+    // positively (an `is_null()` check would pass vacuously for a
+    // missing key).
+    assert!(files.get("dag").is_none());
     assert_eq!(files["log"], ".flow-states/files-block-test/log");
     assert_eq!(files["state"], ".flow-states/files-block-test/state.json");
 }
@@ -1326,7 +1329,10 @@ fn lib_create_state_files_block() {
     let state = read_state_direct(dir.path(), "files-test");
     let files = &state["files"];
     assert!(files["plan"].is_null());
-    assert!(files["dag"].is_null());
+    // init_state no longer writes a `dag` key — assert its absence
+    // positively (an `is_null()` check would pass vacuously for a
+    // missing key).
+    assert!(files.get("dag").is_none());
     assert_eq!(files["log"], ".flow-states/files-test/log");
     assert_eq!(files["state"], ".flow-states/files-test/state.json");
 }

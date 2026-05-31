@@ -407,8 +407,8 @@ mod _removed {
 
     #[test]
     fn build_details_block_nested_fences() {
-        let content = "# DAG\n\n```xml\n<dag/>\n```\n\n```python\nprint('hi')\n```";
-        let result = build_details_block("DAG Analysis", "dag.md", content, "text");
+        let content = "# Plan\n\n```xml\n<node/>\n```\n\n```python\nprint('hi')\n```";
+        let result = build_details_block("Plan", "plan.md", content, "text");
         let lines: Vec<&str> = result.split('\n').collect();
         let fence_lines: Vec<&&str> = lines.iter().filter(|l| l.starts_with("````")).collect();
         assert_eq!(
@@ -418,7 +418,7 @@ mod _removed {
         );
         assert!(result.contains("```xml"));
         assert!(result.contains("```python"));
-        assert!(result.starts_with("## DAG Analysis"));
+        assert!(result.starts_with("## Plan"));
         assert!(result.ends_with("</details>"));
     }
 

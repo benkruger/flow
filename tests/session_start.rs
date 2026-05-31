@@ -59,7 +59,6 @@ fn make_state_json(branch: &str, current_phase: &str) -> String {
         "current_phase": current_phase,
         "files": {
             "plan": null,
-            "dag": null,
             "log": format!(".flow-states/{}.log", branch),
             "state": format!(".flow-states/{}.json", branch)
         },

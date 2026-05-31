@@ -525,7 +525,7 @@ notify-slack, worktree removal, state file deletion, and git pull —
 all best-effort in a single call.
 
 The render-pr-body step produces the PR body with all sections —
-What, Artifacts, Plan, DAG Analysis, Phase Timings, Token Cost,
+What, Artifacts, Plan, Phase Timings, Token Cost,
 Review Findings, Learn Findings, State File, Session Log, and
 Issues Filed — from the state file and available artifact files.
 Sections with missing data are omitted automatically.
@@ -561,7 +561,7 @@ failures but continue — all post-merge operations are best-effort.
 The cleanup operations were performed as part of the complete-finalize
 call in Step 5. The `cleanup` field in the JSON output shows what
 happened to each resource (pr\_close, worktree\_tmp, worktree,
-remote\_branch, local\_branch, state\_file, plan\_file, dag\_file,
+remote\_branch, local\_branch, state\_file, plan\_file,
 log\_file, frozen\_phases, ci\_sentinel, timings\_file,
 closed\_issues\_file, issues\_file, adversarial\_test — plus
 git\_pull when the Complete path runs with `--pull`).

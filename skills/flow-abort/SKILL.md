@@ -126,7 +126,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow cleanup <project_root> --branch <branch> --worktr
 
 If `pr_number` is unknown, omit `--pr`. The cleanup script deletes local branches and attempts remote branch deletion when `--pr` is provided.
 
-The script outputs JSON with a `steps` dict showing what happened to each resource: `pr_close`, `worktree`, `remote_branch`, `local_branch`, `branch_dir`, `queue_entry`. Each step reports `"closed"`/`"removed"`/`"deleted"`, `"skipped"`, or `"failed: <reason>"`. The `branch_dir` step recursively removes every per-branch artifact under `.flow-states/<branch>/` (state file, log, plan, DAG, frozen phases, CI sentinel, timings, closed-issues record, issues summary, scratch rule content, commit message, start prompt). The `queue_entry` step removes `.flow-states/start-queue/<branch>` if a start-lock entry remains.
+The script outputs JSON with a `steps` dict showing what happened to each resource: `pr_close`, `worktree`, `remote_branch`, `local_branch`, `branch_dir`, `queue_entry`. Each step reports `"closed"`/`"removed"`/`"deleted"`, `"skipped"`, or `"failed: <reason>"`. The `branch_dir` step recursively removes every per-branch artifact under `.flow-states/<branch>/` (state file, log, plan, frozen phases, CI sentinel, timings, closed-issues record, issues summary, scratch rule content, commit message, start prompt). The `queue_entry` step removes `.flow-states/start-queue/<branch>` if a start-lock entry remains.
 
 ### Done
 

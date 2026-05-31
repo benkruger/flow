@@ -10,7 +10,7 @@
 //!             "message": "...", "provided": "...",
 //!             "canonical": "...", "artifact_kind": "..."}      — managed-artifact path mismatch (see canonicalization gate)
 //!
-//! When `--path` names a FLOW-managed artifact (`plan.md`, `dag.md`,
+//! When `--path` names a FLOW-managed artifact (`plan.md`,
 //! `commit-msg.txt`, `.flow-issue-body`, `orchestrate-queue.json`),
 //! `run_impl_main` rejects any value that doesn't normalize to the
 //! `(project_root, branch)`-derived canonical destination. The gate
@@ -43,8 +43,6 @@ use crate::protected_paths::is_protected_path;
 pub enum ManagedArtifact {
     /// `<branch_dir>/plan.md`
     PlanMd,
-    /// `<branch_dir>/dag.md`
-    DagMd,
     /// `<branch_dir>/commit-msg.txt`
     CommitMsgTxt,
     /// `<project_root>/.flow-issue-body`
@@ -64,7 +62,6 @@ pub fn classify_path(path: &Path) -> Option<ManagedArtifact> {
     let name = path.file_name()?.to_str()?;
     match name {
         "plan.md" => Some(ManagedArtifact::PlanMd),
-        "dag.md" => Some(ManagedArtifact::DagMd),
         "commit-msg.txt" => Some(ManagedArtifact::CommitMsgTxt),
         ".flow-issue-body" => Some(ManagedArtifact::FlowIssueBody),
         "orchestrate-queue.json" => Some(ManagedArtifact::OrchestrateQueue),
@@ -74,7 +71,7 @@ pub fn classify_path(path: &Path) -> Option<ManagedArtifact> {
 
 /// Compute the canonical destination for a managed artifact.
 ///
-/// Branch-scoped artifacts (`PlanMd`, `DagMd`, `CommitMsgTxt`) live at
+/// Branch-scoped artifacts (`PlanMd`, `CommitMsgTxt`) live at
 /// `<project_root>/.flow-states/<branch>/<filename>` and require a
 /// valid branch — `None` is returned when `branch_opt` is absent or
 /// fails `FlowPaths::is_valid_branch` (e.g., contains `/`). Returning
@@ -93,7 +90,6 @@ pub fn canonical_path(
 ) -> Option<PathBuf> {
     match art {
         ManagedArtifact::PlanMd => FlowPaths::try_new(root, branch_opt?).map(|p| p.plan_file()),
-        ManagedArtifact::DagMd => FlowPaths::try_new(root, branch_opt?).map(|p| p.dag_file()),
         ManagedArtifact::CommitMsgTxt => {
             FlowPaths::try_new(root, branch_opt?).map(|p| p.commit_msg())
         }

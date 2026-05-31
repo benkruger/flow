@@ -2,7 +2,10 @@
 
 > **Note:** This is a historical design document from before DAG
 > decomposition was implemented. The feature shipped as Option A.
-> For current behavior, see
+> The on-disk DAG-artifact lane it describes (the `files.dag` state
+> field and the `dag.md` file) has since been retired — the DAG now
+> lives inside the plan in the GitHub issue body, which renders in
+> the PR. For current behavior, see
 > [/flow-plan](../skills/flow-plan.md).
 
 ## Context

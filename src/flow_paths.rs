@@ -225,7 +225,7 @@ impl FlowPaths {
     }
 
     /// `<.flow-states>/<branch>/` — branch-scoped subdirectory that
-    /// houses every per-branch artifact (state file, log, plan, DAG,
+    /// houses every per-branch artifact (state file, log, plan,
     /// commit message, etc.). Cleanup walks this directory, and flow
     /// discovery scans the `.flow-states/` directory for subdirectories
     /// containing a `state.json` rather than enumerating per-suffix
@@ -276,11 +276,6 @@ impl FlowPaths {
     /// `<branch_dir>/plan.md` — Plan phase output.
     pub fn plan_file(&self) -> PathBuf {
         self.branch_dir().join("plan.md")
-    }
-
-    /// `<branch_dir>/dag.md` — DAG decomposition output.
-    pub fn dag_file(&self) -> PathBuf {
-        self.branch_dir().join("dag.md")
     }
 
     /// `<branch_dir>/phases.json` — frozen phase config captured at

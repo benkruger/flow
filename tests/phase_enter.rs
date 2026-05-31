@@ -78,7 +78,6 @@ fn create_state(
         "feature": "Test Feature",
         "files": {
             "plan": ".flow-states/test-plan.md",
-            "dag": null,
             "log": format!(".flow-states/{}.log", branch),
             "state": format!(".flow-states/{}.json", branch)
         },

@@ -341,6 +341,92 @@ fn test_state_no_session_cost_usd_field() {
     );
 }
 
+/// Tombstone: removed in PR #1777. The `dag` field of `StateFiles`
+/// (`src/state.rs`) is deleted — the DAG now lives inside the plan in
+/// the GitHub issue body, so no subcommand writes a `dag.md` artifact
+/// or a `files.dag` pointer. Must not return.
+///
+/// Scoped structurally to the `StateFiles` struct body because the bare
+/// substring `dag` is high-collision across the file. The struct-field
+/// shape is byte-stable within that scope:
+///   1. `concat!` reassembly: a struct field name is a literal
+///      identifier (`dag:`), not a runtime-assembled string — re-adding
+///      the field requires the literal `dag` token inside the struct.
+///   2. `format!` reassembly: struct declarations are not produced by
+///      `format!` interpolation.
+///   3. Named `constant` reference: a `const` cannot supply a struct
+///      field name; the field declaration itself trips the scoped check.
+#[test]
+fn test_state_no_files_dag_field() {
+    let root = common::repo_root();
+    let content =
+        fs::read_to_string(root.join("src").join("state.rs")).expect("src/state.rs must exist");
+    let tail = content
+        .split_once("pub struct StateFiles {")
+        .map(|(_, t)| t)
+        .expect("StateFiles struct must exist");
+    let body = tail
+        .split_once('}')
+        .map(|(b, _)| b)
+        .expect("StateFiles struct must close");
+    let forbidden = "dag";
+    assert!(
+        !body.contains(forbidden),
+        "StateFiles in src/state.rs must not declare a `dag` field — the \
+         DAG-on-disk lane was retired; the DAG lives in the issue-body plan."
+    );
+}
+
+/// Tombstone: removed in PR #1777. The `FlowPaths::dag_file()` method
+/// (`src/flow_paths.rs`) is deleted alongside the `files.dag` state
+/// field — no caller computes a `dag.md` path. Must not return.
+///
+/// Byte-substring on `fn dag_file` scoped to `src/flow_paths.rs`. The
+/// shape is byte-stable:
+///   1. `concat!` reassembly: a Rust method name cannot be assembled by
+///      `concat!` — re-adding the method requires the literal
+///      `fn dag_file` in source.
+///   2. `format!` reassembly: method declarations are not produced by
+///      `format!` interpolation.
+///   3. Named `constant` reference: a `const` cannot declare a method;
+///      the `fn dag_file` declaration itself trips the check.
+#[test]
+fn test_flow_paths_no_dag_file_method() {
+    let root = common::repo_root();
+    let content = fs::read_to_string(root.join("src").join("flow_paths.rs"))
+        .expect("src/flow_paths.rs must exist");
+    assert!(
+        !content.contains("fn dag_file"),
+        "src/flow_paths.rs must not declare `fn dag_file` — the dag.md \
+         path helper was removed with the DAG-on-disk lane."
+    );
+}
+
+/// Tombstone: removed in PR #1777. The `ManagedArtifact::DagMd` variant
+/// and its `classify_path`/`canonical_path` arms (`src/write_rule.rs`)
+/// are deleted — `dag.md` is no longer a write-rule-managed artifact.
+/// Must not return.
+///
+/// Byte-substring on `DagMd` scoped to `src/write_rule.rs`. The
+/// PascalCase enum-variant identifier is byte-stable:
+///   1. `concat!` reassembly: a variant name cannot be assembled by
+///      `concat!` — re-adding it requires the literal `DagMd` token.
+///   2. `format!` reassembly: enum declarations and match arms are not
+///      produced by `format!` interpolation.
+///   3. Named `constant` reference: a `const` cannot supply an enum
+///      variant; the variant declaration itself trips the check.
+#[test]
+fn test_write_rule_no_dag_md_variant() {
+    let root = common::repo_root();
+    let content = fs::read_to_string(root.join("src").join("write_rule.rs"))
+        .expect("src/write_rule.rs must exist");
+    assert!(
+        !content.contains("DagMd"),
+        "src/write_rule.rs must not contain `DagMd` — dag.md is no longer \
+         a write-rule-managed artifact."
+    );
+}
+
 /// Tombstone: removed in PR #1567. The `bump_install_path` function and
 /// its two `run_impl` callsites are deleted from `src/bump_version.rs` —
 /// the `flow-marketplace/flow/<version>/bin/setup` install-path

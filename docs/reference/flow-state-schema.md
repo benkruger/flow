@@ -298,17 +298,15 @@ The object shape is represented in Rust as `SkillConfig::Detailed(IndexMap<Strin
 ## Files Object
 
 Structured artifact file paths using relative paths (relative to project root)
-for portability. Created by `/flow-start` with `plan` and `dag` set to `null`.
+for portability. Created by `/flow-start` with `plan` set to `null`.
 `files.plan` is populated at Phase 1 (Start) Step 5 by `bin/flow plan-from-issue`,
 which extracts the plan from the issue body's
 `<!-- FLOW-PLAN-BEGIN -->`/`<!-- FLOW-PLAN-END -->` sentinels and writes it to
-`.flow-states/<branch>/plan.md`. `files.dag` is written by the pre-decompose
-flow (the `/flow-plan` utility skill) when a DAG analysis is produced.
+`.flow-states/<branch>/plan.md`.
 
 ```json
 "files": {
   "plan": ".flow-states/app-payment-webhooks/plan.md",
-  "dag": ".flow-states/app-payment-webhooks/dag.md",
   "log": ".flow-states/app-payment-webhooks/log",
   "state": ".flow-states/app-payment-webhooks/state.json"
 }
@@ -317,11 +315,10 @@ flow (the `/flow-plan` utility skill) when a DAG analysis is produced.
 | Field | Type | Description |
 |-------|------|-------------|
 | `plan` | string / null | Relative path to the implementation plan file — set by Phase 1 Step 5 (`bin/flow plan-from-issue`) |
-| `dag` | string / null | Relative path to the DAG analysis file — written by the pre-decompose flow when applicable |
 | `log` | string | Relative path to the session log file — set at creation |
 | `state` | string | Relative path to this state file — set at creation |
 
-These entries are **descriptive** — they record where the artifacts live so consumers (e.g., the Plan-phase resume check, `format-status`) can read them. They are NOT the source of truth for write destinations. The canonical destination for every managed FLOW artifact is computed by `FlowPaths` (`src/flow_paths.rs`) as a pure function of `(project_root, branch)`. `bin/flow write-rule` enforces this at the CLI layer: when `--path` names a managed artifact (`plan.md`, `dag.md`, `commit-msg.txt`, `.flow-issue-body`, `orchestrate-queue.json`), any value that doesn't lexically normalize to the `FlowPaths`-computed destination is rejected with `step: "path_canonicalization"`. The commit-message file (`<branch_dir>/commit-msg.txt`, via `FlowPaths::commit_msg`) is intentionally absent from `files.*` for this reason — its path is recoverable from `(project_root, branch)` alone, so persisting it in state would only invite drift. See `.claude/rules/file-tool-preflights.md` "Managed-Artifact Canonicalization Gate (CLI Layer)".
+These entries are **descriptive** — they record where the artifacts live so consumers (e.g., the Plan-phase resume check, `format-status`) can read them. They are NOT the source of truth for write destinations. The canonical destination for every managed FLOW artifact is computed by `FlowPaths` (`src/flow_paths.rs`) as a pure function of `(project_root, branch)`. `bin/flow write-rule` enforces this at the CLI layer: when `--path` names a managed artifact (`plan.md`, `commit-msg.txt`, `.flow-issue-body`, `orchestrate-queue.json`), any value that doesn't lexically normalize to the `FlowPaths`-computed destination is rejected with `step: "path_canonicalization"`. The commit-message file (`<branch_dir>/commit-msg.txt`, via `FlowPaths::commit_msg`) is intentionally absent from `files.*` for this reason — its path is recoverable from `(project_root, branch)` alone, so persisting it in state would only invite drift. See `.claude/rules/file-tool-preflights.md` "Managed-Artifact Canonicalization Gate (CLI Layer)".
 
 ---
 

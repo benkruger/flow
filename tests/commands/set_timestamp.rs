@@ -762,7 +762,6 @@ fn make_cli_state() -> Value {
         "started_at": "2026-01-01T00:00:00-08:00",
         "files": {
             "plan": null,
-            "dag": null,
             "log": ".flow-states/test-feature/log",
             "state": ".flow-states/test-feature/state.json"
         },

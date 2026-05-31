@@ -293,7 +293,7 @@ fn make_flow_with_token_snapshots() -> FlowSummary {
         "branch": "token-test",
         "started_at": "2026-01-01T00:00:00-08:00",
         "current_phase": "flow-code",
-        "files": {"plan": null, "dag": null, "log": "", "state": ""},
+        "files": {"plan": null, "log": "", "state": ""},
         "phases": {
             "flow-start": {
                 "name": "Start", "status": "complete", "started_at": null,

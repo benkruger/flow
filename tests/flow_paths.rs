@@ -58,14 +58,6 @@ fn plan_file_lives_under_branch_dir() {
 }
 
 #[test]
-fn dag_file_lives_under_branch_dir() {
-    assert_eq!(
-        paths().dag_file(),
-        PathBuf::from("/tmp/project/.flow-states/my-feature/dag.md")
-    );
-}
-
-#[test]
 fn frozen_phases_lives_under_branch_dir() {
     assert_eq!(
         paths().frozen_phases(),

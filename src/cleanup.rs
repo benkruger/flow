@@ -289,7 +289,7 @@ fn remove_phase_anchor_marker(home: &Path, session_id: Option<&str>) -> String {
 
 /// Recursively remove `<.flow-states>/<branch>/` and everything inside
 /// it. The branch directory holds every per-branch artifact (state
-/// file, log, plan, DAG, frozen phases, CI sentinel, timings,
+/// file, log, plan, frozen phases, CI sentinel, timings,
 /// closed-issues record, issues summary, scratch rule content, commit
 /// message, start prompt, adversarial test files of any extension), so
 /// a single recursive remove replaces the previous per-suffix
@@ -435,7 +435,7 @@ pub fn cleanup(
     );
 
     // Every per-branch artifact (`state.json`, `log`, `plan.md`,
-    // `dag.md`, `phases.json`, `ci-passed`, `timings.md`,
+    // `phases.json`, `ci-passed`, `timings.md`,
     // `closed-issues.json`, `issues.md`, `rule-content.md`,
     // `commit-msg.txt`, `commit-msg-content.txt`, `start-prompt`)
     // lives under `branch_dir()`, so one `remove_dir_all` covers the

@@ -608,7 +608,6 @@ fn minimal_state() {
     assert!(body.contains("## Phase Timings"));
     assert!(body.contains("## State File"));
     assert!(!body.contains("## Plan\n"));
-    assert!(!body.contains("## DAG Analysis"));
     assert!(!body.contains("## Session Log"));
     assert!(!body.contains("## Issues Filed"));
 }
@@ -658,61 +657,30 @@ fn with_plan_only() {
 
     assert!(body.contains("## Plan"));
     assert!(body.contains("Do the thing."));
-    assert!(!body.contains("## DAG Analysis"));
-}
-
-#[test]
-fn with_plan_and_dag() {
-    let mut state = make_test_state();
-    let dir = tempfile::tempdir().unwrap();
-    let plan_file = dir.path().join("plan.md");
-    fs::write(&plan_file, "# Plan content").unwrap();
-    let dag_file = dir.path().join("dag.md");
-    fs::write(&dag_file, "# DAG content").unwrap();
-    state["plan_file"] = json!(plan_file.to_string_lossy().to_string());
-    state["dag_file"] = json!(dag_file.to_string_lossy().to_string());
-
-    let body = render_body(&state, dir.path()).unwrap();
-
-    assert!(body.contains("## Plan"));
-    assert!(body.contains("## DAG Analysis"));
-    assert!(body.contains("Plan content"));
-    assert!(body.contains("DAG content"));
-}
-
-#[test]
-fn dag_always_text_format() {
-    let mut state = make_test_state();
-    let dir = tempfile::tempdir().unwrap();
-    let dag_file = dir.path().join("dag.md");
-    fs::write(&dag_file, r#"<dag goal="test"><node id="1"/></dag>"#).unwrap();
-    state["dag_file"] = json!(dag_file.to_string_lossy().to_string());
-
-    let body = render_body(&state, dir.path()).unwrap();
-
-    assert!(body.contains("```text"));
-    assert!(!body.contains("```xml"));
-    assert!(body.contains(r#"<dag goal="test">"#));
 }
 
 #[test]
 fn nested_fences_preserve_subsequent_sections() {
+    // A details-block body that itself contains fenced code must not
+    // let its nested fences bleed into the sections render_body emits
+    // after it. Driven through the surviving Plan section.
     let mut state = make_test_state();
     let dir = tempfile::tempdir().unwrap();
-    let dag_file = dir.path().join("dag.md");
+    let plan_file = dir.path().join("plan.md");
     fs::write(
-        &dag_file,
-        "# DAG Analysis\n\n```xml\n<dag goal='test'><node id='1'/></dag>\n```\n\n```python\nprint('hello')\n```",
-    ).unwrap();
-    state["dag_file"] = json!(dag_file.to_string_lossy().to_string());
+        &plan_file,
+        "# Plan\n\n```xml\n<node id='1'/>\n```\n\n```python\nprint('hello')\n```",
+    )
+    .unwrap();
+    state["plan_file"] = json!(plan_file.to_string_lossy().to_string());
 
     let body = render_body(&state, dir.path()).unwrap();
 
     assert!(body.contains("## Phase Timings"));
     assert!(body.contains("## State File"));
-    let dag_start = body.find("## DAG Analysis").unwrap();
-    let dag_section = &body[dag_start..];
-    assert!(dag_section.contains("````"));
+    let plan_start = body.find("## Plan").unwrap();
+    let plan_section = &body[plan_start..];
+    assert!(plan_section.contains("````"));
 }
 
 #[test]
@@ -741,15 +709,12 @@ fn full_state() {
 
     let plan_file = dir.path().join("plan.md");
     fs::write(&plan_file, "Plan content").unwrap();
-    let dag_file = dir.path().join("dag.md");
-    fs::write(&dag_file, "DAG content").unwrap();
     let branch_dir = dir.path().join(".flow-states").join("test-feature");
     fs::create_dir_all(&branch_dir).unwrap();
     let log_file = branch_dir.join("log");
     fs::write(&log_file, "2026-01-01 [Phase 1] Step 1 — done").unwrap();
 
     state["plan_file"] = json!(plan_file.to_string_lossy().to_string());
-    state["dag_file"] = json!(dag_file.to_string_lossy().to_string());
     state["transcript_path"] = json!("/path/to/session.jsonl");
     state["issues_filed"] = json!([{
         "label": "Tech Debt",
@@ -763,7 +728,6 @@ fn full_state() {
     assert!(body.contains("## What"));
     assert!(body.contains("## Artifacts"));
     assert!(body.contains("## Plan"));
-    assert!(body.contains("## DAG Analysis"));
     assert!(body.contains("## Phase Timings"));
     assert!(body.contains("## State File"));
     assert!(body.contains("## Session Log"));
@@ -804,33 +768,15 @@ fn plan_from_files_block() {
 }
 
 #[test]
-fn dag_from_files_block() {
-    let mut state = make_test_state();
-    let dir = tempfile::tempdir().unwrap();
-    let branch_dir = dir.path().join(".flow-states").join("test-feature");
-    fs::create_dir_all(&branch_dir).unwrap();
-    let dag_file = branch_dir.join("dag.md");
-    fs::write(&dag_file, "# DAG from files block").unwrap();
-    state["files"]["dag"] = json!(".flow-states/test-feature/dag.md");
-
-    let body = render_body(&state, dir.path()).unwrap();
-
-    assert!(body.contains("## DAG Analysis"));
-    assert!(body.contains("DAG from files block"));
-}
-
-#[test]
 fn artifacts_table_from_files_block() {
     let mut state = make_test_state();
     state["files"]["plan"] = json!(".flow-states/test-feature/plan.md");
-    state["files"]["dag"] = json!(".flow-states/test-feature/dag.md");
 
     let dir = tempfile::tempdir().unwrap();
     let body = render_body(&state, dir.path()).unwrap();
 
     assert!(body.contains("| File | Path |"));
     assert!(body.contains(".flow-states/test-feature/plan.md"));
-    assert!(body.contains(".flow-states/test-feature/dag.md"));
     assert!(body.contains(".flow-states/test-feature/log"));
     assert!(body.contains(".flow-states/test-feature/state.json"));
 }
@@ -876,20 +822,6 @@ fn missing_plan_file() {
     let body = render_body(&state, dir.path()).unwrap();
     let has_plan_section = body.contains("## Plan\n\n<details>");
     assert!(!has_plan_section);
-}
-
-#[test]
-fn missing_dag_file() {
-    let mut state = make_test_state();
-    let dir = tempfile::tempdir().unwrap();
-    state["dag_file"] = json!(dir
-        .path()
-        .join("nonexistent-dag.md")
-        .to_string_lossy()
-        .to_string());
-
-    let body = render_body(&state, dir.path()).unwrap();
-    assert!(!body.contains("## DAG Analysis"));
 }
 
 #[test]
@@ -944,13 +876,10 @@ fn section_order() {
 
     let plan_file = dir.path().join("plan.md");
     fs::write(&plan_file, "Plan").unwrap();
-    let dag_file = dir.path().join("dag.md");
-    fs::write(&dag_file, "DAG").unwrap();
     let branch_log_dir = dir.path().join(".flow-states").join("test-feature");
     fs::create_dir_all(&branch_log_dir).unwrap();
     fs::write(branch_log_dir.join("log"), "log entry").unwrap();
     state["plan_file"] = json!(plan_file.to_string_lossy().to_string());
-    state["dag_file"] = json!(dag_file.to_string_lossy().to_string());
     state["transcript_path"] = json!("/path/to/session.jsonl");
     state["issues_filed"] = json!([{
         "label": "Tech Debt",
@@ -965,7 +894,6 @@ fn section_order() {
         "## What",
         "## Artifacts",
         "## Plan",
-        "## DAG Analysis",
         "## Phase Timings",
         "## State File",
         "## Session Log",
@@ -1032,9 +960,9 @@ fn render_body_omits_token_cost_section_when_no_data() {
     );
 }
 
-/// All eight optional sections rendered together: their `## `
+/// All seven optional sections rendered together: their `## `
 /// heading positions must follow the canonical order
-/// What < Artifacts < Plan < DAG Analysis < Phase Timings <
+/// What < Artifacts < Plan < Phase Timings <
 /// Token Cost < State File < Session Log < Issues Filed.
 #[test]
 fn render_body_token_cost_section_order_invariant() {
@@ -1043,13 +971,10 @@ fn render_body_token_cost_section_order_invariant() {
 
     let plan_file = dir.path().join("plan.md");
     fs::write(&plan_file, "Plan").unwrap();
-    let dag_file = dir.path().join("dag.md");
-    fs::write(&dag_file, "DAG").unwrap();
     let branch_log_dir = dir.path().join(".flow-states").join("test-feature");
     fs::create_dir_all(&branch_log_dir).unwrap();
     fs::write(branch_log_dir.join("log"), "log entry").unwrap();
     state["plan_file"] = json!(plan_file.to_string_lossy().to_string());
-    state["dag_file"] = json!(dag_file.to_string_lossy().to_string());
     state["transcript_path"] = json!("/path/to/session.jsonl");
     state["issues_filed"] = json!([{
         "label": "Tech Debt",
@@ -1064,7 +989,6 @@ fn render_body_token_cost_section_order_invariant() {
         "## What",
         "## Artifacts",
         "## Plan",
-        "## DAG Analysis",
         "## Phase Timings",
         "## Token Cost",
         "## State File",
@@ -1228,19 +1152,6 @@ fn plan_file_as_directory_propagates_error() {
     let plan_as_dir = dir.path().join("plan-dir");
     fs::create_dir(&plan_as_dir).unwrap();
     state["plan_file"] = json!(plan_as_dir.to_string_lossy().to_string());
-
-    let result = render_body(&state, dir.path());
-    assert!(result.is_err());
-}
-
-/// Same as above but for the DAG file read.
-#[test]
-fn dag_file_as_directory_propagates_error() {
-    let mut state = make_test_state();
-    let dir = tempfile::tempdir().unwrap();
-    let dag_as_dir = dir.path().join("dag-dir");
-    fs::create_dir(&dag_as_dir).unwrap();
-    state["dag_file"] = json!(dag_as_dir.to_string_lossy().to_string());
 
     let result = render_body(&state, dir.path());
     assert!(result.is_err());

@@ -137,7 +137,6 @@ pub struct StepSnapshot {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StateFiles {
     pub plan: Option<String>,
-    pub dag: Option<String>,
     pub log: String,
     pub state: String,
 }
@@ -240,11 +239,9 @@ pub struct FlowState {
     #[serde(default)]
     pub phase_transitions: Vec<PhaseTransition>,
 
-    // Legacy fields — superseded by files.plan and files.dag
+    // Legacy field — superseded by files.plan
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan_file: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dag_file: Option<String>,
 
     // Per-skill autonomy settings
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -41,7 +41,6 @@ fn make_state() -> Value {
         "current_phase": "flow-code",
         "files": {
             "plan": null,
-            "dag": null,
             "log": ".flow-states/test-feature.log",
             "state": ".flow-states/test-feature.json"
         },
