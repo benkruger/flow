@@ -144,12 +144,16 @@ gate — there is nothing to log.
 
 ## Resume Check
 
-Read `learn_step` from the state file (default `0` if absent).
+Read `learn_step` from the state file (default `0` if absent). Each value
+is the highest Step that completed; resume at the next one.
 
-- If `3` → Step 3 is done. Skip to Step 4.
-- If `4` → Steps 3-4 are done. Skip to Step 5.
-- If `5` → Steps 3-5 are done. Skip to Step 6.
-- If `6` → Steps 3-6 are done. Skip to Step 7.
+- If `0` or absent → no step completed. Start at Step 1.
+- If `1` → Step 1 is done. Skip to Step 2.
+- If `2` → Steps 1-2 are done. Skip to Step 3.
+- If `3` → Steps 1-3 are done. Skip to Step 4.
+- If `4` → Steps 1-4 are done. Skip to Step 5.
+- If `5` → Steps 1-5 are done. Skip to Step 6.
+- If `6` → Steps 1-6 are done. Skip to Step 7.
 
 ---
 
@@ -355,13 +359,15 @@ analysis from session memory defeats cognitive isolation per
 Work From the Parent Session".
 </HARD-GATE>
 
----
-
-## Step 2 — Synthesize findings
+Record step completion:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=1
 ```
+
+---
+
+## Step 2 — Synthesize findings
 
 **Correction notes are mandatory user directives.** This paragraph
 exists so a correction the user captured mid-flow via
@@ -468,13 +474,15 @@ double-truncation (a partition re-invocation itself returned without
 the `END-OF-FINDINGS` marker), note the agent as truncated at the top
 of the synthesis and use the combined findings gathered so far.
 
----
-
-## Step 3 — Route and apply
+Record step completion:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=2
 ```
+
+---
+
+## Step 3 — Route and apply
 
 This step is fully autonomous — decide destinations and apply all
 changes without asking the user.
@@ -664,13 +672,15 @@ After each rules file write, record the finding. Use outcome `rule_written` for 
 ${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<reason>" --outcome "<outcome>" --phase "flow-learn" --path ".claude/rules/<topic>.md"
 ```
 
----
-
-## Step 4 — Promote permissions
+Record step completion:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=3
 ```
+
+---
+
+## Step 4 — Promote permissions
 
 Promote any session permissions accumulated in
 `.claude/settings.local.json` into the persistent
@@ -751,10 +761,6 @@ after this invocation.
 
 ## Step 6 — File GitHub issues
 
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=5
-```
-
 File GitHub issues for findings that require plugin changes.
 
 ### Process gap issues (Tenant 1)
@@ -773,6 +779,22 @@ The issue title should name the rule and recommend the enforcement
 mechanism (HARD-GATE or hook). The issue body should describe the
 violation, cite the rule, and explain why instruction-level enforcement
 is insufficient.
+
+### Skip already-filed findings (resume idempotency)
+
+Step 6 can re-run on resume — the Resume Check maps `learn_step=5` back to
+this step, and an interrupt after the first issue is filed but before
+`learn_step=6` is recorded re-enters here. Because issue filing
+(`gh issue create` underneath) is not idempotent, re-filing a finding
+already on GitHub creates a duplicate issue on `benkruger/flow`. Guard
+against that by consulting the durable record before filing.
+
+Before filing each finding, read the state `findings[]` array. If an
+entry with `outcome=="filed"` matches the current finding's description
+string (the exact text passed to `add-finding --finding`), the issue was
+already filed on a prior run: skip the file + record steps below and reuse
+that entry's recorded `issue_url` for the Step 7 report. Only file
+findings with no matching `filed` entry.
 
 ### Filing process
 
@@ -805,13 +827,16 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow add-finding --finding "<description>" --reason "<
 
 If there are no findings to file, skip this step.
 
----
-
-## Step 7 — Present report
+Record step completion (after filing, so an interrupt mid-filing
+resumes back into Step 6 rather than skipping to Step 7):
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set learn_step=6
 ```
+
+---
+
+## Step 7 — Present report
 
 Present the full report to the user:
 

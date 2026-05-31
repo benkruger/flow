@@ -1068,6 +1068,139 @@ fn learn_uses_partition_truncation_recovery() {
     );
 }
 
+/// Extract the flow-learn `## Step N` section, bounded from the `## Step N `
+/// header to the next `## ` heading. Bounded-slice pattern per
+/// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions" so a
+/// per-step `learn_step=` assertion does not leak into a sibling step. The
+/// trailing space in the marker (`## Step 1 `) anchors on the header line and
+/// never matches prose like `Skip to Step 1`.
+fn flow_learn_step(skill: &str, n: u32) -> &str {
+    let marker = format!("## Step {} ", n);
+    let tail = skill
+        .split_once(&marker)
+        .map(|(_, t)| t)
+        .unwrap_or_else(|| panic!("flow-learn must have a `## Step {n}` header"));
+    tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail)
+}
+
+/// The integer following the LAST `--set learn_step=` write inside a step
+/// section, or `None` when the section contains no counter write. Anchors on
+/// the `--set ` prefix so prose that mentions a `learn_step=N` value (e.g. a
+/// resume-window explanation) is not mistaken for a counter write.
+fn last_learn_step_value(section: &str) -> Option<u32> {
+    let marker = "--set learn_step=";
+    let idx = section.rfind(marker)?;
+    let digits: String = section[idx + marker.len()..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    digits.parse().ok()
+}
+
+#[test]
+fn flow_learn_resume_check_covers_every_step() {
+    // The Resume Check must map every reachable `learn_step` value 1..6 to a
+    // step. Regression: a missing case (the pre-PR Resume Check lacked `1`
+    // and `2`) silently restarts the phase from Step 1 after a crash past
+    // Step 2 or 3, re-launching the cognitively-isolated learn-analyst agent.
+    // Consumer: the per-step monotonic counter the Resume Check resumes from.
+    let c = common::read_skill("flow-learn");
+    let tail = c
+        .split_once("## Resume Check")
+        .map(|(_, t)| t)
+        .expect("flow-learn must have a `## Resume Check` section");
+    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
+    for n in 1..=6 {
+        assert!(
+            section.contains(&format!("`{n}`")),
+            "flow-learn Resume Check must map `learn_step` value `{n}` to a step"
+        );
+    }
+}
+
+#[test]
+fn flow_learn_each_step_ends_with_its_own_counter() {
+    // Each Step N (N in 1..6) must end with `learn_step=N`, so an interrupt
+    // anywhere inside the step resumes at the correct next step. Regression:
+    // the pre-PR off-by-one / start-of-step / Step-5/Step-6 collision writes
+    // (Step 2 wrote `=1`, Step 6 wrote `=5` at its start) mis-resume.
+    // Consumer: the Resume Check `N → Step N+1` mapping.
+    let c = common::read_skill("flow-learn");
+    for n in 1..=6 {
+        let section = flow_learn_step(&c, n);
+        assert_eq!(
+            last_learn_step_value(section),
+            Some(n),
+            "flow-learn Step {n} must end with `set-timestamp --set learn_step={n}`"
+        );
+    }
+}
+
+#[test]
+fn flow_learn_step7_writes_no_counter() {
+    // Step 7 is terminal — there is no Step 8 to resume into. Writing
+    // `learn_step=7` would push the unguarded `src/tui_data.rs` timeline arm
+    // to `display_step = 8`, past the names map's max index, producing a
+    // "step 8 of 7" annotation. Regression: re-adding a Step 7 counter write.
+    // Consumer: the `src/tui_data.rs:361` timeline annotation (`learn_step + 1`).
+    let c = common::read_skill("flow-learn");
+    let step7 = flow_learn_step(&c, 7);
+    assert!(
+        !step7.contains("--set learn_step="),
+        "flow-learn Step 7 (terminal) must write no `learn_step=` counter"
+    );
+}
+
+#[test]
+fn flow_learn_step6_writes_complete_marker_after_filing() {
+    // Step 6's `learn_step=6` write must appear AFTER the `bin/flow issue`
+    // filing block, so an interrupt during filing leaves `learn_step=5`
+    // (resume re-enters Step 6) rather than `learn_step=6` (resume skips to
+    // Step 7, dropping unfiled findings). Regression: the exact Step-5/Step-6
+    // collision that re-files duplicate GitHub issues on resume. Consumer:
+    // the Step 6 idempotency skip (Part 2) the end-of-step marker pairs with.
+    let c = common::read_skill("flow-learn");
+    let step6 = flow_learn_step(&c, 6);
+    let issue_idx = step6
+        .find("bin/flow issue")
+        .expect("flow-learn Step 6 must invoke `bin/flow issue`");
+    let write_idx = step6
+        .find("--set learn_step=6")
+        .expect("flow-learn Step 6 must write `--set learn_step=6`");
+    assert!(
+        write_idx > issue_idx,
+        "flow-learn Step 6 must write `learn_step=6` AFTER the `bin/flow issue` filing block"
+    );
+}
+
+#[test]
+fn flow_learn_step6_skips_already_filed_findings() {
+    // Step 6's filing loop must consult the durable state `findings[]`
+    // array and skip any finding already recorded with `outcome=="filed"`,
+    // reusing its recorded URL, BEFORE calling `bin/flow issue`. Regression:
+    // a Step 6 resume re-files duplicate GitHub issues because
+    // `bin/flow issue` / `gh issue create` is not idempotent. Consumer: the
+    // end-of-Step-6 `learn_step=6` marker (Part 1) closes the whole-step
+    // window; this skip closes the residual mid-filing window.
+    let c = common::read_skill("flow-learn");
+    let step6 = flow_learn_step(&c, 6);
+    let lc = step6.to_ascii_lowercase();
+    let skip_idx = step6
+        .find("findings[]")
+        .expect("flow-learn Step 6 must consult the state `findings[]` array before filing");
+    assert!(
+        lc.contains("already") && lc.contains("filed") && lc.contains("skip"),
+        "flow-learn Step 6 must instruct skipping findings already recorded as filed"
+    );
+    let issue_idx = step6
+        .find("bin/flow issue")
+        .expect("flow-learn Step 6 must invoke `bin/flow issue`");
+    assert!(
+        skip_idx < issue_idx,
+        "flow-learn Step 6's already-filed skip check must appear BEFORE the `bin/flow issue` call"
+    );
+}
+
 #[test]
 fn review_agents_have_sufficient_max_turns() {
     for agent in &[
