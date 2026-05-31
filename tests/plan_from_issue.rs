@@ -858,6 +858,56 @@ fn plan_from_issue_tasks_total_requires_digit_after_task_prefix() {
     assert_eq!(data["tasks_total"], 1);
 }
 
+// --- files.plan population ---
+
+/// After `write_plan` succeeds, `run_impl_main` records the relative
+/// plan path in the state file's `files.plan` so downstream consumers
+/// (phase-enter, render_pr_body, tui_data, plan_deviation) read the
+/// pointer without recomputing it. The test seeds an existing
+/// `.flow-states/<branch>/state.json` (run_impl_main does not create
+/// it — the real flow's init-state Step 3 already did), runs the
+/// subprocess through a fake gh returning a sentinel-delimited body,
+/// and asserts the concrete relative path lands in files.plan.
+#[test]
+fn plan_from_issue_populates_files_plan() {
+    // Plan fixture: key "expected" carries value
+    // ".flow-states/<branch>/plan.md" (the branch-templated relative
+    // path the run writes into files.plan).
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    let branch = "feat-files-plan";
+    // Seed an existing state file — run_impl_main mutates it, never
+    // creates it.
+    let state_dir = repo.join(".flow-states").join(branch);
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(state_dir.join("state.json"), "{\"files\":{}}").unwrap();
+
+    let body = "<!-- FLOW-PLAN-BEGIN -->\\n## Plan\\nContent.\\n<!-- FLOW-PLAN-END -->";
+    let stub_dir = create_gh_stub(
+        &repo,
+        &format!(
+            "#!/bin/bash\necho '{{\"body\":\"{}\",\"state\":\"OPEN\"}}'\nexit 0\n",
+            body
+        ),
+    );
+
+    let output = run_plan_from_issue(&repo, &["--issue", "30", "--branch", branch], &stub_dir);
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+
+    let state_content = fs::read_to_string(state_dir.join("state.json")).unwrap();
+    let state: serde_json::Value = serde_json::from_str(&state_content).unwrap();
+    let expected = format!(".flow-states/{}/plan.md", branch);
+    assert_eq!(state["files"]["plan"].as_str().unwrap(), expected);
+}
+
 #[test]
 fn plan_from_issue_rejects_oversized_gh_stdout_before_parse() {
     // Tenant 4 (Correctness): Review pre-mortem flagged that an

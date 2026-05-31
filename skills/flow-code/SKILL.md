@@ -162,9 +162,12 @@ Get `<branch>` from the state file.
 
 ## Resume Check
 
-Read `files.plan` from the state file to get the plan file path (fall back
-to `plan_file` for old state files). Use the Read tool to read the plan file. Identify the Tasks section — this is the
-ordered list of implementation tasks to execute.
+Read `files.plan` from the state file to get the plan file path. Use the
+Read tool to read the plan file at `<project_root>/<files.plan path>` — the
+`.flow-states/` tree lives at the project root, not inside the worktree, so
+the `<project_root>/` prefix is required (a raw relative read resolves under
+the worktree and the `validate-worktree-paths` hook blocks it). Identify the
+Tasks section — this is the ordered list of implementation tasks to execute.
 
 Read `code_task` from the state file (default `0` if absent).
 

@@ -317,6 +317,47 @@ fn complete_navigates_to_project_root() {
     );
 }
 
+// --- plan-path resolution: <project_root>/<files.plan path> ---
+//
+// The `.flow-states/` tree lives at the project root, not inside the
+// worktree. A skill that reads `files.plan` as a raw relative path
+// resolves it under the worktree, where `validate-worktree-paths`
+// blocks the read. Each skill that reads the plan file must prefix the
+// state-stored relative path with `<project_root>/`. These are per-file
+// siblings (per `.claude/rules/tests-guard-real-regressions.md`
+// "Multi-file contract tests"): each names the one skill whose
+// drift it guards.
+
+#[test]
+fn review_reads_plan_at_project_root() {
+    let c = common::read_skill("flow-review");
+    assert!(
+        c.contains("<project_root>/<files.plan path>"),
+        "flow-review must read the plan at `<project_root>/<files.plan path>` — \
+         a raw relative read resolves under the worktree and is blocked"
+    );
+}
+
+#[test]
+fn code_reads_plan_at_project_root() {
+    let c = common::read_skill("flow-code");
+    assert!(
+        c.contains("<project_root>/<files.plan path>"),
+        "flow-code must read the plan at `<project_root>/<files.plan path>` — \
+         a raw relative read resolves under the worktree and is blocked"
+    );
+}
+
+#[test]
+fn learn_reads_plan_at_project_root() {
+    let c = common::read_skill("flow-learn");
+    assert!(
+        c.contains("<project_root>/<files.plan path>"),
+        "flow-learn must read the plan at `<project_root>/<files.plan path>` — \
+         a raw relative read resolves under the worktree and is blocked"
+    );
+}
+
 fn assert_agent_exists(filename: &str, required_keys: &[&str]) {
     let fm = read_agent_frontmatter(filename);
     let map = fm.as_mapping().unwrap();
