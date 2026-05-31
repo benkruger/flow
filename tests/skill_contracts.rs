@@ -1100,9 +1100,9 @@ fn last_learn_step_value(section: &str) -> Option<u32> {
 #[test]
 fn flow_learn_resume_check_covers_every_step() {
     // The Resume Check must map every reachable `learn_step` value 1..6 to a
-    // step. Regression: a missing case (the pre-PR Resume Check lacked `1`
-    // and `2`) silently restarts the phase from Step 1 after a crash past
-    // Step 2 or 3, re-launching the cognitively-isolated learn-analyst agent.
+    // step. Regression: a Resume Check that omits a value N in 1..6 leaves a
+    // crash at `learn_step=N` to restart the phase from Step 1, re-launching
+    // the cognitively-isolated learn-analyst agent and re-running synthesis.
     // Consumer: the per-step monotonic counter the Resume Check resumes from.
     let c = common::read_skill("flow-learn");
     let tail = c
@@ -1122,9 +1122,10 @@ fn flow_learn_resume_check_covers_every_step() {
 fn flow_learn_each_step_ends_with_its_own_counter() {
     // Each Step N (N in 1..6) must end with `learn_step=N`, so an interrupt
     // anywhere inside the step resumes at the correct next step. Regression:
-    // the pre-PR off-by-one / start-of-step / Step-5/Step-6 collision writes
-    // (Step 2 wrote `=1`, Step 6 wrote `=5` at its start) mis-resume.
-    // Consumer: the Resume Check `N → Step N+1` mapping.
+    // a counter write placed at a step's START, or a step writing a value
+    // that does not equal its own number, makes the Resume Check resume at
+    // the wrong step (and a Step-5/Step-6 pair both writing `=5` re-enters
+    // the issue-filing loop). Consumer: the Resume Check `N → Step N+1` mapping.
     let c = common::read_skill("flow-learn");
     for n in 1..=6 {
         let section = flow_learn_step(&c, n);
@@ -1138,11 +1139,12 @@ fn flow_learn_each_step_ends_with_its_own_counter() {
 
 #[test]
 fn flow_learn_step7_writes_no_counter() {
-    // Step 7 is terminal — there is no Step 8 to resume into. Writing
-    // `learn_step=7` would push the unguarded `src/tui_data.rs` timeline arm
-    // to `display_step = 8`, past the names map's max index, producing a
-    // "step 8 of 7" annotation. Regression: re-adding a Step 7 counter write.
-    // Consumer: the `src/tui_data.rs:361` timeline annotation (`learn_step + 1`).
+    // Step 7 is terminal — there is no Step 8 to resume into. A Step 7
+    // counter write of `learn_step=7` would push the unguarded
+    // `src/tui_data.rs` timeline arm to `display_step = 8`, past the names
+    // map's max index, producing a "step 8 of 7" annotation. Regression: a
+    // Step 7 counter write. Consumer: the `src/tui_data.rs:361` timeline
+    // annotation (`learn_step + 1`).
     let c = common::read_skill("flow-learn");
     let step7 = flow_learn_step(&c, 7);
     assert!(
@@ -1156,9 +1158,11 @@ fn flow_learn_step6_writes_complete_marker_after_filing() {
     // Step 6's `learn_step=6` write must appear AFTER the `bin/flow issue`
     // filing block, so an interrupt during filing leaves `learn_step=5`
     // (resume re-enters Step 6) rather than `learn_step=6` (resume skips to
-    // Step 7, dropping unfiled findings). Regression: the exact Step-5/Step-6
-    // collision that re-files duplicate GitHub issues on resume. Consumer:
-    // the Step 6 idempotency skip (Part 2) the end-of-step marker pairs with.
+    // Step 7, dropping unfiled findings). Regression: a `learn_step=6` write
+    // placed before the filing block lets a mid-filing interrupt skip to
+    // Step 7 and re-file duplicate GitHub issues on resume. Consumer: the
+    // Step 6 "Skip already-filed findings" idempotency subsection, which the
+    // end-of-step marker pairs with.
     let c = common::read_skill("flow-learn");
     let step6 = flow_learn_step(&c, 6);
     let issue_idx = step6
@@ -1180,8 +1184,8 @@ fn flow_learn_step6_skips_already_filed_findings() {
     // reusing its recorded URL, BEFORE calling `bin/flow issue`. Regression:
     // a Step 6 resume re-files duplicate GitHub issues because
     // `bin/flow issue` / `gh issue create` is not idempotent. Consumer: the
-    // end-of-Step-6 `learn_step=6` marker (Part 1) closes the whole-step
-    // window; this skip closes the residual mid-filing window.
+    // end-of-Step-6 `learn_step=6` marker closes the whole-step window; this
+    // skip closes the residual mid-filing window.
     let c = common::read_skill("flow-learn");
     let step6 = flow_learn_step(&c, 6);
     let lc = step6.to_ascii_lowercase();

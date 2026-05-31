@@ -782,12 +782,13 @@ is insufficient.
 
 ### Skip already-filed findings (resume idempotency)
 
-Step 6 can re-run on resume — the Resume Check maps `learn_step=5` back to
-this step, and an interrupt after the first issue is filed but before
-`learn_step=6` is recorded re-enters here. Because issue filing
-(`gh issue create` underneath) is not idempotent, re-filing a finding
-already on GitHub creates a duplicate issue on `benkruger/flow`. Guard
-against that by consulting the durable record before filing.
+Filing GitHub issues is not idempotent — `gh issue create` cannot detect
+and skip an issue it already created — so re-filing a finding on a Step 6
+resume creates a duplicate issue on `benkruger/flow`. Step 6 can re-run on
+resume: the Resume Check maps `learn_step=5` back to this step, and an
+interrupt after the first issue is filed but before `learn_step=6` is
+recorded re-enters here. Guard against the duplicate by consulting the
+durable record before filing.
 
 Before filing each finding, read the state `findings[]` array. If an
 entry with `outcome=="filed"` matches the current finding's description
