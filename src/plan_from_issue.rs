@@ -328,6 +328,20 @@ pub fn run_impl_main(args: &Args, root: &Path) -> (serde_json::Value, i32) {
         .state_file();
     let relative = format!(".flow-states/{}/plan.md", args.branch);
     let _ = crate::lock::mutate_state(&state_path, &mut |state| {
+        // Per-level object guards before the nested `IndexMut`
+        // assignment (`.claude/rules/rust-patterns.md` "State Mutation
+        // Object Guards"). A hand-edited or corrupted state file can
+        // hold a non-object root or a non-object `files` value; raw
+        // `state["files"]["plan"] = ...` would panic with serde_json's
+        // `IndexMut`-on-non-object. The root guard skips the write
+        // entirely for a wrong-type root; the `files` guard auto-heals
+        // a wrong-type `files` to an empty object before the assignment.
+        if !(state.is_object() || state.is_null()) {
+            return;
+        }
+        if !state["files"].is_object() {
+            state["files"] = serde_json::json!({});
+        }
         state["files"]["plan"] = serde_json::json!(relative);
     });
 

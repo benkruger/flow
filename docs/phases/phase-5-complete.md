@@ -87,9 +87,9 @@ the worktree, so a missed `cd <project_root>` produces a clean error
 rather than stranding the shell in a deleted directory.
 
 - Phase transition complete (records timing)
-- PR body rendering (What, Artifacts, Plan, DAG Analysis, Phase
-  Timings, Token Cost, Review Findings, Learn Findings, State File,
-  Session Log, Issues Filed)
+- PR body rendering (What, Artifacts, Plan, Phase Timings, Token
+  Cost, Review Findings, Learn Findings, State File, Session Log,
+  Issues Filed)
 - Close referenced GitHub issues from the start prompt
 - Generate business-friendly summary (feature name, prompt,
   per-phase timeline, artifact counts)
@@ -100,7 +100,7 @@ rather than stranding the shell in a deleted directory.
 - Post Slack notification
 - Worktree tmp directory removal, worktree removal, remote and
   local branch deletion, and deletion of the state file, plan file,
-  DAG file, log file, frozen-phases file, CI sentinel, timings
+  log file, frozen-phases file, CI sentinel, timings
   file, closed-issues file, issues file, and adversarial test file
   (glob-matched as `.flow-states/<branch>/adversarial_test.*`),
   followed by `git pull origin <base_branch>` (the integration branch)

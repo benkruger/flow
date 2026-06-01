@@ -53,7 +53,6 @@ fn create_state_file(repo: &Path, branch: &str) {
         "current_phase": "flow-start",
         "files": {
             "plan": null,
-            "dag": null,
             "log": format!(".flow-states/{}/log", branch),
             "state": format!(".flow-states/{}/state.json", branch)
         },
@@ -375,7 +374,6 @@ fn test_worktree_cwd_includes_relative_cwd_suffix() {
         "current_phase": "flow-start",
         "files": {
             "plan": null,
-            "dag": null,
             "log": ".flow-states/subdir-flow/log",
             "state": ".flow-states/subdir-flow/state.json",
         },
@@ -473,7 +471,6 @@ fn start_workspace_pr_base_resolved_by_git() {
         "current_phase": "flow-start",
         "files": {
             "plan": null,
-            "dag": null,
             "log": ".flow-states/staging-flow/log",
             "state": ".flow-states/staging-flow/state.json",
         },
@@ -627,7 +624,6 @@ fn test_backfill_with_repo_and_valid_prompt_file() {
         "current_phase": "flow-start",
         "files": {
             "plan": null,
-            "dag": null,
             "log": ".flow-states/repo-set-branch/log",
             "state": ".flow-states/repo-set-branch/state.json"
         },
@@ -1073,7 +1069,6 @@ fn create_state_file_with_issue(repo: &Path, branch: &str) {
         "current_phase": "flow-start",
         "files": {
             "plan": null,
-            "dag": null,
             "log": format!(".flow-states/{}/log", branch),
             "state": format!(".flow-states/{}/state.json", branch)
         },
