@@ -212,7 +212,7 @@ insufficient:
 - **`AskUserQuestion` during an autonomous in-progress phase**
   — `validate-ask-user` rejects with exit 2 when
   `phases.<current_phase>.status == "in_progress"` AND
-  `skills.<current_phase>.continue == "auto"`. Two carve-outs
+  `skills.<current_phase>.continue == "auto"`. Three carve-outs
   suppress the block:
     - **User-only-skill carve-out**: when the most recent
       assistant Skill tool_use call (since the most recent
@@ -239,6 +239,21 @@ insufficient:
       carve-out is checked first. See
       `.claude/rules/autonomous-phase-discipline.md`
       "Shared-Config Carve-Out".
+    - **Agent-skip-handoff carve-out**: when the most recent
+      user-role turn carries a `phase-finalize` agent-skip
+      handoff (a `tool_result` whose content contains the
+      reason substring `agents_skipped` or
+      `required_agent_not_returned`), the block is suppressed
+      so flow-review's Done-handler `AskUserQuestion` — which
+      asks the user how to proceed when a review agent is
+      recorded in neither `agents_returned` nor
+      `agents_skipped` — can fire instead of deadlocking the
+      autonomous Review phase. phase-finalize returns these
+      business errors with exit 0, so the tool_result's
+      `is_error` is false; the carve-out scans every
+      tool_result regardless of the flag. Checked after the
+      shared-config carve-out. Backed by
+      `crate::hooks::transcript_walker::recent_phase_finalize_agent_skip`.
 - **Autonomous Stop refusal** — `stop_continue::run` composes
   three predicates in order: `check_in_progress_utility_skill`
   (refuses turn-end when a multi-step utility skill marker

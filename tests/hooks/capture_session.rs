@@ -757,3 +757,122 @@ fn refresh_only_touches_cwd_branch() {
         "sibling flow's state must be untouched"
     );
 }
+
+/// End-to-end contract for the session-rotation refresh: a mid-flow
+/// session rotation (capture-session) must refresh the active flow's
+/// transcript pointer so the downstream `record-agent-return`
+/// verifier reads the LIVE transcript and confirms the agent. Without
+/// the refresh, `record-agent-return` reads the stale flow-start
+/// transcript, `verify_agent_returned_in_phase` finds no agent
+/// invocation, and the verifier reports failure — the Review/Learn
+/// deadlock this fix resolves.
+///
+/// The fixture uses a REAL linked git worktree so `project_root()`
+/// (`git worktree list --porcelain`) resolves the worktree cwd back to
+/// the main repo where `.flow-states/` lives, matching production.
+#[test]
+fn e2e_session_rotation_refresh_lets_record_agent_return_pass() {
+    let dir = tempfile::tempdir().unwrap();
+    let main_repo = crate::common::create_git_repo_with_remote(dir.path());
+    let main_repo = main_repo.canonicalize().unwrap();
+    let branch = "feat";
+    let worktree = main_repo.join(".worktrees").join(branch);
+    let add = Command::new("git")
+        .args(["worktree", "add", worktree.to_str().unwrap(), "-b", branch])
+        .current_dir(&main_repo)
+        .output()
+        .unwrap();
+    assert!(
+        add.status.success(),
+        "git worktree add failed: {}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+
+    let home = dir.path().canonicalize().unwrap();
+
+    // The flow-start transcript: shape-valid and present, but carries
+    // no agent invocation — the verifier must fail against it.
+    let stale = make_transcript_path(&home, "stale", "stale-session.jsonl");
+    fs::write(
+        &stale,
+        b"{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hi\"}}\n",
+    )
+    .unwrap();
+
+    // Active flow state pointing at the stale transcript.
+    let state_dir = main_repo.join(".flow-states").join(branch);
+    fs::create_dir_all(&state_dir).unwrap();
+    let state_path = state_dir.join("state.json");
+    let state = serde_json::json!({
+        "branch": branch,
+        "session_id": "stale-session",
+        "transcript_path": stale.to_string_lossy(),
+        "phases": {"flow-review": {"status": "in_progress"}},
+    });
+    fs::write(&state_path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
+
+    // The rotated (live) transcript carries the phase-enter marker and
+    // the reviewer Agent tool_use/tool_result pair.
+    let live = make_transcript_path(&home, "live", "live-session.jsonl");
+    let happy = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"id\":\"toolu_b1\",\"input\":{\"command\":\"bin/flow phase-enter --phase flow-review\"}}]}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Agent\",\"id\":\"toolu_a1\",\"input\":{\"subagent_type\":\"flow:reviewer\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_a1\",\"content\":\"findings\"}]}}\n";
+    fs::write(&live, happy).unwrap();
+
+    let run_rar = |worktree: &Path, home: &Path| -> serde_json::Value {
+        let out = flow_rs_no_recursion()
+            .args([
+                "record-agent-return",
+                "--branch",
+                branch,
+                "--agent",
+                "reviewer",
+                "--phase",
+                "flow-review",
+            ])
+            .current_dir(worktree)
+            .env("HOME", home)
+            .env("GH_TOKEN", "invalid")
+            .env("CLAUDE_PLUGIN_ROOT", env!("CARGO_MANIFEST_DIR"))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        serde_json::from_str(stdout.trim().lines().last().unwrap_or(""))
+            .unwrap_or(serde_json::Value::Null)
+    };
+
+    // Before rotation: the verifier reads the stale transcript and
+    // fails — proving the test exercises the real verification path.
+    let before = run_rar(&worktree, &home);
+    assert_eq!(
+        before["status"], "error",
+        "stale transcript must fail verification; got {}",
+        before
+    );
+
+    // Rotate the session: SessionStart fires with the live session's
+    // id, transcript, and the worktree cwd.
+    let stdin = format!(
+        r#"{{"session_id":"live-session","transcript_path":"{}","cwd":"{}"}}"#,
+        live.display(),
+        worktree.display()
+    );
+    let cap = crate::common::spawn_hook(
+        "capture-session",
+        &worktree,
+        stdin.as_bytes(),
+        &[("HOME", home.to_str().unwrap())],
+    );
+    assert_eq!(cap.status.code(), Some(0));
+
+    // After rotation: the verifier reads the refreshed (live)
+    // transcript and confirms the agent.
+    let after = run_rar(&worktree, &home);
+    assert_eq!(
+        after["status"], "ok",
+        "refreshed transcript must verify; got {}",
+        after
+    );
+}

@@ -25,6 +25,15 @@
 //! `record-agent-return` reports `phase_marker_not_found` for every
 //! Review and Learn agent. `refresh_active_flow_session` keeps the
 //! pointer current so the verifier reads the live session's transcript.
+//!
+//! Known limitation: the refresh repoints the flow at the rotated
+//! session's transcript wholesale. A resume that lands *mid-phase* —
+//! the `phase-enter` marker in the prior session's file and the
+//! agents' tool_use/tool_result pairs in the rotated file — is not
+//! covered by the refresh alone; `verify_agent_returned_in_phase`
+//! anchors on the marker, which now sits in a file the flow no longer
+//! points at. Closing that gap needs a session-lineage union scan
+//! across the prior and rotated transcripts and is deferred.
 
 use std::fs;
 use std::io::Read;
