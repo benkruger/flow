@@ -15,7 +15,6 @@ use std::time::{Duration, Instant};
 use common::flow_states_dir;
 use flow_rs::commands::start_lock::{acquire_with_wait, queue_path, release};
 use flow_rs::lock::mutate_state;
-use fs2::FileExt;
 use serde_json::{self, json, Value};
 
 /// The flow-rs binary path, resolved at compile time via cargo.
@@ -87,11 +86,12 @@ fn mutate_state_under_contention() {
     // 20 parallel threads increment a counter in a JSON file using exclusive
     // file locking. Final count must equal 20 — no increments lost.
     //
-    // Note: This tests the fs2 file-locking mechanism directly rather than
-    // calling flow_rs::mutate_state via subprocess. The production mutate_state
-    // uses the same fs2::FileExt::lock_exclusive pattern. A regression where
+    // Note: This exercises the std File::lock() advisory file-locking
+    // mechanism directly rather than calling flow_rs::mutate_state via
+    // subprocess. The production mutate_state acquires the same exclusive
+    // advisory lock via File::lock(). A regression where
     // mutate_state acquires the lock after reading would not be caught here —
-    // that invariant is enforced by the mutate_state unit tests in src/utils.rs.
+    // that invariant is enforced by the mutate_state unit tests in tests/lock.rs.
     let tmp = tempfile::tempdir().expect("Failed to create tempdir");
     let state_path = tmp.path().join("shared.json");
     fs::write(&state_path, r#"{"count": 0}"#).expect("Failed to write initial state");
@@ -110,7 +110,7 @@ fn mutate_state_under_contention() {
                     .write(true)
                     .open(path.as_ref())
                     .unwrap();
-                file.lock_exclusive().unwrap();
+                file.lock().unwrap();
                 let content = fs::read_to_string(path.as_ref()).unwrap();
                 let mut data: Value = serde_json::from_str(&content).unwrap();
                 let count = data["count"].as_i64().unwrap_or(0);
@@ -501,7 +501,7 @@ fn cleanup_isolation() {
             .write(true)
             .open(&state_b_path)
             .unwrap();
-        file.lock_exclusive().unwrap();
+        file.lock().unwrap();
         let content = fs::read_to_string(&state_b_path).unwrap();
         let mut data: Value = serde_json::from_str(&content).unwrap();
         data["mutated"] = json!(true);

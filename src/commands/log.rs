@@ -8,8 +8,6 @@ use std::io::Write;
 use std::path::Path;
 use std::process;
 
-use fs2::FileExt;
-
 use crate::flow_paths::FlowPaths;
 use crate::git;
 use crate::utils;
@@ -40,7 +38,7 @@ pub fn append_log(root: &Path, branch: &str, message: &str) -> Result<(), std::i
         .append(true)
         .open(&log_path)?;
 
-    let _ = file.lock_exclusive();
+    let _ = file.lock();
     let mut writer = std::io::BufWriter::new(&file);
     let _ = writeln!(writer, "{} {}", timestamp, message);
 

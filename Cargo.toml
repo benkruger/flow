@@ -15,7 +15,6 @@ path = "src/main.rs"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
 clap = { version = "4", features = ["derive"] }
-fs2 = "0.4"
 indexmap = { version = "2", features = ["serde"] }
 libc = "0.2"
 regex = "1"
