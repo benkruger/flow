@@ -9,22 +9,12 @@
 //! that bypassed the clap wiring, stdin reading, and branch resolution layers.
 
 use std::fs;
-use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Output};
 
 use crate::common::flow_states_dir;
 
 use serde_json::{json, Value};
-
-/// Build a `Command` targeting the compiled `flow-rs` test binary.
-///
-/// `CARGO_BIN_EXE_flow-rs` is set by Cargo's integration test harness to the
-/// absolute path of the just-built binary, so this is hermetic — it never
-/// depends on `$PATH` or an installed `bin/flow` dispatcher.
-fn flow_rs() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-}
 
 /// Initialize a bare git repo at `dir` and write `state` to
 /// `<dir>/.flow-states/<branch>.json`.
@@ -59,40 +49,26 @@ fn read_state(dir: &Path, branch: &str) -> Value {
     serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
 }
 
-/// Spawn `flow-rs hook <hook>` with simulated branch resolution, pipe
-/// `stdin_data` to the child, and return the captured `Output`.
+/// Spawn `flow-rs hook <hook>` with simulated branch resolution and
+/// return the captured `Output`. Delegates the command construction,
+/// stdin write, and `wait_with_output` to [`crate::common::spawn_hook`].
 ///
-/// - `FLOW_SIMULATE_BRANCH` is set on the child `Command` only (not the
-///   test process) so parallel Cargo tests cannot race on it — this
-///   satisfies `.claude/rules/testing-gotchas.md` Rust Parallel Test Env
-///   Var Races. All three hooks use `resolve_branch()` (which delegates
-///   to `current_branch()` internally), and both functions honor the
-///   env var, so one helper serves all three hooks.
-/// - `current_dir(dir)` scopes `project_root()` discovery to the tempdir
-///   so the child reads and mutates only the fixture's `.flow-states/`
-///   directory — prevents host environment leaks (see testing-gotchas.md).
-/// - All three stdio streams must be piped explicitly. `Command::spawn`
-///   defaults to inheriting stdout/stderr, which means `wait_with_output`
-///   would return empty buffers while the child's output leaks directly
-///   to the test harness terminal.
-///   Piping stdout and stderr lets `wait_with_output` capture them for
-///   assertion AND keeps cargo test output clean.
+/// - `FLOW_SIMULATE_BRANCH` is passed in the `env` slice so it is set on
+///   the child only (not the test process) — parallel Cargo tests cannot
+///   race on it, satisfying `.claude/rules/testing-gotchas.md` Rust
+///   Parallel Test Env Var Races. All three hooks use `resolve_branch()`
+///   (which delegates to `current_branch()` internally) and honor the env
+///   var, so one helper serves all three hooks.
+/// - `dir` is the child's `current_dir`, scoping `project_root()`
+///   discovery to the tempdir so the child reads and mutates only the
+///   fixture's `.flow-states/` directory.
 fn run_hook(hook: &str, dir: &Path, branch: &str, stdin_data: &[u8]) -> Output {
-    let mut cmd = flow_rs();
-    cmd.arg("hook")
-        .arg(hook)
-        .env("FLOW_SIMULATE_BRANCH", branch)
-        .current_dir(dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    let mut child = cmd.spawn().unwrap();
-    {
-        let stdin = child.stdin.as_mut().unwrap();
-        stdin.write_all(stdin_data).unwrap();
-    }
-    child.wait_with_output().unwrap()
+    crate::common::spawn_hook(
+        hook,
+        dir,
+        std::str::from_utf8(stdin_data).expect("hook stdin is UTF-8"),
+        &[("FLOW_SIMULATE_BRANCH", branch)],
+    )
 }
 
 /// Initialize a git repo in `dir` with an initial commit on `branch_name`.
@@ -117,13 +93,13 @@ fn setup_git_repo_on_branch(dir: &Path, branch_name: &str) {
     run(&["commit", "--allow-empty", "-m", "init"]);
 }
 
-/// Spawn `flow-rs hook <hook>` WITHOUT `FLOW_SIMULATE_BRANCH`, pipe
-/// `stdin_data` to the child, and return the captured `Output`.
+/// Spawn `flow-rs hook <hook>` WITHOUT `FLOW_SIMULATE_BRANCH` and return
+/// the captured `Output`. Delegates to [`crate::common::spawn_hook`].
 ///
-/// Unlike [`run_hook`], this helper does NOT set `FLOW_SIMULATE_BRANCH`
-/// on the child process, and explicitly removes it from the inherited
-/// environment via `env_remove`. This forces the hook to resolve the
-/// branch via real git (`git branch --show-current`) and the
+/// Unlike [`run_hook`], this helper passes an empty `env` slice, so
+/// `spawn_hook`'s universal `env_remove("FLOW_SIMULATE_BRANCH")` is the
+/// effective behavior and nothing re-sets it. This forces the hook to
+/// resolve the branch via real git (`git branch --show-current`) and the
 /// `resolve_branch` state-file-scan fallback — exercising the exact
 /// production code path that `FLOW_SIMULATE_BRANCH` short-circuits.
 ///
@@ -131,21 +107,12 @@ fn setup_git_repo_on_branch(dir: &Path, branch_name: &str) {
 /// [`setup_git_and_state`]) so the fixture repo has a deterministic
 /// HEAD branch and an initial commit.
 fn run_hook_no_simulate(hook: &str, dir: &Path, stdin_data: &[u8]) -> Output {
-    let mut cmd = flow_rs();
-    cmd.arg("hook")
-        .arg(hook)
-        .env_remove("FLOW_SIMULATE_BRANCH")
-        .current_dir(dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    let mut child = cmd.spawn().unwrap();
-    {
-        let stdin = child.stdin.as_mut().unwrap();
-        stdin.write_all(stdin_data).unwrap();
-    }
-    child.wait_with_output().unwrap()
+    crate::common::spawn_hook(
+        hook,
+        dir,
+        std::str::from_utf8(stdin_data).expect("hook stdin is UTF-8"),
+        &[],
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -838,21 +805,12 @@ fn setup_worktree_fixture(dir: &Path, branch: &str, with_state_file: bool) -> st
 }
 
 fn run_hook_in(cwd: &Path, hook: &str, stdin_data: &[u8]) -> Output {
-    let mut cmd = flow_rs();
-    cmd.arg("hook")
-        .arg(hook)
-        .env_remove("FLOW_SIMULATE_BRANCH")
-        .env_remove("FLOW_CI_RUNNING")
-        .current_dir(cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut child = cmd.spawn().unwrap();
-    {
-        let stdin = child.stdin.as_mut().unwrap();
-        stdin.write_all(stdin_data).unwrap();
-    }
-    child.wait_with_output().unwrap()
+    crate::common::spawn_hook(
+        hook,
+        cwd,
+        std::str::from_utf8(stdin_data).expect("hook stdin is UTF-8"),
+        &[],
+    )
 }
 
 #[test]

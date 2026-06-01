@@ -1459,29 +1459,18 @@ fn run_hook_with_bg(bg: Value) -> (i32, String, String) {
     // FLOW state is irrelevant to that decision but reaches
     // Layer 11 when bg is falsy and the bg check falls through.
     let isolation = tempfile::tempdir().expect("tempdir");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["hook", "validate-pretool"])
-        .current_dir(isolation.path())
-        .env("HOME", isolation.path())
-        .env_remove("FLOW_CI_RUNNING")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn flow-rs");
-    {
-        let stdin = child.stdin.as_mut().unwrap();
-        let input = json!({
-            "tool_input": {
-                "command": "bin/flow ci",
-                "run_in_background": bg,
-            }
-        });
-        stdin
-            .write_all(serde_json::to_string(&input).unwrap().as_bytes())
-            .unwrap();
-    }
-    let output = child.wait_with_output().unwrap();
+    let input = json!({
+        "tool_input": {
+            "command": "bin/flow ci",
+            "run_in_background": bg,
+        }
+    });
+    let output = crate::common::spawn_hook(
+        "validate-pretool",
+        isolation.path(),
+        &serde_json::to_string(&input).unwrap(),
+        &[("HOME", isolation.path().to_str().unwrap())],
+    );
     (
         output.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&output.stdout).to_string(),

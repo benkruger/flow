@@ -4,9 +4,7 @@
 //! src/protected_paths.rs) — only the hook-specific `validate` and
 //! `run_impl_main` surface is exercised here.
 
-use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Stdio};
 
 use flow_rs::hooks::validate_claude_paths::{run_impl_main, validate};
 
@@ -506,22 +504,7 @@ fn run_impl_main_cwd_with_flow_states_directly_resolves_root() {
 // --- run() subprocess tests ---
 
 fn run_hook_subprocess(cwd: &Path, stdin_input: &str) -> (i32, String, String) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["hook", "validate-claude-paths"])
-        .current_dir(cwd)
-        .env_remove("FLOW_CI_RUNNING")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn flow-rs");
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(stdin_input.as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().expect("wait");
+    let output = crate::common::spawn_hook("validate-claude-paths", cwd, stdin_input, &[]);
     (
         output.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&output.stdout).to_string(),
