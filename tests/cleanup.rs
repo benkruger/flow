@@ -600,13 +600,11 @@ fn step_key_order_with_pull() {
 //
 // Pin the top-level `Value` shape of every `run_impl_main` return arm
 // — status-first key order, exact error messages, and the success
-// arm's `[status, steps]` ordering. These guard the rewrite of the
-// three error arms from `from_str(&json_error_string(...)).unwrap()`
-// to `json_error_value(...)` and the success arm from
-// `json_ok_string` + reparse to `json_ok_value`: the output must stay
-// byte-identical, so a key-order or message regression in that
-// rewrite trips here. Named consumer: the JSON the `flow-complete`
-// skill parses from `cleanup` stdout.
+// arm's `[status, steps]` ordering. The JSON the `flow-complete`
+// skill parses from `cleanup` stdout depends on this exact shape, so
+// any key-order shift or message change in the output helpers trips
+// these tests. Named consumer: the `flow-complete` skill's parse of
+// `cleanup` stdout.
 
 fn top_level_keys(value: &Value) -> Vec<String> {
     value
