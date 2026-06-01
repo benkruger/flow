@@ -799,10 +799,10 @@ pub fn run() {
     };
 
     // Utility-skill marker guard: when a multi-step utility skill
-    // (`flow:flow-plan`) is in progress AND `decompose:decompose`
-    // is the most recent Skill
-    // since the user turn, refuse turn-end so the model continues
-    // past decompose's return. Composed FIRST because its block
+    // (`flow:flow-plan`) is in progress AND the decompose skill
+    // (bare `decompose` or namespaced `decompose:decompose`) is the
+    // most recent Skill since the user turn, refuse turn-end so the
+    // model continues past decompose's return. Composed FIRST because its block
     // message is the verbatim encouraging string for that specific
     // failure shape — wins over the generic autonomous-stop
     // refusal for the decompose-return boundary.

@@ -1259,9 +1259,10 @@ fn utility_skill_marker_present_bare_decompose_most_recent_blocks() {
 #[test]
 fn utility_skill_marker_present_pm_after_decompose_no_block() {
     // AC#3: marker present, transcript shows `decompose:decompose`
-    // followed by `flow:pm`. The planning-persona sub-agent call is
-    // the most recent Skill, so the predicate must NOT block — the
-    // user reacts in the next message and discussion continues.
+    // (namespaced form) followed by `flow:pm`. The planning-persona
+    // sub-agent call is the most recent Skill, so the predicate must
+    // NOT block — the user reacts in the next message and discussion
+    // continues.
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().canonicalize().unwrap();
     write_utility_marker(&home, UTIL_SKILL, UTIL_SESSION);
