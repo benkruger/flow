@@ -1460,6 +1460,93 @@ pub fn recent_edit_blocked_on_shared_config(transcript_path: &Path, home: &Path)
     false
 }
 
+/// Returns `true` iff the persisted transcript shows the most recent
+/// user-role turn carries a `phase-finalize` agent-skip handoff — a
+/// `tool_result` whose content contains the reason substring
+/// `agents_skipped` or `required_agent_not_returned`.
+///
+/// Companion to validate-ask-user's agent-skip-handoff carve-out.
+/// flow-review's Done handler runs `bin/flow phase-finalize`; when a
+/// review agent is recorded in neither `agents_returned` nor
+/// `agents_skipped`, the command returns
+/// `{"status":"error","reason":"required_agent_not_returned",...}`,
+/// and when a skipped agent is pending it returns
+/// `{"status":"error","reason":"agents_skipped",...}`. The handler
+/// then fires `AskUserQuestion` to ask the user how to proceed. In an
+/// in-progress autonomous Review phase, `validate-ask-user` blocks
+/// `AskUserQuestion` — so without this carve-out a genuine agent skip
+/// deadlocks the flow. The reason values are emitted only by FLOW's
+/// own `phase-finalize` JSON, a trusted producer, so a literal
+/// substring match without normalization is correct (cf.
+/// `recent_edit_blocked_on_shared_config`).
+///
+/// Walks lines backward from the file tail (read via
+/// `read_recent_turns`, capped at `SHARED_CONFIG_BLOCK_BYTE_CAP`) and
+/// stops at the most recent user-role turn, examining ONLY that
+/// turn's content. The carve-out fires iff the latest user-channel
+/// interaction was the skip handoff. If any other tool_result
+/// intervenes (a different command's result), the most recent user
+/// turn is no longer the handoff and the carve-out does not fire —
+/// keeping a stale handoff from authorizing an unrelated
+/// AskUserQuestion later.
+///
+/// `transcript_path` is validated through
+/// `crate::session_metrics::is_safe_transcript_path` per
+/// `.claude/rules/external-input-path-construction.md` (rejects
+/// empty, NUL-byte, relative, ParentDir-component, prefix-escaping,
+/// and symlink-escape paths). Synthetic string-content turns
+/// (hook-feedback `isMeta:true`, compaction-continuation
+/// `isCompactSummary:true`) are skipped via the inline targeted skip
+/// per `.claude/rules/transcript-shape.md` — this walker cannot
+/// delegate to `is_real_user_turn` because it legitimately consumes
+/// the array-content tool_result wrapper that helper rejects.
+pub fn recent_phase_finalize_agent_skip(transcript_path: &Path, home: &Path) -> bool {
+    if !is_safe_transcript_path(transcript_path, home) {
+        return false;
+    }
+    let lines = match read_recent_turns(transcript_path) {
+        Some(s) => s,
+        None => return false,
+    };
+    for line in lines.lines().rev() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let turn: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let turn_type =
+            normalize_gate_input(turn.get("type").and_then(|v| v.as_str()).unwrap_or(""));
+        if turn_type != "user" {
+            continue;
+        }
+        // Skip the two string-content synthetic shapes (hook-feedback
+        // `isMeta:true`, compaction-continuation `isCompactSummary:true`)
+        // via the targeted inline skip. The handoff lives in an
+        // array-content tool_result wrapper, so this walker cannot use
+        // `is_real_user_turn` (which rejects array-content turns). Any
+        // future string-content synthetic shape must be added here too.
+        // Per `.claude/rules/transcript-shape.md`.
+        let is_string_content = turn
+            .get("message")
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+            .is_some();
+        if is_string_content && is_meta_marker_present(turn.get("isMeta")) {
+            continue;
+        }
+        if is_string_content && is_compact_summary_turn(&turn) {
+            continue;
+        }
+        // Most recent non-synthetic user-role turn reached. Examine
+        // its content and RETURN — do not walk further back.
+        return user_turn_carries_phase_finalize_skip(&turn);
+    }
+    false
+}
+
 /// Scan every `tool_result` block in `turn` whose `is_error` is
 /// truthy and return `true` as soon as `pred` accepts that block's
 /// text. Returns `false` for string-content user turns (the user
@@ -1475,7 +1562,11 @@ pub fn recent_edit_blocked_on_shared_config(transcript_path: &Path, home: &Path)
 /// `user_turn_carries_shared_config_block` and the
 /// `user_approved_shared_config_edit` block-corroboration check so
 /// the extraction logic lives in one place.
-fn any_error_tool_result_text<F: FnMut(&str) -> bool>(turn: &Value, mut pred: F) -> bool {
+fn any_tool_result_text<F: FnMut(&str) -> bool>(
+    turn: &Value,
+    require_error: bool,
+    mut pred: F,
+) -> bool {
     let content = match turn.get("message").and_then(|m| m.get("content")) {
         Some(c) => c,
         None => return false,
@@ -1491,7 +1582,13 @@ fn any_error_tool_result_text<F: FnMut(&str) -> bool>(turn: &Value, mut pred: F)
         if block.get("type").and_then(|v| v.as_str()) != Some("tool_result") {
             continue;
         }
-        if !is_truthy(block.get("is_error")) {
+        // The shared-config block carve-out keys on `is_error: true`
+        // because `validate_worktree_paths` emits its BLOCKED message
+        // as an error tool_result. The phase-finalize skip handoff is
+        // a business error returned with exit 0 (`is_error: false`),
+        // so its caller passes `require_error = false` to scan every
+        // tool_result regardless of the flag.
+        if require_error && !is_truthy(block.get("is_error")) {
             continue;
         }
         let block_content = match block.get("content") {
@@ -1527,8 +1624,27 @@ fn any_error_tool_result_text<F: FnMut(&str) -> bool>(turn: &Value, mut pred: F)
 /// user turns (the user typed a message), missing or non-array
 /// content, and array content where no block matches.
 fn user_turn_carries_shared_config_block(turn: &Value) -> bool {
-    any_error_tool_result_text(turn, |t| {
+    any_tool_result_text(turn, true, |t| {
         t.contains("is a shared configuration file that affects every engineer")
+    })
+}
+
+/// Returns `true` when the user-role turn carries a tool_result
+/// block whose content names a phase-finalize agent-skip handoff —
+/// the literal reason substring `agents_skipped` or
+/// `required_agent_not_returned`. Scans every tool_result regardless
+/// of `is_error` (phase-finalize returns these business errors with
+/// exit 0, so the Bash tool_result's `is_error` is false). Returns
+/// `false` for string-content user turns, missing or non-array
+/// content, and array content where no block matches.
+///
+/// The two reason values are emitted only by FLOW's own
+/// `phase-finalize` JSON (`src/phase_finalize.rs`), a trusted
+/// producer, so a literal substring match without normalization is
+/// the correct posture (cf. the shared-config sibling).
+fn user_turn_carries_phase_finalize_skip(turn: &Value) -> bool {
+    any_tool_result_text(turn, false, |t| {
+        t.contains("agents_skipped") || t.contains("required_agent_not_returned")
     })
 }
 
@@ -1656,7 +1772,7 @@ pub fn user_approved_shared_config_edit(
         // block only corroborates the grant once the approval (more
         // recent) has been seen, and must name the target basename.
         if approval_seen
-            && any_error_tool_result_text(&turn, |t| {
+            && any_tool_result_text(&turn, true, |t| {
                 t.contains("is a shared configuration file that affects every engineer")
                     && t.contains(target_path)
             })

@@ -15,9 +15,9 @@ use flow_rs::hooks::transcript_walker::{
     any_skill_in_set_since_user, last_user_message_invokes_skill,
     most_recent_skill_in_user_only_set, most_recent_skill_since_user,
     most_recent_user_message_since_skill_action, read_full, read_recency_window, read_recent_turns,
-    recent_edit_blocked_on_shared_config, user_approved_shared_config_edit,
-    verify_agent_returned_in_phase, SHARED_CONFIG_BLOCK_BYTE_CAP, TRANSCRIPT_BYTE_CAP,
-    USER_ONLY_SKILLS,
+    recent_edit_blocked_on_shared_config, recent_phase_finalize_agent_skip,
+    user_approved_shared_config_edit, verify_agent_returned_in_phase, SHARED_CONFIG_BLOCK_BYTE_CAP,
+    TRANSCRIPT_BYTE_CAP, USER_ONLY_SKILLS,
 };
 
 // --- last_user_message_invokes_skill ---
@@ -1103,6 +1103,254 @@ fn helper_continues_when_tool_result_content_is_number() {
 {\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":7,\"is_error\":true}]}}\n";
     let path = crate::common::transcript_fixture(home, "p", jsonl);
     assert!(!recent_edit_blocked_on_shared_config(&path, home));
+}
+
+// --- recent_phase_finalize_agent_skip ---
+//
+// Companion to validate-ask-user's agent-skip-handoff carve-out.
+// flow-review's Done handler runs `bin/flow phase-finalize`, which
+// returns `{"status":"error","reason":"agents_skipped",...}` or
+// `{"status":"error","reason":"required_agent_not_returned",...}`
+// when a review agent is unaccounted-for. The handler then fires
+// AskUserQuestion to ask the user how to proceed — but in an
+// in-progress autonomous Review phase, validate-ask-user blocks it.
+// This walker detects the recent phase-finalize skip handoff so the
+// carve-out can release the prompt. Detection signal: the literal
+// reason substring `agents_skipped` or `required_agent_not_returned`
+// inside a `tool_result` block in the most recent user-role turn.
+// Unlike the shared-config block, phase-finalize returns exit 0 for
+// these business errors, so the tool_result's `is_error` is false —
+// the walker scans every tool_result regardless of `is_error`.
+
+#[test]
+fn recent_phase_finalize_agent_skip_returns_true_for_agents_skipped() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"finalize review\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"id\":\"toolu_01\",\"input\":{\"command\":\"bin/flow phase-finalize --phase flow-review --branch feat\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_01\",\"content\":\"{\\\"status\\\":\\\"error\\\",\\\"reason\\\":\\\"agents_skipped\\\",\\\"skipped\\\":[\\\"reviewer\\\"]}\",\"is_error\":false}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(recent_phase_finalize_agent_skip(&path, home));
+}
+
+#[test]
+fn recent_phase_finalize_agent_skip_returns_true_for_required_agent_not_returned() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"finalize review\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"id\":\"toolu_02\",\"input\":{\"command\":\"bin/flow phase-finalize --phase flow-review --branch feat\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_02\",\"content\":\"{\\\"status\\\":\\\"error\\\",\\\"reason\\\":\\\"required_agent_not_returned\\\",\\\"missing\\\":[\\\"adversarial\\\"]}\",\"is_error\":false}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(recent_phase_finalize_agent_skip(&path, home));
+}
+
+#[test]
+fn recent_phase_finalize_agent_skip_matches_text_array_content() {
+    // tool_result.content can be an array of text blocks. The shared
+    // flattening joins them and matches the reason substring against
+    // the joined string.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"status\\\":\\\"error\\\",\\\"reason\\\":\\\"agents_skipped\\\"}\"}],\"is_error\":false}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(recent_phase_finalize_agent_skip(&path, home));
+}
+
+#[test]
+fn recent_phase_finalize_agent_skip_returns_false_when_no_reason() {
+    // A successful phase-finalize `{"status":"ok",...}` tool_result
+    // carries neither reason substring — the walker returns false so
+    // the autonomous-phase block stands.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"finalize\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"id\":\"toolu_03\",\"input\":{\"command\":\"bin/flow phase-finalize\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_03\",\"content\":\"{\\\"status\\\":\\\"ok\\\",\\\"formatted_time\\\":\\\"<1m\\\"}\",\"is_error\":false}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(!recent_phase_finalize_agent_skip(&path, home));
+}
+
+#[test]
+fn recent_phase_finalize_agent_skip_returns_false_when_block_predates_user_turn() {
+    // The skip handoff is in the transcript but a fresh real user
+    // prose turn intervenes after it. Walking backward the walker
+    // hits the user prose first and returns false — the older
+    // handoff is outside the window.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"first\"}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"status\\\":\\\"error\\\",\\\"reason\\\":\\\"agents_skipped\\\"}\",\"is_error\":false}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"now do something else\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(!recent_phase_finalize_agent_skip(&path, home));
+}
+
+#[test]
+fn recent_phase_finalize_agent_skip_iterates_past_trailing_assistant() {
+    // When the LAST line is an assistant turn (after the user-array
+    // tool_result), the walker continues past it (turn_type != user)
+    // and reaches the user-array turn carrying the skip handoff.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"status\\\":\\\"error\\\",\\\"reason\\\":\\\"agents_skipped\\\"}\",\"is_error\":false}]}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"thinking\"}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(recent_phase_finalize_agent_skip(&path, home));
+}
+
+#[test]
+fn recent_phase_finalize_agent_skip_skips_unparseable_jsonl_lines() {
+    // A non-empty line that fails JSON parsing is skipped via
+    // continue; the valid handoff on the previous line still drives
+    // the walker's true return.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"status\\\":\\\"error\\\",\\\"reason\\\":\\\"agents_skipped\\\"}\",\"is_error\":false}]}}\n\
+not valid json at all\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(recent_phase_finalize_agent_skip(&path, home));
+}
+
+#[test]
+fn recent_phase_finalize_agent_skip_returns_false_when_transcript_path_unsafe() {
+    // The validator rejects relative and traversal paths before any
+    // I/O, matching the sibling walkers' rejection profile.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let relative = std::path::Path::new("relative/path.jsonl");
+    assert!(!recent_phase_finalize_agent_skip(relative, home));
+}
+
+#[test]
+fn recent_phase_finalize_agent_skip_returns_false_when_transcript_missing() {
+    // File does not exist — read_recent_turns returns None and the
+    // walker falls open to false.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let missing = home
+        .join(".claude")
+        .join("projects")
+        .join("p")
+        .join("nonexistent.jsonl");
+    assert!(!recent_phase_finalize_agent_skip(&missing, home));
+}
+
+#[test]
+fn recent_phase_finalize_agent_skip_returns_false_on_empty_transcript() {
+    // Empty file — no lines to walk, the walker returns false.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let path = crate::common::transcript_fixture(home, "p", "");
+    assert!(!recent_phase_finalize_agent_skip(&path, home));
+}
+
+#[test]
+fn recent_phase_finalize_agent_skip_returns_false_when_transcript_file_unreadable() {
+    // The file EXISTS (so `is_safe_transcript_path`'s canonicalize
+    // succeeds — it stats components, not opens), but `File::open`
+    // inside `read_recent_turns` returns Err(PermissionDenied), so the
+    // walker hits the `None => return false` arm of the read match. A
+    // missing-file test instead trips the path validator first, so
+    // this chmod-000 case is the one that reaches the read-failure
+    // branch.
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let proj = home.join(".claude").join("projects").join("p");
+    fs::create_dir_all(&proj).unwrap();
+    let path = proj.join("session.jsonl");
+    fs::write(&path, b"{\"type\":\"user\"}\n").unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+    struct PermGuard(std::path::PathBuf);
+    impl Drop for PermGuard {
+        fn drop(&mut self) {
+            let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o644));
+        }
+    }
+    let _g = PermGuard(path.clone());
+    assert!(!recent_phase_finalize_agent_skip(&path, home));
+}
+
+#[test]
+fn recent_phase_finalize_agent_skip_returns_false_when_only_assistant_turns() {
+    // A transcript with only assistant turns (no user turn). The
+    // walker enters the loop, skips every non-user turn (turn_type !=
+    // "user" continue), exhausts the iterator without returning, and
+    // falls through to false — the loop-iterated-then-exhausted path
+    // distinct from the empty-transcript case (loop never runs).
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"thinking\"}]}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"more thinking\"}]}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(!recent_phase_finalize_agent_skip(&path, home));
+}
+
+#[test]
+fn recent_phase_finalize_agent_skip_skips_blank_lines() {
+    // A blank (whitespace-only) line between turns is skipped via the
+    // `trimmed.is_empty()` continue; the handoff on the line behind
+    // it still drives the true return.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"status\\\":\\\"error\\\",\\\"reason\\\":\\\"agents_skipped\\\"}\",\"is_error\":false}]}}\n\
+   \n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(recent_phase_finalize_agent_skip(&path, home));
+}
+
+#[test]
+fn recent_phase_finalize_agent_skip_skips_hook_feedback_string_content_ismeta_true() {
+    // Real user prose → assistant Bash phase-finalize tool_use →
+    // tool_result-wrapped user turn carrying the agents_skipped
+    // handoff → hook-feedback string-content user turn with
+    // `isMeta:true` at the tail. The walker must skip the
+    // hook-feedback turn and reach the tool_result-wrapped user turn
+    // to detect the handoff. Without the filter, the walker stops at
+    // the hook-feedback turn, finds no handoff, and the carve-out
+    // fails to fire — deadlocking the autonomous Review handoff
+    // prompt.
+    //
+    // Regression guard per `.claude/rules/transcript-shape.md`
+    // Enforcement. Named consumer: the agent-skip-handoff carve-out
+    // in `validate-ask-user::run_impl_main`.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"finalize review\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"id\":\"toolu_01\",\"input\":{\"command\":\"bin/flow phase-finalize\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_01\",\"content\":\"{\\\"status\\\":\\\"error\\\",\\\"reason\\\":\\\"agents_skipped\\\"}\",\"is_error\":false}]}}\n\
+{\"type\":\"user\",\"isMeta\":true,\"message\":{\"role\":\"user\",\"content\":\"Stop hook feedback:\\nStop Refused: Continue, you can do it.\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(recent_phase_finalize_agent_skip(&path, home));
+}
+
+#[test]
+fn recent_phase_finalize_agent_skip_skips_compact_summary_turn() {
+    // Real user prose → assistant Bash phase-finalize tool_use →
+    // tool_result-wrapped user turn carrying the agents_skipped
+    // handoff → compaction-summary continuation turn at the tail.
+    // This walker uses an INLINE synthetic-turn skip (not
+    // `is_real_user_turn`), so it needs its own compact-summary skip
+    // to pass the continuation turn and reach the array-content
+    // tool_result turn. Without it, the walker stops at the
+    // compaction-summary turn (string content, no handoff) and
+    // returns false, deadlocking the autonomous Review handoff
+    // prompt.
+    //
+    // Regression guard per `.claude/rules/transcript-shape.md`
+    // Enforcement. Named consumer: the agent-skip-handoff carve-out
+    // in `validate-ask-user::run_impl_main`.
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"finalize review\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"id\":\"toolu_01\",\"input\":{\"command\":\"bin/flow phase-finalize\"}}]}}\n\
+{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_01\",\"content\":\"{\\\"status\\\":\\\"error\\\",\\\"reason\\\":\\\"agents_skipped\\\"}\",\"is_error\":false}]}}\n\
+{\"type\":\"user\",\"isCompactSummary\":true,\"message\":{\"role\":\"user\",\"content\":\"This session is being continued from a previous conversation that ran out of context.\"}}\n";
+    let path = crate::common::transcript_fixture(home, "p", jsonl);
+    assert!(recent_phase_finalize_agent_skip(&path, home));
 }
 
 // --- user_approved_shared_config_edit ---
