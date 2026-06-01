@@ -279,7 +279,7 @@ fn mutate_state_error_wraps_invalid_json_as_json() {
 // --- mutate_state_with_lock ---
 
 /// Covers the `MutateError::Lock` arm by injecting a closure that
-/// returns `Err(io::Error)` instead of `fs2::FileExt::lock_exclusive`.
+/// returns `Err(io::Error)` in place of the real `File::lock()` call.
 #[test]
 fn mutate_state_with_lock_error_wraps_as_lock_variant() {
     let dir = tempfile::tempdir().unwrap();

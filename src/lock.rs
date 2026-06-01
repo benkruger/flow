@@ -2,7 +2,6 @@ use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
-use fs2::FileExt;
 use serde_json::Value;
 
 /// Atomic read-lock-transform-write for state files.
@@ -26,11 +25,11 @@ pub fn mutate_state(
     state_path: &Path,
     transform_fn: &mut dyn FnMut(&mut Value),
 ) -> Result<Value, MutateError> {
-    mutate_state_with_lock(state_path, transform_fn, &mut |f| f.lock_exclusive())
+    mutate_state_with_lock(state_path, transform_fn, &mut |f| f.lock())
 }
 
 /// Test seam for `mutate_state` — accepts an injectable lock closure
-/// so tests can simulate `lock_exclusive()` failures without triggering
+/// so tests can simulate `File::lock()` failures without triggering
 /// real OS-level lock contention.
 pub fn mutate_state_with_lock(
     state_path: &Path,

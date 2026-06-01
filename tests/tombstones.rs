@@ -1187,6 +1187,92 @@ fn test_commit_no_title_only_or_full_format() {
     );
 }
 
+// --- fs2 dependency removal (PR #1779) ---
+//
+// The `fs2` crate is deprecated and unmaintained. Its
+// `FileExt::lock_exclusive()` / `FileExt::unlock()` usage on `&File`
+// across src/lock.rs, src/commands/log.rs, and tests/concurrency.rs
+// migrated to the standard library's `File::lock()` / `File::unlock()`
+// (stabilized Rust 1.89), and `fs2 = "0.4"` was removed from
+// Cargo.toml. This tombstone catches a merge conflict or accidental
+// edit that re-introduces the dependency or any `use fs2` / `fs2::`
+// reference in source.
+
+/// Tombstone: removed in PR #1779. The `fs2` dependency and every
+/// `use fs2` / `fs2::` reference are gone — file locking uses the
+/// standard library's `File::lock()` / `File::unlock()`. Must not
+/// return to `Cargo.toml`, `src/`, or `tests/`.
+///
+/// Assertion kind: literal byte-substring across `Cargo.toml` and
+/// every `.rs` file under `src/` and `tests/` (self-excluding this
+/// file, which carries the literal as search input). Stability
+/// argument per `.claude/rules/tombstone-tests.md` "Literal
+/// tombstones — stability checklist":
+///   1. `concat!` reassembly: a `Cargo.toml` dependency line is TOML
+///      key=value text, not Rust source, so `concat!` cannot assemble
+///      it. A `use fs2::FileExt;` import is a Rust `use` item whose
+///      path segment must appear verbatim — `concat!` yields a string
+///      value, never a path token in a `use` declaration.
+///   2. `format!` reassembly: neither a TOML manifest line nor a Rust
+///      `use` path is produced by `format!` interpolation.
+///   3. Named constant reference: a `const` aliasing `"fs2"` cannot
+///      stand in for the crate name in a `use` path or a Cargo
+///      dependency key — both require the literal token in source.
+///   4. `.arg()` split: not applicable — the target is a manifest key
+///      and a `use`-path segment, not a CLI argument chain.
+///
+/// File-resurrection pair: not applicable — no source file is
+/// deleted; the change is callsite migration plus a manifest-line
+/// removal.
+#[test]
+fn test_deps_no_fs2() {
+    let root = common::repo_root();
+    let scanner_path = root
+        .join("tests")
+        .join("tombstones.rs")
+        .canonicalize()
+        .expect("scanner path must canonicalize");
+
+    let cargo_toml = fs::read_to_string(root.join("Cargo.toml")).expect("Cargo.toml must exist");
+    assert!(
+        !cargo_toml.contains("fs2"),
+        "Cargo.toml must not contain `fs2` — the deprecated crate was \
+         removed; file locking uses std `File::lock()` / `File::unlock()`."
+    );
+
+    let mut files: Vec<PathBuf> = Vec::new();
+    collect_rs_files(&root.join("src"), &mut files);
+    collect_rs_files(&root.join("tests"), &mut files);
+
+    let mut violations: Vec<String> = Vec::new();
+    for file in &files {
+        // Self-exclude this scanner file — it carries `fs2` as search input.
+        if file
+            .canonicalize()
+            .map(|p| p == scanner_path)
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        let content = match fs::read_to_string(file) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let rel = file.strip_prefix(&root).unwrap_or(file);
+        for (idx, line) in content.lines().enumerate() {
+            if line.contains("use fs2") || line.contains("fs2::") {
+                violations.push(format!("{}:{}", rel.display(), idx + 1));
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "fs2 references must not appear under src/ or tests/ — \
+         file locking uses std `File::lock()` / `File::unlock()`:\n  {}",
+        violations.join("\n  ")
+    );
+}
+
 // --- flow-decompose-project removal (issue #1590 AC#6) ---
 //
 // AC#6 of issue #1590 mandates the removal of the
