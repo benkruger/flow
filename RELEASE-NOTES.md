@@ -1,5 +1,39 @@
 # Release Notes
 
+## v2.6.0 — Autonomous-mode hardening, cost tracking, release Slack notes
+
+### New features
+
+- **Per-flow and month-to-date cost tracking** — token-derived cost
+  is surfaced per phase and month-to-date (#1730).
+- **Release Slack announcement** — `/flow-release` renders a
+  copy-pasteable Slack post from the release notes (#1707).
+
+### Improvements
+
+- **Autonomous-mode discipline hardened** — the Stop hook refuses
+  performative pauses and no-progress stalls, escalating to a pointed
+  refusal after repeated unchanged stops (#1708, #1709, #1712).
+- **Sub-agent prompt path scanning** — out-of-worktree paths in Agent
+  prompts are blocked before they can surface a permission prompt
+  mid-flow (#1710).
+- **Post-compaction recovery** and Review/Learn working-directory
+  re-anchoring on resume (#1744, #1754, #1753).
+- **No more GitHub-CI re-polling at Complete** — `gh pr merge` is the
+  single merge authority (#1726).
+- Conventional-commit enforcement in the commit skill (#1743).
+
+### Fixes
+
+- `flow-commit` no longer fails on certain branches (#1722).
+- Plan Review remediation loop fix (#1729).
+- Review-phase agent trigger and Learn-phase audit/step-counter fixes
+  (#1748, #1741).
+- Stop-hook utility-skill guard misses (#1783).
+- Docs: corrected the `/flow-reset` description and other doc-sync
+  drift; added the terse-response rule.
+- Internal: test consolidation, dead-code removal, dependency updates.
+
 ## v2.5.0 — On-trunk commit carve-out, bare-prompt planning, flowjson as single source
 
 ### New features
