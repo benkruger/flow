@@ -1022,21 +1022,13 @@ fn shared_config_blocks_when_worktree_unresolvable() {
 // --- run() subprocess smoke test ---
 
 fn run_hook(stdin_input: &str) -> (i32, String, String) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["hook", "validate-worktree-paths"])
-        .env_remove("FLOW_CI_RUNNING")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn flow-rs");
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(stdin_input.as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().expect("wait");
+    let dir = tempfile::tempdir().expect("tempdir");
+    let output = crate::common::spawn_hook(
+        "validate-worktree-paths",
+        dir.path(),
+        stdin_input.as_bytes(),
+        &[],
+    );
     (
         output.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&output.stdout).to_string(),
@@ -1146,22 +1138,12 @@ fn run_subprocess_exits_2_when_editing_shared_config_in_worktree() {
         cargo_toml.display()
     );
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["hook", "validate-worktree-paths"])
-        .env_remove("FLOW_CI_RUNNING")
-        .current_dir(&worktree)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn flow-rs");
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(payload.as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().expect("wait");
+    let output = crate::common::spawn_hook(
+        "validate-worktree-paths",
+        &worktree,
+        payload.as_bytes(),
+        &[],
+    );
     assert_eq!(
         output.status.code(),
         Some(2),
@@ -1414,23 +1396,12 @@ fn spawn_hook_with_cwd(
         r#"{{"tool_name":"{}","tool_input":{{"{}":"{}"}}}}"#,
         tool_name, path_field, file_path
     );
-    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["hook", "validate-worktree-paths"])
-        .env_remove("FLOW_CI_RUNNING")
-        .env("HOME", home)
-        .current_dir(worktree_cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn flow-rs");
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(stdin_input.as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().expect("wait");
+    let output = crate::common::spawn_hook(
+        "validate-worktree-paths",
+        worktree_cwd,
+        stdin_input.as_bytes(),
+        &[("HOME", home.to_str().unwrap())],
+    );
     (
         output.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&output.stdout).to_string(),
@@ -1470,23 +1441,12 @@ fn spawn_with_payload_cwd(
         r#"{{"cwd":"{}","tool_name":"Read","tool_input":{{"file_path":"{}"}}}}"#,
         payload_cwd, file_path
     );
-    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["hook", "validate-worktree-paths"])
-        .env_remove("FLOW_CI_RUNNING")
-        .env("HOME", real_cwd)
-        .current_dir(real_cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn flow-rs");
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(stdin_input.as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().expect("wait");
+    let output = crate::common::spawn_hook(
+        "validate-worktree-paths",
+        real_cwd,
+        stdin_input.as_bytes(),
+        &[("HOME", real_cwd.to_str().unwrap())],
+    );
     (
         output.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&output.stderr).to_string(),

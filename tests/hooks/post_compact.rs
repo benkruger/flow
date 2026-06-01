@@ -6,31 +6,14 @@
 //! covered by the per-file gate.
 
 use std::fs;
-use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 use flow_rs::hooks::post_compact::capture_compact_data;
 use serde_json::{json, Value};
 
-fn flow_rs_no_recursion() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
-    cmd.env_remove("FLOW_CI_RUNNING")
-        .env_remove("FLOW_SIMULATE_BRANCH");
-    cmd
-}
-
 fn run_post_compact(cwd: &Path, stdin: &[u8]) -> std::process::Output {
-    let mut child = flow_rs_no_recursion()
-        .args(["hook", "post-compact"])
-        .current_dir(cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn flow-rs hook post-compact");
-    child.stdin.as_mut().unwrap().write_all(stdin).unwrap();
-    child.wait_with_output().expect("wait")
+    crate::common::spawn_hook("post-compact", cwd, stdin, &[])
 }
 
 fn init_git(dir: &Path, branch: &str) {

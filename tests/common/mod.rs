@@ -9,9 +9,10 @@
 
 use std::collections::HashMap;
 use std::fs;
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::sync::{Mutex, OnceLock};
 
 use flow_rs::flow_paths::FlowStatesDir;
@@ -425,6 +426,79 @@ pub fn parse_output(output: &Output) -> Value {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let last_line = stdout.trim().lines().last().unwrap_or("");
     serde_json::from_str(last_line).unwrap_or_else(|_| json!({"raw": stdout.trim()}))
+}
+
+// --- Hook subprocess spawning ---
+
+/// Spawn `flow-rs hook <hook_name>`, write `stdin` to the child, and
+/// return its full [`std::process::Output`].
+///
+/// Builds the command with `current_dir(cwd)` and all three stdio
+/// streams piped, writes `stdin` to the child's stdin, and waits for
+/// completion. Returning the full `Output` lets every caller
+/// destructure the field it needs — exit code, stdout, or stderr — so
+/// one helper serves both the `(exit, stderr)` and full-`Output`
+/// consumers across the hook test files.
+///
+/// **Environment contract** (per
+/// `.claude/rules/subprocess-test-hygiene.md`): three host env vars are
+/// always `env_remove`d BEFORE the `env` overrides apply, so the child
+/// inherits none of them unless the caller re-sets them through `env`:
+///
+/// - `FLOW_CI_RUNNING` — the recursion guard; a fresh hook invocation
+///   must not look like a nested CI run.
+/// - `FLOW_SIMULATE_BRANCH` — the branch-detection override; removed so
+///   branch resolution comes from the `cwd` git fixture unless a caller
+///   re-sets it (e.g. dispatcher's `run_hook` passes
+///   `("FLOW_SIMULATE_BRANCH", branch)`).
+/// - `HOME` — the ambient-config home; removed so the child reads no
+///   user dotfiles. The removal is UNCONDITIONAL: a caller that needs
+///   a specific home re-adds it by passing `("HOME", fixture)` in
+///   `env` (e.g. for transcript fixtures), which sets HOME to that
+///   fixture value. There is no way to inherit the parent process's
+///   real HOME — that is deliberate, per the rule's Working Directory
+///   Isolation: a hook test must never resolve against the runner's
+///   real home. Omitting the key from `env` is not a request to
+///   inherit; it simply leaves the unconditional removal in place.
+///
+/// `env` pairs are applied AFTER the three removals, so passing
+/// `("HOME", fixture)` or `("FLOW_SIMULATE_BRANCH", "feature/x")`
+/// re-adds the removed var with the fixture value (last-write-wins on
+/// `Command`). A var that must stay removed is simply left out of
+/// `env`; a var the slice cannot express (e.g. a removal of some
+/// fourth var, or a `pre_exec` closure) means the caller builds its
+/// own `Command`.
+///
+/// # Parameters
+/// - `hook_name`: the hook subcommand (e.g. `"post-compact"`).
+/// - `cwd`: the child's working directory (a fixture git repo or
+///   tempdir).
+/// - `stdin`: raw bytes written to the child's stdin. Bytes (not
+///   `&str`) so byte-origin callers pass their payload directly and a
+///   probe can feed deliberately-malformed non-UTF-8 input to exercise
+///   the production hooks' raw-stdin reads.
+/// - `env`: `(key, value)` pairs set on the child after the removals.
+pub fn spawn_hook(hook_name: &str, cwd: &Path, stdin: &[u8], env: &[(&str, &str)]) -> Output {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
+    cmd.args(["hook", hook_name])
+        .env_remove("FLOW_CI_RUNNING")
+        .env_remove("FLOW_SIMULATE_BRANCH")
+        .env_remove("HOME")
+        .current_dir(cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    for (key, value) in env {
+        cmd.env(key, value);
+    }
+    let mut child = cmd.spawn().expect("spawn flow-rs hook");
+    child
+        .stdin
+        .as_mut()
+        .expect("piped stdin")
+        .write_all(stdin)
+        .expect("write stdin to flow-rs hook");
+    child.wait_with_output().expect("wait for flow-rs hook")
 }
 
 /// Build a `WindowSnapshot`-shaped JSON Value for fixtures.
