@@ -493,27 +493,26 @@ pub fn run_impl_main(args: &Args) -> (Value, i32) {
     let root = Path::new(&args.project_root);
     if !root.is_dir() {
         let msg = format!("Project root not found: {}", args.project_root);
-        let err_str = crate::output::json_error_string(&msg, &[]);
-        return (serde_json::from_str(&err_str).unwrap(), 1);
+        return (crate::output::json_error_value(&msg, &[]), 1);
     }
 
     // Per-branch mode: --branch and --worktree are required.
     let branch = match args.branch.as_deref() {
         Some(b) => b,
         None => {
-            let err_str =
-                crate::output::json_error_string("--branch (with --worktree) is required", &[]);
-            return (serde_json::from_str(&err_str).unwrap(), 1);
+            return (
+                crate::output::json_error_value("--branch (with --worktree) is required", &[]),
+                1,
+            );
         }
     };
     let worktree = match args.worktree.as_deref() {
         Some(w) => w,
         None => {
-            let err_str = crate::output::json_error_string(
-                "--worktree is required when --branch is set",
-                &[],
+            return (
+                crate::output::json_error_value("--worktree is required when --branch is set", &[]),
+                1,
             );
-            return (serde_json::from_str(&err_str).unwrap(), 1);
         }
     };
 
@@ -541,12 +540,15 @@ pub fn run_impl_main(args: &Args) -> (Value, i32) {
             format!("failed: cannot resolve integration branch — {}", msg),
         );
     }
-    let steps = steps;
-    let steps_map: IndexMap<String, Value> = steps
-        .into_iter()
-        .map(|(k, v)| (k, Value::String(v)))
-        .collect();
-    let steps_value = serde_json::to_value(steps_map).unwrap();
-    let ok_str = crate::output::json_ok_string(&[("steps", steps_value)]);
-    (serde_json::from_str(&ok_str).unwrap(), 0)
+    // Build the steps object directly as a `serde_json::Map`
+    // (`preserve_order` keeps the insertion order from the
+    // order-preserving `steps` IndexMap), so the success arm returns
+    // the Value with no serialize/reparse round-trip.
+    let steps_value = Value::Object(
+        steps
+            .into_iter()
+            .map(|(k, v)| (k, Value::String(v)))
+            .collect(),
+    );
+    (crate::output::json_ok_value(&[("steps", steps_value)]), 0)
 }

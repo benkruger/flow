@@ -24,7 +24,7 @@ use crate::cwd_scope;
 use crate::flow_paths::FlowPaths;
 use crate::git::resolve_branch;
 use crate::lock::mutate_state;
-use crate::output::json_error_string;
+use crate::output::json_error_value;
 use crate::phase_config::{self, load_phase_config, phase_number, PHASE_ORDER};
 use crate::utils::{elapsed_since, format_time, now, tolerant_i64};
 
@@ -293,22 +293,25 @@ pub fn run_impl_main(
             phase,
             PHASE_ORDER.join(", ")
         );
-        return (json_error_value(&msg), 1);
+        return (json_error_value(&msg, &[]), 1);
     }
 
     if action != "enter" && action != "complete" {
         let msg = format!("Invalid action: {}. Must be 'enter' or 'complete'", action);
-        return (json_error_value(&msg), 1);
+        return (json_error_value(&msg, &[]), 1);
     }
 
     if let Err(msg) = cwd_scope::enforce(cwd, root) {
-        return (json_error_value(&msg), 1);
+        return (json_error_value(&msg, &[]), 1);
     }
 
     let branch = match resolve_branch(branch_override, root) {
         Some(b) => b,
         None => {
-            return (json_error_value("Could not determine current branch"), 1);
+            return (
+                json_error_value("Could not determine current branch", &[]),
+                1,
+            );
         }
     };
     // `resolve_branch` may return a raw git ref (slash-containing,
@@ -319,10 +322,13 @@ pub fn run_impl_main(
         Some(p) => p,
         None => {
             return (
-                json_error_value(&format!(
-                    "Invalid branch name: \"{}\" (contains '/' or is empty)",
-                    branch
-                )),
+                json_error_value(
+                    &format!(
+                        "Invalid branch name: \"{}\" (contains '/' or is empty)",
+                        branch
+                    ),
+                    &[],
+                ),
                 1,
             );
         }
@@ -331,7 +337,10 @@ pub fn run_impl_main(
 
     if !state_path.exists() {
         return (
-            json_error_value(&format!("No state file found: {}", state_path.display())),
+            json_error_value(
+                &format!("No state file found: {}", state_path.display()),
+                &[],
+            ),
             1,
         );
     }
@@ -340,7 +349,7 @@ pub fn run_impl_main(
         Ok(c) => c,
         Err(e) => {
             return (
-                json_error_value(&format!("Could not read state file: {}", e)),
+                json_error_value(&format!("Could not read state file: {}", e), &[]),
                 1,
             );
         }
@@ -350,7 +359,7 @@ pub fn run_impl_main(
         Ok(v) => v,
         Err(e) => {
             return (
-                json_error_value(&format!("Could not read state file: {}", e)),
+                json_error_value(&format!("Could not read state file: {}", e), &[]),
                 1,
             );
         }
@@ -358,7 +367,7 @@ pub fn run_impl_main(
 
     if state.get("phases").is_none() || state["phases"].get(phase).is_none() {
         return (
-            json_error_value(&format!("Phase {} not found in state file", phase)),
+            json_error_value(&format!("Phase {} not found in state file", phase), &[]),
             1,
         );
     }
@@ -437,20 +446,9 @@ pub fn run_impl_main(
                 ),
             );
             (
-                json_error_value(&format!("State mutation failed: {}", e)),
+                json_error_value(&format!("State mutation failed: {}", e), &[]),
                 1,
             )
         }
     }
-}
-
-/// Build a `json_error`-shaped Value (parsed from `json_error_string`)
-/// so `run_impl_main` can return `(Value, i32)` while matching the
-/// pre-extraction `json_error` output contract exactly. The parse
-/// cannot fail — `json_error_string` constructs the JSON from a valid
-/// serde_json::Map — so `.expect` is correct per
-/// `.claude/rules/testability-means-simplicity.md`.
-fn json_error_value(message: &str) -> Value {
-    serde_json::from_str::<Value>(&json_error_string(message, &[]))
-        .expect("json_error_string produces valid JSON")
 }

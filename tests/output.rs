@@ -8,7 +8,9 @@
 //! println branches. Captured stdout during tests is suppressed by
 //! the Rust test harness unless the test fails.
 
-use flow_rs::output::{json_error, json_error_string, json_ok, json_ok_string};
+use flow_rs::output::{
+    json_error, json_error_string, json_error_value, json_ok, json_ok_string, json_ok_value,
+};
 use serde_json::{json, Value};
 
 // --- json_ok_string ---
@@ -108,4 +110,63 @@ fn json_error_prints_without_panicking() {
 #[test]
 fn json_error_prints_with_fields_without_panicking() {
     json_error("test", &[("field", json!("value"))]);
+}
+
+// --- json_ok_value / json_error_value ---
+//
+// The `*_value` helpers build the `Value::Object` directly; the
+// `*_string` variants delegate to them and `.to_string()`. The
+// status-first ordering and the delegation equivalence are the
+// invariants callers (`cleanup`, `phase_transition`) depend on:
+// they return the Value directly and never reparse a String.
+
+#[test]
+fn json_ok_value_is_status_first_object() {
+    let v = json_ok_value(&[("branch", json!("my-feature")), ("pr_number", json!(42))]);
+    assert!(v.is_object());
+    let keys: Vec<&str> = v.as_object().unwrap().keys().map(|k| k.as_str()).collect();
+    assert_eq!(keys.first(), Some(&"status"));
+    assert_eq!(v["status"], "ok");
+    assert_eq!(v["branch"], "my-feature");
+    assert_eq!(v["pr_number"], 42);
+}
+
+#[test]
+fn json_error_value_is_status_first_then_message() {
+    let v = json_error_value("boom", &[("phase", json!("flow-code"))]);
+    assert!(v.is_object());
+    let keys: Vec<&str> = v.as_object().unwrap().keys().map(|k| k.as_str()).collect();
+    assert_eq!(keys.first(), Some(&"status"));
+    assert_eq!(keys.get(1), Some(&"message"));
+    assert_eq!(v["status"], "error");
+    assert_eq!(v["message"], "boom");
+    assert_eq!(v["phase"], "flow-code");
+}
+
+#[test]
+fn json_ok_string_equals_value_to_string() {
+    let fields = [("branch", json!("my-feature")), ("pr_number", json!(42))];
+    assert_eq!(json_ok_string(&fields), json_ok_value(&fields).to_string());
+}
+
+#[test]
+fn json_ok_string_equals_value_to_string_empty() {
+    assert_eq!(json_ok_string(&[]), json_ok_value(&[]).to_string());
+}
+
+#[test]
+fn json_error_string_equals_value_to_string() {
+    let fields = [("phase", json!("flow-code"))];
+    assert_eq!(
+        json_error_string("boom", &fields),
+        json_error_value("boom", &fields).to_string()
+    );
+}
+
+#[test]
+fn json_error_string_equals_value_to_string_empty() {
+    assert_eq!(
+        json_error_string("boom", &[]),
+        json_error_value("boom", &[]).to_string()
+    );
 }
