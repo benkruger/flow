@@ -107,8 +107,9 @@ field is set; the fix is to add `.current_dir(fixture_root)`.
 
 ## Canonical Helper Pattern
 
-Every test file that spawns the binary should define a
-no-recursion helper at the top and go through it exclusively:
+Subprocess tests that are NOT hook invocations should define a
+no-recursion helper at the top of the test file and go through it
+exclusively:
 
 ```rust
 fn flow_rs_no_recursion() -> Command {
@@ -134,6 +135,28 @@ let output = flow_rs_no_recursion()
     .expect("spawn flow-rs issue");
 ```
 
+### Hook Subprocess Tests Route Through the Shared Helper
+
+Tests that spawn the `bin/flow hook <name>` subcommand go through
+the shared `crate::common::spawn_hook(hook_name, cwd, stdin, env)`
+helper in `tests/common/mod.rs` rather than a per-file
+`flow_rs_no_recursion`. The shared helper centralizes the recursion
+guard plus the worktree-isolation surface this rule mandates: it
+removes `FLOW_CI_RUNNING`, `FLOW_SIMULATE_BRANCH`, and `HOME`, sets
+`.current_dir(cwd)`, pipes all three stdio streams, then applies the
+caller-supplied `env` pairs last (last-write-wins, so a test that
+needs a specific `HOME` or `FLOW_SIMULATE_BRANCH` passes it
+explicitly via the `env` slice). `stdin` is `&[u8]` so a non-UTF-8
+robustness payload stays expressible, and the helper returns the
+child's `Output`.
+
+The per-file `flow_rs_no_recursion` pattern above remains correct
+for subprocess tests that are NOT hook invocations: non-hook
+subcommands, BrokenPipe-tolerant stdin probes, and spawns that need
+a `pre_exec` hook (`setsid`, `rmdir`) the shared helper does not
+expose. For those, define the per-file helper and pass the
+neutralizers at the call site.
+
 ## When to Apply Which Neutralizers
 
 Map the subcommand the test invokes to the services its module
@@ -144,7 +167,7 @@ reaches, and neutralize exactly those:
 | `bin/flow issue`, `close-issue`, `close-issues`, `link-blocked-by`, `auto-close-parent`, `label-issues` | `gh` CLI → GitHub API | `GH_TOKEN=invalid`, `HOME=<tempdir>` |
 | `bin/flow notify-slack` | Slack webhook POST | `env_remove("SLACK_WEBHOOK_URL")`, `env_remove("SLACK_BOT_TOKEN")` |
 | `bin/flow ci`, `build`, `test`, `lint`, `format` | recursion guard | `env_remove("FLOW_CI_RUNNING")` |
-| `bin/flow hook <name>` | state file reads, stdin | `HOME=<tempdir>` if the hook might read ~/.config; `.current_dir(fixture)` so the hook resolves a fixture branch/state, not the real worktree (see "Working Directory Isolation") |
+| `bin/flow hook <name>` | state file reads, stdin | routed through `crate::common::spawn_hook`, which removes `HOME` and sets `.current_dir(fixture)` so the hook resolves a fixture branch/state, not the real worktree (see "Working Directory Isolation"); pass a specific `HOME` via the `env` slice when the hook must read one |
 
 ## Plan-Phase Trigger
 

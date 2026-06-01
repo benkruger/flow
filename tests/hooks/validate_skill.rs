@@ -8,9 +8,7 @@
 //! `tests/common/mod.rs` via `crate::common` because
 //! `tests/hooks/main.rs` declares the path-aliased common module.
 
-use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Stdio};
 
 use flow_rs::hooks::transcript_walker::USER_ONLY_SKILLS;
 use flow_rs::hooks::validate_skill::{run_impl_main, validate};
@@ -472,22 +470,15 @@ fn run_impl_main_blocks_user_only_skill_via_validate() {
 
 // --- subprocess integration tests ---
 
+/// Spawn `validate-skill` from an inert tempdir cwd (no git repo, no
+/// `.flow-states/` state file) so branch detection finds no active flow
+/// — the right fixture for the basic stdin/exit-code path tests. Tests
+/// that need the gate to see an active flow build their own worktree +
+/// state file and spawn through `spawn_skill_with_payload_cwd` instead.
 fn run_hook_subprocess(stdin_input: &str) -> (i32, String, String) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["hook", "validate-skill"])
-        .env_remove("FLOW_CI_RUNNING")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn flow-rs");
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(stdin_input.as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().expect("wait");
+    let dir = tempfile::tempdir().expect("tempdir");
+    let output =
+        crate::common::spawn_hook("validate-skill", dir.path(), stdin_input.as_bytes(), &[]);
     (
         output.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&output.stdout).to_string(),
@@ -505,23 +496,12 @@ fn write_jsonl_fixture(home: &Path, jsonl: &str) -> std::path::PathBuf {
 /// `cwd`, not env::current_dir(). HOME is pinned to `real_cwd` per
 /// `.claude/rules/subprocess-test-hygiene.md`. Returns (exit, stderr).
 fn spawn_skill_with_payload_cwd(real_cwd: &Path, stdin_input: &str) -> (i32, String) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["hook", "validate-skill"])
-        .env_remove("FLOW_CI_RUNNING")
-        .env("HOME", real_cwd)
-        .current_dir(real_cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn flow-rs");
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(stdin_input.as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().expect("wait");
+    let output = crate::common::spawn_hook(
+        "validate-skill",
+        real_cwd,
+        stdin_input.as_bytes(),
+        &[("HOME", real_cwd.to_str().unwrap())],
+    );
     (
         output.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&output.stderr).to_string(),
@@ -576,22 +556,12 @@ fn subprocess_validate_skill_blocks_user_only_invocation_without_user_command() 
     });
     // Override HOME for the subprocess so is_safe_transcript_path
     // accepts the tempdir-rooted fixture.
-    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["hook", "validate-skill"])
-        .env_remove("FLOW_CI_RUNNING")
-        .env("HOME", home)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn flow-rs");
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(payload.to_string().as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().expect("wait");
+    let output = crate::common::spawn_hook(
+        "validate-skill",
+        home,
+        payload.to_string().as_bytes(),
+        &[("HOME", home.to_str().unwrap())],
+    );
     assert_eq!(output.status.code().unwrap_or(-1), 2);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
@@ -612,22 +582,12 @@ fn subprocess_validate_skill_allows_when_user_invocation_present() {
         "tool_input": {"skill": "flow:flow-abort"},
         "transcript_path": path.to_string_lossy(),
     });
-    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["hook", "validate-skill"])
-        .env_remove("FLOW_CI_RUNNING")
-        .env("HOME", home)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn flow-rs");
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(payload.to_string().as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().expect("wait");
+    let output = crate::common::spawn_hook(
+        "validate-skill",
+        home,
+        payload.to_string().as_bytes(),
+        &[("HOME", home.to_str().unwrap())],
+    );
     assert_eq!(output.status.code().unwrap_or(-1), 0);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.is_empty(), "stderr should be empty: {}", stderr);
@@ -643,22 +603,12 @@ fn subprocess_validate_skill_allows_when_skill_not_user_only() {
         "tool_input": {"skill": "flow:flow-status"},
         "transcript_path": path.to_string_lossy(),
     });
-    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["hook", "validate-skill"])
-        .env_remove("FLOW_CI_RUNNING")
-        .env("HOME", home)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn flow-rs");
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(payload.to_string().as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().expect("wait");
+    let output = crate::common::spawn_hook(
+        "validate-skill",
+        home,
+        payload.to_string().as_bytes(),
+        &[("HOME", home.to_str().unwrap())],
+    );
     assert_eq!(output.status.code().unwrap_or(-1), 0);
 }
 

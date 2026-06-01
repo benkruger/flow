@@ -24,30 +24,21 @@ fn capture_file(home: &Path) -> PathBuf {
 }
 
 /// Spawn `flow-rs hook capture-session`, pipe `stdin_bytes`, wait for
-/// exit. Returns the child's exit code. Wraps the verbose stdin/stdout
-/// boilerplate so individual tests stay focused on assertions.
+/// exit. Returns the child's exit code. Delegates to
+/// [`crate::common::spawn_hook`], whose universal `env_remove("HOME")`
+/// covers the `home_env: None` case (capture-session resolves its
+/// capture-file location from `HOME`, so an unset `HOME` exercises the
+/// fail-open path); `Some(h)` re-sets `HOME` via the `env` slice. The
+/// `cwd` is an inert tempdir because capture-session reads `HOME`, not
+/// the working directory.
 fn run_capture_session(home_env: Option<&Path>, stdin_bytes: &[u8]) -> Option<i32> {
-    let mut cmd = flow_rs_no_recursion();
-    cmd.args(["hook", "capture-session"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    match home_env {
-        Some(h) => {
-            cmd.env("HOME", h);
-        }
-        None => {
-            cmd.env_remove("HOME");
-        }
-    }
-    let mut child = cmd.spawn().expect("spawn capture-session");
-    child
-        .stdin
-        .as_mut()
-        .expect("piped stdin")
-        .write_all(stdin_bytes)
-        .expect("write stdin");
-    let output = child.wait_with_output().expect("wait capture-session");
+    let dir = tempfile::tempdir().expect("tempdir");
+    let home = home_env.map(|h| h.to_str().expect("HOME path is UTF-8"));
+    let env: Vec<(&str, &str)> = match home {
+        Some(h) => vec![("HOME", h)],
+        None => vec![],
+    };
+    let output = crate::common::spawn_hook("capture-session", dir.path(), stdin_bytes, &env);
     output.status.code()
 }
 
@@ -138,20 +129,13 @@ fn capture_session_skips_when_home_is_relative() {
     // resolve against the worktree's cwd — exactly the
     // hostile-config trap `.claude/rules/external-input-path-construction.md`
     // "Validate env-var-derived paths as absolute" defends against.
-    let mut cmd = flow_rs_no_recursion();
-    cmd.args(["hook", "capture-session"])
-        .env("HOME", "relative-home")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut child = cmd.spawn().expect("spawn capture-session");
-    child
-        .stdin
-        .as_mut()
-        .expect("piped stdin")
-        .write_all(br#"{"session_id":"valid-sid"}"#)
-        .expect("write stdin");
-    let output = child.wait_with_output().expect("wait capture-session");
+    let dir = tempfile::tempdir().expect("tempdir");
+    let output = crate::common::spawn_hook(
+        "capture-session",
+        dir.path(),
+        br#"{"session_id":"valid-sid"}"#,
+        &[("HOME", "relative-home")],
+    );
     assert_eq!(output.status.code(), Some(0));
 }
 

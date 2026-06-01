@@ -1,9 +1,8 @@
 //! Integration tests for `src/hooks/validate_ask_user.rs`.
 
 use std::fs;
-use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 use flow_rs::hooks::validate_ask_user::{set_blocked, user_only_skill_carve_out_applies, validate};
 use serde_json::{json, Value};
@@ -436,22 +435,7 @@ fn test_set_blocked_preserves_other_fields() {
 // --- run() subprocess test ---
 
 fn run_hook(cwd: &Path, stdin_input: &str) -> (i32, String, String) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["hook", "validate-ask-user"])
-        .current_dir(cwd)
-        .env_remove("FLOW_CI_RUNNING")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn flow-rs");
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(stdin_input.as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().expect("wait");
+    let output = crate::common::spawn_hook("validate-ask-user", cwd, stdin_input.as_bytes(), &[]);
     (
         output.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&output.stdout).to_string(),
@@ -778,23 +762,12 @@ fn validate_ask_user_carve_out_subprocess_allows_during_in_progress_auto() {
     let transcript = carve_out_transcript_fixture(&root, jsonl);
     let payload = json!({"transcript_path": transcript.to_string_lossy()});
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["hook", "validate-ask-user"])
-        .current_dir(&root)
-        .env_remove("FLOW_CI_RUNNING")
-        .env("HOME", &root)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(payload.to_string().as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
+    let output = crate::common::spawn_hook(
+        "validate-ask-user",
+        &root,
+        payload.to_string().as_bytes(),
+        &[("HOME", root.to_str().unwrap())],
+    );
     // Without the carve-out the in_progress + auto block would
     // exit 2. Verify it exited 0 and stderr is empty.
     assert_eq!(
@@ -844,23 +817,12 @@ fn validate_ask_user_block_persists_when_no_carve_out_during_in_progress_auto() 
     let transcript = carve_out_transcript_fixture(&root, jsonl);
     let payload = json!({"transcript_path": transcript.to_string_lossy()});
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["hook", "validate-ask-user"])
-        .current_dir(&root)
-        .env_remove("FLOW_CI_RUNNING")
-        .env("HOME", &root)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(payload.to_string().as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
+    let output = crate::common::spawn_hook(
+        "validate-ask-user",
+        &root,
+        payload.to_string().as_bytes(),
+        &[("HOME", root.to_str().unwrap())],
+    );
     assert_eq!(output.status.code().unwrap_or(-1), 2);
     assert!(String::from_utf8_lossy(&output.stderr).contains("BLOCKED"));
 }
@@ -918,23 +880,12 @@ fn shared_config_subprocess_fixture(state: &Value) -> (tempfile::TempDir, std::p
 /// `<home>/.claude/projects/` prefix check resolves to the same root
 /// the transcript fixture is written under.
 fn run_validate_ask_user(root: &Path, payload: &Value) -> (i32, String, String) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["hook", "validate-ask-user"])
-        .current_dir(root)
-        .env_remove("FLOW_CI_RUNNING")
-        .env("HOME", root)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(payload.to_string().as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
+    let output = crate::common::spawn_hook(
+        "validate-ask-user",
+        root,
+        payload.to_string().as_bytes(),
+        &[("HOME", root.to_str().unwrap())],
+    );
     (
         output.status.code().unwrap_or(-1),
         String::from_utf8_lossy(&output.stdout).to_string(),
