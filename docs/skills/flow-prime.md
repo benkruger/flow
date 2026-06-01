@@ -51,7 +51,7 @@ The chosen configuration is stored in `.flow.json` under a `skills` key:
 
 ```json
 {
-  "flow_version": "2.4.0",
+  "flow_version": "2.5.0",
   "skills": {
     "flow-start": {"continue": "auto"},
     "flow-code": {"commit": "auto", "continue": "auto"},

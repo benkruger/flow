@@ -45,27 +45,25 @@ Then display the skills configuration as a markdown table:
 | Skill     | Commit | Continue |
 |-----------|--------|----------|
 | start       | —      | manual   |
-| plan        | —      | auto     |
 | code        | manual | manual   |
-| review | auto   | auto     |
+| review      | auto   | auto     |
 | learn       | auto   | auto     |
-| complete    | auto   | —        |
-| abort       | auto   | —        |
+| complete    | —      | auto     |
+| abort       | —      | auto     |
 ```
 
 Use the actual values from `.flow.json`. The table above is just an example.
 
 **Column rules:**
 
-- **Phase skills with both axes** (code, review, learn): show both `commit` and `continue` values from the nested object
-- **Phase skills with continue only** (start, plan): show `—` for Commit, show the `continue` value
-- **Utility skills** (complete, abort): show the single string value under Commit, show `—` for Continue
+- **Skills with both axes** (code, review, learn): show both `commit` and `continue` values from the nested object
+- **Skills with continue only** (start, complete, abort): show `—` for Commit, show the `continue` value from the nested object
 
 **Legacy format handling:** If `.flow.json` has the old single-value format (e.g., `"code": "manual"` instead of `{"commit": "manual", "continue": "manual"}`), display the single value in both columns for phase skills that should have two axes.
 
 If `.flow.json` has no `skills` key, show "No skills configured — using built-in defaults" instead of the table.
 
-Tell the user that phase skills can be overridden at invocation time with flags controlling autonomy.
+Tell the user that autonomy is configured in `.flow.json` — there are no `--auto`/`--manual` invocation flags — and that re-running `/flow:flow-prime` changes it.
 
 ## Hard Rules
 

@@ -39,7 +39,9 @@ from `.flow-states/<branch>/log`.
 |-----|--------|
 | Up/Down | Navigate flow list |
 | Left/Right | Switch tab (Active Flows / Orchestration) |
-| Enter | Open worktree in terminal (activates existing iTerm2 tab or opens new tab) |
+| Enter | Activate the existing iTerm2 tab for the selected flow's session |
+| o | Open a fresh iTerm2 tab (or window) in the selected flow's worktree |
+| / | Filter the flow list by query |
 | p | Open PR in browser |
 | i | Show issues list |
 | I | Open issue in browser |
@@ -47,6 +49,7 @@ from `.flow-states/<branch>/log`.
 | l | Show log view |
 | a | Abort flow (with Y/N confirmation) |
 | r | Force refresh |
+| ? | Toggle the help overlay |
 | Esc | Return from log view to list view |
 | q | Quit |
 

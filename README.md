@@ -207,7 +207,7 @@ These commands are reserved for direct user invocation — type the slash comman
 | `/flow-prime` | One-time project setup — configure permissions, install `bin/*` stubs, write the version marker |
 | `/flow-abort` | Abort the current feature — close the PR, delete the remote branch, remove the worktree, delete the state file |
 | `/flow-continue` | Resume a halted autonomous flow — clears `_halt_pending` so the next assistant turn proceeds |
-| `/flow-reset` | Reset all FLOW artifacts on this machine — close PRs, remove worktrees, delete branches, clear state files |
+| `/flow-reset` | Wipe `.flow-states/` on this machine — PRs, worktrees, and branches are NOT touched (those require per-flow `/flow-abort`) |
 
 ---
 
@@ -225,7 +225,9 @@ Reads state files directly and auto-refreshes every 2 seconds, so phase transiti
 |-----|--------|
 | Up/Down | Navigate flow list |
 | Left/Right | Switch tab |
-| Enter | Open worktree in terminal (activates existing iTerm2 tab or opens new tab) |
+| Enter | Activate the existing iTerm2 tab for the selected flow's session |
+| o | Open a fresh iTerm2 tab (or window) in the selected flow's worktree |
+| / | Filter the flow list by query |
 | p | Open PR in browser |
 | i | Show issues list |
 | I | Open issue in browser |
@@ -233,6 +235,7 @@ Reads state files directly and auto-refreshes every 2 seconds, so phase transiti
 | l | Show session log |
 | a | Abort flow (with Y/N confirmation) |
 | r | Force refresh |
+| ? | Toggle the help overlay |
 | Esc | Back to list view |
 | q | Quit |
 
