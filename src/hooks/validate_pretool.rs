@@ -37,45 +37,79 @@ use crate::session_metrics::home_dir_or_empty;
 ///
 /// Layer 9 (whitelist enforcement) is only enforced when both settings
 /// are provided AND `flow_active` is true.
+///
+/// Each layer is an `Option<String>`-returning checker; this function
+/// runs them in first-failing-layer-wins order, returning the first
+/// block message a checker produces. Layers differ in whether they
+/// match the raw `command` (1, 2, 9) or the trimmed `stripped` form
+/// (3-8); the per-checker signatures name the input each consumes so
+/// the raw-vs-stripped distinction cannot drift.
 pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (bool, String) {
-    // Layer 1: Block compound commands and command substitution at the
-    // command-structure level. Operator characters inside single quotes,
-    // double quotes, or backslash escapes are treated as literal data
-    // because bash itself does not interpret them as operators there.
-    // An unclosed quote at end-of-input is pessimistically blocked — it
-    // is malformed input and could otherwise hide a structural operator
-    // from the scanner.
-    match scan_unquoted(command, compound_op_predicate) {
-        Ok(Some(op)) => {
-            return (
-                false,
-                format!(
-                    "BLOCKED: Compound commands ({}) are not allowed outside quoted arguments. \
-                     Use separate Bash calls for each command. \
-                     See .claude/rules/no-escape-hatches.md.",
-                    op
-                ),
-            );
-        }
-        Err(ScanError::Unclosed) => {
-            return (
-                false,
-                "BLOCKED: Command has an unclosed single or double quote. \
-                 Close the quote before running the command. \
-                 See .claude/rules/no-escape-hatches.md."
-                    .to_string(),
-            );
-        }
-        Ok(None) => {}
+    if let Some(m) = check_compound_operators(command) {
+        return (false, m);
     }
+    if let Some(m) = check_shell_redirection(command) {
+        return (false, m);
+    }
+    let stripped = command.trim();
+    if let Some(m) = check_exec_prefix(stripped) {
+        return (false, m);
+    }
+    if let Some(m) = check_find_destructive_flags(stripped) {
+        return (false, m);
+    }
+    if let Some(m) = check_blanket_restore(stripped) {
+        return (false, m);
+    }
+    if let Some(m) = check_git_diff_file_args(stripped) {
+        return (false, m);
+    }
+    if let Some(m) = check_deny_list(settings, stripped, command) {
+        return (false, m);
+    }
+    if let Some(m) = check_escape_hatch_structural(stripped) {
+        return (false, m);
+    }
+    if let Some(m) = check_allow_list(settings, command, flow_active) {
+        return (false, m);
+    }
+    (true, String::new())
+}
 
-    // Layer 2: Block shell redirection (>, >>, 2>, etc.) in unquoted
-    // positions. Layer 1 already rejected unclosed-quote inputs, so any
-    // command that reaches here is guaranteed quote-balanced and a
-    // successful scan is sufficient.
+/// Layer 1: block compound commands and command substitution at the
+/// command-structure level. Consumes the RAW `command` because the
+/// quote-state scanner must see the unstripped bytes. Operator
+/// characters inside single quotes, double quotes, or backslash
+/// escapes are treated as literal data because bash itself does not
+/// interpret them as operators there. An unclosed quote at
+/// end-of-input is pessimistically blocked — it is malformed input
+/// and could otherwise hide a structural operator from the scanner.
+fn check_compound_operators(command: &str) -> Option<String> {
+    match scan_unquoted(command, compound_op_predicate) {
+        Ok(Some(op)) => Some(format!(
+            "BLOCKED: Compound commands ({}) are not allowed outside quoted arguments. \
+             Use separate Bash calls for each command. \
+             See .claude/rules/no-escape-hatches.md.",
+            op
+        )),
+        Err(ScanError::Unclosed) => Some(
+            "BLOCKED: Command has an unclosed single or double quote. \
+             Close the quote before running the command. \
+             See .claude/rules/no-escape-hatches.md."
+                .to_string(),
+        ),
+        Ok(None) => None,
+    }
+}
+
+/// Layer 2: block shell redirection (>, >>, 2>, etc.) in unquoted
+/// positions. Consumes the RAW `command` for the same quote-state
+/// reason as Layer 1. Layer 1 already rejected unclosed-quote inputs,
+/// so any command that reaches here is guaranteed quote-balanced and a
+/// successful scan is sufficient.
+fn check_shell_redirection(command: &str) -> Option<String> {
     if let Ok(Some(_)) = scan_unquoted(command, redirect_predicate) {
-        return (
-            false,
+        return Some(
             "BLOCKED: Shell redirection (>, >>) is not allowed. \
              Use the Read tool to view file contents and the \
              Write tool to create files. \
@@ -83,15 +117,17 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
                 .to_string(),
         );
     }
+    None
+}
 
-    // Layer 3: Block exec prefix — triggers Claude Code's built-in
-    // "evaluates arguments as shell code" safety heuristic, causing
-    // permission prompts that break autonomous flows. Plain command
-    // invocation is functionally identical.
-    let stripped = command.trim();
+/// Layer 3: block the exec prefix — it triggers Claude Code's built-in
+/// "evaluates arguments as shell code" safety heuristic, causing
+/// permission prompts that break autonomous flows. Plain command
+/// invocation is functionally identical. Consumes the trimmed
+/// `stripped` form.
+fn check_exec_prefix(stripped: &str) -> Option<String> {
     if stripped.starts_with("exec ") {
-        return (
-            false,
+        return Some(
             "BLOCKED: 'exec' prefix triggers a permission prompt. \
              Remove 'exec' and run the command directly — \
              the behavior is identical. \
@@ -99,26 +135,28 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
                 .to_string(),
         );
     }
+    None
+}
 
-    // Layer 4: Block destructive `find` flag forms structurally.
-    // `find` with -exec, -execdir, -ok, -okdir, or -delete runs
-    // arbitrary commands or recursively unlinks files. UNIVERSAL_ALLOW
-    // permits `Bash(find *)` for read-only invocations (the safe
-    // default with no destructive flag); this layer rejects the
-    // destructive shapes regardless of `settings.json` content or
-    // `flow_active` state, so the protection holds during the
-    // pre-prime upgrade window AND outside FLOW phases. Tokenization
-    // via `split_whitespace` catches path-omitted forms like
-    // `find -exec rm /etc/passwd \;` and `find -delete` (find
-    // defaults the path to `.` when absent) that a regex pattern
-    // with a required path slot would silently pass.
-    //
-    // The check matches the literal command name `find` plus any
-    // absolute-path variant ending with `/find`. Bash-quoted
-    // (`'find'`) or escape-prefixed (`\find`) shapes are not caught
-    // here — the same gap exists for every settings-driven layer in
-    // this hook because they also tokenize on the literal command
-    // string.
+/// Layer 4: block destructive `find` flag forms structurally.
+/// Consumes the trimmed `stripped` form. `find` with -exec, -execdir,
+/// -ok, -okdir, or -delete runs arbitrary commands or recursively
+/// unlinks files. UNIVERSAL_ALLOW permits `Bash(find *)` for read-only
+/// invocations (the safe default with no destructive flag); this layer
+/// rejects the destructive shapes regardless of `settings.json`
+/// content or `flow_active` state, so the protection holds during the
+/// pre-prime upgrade window AND outside FLOW phases. Tokenization via
+/// `split_whitespace` catches path-omitted forms like `find -exec rm
+/// /etc/passwd \;` and `find -delete` (find defaults the path to `.`
+/// when absent) that a regex pattern with a required path slot would
+/// silently pass.
+///
+/// The check matches the literal command name `find` plus any
+/// absolute-path variant ending with `/find`. Bash-quoted (`'find'`)
+/// or escape-prefixed (`\find`) shapes are not caught here — the same
+/// gap exists for every settings-driven layer in this hook because
+/// they also tokenize on the literal command string.
+fn check_find_destructive_flags(stripped: &str) -> Option<String> {
     const FIND_DESTRUCTIVE_FLAGS: &[&str] = &["-exec", "-execdir", "-ok", "-okdir", "-delete"];
     let mut find_tokens = stripped.split_whitespace();
     let first_token = find_tokens.next();
@@ -127,39 +165,43 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
     if is_find_command {
         for token in find_tokens {
             if FIND_DESTRUCTIVE_FLAGS.contains(&token) {
-                return (
-                    false,
-                    format!(
-                        "BLOCKED: 'find' with destructive flag '{}' is forbidden. \
-                         `-exec`, `-execdir`, `-ok`, `-okdir`, and `-delete` \
-                         run arbitrary commands or unlink files. Use Glob to \
-                         discover paths and Read to inspect them. \
-                         See .claude/rules/no-escape-hatches.md.",
-                        token
-                    ),
-                );
+                return Some(format!(
+                    "BLOCKED: 'find' with destructive flag '{}' is forbidden. \
+                     `-exec`, `-execdir`, `-ok`, `-okdir`, and `-delete` \
+                     run arbitrary commands or unlink files. Use Glob to \
+                     discover paths and Read to inspect them. \
+                     See .claude/rules/no-escape-hatches.md.",
+                    token
+                ));
             }
         }
     }
+    None
+}
 
-    // Layer 5: Block blanket restore (git restore . wipes all changes)
+/// Layer 5: block blanket restore (`git restore .` wipes all changes).
+/// Consumes the trimmed `stripped` form.
+fn check_blanket_restore(stripped: &str) -> Option<String> {
     if stripped == "git restore ." {
-        return (
-            false,
+        return Some(
             "BLOCKED: 'git restore .' discards ALL changes without review. \
              Use 'git restore <file>' for each file individually. \
              Before restoring, run 'git diff' to capture what will be lost."
                 .to_string(),
         );
     }
+    None
+}
 
-    // Layer 6: Block git diff with file-path arguments
+/// Layer 6: block `git diff` with file-path arguments. Consumes the
+/// trimmed `stripped` form and matches ` -- ` followed by a non-space
+/// character.
+fn check_git_diff_file_args(stripped: &str) -> Option<String> {
     if stripped.starts_with("git diff") {
         // Check for " -- " followed by a non-space character
         let re = Regex::new(r" -- \S").unwrap();
         if re.is_match(stripped) {
-            return (
-                false,
+            return Some(
                 "BLOCKED: 'git diff' with file path arguments is not allowed. \
                  Use the Read tool to view file contents and the Grep tool \
                  to search for patterns."
@@ -167,54 +209,47 @@ pub fn validate(command: &str, settings: Option<&Value>, flow_active: bool) -> (
             );
         }
     }
+    None
+}
 
-    // Layer 7: Deny-list check — deny always wins over allow
+/// Layer 7: deny-list check — deny always wins over allow. Matches the
+/// deny regexes against the trimmed `stripped` form; the block message
+/// names the raw `command`. No-op when `settings` is absent.
+fn check_deny_list(settings: Option<&Value>, stripped: &str, command: &str) -> Option<String> {
     if let Some(settings) = settings {
         let deny_regexes = build_permission_regexes(settings, "deny");
         for regex in &deny_regexes {
             if regex.is_match(stripped) {
-                return (
-                    false,
-                    format!(
-                        "BLOCKED: Command matches deny list: '{}'. \
-                         This operation is explicitly forbidden. \
-                         See .claude/rules/no-escape-hatches.md.",
-                        command
-                    ),
-                );
+                return Some(format!(
+                    "BLOCKED: Command matches deny list: '{}'. \
+                     This operation is explicitly forbidden. \
+                     See .claude/rules/no-escape-hatches.md.",
+                    command
+                ));
             }
         }
     }
+    None
+}
 
-    // Layer 8: Structural escape-hatch program/flag block. Catches
-    // indirect forms (absolute paths, env-var prefixes, flags-before-
-    // trigger) that route around Layer 7's glob deny patterns. Fires
-    // regardless of `settings` or `flow_active` so pre-prime sessions
-    // and outside-FLOW invocations inherit the protection. See
-    // `.claude/rules/no-escape-hatches.md` for the canonical
-    // program/flag table this layer enforces structurally.
-    if let Some(msg) = check_escape_hatch_structural(stripped) {
-        return (false, msg);
-    }
-
-    // Layer 9: Whitelist check — only during an active flow
+/// Layer 9: whitelist check — only enforced during an active flow.
+/// Matches the allow regexes against the RAW `command`. No-op when
+/// `settings` is absent or `flow_active` is false; also a no-op when
+/// the allow list is empty (an unprimed project imposes no whitelist).
+fn check_allow_list(settings: Option<&Value>, command: &str, flow_active: bool) -> Option<String> {
     if let Some(settings) = settings {
         if flow_active {
             let allow_regexes = build_permission_regexes(settings, "allow");
             if !allow_regexes.is_empty() && !allow_regexes.iter().any(|r| r.is_match(command)) {
-                return (
-                    false,
-                    format!(
-                        "BLOCKED: Command not in allow list: '{}'. \
-                         Check .claude/settings.json allow patterns.",
-                        command
-                    ),
-                );
+                return Some(format!(
+                    "BLOCKED: Command not in allow list: '{}'. \
+                     Check .claude/settings.json allow patterns.",
+                    command
+                ));
             }
         }
     }
-
-    (true, String::new())
+    None
 }
 
 /// Error returned by `scan_unquoted` when the command ends inside a
@@ -1895,16 +1930,153 @@ fn is_flow_advancing_bash_command(cmd: &str) -> bool {
     }
 }
 
+/// The cwd-derived inputs the validate-pretool decision core needs,
+/// resolved ONCE from the single threaded `cwd` value so every
+/// consumer reads the same resolution and cannot diverge.
+///
+/// `settings` is consulted only for Layer 7 (deny) and Layer 9
+/// (allow) enforcement. `branch` and `main_root` are derived
+/// independently of `settings.json` presence so a missing settings
+/// file (interrupted prime, `.gitignore`'d in CI) does not silently
+/// disable the halt gate. `flow_active` is the combined predicate the
+/// background gate and `validate()` consume.
+///
+/// The intermediate `project_root` from settings discovery is folded
+/// into `main_root` and not retained — every downstream consumer
+/// reads `main_root` (the resolved main-repo root) rather than the
+/// raw project root.
+struct HookContext {
+    settings: Option<Value>,
+    branch: Option<String>,
+    main_root: Option<PathBuf>,
+    flow_active: bool,
+}
+
+/// Resolve the cwd-derived `HookContext` from a single threaded `cwd`
+/// value. A `None` cwd (env::current_dir() failed upstream, e.g. the
+/// stale-cwd adversarial path) makes settings and branch fall through
+/// to None and `flow_active` to false. Per
+/// `.claude/rules/testability-means-simplicity.md`, settings and branch
+/// resolution call the concrete `find_settings_and_root_from` /
+/// `detect_branch_from_path` functions directly rather than through a
+/// generic seam: a parameterized seam would introduce a
+/// per-monomorphization Err arm with no reachable production callsite,
+/// and the stale-cwd subprocess test already covers the `None` path
+/// here through the real entry point.
+fn resolve_hook_context(cwd: Option<&Path>) -> HookContext {
+    let (settings, project_root) = cwd.map(find_settings_and_root_from).unwrap_or((None, None));
+    let branch = cwd.and_then(detect_branch_from_path);
+    let main_root = match project_root.as_ref() {
+        Some(r) => Some(resolve_main_root(r)),
+        None => cwd.map(resolve_main_root),
+    };
+    let flow_active = match (&branch, &main_root) {
+        (Some(b), Some(r)) => is_flow_active(b, r),
+        _ => false,
+    };
+    HookContext {
+        settings,
+        branch,
+        main_root,
+        flow_active,
+    }
+}
+
+/// Handle the empty-command Agent tool call path. Returns `None` when
+/// `command` is non-empty (a Bash call — the caller falls through to
+/// `validate()`); returns `Some((exit_code, message))` when the call
+/// is the Agent path and is fully handled, including the allow case
+/// `Some((0, None))`. The `Some`/`None` split distinguishes "handled,
+/// return" from "fall through" — conflating an Agent allow `(0, None)`
+/// with a layer checker's `None` fall-through would change behavior.
+///
+/// Layer ordering inside the Agent path: the cheap `subagent_type`
+/// check runs first (rejects `general-purpose` calls before any
+/// prompt tokenization), then the expensive prompt-body scan runs on
+/// the Agent's prompt field. The prompt scan is scoped to active
+/// flows and bounded at AGENT_PROMPT_BYTE_CAP.
+fn handle_agent_call(
+    command: &str,
+    tool_input: &Value,
+    cwd: Option<&Path>,
+    flow_active: bool,
+) -> Option<(i32, Option<String>)> {
+    if !command.is_empty() {
+        return None;
+    }
+    let subagent_type = tool_input.get("subagent_type").and_then(|v| v.as_str());
+    let (allowed, message) = validate_agent(subagent_type, flow_active);
+    if !allowed {
+        return Some((2, Some(message)));
+    }
+    let prompt_field = tool_input.get("prompt").and_then(|v| v.as_str());
+    let worktree_root = cwd.and_then(|c| {
+        crate::flow_paths::compute_worktree_root(&c.to_string_lossy()).map(PathBuf::from)
+    });
+    if let Some(root) = worktree_root {
+        let (prompt_allowed, prompt_message) =
+            crate::hooks::agent_prompt_scan::validate_agent_prompt(
+                prompt_field,
+                &root,
+                flow_active,
+            );
+        if !prompt_allowed {
+            return Some((2, Some(prompt_message)));
+        }
+    }
+    Some((0, None))
+}
+
+/// Halt gate: return the block message when a flow-advancing Bash
+/// command is attempted while the active flow's state file has
+/// `_halt_pending=true`. The gate closes the surface where a model
+/// would otherwise advance the counter, transition phases, or commit
+/// while the user has paused the autonomous flow. `/flow:flow-continue`
+/// clears the halt by calling `bin/flow clear-halt`, which is itself
+/// self-gated (Layer 1 of `validate-skill` plus the transcript-walker
+/// check inside `clear-halt::run_impl`) — so this gate does NOT need
+/// an explicit pass-through for `clear-halt`: the command is not in
+/// `is_flow_advancing_bash_command`'s allowlist and falls through.
+///
+/// `FlowPaths::try_new` returns None on slash- or NUL-containing
+/// branches per `.claude/rules/branch-path-safety.md`. An invalid
+/// branch cannot have an active flow at any `.flow-states/<branch>/`
+/// path, so the gate correctly falls through (`unwrap_or(false)`) —
+/// the fallible constructor's `None` case is handled as a control-flow
+/// branch, never a panic, per
+/// `.claude/rules/external-input-validation.md`.
+fn check_halt_gate(command: &str, branch: &str, main_root: &Path) -> Option<String> {
+    if !is_flow_advancing_bash_command(command) {
+        return None;
+    }
+    let halt = crate::flow_paths::FlowPaths::try_new(main_root, branch)
+        .map(|paths| is_halt_set(&paths.state_file()))
+        .unwrap_or(false);
+    if halt {
+        return Some(
+            "BLOCKED: this flow is halted. The autonomous flow paused after a user \
+             message and stays paused until the user explicitly resumes or aborts. \
+             The model cannot advance the flow (counter, phase, commit, marker) \
+             while halted. Two exits are available — only the user can take them: \
+             type `/flow:flow-continue` to resume, or `/flow:flow-abort` to close \
+             the flow. See .claude/rules/autonomous-phase-discipline.md."
+                .to_string(),
+        );
+    }
+    None
+}
+
 /// Decision core for the validate-pretool hook. Returns
 /// `(exit_code, Option<stderr_message>)` so `run()` can translate the
 /// decision into `eprintln!` + `process::exit` side effects.
 ///
 /// `cwd` is the resolved working directory the hook reasons about —
-/// `run()` supplies it. Every cwd-derived consumer (settings/project
-/// root discovery, branch detection, `main_root`, the agent-prompt
-/// `worktree_root`, and the Layer 10/11 + halt gates) reads the single
-/// `cwd` value threaded here so they cannot diverge. A `None` cwd
-/// (env::current_dir() failed upstream) makes each consumer fall
+/// `run()` supplies it. `resolve_hook_context` resolves every
+/// cwd-derived consumer (settings discovery, branch detection,
+/// `main_root`, `flow_active`) ONCE from the single `cwd` value so
+/// they cannot diverge; the Agent-prompt `worktree_root` and the
+/// Layer 10/11 + halt gates read the same threaded `cwd`. A `None`
+/// cwd (env::current_dir() failed upstream) makes each consumer fall
 /// through to its no-flow default. Integration tests drive every
 /// branch through the hook subprocess with fixture stdin payloads.
 fn run_impl_main(hook_input: Option<Value>, cwd: Option<String>) -> (i32, Option<String>) {
@@ -1913,34 +2085,8 @@ fn run_impl_main(hook_input: Option<Value>, cwd: Option<String>) -> (i32, Option
         None => return (0, None),
     };
 
-    // Resolve cwd-derived inputs ONCE from the single threaded `cwd`
-    // value and reuse for settings discovery and branch detection. A
-    // `None` cwd (env::current_dir() failed upstream, e.g. the
-    // stale-cwd adversarial path) makes both settings and branch fall
-    // through to None. Per `.claude/rules/testability-means-simplicity.md`
-    // the prior `find_settings_and_root`/`detect_branch_from_cwd`
-    // generic seams have been removed because their per-monomorphization
-    // Err arms were unreachable through any production callsite — the
-    // stale-cwd subprocess test covers the failure path here instead.
     let cwd: Option<PathBuf> = cwd.map(PathBuf::from);
-    let (settings, project_root) = cwd
-        .as_deref()
-        .map(find_settings_and_root_from)
-        .unwrap_or((None, None));
-    // Derive branch and main_root independently of settings.json
-    // presence per Review finding #9: a missing settings.json
-    // (interrupted prime, .gitignore'd in CI) must not silently
-    // disable the halt gate. settings.json is consulted only for
-    // Layer 9 whitelist enforcement.
-    let branch = cwd.as_deref().and_then(detect_branch_from_path);
-    let main_root = match project_root.as_ref() {
-        Some(r) => Some(resolve_main_root(r)),
-        None => cwd.as_deref().map(resolve_main_root),
-    };
-    let flow_active = match (&branch, &main_root) {
-        (Some(b), Some(r)) => is_flow_active(b, r),
-        _ => false,
-    };
+    let context = resolve_hook_context(cwd.as_deref());
 
     let tool_input = hook_input
         .get("tool_input")
@@ -1961,43 +2107,22 @@ fn run_impl_main(hook_input: Option<Value>, cwd: Option<String>) -> (i32, Option
     // Pre-validation: CI is always a gate; other commands only blocked in FLOW phases
     if let Some(bg) = tool_input.get("run_in_background") {
         if is_bg_truthy(bg) {
-            if let Some(msg) = should_block_background(command, flow_active) {
+            if let Some(msg) = should_block_background(command, context.flow_active) {
                 return (2, Some(msg));
             }
         }
     }
-    if command.is_empty() {
-        // No command means this is an Agent tool call, not Bash.
-        // Layer ordering: the cheap `subagent_type` check runs first
-        // (rejects `general-purpose` calls before any prompt
-        // tokenization), then the expensive prompt-body scan runs on
-        // the Agent's prompt field per issue #1704. The prompt scan
-        // is scoped to active flows and bounded at
-        // AGENT_PROMPT_BYTE_CAP.
-        let subagent_type = tool_input.get("subagent_type").and_then(|v| v.as_str());
-        let (allowed, message) = validate_agent(subagent_type, flow_active);
-        if !allowed {
-            return (2, Some(message));
-        }
-        let prompt_field = tool_input.get("prompt").and_then(|v| v.as_str());
-        let worktree_root = cwd.as_deref().and_then(|c| {
-            crate::flow_paths::compute_worktree_root(&c.to_string_lossy()).map(PathBuf::from)
-        });
-        if let Some(root) = worktree_root {
-            let (prompt_allowed, prompt_message) =
-                crate::hooks::agent_prompt_scan::validate_agent_prompt(
-                    prompt_field,
-                    &root,
-                    flow_active,
-                );
-            if !prompt_allowed {
-                return (2, Some(prompt_message));
-            }
-        }
-        return (0, None);
+
+    // Empty command → Agent tool call path. Returns Some when handled
+    // (short-circuit), None when the command is a Bash call to fall
+    // through to validate().
+    if let Some(decision) =
+        handle_agent_call(command, &tool_input, cwd.as_deref(), context.flow_active)
+    {
+        return decision;
     }
 
-    let (allowed, message) = validate(command, settings.as_ref(), flow_active);
+    let (allowed, message) = validate(command, context.settings.as_ref(), context.flow_active);
     if !allowed {
         return (2, Some(message));
     }
@@ -2035,42 +2160,14 @@ fn run_impl_main(hook_input: Option<Value>, cwd: Option<String>) -> (i32, Option
         }
     }
 
-    // Halt gate: block flow-advancing Bash commands when the
-    // active flow's state file has `_halt_pending=true`. The gate
-    // closes the surface where a model would otherwise advance the
-    // counter, transition phases, or commit while the user has
-    // paused the autonomous flow. `/flow:flow-continue` clears the
-    // halt by calling `bin/flow clear-halt`, which is itself self-
-    // gated (Layer 1 of `validate-skill` plus the transcript-walker
-    // check inside `clear-halt::run_impl`) — so this gate does NOT
-    // need an explicit pass-through for `clear-halt`: the command
-    // is not in `is_flow_advancing_bash_command`'s allowlist and
-    // falls through.
-    if let (Some(b), Some(r)) = (&branch, &main_root) {
-        if is_flow_advancing_bash_command(command) {
-            // `FlowPaths::try_new` returns None on slash- or
-            // NUL-containing branches per
-            // `.claude/rules/branch-path-safety.md`. An invalid
-            // branch cannot have an active flow at any
-            // `.flow-states/<branch>/` path so the halt gate
-            // correctly falls through (`unwrap_or(false)`).
-            let halt = crate::flow_paths::FlowPaths::try_new(r, b)
-                .map(|paths| is_halt_set(&paths.state_file()))
-                .unwrap_or(false);
-            if halt {
-                return (
-                    2,
-                    Some(
-                        "BLOCKED: this flow is halted. The autonomous flow paused after a user \
-                         message and stays paused until the user explicitly resumes or aborts. \
-                         The model cannot advance the flow (counter, phase, commit, marker) \
-                         while halted. Two exits are available — only the user can take them: \
-                         type `/flow:flow-continue` to resume, or `/flow:flow-abort` to close \
-                         the flow. See .claude/rules/autonomous-phase-discipline.md."
-                            .to_string(),
-                    ),
-                );
-            }
+    // Halt gate: block flow-advancing Bash commands when the active
+    // flow's state file has `_halt_pending=true`. The `(Some, Some)`
+    // guard keeps the gate scoped to a resolved branch + main_root;
+    // `check_halt_gate` owns the advancing-command and halt-state
+    // checks.
+    if let (Some(b), Some(r)) = (&context.branch, &context.main_root) {
+        if let Some(msg) = check_halt_gate(command, b, r) {
+            return (2, Some(msg));
         }
     }
 
