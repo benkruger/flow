@@ -7908,9 +7908,15 @@ fn validate_pretool_escape_hatch_messages_cite_rule() {
 
     // Bounded-slice helper: walk to the first occurrence of `start`,
     // then walk to the first occurrence of `end` in the tail,
-    // returning the substring between. The end marker is the
-    // following layer's section header so each scope is exactly the
-    // layer's block-message section.
+    // returning the substring between. Each layer is its own
+    // `Option<String>`-returning checker function, so the markers are
+    // the checker's own `fn` definition (start) and the next
+    // checker's `fn` definition (end) — function-boundary markers
+    // prevent a future refactor from accidentally shrinking the slice
+    // via a common Rust pattern (like `None` or `_ => None,`)
+    // appearing elsewhere. Each layer's block-message slice covers its
+    // checker body plus the next checker's doc comment, which carries
+    // no citation, so exactly one citation lands per slice.
     fn slice<'a>(content: &'a str, start: &str, end: &str) -> &'a str {
         let tail = content
             .split_once(start)
@@ -7923,9 +7929,13 @@ fn validate_pretool_escape_hatch_messages_cite_rule() {
 
     const CITATION: &str = "See .claude/rules/no-escape-hatches.md";
 
-    // Layer 1 — compound commands and command substitution. The
-    // block message lives between `// Layer 1` and `// Layer 2`.
-    let layer1 = slice(&content, "// Layer 1:", "// Layer 2:");
+    // Layer 1 — compound commands and command substitution. The block
+    // messages live in the `check_compound_operators` checker body.
+    let layer1 = slice(
+        &content,
+        "fn check_compound_operators",
+        "\nfn check_shell_redirection",
+    );
     assert!(
         layer1.contains(CITATION),
         "Layer 1 (compound commands) block message must cite no-escape-hatches.md; layer body:\n{}",
@@ -7933,7 +7943,11 @@ fn validate_pretool_escape_hatch_messages_cite_rule() {
     );
 
     // Layer 2 — shell redirection.
-    let layer2 = slice(&content, "// Layer 2:", "// Layer 3:");
+    let layer2 = slice(
+        &content,
+        "fn check_shell_redirection",
+        "\nfn check_exec_prefix",
+    );
     assert!(
         layer2.contains(CITATION),
         "Layer 2 (shell redirection) block message must cite no-escape-hatches.md; layer body:\n{}",
@@ -7941,7 +7955,11 @@ fn validate_pretool_escape_hatch_messages_cite_rule() {
     );
 
     // Layer 3 — exec prefix.
-    let layer3 = slice(&content, "// Layer 3:", "// Layer 4:");
+    let layer3 = slice(
+        &content,
+        "fn check_exec_prefix",
+        "\nfn check_find_destructive_flags",
+    );
     assert!(
         layer3.contains(CITATION),
         "Layer 3 (exec prefix) block message must cite no-escape-hatches.md; layer body:\n{}",
@@ -7949,16 +7967,20 @@ fn validate_pretool_escape_hatch_messages_cite_rule() {
     );
 
     // Layer 4 — destructive find flags.
-    let layer4 = slice(&content, "// Layer 4:", "// Layer 5:");
+    let layer4 = slice(
+        &content,
+        "fn check_find_destructive_flags",
+        "\nfn check_blanket_restore",
+    );
     assert!(
         layer4.contains(CITATION),
         "Layer 4 (destructive find) block message must cite no-escape-hatches.md; layer body:\n{}",
         layer4
     );
 
-    // Layer 7 — settings-driven deny list. Exempt layers (5, 6)
-    // sit between Layer 4 and Layer 7.
-    let layer7 = slice(&content, "// Layer 7:", "// Layer 8:");
+    // Layer 7 — settings-driven deny list. Exempt layers (5, 6) have
+    // their own checker functions between Layer 4 and Layer 7.
+    let layer7 = slice(&content, "fn check_deny_list", "\nfn check_allow_list");
     assert!(
         layer7.contains(CITATION),
         "Layer 7 (deny list) block message must cite no-escape-hatches.md; layer body:\n{}",
