@@ -2024,6 +2024,13 @@ fn handle_agent_call(
             return Some((2, Some(prompt_message)));
         }
     }
+    // Record the launched required Review/Learn agent into the current
+    // phase's `agents_returned` set. The launch is the anti-fabrication
+    // evidence: only a real Agent tool call reaches this point. The
+    // recorder self-gates (active flow, in_progress, required-phase,
+    // matching subagent_type) and is fail-open — it never blocks the
+    // launch. See `src/hooks/agent_run_record.rs`.
+    crate::hooks::agent_run_record::record_agent_run(cwd, subagent_type);
     Some((0, None))
 }
 

@@ -201,6 +201,7 @@ pub fn resolve_hook_cwd(hook_input: &Value) -> Option<String> {
 }
 
 pub mod agent_prompt_scan;
+pub mod agent_run_record;
 pub mod capture_session;
 pub mod post_compact;
 pub mod stop_continue;
