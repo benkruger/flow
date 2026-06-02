@@ -1639,25 +1639,89 @@ fn validate_subprocess_memory_read_allowed_via_resolved_home() {
 }
 
 #[test]
-fn validate_subprocess_rejects_worktree_flow_states_write() {
+fn validate_subprocess_rewrites_worktree_flow_states_write() {
+    // A Write to a misplaced worktree-internal .flow-states/ path is
+    // now silently auto-corrected: exit 0 with a stdout rewrite
+    // envelope pointing file_path at the canonical main-repo location,
+    // not a BLOCKED stderr message.
     let tmp = tempfile::tempdir().expect("tempdir");
     let (root, worktree_cwd) = worktree_fixture(&tmp);
     let target = worktree_cwd.join(".flow-states/plan.md");
     let canonical = root.join(".flow-states/plan.md");
-    let (code, _, stderr) = spawn_hook_with_cwd(
+    let (code, stdout, stderr) = spawn_hook_with_cwd(
         &worktree_cwd,
         &root,
         "Write",
         "file_path",
         target.to_str().unwrap(),
     );
-    assert_eq!(code, 2, "stderr: {}", stderr);
-    assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
-    assert!(stderr.contains(".flow-states/"), "stderr: {}", stderr);
+    assert_eq!(code, 0, "stderr: {}", stderr);
     assert!(
-        stderr.contains(canonical.to_str().unwrap()),
-        "stderr: {}",
-        stderr
+        stdout.contains("\"permissionDecision\":\"allow\""),
+        "stdout: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("\"hookEventName\":\"PreToolUse\""),
+        "stdout: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains(canonical.to_str().unwrap()),
+        "stdout: {}",
+        stdout
+    );
+}
+
+#[test]
+fn validate_subprocess_rewrites_worktree_flow_states_edit() {
+    // Edit mirrors Write: the misplaced .flow-states/ path is rewritten
+    // to the canonical location (exit 0 + stdout envelope) rather than
+    // blocked.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (root, worktree_cwd) = worktree_fixture(&tmp);
+    let target = worktree_cwd.join(".flow-states/plan.md");
+    let canonical = root.join(".flow-states/plan.md");
+    let (code, stdout, stderr) = spawn_hook_with_cwd(
+        &worktree_cwd,
+        &root,
+        "Edit",
+        "file_path",
+        target.to_str().unwrap(),
+    );
+    assert_eq!(code, 0, "stderr: {}", stderr);
+    assert!(
+        stdout.contains("\"permissionDecision\":\"allow\""),
+        "stdout: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains(canonical.to_str().unwrap()),
+        "stdout: {}",
+        stdout
+    );
+}
+
+#[test]
+fn validate_subprocess_allow_arm_emits_no_stdout() {
+    // The WorktreeAction::Allow arm exits 0 with no stdout — an
+    // in-worktree non-flow-states Write is allowed silently, distinct
+    // from the Rewrite arm which emits a stdout envelope.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (root, worktree_cwd) = worktree_fixture(&tmp);
+    let target = worktree_cwd.join("src/main.rs");
+    let (code, stdout, stderr) = spawn_hook_with_cwd(
+        &worktree_cwd,
+        &root,
+        "Write",
+        "file_path",
+        target.to_str().unwrap(),
+    );
+    assert_eq!(code, 0, "stderr: {}", stderr);
+    assert!(
+        stdout.is_empty(),
+        "Allow arm must emit no stdout; got: {}",
+        stdout
     );
 }
 
@@ -1671,28 +1735,6 @@ fn validate_subprocess_rejects_worktree_flow_states_read() {
         &worktree_cwd,
         &root,
         "Read",
-        "file_path",
-        target.to_str().unwrap(),
-    );
-    assert_eq!(code, 2, "stderr: {}", stderr);
-    assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
-    assert!(
-        stderr.contains(canonical.to_str().unwrap()),
-        "stderr: {}",
-        stderr
-    );
-}
-
-#[test]
-fn validate_subprocess_rejects_worktree_flow_states_edit() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let (root, worktree_cwd) = worktree_fixture(&tmp);
-    let target = worktree_cwd.join(".flow-states/plan.md");
-    let canonical = root.join(".flow-states/plan.md");
-    let (code, _, stderr) = spawn_hook_with_cwd(
-        &worktree_cwd,
-        &root,
-        "Edit",
         "file_path",
         target.to_str().unwrap(),
     );

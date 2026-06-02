@@ -42,9 +42,13 @@ identical retry. Apply the fix and retry — do not prompt the user.
   Reissue the call against the canonical path. (Reference:
   `.claude/rules/file-tool-preflights.md` "Canonical Location for
   `.flow-states/`".)
-- **Path mismatches between worktree and main repo** — the hook
-  redirects worktree-internal `.flow-states/` writes to the main
-  repo's canonical location. Reissue against the main repo path.
+- **Path mismatches between worktree and main repo** — a misplaced
+  worktree-internal `.flow-states/` Write or Edit is auto-corrected
+  by the hook itself: it emits a stdout rewrite envelope repointing
+  the call at the main-repo canonical location, so no recovery is
+  needed for those tools. A misplaced `.flow-states/` Read/Glob/Grep
+  still blocks with a `BLOCKED:` message naming the canonical
+  location — reissue the read against the main repo path.
 - **Relative-vs-absolute path confusion** — when a CLI subcommand or
   file tool rejects a relative path, retry with the absolute form
   (or vice versa) using the path the error message names.
