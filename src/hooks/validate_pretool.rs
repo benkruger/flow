@@ -1956,11 +1956,13 @@ struct HookContext {
 /// value. A `None` cwd (env::current_dir() failed upstream, e.g. the
 /// stale-cwd adversarial path) makes settings and branch fall through
 /// to None and `flow_active` to false. Per
-/// `.claude/rules/testability-means-simplicity.md` the prior
-/// `find_settings_and_root`/`detect_branch_from_cwd` generic seams
-/// were removed because their per-monomorphization Err arms were
-/// unreachable through any production callsite — the stale-cwd
-/// subprocess test covers the `None` path here instead.
+/// `.claude/rules/testability-means-simplicity.md`, settings and branch
+/// resolution call the concrete `find_settings_and_root_from` /
+/// `detect_branch_from_path` functions directly rather than through a
+/// generic seam: a parameterized seam would introduce a
+/// per-monomorphization Err arm with no reachable production callsite,
+/// and the stale-cwd subprocess test already covers the `None` path
+/// here through the real entry point.
 fn resolve_hook_context(cwd: Option<&Path>) -> HookContext {
     let (settings, project_root) = cwd.map(find_settings_and_root_from).unwrap_or((None, None));
     let branch = cwd.and_then(detect_branch_from_path);
