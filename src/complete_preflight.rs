@@ -316,8 +316,9 @@ fn phase_transition_enter(branch: &str) -> Result<Value, String> {
 /// `.claude/rules/external-input-validation.md` and
 /// `.claude/rules/branch-path-safety.md`. Returns
 /// `Ok((branch, state_path))` on success; `Err(error_envelope)` for
-/// an empty / absent branch and for a slash-/NUL-containing branch
-/// that fails `try_new`.
+/// an empty / absent branch, and for a branch that fails
+/// `FlowPaths::try_new` (contains `/` or `\0`, or equals `.` or
+/// `..`).
 fn validate_branch_and_paths(
     branch: Option<&str>,
     root: &Path,
@@ -354,8 +355,9 @@ fn validate_branch_and_paths(
 /// Returns `Ok((Some(state), false))` when the file exists and parses,
 /// `Ok((None, true))` when the file is missing (the `inferred` path),
 /// and `Err(error_envelope)` when the file exists but cannot be read
-/// or parsed. The trailing `bool` is the `inferred` flag the base map
-/// emits.
+/// or parsed. The trailing `bool` is the `inferred` flag: when
+/// `true`, the caller passes it to `build_base_response_map`, which
+/// adds an `"inferred": true` field to the response map.
 fn load_state_file(state_path: &Path) -> Result<(Option<Value>, bool), Value> {
     if state_path.exists() {
         match std::fs::read_to_string(state_path) {
