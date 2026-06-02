@@ -13,6 +13,13 @@
 //!   Inferred: {"status": "ok", "inferred": true, ...}
 //!   Error:    {"status": "error", "message": "..."}
 //!
+//! Internally, `preflight` runs its setup phase through four private
+//! helpers — `validate_branch_and_paths`, `load_state_file`,
+//! `compute_preflight_metadata`, and `build_base_response_map` — then
+//! dispatches on the PR state via the 4-way match. The phase-transition
+//! side effect and the `check_pr_status` call stay inline between the
+//! metadata step and the base-map build.
+//!
 //! Tests live in `tests/complete_preflight.rs` per
 //! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]` block
 //! in this file.
