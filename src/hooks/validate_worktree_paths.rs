@@ -306,6 +306,76 @@ fn sanitize_canonical_suffix(suffix: &str) -> String {
         .join("/")
 }
 
+/// Build a PreToolUse `updatedInput` envelope that rewrites the tool
+/// call's `file_path` to the canonical destination while preserving
+/// every other field of the original input.
+///
+/// Returns `Some(envelope)` when `tool_input` is a JSON object: the
+/// object is cloned and only its `file_path` key is overwritten with
+/// `canonical`, so every other key (`content` for Write,
+/// `old_string` / `new_string` / `replace_all` for Edit, and any
+/// field a future tool-input shape adds) survives unchanged. The
+/// clone-and-overwrite-one-key shape is field-agnostic by
+/// construction — it never enumerates the keys it preserves, so it
+/// cannot silently drop a field the Claude Code `updatedInput`
+/// contract requires.
+///
+/// Returns `None` when `tool_input` is not a JSON object: there is no
+/// object to clone, so the caller falls through to the block path
+/// rather than emitting a malformed `updatedInput`. The `updatedInput`
+/// contract replaces the tool input wholesale, so a non-object input
+/// has no safe rewrite.
+pub fn build_rewrite_envelope(tool_input: &Value, canonical: &str) -> Option<Value> {
+    let obj = tool_input.as_object()?;
+    let mut updated = obj.clone();
+    updated.insert(
+        "file_path".to_string(),
+        Value::String(canonical.to_string()),
+    );
+    Some(serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "updatedInput": Value::Object(updated),
+        }
+    }))
+}
+
+/// Decide whether a misplaced worktree-internal `.flow-states/` tool
+/// call should be auto-corrected to its canonical destination rather
+/// than hard-blocked.
+///
+/// Only `Write` and `Edit` are rewritten: both carry the full
+/// replacement content in their `tool_input`, so reissuing the call
+/// against the canonical path is lossless. `Read` / `Glob` / `Grep`
+/// fall through to `None` (the caller blocks them) because there is no
+/// `content` / `file_path` pairing that could be safely redirected
+/// without returning data the model did not ask for. `tool_name` is a
+/// Claude Code platform-emitted hook-payload field whose casing the
+/// platform controls, so the exact `==` comparison needs no
+/// normalization — it matches how `validate_shared_config` already
+/// compares `tool_name`.
+///
+/// Returns `Some(envelope)` only when ALL hold: `tool_name` is `Write`
+/// or `Edit`, `cwd` resolves to a worktree via `compute_worktree_paths`,
+/// `file_path` is a misplaced `.flow-states/` path under that worktree
+/// (`detect_misplaced_flow_states`), and `tool_input` is a JSON object
+/// (`build_rewrite_envelope`). Any other case yields `None` and the
+/// caller's existing block path runs unchanged.
+pub fn misplaced_flow_states_rewrite(
+    file_path: &str,
+    cwd: &str,
+    tool_name: &str,
+    tool_input: &Value,
+) -> Option<Value> {
+    if tool_name != "Write" && tool_name != "Edit" {
+        return None;
+    }
+    let (project_root, _) = compute_worktree_paths(cwd)?;
+    let canonical = detect_misplaced_flow_states(file_path, project_root)?;
+    build_rewrite_envelope(tool_input, &canonical)
+}
+
 /// Approved `/tmp/` file extensions for the out-of-project surface,
 /// matched ASCII-case-insensitively.
 ///
