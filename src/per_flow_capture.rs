@@ -83,11 +83,10 @@ pub fn capture_for_active_state(home: &Path, state: &Value, project_root: &Path)
 ///
 /// - `capture_for_active_state` above (the original consumer) — the
 ///   self-heal branch when state's `transcript_path` is null.
-/// - `crate::record_agent_return::run_impl_main` — same self-heal
-///   branch, applied before calling
-///   `verify_agent_returned_in_phase` to ensure the verifier reads
-///   the canonical transcript path even when the state file's
-///   `transcript_path` is missing or null.
+/// - `crate::approve_shared_config` and `crate::clear_halt` — the same
+///   self-heal branch, deriving the canonical transcript path from
+///   `session_id` when the state file's `transcript_path` is missing
+///   or null.
 pub fn derive_transcript_path(home: &Path, project_root: &Path, session_id: &str) -> PathBuf {
     let encoded: String = project_root
         .to_string_lossy()

@@ -3992,3 +3992,154 @@ fn test_flow_plan_no_plan_reviewer_max_retries() {
         );
     }
 }
+
+// --- Agent-run recording moved to PreToolUse:Agent hook (PR #1806) ---
+//
+// PR #1806 moved "a required Review/Learn sub-agent ran" from the
+// model-invoked `record-agent-return` CLI (which a model could
+// fabricate without launching the agent) into the `PreToolUse:Agent`
+// hook (`src/hooks/agent_run_record.rs`), which records the launch as
+// unforgeable evidence. `phase-finalize`'s required-agents gate now
+// reads `agents_returned` alone. The same PR deleted the now-orphaned
+// skip and verification machinery. These tombstones assert none of
+// the deleted identifiers or files return.
+
+/// Tombstone: removed in PR #1806. `verify_agent_returned_in_phase`
+/// and `recent_phase_finalize_agent_skip` (plus their private
+/// helpers) were removed from `src/hooks/transcript_walker.rs` when
+/// agent-run recording moved into the `PreToolUse:Agent` hook and the
+/// required-agents gate began reading `agents_returned` alone.
+///
+/// Stability argument: a Rust `fn` definition requires the literal
+/// name in source and cannot be assembled via `concat!` or
+/// `format!`; a constant rename would still surface a definition. The
+/// four-question stability checklist passes for these byte-substring
+/// scans.
+#[test]
+fn test_transcript_walker_no_agent_accounting_helpers() {
+    let root = common::repo_root();
+    let path = root.join("src").join("hooks").join("transcript_walker.rs");
+    let content = fs::read_to_string(&path).expect("transcript_walker.rs must exist");
+    for name in [
+        "verify_agent_returned_in_phase",
+        "recent_phase_finalize_agent_skip",
+    ] {
+        assert!(
+            !content.contains(name),
+            "src/hooks/transcript_walker.rs must not contain the \
+             deleted agent-accounting helper `{}` — PR #1806 moved \
+             agent-run recording into the PreToolUse:Agent hook.",
+            name
+        );
+    }
+}
+
+/// Tombstone: removed in PR #1806. `is_known_agent` was removed from
+/// `src/required_agents.rs` when agent-run recording moved into the
+/// `PreToolUse:Agent` hook, which matches the launched subagent
+/// against `required_agents_for_phase` directly.
+///
+/// Stability argument: a Rust `fn` definition requires the literal
+/// name in source and cannot be produced by `concat!` or `format!`;
+/// the byte-substring scan is sufficient.
+#[test]
+fn test_required_agents_no_is_known_agent() {
+    let root = common::repo_root();
+    let path = root.join("src").join("required_agents.rs");
+    let content = fs::read_to_string(&path).expect("required_agents.rs must exist");
+    assert!(
+        !content.contains("is_known_agent"),
+        "src/required_agents.rs must not contain the deleted \
+         `is_known_agent` helper — removed in PR #1806."
+    );
+}
+
+/// Tombstone: removed in PR #1806. `refresh_active_flow_session` was
+/// removed from `src/hooks/capture_session.rs` when the orphaned
+/// agent-skip machinery it fed was deleted.
+///
+/// Stability argument: a Rust `fn` definition requires the literal
+/// name in source; `concat!`/`format!` cannot synthesize a
+/// definition, so the byte-substring scan holds.
+#[test]
+fn test_capture_session_no_refresh_active_flow_session() {
+    let root = common::repo_root();
+    let path = root.join("src").join("hooks").join("capture_session.rs");
+    let content = fs::read_to_string(&path).expect("capture_session.rs must exist");
+    assert!(
+        !content.contains("refresh_active_flow_session"),
+        "src/hooks/capture_session.rs must not contain the deleted \
+         `refresh_active_flow_session` helper — removed in PR #1806."
+    );
+}
+
+/// Tombstone: removed in PR #1806. `skipped_agents_section` was
+/// removed from `src/format_complete_summary.rs` when the skipped-
+/// agents panel was dropped from the Complete summary.
+///
+/// Stability argument: a Rust `fn` definition requires the literal
+/// name in source and cannot be assembled by `concat!` or `format!`.
+#[test]
+fn test_format_complete_summary_no_skipped_agents_section() {
+    let root = common::repo_root();
+    let path = root.join("src").join("format_complete_summary.rs");
+    let content = fs::read_to_string(&path).expect("format_complete_summary.rs must exist");
+    assert!(
+        !content.contains("skipped_agents_section"),
+        "src/format_complete_summary.rs must not contain the deleted \
+         `skipped_agents_section` helper — removed in PR #1806."
+    );
+}
+
+/// Tombstone: removed in PR #1806. The `record-agent-return`
+/// subcommand and its module `src/record_agent_return.rs` were
+/// removed when agent-run recording moved into the PreToolUse:Agent
+/// hook. The file-existence check pairs with the source-content check
+/// per `.claude/rules/tombstone-tests.md` "file-resurrection
+/// threats": a `#[path = "record_agent_return.rs"]` re-import under a
+/// renamed module would resurrect the file without the variant string
+/// reappearing.
+///
+/// Stability argument: the clap `RecordAgentReturn` variant requires
+/// the literal identifier in `src/main.rs`; it cannot be assembled by
+/// `concat!` or `format!`. The paired file-existence check covers the
+/// renamed-module resurrection shape the byte scan cannot.
+#[test]
+fn test_src_no_record_agent_return_module() {
+    let root = common::repo_root();
+    assert!(
+        !root.join("src").join("record_agent_return.rs").exists(),
+        "src/record_agent_return.rs must not exist — removed in PR #1806."
+    );
+    let main = fs::read_to_string(root.join("src").join("main.rs")).expect("main.rs must exist");
+    assert!(
+        !main.contains("RecordAgentReturn"),
+        "src/main.rs must not contain the deleted `RecordAgentReturn` \
+         clap variant — removed in PR #1806."
+    );
+}
+
+/// Tombstone: removed in PR #1806. The `add-skipped-agent` subcommand
+/// and its module `src/add_skipped_agent.rs` were removed when the
+/// required-agents gate stopped reading `agents_skipped`. The
+/// file-existence check pairs with the source-content check per
+/// `.claude/rules/tombstone-tests.md` "file-resurrection threats".
+///
+/// Stability argument: the clap `AddSkippedAgent` variant requires
+/// the literal identifier in `src/main.rs`; it cannot be assembled by
+/// `concat!` or `format!`. The paired file-existence check covers the
+/// renamed-module resurrection shape.
+#[test]
+fn test_src_no_add_skipped_agent_module() {
+    let root = common::repo_root();
+    assert!(
+        !root.join("src").join("add_skipped_agent.rs").exists(),
+        "src/add_skipped_agent.rs must not exist — removed in PR #1806."
+    );
+    let main = fs::read_to_string(root.join("src").join("main.rs")).expect("main.rs must exist");
+    assert!(
+        !main.contains("AddSkippedAgent"),
+        "src/main.rs must not contain the deleted `AddSkippedAgent` \
+         clap variant — removed in PR #1806."
+    );
+}

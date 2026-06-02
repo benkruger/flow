@@ -80,15 +80,15 @@ fn agents_returned_contains(state: &Value, phase: &str, agent: &str) -> bool {
 /// first per `.claude/rules/rust-patterns.md` "State Mutation Object
 /// Guards".
 ///
-/// State-root shape is guaranteed an Object by the caller, mirroring
-/// `record_agent_return::apply_return_mutation`: `record_agent_run`'s
-/// capped pre-read confirms `phases.<phase>.status == "in_progress"`,
-/// which is unreadable unless the state root, `phases`, and
-/// `phases.<phase>` are all objects. The wrong-root-type and
-/// wrong-`phases`-type guards would therefore be unreachable here and
-/// are intentionally omitted — only `agents_returned` can be absent or
-/// wrong-typed. The caller also pre-checks membership, so this helper
-/// pushes unconditionally; set-semantics is owned by the caller's
+/// State-root shape is guaranteed an Object by the caller:
+/// `record_agent_run`'s capped pre-read confirms
+/// `phases.<phase>.status == "in_progress"`, which is unreadable
+/// unless the state root, `phases`, and `phases.<phase>` are all
+/// objects. The wrong-root-type and wrong-`phases`-type guards would
+/// therefore be unreachable here and are intentionally omitted — only
+/// `agents_returned` can be absent or wrong-typed. The caller also
+/// pre-checks membership, so this helper pushes unconditionally;
+/// set-semantics is owned by the caller's
 /// `agents_returned_contains` short-circuit.
 fn apply_set_add(state: &mut Value, phase: &str, agent: &str, timestamp: &str) {
     if !state["phases"][phase]["agents_returned"].is_array() {

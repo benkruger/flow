@@ -1,7 +1,6 @@
 pub mod add_finding;
 pub mod add_issue;
 pub mod add_notification;
-pub mod add_skipped_agent;
 pub mod analyze_issues;
 pub mod append_note;
 pub mod approve_shared_config;
@@ -57,7 +56,6 @@ pub mod prime_check;
 pub mod prime_setup;
 pub mod promote_permissions;
 pub mod protected_paths;
-pub mod record_agent_return;
 pub mod render_pr_body;
 pub mod required_agents;
 pub mod reset;
