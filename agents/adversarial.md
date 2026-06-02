@@ -45,16 +45,13 @@ the calling skill's cwd). Use the Read tool to read the CLAUDE.md
 for test conventions and patterns. Use Read, Glob, and Grep to
 investigate the codebase.
 
-After you return cleanly, the calling skill records your return via
-`bin/flow record-agent-return --branch <branch> --agent adversarial
---phase flow-review`, which reads the persisted Claude Code
-transcript and confirms an Agent tool_use/tool_result pair exists
-for `subagent_type: "flow:adversarial"` after the most recent
-`phase-enter --phase flow-review` Bash marker. The recording
-appends to `phases.flow-review.agents_returned` so the
-`phase-finalize` required-agents gate can confirm you ran. You do
-not invoke this subcommand yourself — it runs in the parent
-session after your `tool_result` lands.
+When the calling skill launches you, FLOW's `PreToolUse:Agent` hook
+records your run in `phases.flow-review.agents_returned` — the Agent
+tool call itself is the evidence, so the recording cannot be
+fabricated without actually launching you. The `phase-finalize`
+required-agents gate reads that field to confirm you ran. Neither you
+nor the parent session records anything; the hook fires automatically
+on launch.
 
 ## Temp File
 

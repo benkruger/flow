@@ -299,12 +299,13 @@ the agent's output — with one exception. If the markerless response
 ALSO has zero `**Finding` blocks AND carries an external-failure marker
 (`rate_limit`, `429`, `usage_limit`, `API Error`), it is an upstream
 API/quota failure, NOT `maxTurns` truncation. Route that case to the
-**External failure** path in Per-agent accounting below
-(retry-3-then-skip), not to partition-and-combine: partitioning a
-rate-limited agent only re-fails inside the same quota window, whereas
-retry-then-skip waits the failure out. This mirrors the Review skill's
-Class 2 (external failure) precondition — zero findings plus a failure
-marker — taking priority over the markerless-truncation routing.
+**External or upstream failure** path in Agent accounting below
+(re-invoke once, then note-and-proceed), not to partition-and-combine:
+partitioning a rate-limited agent only re-fails inside the same quota
+window, whereas a re-invocation lets the limit clear. This mirrors the
+Review skill's Class 2 (external failure) precondition — zero findings
+plus a failure marker — taking priority over the markerless-truncation
+routing.
 
 Otherwise, marker absence means the agent was truncated
 by `maxTurns` exhaustion — regardless of whether any partial `**Finding`
@@ -337,62 +338,34 @@ agent as truncated for the Step 7 report rather than splitting
 infinitely; the user decides whether to accept partial coverage or
 rerun Learn against a smaller diff subset.
 
-### Per-agent accounting (record + retry-3-then-skip)
+### Agent accounting
 
-Account for the learn-analyst agent in state so the
-`phase-finalize` required-agents gate can confirm it ran.
+The learn-analyst launch is recorded automatically by FLOW's
+`PreToolUse:Agent` hook into `phases.flow-learn.agents_returned` —
+the Agent tool call itself is the evidence, so there is no recording
+call to make and no skip path. The `phase-finalize` required-agents
+gate reads that field to confirm the agent ran.
 
-**Normal completion — record the return.** When the agent
-produced structured output cleanly, invoke `record-agent-return`
-to write the verified entry into
-`phases.flow-learn.agents_returned`. The subcommand reads the
-persisted Claude Code transcript and confirms the Agent
-tool_use/tool_result pair exists for `subagent_type:
-"flow:learn-analyst"` after the most recent `phase-enter --phase
-flow-learn` Bash marker — closing the inline-synthesis bypass
-where a model could write findings without actually invoking the
-agent.
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow record-agent-return --branch <branch> --agent learn-analyst --phase flow-learn
-```
-
-Parse the JSON output. If `status==ok`, the agent is accounted
-for. If `status==error` (reason `transcript_verification_failed`
-or any other), enter the retry path below.
-
-**External failure or recording failure — retry up to 3 attempts,
-then skip.** Truncation is handled by the partition-and-combine
-recovery in the Truncation check above, not here. This path handles
-`record-agent-return` returning `status==error` and upstream API/quota
-failures (the agent's response carries `rate_limit`, `429`,
-`usage_limit`, or `API Error` with zero `**Finding` blocks). Read
-`phases.flow-learn.agent_retry_counts.learn-analyst` from state
-(default `0`). If the count is less than 3, increment via
-`bin/flow set-timestamp` and re-invoke the agent from the Step 1
-prompt template above:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set phases.flow-learn.agent_retry_counts.learn-analyst=<count+1>
-```
-
-If the count has reached 3, the agent has exhausted its retries.
-Record the skip:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow add-skipped-agent --branch <branch> --agent learn-analyst --reason exhausted_retries --phase flow-learn
-```
+**External or upstream failure.** Truncation is handled by the
+partition-and-combine recovery in the Truncation check above. This
+path handles upstream API/quota failures: the agent's response
+carries `rate_limit`, `429`, `usage_limit`, or `API Error` with zero
+`**Finding` blocks. Re-invoke the agent once from the Step 1 prompt
+template above — the upstream limit may have cleared. If it fails the
+same way a second time, the agent's analysis is genuinely unavailable
+for this Learn pass: note it for the Step 7 report and proceed to
+Step 2. The launch already satisfied the required-agents gate — only
+the findings are missing.
 
 <HARD-GATE>
-When the learn-analyst agent has exhausted retries, you MUST NOT
-synthesize its findings inline. The agent's analysis is
-unavailable for this Learn pass — record the skip via
-`add-skipped-agent`, then proceed to Step 2 with the explicit
-acknowledgment that Tenant 1/2/3
-findings were not produced for this PR. Fabricating an agent's
-analysis from session memory defeats cognitive isolation per
-`.claude/rules/cognitive-isolation.md` "Never Supplement Agent
-Work From the Parent Session".
+When the learn-analyst agent's findings are unavailable — a persistent
+external failure, or a truncation that double-truncated — you MUST NOT
+synthesize them inline. Note the agent as unavailable, then proceed to
+Step 2 with the explicit acknowledgment that Tenant 1/2/3 findings were
+not produced for this PR. Fabricating an agent's analysis from session
+memory defeats cognitive isolation per
+`.claude/rules/cognitive-isolation.md` "Never Supplement Agent Work
+From the Parent Session".
 </HARD-GATE>
 
 Record step completion:
@@ -949,44 +922,20 @@ Parse the JSON output.
 **Handle the `required_agent_not_returned` error reason.** When
 the response shape is
 `{"status":"error","reason":"required_agent_not_returned","missing":[...],"message":"..."}`,
-the learn-analyst agent is recorded in neither
-`agents_returned` nor `agents_skipped`. The required-agents
-gate ran before any state mutation. The phase has not been
+the learn-analyst agent is absent from `agents_returned`. Because
+FLOW's `PreToolUse:Agent` hook records every launch, this means the
+agent was never launched in this Learn pass. The required-agents
+gate ran before any state mutation, so the phase has not been
 advanced.
 
-Three recovery shapes apply, ordered cheapest first:
+Recovery is to launch the agent. Re-invoke learn-analyst from Step
+1's prompt template (reusing the `<substantive_diff_file>` path).
+The launch is recorded by the hook, so no separate recording call
+is needed. Classify the return and route any findings to Step 2.
+Then re-run `phase-finalize`.
 
-- **learn-analyst was invoked but `record-agent-return` was not
-  called.** The persisted transcript still carries the
-  `tool_use`/`tool_result` pair. Retroactively invoke the
-  recording subcommand:
-
-  ```bash
-  ${CLAUDE_PLUGIN_ROOT}/bin/flow record-agent-return --branch <branch> --agent learn-analyst --phase flow-learn
-  ```
-
-  When the response is `{"status":"ok",...}`, re-run
-  `phase-finalize`. When the response is
-  `{"status":"error","reason":"transcript_verification_failed"}`,
-  fall through to the next recovery shape.
-
-- **learn-analyst was never invoked (Step 1 loop bypassed).**
-  Re-invoke the agent from Step 1's prompt template, classify
-  the return, and either call `record-agent-return` (Class 3) or
-  `add-skipped-agent` (Class 1/2 after the 3-attempt cap). Then
-  re-run `phase-finalize`.
-
-- **learn-analyst cannot be retried in this session.** Record it
-  as skipped via the existing path:
-
-  ```bash
-  ${CLAUDE_PLUGIN_ROOT}/bin/flow add-skipped-agent --branch <branch> --agent learn-analyst --reason exhausted_retries --phase flow-learn
-  ```
-
-  Then re-run `phase-finalize` with `--accept-skipped-agents`.
-
-Do NOT advance to the COMPLETE banner until learn-analyst is
-accounted for AND a subsequent `phase-finalize` call returns
+Do NOT advance to the COMPLETE banner until learn-analyst has been
+launched AND a subsequent `phase-finalize` call returns
 `{"status":"ok",...}`.
 
 When the response is `{"status":"error", ...}` for any OTHER
