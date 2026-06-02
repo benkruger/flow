@@ -360,10 +360,15 @@ pub fn build_rewrite_envelope(tool_input: &Value, canonical: &str) -> Option<Val
 /// fall through to `None` (the caller blocks them) because there is no
 /// `content` / `file_path` pairing that could be safely redirected
 /// without returning data the model did not ask for. `tool_name` is a
-/// Claude Code platform-emitted hook-payload field whose casing the
-/// platform controls, so the exact `==` comparison needs no
-/// normalization — it matches how `validate_shared_config` already
-/// compares `tool_name`.
+/// Claude Code platform-emitted hook-payload field — the platform emits
+/// exact-cased tool names (`Write`, `Edit`, `Read`, `Glob`, `Grep`), so
+/// the exact `==` comparison needs no normalization, matching how
+/// `validate_shared_config` already compares `tool_name`. The exact-match
+/// gate is fail-closed by direction: any `tool_name` that does not match
+/// `Write` or `Edit` (Read/Glob/Grep, or a hypothetical unexpected
+/// casing) returns `None`, so the caller falls through to `validate()`'s
+/// block rather than rewriting — a non-rewritten call is blocked, never
+/// silently allowed.
 ///
 /// Returns `Some(envelope)` only when ALL hold: `tool_name` is `Write`
 /// or `Edit`, `cwd` resolves to a worktree via `compute_worktree_paths`,

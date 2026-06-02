@@ -93,10 +93,12 @@ destination. The handling then splits by tool:
   be safely redirected without returning data the model did not ask
   for.
 
-The check fires on every Edit, Write, Read, Glob, and Grep tool call
-the hook is registered for. Both `file_path` (Edit/Write/Read) and
-`path` (Glob/Grep) input shapes resolve through `get_file_path`
-before the helper runs.
+The detection logic runs for every Edit, Write, Read, Glob, and Grep
+tool call the hook is registered for — for Write/Edit it runs inside
+`misplaced_flow_states_rewrite` ahead of the block gates, and for
+Read/Glob/Grep it runs inside `validate()`. Both `file_path`
+(Edit/Write/Read) and `path` (Glob/Grep) input shapes resolve through
+`get_file_path` before that detection runs.
 
 ## Managed-Artifact Canonicalization Gate (CLI Layer)
 
