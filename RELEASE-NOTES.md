@@ -1,5 +1,30 @@
 # Release Notes
 
+## v2.6.1 — Auto-corrected state writes, Review-agent confirmation, deadlock fix
+
+### Improvements
+
+- **Auto-correct misplaced `.flow-states/` writes** — a misplaced
+  worktree-internal `.flow-states/` Write/Edit is now silently
+  rewritten to its canonical project-root path instead of hard-blocking,
+  removing a per-commit round-trip the model used to stumble on (#1807).
+- **Review-agent run confirmation** — phase completion now refuses to
+  advance unless the required Review sub-agents actually launched,
+  recorded via unforgeable PreToolUse:Agent evidence (#1806).
+
+### Fixes
+
+- **Review phase no longer deadlocks** under the conditions in #1800.
+- **Prevent a crash when linking** blocked-by issues (#1820).
+- **Secret-scanner false positives** on Slack test fixtures resolved by
+  dropping the real-token `xoxb-` prefix from the fakes (#1819).
+
+### Internal
+
+- Extracted the Complete preflight setup and a validate-pretool layer
+  into helpers (#1811, #1804); subprocess test hygiene for phase-enter
+  (#1809); dependency updates.
+
 ## v2.6.0 — Autonomous-mode hardening, cost tracking, release Slack notes
 
 ### New features

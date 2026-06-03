@@ -154,7 +154,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v2.6.0 — Phase 4: Learn — STARTING
+  FLOW v2.6.1 — Phase 4: Learn — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -949,7 +949,7 @@ Output in your response (not via Bash) inside a fenced code block:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v2.6.0 — Phase 4: Learn — COMPLETE (<formatted_time>)
+  ✓ FLOW v2.6.1 — Phase 4: Learn — COMPLETE (<formatted_time>)
   Run /flow:flow-complete to merge the PR and clean up.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```

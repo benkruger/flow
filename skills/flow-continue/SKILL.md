@@ -43,7 +43,7 @@ fenced code block:
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v2.6.0 — flow:flow-continue — STARTING
+  FLOW v2.6.1 — flow:flow-continue — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -88,7 +88,7 @@ fenced code block:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v2.6.0 — flow:flow-continue — COMPLETE
+  ✓ FLOW v2.6.1 — flow:flow-continue — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````

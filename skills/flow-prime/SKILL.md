@@ -23,7 +23,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v2.6.0 — Prime — STARTING
+  FLOW v2.6.1 — Prime — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -513,7 +513,7 @@ Output the following banner in your response (not via Bash) inside a fenced code
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v2.6.0 — Prime — COMPLETE
+  ✓ FLOW v2.6.1 — Prime — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````

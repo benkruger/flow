@@ -39,7 +39,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v2.6.0 — flow:flow-orchestrate — STARTING
+  FLOW v2.6.1 — flow:flow-orchestrate — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -59,7 +59,7 @@ If no issues remain after filtering, output:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v2.6.0 — flow:flow-orchestrate — COMPLETE
+  ✓ FLOW v2.6.1 — flow:flow-orchestrate — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   No decomposed issues to process.
 ```
@@ -209,7 +209,7 @@ Output the completion banner:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v2.6.0 — flow:flow-orchestrate — COMPLETE
+  ✓ FLOW v2.6.1 — flow:flow-orchestrate — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
