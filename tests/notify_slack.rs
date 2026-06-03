@@ -1,4 +1,10 @@
 //! Integration tests for `src/notify_slack.rs`.
+//!
+//! Slack token fixtures here deliberately avoid the real `xoxb-` Bot
+//! User OAuth Token prefix so secret scanners do not flag them. The
+//! production code (`build_config`, `post_message_inner`) treats the
+//! bot token as an opaque non-empty string and never inspects the
+//! prefix, so any non-empty fake works — keep new fixtures prefix-free.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
