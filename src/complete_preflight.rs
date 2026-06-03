@@ -17,7 +17,7 @@
 //! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]` block
 //! in this file.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -300,22 +300,32 @@ fn phase_transition_enter(branch: &str) -> Result<Value, String> {
         .map_err(|_| format!("Invalid JSON from phase-transition: {}", stdout))
 }
 
-fn preflight(branch: Option<&str>, root: &Path) -> Value {
-    // Resolve branch
+/// Resolve the branch and its state-file path for the preflight gate.
+///
+/// `branch` is an external input — the `--branch` CLI override OR
+/// upstream current-branch detection — so the empty/`None` case and
+/// the `FlowPaths::try_new` `None` case (slash-containing or otherwise
+/// invalid branch, per `.claude/rules/branch-path-safety.md`) are
+/// translated into the error envelope rather than panicking. Returns
+/// `Ok((branch, state_path))` on success.
+fn validate_branch_and_paths(
+    branch: Option<&str>,
+    root: &Path,
+) -> Result<(String, PathBuf), Value> {
     let branch = match branch {
         Some(b) if !b.is_empty() => b.to_string(),
         _ => {
-            return json!({
+            return Err(json!({
                 "status": "error",
                 "message": "Could not determine current branch"
-            });
+            }));
         }
     };
 
     let state_path = match FlowPaths::try_new(root, &branch) {
         Some(paths) => paths.state_file(),
         None => {
-            return json!({
+            return Err(json!({
                 "status": "error",
                 "message": format!(
                     "Branch '{}' is not a valid FLOW branch (contains '/' or is empty). \
@@ -323,40 +333,92 @@ fn preflight(branch: Option<&str>, root: &Path) -> Value {
                      branches; resume the flow in its canonical branch name.",
                     branch
                 )
-            });
+            }));
         }
     };
-    let mut state: Option<Value> = None;
-    let mut inferred = false;
+    Ok((branch, state_path))
+}
 
+/// Load the flow state file, returning `(state, inferred)`.
+///
+/// A missing file is the inferred path — `Ok((None, true))`. A present
+/// file that reads and parses yields `Ok((Some(state), false))`. An
+/// unreadable or unparseable file produces the error envelope.
+fn load_state_file(state_path: &Path) -> Result<(Option<Value>, bool), Value> {
     if state_path.exists() {
-        match std::fs::read_to_string(&state_path) {
+        match std::fs::read_to_string(state_path) {
             Ok(content) => match serde_json::from_str::<Value>(&content) {
-                Ok(v) => state = Some(v),
-                Err(_) => {
-                    return json!({
-                        "status": "error",
-                        "message": format!("Could not parse state file: {}", state_path.display())
-                    });
-                }
-            },
-            Err(e) => {
-                return json!({
+                Ok(v) => Ok((Some(v), false)),
+                Err(_) => Err(json!({
                     "status": "error",
-                    "message": format!("Could not read state file: {}", e)
-                });
-            }
+                    "message": format!("Could not parse state file: {}", state_path.display())
+                })),
+            },
+            Err(e) => Err(json!({
+                "status": "error",
+                "message": format!("Could not read state file: {}", e)
+            })),
         }
     } else {
-        inferred = true;
+        Ok((None, true))
     }
+}
 
-    let mode = resolve_mode(state.as_ref());
-
-    let warnings = match state.as_ref() {
+/// Derive the continue-mode and Learn-phase warnings from the loaded
+/// state. When state is absent (inferred path), the mode falls back to
+/// `FALLBACK_MODE` via `resolve_mode` and warnings are empty.
+fn compute_preflight_metadata(state: Option<&Value>) -> (String, Vec<String>) {
+    let mode = resolve_mode(state);
+    let warnings = match state {
         Some(s) => check_learn_phase(s),
         None => Vec::new(),
     };
+    (mode, warnings)
+}
+
+/// Build the `base` response map shared by every PR-state arm.
+///
+/// `inferred` adds the `"inferred": true` field; a present `state`
+/// adds the `pr_number` / `pr_url` / `worktree` fields. Every arm
+/// merges this map into its own `out` map via `for (k, v) in base`.
+fn build_base_response_map(
+    mode: &str,
+    pr_state: &str,
+    warnings: &[String],
+    branch: &str,
+    inferred: bool,
+    state: Option<&Value>,
+    pr_number: Option<i64>,
+) -> serde_json::Map<String, Value> {
+    let mut base = serde_json::Map::new();
+    base.insert("mode".to_string(), json!(mode));
+    base.insert("pr_state".to_string(), json!(pr_state));
+    base.insert("warnings".to_string(), json!(warnings));
+    base.insert("branch".to_string(), json!(branch));
+    if inferred {
+        base.insert("inferred".to_string(), json!(true));
+    }
+    if let Some(s) = state {
+        base.insert("pr_number".to_string(), json!(pr_number));
+        let pr_url = s.get("pr_url").and_then(|v| v.as_str()).unwrap_or("");
+        base.insert("pr_url".to_string(), json!(pr_url));
+        base.insert("worktree".to_string(), json!(derive_worktree(branch)));
+    }
+    base
+}
+
+fn preflight(branch: Option<&str>, root: &Path) -> Value {
+    let (branch, state_path) = match validate_branch_and_paths(branch, root) {
+        Ok(pair) => pair,
+        Err(envelope) => return envelope,
+    };
+
+    let (state, inferred) = match load_state_file(&state_path) {
+        Ok(pair) => pair,
+        Err(envelope) => return envelope,
+    };
+
+    let (mode, warnings) = compute_preflight_metadata(state.as_ref());
 
     // Phase transition enter (only if state file exists)
     if state.is_some() {
@@ -386,20 +448,15 @@ fn preflight(branch: Option<&str>, root: &Path) -> Value {
         }
     };
 
-    let mut base = serde_json::Map::new();
-    base.insert("mode".to_string(), json!(mode));
-    base.insert("pr_state".to_string(), json!(pr_state));
-    base.insert("warnings".to_string(), json!(warnings));
-    base.insert("branch".to_string(), json!(branch));
-    if inferred {
-        base.insert("inferred".to_string(), json!(true));
-    }
-    if let Some(ref s) = state {
-        base.insert("pr_number".to_string(), json!(pr_number));
-        let pr_url = s.get("pr_url").and_then(|v| v.as_str()).unwrap_or("");
-        base.insert("pr_url".to_string(), json!(pr_url));
-        base.insert("worktree".to_string(), json!(derive_worktree(&branch)));
-    }
+    let base = build_base_response_map(
+        &mode,
+        &pr_state,
+        &warnings,
+        &branch,
+        inferred,
+        state.as_ref(),
+        pr_number,
+    );
 
     match pr_state.as_str() {
         "MERGED" => {
