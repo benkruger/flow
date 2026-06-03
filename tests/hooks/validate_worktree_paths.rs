@@ -6,8 +6,8 @@ use std::process::{Command, Stdio};
 
 use flow_rs::hooks::validate_worktree_paths::{
     build_rewrite_envelope, detect_misplaced_flow_states, get_file_path,
-    is_approved_out_of_project_path, is_shared_config, validate, validate_shared_config,
-    APPROVED_TMP_EXTENSIONS,
+    is_approved_out_of_project_path, is_shared_config, misplaced_flow_states_rewrite, validate,
+    validate_shared_config, APPROVED_TMP_EXTENSIONS,
 };
 use serde_json::json;
 
@@ -1737,6 +1737,76 @@ fn build_rewrite_envelope_non_object_input_returns_none() {
     let tool_input = json!("not-an-object");
     let result = build_rewrite_envelope(&tool_input, "/proj/.flow-states/plan.md");
     assert!(result.is_none());
+}
+
+// --- misplaced_flow_states_rewrite tests ---
+
+const MISPLACED: &str = "/proj/.worktrees/feat/.flow-states/plan.md";
+const MISPLACED_CWD: &str = "/proj/.worktrees/feat";
+const MISPLACED_CANONICAL: &str = "/proj/.flow-states/plan.md";
+
+#[test]
+fn misplaced_rewrite_write_returns_envelope() {
+    let tool_input = json!({"file_path": MISPLACED, "content": "X"});
+    let env = misplaced_flow_states_rewrite(MISPLACED, MISPLACED_CWD, "Write", &tool_input)
+        .expect("Write + misplaced path yields a rewrite");
+    assert_eq!(
+        env["hookSpecificOutput"]["updatedInput"]["file_path"],
+        MISPLACED_CANONICAL
+    );
+}
+
+#[test]
+fn misplaced_rewrite_edit_returns_envelope() {
+    let tool_input = json!({"file_path": MISPLACED, "old_string": "a", "new_string": "b"});
+    let env = misplaced_flow_states_rewrite(MISPLACED, MISPLACED_CWD, "Edit", &tool_input)
+        .expect("Edit + misplaced path yields a rewrite");
+    assert_eq!(
+        env["hookSpecificOutput"]["updatedInput"]["file_path"],
+        MISPLACED_CANONICAL
+    );
+}
+
+#[test]
+fn misplaced_rewrite_read_returns_none() {
+    // Read is not a mutating tool — no auto-rewrite, falls through to block.
+    let tool_input = json!({"file_path": MISPLACED});
+    assert!(misplaced_flow_states_rewrite(MISPLACED, MISPLACED_CWD, "Read", &tool_input).is_none());
+}
+
+#[test]
+fn misplaced_rewrite_glob_returns_none() {
+    let tool_input = json!({"path": MISPLACED});
+    assert!(misplaced_flow_states_rewrite(MISPLACED, MISPLACED_CWD, "Glob", &tool_input).is_none());
+}
+
+#[test]
+fn misplaced_rewrite_grep_returns_none() {
+    let tool_input = json!({"path": MISPLACED});
+    assert!(misplaced_flow_states_rewrite(MISPLACED, MISPLACED_CWD, "Grep", &tool_input).is_none());
+}
+
+#[test]
+fn misplaced_rewrite_write_non_misplaced_path_returns_none() {
+    // A path inside the worktree proper (not a misplaced .flow-states/)
+    // produces no canonical destination → no rewrite.
+    let inside = "/proj/.worktrees/feat/src/lib.rs";
+    let tool_input = json!({"file_path": inside, "content": "X"});
+    assert!(misplaced_flow_states_rewrite(inside, MISPLACED_CWD, "Write", &tool_input).is_none());
+}
+
+#[test]
+fn misplaced_rewrite_empty_file_path_returns_none() {
+    let tool_input = json!({"file_path": "", "content": "X"});
+    assert!(misplaced_flow_states_rewrite("", MISPLACED_CWD, "Write", &tool_input).is_none());
+}
+
+#[test]
+fn misplaced_rewrite_cwd_not_in_worktree_returns_none() {
+    // compute_worktree_paths returns None for a non-worktree cwd, so
+    // there is no project_root to resolve the canonical destination.
+    let tool_input = json!({"file_path": MISPLACED, "content": "X"});
+    assert!(misplaced_flow_states_rewrite(MISPLACED, "/proj", "Write", &tool_input).is_none());
 }
 
 // --- Presence contract: shared-config BLOCKED phrase ---

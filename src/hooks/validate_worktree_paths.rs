@@ -335,6 +335,43 @@ pub fn build_rewrite_envelope(tool_input: &Value, canonical: &str) -> Option<Val
     }))
 }
 
+/// Decide whether a misplaced worktree-internal `.flow-states/` tool
+/// call should be silently rewritten to its canonical destination,
+/// returning the PreToolUse `updatedInput` envelope when so.
+///
+/// Returns `Some(envelope)` ONLY for the two mutating tools (`Write`,
+/// `Edit`): their `tool_input` carries everything needed to reissue
+/// the call against the canonical path, so the redirect can be a no-op
+/// the model never sees. `Read`/`Glob`/`Grep` return `None` — they
+/// have no `content`/`file_path` pairing that can be auto-redirected
+/// without returning data the model did not ask for, so they fall
+/// through to the block.
+///
+/// `tool_name` is compared against the canonical platform-emitted
+/// values (`Write`/`Edit`) with exact `==`; the hook payload field is
+/// controlled by Claude Code, not user-supplied state, so no
+/// normalization is warranted (matching how `run_impl_main` already
+/// compares `tool_name` for the shared-config gate).
+///
+/// Reuses `compute_worktree_paths` (to resolve `project_root` outside
+/// `validate`) and `detect_misplaced_flow_states` (to compute the
+/// canonical destination). `None` from either — a non-worktree cwd,
+/// or a path that is not a misplaced `.flow-states/` write — means no
+/// rewrite.
+pub fn misplaced_flow_states_rewrite(
+    file_path: &str,
+    cwd: &str,
+    tool_name: &str,
+    tool_input: &Value,
+) -> Option<Value> {
+    if tool_name != "Write" && tool_name != "Edit" {
+        return None;
+    }
+    let (project_root, _) = compute_worktree_paths(cwd)?;
+    let canonical = detect_misplaced_flow_states(file_path, project_root)?;
+    build_rewrite_envelope(tool_input, &canonical)
+}
+
 /// Approved `/tmp/` file extensions for the out-of-project surface,
 /// matched ASCII-case-insensitively.
 ///
