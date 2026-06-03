@@ -52,6 +52,9 @@ pub fn link_blocked_by(
         ));
     }
 
+    // Resolve the blocked issue only to verify it exists and surface a clear
+    // error if it does not; its database ID is not needed for the dependency
+    // POST, which keys off the blocking issue's ID.
     fetch_database_id(repo, blocked_number)
         .map_err(|e| format!("Failed to resolve blocked #{}: {}", blocked_number, e))?;
 

@@ -376,6 +376,9 @@ fn retry_with_label(
 
 fn build_issue_result(repo: &str, url: String) -> IssueResult {
     let number = parse_issue_number(&url);
+    // The database ID is a best-effort enrichment of the result: the issue
+    // has already been created, so a failed lookup degrades `id` to None
+    // rather than failing the whole operation.
     let db_id = number.and_then(|n| fetch_database_id(repo, n).ok());
     IssueResult {
         url,
