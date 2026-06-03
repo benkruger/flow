@@ -39,12 +39,19 @@ identical retry. Apply the fix and retry — do not prompt the user.
 
 - **`validate-worktree-paths` hook rejections** — the hook responds
   with a `BLOCKED:` message that names the canonical destination.
-  Reissue the call against the canonical path. (Reference:
+  Reissue the call against the canonical path. This covers the
+  main-repo redirect, the out-of-project gate, and a misplaced
+  `.flow-states/` Read/Glob/Grep. (Reference:
   `.claude/rules/file-tool-preflights.md` "Canonical Location for
   `.flow-states/`".)
-- **Path mismatches between worktree and main repo** — the hook
-  redirects worktree-internal `.flow-states/` writes to the main
-  repo's canonical location. Reissue against the main repo path.
+- **Worktree-internal `.flow-states/` Write/Edit** — auto-rewritten,
+  no model action required. `validate-worktree-paths` redirects a
+  misplaced worktree-internal `.flow-states/` Write or Edit to the
+  canonical `<project_root>/.flow-states/` path via a PreToolUse
+  `updatedInput` envelope (exit 0), so Claude Code reissues the call
+  against the canonical path automatically — the model never sees a
+  block. Only a misplaced `.flow-states/` Read/Glob/Grep still
+  produces the `BLOCKED:` redirect handled by the bullet above.
 - **Relative-vs-absolute path confusion** — when a CLI subcommand or
   file tool rejects a relative path, retry with the absolute form
   (or vice versa) using the path the error message names.

@@ -224,6 +224,23 @@ insufficient:
   where the early "not in a worktree" return leaves path
   jurisdiction to Claude Code. See
   `src/hooks/validate_worktree_paths.rs`.
+- **Misplaced worktree-internal `.flow-states/` Write/Edit
+  auto-rewrite** — `validate-worktree-paths` does NOT block a
+  misplaced worktree-internal `.flow-states/` Write or Edit.
+  `run_impl_main` consults `misplaced_flow_states_rewrite`
+  first; on a match it returns `WorktreeAction::Rewrite` and
+  `run()` emits a PreToolUse `updatedInput` JSON envelope to
+  stdout (exit 0) that replaces only `file_path` with the
+  canonical `<project_root>/.flow-states/` destination — every
+  other tool-input field is preserved verbatim. Claude Code
+  reissues the call against the canonical path with no
+  model-visible stumble. A misplaced `.flow-states/`
+  Read/Glob/Grep still blocks (exit 2) via `validate()`
+  because it has no `content`/`file_path` pairing that can be
+  auto-redirected without returning data the model did not ask
+  for. See `src/hooks/validate_worktree_paths.rs` and
+  `.claude/rules/file-tool-preflights.md` "Canonical Location
+  for `.flow-states/`".
 - **`AskUserQuestion` during an autonomous in-progress phase**
   — `validate-ask-user` rejects with exit 2 when
   `phases.<current_phase>.status == "in_progress"` AND
