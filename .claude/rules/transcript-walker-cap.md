@@ -17,7 +17,7 @@ production code outside the three named helpers are forbidden.
 ## Why
 
 A single cap value cannot serve every walker class. Phase-boundary
-verifiers and per-turn recency walkers have asymmetric costs:
+walkers and per-turn recency walkers have asymmetric costs:
 
 - **Per-turn recency walkers** run on every Skill /
   AskUserQuestion / Stop event. They must stay bounded as a
@@ -26,15 +26,16 @@ verifiers and per-turn recency walkers have asymmetric costs:
   for user-only-skill detection, halt-pause detection, the
   bootstrap carve-out, etc. — while keeping per-turn latency
   predictable.
-- **Phase-boundary verifiers** run at most once per agent return.
-  The `phase-enter --phase <p>` marker they search for can sit
+- **Phase-boundary walkers** run at most once per phase boundary
+  (agent return, phase finalize, cleanup). A marker they search for
+  — for example a `phase-enter --phase <p>` line — can sit
   arbitrarily far back in a long autonomous flow's transcript. A
   tail-bounded read silently misses the marker the moment the
-  transcript exceeds the cap; the verifier then refuses every
-  legitimate agent return with `phase_marker_not_found`. The
-  uncapped `read_full` path is correct here because the verifier's
-  rare invocation rate makes the memory cost (one full transcript
-  load per agent return) acceptable.
+  transcript exceeds the cap, so the walker draws the wrong
+  conclusion from an incomplete view. The uncapped `read_full` path
+  is correct here because the walker's rare invocation rate makes
+  the memory cost (one full transcript load per boundary)
+  acceptable.
 - **Shared-config-block detection** runs on every blocked
   AskUserQuestion during autonomous phases. It only needs the
   latest assistant tool call and its paired tool_result. The 4 MB
@@ -43,7 +44,7 @@ verifiers and per-turn recency walkers have asymmetric costs:
   prompt — and the data the detection needs is structurally close
   to the file tail.
 
-Choosing the wrong cap is silent: a verifier on
+Choosing the wrong cap is silent: a phase-boundary walker on
 `read_recency_window` misses markers on long flows; a per-turn
 walker on `read_full` blows up the hot path on every event. Naming
 the wrapper after its lookback semantics forces the choice into the

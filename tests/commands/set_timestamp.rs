@@ -1169,10 +1169,11 @@ fn run_impl_main_with_slash_branch_returns_structured_error_no_panic() {
 
 /// Auto-vivification end-to-end: a `set-timestamp` invocation whose
 /// dot-path includes a missing intermediate object key
-/// (`phases.flow-review.agent_retry_counts`) succeeds and creates the
-/// nesting. Guards the per-agent retry counter increment that
-/// otherwise fails on first use because `agent_retry_counts` is absent
-/// until first write.
+/// (`phases.flow-review.scratch`) succeeds and creates the nesting.
+/// Guards `set_nested`'s auto-vivification branch — the universal
+/// `--set` engine must create an absent intermediate object before
+/// setting a deeper key, so any dot-path with a missing middle
+/// segment lands correctly rather than erroring on first use.
 #[test]
 fn test_cli_set_nested_vivifies_missing_intermediate() {
     let parent = tempfile::tempdir().unwrap();
@@ -1191,7 +1192,7 @@ fn test_cli_set_nested_vivifies_missing_intermediate() {
     let mut cmd = flow_rs();
     cmd.arg("set-timestamp")
         .arg("--set")
-        .arg("phases.flow-review.agent_retry_counts.reviewer=1")
+        .arg("phases.flow-review.scratch.reviewer=1")
         .env_remove("FLOW_CI_RUNNING")
         .env_remove("FLOW_SIMULATE_BRANCH")
         .env("HOME", &root)
@@ -1205,10 +1206,7 @@ fn test_cli_set_nested_vivifies_missing_intermediate() {
     assert_eq!(parsed["status"], "ok");
 
     let on_disk: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
-    assert_eq!(
-        on_disk["phases"]["flow-review"]["agent_retry_counts"]["reviewer"],
-        1
-    );
+    assert_eq!(on_disk["phases"]["flow-review"]["scratch"]["reviewer"], 1);
 }
 
 /// CLI-level rejection of `_halt_pending` writes. Guards the

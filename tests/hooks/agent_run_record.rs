@@ -262,8 +262,9 @@ fn record_agent_run_heals_wrong_type_agents_returned() {
 
 #[test]
 fn record_agent_run_fail_open_when_state_path_is_directory() {
-    // state.json present but as a DIRECTORY: File::open succeeds, the
-    // capped read returns Err (EISDIR), read_state_capped → None.
+    // state.json present but as a DIRECTORY: mutate_state's read+write
+    // open of the path returns Err (EISDIR), so the closure never runs
+    // and no record is made — fail-open, no panic.
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path().canonicalize().expect("canonicalize");
     let worktree = root.join(".worktrees").join("feat");
@@ -328,6 +329,71 @@ fn record_agent_run_ignores_when_current_phase_absent() {
     assert_eq!(
         content, "{}",
         "a state file with no current_phase must be left untouched"
+    );
+}
+
+#[test]
+fn record_agent_run_ignores_null_root_state() {
+    // State parses to JSON null: the closure's root guard accepts null
+    // (object-or-null), then the absent current_phase short-circuits
+    // before any write. No record, no panic.
+    let (_d, worktree, state_path) = fixture("feat", "null");
+    record_agent_run(Some(&worktree), Some("flow:reviewer"));
+    assert!(
+        returned_agents(&state_path, "flow-review").is_empty(),
+        "a null root state must produce no record"
+    );
+}
+
+#[test]
+fn record_agent_run_ignores_non_object_root_state() {
+    // State parses to a JSON array (neither object nor null): the
+    // closure's root guard returns immediately. No record, no panic.
+    let (_d, worktree, state_path) = fixture("feat", "[]");
+    record_agent_run(Some(&worktree), Some("flow:reviewer"));
+    assert!(
+        returned_agents(&state_path, "flow-review").is_empty(),
+        "a non-object, non-null root state must produce no record"
+    );
+}
+
+#[test]
+fn record_agent_run_does_not_panic_when_phases_field_is_array() {
+    // Regression guard: `phases` is a JSON array, not an object. The
+    // closure reads status via get(...) chains, so the wrong-type
+    // `phases` reads as absent (status empty) and the guard returns
+    // before any IndexMut write — no panic. This is the case the
+    // single-locked-read design handles deterministically that a
+    // separate pre-read + unguarded write would crash on under a TOCTOU
+    // race.
+    let state = serde_json::to_string(&json!({
+        "current_phase": "flow-review",
+        "phases": ["not", "an", "object"]
+    }))
+    .unwrap();
+    let (_d, worktree, state_path) = fixture("feat", &state);
+    record_agent_run(Some(&worktree), Some("flow:reviewer"));
+    assert!(
+        returned_agents(&state_path, "flow-review").is_empty(),
+        "a wrong-type phases field must produce no record and no panic"
+    );
+}
+
+#[test]
+fn record_agent_run_does_not_panic_when_phase_entry_is_array() {
+    // Regression guard: `phases.<phase>` is a JSON array, not an object.
+    // The status read on a non-object phase entry yields None (status
+    // empty), so the guard returns before any IndexMut write — no panic.
+    let state = serde_json::to_string(&json!({
+        "current_phase": "flow-review",
+        "phases": { "flow-review": ["not", "an", "object"] }
+    }))
+    .unwrap();
+    let (_d, worktree, state_path) = fixture("feat", &state);
+    record_agent_run(Some(&worktree), Some("flow:reviewer"));
+    assert!(
+        returned_agents(&state_path, "flow-review").is_empty(),
+        "a wrong-type phase entry must produce no record and no panic"
     );
 }
 
