@@ -306,6 +306,35 @@ fn sanitize_canonical_suffix(suffix: &str) -> String {
         .join("/")
 }
 
+/// Build a PreToolUse `updatedInput` envelope that silently rewrites a
+/// misplaced `.flow-states/` write to its canonical destination.
+///
+/// Returns `None` when `tool_input` is not a JSON object — there is no
+/// `file_path` key to overwrite, so the caller falls through to the
+/// block path. On an object input, clones `tool_input` and overwrites
+/// only the `file_path` key with `canonical`, leaving every other key
+/// (`content`, `old_string`, `new_string`, `replace_all`, and any
+/// future Edit/Write field) verbatim.
+///
+/// Clone-and-overwrite-one-key is field-agnostic by design: the
+/// `updatedInput` object REPLACES the entire tool input that Claude
+/// Code reissues, so a dropped key would corrupt the rewritten call.
+/// Preserving every key except `file_path` is the only safe shape.
+pub fn build_rewrite_envelope(tool_input: &Value, canonical: &str) -> Option<Value> {
+    if !tool_input.is_object() {
+        return None;
+    }
+    let mut updated = tool_input.clone();
+    updated["file_path"] = Value::String(canonical.to_string());
+    Some(serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "updatedInput": updated,
+        }
+    }))
+}
+
 /// Approved `/tmp/` file extensions for the out-of-project surface,
 /// matched ASCII-case-insensitively.
 ///

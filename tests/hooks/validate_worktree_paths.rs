@@ -5,8 +5,9 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use flow_rs::hooks::validate_worktree_paths::{
-    detect_misplaced_flow_states, get_file_path, is_approved_out_of_project_path, is_shared_config,
-    validate, validate_shared_config, APPROVED_TMP_EXTENSIONS,
+    build_rewrite_envelope, detect_misplaced_flow_states, get_file_path,
+    is_approved_out_of_project_path, is_shared_config, validate, validate_shared_config,
+    APPROVED_TMP_EXTENSIONS,
 };
 use serde_json::json;
 
@@ -1689,6 +1690,53 @@ fn validate_subprocess_accepts_main_repo_flow_states_grep() {
         target.to_str().unwrap(),
     );
     assert_eq!(code, 0, "stderr: {}", stderr);
+}
+
+// --- build_rewrite_envelope tests ---
+
+#[test]
+fn build_rewrite_envelope_write_input_replaces_file_path_preserves_content() {
+    let tool_input = json!({
+        "file_path": "/proj/.worktrees/feat/.flow-states/plan.md",
+        "content": "X"
+    });
+    let canonical = "/proj/.flow-states/plan.md";
+    let env = build_rewrite_envelope(&tool_input, canonical).expect("object input yields envelope");
+    let hso = &env["hookSpecificOutput"];
+    assert_eq!(hso["hookEventName"], "PreToolUse");
+    assert_eq!(hso["permissionDecision"], "allow");
+    let updated = &hso["updatedInput"];
+    assert_eq!(updated["file_path"], canonical);
+    // Field-agnostic preservation: content survives the rewrite.
+    assert_eq!(updated["content"], "X");
+}
+
+#[test]
+fn build_rewrite_envelope_edit_input_preserves_all_non_path_fields() {
+    let tool_input = json!({
+        "file_path": "/proj/.worktrees/feat/.flow-states/plan.md",
+        "old_string": "a",
+        "new_string": "b",
+        "replace_all": true
+    });
+    let canonical = "/proj/.flow-states/plan.md";
+    let env = build_rewrite_envelope(&tool_input, canonical).expect("object input yields envelope");
+    let updated = &env["hookSpecificOutput"]["updatedInput"];
+    // Only file_path changes; every Edit field is preserved verbatim.
+    assert_eq!(updated["file_path"], canonical);
+    assert_eq!(updated["old_string"], "a");
+    assert_eq!(updated["new_string"], "b");
+    assert_eq!(updated["replace_all"], true);
+}
+
+#[test]
+fn build_rewrite_envelope_non_object_input_returns_none() {
+    // A non-object tool_input (a JSON string) cannot carry a file_path
+    // key to overwrite, so the helper signals "no rewrite" and the
+    // caller falls through to the block.
+    let tool_input = json!("not-an-object");
+    let result = build_rewrite_envelope(&tool_input, "/proj/.flow-states/plan.md");
+    assert!(result.is_none());
 }
 
 // --- Presence contract: shared-config BLOCKED phrase ---
