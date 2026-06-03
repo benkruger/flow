@@ -714,7 +714,7 @@ fn subprocess_slack_thread_reply_success_records_state() {
         .current_dir(&root)
         .env("PATH", path_with_fake)
         .env("HOME", &root)
-        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-test")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "test-bot")
         .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C123")
         .output()
         .unwrap();
@@ -769,7 +769,7 @@ fn subprocess_slack_thread_create_success_sets_thread_ts() {
         .current_dir(&root)
         .env("PATH", path_with_fake)
         .env("HOME", &root)
-        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-test")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "test-bot")
         .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C123")
         .output()
         .unwrap();
@@ -829,7 +829,7 @@ fn subprocess_slack_preexisting_array_appends_instead_of_resetting() {
         .current_dir(&root)
         .env("PATH", path_with_fake)
         .env("HOME", &root)
-        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-test")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "test-bot")
         .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C123")
         .output()
         .unwrap();
@@ -909,7 +909,7 @@ fn subprocess_unknown_phase_name_slack_message_falls_back_to_key() {
         .current_dir(&root)
         .env("PATH", path_with_fake)
         .env("HOME", &root)
-        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-test")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "test-bot")
         .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C123")
         .output()
         .unwrap();
@@ -951,7 +951,7 @@ fn subprocess_slack_error_response_skips_state_record() {
         .current_dir(&root)
         .env("PATH", path_with_fake)
         .env("HOME", &root)
-        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-test")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "test-bot")
         .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C123")
         .output()
         .unwrap();
