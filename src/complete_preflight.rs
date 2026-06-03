@@ -339,11 +339,14 @@ fn validate_branch_and_paths(
     Ok((branch, state_path))
 }
 
-/// Load the flow state file, returning `(state, inferred)`.
+/// Load the flow state file, returning `(state, inferred)` where the
+/// `inferred` flag is `true` when no state file was found on disk and
+/// the preflight result is therefore inferred without flow state.
 ///
-/// A missing file is the inferred path — `Ok((None, true))`. A present
-/// file that reads and parses yields `Ok((Some(state), false))`. An
-/// unreadable or unparseable file produces the error envelope.
+/// A missing file yields `Ok((None, true))` — the inferred case. A
+/// present file that reads and parses yields `Ok((Some(state),
+/// false))`. An unreadable or unparseable file produces the error
+/// envelope.
 fn load_state_file(state_path: &Path) -> Result<(Option<Value>, bool), Value> {
     if state_path.exists() {
         match std::fs::read_to_string(state_path) {
@@ -376,11 +379,14 @@ fn compute_preflight_metadata(state: Option<&Value>) -> (String, Vec<String>) {
     (mode, warnings)
 }
 
-/// Build the `base` response map shared by every PR-state arm.
+/// Build the `base` response map of fields common to every PR-state
+/// outcome.
 ///
 /// `inferred` adds the `"inferred": true` field; a present `state`
-/// adds the `pr_number` / `pr_url` / `worktree` fields. Every arm
-/// merges this map into its own `out` map via `for (k, v) in base`.
+/// adds the `pr_number` / `pr_url` / `worktree` fields. The returned
+/// map carries no `status` key — each PR-state outcome owns its own
+/// `status` and extends the map with outcome-specific fields before
+/// serializing the final response.
 fn build_base_response_map(
     mode: &str,
     pr_state: &str,
