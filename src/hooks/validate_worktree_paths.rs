@@ -332,6 +332,26 @@ fn sanitize_canonical_suffix(suffix: &str) -> String {
 /// `updatedInput` object REPLACES the entire tool input that Claude
 /// Code reissues, so a dropped key would corrupt the rewritten call.
 /// Preserving every key except `file_path` is the only safe shape.
+///
+/// **Envelope contract.** The wrapped
+/// `hookSpecificOutput { hookEventName: "PreToolUse", permissionDecision:
+/// "allow", updatedInput: <object> }` shape is the documented Claude
+/// Code PreToolUse mechanism for rewriting tool input — when
+/// `permissionDecision` is `"allow"` and `updatedInput` is the full
+/// modified tool-input object, Claude Code reissues the call against the
+/// modified input. The flat top-level `{permissionDecision, updatedInput}`
+/// shape is NOT valid for input rewrite. See
+/// `code.claude.com/docs/en/hooks.md` "Modifying Tool Input with
+/// `updatedInput`". (The flat shape `validate_ask_user` emits is the
+/// AskUserQuestion answer-injection mechanism, a different event.)
+///
+/// `pub` so the envelope shape — including the non-object `None` branch,
+/// which `run_impl_main` never reaches (a non-object `tool_input` yields
+/// an empty `file_path` from `get_file_path`, so `run_impl_main` returns
+/// `Allow` before consulting `misplaced_flow_states_rewrite`) — can be
+/// unit-tested directly, the same pattern as the sibling pure helper
+/// `detect_misplaced_flow_states`. The sole production caller is
+/// `misplaced_flow_states_rewrite`, itself called only by `run_impl_main`.
 pub fn build_rewrite_envelope(tool_input: &Value, canonical: &str) -> Option<Value> {
     if !tool_input.is_object() {
         return None;
@@ -370,6 +390,14 @@ pub fn build_rewrite_envelope(tool_input: &Value, canonical: &str) -> Option<Val
 /// canonical destination). `None` from either — a non-worktree cwd,
 /// or a path that is not a misplaced `.flow-states/` write — means no
 /// rewrite.
+///
+/// The sole production caller is `run_impl_main`, which consults this
+/// helper as its rewrite-shortcut check before the out-of-project and
+/// shared-config gates. `pub` so the tool-gating dispatch
+/// (Write/Edit → `Some`, Read/Glob/Grep / non-misplaced / non-worktree
+/// → `None`) can be unit-tested directly — several of those `None`
+/// branches are unreachable through the full hook subprocess — mirroring
+/// the sibling pure helpers (`detect_misplaced_flow_states`, `validate`).
 pub fn misplaced_flow_states_rewrite(
     file_path: &str,
     cwd: &str,

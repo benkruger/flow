@@ -332,8 +332,11 @@ The gate covers the `bin/flow set-timestamp` CLI write path only.
 Direct Edit/Write tool calls against
 `<project_root>/.flow-states/<branch>/state.json` from inside an
 active-flow worktree are not blocked by `validate-worktree-paths`
-(which only blocks misplaced worktree-internal copies under
-`.worktrees/<branch>/.flow-states/`) or `validate-claude-paths`
+(which only acts on misplaced worktree-internal copies under
+`.worktrees/<branch>/.flow-states/` — auto-rewriting a Write/Edit
+to the canonical destination and blocking a Read/Glob/Grep —
+never the canonical `<project_root>/.flow-states/` file itself) or
+`validate-claude-paths`
 (which protects `.claude/` paths, not `.flow-states/`), so a model
 with Edit/Write access remains a broader trust surface tracked
 separately from this gate.
