@@ -25,8 +25,8 @@ fn mock_curl(responses: Vec<CurlResult>) -> impl Fn(&[&str], u64) -> CurlResult 
 
 #[test]
 fn build_config_both_present() {
-    let config = build_config("xoxb-test-token", "C12345").unwrap();
-    assert_eq!(config.bot_token, "xoxb-test-token");
+    let config = build_config("test-bot-token", "C12345").unwrap();
+    assert_eq!(config.bot_token, "test-bot-token");
     assert_eq!(config.channel, "C12345");
 }
 
@@ -37,7 +37,7 @@ fn build_config_missing_token() {
 
 #[test]
 fn build_config_missing_channel() {
-    assert!(build_config("xoxb-test", "").is_none());
+    assert!(build_config("test-bot", "").is_none());
 }
 
 #[test]
@@ -49,10 +49,10 @@ fn build_config_both_empty() {
 
 #[test]
 fn read_slack_config_with_env_returns_config_when_both_present() {
-    let token = || "xoxb-test-token".to_string();
+    let token = || "test-bot-token".to_string();
     let channel = || "C12345".to_string();
     let config = read_slack_config_with_env(&token, &channel).unwrap();
-    assert_eq!(config.bot_token, "xoxb-test-token");
+    assert_eq!(config.bot_token, "test-bot-token");
     assert_eq!(config.channel, "C12345");
 }
 
@@ -65,7 +65,7 @@ fn read_slack_config_with_env_returns_none_when_token_empty() {
 
 #[test]
 fn read_slack_config_with_env_returns_none_when_channel_empty() {
-    let token = || "xoxb-test-token".to_string();
+    let token = || "test-bot-token".to_string();
     let channel = || String::new();
     assert!(read_slack_config_with_env(&token, &channel).is_none());
 }
@@ -146,7 +146,7 @@ exit 0
         .env_remove("FLOW_CI_RUNNING")
         .env("PATH", path_with_fake)
         .env("HOME", &root)
-        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-test")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "test-bot")
         .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C123")
         .output()
         .unwrap();
@@ -177,7 +177,7 @@ fn subprocess_run_curl_nonzero_exit_surfaces_error() {
         .env_remove("FLOW_CI_RUNNING")
         .env("PATH", path_with_fake)
         .env("HOME", &root)
-        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-test")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "test-bot")
         .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C123")
         .output()
         .unwrap();
@@ -198,7 +198,7 @@ fn subprocess_run_curl_spawn_failure_surfaces_error() {
         .env_remove("FLOW_CI_RUNNING")
         .env("PATH", "/nonexistent-no-curl-here")
         .env("HOME", &root)
-        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-test")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "test-bot")
         .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C123")
         .output()
         .unwrap();
@@ -216,7 +216,7 @@ fn subprocess_run_curl_spawn_failure_surfaces_error() {
 fn post_message_success() {
     let slack_response = json!({"ok": true, "ts": "1234567890.123456"});
     let curl = mock_curl(vec![Ok((0, slack_response.to_string(), String::new()))]);
-    let result = post_message_inner("xoxb-token", "C12345", "Hello", None, &curl);
+    let result = post_message_inner("test-bot-token", "C12345", "Hello", None, &curl);
     assert_eq!(result["status"], "ok");
     assert_eq!(result["ts"], "1234567890.123456");
 }
@@ -240,7 +240,7 @@ fn post_message_with_thread_ts() {
     };
 
     let result = post_message_inner(
-        "xoxb-token",
+        "test-bot-token",
         "C12345",
         "Reply",
         Some("1234567890.123456"),
@@ -256,7 +256,7 @@ fn post_message_with_thread_ts() {
 fn post_message_slack_error() {
     let slack_response = json!({"ok": false, "error": "channel_not_found"});
     let curl = mock_curl(vec![Ok((0, slack_response.to_string(), String::new()))]);
-    let result = post_message_inner("xoxb-token", "C12345", "Hello", None, &curl);
+    let result = post_message_inner("test-bot-token", "C12345", "Hello", None, &curl);
     assert_eq!(result["status"], "error");
     assert!(result["message"]
         .as_str()
@@ -271,14 +271,14 @@ fn post_message_curl_failure() {
         String::new(),
         "Connection refused".to_string(),
     ))]);
-    let result = post_message_inner("xoxb-token", "C12345", "Hello", None, &curl);
+    let result = post_message_inner("test-bot-token", "C12345", "Hello", None, &curl);
     assert_eq!(result["status"], "error");
 }
 
 #[test]
 fn post_message_curl_failure_empty_stderr_returns_curl_failed() {
     let curl = mock_curl(vec![Ok((1, String::new(), String::new()))]);
-    let result = post_message_inner("xoxb-token", "C12345", "Hello", None, &curl);
+    let result = post_message_inner("test-bot-token", "C12345", "Hello", None, &curl);
     assert_eq!(result["status"], "error");
     assert_eq!(result["message"], "curl failed");
 }
@@ -286,7 +286,7 @@ fn post_message_curl_failure_empty_stderr_returns_curl_failed() {
 #[test]
 fn post_message_curl_timeout() {
     let curl = mock_curl(vec![Err("Timeout posting to Slack".to_string())]);
-    let result = post_message_inner("xoxb-token", "C12345", "Hello", None, &curl);
+    let result = post_message_inner("test-bot-token", "C12345", "Hello", None, &curl);
     assert_eq!(result["status"], "error");
     assert!(result["message"]
         .as_str()
@@ -302,7 +302,7 @@ fn post_message_invalid_json_response() {
         "<html>error</html>".to_string(),
         String::new(),
     ))]);
-    let result = post_message_inner("xoxb-token", "C12345", "Hello", None, &curl);
+    let result = post_message_inner("test-bot-token", "C12345", "Hello", None, &curl);
     assert_eq!(result["status"], "error");
 }
 
@@ -362,7 +362,7 @@ exit 0
         .env_remove("FLOW_CI_RUNNING")
         .env("PATH", path_with_fake)
         .env("HOME", &root)
-        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "xoxb-test")
+        .env("CLAUDE_PLUGIN_CONFIG_slack_bot_token", "test-bot")
         .env("CLAUDE_PLUGIN_CONFIG_slack_channel", "C123")
         .output()
         .unwrap();

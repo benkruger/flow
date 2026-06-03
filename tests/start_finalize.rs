@@ -299,7 +299,7 @@ fn test_slack_success_stores_thread_ts() {
         "slack-ok-branch",
         &["--pr-url", "https://github.com/test/repo/pull/42"],
         Some(&stub_dir),
-        Some("xoxb-fake-token"),
+        Some("fake-bot-token"),
     );
 
     assert_eq!(output.status.code(), Some(0));
@@ -334,7 +334,7 @@ fn test_slack_ok_without_ts_falls_back_to_empty() {
         "no-ts-branch",
         &["--pr-url", "https://github.com/test/repo/pull/42"],
         Some(&stub_dir),
-        Some("xoxb-fake-token"),
+        Some("fake-bot-token"),
     );
 
     assert_eq!(output.status.code(), Some(0));
@@ -363,7 +363,7 @@ fn test_slack_error_continues_best_effort() {
         "slack-err-branch",
         &["--pr-url", "https://github.com/test/repo/pull/42"],
         Some(&stub_dir),
-        Some("xoxb-fake-token"),
+        Some("fake-bot-token"),
     );
 
     assert_eq!(output.status.code(), Some(0));
@@ -401,7 +401,7 @@ fn test_slack_success_heals_wrong_notifications_type() {
         "heal-branch",
         &["--pr-url", "https://github.com/test/repo/pull/42"],
         Some(&stub_dir),
-        Some("xoxb-fake-token"),
+        Some("fake-bot-token"),
     );
 
     assert_eq!(output.status.code(), Some(0));
