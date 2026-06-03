@@ -52,22 +52,11 @@ pub fn link_blocked_by(
         ));
     }
 
-    let (_, err) = fetch_database_id(repo, blocked_number);
-    if let Some(e) = err {
-        return Err(format!(
-            "Failed to resolve blocked #{}: {}",
-            blocked_number, e
-        ));
-    }
+    fetch_database_id(repo, blocked_number)
+        .map_err(|e| format!("Failed to resolve blocked #{}: {}", blocked_number, e))?;
 
-    let (blocking_id, err) = fetch_database_id(repo, blocking_number);
-    if let Some(e) = err {
-        return Err(format!(
-            "Failed to resolve blocking #{}: {}",
-            blocking_number, e
-        ));
-    }
-    let blocking_id = blocking_id.unwrap();
+    let blocking_id = fetch_database_id(repo, blocking_number)
+        .map_err(|e| format!("Failed to resolve blocking #{}: {}", blocking_number, e))?;
 
     let api_path = format!(
         "repos/{}/issues/{}/dependencies/blocked_by",
