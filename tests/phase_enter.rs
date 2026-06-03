@@ -145,6 +145,19 @@ fn create_state(
 }
 
 /// Run flow-rs phase-enter.
+///
+/// Isolates the spawned child's environment so it can never reach
+/// machine-global state under the real `<home>/.claude/flow/`:
+/// `HOME=<repo>` points the child's home at the per-test fixture (any
+/// phase-anchor marker write lands under the disposable tempdir), and
+/// `CLAUDE_CODE_SESSION_ID` is removed so the child cannot resolve the
+/// live session id from the inherited env — the session id resolves
+/// only from the fixture's SessionStart capture file (normally absent,
+/// so no marker is written at all). Without this isolation, a suite run
+/// inside an active flow would overwrite that flow's live phase-anchor
+/// marker with a tempdir path, corrupting `--continue-step` resume (per
+/// `.claude/rules/subprocess-test-hygiene.md` "Working Directory
+/// Isolation" + HOME neutralization).
 fn run_phase_enter(repo: &Path, extra_args: &[&str]) -> Output {
     let mut args = vec!["phase-enter"];
     args.extend_from_slice(extra_args);
@@ -152,6 +165,8 @@ fn run_phase_enter(repo: &Path, extra_args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(&args)
         .current_dir(repo)
+        .env("HOME", repo)
+        .env_remove("CLAUDE_CODE_SESSION_ID")
         .env_remove("FLOW_SIMULATE_BRANCH")
         .output()
         .unwrap()
@@ -898,9 +913,19 @@ fn phase_enter_response_includes_worktree_cwd_for_subdir_flow() {
     )
     .unwrap();
 
+    // This own-Command spawn (it needs `.current_dir(&api_dir)`) reaches
+    // the phase-anchor write, so it must isolate HOME to the fixture and
+    // drop CLAUDE_CODE_SESSION_ID — otherwise a suite run inside an
+    // active flow overwrites that flow's live marker with this fixture's
+    // `<repo>/.worktrees/subdir-flow-cwd/api` path. Same isolation the
+    // shared `run_phase_enter` helper applies, per
+    // `.claude/rules/subprocess-test-hygiene.md` "Working Directory
+    // Isolation" + HOME neutralization.
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
         .args(["phase-enter", "--phase", "flow-code", "--branch", branch])
         .current_dir(&api_dir)
+        .env("HOME", &repo)
+        .env_remove("CLAUDE_CODE_SESSION_ID")
         .env_remove("FLOW_SIMULATE_BRANCH")
         .env_remove("FLOW_CI_RUNNING")
         .output()
@@ -1091,4 +1116,90 @@ fn phase_enter_response_omits_absent_optional_fields() {
         "slack_thread_ts must be absent"
     );
     assert!(data.get("plan_file").is_none(), "plan_file must be absent");
+}
+
+// --- run_phase_enter isolation ---
+
+/// The shared `run_phase_enter` helper must isolate the spawned child's
+/// environment so it can never reach machine-global state under the
+/// real `<home>/.claude/flow/`. This test plants a SessionStart capture
+/// file under the per-test fixture HOME
+/// (`<repo>/.claude/flow-current-session.json`) and asserts the
+/// phase-anchor marker lands under that same fixture HOME — proving the
+/// child resolved its session id from the fixture capture file and
+/// wrote the marker under the disposable fixture, not under the
+/// engineer's real `$HOME`.
+///
+/// Regression: when the suite runs inside an active flow, an
+/// un-isolated `run_phase_enter` lets the child resolve the real
+/// session id under the real HOME and overwrite the live flow's
+/// phase-anchor marker with a tempdir path, corrupting
+/// `--continue-step` resume. The fix sets `HOME=<repo>` and removes
+/// `CLAUDE_CODE_SESSION_ID` on the child so the session id resolves
+/// only from the fixture capture file. The assertion keys on the
+/// marker LOCATION under the fixture HOME, so it never depends on the
+/// ambient real HOME. Consumer: every subprocess test routing through
+/// `run_phase_enter`, plus the live flow whose marker must not be
+/// clobbered (per `.claude/rules/subprocess-test-hygiene.md` "Working
+/// Directory Isolation" + HOME neutralization).
+#[test]
+fn run_phase_enter_writes_anchor_under_fixture_home() {
+    let dir = tempfile::tempdir().unwrap();
+    let branch = "iso-anchor";
+    let repo = create_git_repo(dir.path(), branch);
+    create_state(&repo, branch, "flow-start", "complete", None);
+
+    // Plant a SessionStart capture file under the fixture HOME. With the
+    // helper isolating HOME to `<repo>` and removing
+    // CLAUDE_CODE_SESSION_ID, the child resolves this session id (and no
+    // other) via `read_captured_session(<repo>)` and writes the marker
+    // under `<repo>/.claude/flow/`.
+    let session_id = "fixture-iso-sid";
+    let claude_dir = repo.join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    fs::write(
+        claude_dir.join("flow-current-session.json"),
+        format!(
+            r#"{{"session_id":"{}","transcript_path":null}}"#,
+            session_id
+        ),
+    )
+    .unwrap();
+
+    let output = run_phase_enter(&repo, &["--phase", "flow-code", "--branch", branch]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+
+    let marker = repo
+        .join(".claude")
+        .join("flow")
+        .join(format!("phase-anchor-{}.json", session_id));
+    assert!(
+        marker.exists(),
+        "run_phase_enter must isolate HOME to the fixture so the marker \
+         lands at {} (resolved from the fixture capture file); an \
+         un-isolated helper resolves the real session id under the real \
+         HOME instead",
+        marker.display()
+    );
+    let marker_json: Value = serde_json::from_str(&fs::read_to_string(&marker).unwrap()).unwrap();
+    assert_eq!(
+        marker_json["branch"], branch,
+        "marker must record the fixture branch"
+    );
+    let wt_cwd = marker_json["worktree_cwd"]
+        .as_str()
+        .expect("marker must carry worktree_cwd");
+    assert!(
+        wt_cwd.ends_with(&format!("/.worktrees/{}", branch)),
+        "marker worktree_cwd must point under <repo>/.worktrees/{}; got: {}",
+        branch,
+        wt_cwd
+    );
 }
