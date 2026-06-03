@@ -26,8 +26,20 @@
 //!
 //! Fires on Edit, Write, Read, Glob, and Grep tool calls.
 //!
-//! Exit 0 — allow (path is fine or not in a worktree)
-//! Exit 2 — block (path targets main repo, out-of-project, or shared config Edit/Write)
+//! A misplaced worktree-internal `.flow-states/` Write or Edit is NOT
+//! blocked: `run_impl_main` returns `WorktreeAction::Rewrite` and `run()`
+//! emits a PreToolUse `updatedInput` envelope to stdout (exit 0) that
+//! redirects the call to the canonical `<project_root>/.flow-states/`
+//! destination, so Claude Code reissues it there with no model-visible
+//! stumble. Read/Glob/Grep on the same misplaced path still block —
+//! they have no `content`/`file_path` pairing that can be auto-redirected
+//! without returning data the model did not ask for.
+//!
+//! Exit 0 — allow (path is fine or not in a worktree), OR a rewrite
+//!   envelope was emitted to stdout for a misplaced `.flow-states/`
+//!   Write/Edit
+//! Exit 2 — block (path targets main repo, out-of-project, a misplaced
+//!   `.flow-states/` Read/Glob/Grep, or shared config Edit/Write)
 
 use std::path::Path;
 
@@ -671,15 +683,49 @@ pub fn validate(file_path: &str, cwd: &str, home: &str) -> (bool, String) {
     )
 }
 
-/// Decision core for the validate-worktree-paths hook. Returns
-/// `(exit_code, Option<stderr_message>)` so `run()` can translate to
-/// `process::exit` + `eprintln!` side effects. Integration tests
-/// drive every branch through the hook subprocess with fixture
-/// stdin payloads.
-fn run_impl_main(hook_input: Option<Value>, cwd: Option<String>) -> (i32, Option<String>) {
+/// The outcome `run_impl_main` hands to `run()` for a file tool call.
+///
+/// - `Allow` — exit 0, no output. The path is fine, or the cwd is not
+///   inside a worktree, or there is no file path to validate.
+/// - `Block(msg)` — exit 2 with `msg` on stderr. The path targets the
+///   main repo, is out-of-project, is a misplaced `.flow-states/`
+///   Read/Glob/Grep, or is an unapproved shared-config Edit/Write.
+/// - `Rewrite(envelope)` — exit 0 with `envelope` (a PreToolUse
+///   `updatedInput` JSON object) on stdout. A misplaced worktree-
+///   internal `.flow-states/` Write/Edit is silently redirected to its
+///   canonical destination so Claude Code reissues the call there with
+///   no model-visible block.
+enum WorktreeAction {
+    Allow,
+    Block(String),
+    Rewrite(Value),
+}
+
+/// Decision core for the validate-worktree-paths hook. Returns a
+/// `WorktreeAction` so `run()` can translate it into `process::exit`
+/// plus the matching stdout/stderr side effect. Integration tests
+/// drive every arm through the hook subprocess with fixture stdin
+/// payloads.
+///
+/// Order of evaluation:
+/// 1. Missing hook input, empty file path, or absent cwd → `Allow`
+///    (nothing to validate).
+/// 2. **Rewrite shortcut** — a misplaced worktree-internal
+///    `.flow-states/` Write/Edit yields `Rewrite`. This runs BEFORE
+///    the out-of-project and shared-config gates: a misplaced
+///    `.flow-states/` path is inside `project_root` and is not
+///    shared-config, so neither gate would mis-fire, but consulting
+///    the rewrite first keeps the precedence explicit. Read/Glob/Grep
+///    return `None` from the rewrite helper and fall through.
+/// 3. `validate` → `Block` on a main-repo / out-of-project / misplaced
+///    `.flow-states/` Read-Glob-Grep path.
+/// 4. `validate_shared_config` → `Block` on an unapproved shared-config
+///    Edit/Write.
+/// 5. Otherwise `Allow`.
+fn run_impl_main(hook_input: Option<Value>, cwd: Option<String>) -> WorktreeAction {
     let hook_input = match hook_input {
         Some(v) => v,
-        None => return (0, None),
+        None => return WorktreeAction::Allow,
     };
 
     let tool_input = hook_input
@@ -689,13 +735,27 @@ fn run_impl_main(hook_input: Option<Value>, cwd: Option<String>) -> (i32, Option
 
     let file_path = get_file_path(&tool_input);
     if file_path.is_empty() {
-        return (0, None);
+        return WorktreeAction::Allow;
     }
 
     let cwd = match cwd {
         Some(p) => p,
-        None => return (0, None),
+        None => return WorktreeAction::Allow,
     };
+
+    let tool_name = hook_input
+        .get("tool_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    // Rewrite shortcut: a misplaced worktree-internal `.flow-states/`
+    // Write/Edit is silently redirected to its canonical destination
+    // rather than hard-blocked. Read/Glob/Grep return None here and
+    // fall through to the existing block surfaces below.
+    if let Some(envelope) = misplaced_flow_states_rewrite(&file_path, &cwd, tool_name, &tool_input)
+    {
+        return WorktreeAction::Rewrite(envelope);
+    }
 
     // Env-var-derived $HOME for the out-of-project approved-memory
     // class. An unset HOME yields an empty string, which
@@ -704,25 +764,26 @@ fn run_impl_main(hook_input: Option<Value>, cwd: Option<String>) -> (i32, Option
 
     let (allowed, message) = validate(&file_path, &cwd, &home);
     if !allowed {
-        return (2, Some(message));
+        return WorktreeAction::Block(message);
     }
-
-    let tool_name = hook_input
-        .get("tool_name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
 
     let (sc_allowed, sc_message) = validate_shared_config(&file_path, &cwd, tool_name);
     if !sc_allowed {
-        return (2, Some(sc_message));
+        return WorktreeAction::Block(sc_message);
     }
 
-    (0, None)
+    WorktreeAction::Allow
 }
 
 /// Run the validate-worktree-paths hook (entry point from CLI). Thin
-/// wrapper around `run_impl_main` that translates decisions into
-/// stderr + exit code side effects.
+/// wrapper around `run_impl_main` that translates the `WorktreeAction`
+/// into the matching `process::exit` + stdout/stderr side effect:
+///
+/// - `Allow` → exit 0, no output.
+/// - `Block(msg)` → `eprintln!(msg)` + exit 2.
+/// - `Rewrite(envelope)` → `println!(envelope)` (the PreToolUse
+///   `updatedInput` JSON to stdout, the surface Claude Code reads to
+///   reissue the call against the canonical path) + exit 0.
 ///
 /// The cwd is resolved from the hook payload's `cwd` field via
 /// `resolve_hook_cwd` (with `std::env::current_dir()` as fallback),
@@ -734,9 +795,15 @@ fn run_impl_main(hook_input: Option<Value>, cwd: Option<String>) -> (i32, Option
 pub fn run() {
     let hook_input = read_hook_input();
     let cwd = hook_input.as_ref().and_then(crate::hooks::resolve_hook_cwd);
-    let (code, message) = run_impl_main(hook_input, cwd);
-    if let Some(msg) = message {
-        eprintln!("{}", msg);
+    match run_impl_main(hook_input, cwd) {
+        WorktreeAction::Allow => std::process::exit(0),
+        WorktreeAction::Block(msg) => {
+            eprintln!("{}", msg);
+            std::process::exit(2);
+        }
+        WorktreeAction::Rewrite(envelope) => {
+            println!("{}", envelope);
+            std::process::exit(0);
+        }
     }
-    std::process::exit(code);
 }

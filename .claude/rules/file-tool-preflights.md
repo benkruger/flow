@@ -77,9 +77,23 @@ The `validate-worktree-paths` PreToolUse hook
 location at the tool-call layer. The
 `detect_misplaced_flow_states(file_path, project_root)` helper detects
 the misplacement via pure string operations and returns the canonical
-destination. When the helper matches, `validate()` returns
-`(false, message)` with a `BLOCKED` message naming the canonical path
-the caller should use instead.
+destination. The hook's response then depends on the tool:
+
+- **Write / Edit** — silently rewritten, not blocked. `run_impl_main`
+  consults `misplaced_flow_states_rewrite` first; on a match it
+  returns `WorktreeAction::Rewrite`, and `run()` emits a PreToolUse
+  `updatedInput` JSON envelope to stdout (exit 0) that replaces only
+  `file_path` with the canonical `<project_root>/.flow-states/`
+  destination. Claude Code reissues the call against the canonical
+  path with no model-visible stumble — every other tool-input field
+  (`content`, `old_string`, `new_string`, `replace_all`) is preserved
+  verbatim.
+- **Read / Glob / Grep** — still blocked. The rewrite helper returns
+  `None` (these tools carry no `content`/`file_path` pairing that can
+  be auto-redirected without returning data the model did not ask
+  for), so control falls through to `validate()`, which returns
+  `(false, message)` with a `BLOCKED` message naming the canonical
+  path the caller should use instead.
 
 The check fires on every Edit, Write, Read, Glob, and Grep tool call
 the hook is registered for. Both `file_path` (Edit/Write/Read) and

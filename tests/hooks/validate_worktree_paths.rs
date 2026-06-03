@@ -1505,26 +1505,39 @@ fn validate_subprocess_memory_read_allowed_via_resolved_home() {
     );
 }
 
+/// A misplaced worktree-internal .flow-states/ Write is no longer
+/// hard-blocked — run() emits the rewrite envelope to stdout (exit 0)
+/// so Claude Code reissues the Write against the canonical project-root
+/// path with no model-visible stumble. Drives run_impl_main's
+/// WorktreeAction::Rewrite arm and run()'s stdout println.
 #[test]
-fn validate_subprocess_rejects_worktree_flow_states_write() {
+fn validate_subprocess_rewrites_worktree_flow_states_write() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let (root, worktree_cwd) = worktree_fixture(&tmp);
     let target = worktree_cwd.join(".flow-states/plan.md");
     let canonical = root.join(".flow-states/plan.md");
-    let (code, _, stderr) = spawn_hook_with_cwd(
+    let (code, stdout, stderr) = spawn_hook_with_cwd(
         &worktree_cwd,
         &root,
         "Write",
         "file_path",
         target.to_str().unwrap(),
     );
-    assert_eq!(code, 2, "stderr: {}", stderr);
-    assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
-    assert!(stderr.contains(".flow-states/"), "stderr: {}", stderr);
+    assert_eq!(code, 0, "stderr: {}", stderr);
     assert!(
-        stderr.contains(canonical.to_str().unwrap()),
-        "stderr: {}",
-        stderr
+        stdout.contains("\"hookEventName\":\"PreToolUse\""),
+        "stdout: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("\"permissionDecision\":\"allow\""),
+        "stdout: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains(canonical.to_str().unwrap()),
+        "stdout: {}",
+        stdout
     );
 }
 
@@ -1550,25 +1563,33 @@ fn validate_subprocess_rejects_worktree_flow_states_read() {
     );
 }
 
+/// A misplaced worktree-internal .flow-states/ Edit is rewritten the
+/// same way a Write is — exit 0 with the rewrite envelope on stdout,
+/// preserving the Edit's old_string/new_string fields verbatim while
+/// only file_path is redirected to the canonical destination.
 #[test]
-fn validate_subprocess_rejects_worktree_flow_states_edit() {
+fn validate_subprocess_rewrites_worktree_flow_states_edit() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let (root, worktree_cwd) = worktree_fixture(&tmp);
     let target = worktree_cwd.join(".flow-states/plan.md");
     let canonical = root.join(".flow-states/plan.md");
-    let (code, _, stderr) = spawn_hook_with_cwd(
+    let (code, stdout, stderr) = spawn_hook_with_cwd(
         &worktree_cwd,
         &root,
         "Edit",
         "file_path",
         target.to_str().unwrap(),
     );
-    assert_eq!(code, 2, "stderr: {}", stderr);
-    assert!(stderr.contains("BLOCKED"), "stderr: {}", stderr);
+    assert_eq!(code, 0, "stderr: {}", stderr);
     assert!(
-        stderr.contains(canonical.to_str().unwrap()),
-        "stderr: {}",
-        stderr
+        stdout.contains("\"permissionDecision\":\"allow\""),
+        "stdout: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains(canonical.to_str().unwrap()),
+        "stdout: {}",
+        stdout
     );
 }
 
