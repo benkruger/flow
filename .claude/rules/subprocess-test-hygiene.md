@@ -63,6 +63,47 @@ environment — must explicitly neutralize these surfaces:
      `*.profraw` pattern plus `bin/test`'s `default_*.profraw`
      sweep)
 
+## Machine-Global Per-Session Markers Under HOME
+
+A FLOW subcommand that resolves a session id and writes a
+per-session marker file beneath the user's home directory is a
+distinct leak surface from the dotfile reads in "The Rule" above:
+the spawned child does not merely READ ambient state, it WRITES
+machine-global state that a concurrently-running real flow depends
+on. The canonical case is `bin/flow phase-enter`, which resolves a
+session id (from `CLAUDE_CODE_SESSION_ID`, then the SessionStart
+capture file) and writes the phase-anchor marker at
+`<HOME>/.claude/flow/phase-anchor-<session-id>.json`
+(`src/phase_anchor.rs`). `bin/flow set-utility-in-progress` writes
+an analogous per-session marker under the same directory.
+
+When a test spawns such a subcommand WITHOUT neutralizing both
+`HOME` and `CLAUDE_CODE_SESSION_ID`, and the test suite happens to
+run inside an active flow, the child resolves the REAL session id
+under the REAL home and overwrites that flow's live marker with a
+tempdir path — corrupting the very `--continue-step` resume the
+marker exists to support.
+
+Two neutralizers close this surface, and BOTH are required:
+
+1. `HOME=<fixture>` — points the child's home at the disposable
+   per-test tempdir, so any marker write lands under the fixture
+   (cleaned up with it) rather than the engineer's real home.
+2. `env_remove("CLAUDE_CODE_SESSION_ID")` — so the child cannot
+   resolve the live session id from the inherited env; the id
+   resolves only from the fixture's SessionStart capture file
+   (normally absent, so no marker is written at all).
+
+`HOME` alone is insufficient as a safety property argument but is
+sufficient in practice to redirect the WRITE away from the real
+home: even with the live session id resolved from the inherited
+env, the marker lands under the fixture home. Removing
+`CLAUDE_CODE_SESSION_ID` additionally makes the resolved id
+deterministic for tests that assert on the marker's basename. A
+test that asserts the marker lands under the fixture sets both; a
+test that only needs to avoid clobbering the real marker needs at
+minimum `HOME=<fixture>`.
+
 ## Working Directory Isolation
 
 Environment neutralization (above) controls what the child reads
@@ -168,6 +209,7 @@ reaches, and neutralize exactly those:
 | `bin/flow notify-slack` | Slack webhook POST | `env_remove("SLACK_WEBHOOK_URL")`, `env_remove("SLACK_BOT_TOKEN")` |
 | `bin/flow ci`, `build`, `test`, `lint`, `format` | recursion guard | `env_remove("FLOW_CI_RUNNING")` |
 | `bin/flow hook <name>` | state file reads, stdin | routed through `crate::common::spawn_hook`, which removes `HOME` and sets `.current_dir(fixture)` so the hook resolves a fixture branch/state, not the real worktree (see "Working Directory Isolation"); pass a specific `HOME` via the `env` slice when the hook must read one |
+| `bin/flow phase-enter`, `set-utility-in-progress` (any subcommand that writes a per-session marker under `<HOME>/.claude/flow/`) | per-session marker write under HOME; session id resolved from `CLAUDE_CODE_SESSION_ID` then the SessionStart capture file | `HOME=<fixture>` (redirects the marker write off the real home) AND `env_remove("CLAUDE_CODE_SESSION_ID")` (the child resolves only the fixture session id, never the live one) — see "Machine-Global Per-Session Markers Under HOME". Both are required; without them a suite run inside an active flow overwrites that flow's live marker and corrupts `--continue-step` resume |
 
 ## Plan-Phase Trigger
 
