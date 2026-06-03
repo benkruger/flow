@@ -557,9 +557,9 @@ fn home_dir_or_empty_returns_path_when_home_set() {
 /// disk. SessionStart hooks receive a transcript_path before
 /// Claude Code creates the file; the canonical validator's
 /// `canonicalize()` call fails on the missing file and rejects
-/// the path, causing transcript_path to persist as null and
-/// downstream `record-agent-return` to report
-/// `phase_marker_not_found`.
+/// the path, causing transcript_path to persist as null and the
+/// downstream transcript walkers (`validate-skill`,
+/// `validate-ask-user`, the stop hooks) to have no path to scan.
 #[test]
 fn is_safe_transcript_path_structural_accepts_nonexistent_path_under_projects() {
     let tmp = TempDir::new().expect("tempdir");

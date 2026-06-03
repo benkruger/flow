@@ -32,21 +32,11 @@
 //!    `crate::hooks::transcript_walker::recent_edit_blocked_on_shared_config`.
 //!    See `.claude/rules/autonomous-phase-discipline.md`
 //!    "Shared-Config Carve-Out" subsection.
-//! 4. **Agent-skip-handoff carve-out** — when `validate` would have
-//!    blocked the prompt but the most recent user-role turn carries a
-//!    `phase-finalize` agent-skip handoff (a tool_result whose content
-//!    contains the reason substring `agents_skipped` or
-//!    `required_agent_not_returned`). flow-review's Done handler fires
-//!    `AskUserQuestion` to ask the user how to proceed when a review
-//!    agent is unaccounted-for; this carve-out lets that prompt fire
-//!    during an in-progress autonomous Review phase instead of
-//!    deadlocking. Checked after the shared-config carve-out. Backed by
-//!    `crate::hooks::transcript_walker::recent_phase_finalize_agent_skip`.
-//! 5. **Auto-answer** (exit 0, JSON on stdout) — when `_auto_continue`
+//! 4. **Auto-answer** (exit 0, JSON on stdout) — when `_auto_continue`
 //!    is set and the block did not fire. Answers the AskUserQuestion
 //!    with the successor skill command so phase transitions advance
 //!    even if the skill's HARD-GATE was ignored.
-//! 6. **Allow** (exit 0, stdout: `{"permissionDecision":"defer"}`) —
+//! 5. **Allow** (exit 0, stdout: `{"permissionDecision":"defer"}`) —
 //!    otherwise. The explicit defer signal tells Claude Code the hook
 //!    has no opinion on this tool call, routing it through normal
 //!    permission handling without relying on empty-stdout implicit
@@ -64,7 +54,6 @@ use crate::flow_paths::FlowPaths;
 use crate::git::{current_branch, project_root};
 use crate::hooks::transcript_walker::{
     most_recent_skill_in_user_only_set, recent_edit_blocked_on_shared_config,
-    recent_phase_finalize_agent_skip,
 };
 use crate::lock::mutate_state;
 use crate::session_metrics::home_dir_or_empty;
@@ -300,22 +289,6 @@ fn run_impl_main(
             .map(|p| recent_edit_blocked_on_shared_config(p, home))
             .unwrap_or(false);
         if allow_shared_config {
-            return HookAction::AllowWithMark(state_path);
-        }
-        // Carve-out: flow-review's Done handler fires AskUserQuestion
-        // when `phase-finalize` returns an `agents_skipped` or
-        // `required_agent_not_returned` handoff (a review agent is
-        // unaccounted-for and the user must choose retry/accept/abort).
-        // In an in-progress autonomous Review phase the block above
-        // would deadlock that prompt; this carve-out releases it when
-        // the transcript shows the recent handoff. Checked after the
-        // shared-config branch; all three carve-outs produce the same
-        // AllowWithMark outcome.
-        let allow_agent_skip = transcript_path
-            .as_deref()
-            .map(|p| recent_phase_finalize_agent_skip(p, home))
-            .unwrap_or(false);
-        if allow_agent_skip {
             return HookAction::AllowWithMark(state_path);
         }
         // `set_blocked` is intentionally not called — the hook

@@ -595,10 +595,7 @@ status in your response (not via Bash) inside a single fenced code block:
 The summary already includes the feature name, prompt, PR: <pr_url>,
 per-phase timeline (Start:, Plan:, Code:, Review:, Learn:,
 Complete:, Total:), Review Findings and Learn Findings sections
-(each finding with its outcome marker and reasoning), the Skipped
-Agents section (one line per review agent that flow-review or
-flow-learn could not run, naming the agent, its skip reason, and the
-phase — omitted when no phase carries skipped agents), the Token Cost
+(each finding with its outcome marker and reasoning), the Token Cost
 section (per-phase token totals + cost in USD, plus a Total row; an
 optional By Model breakdown when 2+ models contributed; an optional
 "↻" marker and footer note when a rate-limit window reset was

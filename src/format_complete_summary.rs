@@ -440,53 +440,6 @@ fn phase_findings_section(findings: &[Value], phase_key: &str, section_title: &s
     lines
 }
 
-/// Render the Skipped Agents section for the Complete Done banner.
-///
-/// Iterates `PHASE_ORDER` and reads `phases.<phase>.agents_skipped` —
-/// the array of `{agent, reason, timestamp}` entries that
-/// `bin/flow add-skipped-agent` appends when flow-review or
-/// flow-learn records a review agent it could not run. Each entry
-/// renders as one line naming the agent, the skip reason, and the
-/// phase. Returns an empty Vec when no phase carries skipped agents
-/// so the caller omits the section.
-///
-/// Malformed state is tolerated, not trusted: a non-array
-/// `agents_skipped` value skips that phase, and an entry missing
-/// `agent` or `reason` renders an empty string for the absent field
-/// per `.claude/rules/state-files.md` "Corruption Resilience".
-fn skipped_agents_section(state: &Value) -> Vec<String> {
-    let names = phase_config::phase_names();
-    let phases = state.get("phases").and_then(|p| p.as_object());
-
-    let mut entry_lines: Vec<String> = Vec::new();
-    for &key in PHASE_ORDER {
-        let Some(skipped) = phases
-            .and_then(|p| p.get(key))
-            .and_then(|phase| phase.get("agents_skipped"))
-            .and_then(|v| v.as_array())
-        else {
-            continue;
-        };
-        let phase_name = names.get(key).map(|s| s.as_str()).unwrap_or(key);
-        for entry in skipped {
-            let agent = entry.get("agent").and_then(|v| v.as_str()).unwrap_or("");
-            let reason = entry.get("reason").and_then(|v| v.as_str()).unwrap_or("");
-            entry_lines.push(format!("    {} — {} ({})", agent, reason, phase_name));
-        }
-    }
-
-    if entry_lines.is_empty() {
-        return Vec::new();
-    }
-
-    let mut lines = Vec::new();
-    lines.push("  Skipped Agents".to_string());
-    lines.push(format!("  {}", "─".repeat(28)));
-    lines.extend(entry_lines);
-    lines.push(String::new());
-    lines
-}
-
 /// Build the Complete phase Done banner from state dict.
 pub fn format_complete_summary(state: &Value, closed_issues: Option<&[Value]>) -> SummaryResult {
     let names = phase_config::phase_names();
@@ -573,13 +526,8 @@ pub fn format_complete_summary(state: &Value, closed_issues: Option<&[Value]>) -
         lines.extend(learn_lines);
     }
 
-    // Skipped Agents section (between Findings and Token Cost) —
-    // empty when no phase carries `agents_skipped` entries.
-    let skipped_lines = skipped_agents_section(state);
-    lines.extend(skipped_lines);
-
-    // Token Cost section (between Skipped Agents and Artifacts) —
-    // empty when no phase carries window snapshot data per
+    // Token Cost section (between Findings and Artifacts) — empty when
+    // no phase carries window snapshot data per
     // `docs/reference/flow-state-schema.md` "Window Snapshot".
     let token_lines = token_cost_section(state);
     lines.extend(token_lines);

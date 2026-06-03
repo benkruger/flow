@@ -47,15 +47,6 @@ pub struct Args {
     /// PR URL for Slack notification (used when creating a new thread, i.e. Start phase)
     #[arg(long = "pr-url")]
     pub pr_url: Option<String>,
-
-    /// Accept and proceed when `phases.<phase>.agents_skipped` is
-    /// non-empty. Without this flag, phase-finalize returns
-    /// `{"status":"error","reason":"agents_skipped",...}` so the
-    /// caller surfaces the skipped list to the user before
-    /// advancing. Populated by `bin/flow add-skipped-agent` during
-    /// flow-review's failure-classification logic.
-    #[arg(long = "accept-skipped-agents")]
-    pub accept_skipped_agents: bool,
 }
 
 /// Main-arm wrapper: resolves real `root` and `cwd` then delegates to
@@ -166,16 +157,15 @@ pub fn run_impl(
 
     // Single state mutation: phase_complete + optional slack record.
     let result_holder = std::cell::RefCell::new(Value::Null);
-    // agents_skipped gate response — populated from inside the
+    // Required-agents gate response — populated from inside the
     // `mutate_state` closure when the gate fires under the exclusive
     // file lock. Reading the field there (rather than in a separate
     // `fs::read_to_string` above) eliminates the TOCTOU window where
-    // a concurrent `bin/flow add-skipped-agent` could write between
-    // the gate's read and `mutate_state`'s read.
+    // the PreToolUse:Agent recorder could write `agents_returned`
+    // between the gate's read and `mutate_state`'s read.
     let gate_response: std::cell::RefCell<Option<Value>> = std::cell::RefCell::new(None);
     let phase_name = args.phase.clone();
     let phase_key_for_closure = phase_key.clone();
-    let accept_skipped = args.accept_skipped_agents;
     let slack_status_is_ok = slack_result["status"] == "ok";
     let slack_ts = slack_result["ts"].as_str().unwrap_or("").to_string();
     let user_thread_ts = args.thread_ts.clone();
@@ -186,57 +176,13 @@ pub fn run_impl(
             return;
         }
 
-        // agents_skipped gate, atomic with phase_complete under the
-        // exclusive file lock. Fail closed on any shape that is not a
-        // proper array per `.claude/rules/security-gates.md` "Fail
-        // Closed When State Is Unreliable" — a non-array (string,
-        // number, object) signals state-file corruption or
-        // attempted bypass and must NOT silently advance the phase.
-        if !accept_skipped {
-            let field = &state["phases"][&phase_key_for_closure]["agents_skipped"];
-            if let Some(arr) = field.as_array() {
-                if !arr.is_empty() {
-                    *gate_response.borrow_mut() = Some(json!({
-                        "status": "error",
-                        "reason": "agents_skipped",
-                        "message": format!(
-                            "{} agents skipped during {}; pass --accept-skipped-agents to proceed",
-                            arr.len(),
-                            phase_key_for_closure
-                        ),
-                        "skipped": arr,
-                    }));
-                    return;
-                }
-            } else if !field.is_null() {
-                *gate_response.borrow_mut() = Some(json!({
-                    "status": "error",
-                    "reason": "agents_skipped",
-                    "message": format!(
-                        "phases.{}.agents_skipped has wrong type (expected array); refusing to advance phase",
-                        phase_key_for_closure
-                    ),
-                }));
-                return;
-            }
-        }
-
-        // Required-agents gate. Compose `agents_returned` (verified
-        // by `bin/flow record-agent-return`) with `agents_skipped`
-        // (verified by `bin/flow add-skipped-agent`) to confirm every
-        // required agent for this phase has been accounted for. A
-        // missing required agent is a model that did not actually
-        // invoke the agent AND did not record a skip reason — the
-        // inline-synthesis bypass the recording subcommand was
-        // designed to close.
-        //
-        // Composes with the agents_skipped gate above: when
-        // `--accept-skipped-agents` is set, the skipped-non-empty
-        // gate is bypassed but this gate still requires every
-        // required agent to appear in EITHER `agents_returned` OR
-        // `agents_skipped`. The flag means "I accept that some
-        // agents were skipped"; it does not mean "I accept that
-        // some required agents were never invoked at all".
+        // Required-agents gate. Read `agents_returned` (recorded by
+        // FLOW's PreToolUse:Agent hook when the model launches each
+        // required Review/Learn sub-agent) to confirm every required
+        // agent for this phase actually ran. A missing required agent
+        // is a phase that tried to advance before a required agent was
+        // launched — the only sanctioned signal is a real Agent tool
+        // call, which the hook records and the model cannot fabricate.
         //
         // Fail-closed per `.claude/rules/security-gates.md` "Fail
         // Closed When State Is Unreliable": a wrong-type
@@ -266,20 +212,6 @@ pub fn run_impl(
                     }
                 }
             }
-            // Re-read agents_skipped as a Vec<Value> for membership
-            // composition. Wrong-type was handled above by the
-            // agents_skipped gate (when --accept-skipped-agents is
-            // false) — when the flag IS set, a wrong-type field
-            // here is treated as "no skips" (empty set), still
-            // requiring every agent to be returned.
-            if let Some(arr) = state["phases"][&phase_key_for_closure]["agents_skipped"].as_array()
-            {
-                for entry in arr {
-                    if let Some(name) = entry.get("agent").and_then(|v| v.as_str()) {
-                        accounted.insert(name.to_string());
-                    }
-                }
-            }
             let missing: Vec<&str> = required
                 .iter()
                 .filter(|r| !accounted.contains(**r))
@@ -290,7 +222,7 @@ pub fn run_impl(
                     "status": "error",
                     "reason": "required_agent_not_returned",
                     "message": format!(
-                        "{} required agents for {} neither returned nor skipped: {:?}",
+                        "{} required agents for {} did not run (relaunch them, then re-run phase-finalize): {:?}",
                         missing.len(),
                         phase_key_for_closure,
                         missing
@@ -362,12 +294,12 @@ pub fn run_impl(
         }
     }
 
-    // Intercept the agents_skipped gate response if the closure
+    // Intercept the required-agents gate response if the closure
     // populated it. The closure returned without invoking
     // phase_complete, so result_holder is null — return the gate
     // envelope directly. The phase's `in_progress` status is
-    // preserved (no state mutation ran), so the caller can retry the
-    // skipped agents.
+    // preserved (no state mutation ran), so the caller can relaunch
+    // the missing agents and re-run phase-finalize.
     if let Some(gate) = gate_response.into_inner() {
         return Ok(gate);
     }

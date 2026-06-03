@@ -15,6 +15,7 @@
 mod common;
 
 mod agent_prompt_scan;
+mod agent_run_record;
 mod capture_session;
 mod dispatcher;
 mod post_compact;

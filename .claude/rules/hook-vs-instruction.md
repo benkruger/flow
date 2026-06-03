@@ -184,6 +184,21 @@ insufficient:
   `src/hooks/agent_prompt_scan.rs` and
   `.claude/rules/cognitive-isolation.md` "Retry-prompt
   path-scoping constraint".
+- **PreToolUse:Agent required-agent recording** —
+  `validate-pretool`'s Agent branch calls
+  `agent_run_record::record_agent_run` after the prompt scan
+  passes and before the call is allowed. When the launched
+  `subagent_type` (normalized to the `flow:<name>` form)
+  matches a required agent for the active in-progress phase,
+  it records the run into `phases.<phase>.agents_returned`
+  (set-semantics) so `phase-finalize`'s required-agents gate
+  has unforgeable evidence the agent was launched — only a
+  real Agent tool call reaches this code, so the model cannot
+  fabricate the record by synthesizing a CLI invocation. This
+  is a recorder, not a blocking gate: it is fail-open and
+  never blocks the Agent launch (missing/corrupt state,
+  invalid branch, non-matching subagent, or non-`in_progress`
+  phase records nothing). See `src/hooks/agent_run_record.rs`.
 - **Autonomous-flow-strict response shape on blocked paths** —
   `validate-worktree-paths::validate()` checks
   `crate::flow_paths::is_autonomous_flow_active(project_root,
@@ -212,7 +227,7 @@ insufficient:
 - **`AskUserQuestion` during an autonomous in-progress phase**
   — `validate-ask-user` rejects with exit 2 when
   `phases.<current_phase>.status == "in_progress"` AND
-  `skills.<current_phase>.continue == "auto"`. Three carve-outs
+  `skills.<current_phase>.continue == "auto"`. Two carve-outs
   suppress the block:
     - **User-only-skill carve-out**: when the most recent
       assistant Skill tool_use call (since the most recent
@@ -239,21 +254,6 @@ insufficient:
       carve-out is checked first. See
       `.claude/rules/autonomous-phase-discipline.md`
       "Shared-Config Carve-Out".
-    - **Agent-skip-handoff carve-out**: when the most recent
-      user-role turn carries a `phase-finalize` agent-skip
-      handoff (a `tool_result` whose content contains the
-      reason substring `agents_skipped` or
-      `required_agent_not_returned`), the block is suppressed
-      so flow-review's Done-handler `AskUserQuestion` — which
-      asks the user how to proceed when a review agent is
-      recorded in neither `agents_returned` nor
-      `agents_skipped` — can fire instead of deadlocking the
-      autonomous Review phase. phase-finalize returns these
-      business errors with exit 0, so the tool_result's
-      `is_error` is false; the carve-out scans every
-      tool_result regardless of the flag. Checked after the
-      shared-config carve-out. Backed by
-      `crate::hooks::transcript_walker::recent_phase_finalize_agent_skip`.
 - **Autonomous Stop refusal** — `stop_continue::run` composes
   three predicates in order: `check_in_progress_utility_skill`
   (refuses turn-end when a multi-step utility skill marker

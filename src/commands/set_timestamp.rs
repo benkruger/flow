@@ -32,11 +32,10 @@ pub fn is_step_counter_field(field: &str) -> bool {
 ///
 /// Numeric path segments are treated as array indexes (0-based).
 /// Missing intermediate object keys are auto-vivified as empty
-/// objects, so a dot-path can create the nesting it needs. This
-/// serves the per-agent retry counter at
-/// `phases.<phase>.agent_retry_counts.<agent>`, whose
-/// `agent_retry_counts` segment is absent from the state file
-/// until its first write.
+/// objects, so a dot-path can create the nesting it needs even when
+/// an intermediate segment is absent from the state file until its
+/// first write — a path of the shape `phases.<phase>.<section>.<key>`
+/// creates the `<section>` object before setting `<key>`.
 /// Present-but-wrong-type intermediates (a string, number, bool, or
 /// null where an object or array is expected) and out-of-range array
 /// indices still error.

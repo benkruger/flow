@@ -574,7 +574,6 @@ fn phase_finalize_test_args(
         branch: branch.to_string(),
         thread_ts: thread_ts.map(|s| s.to_string()),
         pr_url: pr_url.map(|s| s.to_string()),
-        accept_skipped_agents: false,
     }
 }
 
@@ -1079,170 +1078,19 @@ fn run_impl_main_covers_production_binding() {
         branch: "nonexistent-branch-for-cov".to_string(),
         thread_ts: None,
         pr_url: None,
-        accept_skipped_agents: false,
     };
     let _ = run_impl_main(&args);
 }
 
-// --- agents_skipped gate (Tasks 14-16) ---
-
-/// Seed `phases.<phase>.agents_skipped` on the existing state file so
-/// the agents_skipped gate has an observable input. The helper does
-/// not change other phase fields so the rest of phase-finalize's
-/// downstream logic stays in its `in_progress` posture.
+/// Seed `phases.<phase>.agents_skipped` on the existing state file.
+/// `agents_skipped` is no longer read by phase-finalize; this helper
+/// survives so the required-agents gate test can prove a skipped entry
+/// does NOT satisfy the gate.
 fn seed_agents_skipped(root: &std::path::Path, branch: &str, phase: &str, entries: Value) {
     let path = root.join(".flow-states").join(branch).join("state.json");
     let mut state: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     state["phases"][phase]["agents_skipped"] = entries;
     fs::write(&path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
-}
-
-#[test]
-fn phase_finalize_rejects_when_agents_skipped_non_empty() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    phase_finalize_write_state(root, "skipped-branch", "flow-review");
-    seed_agents_skipped(
-        root,
-        "skipped-branch",
-        "flow-review",
-        json!([{
-            "agent": "reviewer",
-            "reason": "rate_limit",
-            "timestamp": "2026-01-01T00:00:00-08:00"
-        }]),
-    );
-
-    let args = phase_finalize_test_args("flow-review", "skipped-branch", None, None);
-    let result = run_impl(root, root, &args).expect("run_impl returns Ok envelope");
-
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["reason"], "agents_skipped");
-    let skipped = result["skipped"]
-        .as_array()
-        .expect("skipped array in error");
-    assert_eq!(skipped.len(), 1);
-    assert_eq!(skipped[0]["agent"], "reviewer");
-    assert!(result["message"]
-        .as_str()
-        .unwrap()
-        .contains("agents skipped"));
-
-    // The gate must short-circuit before phase_complete runs — the
-    // phase status must remain in_progress so the caller can retry.
-    let state = phase_finalize_read_state(root, "skipped-branch");
-    assert_eq!(state["phases"]["flow-review"]["status"], "in_progress");
-}
-
-#[test]
-fn phase_finalize_accepts_when_accept_skipped_agents_flag_set() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    phase_finalize_write_state(root, "accept-branch", "flow-review");
-    seed_agents_skipped(
-        root,
-        "accept-branch",
-        "flow-review",
-        json!([{
-            "agent": "pre-mortem",
-            "reason": "api_error",
-            "timestamp": "2026-01-01T00:00:00-08:00"
-        }]),
-    );
-
-    let mut args = phase_finalize_test_args("flow-review", "accept-branch", None, None);
-    args.accept_skipped_agents = true;
-    let result = run_impl(root, root, &args).expect("run_impl returns Ok envelope");
-
-    assert_eq!(result["status"], "ok");
-    assert!(result["formatted_time"].is_string());
-    assert!(result["continue_action"].is_string());
-
-    // Phase completion mutated state as usual.
-    let state = phase_finalize_read_state(root, "accept-branch");
-    assert_eq!(state["phases"]["flow-review"]["status"], "complete");
-}
-
-#[test]
-fn phase_finalize_rejects_when_agents_skipped_is_wrong_type() {
-    // Per `.claude/rules/security-gates.md` "Fail Closed When State
-    // Is Unreliable" and `.claude/rules/state-files.md` "Corruption
-    // Resilience": a `phases.<phase>.agents_skipped` field whose
-    // type is not an array (e.g. string, integer, object) must
-    // fail-closed rather than silently advance the phase. A
-    // corrupted or hand-edited state file can produce this shape.
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    phase_finalize_write_state(root, "wrong-type", "flow-review");
-    seed_agents_skipped(
-        root,
-        "wrong-type",
-        "flow-review",
-        json!("rate_limit_was_hit"),
-    );
-
-    let args = phase_finalize_test_args("flow-review", "wrong-type", None, None);
-    let result = run_impl(root, root, &args).expect("run_impl returns Ok envelope");
-
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["reason"], "agents_skipped");
-    assert!(result["message"].as_str().unwrap().contains("wrong type"));
-
-    // The gate must short-circuit before phase_complete runs.
-    let state = phase_finalize_read_state(root, "wrong-type");
-    assert_eq!(state["phases"]["flow-review"]["status"], "in_progress");
-}
-
-#[test]
-fn phase_finalize_agents_skipped_gate_normalizes_mixed_case_phase() {
-    // Per `.claude/rules/security-gates.md` "Normalize Before
-    // Comparing": gate inputs that compare against state-file
-    // canonical lowercase phase keys must be normalized first. A
-    // mixed-case `--phase "Flow-Review"` must still find the
-    // canonical `phases.flow-review.agents_skipped` array and fire
-    // the gate.
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    phase_finalize_write_state(root, "mixed-case", "flow-review");
-    seed_agents_skipped(
-        root,
-        "mixed-case",
-        "flow-review",
-        json!([{
-            "agent": "reviewer",
-            "reason": "rate_limit",
-            "timestamp": "2026-01-01T00:00:00-08:00"
-        }]),
-    );
-
-    // Caller passes Mixed-case phase string; canonical state key is
-    // lowercase.
-    let args = phase_finalize_test_args("Flow-Review", "mixed-case", None, None);
-    let result = run_impl(root, root, &args).expect("run_impl returns Ok envelope");
-
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["reason"], "agents_skipped");
-}
-
-#[test]
-fn phase_finalize_unaffected_when_agents_skipped_empty() {
-    // Empty array AND missing field both pass through — the gate only
-    // fires when at least one entry is present.
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    phase_finalize_write_state(root, "empty-array", "flow-review");
-    seed_agents_skipped(root, "empty-array", "flow-review", json!([]));
-
-    let args = phase_finalize_test_args("flow-review", "empty-array", None, None);
-    let result = run_impl(root, root, &args).expect("run_impl returns Ok envelope");
-    assert_eq!(result["status"], "ok");
-
-    // Sibling case: state without an agents_skipped field at all
-    // (every existing test fixture is this shape).
-    phase_finalize_write_state(root, "no-field", "flow-review");
-    let args2 = phase_finalize_test_args("flow-review", "no-field", None, None);
-    let result2 = run_impl(root, root, &args2).expect("run_impl returns Ok envelope");
-    assert_eq!(result2["status"], "ok");
 }
 
 #[test]
@@ -1300,13 +1148,12 @@ fn skipped_entry(agent: &str, reason: &str) -> Value {
 }
 
 #[test]
-fn phase_finalize_rejects_when_required_agents_neither_returned_nor_skipped() {
+fn phase_finalize_rejects_when_required_agents_not_returned() {
     // flow-review requires {reviewer, pre-mortem, adversarial,
-    // documentation}. State has no agents_returned and no
-    // agents_skipped — every required agent is missing. The gate
-    // must short-circuit before phase_complete with reason
-    // required_agent_not_returned and an enumerated `missing`
-    // array.
+    // documentation}. State has no agents_returned — every required
+    // agent is missing. The gate must short-circuit before
+    // phase_complete with reason required_agent_not_returned and an
+    // enumerated `missing` array.
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     phase_finalize_write_state(root, "missing-all", "flow-review");
@@ -1416,18 +1263,19 @@ fn phase_finalize_passes_when_all_required_agents_returned() {
 }
 
 #[test]
-fn phase_finalize_passes_when_all_required_agents_skipped_with_flag() {
-    // Every required agent appears in agents_skipped; --accept-skipped-agents
-    // bypasses the agents_skipped non-empty gate. The required-agents
-    // gate composes both fields and finds every required agent
-    // accounted-for (via the skipped path), so the phase advances.
+fn phase_finalize_rejects_when_only_agents_skipped_present() {
+    // Every required agent appears in agents_skipped but none in
+    // agents_returned. The gate reads ONLY agents_returned now — a
+    // skip recorded by any means does NOT satisfy a required-agent
+    // phase. The phase must not advance; the missing array names every
+    // required agent.
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    phase_finalize_write_state(root, "all-skipped", "flow-review");
-    clear_agents_returned(root, "all-skipped", "flow-review");
+    phase_finalize_write_state(root, "only-skipped", "flow-review");
+    clear_agents_returned(root, "only-skipped", "flow-review");
     seed_agents_skipped(
         root,
-        "all-skipped",
+        "only-skipped",
         "flow-review",
         json!([
             skipped_entry("reviewer", "rate_limit"),
@@ -1437,46 +1285,17 @@ fn phase_finalize_passes_when_all_required_agents_skipped_with_flag() {
         ]),
     );
 
-    let mut args = phase_finalize_test_args("flow-review", "all-skipped", None, None);
-    args.accept_skipped_agents = true;
+    let args = phase_finalize_test_args("flow-review", "only-skipped", None, None);
     let result = run_impl(root, root, &args).expect("run_impl returns Ok envelope");
-    assert_eq!(result["status"], "ok");
+    assert_eq!(result["status"], "error");
+    assert_eq!(result["reason"], "required_agent_not_returned");
+    let missing = result["missing"]
+        .as_array()
+        .expect("missing array in error envelope");
+    assert_eq!(missing.len(), 4, "agents_skipped must not satisfy the gate");
 
-    let state = phase_finalize_read_state(root, "all-skipped");
-    assert_eq!(state["phases"]["flow-review"]["status"], "complete");
-}
-
-#[test]
-fn phase_finalize_passes_when_required_agents_split_between_returned_and_skipped() {
-    // Two agents returned, two skipped (with --accept-skipped-agents).
-    // The gate composes both fields — every required agent is
-    // accounted-for, so the phase advances.
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    phase_finalize_write_state(root, "split-coverage", "flow-review");
-    seed_agents_returned(
-        root,
-        "split-coverage",
-        "flow-review",
-        json!([returned_entry("reviewer"), returned_entry("pre-mortem"),]),
-    );
-    seed_agents_skipped(
-        root,
-        "split-coverage",
-        "flow-review",
-        json!([
-            skipped_entry("adversarial", "rate_limit"),
-            skipped_entry("documentation", "api_error"),
-        ]),
-    );
-
-    let mut args = phase_finalize_test_args("flow-review", "split-coverage", None, None);
-    args.accept_skipped_agents = true;
-    let result = run_impl(root, root, &args).expect("run_impl returns Ok envelope");
-    assert_eq!(result["status"], "ok");
-
-    let state = phase_finalize_read_state(root, "split-coverage");
-    assert_eq!(state["phases"]["flow-review"]["status"], "complete");
+    let state = phase_finalize_read_state(root, "only-skipped");
+    assert_eq!(state["phases"]["flow-review"]["status"], "in_progress");
 }
 
 #[test]
@@ -1497,16 +1316,14 @@ fn phase_finalize_no_required_agents_gate_for_non_review_learn_phases() {
 
 #[test]
 fn phase_finalize_required_agents_gate_skips_entries_without_agent_field() {
-    // Malformed entries in agents_returned / agents_skipped (missing
-    // the `agent` field) must not be treated as accounted-for. The
-    // gate's `if let Some(name) = entry.get("agent")...` branch
-    // tolerates the malformed entry by skipping it; the gate
-    // composes only the valid entries.
+    // A malformed entry in agents_returned (missing the `agent`
+    // field) must not be treated as accounted-for. The gate's
+    // `if let Some(name) = entry.get("agent")...` branch tolerates the
+    // malformed entry by skipping it; the four valid entries still
+    // cover every required agent, so the phase advances.
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     phase_finalize_write_state(root, "malformed-entries", "flow-review");
-    // Replace the preset with 4 valid entries plus one malformed
-    // (no agent field). agents_skipped also has a malformed entry.
     seed_agents_returned(
         root,
         "malformed-entries",
@@ -1519,15 +1336,8 @@ fn phase_finalize_required_agents_gate_skips_entries_without_agent_field() {
             returned_entry("documentation"),
         ]),
     );
-    seed_agents_skipped(
-        root,
-        "malformed-entries",
-        "flow-review",
-        json!([{"timestamp": "2026-01-01T00:00:00-08:00"}]),
-    );
 
-    let mut args = phase_finalize_test_args("flow-review", "malformed-entries", None, None);
-    args.accept_skipped_agents = true;
+    let args = phase_finalize_test_args("flow-review", "malformed-entries", None, None);
     let result = run_impl(root, root, &args).expect("run_impl returns Ok envelope");
     assert_eq!(result["status"], "ok");
 }

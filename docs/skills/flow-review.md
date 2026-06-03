@@ -68,18 +68,18 @@ budget stays bounded on moderately-sized PRs.
 All four `Agent` launches go in a single response with no intervening
 tool call — no Bash, Read, Grep, Skill, or fifth `Agent` call —
 between the first agent's launch and the fourth agent's return.
-Per-agent classify-and-record calls (`record-agent-return`,
-`add-skipped-agent`) run only after all four agents have returned;
-interleaving them between launches serializes the four agents instead
-of running them as one concurrent batch.
+Each launch is recorded into `phases.flow-review.agents_returned` by
+the `PreToolUse:Agent` hook (`src/hooks/agent_run_record.rs`) — the
+Agent tool call itself is the evidence the agent ran — so no
+per-agent record call runs between launches.
 
 After agents return, the skill classifies each response in priority
-order: truncation first (re-invoke with narrower partition), external
-failure second (record via `bin/flow add-skipped-agent` with one of
-`rate_limit`, `api_error`, `other`), normal completion otherwise.
-When any agent is recorded as skipped, `phase-finalize` refuses to
-advance until the user passes `--accept-skipped-agents` to
-acknowledge the partial coverage.
+order: truncation first (re-invoke with a narrower partition),
+external failure second (re-invoke once, then note the failure and
+proceed), normal completion otherwise. `phase-finalize` gates on
+`phases.flow-review.agents_returned`: it refuses to advance with
+`required_agent_not_returned` naming any required agent that was never
+launched, and the recovery is to re-launch that agent.
 
 After agents return, the skill checks each high-investigation agent
 (reviewer, learn-analyst, documentation) for the literal
@@ -162,4 +162,4 @@ even when the working directory drifted between invocations.
 - `bin/flow ci` must be green after all fixes
 - `bin/flow ci` must be green before transitioning to Learn
 - Can return to Code
-- If any agent is recorded as skipped (`rate_limit`, `api_error`, or `other`), `bin/flow phase-finalize` refuses to advance until `--accept-skipped-agents` is passed. The skipped entries remain in state for the Learn-phase audit. See `docs/reference/flow-state-schema.md` "Agents-Skipped Gate" for the JSON contract.
+- `bin/flow phase-finalize` refuses to advance with `required_agent_not_returned` when any required agent (`reviewer`, `pre-mortem`, `adversarial`, `documentation`) was never launched — `agents_returned` is written by the `PreToolUse:Agent` hook at launch time. The recovery is to re-launch the missing agent. See `docs/reference/flow-state-schema.md` "Required-Agents Gate" for the JSON contract.

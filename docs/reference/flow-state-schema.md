@@ -162,104 +162,52 @@ Each phase entry has identical fields regardless of status.
 | `window_at_enter` | object / absent | Account-window snapshot captured on phase entry. See [Window Snapshot](#window-snapshot). Absent until phase entry runs or when capture failed. |
 | `window_at_complete` | object / absent | Account-window snapshot captured on phase finalize. See [Window Snapshot](#window-snapshot). Absent until phase finalize runs. |
 | `step_snapshots` | array | Array of [Step Snapshots](#step-snapshot) appended on each step-counter increment (`code_task`, `review_step`, `learn_step`, `complete_step`). Empty until the phase begins incrementing its step counter. Bounded by step count per phase (typically <30 entries; up to ~10 KB for a long Code phase). |
-| `agents_skipped` | array / absent | Review-only and Learn-only. Entries of `{agent: string, reason: string, timestamp: ISO 8601}` appended by `bin/flow add-skipped-agent` when the calling skill's failure classification detects an agent returned an external-failure marker OR exhausted the retry cap. `reason` is a positive allowlist: `rate_limit`, `api_error`, `other`, or `exhausted_retries`. Absent on every phase except `flow-review` / `flow-learn`, and absent on runs that complete with no skipped agents. Consumed by `phase-finalize`'s `agents_skipped` gate AND the required-agents gate — see below. |
-| `agents_returned` | array / absent | Review-only and Learn-only. Entries of `{agent: string, timestamp: ISO 8601}` appended by `bin/flow record-agent-return` after the calling skill's Class 3 (Normal completion) classification. The recording subcommand reads the persisted Claude Code transcript and confirms an Agent tool_use/tool_result pair exists for `subagent_type: "flow:<agent>"` after the most recent `phase-enter --phase <phase>` Bash marker — closing the inline-synthesis bypass where a model could write findings without actually invoking the agent. Consumed by `phase-finalize`'s required-agents gate — see below. |
-| `agent_retry_counts` | object / absent | Review-only and Learn-only. Map of `<agent_name> -> count` (`0..=3`). The calling skill increments this counter via `bin/flow set-timestamp` when an agent's tool_result triggers Class 1 (truncation), Class 2 (external failure), or recording failure. When the counter reaches 3, the skill records the agent in `agents_skipped` with reason `exhausted_retries`. Absent on phases that don't invoke sub-agents. |
-
-### Agents-Skipped Gate
-
-`bin/flow phase-finalize --phase flow-review` gates on the
-`agents_skipped` array. When the array is non-empty AND
-`--accept-skipped-agents` is absent, the command returns:
-
-```json
-{
-  "status": "error",
-  "reason": "agents_skipped",
-  "skipped": [{"agent": "reviewer", "reason": "rate_limit", "timestamp": "..."}],
-  "message": "<count> agents skipped during flow-review; pass --accept-skipped-agents to proceed"
-}
-```
-
-The gate runs after the state-file existence check and before
-any state mutation, so a rejection leaves the phase in
-`in_progress` for caller retry. Pass `--accept-skipped-agents`
-to bypass the gate; the skipped entries remain in state for the
-Learn-phase audit.
+| `agents_returned` | array / absent | Review-only and Learn-only. Entries of `{agent: string, timestamp: ISO 8601}` appended by the `PreToolUse:Agent` hook (`src/hooks/agent_run_record.rs`) when a required Review/Learn sub-agent is launched. The Agent tool launch is itself the evidence the agent ran — only a real Agent tool call reaches the hook, so a model cannot fabricate the record by synthesizing a CLI invocation. Set-semantics: each required agent appears at most once. Absent on every phase except `flow-review` / `flow-learn`, and absent until the first required agent is launched. Consumed by `phase-finalize`'s required-agents gate — see below. |
 
 ### Required-Agents Gate
 
-`bin/flow phase-finalize` also gates on the union of
-`agents_returned` and `agents_skipped` against the per-phase
-`REQUIRED_AGENTS` constant (`src/required_agents.rs`):
+`bin/flow phase-finalize` gates on `phases.<phase>.agents_returned`
+against the per-phase `REQUIRED_AGENTS` constant
+(`src/required_agents.rs`):
 
 - `flow-review` requires `{reviewer, pre-mortem, adversarial, documentation}`
 - `flow-learn` requires `{learn-analyst}`
 - All other phases have no required agents and bypass this gate
 
-The gate computes `missing = required \ (returned ∪ skipped)` and
-refuses the phase when `missing` is non-empty:
+The gate computes `missing = required \ returned` and refuses the
+phase when `missing` is non-empty:
 
 ```json
 {
   "status": "error",
   "reason": "required_agent_not_returned",
   "missing": ["adversarial", "documentation"],
-  "message": "<count> required agents for flow-review neither returned nor skipped: [...]"
+  "message": "<count> required agents for flow-review did not run: [...]"
 }
 ```
 
 Fail-closed on wrong-type `agents_returned`: when the field is
 present but not an array (string, number, object), the gate
 refuses the phase with the same `required_agent_not_returned`
-reason. This composes with the `agents_skipped` gate: when
-`--accept-skipped-agents` is set, the skipped-non-empty gate is
-bypassed but the required-agents gate still requires every
-required agent to appear in EITHER `agents_returned` OR
-`agents_skipped`. Malformed entries (missing the `agent` field)
-are skipped during the composition; only entries with a valid
-`agent` string contribute to the accounted-for set.
+reason. Malformed entries (missing the `agent` field) are skipped
+during the composition; only entries with a valid `agent` string
+contribute to the accounted-for set. Recovery when the gate
+refuses: re-launch the missing agent(s), then re-run
+`phase-finalize`.
 
-### Required-Agents Gate v1 Boundaries
+### Required-Agents Gate v1 Boundary
 
 The required-agents gate is the load-bearing protection against
-"model fabricates findings without invoking the agent." Two v1
-limitations are documented here so consumers know which surfaces
-the gate covers and which it does not:
-
-**Skip reasons are procedural, not transcript-verified.**
-`bin/flow add-skipped-agent` writes the entry unconditionally
-when the reason normalizes to one of `rate_limit`, `api_error`,
-`other`, `exhausted_retries`. A model that calls
-`add-skipped-agent --reason exhausted_retries` without actually
-exhausting three retries satisfies the `agents_skipped` half of
-the gate the same way a legitimate `api_error` entry does.
-Exhausted and skipped agents surface to the user in the Complete
-Done banner's Skipped Agents section, sourced from
-`phases.<phase>.agents_skipped`. Procedural enforcement of the
-retry cap lives in the calling SKILL.md's retry-3-then-skip loop.
-A future PR may mechanically gate `exhausted_retries` against
-`phases.<phase>.agent_retry_counts.<agent> >= 3`; that
-tightening is out of scope for v1.
-
-**Cross-session transcript contamination.**
-`bin/flow record-agent-return` reads `session_id` and
-`transcript_path` from the per-branch state file and walks the
-JSONL at that path for the LAST `bin/flow phase-enter --phase
-<phase>` marker. Two flows running in the SAME Claude Code
-session (the user opened a second worktree in the same session
-and ran `flow-start` on a different branch) share the same
-transcript path. Each branch's state file records the same
-`session_id`. When both branches enter `flow-review` in the same
-session, the verifier's "LAST phase-enter --phase flow-review"
-scan may anchor on the OTHER branch's marker, accepting or
-rejecting an agent invocation against the wrong scan window.
-The typical usage pattern — one Claude Code session per
-worktree (distinct terminal windows) — produces distinct
-`session_id`s, isolating the transcripts. A future PR may
-extend the phase-enter marker to include the branch name so the
-verifier's scan is branch-scoped; that tightening is out of
-scope for v1.
+"model fabricates findings without invoking the agent." Because
+`agents_returned` is written by the `PreToolUse:Agent` hook at
+launch time, the gate confirms the agent was *launched* — a real
+Agent tool call the model cannot synthesize — not that it ran to
+completion. A launched agent that truncates mid-run is still
+recorded; the calling skill's `END-OF-FINDINGS` marker check is
+what detects truncation and re-launches. The recorder derives
+the branch from `cwd` and writes only the current branch's state
+file, so two flows in the same Claude Code session never
+cross-record.
 
 ---
 

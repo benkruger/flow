@@ -91,7 +91,7 @@ The full step sequence and JSON status handling live in `skills/flow-start/SKILL
 
 - State file schema reference: `docs/reference/flow-state-schema.md`
 - Test fixtures: `tests/common/mod.rs` helpers
-- **Claude never computes timestamps, time differences, or counter increments.** All standard state mutations go through `bin/flow` commands (`phase-enter`, `phase-finalize`, `phase-transition`, `set-timestamp`, `add-finding`, `add-skipped-agent`, `record-agent-return`, `clear-halt`, `approve-shared-config`, `confirm-merge`).
+- **Claude never computes timestamps, time differences, or counter increments.** All standard state mutations go through `bin/flow` commands (`phase-enter`, `phase-finalize`, `phase-transition`, `set-timestamp`, `add-finding`, `clear-halt`, `approve-shared-config`, `confirm-merge`).
 - Plan handoff: `bin/flow plan-from-issue --issue <N> --branch <name>` extracts content between `<!-- FLOW-PLAN-BEGIN -->` and `<!-- FLOW-PLAN-END -->` sentinels in the issue body and writes it to `.flow-states/<branch>/plan.md`. Skills that produce decomposed-issue plan bodies (whether filing new issues or editing existing ones in place) wrap the plan content in these sentinels automatically.
 
 ## Architecture References
@@ -113,6 +113,7 @@ Module-level doc comments in `src/*.rs` describe each file's purpose. Discover v
 Permanent on-main artifacts that future-session readers should know about by name + one-line purpose. Architecture detail lives in each artifact's module doc comment.
 
 - `src/hooks/agent_prompt_scan.rs` — scans Agent tool prompts for out-of-worktree path tokens during active flows and blocks the Agent call before a sub-agent Read would surface a permission prompt.
+- `src/hooks/agent_run_record.rs` — PreToolUse:Agent recorder; when a required Review/Learn sub-agent is launched it records the run into `phases.<phase>.agents_returned` (the Agent launch is unforgeable evidence the model cannot fabricate), so `phase-finalize`'s required-agents gate reads `agents_returned` alone.
 - `src/pricing.rs` — model→per-token USD price table; `cost_for(model, &ModelTokens)` derives per-phase and month-to-date cost from captured token counts, so cost has one source and one capture instant.
 - `bin/flow write-session-cost` (`src/write_session_cost.rs`) — SessionStart hook subcommand that writes the active session's token-derived cost to `.claude/cost/<YYYY-MM>/<session_id>` so month-to-date spend reconciles with the token counts.
 - `src/wait_for_release_ci.rs` — `bin/flow wait-for-release-ci` polls the latest integration-branch GitHub Actions run for the current HEAD with a bounded real-sleep loop until it reaches a terminal conclusion, so flow-release reads the CI result from a single bounded command.

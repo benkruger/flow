@@ -8031,9 +8031,10 @@ fn validate_pretool_escape_hatch_messages_cite_rule() {
 // --- REQUIRED_AGENTS ↔ SKILL.md binding ---
 
 /// `flow_rs::required_agents::REQUIRED_AGENTS` is the authoritative
-/// per-phase required-agent set the `phase-finalize` gate composes
-/// against `agents_returned` / `agents_skipped`. This contract test
-/// binds the constant to the matching SKILL.md invocation set: a
+/// per-phase required-agent set the `phase-finalize` gate checks
+/// against `agents_returned` (recorded by the PreToolUse:Agent
+/// hook on each launch). This contract test binds the constant to
+/// the matching SKILL.md invocation set: a
 /// SKILL.md edit that adds, removes, or renames an
 /// `subagent_type: "flow:<name>"` invocation without updating the
 /// constant fails CI.
@@ -8063,17 +8064,14 @@ fn required_agents_matches_skill_invocations() {
 /// flow-review Step 2's launch HARD-GATE must forbid tool calls
 /// between the first agent's launch and the fourth agent's return,
 /// and Step 2 must keep the post-launch anchor that marks where
-/// classify-and-record work resumes.
+/// classification resumes.
 ///
 /// Regression guarded: a future Step 2 edit reorders, removes,
 /// rewords, inverts, or fragments the cross-launch-window
-/// prohibition, letting the model interleave per-agent
-/// `record-agent-return` / `set-timestamp --set agent_retry_counts`
-/// / `add-skipped-agent` calls between agent launches. Step 2's
-/// `### Per-agent accounting` subsection reads as a per-agent
-/// narrative, so without the explicit gate the model's most
-/// mechanical reading of Step 2 is launch-wait-classify-record per
-/// agent — serializing four launches that are designed to run
+/// prohibition, letting the model interleave a tool call between
+/// agent launches. Reading one agent's findings before launching
+/// the next re-introduces the cross-agent bias cognitive isolation
+/// exists to break, and serializes four launches designed to run
 /// concurrently.
 ///
 /// Code path: a refactor of Step 2 that reorders, removes, or
@@ -8088,11 +8086,11 @@ fn required_agents_matches_skill_invocations() {
 /// Assertion strength: substring-presence checks alone are
 /// bypassable — a permissive reword keeps the substrings, and
 /// fragmented incidental mentions of the endpoints keep them too.
-/// The assertions below pin a prohibition keyword, the contiguous
-/// launch-window phrase, and the concrete `record-agent-return`
-/// call name — and anchor the gate slice to the launch directive
-/// rather than gate position, so reordering Step 2's two HARD-GATE
-/// blocks cannot redirect the assertions onto the wrong block.
+/// The assertions below pin a prohibition keyword and the
+/// contiguous launch-window phrase — and anchor the gate slice to
+/// the launch directive rather than gate position, so reordering
+/// Step 2's two HARD-GATE blocks cannot redirect the assertions
+/// onto the wrong block.
 #[test]
 fn flow_review_step_2_hard_gate_forbids_per_agent_bash_during_launch() {
     let c = common::read_skill("flow-review");
@@ -8139,14 +8137,6 @@ fn flow_review_step_2_hard_gate_forbids_per_agent_bash_during_launch() {
         "flow-review Step 2 launch HARD-GATE must name the launch window as the \
          contiguous phrase `between the first agent's launch and the fourth \
          agent's return` — see .claude/rules/cognitive-isolation.md"
-    );
-    // The concrete forbidden-action name pins the prohibition to a
-    // specific call rather than a generic `Bash` mention.
-    assert!(
-        launch_gate.contains("record-agent-return"),
-        "flow-review Step 2 launch HARD-GATE must name `record-agent-return` as \
-         a classify-and-record call forbidden during the launch window — see \
-         .claude/rules/cognitive-isolation.md"
     );
     // The protective change has a second part: the post-launch
     // anchor marking where classify-and-record work resumes. It

@@ -14,26 +14,6 @@
 //! last-writer-wins: a wrong session_id at flow-start would cause the
 //! cost lookup to fail gracefully (no cost file matches), which is no
 //! worse than the pre-fix state where session_id was always Null.
-//!
-//! After the global capture write, the hook also refreshes the active
-//! flow's `session_id` and `transcript_path` in
-//! `.flow-states/<branch>/state.json` (keyed by branch-from-cwd). The
-//! global capture file seeds NEW flows at flow-start; an already-running
-//! flow holds the pointers it captured when it started. When the Claude
-//! Code session rotates mid-flow (resume|clear|compact), the rotated
-//! transcript no longer matches the flow's stored pointer and
-//! `record-agent-return` reports `phase_marker_not_found` for every
-//! Review and Learn agent. `refresh_active_flow_session` keeps the
-//! pointer current so the verifier reads the live session's transcript.
-//!
-//! Known limitation: the refresh repoints the flow at the rotated
-//! session's transcript wholesale. A resume that lands *mid-phase* —
-//! the `phase-enter` marker in the prior session's file and the
-//! agents' tool_use/tool_result pairs in the rotated file — is not
-//! covered by the refresh alone; `verify_agent_returned_in_phase`
-//! anchors on the marker, which now sits in a file the flow no longer
-//! points at. Closing that gap needs a session-lineage union scan
-//! across the prior and rotated transcripts and is deferred.
 
 use std::fs;
 use std::io::Read;
@@ -41,9 +21,6 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
-use crate::flow_paths::FlowPaths;
-use crate::hooks::{detect_branch_from_path, is_flow_active, resolve_hook_cwd, resolve_main_root};
-use crate::lock::mutate_state;
 use crate::session_metrics::{
     home_dir_or_empty, is_safe_session_id, is_safe_transcript_path_structural,
 };
@@ -165,80 +142,4 @@ pub fn run() {
         }
     }
     let _ = fs::write(&path, payload.to_string());
-
-    // Refresh the active flow's session pointers from the same payload.
-    // The global capture file above seeds NEW flows at flow-start, but
-    // an already-running flow holds the session_id/transcript_path
-    // captured when it started. When the Claude Code session rotates
-    // mid-flow (resume|clear|compact), the rotated transcript no longer
-    // matches the flow's stored pointer, and `record-agent-return`
-    // reports `phase_marker_not_found` for every Review/Learn agent.
-    // Refreshing the active flow's state file here keeps the pointer
-    // current. The cwd identifies which flow to refresh; a degenerate
-    // or absent cwd resolves to no active flow and the refresh no-ops.
-    // `resolve_hook_cwd` returns `None` only when the payload carries no
-    // `cwd` AND `env::current_dir()` fails — an empty-string fallback
-    // resolves no branch in `refresh_active_flow_session`, so the
-    // unreachable-in-practice None case collapses into the same no-op.
-    let cwd = resolve_hook_cwd(&input).unwrap_or_default();
-    refresh_active_flow_session(&cwd, &session_id, transcript_path.as_deref());
-}
-
-/// Refresh the active flow's `session_id` AND `transcript_path` to the
-/// rotated session's values.
-///
-/// `cwd` is the SessionStart payload's working directory: during an
-/// active flow it is the worktree, from which `detect_branch_from_path`
-/// derives the branch and `resolve_main_root` derives the main repo
-/// root. Both pointer fields are overwritten together in one
-/// `mutate_state` so a half-updated pair cannot leave
-/// `resolve_transcript_path` (which prefers `transcript_path`) reading
-/// a rotated session_id against a stale transcript.
-///
-/// `transcript_path` carries the value already validated by `run()`'s
-/// structural check (`is_safe_transcript_path_structural`); `None`
-/// (absent or invalid in the payload) is written as JSON null so the
-/// stale value is not retained.
-///
-/// Fail-open at every boundary — no detectable branch, no active flow,
-/// a wrong-root-type state file — so the hook never blocks or panics on
-/// the SessionStart event:
-/// - `detect_branch_from_path` returns `None` when `cwd` is not inside a
-///   worktree (no flow to refresh).
-/// - `is_flow_active` returns `false` for an invalid (slash-bearing)
-///   branch or a branch with no `state.json` (no active flow).
-/// - the `mutate_state` closure's object guard returns without mutating
-///   when the state file is a wrong root type (array, string, number),
-///   per `.claude/rules/state-files.md` "Corruption Resilience".
-fn refresh_active_flow_session(cwd: &str, session_id: &str, transcript_path: Option<&str>) {
-    let cwd_path = Path::new(cwd);
-    let branch = match detect_branch_from_path(cwd_path) {
-        Some(b) => b,
-        None => return,
-    };
-    let main_root = resolve_main_root(cwd_path);
-    if !is_flow_active(&branch, &main_root) {
-        return;
-    }
-    // `is_flow_active` returned true, so the branch passed
-    // `FlowPaths::is_valid_branch` AND the state file exists —
-    // `try_new` is infallible here. The `.expect` documents that
-    // upstream guarantee per `.claude/rules/branch-path-safety.md`
-    // (documentation, not a reachable panic).
-    let state_path = FlowPaths::try_new(&main_root, &branch)
-        .expect("is_flow_active confirmed branch is valid")
-        .state_file();
-    let _ = mutate_state(&state_path, &mut |state| {
-        // Guard: string-key IndexMut panics on array/bool/number/string
-        // roots. Fail-open on any non-writable shape (Null is
-        // auto-vivified to an object by serde_json's IndexMut).
-        if !(state.is_object() || state.is_null()) {
-            return;
-        }
-        state["session_id"] = Value::String(session_id.to_string());
-        state["transcript_path"] = match transcript_path {
-            Some(tp) => Value::String(tp.to_string()),
-            None => Value::Null,
-        };
-    });
 }
