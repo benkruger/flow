@@ -278,20 +278,16 @@ pub fn parse_issue_number(url: &str) -> Option<i64> {
     re.captures(url).and_then(|cap| cap[1].parse().ok())
 }
 
-/// Fetch the REST API database ID for an issue. Returns (id, error).
-/// Used cross-module by `link_blocked_by.rs`.
-pub fn fetch_database_id(repo: &str, number: i64) -> (Option<i64>, Option<String>) {
+/// Fetch the REST API database ID for an issue. Returns `Ok(id)` on
+/// success, `Err(msg)` on a `gh` runner error or a non-numeric API
+/// response. Used cross-module by `link_blocked_by.rs`.
+pub fn fetch_database_id(repo: &str, number: i64) -> Result<i64, String> {
     let api_path = format!("repos/{}/issues/{}", repo, number);
-    match run_gh_cmd(&["gh", "api", &api_path, "--jq", ".id"]) {
-        Ok(stdout) => match stdout.trim().parse::<i64>() {
-            Ok(id) => (Some(id), None),
-            Err(_) => (
-                None,
-                Some(format!("Invalid ID from API: {}", stdout.trim())),
-            ),
-        },
-        Err(e) => (None, Some(e)),
-    }
+    let stdout = run_gh_cmd(&["gh", "api", &api_path, "--jq", ".id"])?;
+    stdout
+        .trim()
+        .parse::<i64>()
+        .map_err(|_| format!("Invalid ID from API: {}", stdout.trim()))
 }
 
 /// Run gh issue create and return issue details. Includes label-not-
@@ -380,10 +376,10 @@ fn retry_with_label(
 
 fn build_issue_result(repo: &str, url: String) -> IssueResult {
     let number = parse_issue_number(&url);
-    let db_id = number.and_then(|n| {
-        let (id, _) = fetch_database_id(repo, n);
-        id
-    });
+    // The database ID is a best-effort enrichment of the result: the issue
+    // has already been created, so a failed lookup degrades `id` to None
+    // rather than failing the whole operation.
+    let db_id = number.and_then(|n| fetch_database_id(repo, n).ok());
     IssueResult {
         url,
         number,
