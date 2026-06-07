@@ -3,13 +3,11 @@
 //! Tests live at tests/post_compact.rs per .claude/rules/test-placement.md —
 //! no inline #[cfg(test)] in this file.
 
-use std::io::Read;
 use std::path::Path;
 
 use serde_json::Value;
 
-use crate::flow_paths::FlowPaths;
-use crate::git::{project_root, resolve_branch};
+use crate::git::project_root;
 use crate::lock::mutate_state;
 use crate::utils::tolerant_i64;
 
@@ -51,34 +49,14 @@ pub fn capture_compact_data(hook_input: &Value, state_path: &Path) {
 
 /// Run the post-compact hook (entry point).
 ///
-/// Uses `resolve_branch` for `--branch` override support. Calls
-/// `current_branch()` internally — does not scan `.flow-states/`.
+/// Resolves the stdin payload and the active flow's state file via the
+/// shared `read_hook_input_and_state` helper, then captures compaction
+/// data. `--branch` override support and the no-active-flow fail-open
+/// posture live in the helper; this entry point owns only the
+/// `project_root()` call and the `capture_compact_data` dispatch.
 pub fn run() {
-    let mut stdin_buf = String::new();
-    let _ = std::io::stdin().read_to_string(&mut stdin_buf);
-
-    let hook_input: Value = match serde_json::from_str(&stdin_buf) {
-        Ok(v) => v,
-        Err(_) => return,
-    };
-
     let root = project_root();
-    let branch = resolve_branch(None, &root);
-    let branch = match branch {
-        Some(b) => b,
-        None => return,
-    };
-
-    // Slash-containing git branches are not valid FLOW branches —
-    // treat as "no active flow" and return rather than panicking.
-    let state_path = match FlowPaths::try_new(&root, &branch) {
-        Some(p) => p.state_file(),
-        None => return,
-    };
-
-    if !state_path.exists() {
-        return;
+    if let Some((hook_input, state_path)) = crate::hooks::read_hook_input_and_state(&root) {
+        capture_compact_data(&hook_input, &state_path);
     }
-
-    capture_compact_data(&hook_input, &state_path);
 }

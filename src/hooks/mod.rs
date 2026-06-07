@@ -4,7 +4,7 @@
 //! All functions avoid subprocess calls where possible, using filesystem-based
 //! detection instead.
 //!
-//! Tests live at tests/hooks_shared.rs per .claude/rules/test-placement.md —
+//! Tests live at tests/hooks/shared.rs per .claude/rules/test-placement.md —
 //! no inline #[cfg(test)] in this file.
 
 use regex::Regex;
@@ -167,6 +167,29 @@ pub fn read_hook_input() -> Option<Value> {
     let mut input = String::new();
     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
     serde_json::from_str(&input).ok()
+}
+
+/// Read the hook's stdin payload and resolve the active flow's state file.
+///
+/// Composes `read_hook_input()` (stdin read + JSON parse) with branch
+/// resolution and `FlowPaths` construction. Returns `Some((input,
+/// state_path))` only when the parsed payload, a resolved branch, a
+/// valid `FlowPaths`, and an existing state file all succeed.
+///
+/// Fail-open contract: every failure mode returns `None` so the calling
+/// hook exits 0 without acting — unparseable or absent stdin, no
+/// resolvable branch (detached HEAD), a `/`-containing branch that
+/// fails `FlowPaths::try_new`, or a missing state file. The caller owns
+/// the `project_root()` call and passes `root` in; `resolve_branch`
+/// preserves `--branch` override support.
+pub fn read_hook_input_and_state(root: &Path) -> Option<(Value, PathBuf)> {
+    let input = read_hook_input()?;
+    let branch = crate::git::resolve_branch(None, root)?;
+    let state_path = FlowPaths::try_new(root, &branch)?.state_file();
+    if !state_path.exists() {
+        return None;
+    }
+    Some((input, state_path))
 }
 
 /// Resolve the working directory a hook should reason about.
