@@ -160,12 +160,21 @@ family slice with `SUBSTANTIVE_DIFF_FILE` pointed at the bounded
 slice. Findings combine across the per-family runs. If a bounded
 re-invocation still overflows, the skill applies the second
 recovery axis — `split-by-finding-type` (see "Partition strategies"
-below) — re-invoking the documentation agent as a maintainability
-pass (diff slice only; no rules/CLAUDE.md reads) and a
-documentation-drift pass (CLAUDE.md + narrowed rules + `DOC_PATHS:`;
-no codebase-comprehension investigation). Only after BOTH axes are
-exhausted does the skill note the agent unavailable in the triage
-summary and proceed — it never fabricates findings (see "Never
+below). Both passes receive the substantive-diff slice — the
+bounded comparison anchor neither half can be starved of — and read
+CLAUDE.md and the `.claude/rules/` corpus only via Grep + ranged
+Read, never whole-file (the prose corpus is bounded, not
+forbidden): the maintainability pass produces Tenant 3 findings from
+the diff plus grep-anchored source investigation and may Grep the
+prose corpus to confirm whether a pattern is documented, skipping
+the systematic per-`DOC_PATHS:` drift comparison; the
+documentation-drift pass produces Tenant 6 findings by checking each
+`DOC_PATHS:` doc against the diff, skipping the source-comprehension
+investigation. A pass that returns the completion marker with zero
+findings is a legitimate empty result, not a starved one. Only after
+BOTH axes are exhausted — both split-by-finding-type passes still
+overflowing — does the skill note the agent unavailable in the
+triage summary and proceed; it never fabricates findings (see "Never
 Supplement Agent Work From the Parent Session" below) and never
 splits infinitely.
 

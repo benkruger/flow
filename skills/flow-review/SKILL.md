@@ -613,38 +613,48 @@ non-partitionable family (e.g. a one-file `src/` diff) cannot be
 sliced any smaller. Before declaring the tenant unavailable, apply
 the second recovery axis, `split-by-finding-type` (see
 `.claude/rules/cognitive-isolation.md` "Partition strategies").
-Re-invoke the documentation agent twice, each pass scoped to a
-disjoint half of its read surface so neither pass needs the surface
-that overflowed:
+Re-invoke the documentation agent twice — split by finding-type AND
+investigation depth, so each pass runs only half the agent's
+investigation and stays under budget. BOTH passes receive
+`SUBSTANTIVE_DIFF_FILE` (the whole substantive diff, or the largest
+non-empty family slice): the diff is the bounded comparison anchor
+both halves need, so neither pass can be starved of it. Both passes
+consult CLAUDE.md and `.claude/rules/` only via Grep + ranged Read
+(the documentation agent's bounded read invariant), never whole-file
+— the prose corpus is not forbidden, only read in bounded form:
 
-- **Maintainability pass.** Pass `SUBSTANTIVE_DIFF_FILE` (the whole
-  substantive diff, or the largest non-empty family slice) and
-  instruct the agent to skip CLAUDE.md and `.claude/rules/` reads
-  entirely — it produces only Maintainability findings from the
-  diff plus grep-anchored source investigation, never touching the
-  prose corpus that overflowed.
-- **Drift pass.** Pass the CLAUDE.md path, the narrowed `DOC_PATHS:`
-  list, and the `.claude/rules/` directory, and instruct the agent
-  to produce only Documentation findings via CLAUDE.md (Grep +
-  ranged Read) and the narrowed doc paths — skipping the
-  codebase-comprehension investigation so it never whole-reads a
-  source file.
+- **Maintainability pass.** Produces only Maintainability (Tenant 3)
+  findings from the diff plus grep-anchored source investigation. It
+  may Grep CLAUDE.md and `.claude/rules/` (ranged) to confirm whether
+  a pattern is documented — the discriminator between a documented
+  pattern and a comprehension barrier — but it SKIPS the systematic
+  per-`DOC_PATHS:` drift comparison the drift pass owns.
+- **Drift pass.** Produces only Documentation (Tenant 6) findings by
+  checking each `DOC_PATHS:` doc against the diff, consulting CLAUDE.md
+  and `.claude/rules/` via Grep + ranged Read. It SKIPS the
+  codebase-comprehension (source-file) investigation the
+  maintainability pass owns.
 
 Both re-invocations MUST honor the path-scoping HARD-GATE in the
 Class 1 recovery below — every path named in either prompt stays
 inside `<worktree_path>/` or this flow's own `.flow-states/<branch>/`
 subtree. Combine findings from both passes as if they had come from
 a single run; each finding still maps to one of the six tenants for
-triage in Step 3.
+triage in Step 3. A pass that returns the `END-OF-FINDINGS` marker
+with zero findings is a legitimate empty result (both passes receive
+the diff and the bounded prose corpus, so neither is starved) — fold
+it into the combined set as "no findings for that tenant," not as a
+failure.
 
-Only after BOTH axes are exhausted — per-family slicing AND
-split-by-finding-type both still returning an overflow marker with
-zero findings — note the tenant unavailable in the Step 3 triage
-summary and proceed. Do NOT fabricate the agent's findings (see the
-HARD-GATE at the end of this step) and do NOT split infinitely. The
-agent's launch is already recorded in `agents_returned` by FLOW's
-`PreToolUse:Agent` hook, so the `phase-finalize` required-agents
-gate is satisfied — only its findings are missing.
+Only after BOTH axes are exhausted — per-family slicing AND both
+split-by-finding-type passes STILL returning an overflow marker (the
+diff slice handed to a pass is itself the oversized read) — note the
+tenant unavailable in the Step 3 triage summary and proceed. Do NOT
+fabricate the agent's findings (see the HARD-GATE at the end of this
+step) and do NOT split infinitely. The agent's launch is already
+recorded in `agents_returned` by FLOW's `PreToolUse:Agent` hook, so
+the `phase-finalize` required-agents gate is satisfied — only its
+findings are missing.
 
 **Class 1 — Truncation.** For each high-investigation agent
 (reviewer, learn-analyst, documentation), check whether the
