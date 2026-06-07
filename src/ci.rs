@@ -433,6 +433,116 @@ pub fn tree_snapshot(cwd: &Path, simulate_branch: Option<&str>) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+/// The single command-factory shared by both CI paths ([`run_once`]
+/// and [`run_with_retry`]): build the `Command` for one tool with the
+/// cwd, the `FLOW_CI_RUNNING` recursion guard, and the optional
+/// `FLOW_CI_REBUILD` / `FLOW_SIMULATE_BRANCH` env vars. Extracting it
+/// keeps the two call sites from drifting.
+fn build_tool_command(
+    tool: &CiTool,
+    cwd: &Path,
+    rebuild: bool,
+    simulate_branch: Option<&str>,
+) -> Command {
+    let mut cmd = Command::new(&tool.program);
+    cmd.args(&tool.args)
+        .current_dir(cwd)
+        .env("FLOW_CI_RUNNING", "1");
+    if rebuild {
+        cmd.env("FLOW_CI_REBUILD", "1");
+    }
+    if let Some(sim) = simulate_branch {
+        cmd.env("FLOW_SIMULATE_BRANCH", sim);
+    }
+    cmd
+}
+
+/// Return the sentinel-skip response only when the dirty-check passes:
+/// `!force`, a sentinel is present, its path exists, its content reads,
+/// and the content equals `snapshot`. Every other case returns `None`,
+/// signalling [`run_once`] to run the tool sequence.
+fn check_sentinel_skip(
+    sentinel: Option<&PathBuf>,
+    snapshot: &str,
+    force: bool,
+) -> Option<(Value, i32)> {
+    if force {
+        return None;
+    }
+    let path = sentinel?;
+    if !path.exists() {
+        return None;
+    }
+    let content = fs::read_to_string(path).ok()?;
+    if content == snapshot {
+        return Some((
+            json!({
+                "status": "ok",
+                "skipped": true,
+                "reason": "no changes since last CI pass",
+            }),
+            0,
+        ));
+    }
+    None
+}
+
+/// `(tool name, elapsed milliseconds)` pairs accumulated as each CI tool
+/// runs, in execution order.
+type ToolPhases = Vec<(String, u64)>;
+
+/// [`run_tool_sequence`] outcome. `Ok` carries the completed phases; `Err`
+/// carries the failure message plus the phases run so far so [`run_once`]
+/// can rebuild the byte-identical error JSON.
+type ToolSequenceResult = Result<ToolPhases, (String, ToolPhases)>;
+
+/// Run each tool in `tools` via [`build_tool_command`] + `cmd.status()`
+/// (inherited stdio), returning `Ok(phases)` when every tool exits 0 and
+/// `Err((message, phases_so_far))` on the first failure. The message
+/// distinguishes a spawn error (`failed to run …`) from a non-zero exit
+/// (`… failed`). The caller ([`run_once`]) owns the summary print, the
+/// sentinel removal, and the JSON assembly so both failure shapes stay
+/// byte-identical. `run_with_retry` does not share this loop — it uses
+/// `cmd.output()` to capture stdout/stderr for flaky classification.
+fn run_tool_sequence(
+    cwd: &Path,
+    tools: &[CiTool],
+    rebuild: bool,
+    simulate_branch: Option<&str>,
+    start: Instant,
+) -> ToolSequenceResult {
+    let mut phases: ToolPhases = Vec::new();
+
+    for tool in tools {
+        let elapsed_before = start.elapsed().as_secs_f64();
+        eprintln!("\n[{:.1}s] === {} ===", elapsed_before, tool.name);
+        let tool_start = Instant::now();
+
+        let mut cmd = build_tool_command(tool, cwd, rebuild, simulate_branch);
+
+        let status = match cmd.status() {
+            Ok(s) => s,
+            Err(e) => {
+                let tool_ms = tool_start.elapsed().as_millis() as u64;
+                phases.push((tool.name.clone(), tool_ms));
+                return Err((
+                    format!("failed to run {} ({}): {}", tool.name, tool.program, e),
+                    phases,
+                ));
+            }
+        };
+
+        let tool_ms = tool_start.elapsed().as_millis() as u64;
+        phases.push((tool.name.clone(), tool_ms));
+
+        if !status.success() {
+            return Err((format!("{} failed", tool.name), phases));
+        }
+    }
+
+    Ok(phases)
+}
+
 /// Default (non-retry) CI path.
 ///
 /// Runs the tool sequence in `cwd` with inherited stdio so the user sees
@@ -479,70 +589,15 @@ pub fn run_once(
     let sentinel = branch.map(|b| sentinel_path(root, b));
     let snapshot = tree_snapshot(cwd, simulate_branch);
 
-    if !force {
-        if let Some(ref path) = sentinel {
-            if path.exists() {
-                if let Ok(content) = fs::read_to_string(path) {
-                    if content == snapshot {
-                        return (
-                            json!({
-                                "status": "ok",
-                                "skipped": true,
-                                "reason": "no changes since last CI pass",
-                            }),
-                            0,
-                        );
-                    }
-                }
-            }
-        }
+    if let Some(skip) = check_sentinel_skip(sentinel.as_ref(), &snapshot, force) {
+        return skip;
     }
 
     let start = Instant::now();
-    let mut phases: Vec<(String, u64)> = Vec::new();
 
-    for tool in tools {
-        let elapsed_before = start.elapsed().as_secs_f64();
-        eprintln!("\n[{:.1}s] === {} ===", elapsed_before, tool.name);
-        let tool_start = Instant::now();
-
-        let mut cmd = Command::new(&tool.program);
-        cmd.args(&tool.args)
-            .current_dir(cwd)
-            .env("FLOW_CI_RUNNING", "1");
-        if rebuild {
-            cmd.env("FLOW_CI_REBUILD", "1");
-        }
-        if let Some(sim) = simulate_branch {
-            cmd.env("FLOW_SIMULATE_BRANCH", sim);
-        }
-
-        let status = match cmd.status() {
-            Ok(s) => s,
-            Err(e) => {
-                let tool_ms = tool_start.elapsed().as_millis() as u64;
-                phases.push((tool.name.clone(), tool_ms));
-                let total_ms = start.elapsed().as_millis() as u64;
-                eprint_summary(&phases, total_ms);
-                if let Some(ref path) = sentinel {
-                    let _ = fs::remove_file(path);
-                }
-                return (
-                    json!({
-                        "status": "error",
-                        "message": format!("failed to run {} ({}): {}", tool.name, tool.program, e),
-                        "elapsed_ms": total_ms,
-                        "phases": phases_to_json(&phases),
-                    }),
-                    1,
-                );
-            }
-        };
-
-        let tool_ms = tool_start.elapsed().as_millis() as u64;
-        phases.push((tool.name.clone(), tool_ms));
-
-        if !status.success() {
+    let phases = match run_tool_sequence(cwd, tools, rebuild, simulate_branch, start) {
+        Ok(phases) => phases,
+        Err((message, phases)) => {
             let total_ms = start.elapsed().as_millis() as u64;
             eprint_summary(&phases, total_ms);
             if let Some(ref path) = sentinel {
@@ -551,14 +606,14 @@ pub fn run_once(
             return (
                 json!({
                     "status": "error",
-                    "message": format!("{} failed", tool.name),
+                    "message": message,
                     "elapsed_ms": total_ms,
                     "phases": phases_to_json(&phases),
                 }),
                 1,
             );
         }
-    }
+    };
 
     let total_ms = start.elapsed().as_millis() as u64;
     eprint_summary(&phases, total_ms);
@@ -653,16 +708,7 @@ pub fn run_with_retry(
             );
             let tool_start = Instant::now();
 
-            let mut cmd = Command::new(&tool.program);
-            cmd.args(&tool.args)
-                .current_dir(cwd)
-                .env("FLOW_CI_RUNNING", "1");
-            if rebuild {
-                cmd.env("FLOW_CI_REBUILD", "1");
-            }
-            if let Some(sim) = simulate_branch {
-                cmd.env("FLOW_SIMULATE_BRANCH", sim);
-            }
+            let mut cmd = build_tool_command(tool, cwd, rebuild, simulate_branch);
 
             let output = match cmd.output() {
                 Ok(o) => o,
