@@ -604,6 +604,105 @@ fn capture_diff_returns_error_when_family_diff_write_path_is_directory() {
         .contains("write family diff"));
 }
 
+// --- Review #1845: --family validator + collision hardening ---
+//
+// Review's adversarial agent proved (with failing probes) that the
+// original --family validator accepted a backslash and a leading-slash
+// (absolute / degenerate `/`) pathspec, and that family_filename_component
+// is non-injective so two distinct families collide on one slice
+// filename and silently clobber each other. These regression tests lock
+// the fixes: is_safe_family now rejects `\` and leading `/`, and capture()
+// rejects a slice-filename collision (and the exact-duplicate degenerate)
+// before any write.
+
+#[test]
+fn capture_diff_family_rejects_backslash() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    fixture_with_subdir_commits(&repo);
+
+    let output = run_capture_diff(
+        &repo,
+        &[
+            "--branch",
+            "fam-bslash",
+            "--base",
+            "main",
+            "--family",
+            "a\\b",
+        ],
+    );
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(data["message"].as_str().unwrap().contains("invalid family"));
+}
+
+#[test]
+fn capture_diff_family_rejects_absolute_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    fixture_with_subdir_commits(&repo);
+
+    let output = run_capture_diff(
+        &repo,
+        &["--branch", "fam-abs", "--base", "main", "--family", "/etc"],
+    );
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(data["message"].as_str().unwrap().contains("invalid family"));
+}
+
+#[test]
+fn capture_diff_family_rejects_filename_collision() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    fixture_with_subdir_commits(&repo);
+
+    // `a/b` and `a_b` both fold to the slice name `a_b`; rejecting the
+    // collision prevents the second write from clobbering the first slice.
+    let output = run_capture_diff(
+        &repo,
+        &[
+            "--branch",
+            "fam-collide",
+            "--base",
+            "main",
+            "--family",
+            "a/b",
+            "--family",
+            "a_b",
+        ],
+    );
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    let msg = data["message"].as_str().unwrap();
+    assert!(msg.contains("invalid family"));
+    assert!(msg.contains("collides"));
+}
+
+#[test]
+fn capture_diff_family_rejects_duplicate() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    fixture_with_subdir_commits(&repo);
+
+    // An exact-duplicate --family value is the degenerate case of the
+    // filename collision and is rejected by the same guard.
+    let output = run_capture_diff(
+        &repo,
+        &[
+            "--branch", "fam-dup", "--base", "main", "--family", "src/", "--family", "src/",
+        ],
+    );
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(data["message"].as_str().unwrap().contains("collides"));
+}
+
 /// NUL bytes cannot be passed through argv to the child binary (the OS
 /// rejects them at spawn), so the NUL rejection is exercised via the
 /// library entry point directly. Validating every family BEFORE any git

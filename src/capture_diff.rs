@@ -93,11 +93,29 @@ fn capture(args: &Args, root: &Path, cwd: &Path) -> Result<Value, String> {
     }
     // Validate every family pathspec BEFORE any subprocess or write
     // runs, so an invalid family aborts with the business-error envelope
-    // without spawning git or touching the filesystem.
+    // without spawning git or touching the filesystem. The per-family
+    // slice filename is derived here once and reused below;
+    // `family_filename_component` is NOT injective (it folds path
+    // separators to `_`), so two distinct families can produce the same
+    // slice filename. Rejecting that collision here prevents a silent
+    // clobber where the second `fs::write` overwrites the first slice and
+    // both `family_slices` entries point at one file (an exact-duplicate
+    // `--family` value is the degenerate case of the same collision).
+    let mut family_names: Vec<String> = Vec::with_capacity(args.family.len());
+    let mut seen_names: std::collections::HashSet<String> =
+        std::collections::HashSet::with_capacity(args.family.len());
     for fam in &args.family {
         if !is_safe_family(fam) {
             return Err(format!("invalid family pathspec: {:?}", fam));
         }
+        let name = family_filename_component(fam);
+        if !seen_names.insert(name.clone()) {
+            return Err(format!(
+                "invalid family pathspec: {:?} collides with another family on slice name {:?}",
+                fam, name
+            ));
+        }
+        family_names.push(name);
     }
 
     let diff_range = format!("origin/{}...HEAD", args.base);
@@ -106,10 +124,12 @@ fn capture(args: &Args, root: &Path, cwd: &Path) -> Result<Value, String> {
     // diff and the whitespace-filtered substantive diff (same range,
     // only `-w` differs); each remaining argv is the substantive diff
     // scoped to one `--family` pathspec. Folding the family diffs into
-    // the same collect means there is one Err arm — reachable when the
-    // base ref is unknown and the first `git diff` fails — rather than a
-    // second per-family arm whose failure is unreachable once the range
-    // is known-valid.
+    // the same collect means there is one Err arm. `is_safe_family`
+    // rejects the pathspec shapes git would itself reject (pathspec
+    // magic, traversal, absolute paths), so a validator-accepted family
+    // matches zero or more files and `git diff` exits 0 rather than
+    // erroring; in practice the Err arm is reached only by the first
+    // (full) `git diff` when the base ref is unknown.
     let mut diff_argvs: Vec<Vec<String>> = vec![
         vec![diff_range.clone()],
         vec!["-w".to_string(), diff_range.clone()],
@@ -135,16 +155,15 @@ fn capture(args: &Args, root: &Path, cwd: &Path) -> Result<Value, String> {
     std::fs::write(&full_path, &diffs[0]).map_err(|e| format!("write full-diff: {}", e))?;
     std::fs::write(&sub_path, &diffs[1]).map_err(|e| format!("write substantive-diff: {}", e))?;
 
-    // Per-family slices share the branch dir. The filename fragment is
-    // a single path component (separators folded to `_`), so it cannot
-    // escape the branch dir even before the `is_safe_family` traversal
-    // check above.
+    // Per-family slices share the branch dir, using the slice names
+    // computed (and collision-checked) in the validation loop above. The
+    // filename fragment is a single path component (separators folded to
+    // `_`), so it cannot escape the branch dir.
     let mut family_slices: Vec<Value> = Vec::with_capacity(args.family.len());
     for (i, fam) in args.family.iter().enumerate() {
-        let fam_name = family_filename_component(fam);
         let fam_path = paths
             .branch_dir()
-            .join(format!("substantive-diff-{}.diff", fam_name));
+            .join(format!("substantive-diff-{}.diff", family_names[i]));
         std::fs::write(&fam_path, &diffs[2 + i])
             .map_err(|e| format!("write family diff {:?}: {}", fam, e))?;
         family_slices.push(json!({
@@ -202,34 +221,52 @@ fn is_safe_base(s: &str) -> bool {
 /// - NUL (`\0`), newline (`\n`), or carriage return (`\r`) — bytes
 ///   that would corrupt the output filename or smuggle content into
 ///   the diff range,
+/// - a backslash (`\`) — a path separator on non-POSIX platforms that
+///   `family_filename_component` does not fold, so it would land
+///   verbatim in the slice filename,
 /// - any `.` or `..` path component — directory traversal, so a
 ///   crafted family cannot escape the branch dir via the filename,
 /// - a leading `:` — git pathspec magic (`:/`, `:(exclude)…`) that
-///   would change how git interprets the argument.
+///   would change how git interprets the argument,
+/// - a leading `/` — an absolute pathspec (`/etc`) or the degenerate
+///   all-slash pathspec (`/`), which git rejects as outside the
+///   repository and which folds to an empty or misleading slice name.
 ///
 /// A trailing-slash directory pathspec like `src/` is accepted: its
 /// components are `src` and an empty trailing segment, neither of
 /// which is `.` or `..`. The pathspec is passed to git as a literal
 /// `argv` element via `Command::arg` (never through a shell), so the
 /// only structural concern is git pathspec magic, which the leading-`:`
-/// rejection covers — no shell-escape function is required.
+/// and leading-`/` rejections cover — no shell-escape function is
+/// required. Validation does NOT guarantee a *unique* slice filename
+/// across families (the fold is non-injective); the caller
+/// (`capture`) rejects filename collisions separately.
 fn is_safe_family(s: &str) -> bool {
     !s.is_empty()
         && !s.contains('\0')
         && !s.contains('\n')
         && !s.contains('\r')
+        && !s.contains('\\')
         && !s.starts_with(':')
+        && !s.starts_with('/')
         && !s.split('/').any(|c| c == "." || c == "..")
 }
 
 /// Derive a filesystem-safe, single-path-component filename fragment
 /// from a validated family pathspec. `is_safe_family` has already
-/// rejected NUL, newline/CR, `.`/`..` components, and a leading `:`, so
-/// the only transformation needed is to fold the path separators into
-/// `_` — splitting on `/`, dropping empty segments (the trailing slash
-/// of a directory pathspec like `src/`), and rejoining with `_`. The
-/// result is a single component with no `/`, so joining it onto the
-/// branch dir cannot escape: `src/` -> `src`, `a/b/` -> `a_b`.
+/// rejected NUL, newline/CR, backslash, `.`/`..` components, and a
+/// leading `:`/`/`, so the only transformation needed is to fold the
+/// remaining path separators into `_` — splitting on `/`, dropping
+/// empty segments (the trailing slash of a directory pathspec like
+/// `src/`), and rejoining with `_`. The result is a single component
+/// with no `/`, so joining it onto the branch dir cannot escape:
+/// `src/` -> `src`, `a/b/` -> `a_b`.
+///
+/// The fold is NOT injective — `a/b` and `a_b` both map to `a_b`, and
+/// `src/` and `src` both map to `src`. The caller (`capture`) detects
+/// the resulting filename collision and rejects it rather than silently
+/// overwriting one slice with another; this function makes no
+/// uniqueness guarantee.
 fn family_filename_component(s: &str) -> String {
     s.split('/')
         .filter(|c| !c.is_empty())
