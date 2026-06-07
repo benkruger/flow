@@ -457,6 +457,36 @@ fn build_tool_command(
     cmd
 }
 
+/// Return the sentinel-skip response only when the dirty-check passes:
+/// `!force`, a sentinel is present, its path exists, its content reads,
+/// and the content equals `snapshot`. Every other case returns `None`,
+/// signalling [`run_once`] to run the tool sequence.
+fn check_sentinel_skip(
+    sentinel: Option<&PathBuf>,
+    snapshot: &str,
+    force: bool,
+) -> Option<(Value, i32)> {
+    if force {
+        return None;
+    }
+    let path = sentinel?;
+    if !path.exists() {
+        return None;
+    }
+    let content = fs::read_to_string(path).ok()?;
+    if content == snapshot {
+        return Some((
+            json!({
+                "status": "ok",
+                "skipped": true,
+                "reason": "no changes since last CI pass",
+            }),
+            0,
+        ));
+    }
+    None
+}
+
 /// Default (non-retry) CI path.
 ///
 /// Runs the tool sequence in `cwd` with inherited stdio so the user sees
@@ -503,23 +533,8 @@ pub fn run_once(
     let sentinel = branch.map(|b| sentinel_path(root, b));
     let snapshot = tree_snapshot(cwd, simulate_branch);
 
-    if !force {
-        if let Some(ref path) = sentinel {
-            if path.exists() {
-                if let Ok(content) = fs::read_to_string(path) {
-                    if content == snapshot {
-                        return (
-                            json!({
-                                "status": "ok",
-                                "skipped": true,
-                                "reason": "no changes since last CI pass",
-                            }),
-                            0,
-                        );
-                    }
-                }
-            }
-        }
+    if let Some(skip) = check_sentinel_skip(sentinel.as_ref(), &snapshot, force) {
+        return skip;
     }
 
     let start = Instant::now();
