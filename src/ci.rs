@@ -433,6 +433,30 @@ pub fn tree_snapshot(cwd: &Path, simulate_branch: Option<&str>) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+/// The single command-factory shared by both CI paths ([`run_once`]
+/// and [`run_with_retry`]): build the `Command` for one tool with the
+/// cwd, the `FLOW_CI_RUNNING` recursion guard, and the optional
+/// `FLOW_CI_REBUILD` / `FLOW_SIMULATE_BRANCH` env vars. Extracting it
+/// keeps the two call sites from drifting.
+fn build_tool_command(
+    tool: &CiTool,
+    cwd: &Path,
+    rebuild: bool,
+    simulate_branch: Option<&str>,
+) -> Command {
+    let mut cmd = Command::new(&tool.program);
+    cmd.args(&tool.args)
+        .current_dir(cwd)
+        .env("FLOW_CI_RUNNING", "1");
+    if rebuild {
+        cmd.env("FLOW_CI_REBUILD", "1");
+    }
+    if let Some(sim) = simulate_branch {
+        cmd.env("FLOW_SIMULATE_BRANCH", sim);
+    }
+    cmd
+}
+
 /// Default (non-retry) CI path.
 ///
 /// Runs the tool sequence in `cwd` with inherited stdio so the user sees
@@ -506,16 +530,7 @@ pub fn run_once(
         eprintln!("\n[{:.1}s] === {} ===", elapsed_before, tool.name);
         let tool_start = Instant::now();
 
-        let mut cmd = Command::new(&tool.program);
-        cmd.args(&tool.args)
-            .current_dir(cwd)
-            .env("FLOW_CI_RUNNING", "1");
-        if rebuild {
-            cmd.env("FLOW_CI_REBUILD", "1");
-        }
-        if let Some(sim) = simulate_branch {
-            cmd.env("FLOW_SIMULATE_BRANCH", sim);
-        }
+        let mut cmd = build_tool_command(tool, cwd, rebuild, simulate_branch);
 
         let status = match cmd.status() {
             Ok(s) => s,
@@ -653,16 +668,7 @@ pub fn run_with_retry(
             );
             let tool_start = Instant::now();
 
-            let mut cmd = Command::new(&tool.program);
-            cmd.args(&tool.args)
-                .current_dir(cwd)
-                .env("FLOW_CI_RUNNING", "1");
-            if rebuild {
-                cmd.env("FLOW_CI_REBUILD", "1");
-            }
-            if let Some(sim) = simulate_branch {
-                cmd.env("FLOW_SIMULATE_BRANCH", sim);
-            }
+            let mut cmd = build_tool_command(tool, cwd, rebuild, simulate_branch);
 
             let output = match cmd.output() {
                 Ok(o) => o,
