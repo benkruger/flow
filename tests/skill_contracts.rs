@@ -617,6 +617,80 @@ fn flow_review_step2_truncation_recovery_carries_out_of_worktree_hard_gate() {
     );
 }
 
+// --- flow-review Step 2 read-overflow class ordered before truncation (#1845) ---
+//
+// A context-overflow agent return has zero `**Finding` blocks and no
+// `END-OF-FINDINGS` marker, so it ALSO satisfies Class 1's
+// marker-absence trigger. If the read-overflow class is missing or
+// ordered after Class 1, an overflow is misclassified as truncation —
+// and Class 1's only remedy (partition the diff by file family) does
+// not bound the CLAUDE.md/diff read that overflowed, so every
+// re-invocation overflows identically. The read-overflow class must be
+// declared AND evaluated before Class 1 (truncation).
+//
+// Regression: a future edit drops the read-overflow class or reorders
+// it after Class 1, reproducing the silent-overflow bug. The bounded
+// slice on the read-overflow heading (per
+// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions in
+// Contract Tests") scopes the marker/detection assertions to the
+// read-overflow block.
+#[test]
+fn flow_review_step2_read_overflow_class_ordered_before_truncation() {
+    let content = common::read_skill("flow-review");
+    let overflow_idx = content
+        .find("**Class 0 — Read overflow.**")
+        .expect("flow-review Step 2 must declare a read-overflow class (Class 0) (#1845)");
+    let truncation_idx = content
+        .find("**Class 1 — Truncation.**")
+        .expect("flow-review Step 2 must declare Class 1 truncation");
+    assert!(
+        overflow_idx < truncation_idx,
+        "the read-overflow class (Class 0) must be ordered BEFORE Class 1 truncation so a context-overflow return is not misclassified as truncation (#1845)"
+    );
+
+    // Bound the read-overflow block from its heading to the Class 1 heading.
+    let tail = &content[overflow_idx..];
+    let block = tail
+        .split_once("**Class 1 — Truncation.**")
+        .map(|(b, _)| b)
+        .unwrap_or(tail);
+
+    // The block lists every overflow marker the detection matches.
+    for marker in [
+        "prompt is too long",
+        "context length",
+        "context window",
+        "too long",
+    ] {
+        assert!(
+            block.contains(marker),
+            "read-overflow class must list the overflow marker `{}`",
+            marker
+        );
+    }
+
+    // Detection mirrors Class 2's zero-findings precondition: zero
+    // `**Finding` blocks AND no `END-OF-FINDINGS` marker AND an overflow
+    // marker — so a finding whose prose merely mentions "too long" is
+    // not misclassified.
+    assert!(
+        block.contains("**Finding"),
+        "read-overflow detection must require zero **Finding blocks (mirror Class 2's precondition)"
+    );
+    assert!(
+        block.contains("END-OF-FINDINGS"),
+        "read-overflow detection must require absence of the END-OF-FINDINGS marker"
+    );
+
+    // Remediation slices the substantive diff per file family via
+    // capture-diff --family so each bounded re-invocation reads one
+    // bounded family file.
+    assert!(
+        block.contains("--family"),
+        "read-overflow remediation must slice the substantive diff via capture-diff --family"
+    );
+}
+
 // --- documentation agent obey-vs-describe gate for CLAUDE.md findings ---
 //
 // The documentation agent's Workflow section must apply the
@@ -660,6 +734,52 @@ fn documentation_agent_applies_obey_vs_describe_gate_for_claude_md_findings() {
             needle
         );
     }
+}
+
+// --- documentation agent Grep-first CLAUDE.md handling (#1845) ---
+//
+// CLAUDE.md is the one unbounded read surface for the context-sparse
+// documentation agent: on a large monorepo CLAUDE.md a single
+// whole-file Read overflows the agent's context before any analysis,
+// returning zero findings with no END-OF-FINDINGS marker. The agent's
+// "Read the documentation" workflow step must consult CLAUDE.md via a
+// Grep-first protocol (Grep for diff-derived tokens, ranged Read of the
+// matches) rather than reading the whole file.
+//
+// Regression: a future edit reintroduces a whole-file CLAUDE.md read
+// instruction and the agent overflows on large-CLAUDE.md repos. The
+// bounded slice on `## Workflow` (per
+// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions in
+// Contract Tests") scopes both the positive and negative assertions to
+// the agent's instruction lines so the Input section's incidental
+// CLAUDE.md mentions neither satisfy the positive check nor trip the
+// negative one.
+#[test]
+fn documentation_agent_greps_claude_md_rather_than_whole_read() {
+    let c = common::read_agent("documentation.md");
+    let tail_at_heading = c
+        .split_once("## Workflow")
+        .map(|(_, tail)| tail.to_string())
+        .expect("documentation.md must have ## Workflow section");
+    let workflow = tail_at_heading
+        .split_once("\n## ")
+        .map(|(section, _)| section.to_string())
+        .unwrap_or(tail_at_heading);
+    // Positive: the workflow consults CLAUDE.md via Grep.
+    assert!(
+        workflow.contains("Grep `CLAUDE.md`"),
+        "documentation.md ## Workflow must Grep `CLAUDE.md` (then ranged-Read the matches) so a large CLAUDE.md cannot overflow the context-sparse agent on a single whole-file read (#1845)"
+    );
+    // Negative: the workflow must NOT instruct a whole-file Read of
+    // CLAUDE.md. The phrase below is the whole-file-read shape the
+    // pre-#1845 agent carried; matching it as a forbidden needle is
+    // scoped to the Workflow section so the Input section's
+    // "project CLAUDE.md ... provided for cross-reference" prose does
+    // not trip it.
+    assert!(
+        !workflow.contains("Read tool to read CLAUDE.md"),
+        "documentation.md ## Workflow must not instruct a whole-file Read of CLAUDE.md — consult it via Grep + ranged Read instead (#1845)"
+    );
 }
 
 // --- flow-hygiene CLAUDE.md mandate and size-budget contracts ---

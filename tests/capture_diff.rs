@@ -12,6 +12,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use common::{create_git_repo_with_remote, parse_output};
+use flow_rs::capture_diff::{run_impl, Args};
 
 fn flow_rs_no_recursion() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
@@ -354,4 +355,369 @@ fn capture_diff_returns_spawn_error_when_git_unavailable() {
         .unwrap()
         .to_lowercase()
         .contains("spawn"));
+}
+
+// --- Task 3: --family per-family diff slicing ---
+//
+// The read-overflow remediation in flow-review Step 2 re-invokes the
+// documentation agent once per file family under a bounded-read
+// protocol. To keep each re-invocation's diff read bounded, the skill
+// slices the substantive diff per file family via `capture-diff
+// --family <pathspec>`, which writes one `substantive-diff-<family>.diff`
+// file per family under the branch dir. Each `--family` pathspec is
+// external CLI input reaching two sinks (the `git diff -- <pathspec>`
+// subprocess arg and the output filename), so the validator rejects
+// empty, NUL, newline/CR, `..` traversal components, and leading-`:`
+// pathspec magic per `.claude/rules/external-input-path-construction.md`.
+
+/// Create a fixture worktree with committed changes under `src/` and
+/// `tests/` subdirectories so a `--family <subdir>/` pathspec produces
+/// a non-empty per-family slice.
+fn fixture_with_subdir_commits(repo: &Path) {
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::create_dir_all(repo.join("tests")).unwrap();
+    fs::write(repo.join("src/lib.rs"), "// src change\n").unwrap();
+    fs::write(repo.join("tests/foo.rs"), "// test change\n").unwrap();
+    Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(repo)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "subdir changes"])
+        .current_dir(repo)
+        .output()
+        .unwrap();
+}
+
+#[test]
+fn capture_diff_family_writes_per_family_slice_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    fixture_with_subdir_commits(&repo);
+
+    let output = run_capture_diff(
+        &repo,
+        &["--branch", "fam-one", "--base", "main", "--family", "src/"],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let slice = repo.join(".flow-states/fam-one/substantive-diff-src.diff");
+    assert!(slice.exists(), "per-family slice missing at {:?}", slice);
+    let content = fs::read_to_string(&slice).unwrap();
+    assert!(
+        content.contains("src/lib.rs"),
+        "slice should contain the src/ change"
+    );
+    assert!(
+        !content.contains("tests/foo.rs"),
+        "src family slice must not contain the tests/ change"
+    );
+}
+
+#[test]
+fn capture_diff_family_multiple_writes_all_slices() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    fixture_with_subdir_commits(&repo);
+
+    let output = run_capture_diff(
+        &repo,
+        &[
+            "--branch",
+            "fam-multi",
+            "--base",
+            "main",
+            "--family",
+            "src/",
+            "--family",
+            "tests/",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(0));
+    let src_slice = repo.join(".flow-states/fam-multi/substantive-diff-src.diff");
+    let tests_slice = repo.join(".flow-states/fam-multi/substantive-diff-tests.diff");
+    assert!(
+        src_slice.exists() && tests_slice.exists(),
+        "both per-family slices must be written"
+    );
+    assert!(fs::read_to_string(&src_slice)
+        .unwrap()
+        .contains("src/lib.rs"));
+    assert!(fs::read_to_string(&tests_slice)
+        .unwrap()
+        .contains("tests/foo.rs"));
+}
+
+#[test]
+fn capture_diff_family_envelope_lists_slices() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    fixture_with_subdir_commits(&repo);
+
+    let output = run_capture_diff(
+        &repo,
+        &["--branch", "fam-env", "--base", "main", "--family", "src/"],
+    );
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    let slices = data["family_slices"]
+        .as_array()
+        .expect("family_slices array");
+    assert_eq!(slices.len(), 1);
+    assert_eq!(slices[0]["family"], "src/");
+    assert!(slices[0]["path"]
+        .as_str()
+        .unwrap()
+        .ends_with(".flow-states/fam-env/substantive-diff-src.diff"));
+}
+
+#[test]
+fn capture_diff_no_family_omits_slices_field() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    fixture_with_subdir_commits(&repo);
+
+    let output = run_capture_diff(&repo, &["--branch", "no-fam", "--base", "main"]);
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "ok");
+    assert!(
+        data["family_slices"].is_null(),
+        "family_slices must be absent when no --family is passed (byte-compatible with flow-learn's parse)"
+    );
+}
+
+#[test]
+fn capture_diff_family_rejects_traversal() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    fixture_with_subdir_commits(&repo);
+
+    let output = run_capture_diff(
+        &repo,
+        &[
+            "--branch",
+            "fam-trav",
+            "--base",
+            "main",
+            "--family",
+            "../../etc",
+        ],
+    );
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(data["message"].as_str().unwrap().contains("invalid family"));
+    // No slice file escaped the branch dir.
+    assert!(
+        !dir.path().join("etc").exists(),
+        "traversal pathspec must not write outside the branch dir"
+    );
+}
+
+#[test]
+fn capture_diff_family_rejects_pathspec_magic() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    fixture_with_subdir_commits(&repo);
+
+    let output = run_capture_diff(
+        &repo,
+        &["--branch", "fam-magic", "--base", "main", "--family", ":/"],
+    );
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(data["message"].as_str().unwrap().contains("invalid family"));
+}
+
+#[test]
+fn capture_diff_family_rejects_newline() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    fixture_with_subdir_commits(&repo);
+
+    let output = run_capture_diff(
+        &repo,
+        &[
+            "--branch", "fam-nl", "--base", "main", "--family", "src\nfoo",
+        ],
+    );
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(data["message"].as_str().unwrap().contains("invalid family"));
+}
+
+#[test]
+fn capture_diff_family_rejects_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    fixture_with_subdir_commits(&repo);
+
+    let output = run_capture_diff(
+        &repo,
+        &["--branch", "fam-empty", "--base", "main", "--family", ""],
+    );
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(data["message"].as_str().unwrap().contains("invalid family"));
+}
+
+#[test]
+fn capture_diff_returns_error_when_family_diff_write_path_is_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    fixture_with_subdir_commits(&repo);
+
+    // Pre-create the per-family slice path as a directory so fs::write
+    // fails AFTER the full and substantive writes succeed — exercises
+    // the post-write Err arm for the family diff.
+    fs::create_dir_all(repo.join(".flow-states/fam-write-fail/substantive-diff-src.diff")).unwrap();
+
+    let output = run_capture_diff(
+        &repo,
+        &[
+            "--branch",
+            "fam-write-fail",
+            "--base",
+            "main",
+            "--family",
+            "src/",
+        ],
+    );
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(data["message"]
+        .as_str()
+        .unwrap()
+        .contains("write family diff"));
+}
+
+// --- Review #1845: --family validator + collision hardening ---
+//
+// Review's adversarial agent proved (with failing probes) that the
+// original --family validator accepted a backslash and a leading-slash
+// (absolute / degenerate `/`) pathspec, and that family_filename_component
+// is non-injective so two distinct families collide on one slice
+// filename and silently clobber each other. These regression tests lock
+// the fixes: is_safe_family now rejects `\` and leading `/`, and capture()
+// rejects a slice-filename collision (and the exact-duplicate degenerate)
+// before any write.
+
+#[test]
+fn capture_diff_family_rejects_backslash() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    fixture_with_subdir_commits(&repo);
+
+    let output = run_capture_diff(
+        &repo,
+        &[
+            "--branch",
+            "fam-bslash",
+            "--base",
+            "main",
+            "--family",
+            "a\\b",
+        ],
+    );
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(data["message"].as_str().unwrap().contains("invalid family"));
+}
+
+#[test]
+fn capture_diff_family_rejects_absolute_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    fixture_with_subdir_commits(&repo);
+
+    let output = run_capture_diff(
+        &repo,
+        &["--branch", "fam-abs", "--base", "main", "--family", "/etc"],
+    );
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(data["message"].as_str().unwrap().contains("invalid family"));
+}
+
+#[test]
+fn capture_diff_family_rejects_filename_collision() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    fixture_with_subdir_commits(&repo);
+
+    // `a/b` and `a_b` both fold to the slice name `a_b`; rejecting the
+    // collision prevents the second write from clobbering the first slice.
+    let output = run_capture_diff(
+        &repo,
+        &[
+            "--branch",
+            "fam-collide",
+            "--base",
+            "main",
+            "--family",
+            "a/b",
+            "--family",
+            "a_b",
+        ],
+    );
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    let msg = data["message"].as_str().unwrap();
+    assert!(msg.contains("invalid family"));
+    assert!(msg.contains("collides"));
+}
+
+#[test]
+fn capture_diff_family_rejects_duplicate() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = create_git_repo_with_remote(dir.path());
+    fixture_with_subdir_commits(&repo);
+
+    // An exact-duplicate --family value is the degenerate case of the
+    // filename collision and is rejected by the same guard.
+    let output = run_capture_diff(
+        &repo,
+        &[
+            "--branch", "fam-dup", "--base", "main", "--family", "src/", "--family", "src/",
+        ],
+    );
+
+    let data = parse_output(&output);
+    assert_eq!(data["status"], "error");
+    assert!(data["message"].as_str().unwrap().contains("collides"));
+}
+
+/// NUL bytes cannot be passed through argv to the child binary (the OS
+/// rejects them at spawn), so the NUL rejection is exercised via the
+/// library entry point directly. Validating every family BEFORE any git
+/// subprocess runs means the NUL family returns the business-error
+/// envelope without spawning git.
+#[test]
+fn capture_diff_family_rejects_nul_via_run_impl() {
+    let dir = tempfile::tempdir().unwrap();
+    let args = Args {
+        branch: "fam-nul".to_string(),
+        base: "main".to_string(),
+        family: vec!["a\0b".to_string()],
+    };
+    let (val, code) = run_impl(&args, dir.path(), dir.path());
+    assert_eq!(code, 0);
+    assert_eq!(val["status"], "error");
+    assert!(val["message"].as_str().unwrap().contains("invalid family"));
 }

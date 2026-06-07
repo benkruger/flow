@@ -538,13 +538,83 @@ Prefix the prompt with:
 
 Wait for all agents to return.
 
-**Classify each agent's response.** Apply the three classes in
-priority order — truncation first, external failure second,
-normal completion otherwise. Priority order matters because a
-truncated agent's prose may coincidentally contain
-external-failure substrings, but the correct response to
-truncation is re-invocation against a narrowed partition, not
-recording the agent as skipped.
+**Classify each agent's response.** Apply the classes in priority
+order — read-overflow first, truncation second, external failure
+third, normal completion otherwise. Priority order matters for two
+reasons. A read-overflow return has zero findings and no
+`END-OF-FINDINGS` marker, so it ALSO satisfies Class 1's
+marker-absence trigger; evaluating read-overflow first prevents an
+overflow from being misclassified as truncation, whose
+diff-partition-only remedy never bounds the read that overflowed. And
+a truncated agent's prose may coincidentally contain external-failure
+substrings, but the correct response to truncation is re-invocation
+against a narrowed partition, not recording the agent as skipped.
+
+**Class 0 — Read overflow.** For each high-investigation agent
+(reviewer, learn-analyst, documentation), check whether the
+returned output has zero structured `**Finding` blocks AND no
+`END-OF-FINDINGS` marker AND contains a context-overflow marker
+(`prompt is too long`, `context length`, `context window`, `too
+long`), matched ASCII-case-insensitively on the agent's full
+response. This is the agent overflowing its context on a single
+oversized read — most often a whole-file read of a large
+CLAUDE.md — before producing any finding. A read-overflow return
+looks identical to truncation by marker absence, so it MUST be
+evaluated before Class 1: Class 1's diff-partition-only remedy
+does not bound the read that overflowed, so classifying an
+overflow as truncation re-invokes into the same overflow
+indefinitely.
+
+The zero-findings precondition is load-bearing, exactly as in
+Class 2: an agent that produced one or more `**Finding` blocks
+AND whose prose mentions "too long" (e.g., a maintainability
+finding about an overlong function) is NOT read-overflowed — it
+is a normal completion whose findings happen to use the term.
+Class 0 fires only when the response is structurally empty (no
+findings) and an overflow marker is the explanation.
+
+When read-overflow is detected on an agent, re-invoke it once
+under a bounded-read protocol.
+
+**Slice the diff per family.** The documentation agent already
+consults CLAUDE.md via Grep + ranged Read (it never whole-reads
+CLAUDE.md), so the CLAUDE.md read is already bounded. To bound the
+diff read too, slice the substantive diff per file family. From
+the changed-file list (Step 1), derive the directory families
+present in the diff (`src/`, `tests/`, `agents/`, `skills/`,
+`.claude/`, `docs/`) and run capture-diff once with a `--family`
+per present family (trailing slash; substitute
+`<branch>`/`<base_branch>` as in Step 1):
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow capture-diff --branch <branch> --base <base_branch> --family src/ --family tests/
+```
+
+Parse the JSON `family_slices` array — each entry's `path` is a
+bounded per-family substantive diff file under
+`.flow-states/<branch>/`.
+
+**Re-invoke per family slice.** Re-invoke the overflowed agent
+once per non-empty family slice, with `SUBSTANTIVE_DIFF_FILE` set
+to that family's slice path instead of the whole substantive diff.
+Keep the agent's other inputs (narrowed doc-paths list, CLAUDE.md
+path, rules dir) unchanged. Every path named in the re-invocation
+prompt MUST stay inside `<worktree_path>/` or this flow's own
+`.flow-states/<branch>/` subtree, per the HARD-GATE in the Class 1
+recovery below.
+
+**Combine findings.** Combine findings from every family
+re-invocation as if they had come from a single run. Each finding
+still maps to one of the six tenants for triage in Step 3.
+
+If a bounded re-invocation STILL returns an overflow marker with
+zero findings, the per-family slice was itself too large: note the
+tenant unavailable in the Step 3 triage summary and proceed. Do
+NOT fabricate the agent's findings (see the HARD-GATE at the end
+of this step) and do NOT split infinitely. The agent's launch is
+already recorded in `agents_returned` by FLOW's `PreToolUse:Agent`
+hook, so the `phase-finalize` required-agents gate is satisfied —
+only its findings are missing.
 
 **Class 1 — Truncation.** For each high-investigation agent
 (reviewer, learn-analyst, documentation), check whether the
