@@ -617,6 +617,80 @@ fn flow_review_step2_truncation_recovery_carries_out_of_worktree_hard_gate() {
     );
 }
 
+// --- flow-review Step 2 read-overflow class ordered before truncation (#1845) ---
+//
+// A context-overflow agent return has zero `**Finding` blocks and no
+// `END-OF-FINDINGS` marker, so it ALSO satisfies Class 1's
+// marker-absence trigger. If the read-overflow class is missing or
+// ordered after Class 1, an overflow is misclassified as truncation —
+// and Class 1's only remedy (partition the diff by file family) does
+// not bound the CLAUDE.md/diff read that overflowed, so every
+// re-invocation overflows identically. The read-overflow class must be
+// declared AND evaluated before Class 1 (truncation).
+//
+// Regression: a future edit drops the read-overflow class or reorders
+// it after Class 1, reproducing the silent-overflow bug. The bounded
+// slice on the read-overflow heading (per
+// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions in
+// Contract Tests") scopes the marker/detection assertions to the
+// read-overflow block.
+#[test]
+fn flow_review_step2_read_overflow_class_ordered_before_truncation() {
+    let content = common::read_skill("flow-review");
+    let overflow_idx = content
+        .find("**Class 0 — Read overflow.**")
+        .expect("flow-review Step 2 must declare a read-overflow class (Class 0) (#1845)");
+    let truncation_idx = content
+        .find("**Class 1 — Truncation.**")
+        .expect("flow-review Step 2 must declare Class 1 truncation");
+    assert!(
+        overflow_idx < truncation_idx,
+        "the read-overflow class (Class 0) must be ordered BEFORE Class 1 truncation so a context-overflow return is not misclassified as truncation (#1845)"
+    );
+
+    // Bound the read-overflow block from its heading to the Class 1 heading.
+    let tail = &content[overflow_idx..];
+    let block = tail
+        .split_once("**Class 1 — Truncation.**")
+        .map(|(b, _)| b)
+        .unwrap_or(tail);
+
+    // The block lists every overflow marker the detection matches.
+    for marker in [
+        "prompt is too long",
+        "context length",
+        "context window",
+        "too long",
+    ] {
+        assert!(
+            block.contains(marker),
+            "read-overflow class must list the overflow marker `{}`",
+            marker
+        );
+    }
+
+    // Detection mirrors Class 2's zero-findings precondition: zero
+    // `**Finding` blocks AND no `END-OF-FINDINGS` marker AND an overflow
+    // marker — so a finding whose prose merely mentions "too long" is
+    // not misclassified.
+    assert!(
+        block.contains("**Finding"),
+        "read-overflow detection must require zero **Finding blocks (mirror Class 2's precondition)"
+    );
+    assert!(
+        block.contains("END-OF-FINDINGS"),
+        "read-overflow detection must require absence of the END-OF-FINDINGS marker"
+    );
+
+    // Remediation slices the substantive diff per file family via
+    // capture-diff --family so each bounded re-invocation reads one
+    // bounded family file.
+    assert!(
+        block.contains("--family"),
+        "read-overflow remediation must slice the substantive diff via capture-diff --family"
+    );
+}
+
 // --- documentation agent obey-vs-describe gate for CLAUDE.md findings ---
 //
 // The documentation agent's Workflow section must apply the

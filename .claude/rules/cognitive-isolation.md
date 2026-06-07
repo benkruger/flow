@@ -123,6 +123,46 @@ The re-invocation is the recovery path. Without it, truncated
 agents silently produce zero findings — the documentation agent
 in particular ships nothing on moderately-sized PRs.
 
+### Read-overflow recovery (evaluated before truncation)
+
+A high-investigation agent can also fail by overflowing its
+context on a single oversized read — most often a whole-file read
+of a large CLAUDE.md — before producing any finding. The return
+looks identical to truncation by the marker-absence test: zero
+`**Finding` blocks and no `END-OF-FINDINGS` marker. The
+distinguishing signal is a context-overflow marker in the response
+(`prompt is too long`, `context length`, `context window`, `too
+long`), matched ASCII-case-insensitively, with the same
+zero-findings precondition the external-failure class uses so a
+finding that merely mentions "too long" is not misclassified.
+
+Read-overflow MUST be evaluated BEFORE the truncation class. Both
+lack the completion marker, but the truncation remedy (partition
+the diff and re-invoke) does not bound the read that overflowed —
+re-invoking a read-overflow agent against a diff partition
+overflows on the same unbounded read again. Classifying an
+overflow as truncation therefore loops without progress.
+
+The bounded-read remedy has two halves. The agent's own read
+surface must already be bounded — the documentation agent consults
+CLAUDE.md via Grep + ranged Read rather than a whole-file read
+(see `agents/documentation.md`). The skill then bounds the diff
+read by slicing the substantive diff per file family via `bin/flow
+capture-diff --family <pathspec>` (one `--family` per directory
+family present in the diff), parsing the resulting `family_slices`
+paths, and re-invoking the agent once per family slice with
+`SUBSTANTIVE_DIFF_FILE` pointed at the bounded slice. Findings
+combine across the per-family runs. If a bounded re-invocation
+still overflows, the skill notes the agent unavailable in the
+triage summary and proceeds — it never fabricates findings (see
+"Never Supplement Agent Work From the Parent Session" below) and
+never splits infinitely.
+
+The class is general to high-investigation agents (reviewer,
+learn-analyst, documentation). Phase 3 Review's
+`skills/flow-review/SKILL.md` Step 2 implements it as "Class 0 —
+Read overflow," evaluated before "Class 1 — Truncation."
+
 ### Partition strategies
 
 Three partitions cover the cases observed:

@@ -74,9 +74,14 @@ Agent tool call itself is the evidence the agent ran — so no
 per-agent record call runs between launches.
 
 After agents return, the skill classifies each response in priority
-order: truncation first (re-invoke with a narrower partition),
-external failure second (re-invoke once, then note the failure and
-proceed), normal completion otherwise. `phase-finalize` gates on
+order: read-overflow first (a context-overflow return — zero findings,
+no `END-OF-FINDINGS`, an overflow marker — re-invoked once per
+file-family diff slice via `capture-diff --family`), truncation second
+(re-invoke with a narrower partition), external failure third
+(re-invoke once, then note the failure and proceed), normal completion
+otherwise. Read-overflow is evaluated before truncation because an
+overflow return also lacks the `END-OF-FINDINGS` marker, and the
+truncation remedy does not bound the read that overflowed. `phase-finalize` gates on
 `phases.flow-review.agents_returned`: it refuses to advance with
 `required_agent_not_returned` naming any required agent that was never
 launched, and the recovery is to re-launch that agent.
