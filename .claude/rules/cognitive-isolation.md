@@ -144,19 +144,30 @@ overflows on the same unbounded read again. Classifying an
 overflow as truncation therefore loops without progress.
 
 The bounded-read remedy has two halves. The agent's own read
-surface must already be bounded — the documentation agent consults
-CLAUDE.md via Grep + ranged Read rather than a whole-file read
-(see `agents/documentation.md`). The skill then bounds the diff
-read by slicing the substantive diff per file family via `bin/flow
-capture-diff --family <pathspec>` (one `--family` per directory
-family present in the diff), parsing the resulting `family_slices`
-paths, and re-invoking the agent once per family slice with
-`SUBSTANTIVE_DIFF_FILE` pointed at the bounded slice. Findings
-combine across the per-family runs. If a bounded re-invocation
-still overflows, the skill notes the agent unavailable in the
-triage summary and proceeds — it never fabricates findings (see
-"Never Supplement Agent Work From the Parent Session" below) and
-never splits infinitely.
+surface must already be bounded — the documentation agent's
+investigation reads are grep-anchored and ranged, never whole-file:
+CLAUDE.md, the `.claude/rules/` corpus, AND source-file
+investigation are all consulted via Grep + ranged Read rather than
+a whole-file read (see `agents/documentation.md`). The one
+whole-file read the agent makes is the first-pass read of the
+substantive-diff slice; that read's bound is the per-family slicing
+below, not the grep-anchored investigation invariant. The skill
+then bounds the diff read by slicing the substantive diff per file
+family via `bin/flow capture-diff --family <pathspec>` (one
+`--family` per directory family present in the diff), parsing the
+resulting `family_slices` paths, and re-invoking the agent once per
+family slice with `SUBSTANTIVE_DIFF_FILE` pointed at the bounded
+slice. Findings combine across the per-family runs. If a bounded
+re-invocation still overflows, the skill applies the second
+recovery axis — `split-by-finding-type` (see "Partition strategies"
+below) — re-invoking the documentation agent as a maintainability
+pass (diff slice only; no rules/CLAUDE.md reads) and a
+documentation-drift pass (CLAUDE.md + narrowed rules + `DOC_PATHS:`;
+no codebase-comprehension investigation). Only after BOTH axes are
+exhausted does the skill note the agent unavailable in the triage
+summary and proceed — it never fabricates findings (see "Never
+Supplement Agent Work From the Parent Session" below) and never
+splits infinitely.
 
 The class is general to high-investigation agents (reviewer,
 learn-analyst, documentation). Phase 3 Review's

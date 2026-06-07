@@ -77,9 +77,12 @@ launches.
 After agents return, each response is classified in priority order:
 read-overflow first (a context-overflow return — zero findings, no
 `END-OF-FINDINGS`, an overflow marker — re-invoked once per file-family
-diff slice via `capture-diff --family`), truncation second (re-invoke
-with a narrower partition), external failure third (re-invoke once,
-then note the failure and proceed), normal completion otherwise.
+diff slice via `capture-diff --family`, then via the
+split-by-finding-type axis — a maintainability pass and a
+documentation-drift pass — before the tenant is noted unavailable),
+truncation second (re-invoke with a narrower partition), external
+failure third (re-invoke once, then note the failure and proceed),
+normal completion otherwise.
 Read-overflow is evaluated before truncation because an overflow return
 also lacks the `END-OF-FINDINGS` marker, and the truncation remedy does
 not bound the read that overflowed. `phase-finalize` gates on

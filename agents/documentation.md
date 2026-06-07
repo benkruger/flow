@@ -54,10 +54,15 @@ doc paths for documentation drift — do NOT walk the full
 budget bounded on moderately-sized PRs.
 
 The paths to the project CLAUDE.md and `.claude/rules/` directory
-are also provided for cross-reference checks. CLAUDE.md is consulted
-via Grep + ranged Read, not a whole-file read — on a large monorepo
-CLAUDE.md a single whole-file read would overflow your context
-budget before analysis begins. Use Read, Glob, and Grep tools to
+are also provided for cross-reference checks. CLAUDE.md AND the
+`.claude/rules/` corpus are both consulted via Grep + ranged Read,
+never a whole-file read — on a large monorepo a single whole-file
+read of CLAUDE.md or a large rule file would overflow your context
+budget before analysis begins. The same bound applies to
+source-file investigation: Grep for the symbol or pattern, then
+ranged-Read the matches rather than whole-reading the file. The one
+whole-file read the workflow makes is the first-pass Read of the
+SUBSTANTIVE_DIFF_FILE. Use Read, Glob, and Grep tools to
 investigate the surrounding codebase and read the listed
 documentation files.
 
@@ -78,8 +83,14 @@ assumption introduced by the changes.
 
 **Investigate the codebase.** For each pattern you notice, check whether
 it is documented anywhere — in CLAUDE.md, `.claude/rules/`, code
-comments, or naming conventions. If the pattern is undocumented, it is
-a comprehension barrier.
+comments, or naming conventions. Grep the codebase for the symbol or
+pattern under investigation, then use the Read tool's offset/limit to
+read only the matched line ranges — never whole-read a source file,
+which can overflow a context-sparse agent's budget on a large file
+before analysis begins. The first-pass Read of the SUBSTANTIVE_DIFF_FILE
+is the one whole-file read the workflow makes; investigation reads of
+the surrounding source are grep-anchored and ranged. If the pattern is
+undocumented, it is a comprehension barrier.
 
 **Reason from a newcomer's perspective.** For each change, ask: "If I
 had never seen this codebase before and was not part of the conversation
@@ -97,8 +108,12 @@ introduce — then use the Read tool's offset/limit to read only the
 matched line ranges. Use the Read tool to read the doc paths listed
 under the `DOC_PATHS:` header in your prompt (these are already
 bounded).
-Read `.claude/rules/*.md` files only when checking cross-references
-between rules in the diff. For each behavioral change in the diff,
+When checking cross-references between rules in the diff,
+Grep `.claude/rules/` for the diff-derived rule token, then use the
+Read tool's offset/limit to read only the matched line ranges —
+never whole-read a rule file, for the same context-budget reason
+that bounds the CLAUDE.md read. For each behavioral change in the
+diff,
 check whether the documentation in the listed paths still accurately
 describes the code's behavior. If the diff changes how something
 works but the docs still describe the old behavior, that is a
