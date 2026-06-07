@@ -662,6 +662,52 @@ fn documentation_agent_applies_obey_vs_describe_gate_for_claude_md_findings() {
     }
 }
 
+// --- documentation agent Grep-first CLAUDE.md handling (#1845) ---
+//
+// CLAUDE.md is the one unbounded read surface for the context-sparse
+// documentation agent: on a large monorepo CLAUDE.md a single
+// whole-file Read overflows the agent's context before any analysis,
+// returning zero findings with no END-OF-FINDINGS marker. The agent's
+// "Read the documentation" workflow step must consult CLAUDE.md via a
+// Grep-first protocol (Grep for diff-derived tokens, ranged Read of the
+// matches) rather than reading the whole file.
+//
+// Regression: a future edit reintroduces a whole-file CLAUDE.md read
+// instruction and the agent overflows on large-CLAUDE.md repos. The
+// bounded slice on `## Workflow` (per
+// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions in
+// Contract Tests") scopes both the positive and negative assertions to
+// the agent's instruction lines so the Input section's incidental
+// CLAUDE.md mentions neither satisfy the positive check nor trip the
+// negative one.
+#[test]
+fn documentation_agent_greps_claude_md_rather_than_whole_read() {
+    let c = common::read_agent("documentation.md");
+    let tail_at_heading = c
+        .split_once("## Workflow")
+        .map(|(_, tail)| tail.to_string())
+        .expect("documentation.md must have ## Workflow section");
+    let workflow = tail_at_heading
+        .split_once("\n## ")
+        .map(|(section, _)| section.to_string())
+        .unwrap_or(tail_at_heading);
+    // Positive: the workflow consults CLAUDE.md via Grep.
+    assert!(
+        workflow.contains("Grep `CLAUDE.md`"),
+        "documentation.md ## Workflow must Grep `CLAUDE.md` (then ranged-Read the matches) so a large CLAUDE.md cannot overflow the context-sparse agent on a single whole-file read (#1845)"
+    );
+    // Negative: the workflow must NOT instruct a whole-file Read of
+    // CLAUDE.md. The phrase below is the whole-file-read shape the
+    // pre-#1845 agent carried; matching it as a forbidden needle is
+    // scoped to the Workflow section so the Input section's
+    // "project CLAUDE.md ... provided for cross-reference" prose does
+    // not trip it.
+    assert!(
+        !workflow.contains("Read tool to read CLAUDE.md"),
+        "documentation.md ## Workflow must not instruct a whole-file Read of CLAUDE.md — consult it via Grep + ranged Read instead (#1845)"
+    );
+}
+
 // --- flow-hygiene CLAUDE.md mandate and size-budget contracts ---
 //
 // The flow-hygiene skill scans project-local rules for paraphrased

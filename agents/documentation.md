@@ -54,9 +54,12 @@ doc paths for documentation drift — do NOT walk the full
 budget bounded on moderately-sized PRs.
 
 The paths to the project CLAUDE.md and `.claude/rules/` directory
-are also provided for cross-reference checks. Use Read, Glob, and
-Grep tools to investigate the surrounding codebase and read the
-listed documentation files.
+are also provided for cross-reference checks. CLAUDE.md is consulted
+via Grep + ranged Read, not a whole-file read — on a large monorepo
+CLAUDE.md a single whole-file read would overflow your context
+budget before analysis begins. Use Read, Glob, and Grep tools to
+investigate the surrounding codebase and read the listed
+documentation files.
 
 When the calling skill launches you, FLOW's `PreToolUse:Agent` hook
 records your run in `phases.flow-review.agents_returned` — the Agent
@@ -85,8 +88,15 @@ works?" Think about implicit conventions, unstated assumptions, names
 that only make sense with context, and architectural decisions that are
 not self-evident.
 
-**Read the documentation.** Use the Read tool to read CLAUDE.md and
-the doc paths listed under the `DOC_PATHS:` header in your prompt.
+**Read the documentation.** CLAUDE.md can be large enough to overflow
+a context-sparse agent's budget on a single whole-file read, so
+consult it via Grep rather than reading it whole. Grep `CLAUDE.md`
+for tokens derived from the diff — changed-file basenames, names of
+rules referenced in the diff, and new identifiers the changes
+introduce — then use the Read tool's offset/limit to read only the
+matched line ranges. Use the Read tool to read the doc paths listed
+under the `DOC_PATHS:` header in your prompt (these are already
+bounded).
 Read `.claude/rules/*.md` files only when checking cross-references
 between rules in the diff. For each behavioral change in the diff,
 check whether the documentation in the listed paths still accurately
