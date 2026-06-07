@@ -119,6 +119,7 @@ Permanent on-main artifacts that future-session readers should know about by nam
 - `src/wait_for_release_ci.rs` — `bin/flow wait-for-release-ci` polls the latest integration-branch GitHub Actions run for the current HEAD with a bounded real-sleep loop until it reaches a terminal conclusion, so flow-release reads the CI result from a single bounded command.
 - `src/phase_anchor.rs` — writes a session-keyed `<home>/.claude/flow/phase-anchor-<session_id>.json` marker at `phase-enter` so a later `--continue-step` resume can recover `worktree_cwd` after a same-session cwd reset, breaking the cwd-dependent branch-detection cycle.
 - `bin/flow resume-anchor` (`src/resume_anchor.rs`) — read-side resolver for the phase-anchor marker; recovers `worktree_cwd` from the session-keyed marker so a `--continue-step` resume re-anchors cwd, emitting `ok`/`no_marker`/`error` (fail-closed on a corrupt marker).
+- `src/commands/blocked_common.rs` — shared entry helper for the `_blocked` state mutators; `resolve_blocked_state_path()` reads+discards stdin, resolves the branch, and derives the state-file path for `set-blocked`/`clear-blocked` (no existence check — each mutator keeps its own).
 
 ## Maintainer Skills (private to this repo)
 
