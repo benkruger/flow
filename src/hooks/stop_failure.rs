@@ -1,7 +1,7 @@
 //! StopFailure hook: capture error type/message into the state file.
 //!
-//! Tests live at tests/stop_failure.rs per .claude/rules/test-placement.md —
-//! no inline #[cfg(test)] in this file.
+//! Tests live at tests/hooks/stop_failure.rs per
+//! .claude/rules/test-placement.md — no inline #[cfg(test)] in this file.
 
 use std::path::Path;
 

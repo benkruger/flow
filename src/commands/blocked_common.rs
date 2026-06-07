@@ -6,8 +6,12 @@
 //! mutation they apply. This module owns that shared sequence so both
 //! entry points reduce to "resolve the path, then mutate."
 //!
-//! Tests live at tests/commands/blocked_common.rs per
-//! .claude/rules/test-placement.md — no inline #[cfg(test)] in this file.
+//! Covered transitively through the `clear-blocked` / `set-blocked`
+//! entry points — `tests/commands/clear_blocked.rs` and
+//! `tests/commands/set_blocked.rs` drive `clear_blocked::run()` /
+//! `set_blocked::run()`, which delegate here — per
+//! .claude/rules/test-placement.md public-interface testing. There is
+//! no dedicated mirror test file and no inline #[cfg(test)] in this file.
 
 use std::io::Read;
 use std::path::PathBuf;
@@ -28,6 +32,15 @@ use crate::git::{current_branch, project_root};
 /// NOT check whether the state file exists; that guard stays inside
 /// `set_blocked`/`clear_blocked` so each mutator owns its own
 /// missing-file fail-open.
+///
+/// This helper resolves `project_root()` internally rather than taking
+/// it as a parameter, unlike the hooks' `read_hook_input_and_state`:
+/// the `_blocked` mutators have no `--branch`/root-injection seam, so
+/// there is no caller-supplied root to thread through. The two helpers
+/// are deliberately separate: `read_hook_input_and_state` uses
+/// `resolve_branch` (with `--branch` override) and parses stdin into a
+/// `Value`, while this one uses `current_branch` and discards stdin —
+/// not a single merged abstraction.
 pub fn resolve_blocked_state_path() -> Option<PathBuf> {
     let mut _stdin = String::new();
     let _ = std::io::stdin().read_to_string(&mut _stdin);

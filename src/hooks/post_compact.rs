@@ -1,7 +1,7 @@
 //! PostCompact hook: capture compaction context into the state file.
 //!
-//! Tests live at tests/post_compact.rs per .claude/rules/test-placement.md —
-//! no inline #[cfg(test)] in this file.
+//! Tests live at tests/hooks/post_compact.rs per
+//! .claude/rules/test-placement.md — no inline #[cfg(test)] in this file.
 
 use std::path::Path;
 
