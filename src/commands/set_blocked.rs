@@ -1,15 +1,13 @@
 //! Set the `_blocked` timestamp on the state file.
 //!
-//! Tests live at tests/set_blocked.rs per .claude/rules/test-placement.md —
-//! no inline #[cfg(test)] in this file.
+//! Tests live at tests/commands/set_blocked.rs per
+//! .claude/rules/test-placement.md — no inline #[cfg(test)] in this file.
 
-use std::io::Read;
 use std::path::Path;
 
 use serde_json::Value;
 
-use crate::flow_paths::FlowPaths;
-use crate::git::{current_branch, project_root};
+use crate::commands::blocked_common::resolve_blocked_state_path;
 use crate::lock::mutate_state;
 use crate::utils::now;
 
@@ -30,25 +28,13 @@ pub fn set_blocked(state_path: &Path) {
 }
 
 /// Run the set-blocked command (hook entry point).
+///
+/// Resolves the state-file path via the shared
+/// `resolve_blocked_state_path` helper, then sets the `_blocked`
+/// flag. The stdin read, branch resolution, and no-active-flow
+/// fail-open posture live in the helper.
 pub fn run() {
-    // Read stdin best-effort (hook sends JSON context)
-    let mut _stdin = String::new();
-    let _ = std::io::stdin().read_to_string(&mut _stdin);
-
-    let branch = match current_branch() {
-        Some(b) => b,
-        None => return,
-    };
-
-    let root = project_root();
-    // Hook callsite: branch came from `git branch --show-current`
-    // and may carry `/`. Treat slash-containing branches as "no
-    // active flow" — same posture as the detached-HEAD branch above.
-    let paths = match FlowPaths::try_new(&root, &branch) {
-        Some(p) => p,
-        None => return,
-    };
-    let state_path = paths.state_file();
-
-    set_blocked(&state_path);
+    if let Some(state_path) = resolve_blocked_state_path() {
+        set_blocked(&state_path);
+    }
 }
