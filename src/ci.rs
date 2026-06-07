@@ -487,6 +487,62 @@ fn check_sentinel_skip(
     None
 }
 
+/// `(tool name, elapsed milliseconds)` pairs accumulated as each CI tool
+/// runs, in execution order.
+type ToolPhases = Vec<(String, u64)>;
+
+/// [`run_tool_sequence`] outcome. `Ok` carries the completed phases; `Err`
+/// carries the failure message plus the phases run so far so [`run_once`]
+/// can rebuild the byte-identical error JSON.
+type ToolSequenceResult = Result<ToolPhases, (String, ToolPhases)>;
+
+/// Run each tool in `tools` via [`build_tool_command`] + `cmd.status()`
+/// (inherited stdio), returning `Ok(phases)` when every tool exits 0 and
+/// `Err((message, phases_so_far))` on the first failure. The message
+/// distinguishes a spawn error (`failed to run …`) from a non-zero exit
+/// (`… failed`). The caller ([`run_once`]) owns the summary print, the
+/// sentinel removal, and the JSON assembly so both failure shapes stay
+/// byte-identical. `run_with_retry` does not share this loop — it uses
+/// `cmd.output()` to capture stdout/stderr for flaky classification.
+fn run_tool_sequence(
+    cwd: &Path,
+    tools: &[CiTool],
+    rebuild: bool,
+    simulate_branch: Option<&str>,
+    start: Instant,
+) -> ToolSequenceResult {
+    let mut phases: ToolPhases = Vec::new();
+
+    for tool in tools {
+        let elapsed_before = start.elapsed().as_secs_f64();
+        eprintln!("\n[{:.1}s] === {} ===", elapsed_before, tool.name);
+        let tool_start = Instant::now();
+
+        let mut cmd = build_tool_command(tool, cwd, rebuild, simulate_branch);
+
+        let status = match cmd.status() {
+            Ok(s) => s,
+            Err(e) => {
+                let tool_ms = tool_start.elapsed().as_millis() as u64;
+                phases.push((tool.name.clone(), tool_ms));
+                return Err((
+                    format!("failed to run {} ({}): {}", tool.name, tool.program, e),
+                    phases,
+                ));
+            }
+        };
+
+        let tool_ms = tool_start.elapsed().as_millis() as u64;
+        phases.push((tool.name.clone(), tool_ms));
+
+        if !status.success() {
+            return Err((format!("{} failed", tool.name), phases));
+        }
+    }
+
+    Ok(phases)
+}
+
 /// Default (non-retry) CI path.
 ///
 /// Runs the tool sequence in `cwd` with inherited stdio so the user sees
@@ -538,41 +594,10 @@ pub fn run_once(
     }
 
     let start = Instant::now();
-    let mut phases: Vec<(String, u64)> = Vec::new();
 
-    for tool in tools {
-        let elapsed_before = start.elapsed().as_secs_f64();
-        eprintln!("\n[{:.1}s] === {} ===", elapsed_before, tool.name);
-        let tool_start = Instant::now();
-
-        let mut cmd = build_tool_command(tool, cwd, rebuild, simulate_branch);
-
-        let status = match cmd.status() {
-            Ok(s) => s,
-            Err(e) => {
-                let tool_ms = tool_start.elapsed().as_millis() as u64;
-                phases.push((tool.name.clone(), tool_ms));
-                let total_ms = start.elapsed().as_millis() as u64;
-                eprint_summary(&phases, total_ms);
-                if let Some(ref path) = sentinel {
-                    let _ = fs::remove_file(path);
-                }
-                return (
-                    json!({
-                        "status": "error",
-                        "message": format!("failed to run {} ({}): {}", tool.name, tool.program, e),
-                        "elapsed_ms": total_ms,
-                        "phases": phases_to_json(&phases),
-                    }),
-                    1,
-                );
-            }
-        };
-
-        let tool_ms = tool_start.elapsed().as_millis() as u64;
-        phases.push((tool.name.clone(), tool_ms));
-
-        if !status.success() {
+    let phases = match run_tool_sequence(cwd, tools, rebuild, simulate_branch, start) {
+        Ok(phases) => phases,
+        Err((message, phases)) => {
             let total_ms = start.elapsed().as_millis() as u64;
             eprint_summary(&phases, total_ms);
             if let Some(ref path) = sentinel {
@@ -581,14 +606,14 @@ pub fn run_once(
             return (
                 json!({
                     "status": "error",
-                    "message": format!("{} failed", tool.name),
+                    "message": message,
                     "elapsed_ms": total_ms,
                     "phases": phases_to_json(&phases),
                 }),
                 1,
             );
         }
-    }
+    };
 
     let total_ms = start.elapsed().as_millis() as u64;
     eprint_summary(&phases, total_ms);
