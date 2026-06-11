@@ -171,11 +171,15 @@ fn complete_merge(pr_number: i64, state_file: &str) -> Value {
             // sentinel-gated CI on the freshly-merged tree before
             // deferring. The merge changed the tree, so CI re-runs here
             // (or skips on a sentinel match) rather than letting the
-            // Step-4 loop defer an untested tree. A pass writes the
-            // sentinel and proceeds via `ci_rerun` (the next loop's CI
-            // skips on the match and squash-merges); a failure surfaces
-            // `ci_failed` with the CI output so Step 4 launches ci-fixer
-            // directly.
+            // Step-4 loop defer an untested tree. The push targets the
+            // FEATURE branch (work-in-progress), never the integration
+            // branch, so a CI failure after the push never strands an
+            // untested tree on the trunk — it is recoverable via the
+            // Step-4 ci-fixer loop before the squash-merge ever runs. A
+            // pass writes the sentinel and proceeds via `ci_rerun` (the
+            // next loop's CI skips on the match and squash-merges); a
+            // failure surfaces `ci_failed` with the CI output so Step 4
+            // launches ci-fixer directly.
             match cmd_failure_message(run_cmd_with_timeout(&["git", "push"], NETWORK_TIMEOUT)) {
                 Some(msg) => error_result(
                     &format!("Push failed after freshness merge: {}", msg),

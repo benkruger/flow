@@ -12,6 +12,16 @@
 //!   {"status": "ok", "formatted_time": "...", "summary": "...",
 //!    "issues_links": "...", "banner_line": "...", "cleanup": {...}}
 //!
+//! Two optional warning fields ride on the otherwise-`ok` result; both
+//! report best-effort post-merge work that failed without rolling back
+//! the landed merge:
+//!   - "post_merge_failures": {...} — present when any best-effort
+//!     post-merge subcommand (render-pr-body, close-issues, etc.) failed.
+//!   - "base_ci": {"status": "failed", "ci": {...}} — present when the
+//!     sentinel-gated integration-branch CI run (after a clean `--pull`)
+//!     failed. The CI error envelope is carried under `ci`. SKILL Step 5
+//!     reports it to the user; it is a warning, not a rollback.
+//!
 //! Tests live in `tests/complete_finalize.rs` per
 //! `.claude/rules/test-placement.md` — no inline `#[cfg(test)]` block
 //! in this file.
