@@ -93,11 +93,13 @@ fn read_state(root: &Path, branch: &str) -> Result<(Value, PathBuf), String> {
 /// `ci_skipped=true` means the sentinel matches the current tree
 /// snapshot (a prior `bin/flow ci` already passed on this tree);
 /// `ci_failed_output=Some(msg)` means CI ran and failed.
-fn ci_decider(root: &Path, cwd: &Path, branch: &str, tree_changed: bool) -> (bool, Option<String>) {
-    if tree_changed {
-        return (false, None);
-    }
-
+///
+/// The decider runs sentinel-gated CI on every merge point — including
+/// the case where the base branch was just merged into the feature
+/// branch. A base-branch merge changes the tree, so the snapshot
+/// misses the sentinel and CI runs inline; a clean (no-op) merge
+/// leaves the tree byte-identical and the sentinel match skips CI.
+fn ci_decider(root: &Path, cwd: &Path, branch: &str) -> (bool, Option<String>) {
     let snapshot = ci::tree_snapshot(cwd, None);
     let sentinel = ci::sentinel_path(root, branch);
 
@@ -438,7 +440,6 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
         }
     };
     let (merge_status, merge_data) = merge_main(&base_branch);
-    let tree_changed = merge_status == "merged";
 
     if merge_status == "conflict" {
         return Ok(json!({
@@ -463,23 +464,15 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     }
 
     // --- CI dirty check ---
+    // Run sentinel-gated CI inline after the base-branch merge. A
+    // base-branch merge that changes the tree misses the sentinel and
+    // re-runs CI here; a clean no-op merge leaves the sentinel match
+    // and skips CI. The pre-merge `ci_stale` deferral is gone — the
+    // only remaining `ci_stale` outcome is the freshness-window race
+    // in `freshness_and_merge`, where the base branch moves AFTER this
+    // gate passes.
     let cwd = std::env::current_dir().unwrap_or(PathBuf::from("."));
-    let (ci_skipped, ci_failed_output) = ci_decider(&root, &cwd, &branch, tree_changed);
-
-    // --- tree_changed short-circuit to ci_stale ---
-    if tree_changed {
-        return Ok(json!({
-            "status": "ok",
-            "path": "ci_stale",
-            "reason": format!("{} merged into branch — tree changed, CI must re-run", base_branch),
-            "mode": mode,
-            "pr_number": pr_number,
-            "pr_url": pr_url,
-            "branch": branch,
-            "worktree": worktree,
-            "warnings": warnings,
-        }));
-    }
+    let (ci_skipped, ci_failed_output) = ci_decider(&root, &cwd, &branch);
 
     if let Some(output) = ci_failed_output {
         return Ok(json!({

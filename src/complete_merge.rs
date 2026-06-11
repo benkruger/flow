@@ -167,17 +167,65 @@ fn complete_merge(pr_number: i64, state_file: &str) -> Value {
             })
         }
         "merged" => {
-            // Main had new commits, merged into branch — push
+            // Main had new commits, merged into branch — push, then run
+            // sentinel-gated CI on the freshly-merged tree before
+            // deferring. The merge changed the tree, so CI re-runs here
+            // (or skips on a sentinel match) rather than letting the
+            // Step-4 loop defer an untested tree. The push targets the
+            // FEATURE branch (work-in-progress), never the integration
+            // branch, so a CI failure after the push never strands an
+            // untested tree on the trunk — it is recoverable via the
+            // Step-4 ci-fixer loop before the squash-merge ever runs. A
+            // pass writes the sentinel and proceeds via `ci_rerun` (the
+            // next loop's CI skips on the match and squash-merges); a
+            // failure surfaces `ci_failed` with the CI output so Step 4
+            // launches ci-fixer directly.
             match cmd_failure_message(run_cmd_with_timeout(&["git", "push"], NETWORK_TIMEOUT)) {
                 Some(msg) => error_result(
                     &format!("Push failed after freshness merge: {}", msg),
                     pr_number,
                 ),
-                None => json!({
-                    "status": "ci_rerun",
-                    "pushed": true,
-                    "pr_number": pr_number,
-                }),
+                None => {
+                    // complete-merge runs in the feature-branch worktree,
+                    // so the process cwd is the worktree and resolves the
+                    // feature branch for sentinel naming. `unwrap_or` (not
+                    // `unwrap_or_else`) keeps the default eager so no
+                    // closure branch is introduced — mirrors
+                    // `complete_fast::run_impl`.
+                    let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
+                    let root = crate::git::project_root();
+                    let ci_args = crate::ci::Args {
+                        force: false,
+                        retry: 0,
+                        branch: crate::git::resolve_branch_in(None, &cwd, &root),
+                        simulate_branch: None,
+                        format: false,
+                        lint: false,
+                        build: false,
+                        test: false,
+                        audit: false,
+                        clean: false,
+                        trailing: Vec::new(),
+                        reason: Some(
+                            "verifying merged tree before Complete squash-merge".to_string(),
+                        ),
+                    };
+                    let (ci_result, ci_code) = crate::ci::run_impl(&ci_args, &cwd, &root, false);
+                    if ci_code != 0 {
+                        json!({
+                            "status": "ci_failed",
+                            "output": ci_result,
+                            "pushed": true,
+                            "pr_number": pr_number,
+                        })
+                    } else {
+                        json!({
+                            "status": "ci_rerun",
+                            "pushed": true,
+                            "pr_number": pr_number,
+                        })
+                    }
+                }
             }
         }
         "up_to_date" => {

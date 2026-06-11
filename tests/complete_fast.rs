@@ -562,24 +562,55 @@ fn merge_main_error_returns_error() {
 }
 
 #[test]
-fn tree_changed_returns_ci_stale() {
+fn tree_changed_ci_fails_returns_ci_failed() {
+    // merge-base exits 1, merge exits 0 → base branch merged in (tree
+    // changed). The sentinel is unseeded, so the changed tree misses
+    // it and CI runs inline. With no `bin/*` tool scripts present,
+    // `ci::run_impl` fails → path: "ci_failed". The pre-inline-CI
+    // behavior deferred to "ci_stale" without ever running CI; the
+    // inline CI gate now catches the dirty tree before merge.
     let fx = setup("complete", "auto");
-    // merge-base exits 1, merge exits 0, push exits 0 → merged → tree_changed=true
     let output = run_complete_fast(
         &fx.repo,
         Some(BRANCH),
         &fx.flow_bin,
         &fx.stubs,
-        &[
-            ("FAKE_MERGE_BASE_EXIT", "1"),
-            ("FAKE_GIT_MERGE_EXIT", "0"),
-            ("FAKE_PUSH_EXIT", "0"),
-        ],
+        &[("FAKE_MERGE_BASE_EXIT", "1"), ("FAKE_GIT_MERGE_EXIT", "0")],
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
     assert_eq!(json["status"], "ok");
-    assert_eq!(json["path"], "ci_stale");
+    assert_eq!(json["path"], "ci_failed");
+}
+
+#[test]
+fn tree_changed_ci_passes_proceeds_to_merge() {
+    // merge-base exits 1, merge exits 0 → base branch merged in (tree
+    // changed). The sentinel is unseeded, so CI runs inline. With
+    // passing `bin/*` tool scripts, CI passes and the flow proceeds to
+    // the squash merge: path "merged", ci_skipped false. The
+    // pre-inline-CI behavior deferred to "ci_stale" and never ran CI
+    // on this path.
+    let fx = setup("complete", "auto");
+    let bin_dir = fx.repo.join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    for tool in &["format", "lint", "build", "test"] {
+        let p = bin_dir.join(tool);
+        fs::write(&p, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let output = run_complete_fast(
+        &fx.repo,
+        Some(BRANCH),
+        &fx.flow_bin,
+        &fx.stubs,
+        &[("FAKE_MERGE_BASE_EXIT", "1"), ("FAKE_GIT_MERGE_EXIT", "0")],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["status"], "ok", "stdout: {}", stdout);
+    assert_eq!(json["path"], "merged");
+    assert_eq!(json["ci_skipped"], false);
 }
 
 #[test]

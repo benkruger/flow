@@ -4143,3 +4143,41 @@ fn test_src_no_add_skipped_agent_module() {
          clap variant — removed in PR #1806."
     );
 }
+
+#[test]
+fn test_complete_finalize_no_speculative_sentinel_write() {
+    // Tombstone: removed in PR #1879. complete_finalize::run_impl must
+    // not fabricate the integration-branch CI sentinel by writing a
+    // `ci::tree_snapshot` result to `ci::sentinel_path` without an
+    // intervening `ci::run_impl` pass. The sanctioned path is a
+    // sentinel-gated `ci::run_impl` call against the base branch, which
+    // runs format/lint/build/test and writes the sentinel only on a
+    // real CI pass.
+    //
+    // Structural assertion (function-body-scoped, not a single literal):
+    // the speculative write can be reassembled via concat!/format!/split
+    // constants, so the scan targets the construct — a manual
+    // `tree_snapshot(` paired with a manual `sentinel_path(` inside
+    // run_impl's body. The sanctioned `ci::run_impl(` call reaches both
+    // internally (in src/ci.rs), but complete_finalize's own body
+    // references neither after the removal.
+    let root = common::repo_root();
+    let content = fs::read_to_string(root.join("src").join("complete_finalize.rs"))
+        .expect("src/complete_finalize.rs must exist");
+    // run_impl is the only fn in the file and the last item, so the
+    // body slice runs from `fn run_impl` to EOF (no subsequent `\nfn `).
+    let tail = content
+        .split_once("fn run_impl")
+        .map(|(_, t)| t)
+        .expect("complete_finalize must define run_impl");
+    let body = tail.split_once("\nfn ").map(|(b, _)| b).unwrap_or(tail);
+    let has_snapshot = body.contains("tree_snapshot(");
+    let has_sentinel = body.contains("sentinel_path(");
+    assert!(
+        !(has_snapshot && has_sentinel),
+        "complete_finalize::run_impl must not fabricate the base-branch \
+         CI sentinel by pairing a manual tree_snapshot() with a manual \
+         sentinel_path() write — use sentinel-gated ci::run_impl instead \
+         (removed in PR #1879)."
+    );
+}

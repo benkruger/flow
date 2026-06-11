@@ -137,6 +137,23 @@ fn path_stub_dir(parent: &Path) -> PathBuf {
     stubs
 }
 
+/// Seed passing `bin/{format,lint,build,test}` scripts (each `exit 0`,
+/// no `FLOW-STUB-UNCONFIGURED` marker) into `repo/bin/` so the
+/// sentinel-gated `ci::run_impl` complete-finalize runs against the
+/// integration branch after a clean `--pull` actually executes tools
+/// and passes — writing the base-branch sentinel only on a real CI
+/// pass. Without these scripts `bin_tool_sequence` is empty and CI
+/// fails (the empty-tools error), so the sentinel is never written.
+fn write_passing_bin_stubs(repo: &Path) {
+    let bin_dir = repo.join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    for tool in &["format", "lint", "build", "test"] {
+        let p = bin_dir.join(tool);
+        fs::write(&p, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_complete_finalize(
     repo: &Path,
@@ -633,18 +650,20 @@ fn finalize_pull_flag_threads_to_cleanup() {
     let _ = cleanup;
 }
 
-// --- run_impl: integration-branch sentinel persisted after clean pull ---
+// --- run_impl: integration-branch CI after clean pull ---
 
-/// `--pull` was passed AND `git pull origin main` succeeded — write
-/// the integration-branch sentinel so the next `start-gate` skips
-/// CI. Asserts the sentinel exists at the canonical path
-/// (`<root>/.flow-states/main-ci-passed`) and that its content
-/// matches a fresh `ci::tree_snapshot(&repo, None)` evaluation.
+/// `--pull` was passed, `git pull origin main` succeeded, and the
+/// integration-branch CI passed — `ci::run_impl` runs format/lint/
+/// build/test and writes the base-branch sentinel only on the real
+/// pass, so the next `start-gate` can skip CI. Asserts the sentinel
+/// exists at the canonical path (`<root>/.flow-states/main-ci-passed`)
+/// and that no `base_ci` failure field is surfaced.
 #[test]
-fn complete_finalize_writes_sentinel_after_clean_pull() {
+fn complete_finalize_writes_sentinel_after_clean_pull_ci_pass() {
     let dir = tempfile::tempdir().unwrap();
     let parent = dir.path().canonicalize().unwrap();
     let repo = make_repo_fixture(&parent);
+    write_passing_bin_stubs(&repo);
     let state_path = write_state_file(&repo, BRANCH, true);
     let flow_bin = parent.join("bin-flow-stub").join("flow");
     write_success_flow_stub(&flow_bin);
@@ -677,19 +696,68 @@ fn complete_finalize_writes_sentinel_after_clean_pull() {
 
     assert!(
         sentinel_path.exists(),
-        "sentinel must exist at {} after clean pull",
+        "sentinel must exist at {} after a real CI pass on the base branch",
         sentinel_path.display()
     );
-    let sentinel_content = fs::read_to_string(&sentinel_path).expect("read sentinel");
-    let expected = flow_rs::ci::tree_snapshot(&repo, None);
+    assert!(
+        json.get("base_ci").is_none(),
+        "no base_ci failure field when integration-branch CI passes; got: {}",
+        json
+    );
+}
+
+/// `--pull` succeeded but the integration-branch CI failed — no
+/// `bin/*` tool scripts are present, so `ci::run_impl` hits the
+/// empty-tools error. The failure is surfaced in the result's
+/// `base_ci` field WITHOUT erroring the finalize (the squash merge
+/// already landed upstream and cannot be rolled back) and WITHOUT
+/// writing the green sentinel.
+#[test]
+fn complete_finalize_clean_pull_ci_fail_surfaces_base_ci() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let repo = make_repo_fixture(&parent);
+    // No bin/* scripts → ci::run_impl empty-tools error → CI fails.
+    let state_path = write_state_file(&repo, BRANCH, true);
+    let flow_bin = parent.join("bin-flow-stub").join("flow");
+    write_success_flow_stub(&flow_bin);
+    let stubs = path_stub_dir(&parent);
+
+    let sentinel_path = flow_rs::ci::sentinel_path(&repo, "main");
+
+    let (code, stdout, _) = run_complete_finalize(
+        &repo,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        BRANCH,
+        ".worktrees/test-feature",
+        true, // --pull
+        Some(&flow_bin),
+        Some(&stubs),
+    );
+
+    // The finalize itself does not error — the merge already landed.
+    assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert_eq!(json["status"], "ok");
     assert_eq!(
-        sentinel_content, expected,
-        "sentinel content must equal current tree_snapshot"
+        json["cleanup"]["git_pull"], "pulled",
+        "fixture must produce a clean pull: {}",
+        json
+    );
+    let base_ci = json
+        .get("base_ci")
+        .expect("base_ci field must surface the integration-branch CI failure");
+    assert_eq!(base_ci["status"], "failed");
+    assert!(
+        !sentinel_path.exists(),
+        "no green sentinel may be written when integration-branch CI fails"
     );
 }
 
 /// `--pull` flag was NOT set, so no pull happened. We don't know
-/// main's state, so the sentinel must not be written.
+/// main's state, so no integration-branch CI runs: no sentinel is
+/// written and no `base_ci` field appears.
 #[test]
 fn complete_finalize_no_sentinel_when_pull_disabled() {
     let dir = tempfile::tempdir().unwrap();
@@ -700,7 +768,7 @@ fn complete_finalize_no_sentinel_when_pull_disabled() {
     write_success_flow_stub(&flow_bin);
     let stubs = path_stub_dir(&parent);
 
-    let (code, _stdout, _) = run_complete_finalize(
+    let (code, stdout, _) = run_complete_finalize(
         &repo,
         "42",
         state_path.to_string_lossy().as_ref(),
@@ -712,6 +780,12 @@ fn complete_finalize_no_sentinel_when_pull_disabled() {
     );
 
     assert_eq!(code, 0);
+    let json = last_json_line(&stdout);
+    assert!(
+        json.get("base_ci").is_none(),
+        "no base_ci when --pull is unset (CI does not run); got: {}",
+        json
+    );
     let sentinel_path = flow_rs::ci::sentinel_path(&repo, "main");
     assert!(
         !sentinel_path.exists(),
@@ -719,17 +793,17 @@ fn complete_finalize_no_sentinel_when_pull_disabled() {
     );
 }
 
-/// `--pull` succeeds but the state file's `base_branch` field is a
-/// slash-containing value (`origin/HEAD` resolves to a branch like
-/// `feature/foo`). Without an `is_valid_branch` guard around the
-/// sentinel write, `sentinel_path` would call
-/// `FlowPaths::try_new(...).expect()` and panic — surfacing a Rust
+/// `--pull` succeeds but the integration branch (`origin/HEAD`)
+/// resolves to a slash-containing value like `feature/foo`. Without
+/// an `is_valid_branch` guard around the integration-branch CI call,
+/// `ci::run_impl` would reach `sentinel_path`, which calls
+/// `FlowPaths::try_new(...).expect()` and panics — surfacing a Rust
 /// backtrace to the user mid-cleanup. Per
-/// `.claude/rules/branch-path-safety.md`, state-derived branches
-/// must pass `is_valid_branch` before reaching the panicking
-/// constructor. Sentinel writing is best-effort, so the
-/// invalid-branch path skips the write entirely; the next
-/// start-gate run re-establishes the sentinel.
+/// `.claude/rules/branch-path-safety.md`, state-derived branches must
+/// pass `is_valid_branch` before reaching the panicking constructor.
+/// The integration-branch CI is best-effort, so the invalid-branch
+/// path skips the CI run (and therefore the sentinel) entirely; the
+/// next start-gate run re-establishes the sentinel.
 #[test]
 fn complete_finalize_skips_sentinel_when_base_branch_is_slash_containing() {
     let dir = tempfile::tempdir().unwrap();
@@ -782,6 +856,12 @@ fn complete_finalize_skips_sentinel_when_base_branch_is_slash_containing() {
     assert_eq!(
         json["cleanup"]["git_pull"], "pulled",
         "fixture must produce a clean pull so the sentinel branch is reachable: {}",
+        json
+    );
+    assert!(
+        json.get("base_ci").is_none(),
+        "the is_valid_branch guard skips the integration-branch CI entirely \
+         for a slash branch, so no base_ci field is surfaced; got: {}",
         json
     );
     // No sentinel path is computable for a slash-containing branch

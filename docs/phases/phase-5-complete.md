@@ -69,12 +69,16 @@ single-use merge-approval marker — with no marker the merge is refused
 (`merge_not_confirmed`) and the skill loops back to step 3 to
 re-confirm. This structural gate means a lost mode flag cannot merge a
 manual-configured flow unconfirmed. If the integration branch has
-moved, merges the new commits and loops back to step 2 (CI gate) to
-re-test. A retry limit of 3 prevents
-infinite loops under high contention. Once up-to-date, squash-merges
-via `gh pr merge --squash`. When `gh pr merge` refuses (a required
-GitHub check is failing or pending), surfaces the verbatim stderr as
-`not_mergeable` and the skill reports it and stops.
+moved, merges the new commits, pushes, and runs sentinel-gated CI
+inline on the freshly-merged tree before deferring: a pass returns
+`ci_rerun` (the skill loops back to step 2, where CI skips on the
+sentinel match, then re-attempts the merge); a failure returns
+`ci_failed` with the CI output so the skill launches ci-fixer
+directly rather than deferring an untested tree. A retry limit of 3
+prevents infinite loops under high contention. Once up-to-date,
+squash-merges via `gh pr merge --squash`. When `gh pr merge` refuses
+(a required GitHub check is failing or pending), surfaces the verbatim
+stderr as `not_mergeable` and the skill reports it and stops.
 
 ### 5. Finalize: post-merge + cleanup
 
@@ -104,13 +108,16 @@ rather than stranding the shell in a deleted directory.
   file, closed-issues file, issues file, and adversarial test file
   (glob-matched as `.flow-states/<branch>/adversarial_test.*`),
   followed by `git pull origin <base_branch>` (the integration branch)
-- Integration-branch sentinel write: when `--pull` was passed AND
-  the pull completed cleanly, writes
-  `<root>/.flow-states/<base_branch>/ci-passed` from
-  `ci::tree_snapshot(&root, None)`. The post-merge local tree is
-  byte-identical to the feature-branch tip whose CI passed, so the
-  sentinel is honest by construction. The next `start-gate` sees
-  the snapshot match and skips CI entirely.
+- Integration-branch CI: when `--pull` was passed AND the pull
+  completed cleanly, runs sentinel-gated `ci::run_impl` against the
+  integration branch rather than fabricating a sentinel. It runs
+  format/lint/build/test on the merged local tree and writes the
+  base-branch sentinel ONLY on a real pass (so the next `start-gate`
+  can skip CI). A failure is surfaced in the result's `base_ci`
+  field as a warning — the squash merge already landed, so this is
+  not a rollback. The next `/flow:flow-start` re-runs CI on the base
+  branch under the start lock and routes the same failure to
+  ci-fixer.
 
 Each cleanup step is best-effort — if one fails, the rest still run.
 

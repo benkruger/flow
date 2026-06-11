@@ -1981,10 +1981,19 @@ fn skill_ci_invocations_specify_long_timeout() {
     // - `complete-fast`   — runs a local CI dirty check before the
     //                       Complete merge, and dispatches to
     //                       `ci::run_impl()` on sentinel miss
+    // - `complete-finalize` — runs sentinel-gated `ci::run_impl()` on
+    //                       the integration branch after a clean
+    //                       `--pull` (surfaces `base_ci` on failure)
+    // - `complete-merge`  — runs sentinel-gated `ci::run_impl()` on the
+    //                       freshly-merged tree at the freshness-`merged`
+    //                       branch (surfaces `ci_failed` on failure)
     //
     // When adding a new CI-running `bin/flow` subcommand, extend this
     // regex in the same PR and update the list above.
-    let ci_re = Regex::new(r"bin/flow (ci|start-gate|finalize-commit|complete-fast)\b").unwrap();
+    let ci_re = Regex::new(
+        r"bin/flow (ci|start-gate|finalize-commit|complete-fast|complete-finalize|complete-merge)\b",
+    )
+    .unwrap();
     // Numeric form: the Bash tool `timeout` parameter must equal
     // exactly 600000 (10 minutes). The trailing `\D` (or end of
     // string) anchor prevents typo'd values like `timeout: 6000000`
