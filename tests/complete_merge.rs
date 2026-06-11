@@ -131,6 +131,23 @@ fn last_json_line(stdout: &str) -> Value {
         .unwrap_or_else(|e| panic!("failed to parse JSON line '{}': {}", last, e))
 }
 
+/// Seed passing `bin/{format,lint,build,test}` scripts (each `exit 0`,
+/// no `FLOW-STUB-UNCONFIGURED` marker) into `<parent>/bin/` so the
+/// sentinel-gated `ci::run_impl` complete-merge runs at the
+/// freshness-`merged` branch executes tools and passes — returning
+/// `ci_rerun`. Without these scripts `bin_tool_sequence` is empty and
+/// CI fails (the empty-tools error), returning `ci_failed`. CI runs
+/// with cwd = the spawn dir (`parent`), so the scripts live there.
+fn write_passing_bin_stubs(parent: &Path) {
+    let bin_dir = parent.join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+    for tool in &["format", "lint", "build", "test"] {
+        let p = bin_dir.join(tool);
+        fs::write(&p, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
 fn setup(parent: &Path) -> (PathBuf, PathBuf, PathBuf) {
     let flow_bin = parent.join("bin-flow-stub").join("flow");
     write_flow_stub(&flow_bin);
@@ -194,10 +211,17 @@ fn up_to_date_and_merge_succeeds_exits_0() {
 }
 
 #[test]
-fn main_moved_ci_rerun() {
+fn main_moved_ci_passes_returns_ci_rerun() {
+    // Main moved → freshness `merged` → push, then sentinel-gated CI
+    // runs inline on the freshly-merged tree. With passing `bin/*`
+    // stubs CI passes, so complete-merge returns `ci_rerun` (the
+    // Step-4 loop re-checks freshness and squash-merges; its CI skips
+    // on the sentinel). Pre-inline-CI this deferred to `ci_rerun`
+    // without running CI at all.
     let dir = tempfile::tempdir().unwrap();
     let parent = dir.path().canonicalize().unwrap();
     let (state_path, flow_bin, stubs) = setup(&parent);
+    write_passing_bin_stubs(&parent);
 
     let (code, stdout, _) = run_complete_merge_sub(
         &parent,
@@ -213,6 +237,38 @@ fn main_moved_ci_rerun() {
     assert_eq!(json["status"], "ci_rerun");
     assert_eq!(json["pushed"], true);
     assert_eq!(json["pr_number"], 42);
+}
+
+#[test]
+fn main_moved_ci_fails_returns_ci_failed() {
+    // Main moved → freshness `merged` → push, then sentinel-gated CI
+    // runs inline. With no `bin/*` scripts present, `ci::run_impl`
+    // hits the empty-tools error → complete-merge returns `ci_failed`
+    // (Step 4 launches ci-fixer directly rather than deferring an
+    // untested tree). `pushed` stays true — the freshness merge landed.
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let (state_path, flow_bin, stubs) = setup(&parent);
+
+    let (code, stdout, _) = run_complete_merge_sub(
+        &parent,
+        "42",
+        state_path.to_string_lossy().as_ref(),
+        &flow_bin,
+        &stubs,
+        &[("FAKE_FRESHNESS_JSON", r#"{"status":"merged"}"#)],
+    );
+
+    assert_eq!(code, 1); // ci_failed != merged → exit 1
+    let json = last_json_line(&stdout);
+    assert_eq!(json["status"], "ci_failed");
+    assert_eq!(json["pushed"], true);
+    assert_eq!(json["pr_number"], 42);
+    assert!(
+        json.get("output").is_some(),
+        "ci_failed must carry the CI output for ci-fixer; got: {}",
+        json
+    );
 }
 
 #[test]
@@ -776,6 +832,10 @@ fn manual_config_marker_consumed_on_ci_rerun_loopback() {
     let state_path = setup_flow_layout(&parent, "feat-merge", "manual");
     let branch_dir = state_path.parent().unwrap().to_path_buf();
     flow_rs::merge_approval::write_approval(&branch_dir, "feat-merge").unwrap();
+    // Freshness `merged` reaches the inline CI; passing stubs keep the
+    // outcome `ci_rerun` so this test isolates the marker-consumption
+    // invariant rather than a CI failure.
+    write_passing_bin_stubs(&parent);
 
     let (code, stdout, _) = run_complete_merge_sub(
         &parent,
@@ -786,7 +846,7 @@ fn manual_config_marker_consumed_on_ci_rerun_loopback() {
         &[("FAKE_FRESHNESS_JSON", r#"{"status":"merged"}"#)],
     );
 
-    // Freshness `merged` → ci_rerun, no squash-merge reached.
+    // Freshness `merged` → inline CI passes → ci_rerun, no squash-merge reached.
     assert_eq!(code, 1);
     let json = last_json_line(&stdout);
     assert_eq!(json["status"], "ci_rerun");

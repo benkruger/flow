@@ -202,43 +202,50 @@ pub fn run_impl(args: &Args) -> Value {
         .map(|(k, v)| (k, Value::String(v)))
         .collect();
 
-    // Persist the integration-branch sentinel when the post-merge pull
-    // completed cleanly. With the working_tree_dirty gate in
-    // `finalize_commit::run_impl`, the post-merge tree on local
-    // <base_branch> is byte-identical to the feature-branch tip whose
-    // CI just passed. Writing the sentinel here lets the next
-    // `start-gate` see the snapshot match and skip CI entirely. The
-    // write is best-effort — a filesystem error here must not fail
-    // the merge that already succeeded upstream.
+    // Run sentinel-gated CI on the integration branch when the
+    // post-merge pull completed cleanly. The merged tree on local
+    // <base_branch> must actually pass CI before the next `start-gate`
+    // trusts a sentinel for it — so rather than fabricating the
+    // sentinel, run `ci::run_impl` against the base branch. It computes
+    // the tree snapshot, skips when a prior sentinel already matches,
+    // otherwise runs format/lint/build/test and writes the sentinel
+    // ONLY on a real pass. A CI failure is surfaced in the result's
+    // `base_ci` field WITHOUT rolling back the already-completed merge
+    // or erroring the finalize — the merge landed upstream and cannot
+    // be undone from here. The base branch is checked out at the
+    // project root after cleanup, so `root` is both the cwd and the
+    // sentinel root for the call.
+    let mut base_ci: Option<Value> = None;
     if args.pull && cleanup_map.get("git_pull").and_then(|v| v.as_str()) == Some("pulled") {
-        // `base_branch` comes from `git::default_branch_in(root)` via
-        // the match arm at the top of run_impl. The value is git
-        // subprocess output and is unvalidated — slash-containing
-        // origin/HEAD targets (e.g. `feature/main`) can reach this
-        // branch. `sentinel_path` calls
+        // `base_branch` comes from `git::default_branch_in(root)` —
+        // unvalidated git subprocess output. A slash-containing
+        // origin/HEAD target (e.g. `feature/main`) would reach
+        // `sentinel_path` inside `ci::run_impl`, which calls
         // `FlowPaths::try_new(...).expect(...)` and panics on invalid
         // branches; per `.claude/rules/branch-path-safety.md`, callers
-        // must pattern-match on `is_valid_branch` before reaching the
-        // panicking constructor. Sentinel writing is best-effort (per
-        // the surrounding rationale), so an invalid base_branch here
-        // simply skips the write — the next start-gate run will
-        // re-establish the sentinel.
+        // must gate on `is_valid_branch` before the panicking
+        // constructor. The integration-branch CI is best-effort, so an
+        // invalid base_branch skips it — the next start-gate run
+        // re-establishes the sentinel.
         if FlowPaths::is_valid_branch(&base_branch) {
-            let snapshot = crate::ci::tree_snapshot(&root, None);
-            let sentinel = crate::ci::sentinel_path(&root, &base_branch);
-            // `sentinel_path` always returns a multi-component path
-            // under `<root>/.flow-states/<branch>/`, so `.parent()` is
-            // never None. `.expect()` is the canonical pattern for an
-            // unreachable arm per
-            // `.claude/rules/testability-means-simplicity.md`. The parent
-            // dir may not exist when the sentinel branch is the base
-            // branch (no flow ever ran on it yet), so create it before
-            // writing.
-            let parent = sentinel
-                .parent()
-                .expect("sentinel_path always returns a multi-component path");
-            let _ = std::fs::create_dir_all(parent);
-            let _ = std::fs::write(&sentinel, &snapshot);
+            let ci_args = crate::ci::Args {
+                force: false,
+                retry: 0,
+                branch: Some(base_branch.clone()),
+                simulate_branch: None,
+                format: false,
+                lint: false,
+                build: false,
+                test: false,
+                audit: false,
+                clean: false,
+                trailing: Vec::new(),
+                reason: Some("verifying integration branch after Complete merge".to_string()),
+            };
+            let (ci_result, ci_code) = crate::ci::run_impl(&ci_args, &root, &root, false);
+            if ci_code != 0 {
+                base_ci = Some(json!({ "status": "failed", "ci": ci_result }));
+            }
         }
     }
 
@@ -259,6 +266,13 @@ pub fn run_impl(args: &Args) -> Value {
         .unwrap_or_default();
     if !failures_map.is_empty() {
         result["post_merge_failures"] = Value::Object(failures_map);
+    }
+
+    // Surface an integration-branch CI failure as a warning field on
+    // the otherwise-ok result. The merge already landed, so a failure
+    // here is reported to the user (SKILL Step 5), not a rollback.
+    if let Some(bc) = base_ci {
+        result["base_ci"] = bc;
     }
 
     let has_failures = result

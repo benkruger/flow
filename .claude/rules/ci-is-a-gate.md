@@ -27,11 +27,11 @@ This applies everywhere `bin/flow` runs:
 
 The Bash tool's default timeout is 2 minutes (120,000 ms). `bin/flow
 ci` and its transitive callers (`start-gate`, `finalize-commit`,
-`complete-fast`) routinely run 3–4 minutes on clean builds. A Bash
-tool call that hits the default timeout is backgrounded by Claude
-Code — the tool result returns without the command having finished
-— which defeats the same "wait for the gate" invariant as
-`run_in_background: true`.
+`complete-fast`, `complete-finalize`, `complete-merge`) routinely run
+3–4 minutes on clean builds. A Bash tool call that hits the default
+timeout is backgrounded by Claude Code — the tool result returns
+without the command having finished — which defeats the same "wait
+for the gate" invariant as `run_in_background: true`.
 
 Every SKILL.md bash block that invokes a CI-running `bin/flow`
 subcommand must be preceded by adjacent prose instructing the model
@@ -52,7 +52,14 @@ The CI-running subcommand family:
   `git commit` per CLAUDE.md "CI is enforced inside
   `finalize-commit` itself"
 - `bin/flow complete-fast` — runs a local CI dirty check before
-  the Complete merge
+  the Complete merge, and dispatches to `ci::run_impl()` on a
+  sentinel miss
+- `bin/flow complete-finalize` — runs sentinel-gated `ci::run_impl()`
+  on the integration branch after a clean `--pull`, surfacing a
+  `base_ci` failure field without rolling back the merge
+- `bin/flow complete-merge` — runs sentinel-gated `ci::run_impl()` on
+  the freshly-merged tree at the freshness-`merged` branch, surfacing
+  a `ci_failed` status on failure
 
 The canonical instruction wording is:
 
@@ -121,7 +128,7 @@ fences at EOF are surfaced as violations rather than silently
 passing.
 
 - `skill_ci_invocations_specify_long_timeout` — the CI-running
-  regex `bin/flow (ci|start-gate|finalize-commit|complete-fast)\b`,
+  regex `bin/flow (ci|start-gate|finalize-commit|complete-fast|complete-finalize|complete-merge)\b`,
   scanning `skills/`.
 - `skill_poll_invocations_specify_long_timeout` — the poll-subcommand
   regex `bin/flow (start-init|wait-for-release-ci)\b`, scanning both

@@ -411,7 +411,12 @@ staging`; a standard repo produces `<base_branch> = main`.
 ${CLAUDE_PLUGIN_ROOT}/bin/flow base-branch
 ```
 
-For manual mode (after Step 3 confirmation), run the merge command:
+For manual mode (after Step 3 confirmation), run the merge command.
+When main has moved, `complete-merge` runs sentinel-gated CI on the
+freshly-merged tree (`ci::run_impl()`), so use a 10-minute Bash tool
+timeout (`timeout: 600000`) — CI runs can take 3–4 minutes and the
+default 2-minute timeout would background the process, defeating the
+gate (per `.claude/rules/ci-is-a-gate.md`).
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow complete-merge --pr <pr_number> --state-file <project_root>/.flow-states/<branch>/state.json
@@ -426,9 +431,48 @@ using the `<base_branch>` value resolved at the top of this step:
 
 Continue to Step 5.
 
+**If `"status": "ci_failed"`** — main had new commits that were merged
+into the branch without conflicts and pushed, but the inline CI on the
+freshly-merged tree failed. The `output` field carries the CI output.
+Launch the `ci-fixer` sub-agent to diagnose and fix. Use the Agent
+tool:
+
+- `subagent_type`: `"flow:ci-fixer"`
+- `description`: `"Fix CI failures before merge"`
+
+Provide the `output` field from the JSON in the prompt so the sub-agent
+knows what failed.
+
+If fixed, record the resume step, set continuation flags, and commit:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=2
+```
+
+Set the continuation context. The self-invocation carries no mode
+flag — Mode Resolution re-resolves the mode from
+the state file on the resumed entry:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invoke flow:flow-complete --continue-step."
+```
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set _continue_pending=commit
+```
+
+Commit the fixes via `/flow:flow-commit`.
+
+To re-run CI and re-attempt the merge, invoke
+`flow:flow-complete --continue-step` using the Skill tool as your
+final action. Do not output anything else after this invocation.
+
+If not fixed after 3 attempts, stop and report.
+
 **If `"status": "ci_rerun"`** — main had new commits that were merged
-into the branch without conflicts. The branch was pushed. Loop back
-to re-run CI:
+into the branch without conflicts. The branch was pushed and the
+inline CI on the merged tree passed. Loop back to re-run CI (it skips
+on the sentinel match) and re-attempt the merge:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set complete_step=2
@@ -530,6 +574,12 @@ Review Findings, Learn Findings, State File, Session Log, and
 Issues Filed — from the state file and available artifact files.
 Sections with missing data are omitted automatically.
 
+After a clean `--pull`, `complete-finalize` runs sentinel-gated CI on
+the integration branch (`ci::run_impl()`), so use a 10-minute Bash
+tool timeout (`timeout: 600000`) — CI runs can take 3–4 minutes and
+the default 2-minute timeout would background the process, defeating
+the gate (per `.claude/rules/ci-is-a-gate.md`).
+
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/flow complete-finalize --pr <pr_number> --state-file <project_root>/.flow-states/<branch>/state.json --branch <branch> --worktree <worktree_path> --pull
 ```
@@ -555,6 +605,20 @@ already gone, and what failed.
 
 If the output has a non-empty `post_merge_failures` dict, note the
 failures but continue — all post-merge operations are best-effort.
+
+If the output has a `base_ci` field (its `status` is `"failed"`),
+the sentinel-gated CI on the integration branch failed after the
+clean `--pull`. The squash merge already landed, so this is a
+warning, NOT a rollback — do not attempt to undo the merge. Report
+to the user that the integration branch needs attention:
+
+> "⚠ Integration-branch CI failed after merge. The PR is merged, but
+> the local <base_branch> tree did not pass CI. Inspect with
+> `bin/flow ci` on <base_branch> and repair before the next flow
+> starts. (`base_ci.ci` carries the CI output.)"
+
+The next `/flow:flow-start` re-runs CI on the base branch under the
+start lock and surfaces the same failure to `ci-fixer`.
 
 ### Step 6 — Cleanup results
 
