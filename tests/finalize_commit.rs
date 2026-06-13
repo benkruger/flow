@@ -382,10 +382,11 @@ esac
 }
 
 /// Helper: run `bin/flow finalize-commit` against a repo fixture with a
-/// controlled git stub on PATH.
+/// controlled git stub on PATH. The caller writes the message file to
+/// `<commit_cwd>/.flow-commit-msg` before invoking — finalize-commit
+/// derives the path from the commit cwd, not from an argument.
 fn run_finalize_with_stub(
     clone_path: &Path,
-    msg_path: &Path,
     branch: &str,
     stubs: &Path,
     env: &[(&str, &str)],
@@ -393,7 +394,7 @@ fn run_finalize_with_stub(
     let current_path = std::env::var("PATH").unwrap_or_default();
     let new_path = format!("{}:{}", stubs.display(), current_path);
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_flow-rs"));
-    cmd.args(["finalize-commit", msg_path.to_str().unwrap(), branch])
+    cmd.args(["finalize-commit", branch])
         .current_dir(clone_path)
         .env("PATH", new_path)
         .env_remove("FLOW_CI_RUNNING");
@@ -433,7 +434,6 @@ fn happy_path_commit_pull_push_succeed() {
     write_ci_sentinel_for_worktree(clone_path, "happy-path", &worktree_path);
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "happy-path".to_string(),
     };
     let result = run_impl(&args, clone_path).unwrap();
@@ -486,7 +486,6 @@ fn finalize_commit_routes_to_feature_branch_checked_out_at_repo_root() {
     write_ci_sentinel_for_worktree(clone_path, "feat-at-root", clone_path);
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "feat-at-root".to_string(),
     };
     let result = run_impl(&args, clone_path).unwrap();
@@ -509,7 +508,6 @@ fn finalize_commit_errors_when_branch_not_checked_out() {
     fs::write(&msg_path, "Should not commit.").unwrap();
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "never-checked-out".to_string(),
     };
     let result = run_impl(&args, clone_path).unwrap();
@@ -543,7 +541,6 @@ fn finalize_commit_errors_when_worktree_resolution_fails() {
     fs::write(&msg_path, "Should not commit.").unwrap();
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "some-branch".to_string(),
     };
     let result = run_impl(&args, root).unwrap();
@@ -586,7 +583,6 @@ fn finalize_commit_routes_to_worktree_when_caller_cwd_differs() {
     let worktree_sha_before = head_sha(&worktree_path);
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "feature-routing".to_string(),
     };
     let result = run_impl(&args, clone_path).unwrap();
@@ -636,7 +632,6 @@ fn finalize_commit_routes_to_worktree_when_caller_cwd_inside_main_subdir() {
     let worktree_sha_before = head_sha(&worktree_path);
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "feature-monorepo".to_string(),
     };
     let result = run_impl(&args, clone_path).unwrap();
@@ -725,7 +720,6 @@ fn finalize_commit_routes_to_worktree_when_caller_cwd_on_other_feature_branch() 
     let worktree_b_sha_before = head_sha(&worktree_b);
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "feature-b".to_string(),
     };
     let result = run_impl(&args, clone_path).unwrap();
@@ -794,7 +788,6 @@ fn working_tree_dirty_blocks_commit_when_index_differs() {
     let sha_before = head_sha(&worktree_path);
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "dirty-tree".to_string(),
     };
     let result = run_impl(&args, clone_path).unwrap();
@@ -816,9 +809,64 @@ fn working_tree_dirty_blocks_commit_when_index_differs() {
     let sha_after = head_sha(&worktree_path);
     assert_eq!(sha_before, sha_after, "HEAD must not have advanced");
 
-    // Gate fired before finalize_commit ran, so the message file
-    // is still on disk for the user's retry.
-    assert!(msg_path.exists());
+    // The working-tree-dirty gate is reached after commit_cwd resolves,
+    // so it flows through to run_impl's tail deletion: the message file
+    // is gone after every post-resolution exit.
+    assert!(!msg_path.exists());
+}
+
+// --- run_impl: message_file_missing gate ---
+
+/// After `commit_cwd` resolves, the commit-message file path is
+/// `<commit_cwd>/.flow-commit-msg` — derived, not caller-supplied.
+/// When no file exists at that path (the skill failed to write it, or
+/// a prior run already consumed it), run_impl returns a structured
+/// `message_file_missing` error that names the expected path. The gate
+/// fires before any other gate (working-tree-dirty, CI), so the caller
+/// sees a precise reason rather than a downstream `git commit` failure.
+#[test]
+fn message_file_missing_returns_structured_error() {
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("msg-missing");
+    let clone_path = clone_dir.path();
+
+    // Intentionally do NOT write `<worktree>/.flow-commit-msg`.
+    let args = Args {
+        branch: "msg-missing".to_string(),
+    };
+    let result = run_impl(&args, clone_path).unwrap();
+    assert_eq!(result["status"], "error", "got: {}", result);
+    assert_eq!(result["step"], "message_file_missing");
+    let msg = result["message"].as_str().unwrap();
+    assert!(
+        msg.contains(".flow-commit-msg"),
+        "message must name the expected path: {}",
+        msg
+    );
+    assert!(
+        msg.contains(&worktree_path.to_string_lossy().to_string()),
+        "message must name the commit cwd: {}",
+        msg
+    );
+}
+
+/// An empty `.flow-commit-msg` (present but zero bytes) is treated the
+/// same as a missing file — `git commit -F` would refuse an empty
+/// message, so the gate catches it as `message_file_missing` rather
+/// than letting the commit step fail with a less precise reason.
+#[test]
+fn message_file_empty_returns_structured_error() {
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("msg-empty");
+    let clone_path = clone_dir.path();
+
+    let msg_path = worktree_path.join(".flow-commit-msg");
+    fs::write(&msg_path, "").unwrap();
+
+    let args = Args {
+        branch: "msg-empty".to_string(),
+    };
+    let result = run_impl(&args, clone_path).unwrap();
+    assert_eq!(result["status"], "error", "got: {}", result);
+    assert_eq!(result["step"], "message_file_missing");
 }
 
 // --- run_impl: CI enforcement ---
@@ -854,7 +902,6 @@ fn ci_fails_blocks_commit() {
     let commits_before = String::from_utf8_lossy(&before.stdout).lines().count();
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "ci-fail".to_string(),
     };
 
@@ -898,7 +945,6 @@ fn ci_sentinel_fresh_skips_ci() {
     write_ci_sentinel_for_worktree(clone_path, "ci-sentinel", &worktree_path);
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "ci-sentinel".to_string(),
     };
 
@@ -942,7 +988,6 @@ fn error_clears_continue_pending() {
     fs::write(&msg_path, "Add feature.rs").unwrap();
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "err-clear".to_string(),
     };
 
@@ -995,7 +1040,6 @@ fn ok_preserves_continue_pending() {
     write_ci_sentinel_for_worktree(clone_path, "ok-preserve", &worktree_path);
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "ok-preserve".to_string(),
     };
 
@@ -1103,7 +1147,6 @@ fn conflict_preserves_continue_pending() {
     write_ci_sentinel_for_worktree(clone_path, "conflict-preserve", &worktree_path);
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "conflict-preserve".to_string(),
     };
 
@@ -1146,7 +1189,6 @@ fn refreshes_sentinel_after_commit() {
     write_ci_sentinel_for_worktree(clone_path, "refresh-sent", &worktree_path);
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "refresh-sent".to_string(),
     };
 
@@ -1258,7 +1300,6 @@ fn no_sentinel_refresh_when_pull_merges() {
     write_ci_sentinel_for_worktree(clone_path, "no-refresh", &worktree_path);
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "no-refresh".to_string(),
     };
 
@@ -1311,7 +1352,6 @@ fn error_state_wrong_type_guard_fires() {
     fs::write(&msg_path, "Add feature.rs").unwrap();
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "wrong-state".to_string(),
     };
 
@@ -1387,7 +1427,6 @@ fn test_foo() {
     write_ci_sentinel_for_worktree(clone_path, "plan-dev", &worktree_path);
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "plan-dev".to_string(),
     };
 
@@ -1410,6 +1449,13 @@ fn test_foo() {
     assert_eq!(deviations.len(), 1);
     assert_eq!(deviations[0]["test_name"], "test_foo");
     assert_eq!(deviations[0]["plan_value"], "original");
+
+    // The plan-deviation block path reaches run_impl's tail deletion —
+    // the one exit whose deletion behavior changes under the new
+    // design. The plan-deviation block never reaches `finalize_commit`
+    // (where deletion used to live), so the file would have survived
+    // before this PR; the tail deletion now disposes of it.
+    assert!(!msg_path.exists());
 }
 
 /// Two-deviation companion to the single-deviation test. Exercises the
@@ -1474,7 +1520,6 @@ fn test_beta() {
     write_ci_sentinel_for_worktree(clone_path, "plan-dev2", &worktree_path);
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "plan-dev2".to_string(),
     };
 
@@ -1538,7 +1583,7 @@ fn finalize_commit_routes_to_root_when_no_worktree_exists_for_integration_branch
     fs::write(&msg_path, "Bootstrap commit on integration branch.").unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["finalize-commit", msg_path.to_str().unwrap(), "main"])
+        .args(["finalize-commit", "main"])
         .current_dir(clone_path)
         .env("HOME", clone_path)
         .env_remove("FLOW_CI_RUNNING")
@@ -1571,7 +1616,7 @@ fn git_unavailable_returns_resolve_cwd_error() {
     fs::write(&msg_path, "msg").unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args(["finalize-commit", msg_path.to_str().unwrap(), "main"])
+        .args(["finalize-commit", "main"])
         .current_dir(clone_path)
         .env("PATH", "")
         .env_remove("FLOW_CI_RUNNING")
@@ -1603,7 +1648,6 @@ fn commit_nonzero_returns_error_step_commit() {
 
     let output = run_finalize_with_stub(
         clone_path,
-        &msg_path,
         "commit-fail",
         &stubs,
         &[
@@ -1647,7 +1691,6 @@ fn pull_nonzero_no_conflict_returns_error_step_pull() {
 
     let output = run_finalize_with_stub(
         clone_path,
-        &msg_path,
         "pull-fail",
         &stubs,
         &[
@@ -1691,7 +1734,6 @@ fn pull_nonzero_with_conflict_returns_conflict_status() {
 
     let output = run_finalize_with_stub(
         clone_path,
-        &msg_path,
         "pull-conflict",
         &stubs,
         &[
@@ -1739,7 +1781,6 @@ fn push_nonzero_returns_error_step_push() {
 
     let output = run_finalize_with_stub(
         clone_path,
-        &msg_path,
         "push-fail",
         &stubs,
         &[
@@ -1757,23 +1798,10 @@ fn push_nonzero_returns_error_step_push() {
 // --- run_impl error arg validation ---
 
 #[test]
-fn empty_message_file_returns_err() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().canonicalize().unwrap();
-    let args = Args {
-        message_file: String::new(),
-        branch: "main".to_string(),
-    };
-    let err = run_impl(&args, &root).unwrap_err();
-    assert!(err.contains("finalize-commit"));
-}
-
-#[test]
 fn empty_branch_returns_err() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     let args = Args {
-        message_file: "msg.txt".to_string(),
         branch: String::new(),
     };
     let err = run_impl(&args, &root).unwrap_err();
@@ -1798,11 +1826,8 @@ fn flow_rs_no_recursion() -> Command {
 fn finalize_commit_slash_branch_returns_invalid_branch_error() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let msg_path = root.join("msg.txt");
-    fs::write(&msg_path, "subject\n").unwrap();
-
     let output = flow_rs_no_recursion()
-        .args(["finalize-commit", msg_path.to_str().unwrap(), "feature/foo"])
+        .args(["finalize-commit", "feature/foo"])
         .current_dir(&root)
         .env("GIT_CEILING_DIRECTORIES", &root)
         .env("GH_TOKEN", "invalid")
@@ -1833,15 +1858,15 @@ fn finalize_commit_slash_branch_returns_invalid_branch_error() {
     );
 }
 
-// Exercises run_impl_main's Err arm: empty message-file / branch args →
-// run_impl returns Err → run_impl_main wraps as {"step":"args"} + exit 1.
+// Exercises run_impl_main's Err arm: an empty branch arg → run_impl
+// returns Err → run_impl_main wraps as {"step":"args"} + exit 1.
 #[test]
 fn run_impl_main_empty_args_exits_1_with_args_step() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
 
     let output = flow_rs_no_recursion()
-        .args(["finalize-commit", "", ""])
+        .args(["finalize-commit", ""])
         .current_dir(&root)
         .env("GIT_CEILING_DIRECTORIES", &root)
         .env("GH_TOKEN", "invalid")
@@ -1884,7 +1909,7 @@ fn run_impl_main_ok_status_error_exits_1() {
     fs::write(&msg_path, "Add feature.rs").unwrap();
 
     let output = flow_rs_no_recursion()
-        .args(["finalize-commit", msg_path.to_str().unwrap(), "main-err"])
+        .args(["finalize-commit", "main-err"])
         .current_dir(clone_path)
         .env("GIT_CEILING_DIRECTORIES", clone_path)
         .env("GH_TOKEN", "invalid")
@@ -1927,7 +1952,7 @@ fn run_impl_main_ok_status_ok_exits_0() {
     write_ci_sentinel_for_worktree(clone_path, "main-ok", &worktree_path);
 
     let output = flow_rs_no_recursion()
-        .args(["finalize-commit", msg_path.to_str().unwrap(), "main-ok"])
+        .args(["finalize-commit", "main-ok"])
         .current_dir(clone_path)
         .env("GIT_CEILING_DIRECTORIES", clone_path)
         .env("GH_TOKEN", "invalid")
@@ -1972,7 +1997,7 @@ fn finalize_commit_passes_ci_reason() {
     // No sentinel — CI runs and the explicit reason wins.
 
     let output = flow_rs_no_recursion()
-        .args(["finalize-commit", msg_path.to_str().unwrap(), "ci-reason"])
+        .args(["finalize-commit", "ci-reason"])
         .current_dir(clone_path)
         .output()
         .expect("spawn flow-rs");
@@ -2075,7 +2100,6 @@ exit 0
     // tree.
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "restage-after-ci".to_string(),
     };
     let result = run_impl(&args, clone_path).unwrap();
@@ -2121,22 +2145,17 @@ fn finalize_commit_restage_noop_when_ci_leaves_working_tree_clean() {
             .unwrap(),
     );
 
-    // Use the canonical gitignored commit-msg path
-    // (`.flow-states/` is gitignored by the fixture) so the
-    // tree-listing assertion below sees only the staged source.rs.
-    // Production callers always use `FlowPaths::commit_msg()`,
-    // which resolves under `.flow-states/<branch>/`; the test
-    // fixture follows the same convention here so the no-op
-    // invariant is exercised against the path the model uses.
-    let branch_state_dir = clone_path.join(".flow-states").join("restage-noop");
-    fs::create_dir_all(&branch_state_dir).unwrap();
-    let msg_path = branch_state_dir.join("commit-msg.txt");
+    // The commit-message file lives at `<commit_cwd>/.flow-commit-msg`
+    // — the canonical location finalize-commit derives from its commit
+    // cwd. It is untracked and deleted at run_impl's tail, and
+    // `git add -u` cannot sweep an untracked file, so the tree-listing
+    // assertion below sees only the staged source.rs.
+    let msg_path = worktree_path.join(".flow-commit-msg");
     fs::write(&msg_path, "Add source.rs (no-op re-stage test).").unwrap();
 
     write_ci_sentinel_for_worktree(clone_path, "restage-noop", &worktree_path);
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "restage-noop".to_string(),
     };
     let result = run_impl(&args, clone_path).unwrap();
@@ -2246,7 +2265,7 @@ fn finalize_commit_restage_failure_returns_step_restage() {
 
     let stubs = write_git_add_failing_stub(clone_path);
 
-    let output = run_finalize_with_stub(clone_path, &msg_path, "restage-fail", &stubs, &[]);
+    let output = run_finalize_with_stub(clone_path, "restage-fail", &stubs, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let result = last_json_line(&stdout);
 
@@ -2326,7 +2345,6 @@ fn finalize_commit_restage_does_not_sweep_untracked_artifacts() {
     write_ci_sentinel_for_worktree(clone_path, "restage-untracked-bound", &worktree_path);
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "restage-untracked-bound".to_string(),
     };
     let result = run_impl(&args, clone_path).unwrap();
@@ -2393,7 +2411,6 @@ fn finalize_commit_working_tree_dirty_gate_still_fires_pre_ci() {
     fs::write(&msg_path, "Baseline + dirty tree.").unwrap();
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "dirty-pre-ci".to_string(),
     };
     let result = run_impl(&args, clone_path).unwrap();
@@ -2487,7 +2504,6 @@ exit 0
     // produces the gitignored artifact.
 
     let args = Args {
-        message_file: msg_path.to_str().unwrap().to_string(),
         branch: "restage-gitignore".to_string(),
     };
     let result = run_impl(&args, clone_path).unwrap();

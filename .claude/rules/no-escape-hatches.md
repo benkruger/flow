@@ -186,7 +186,7 @@ The Layer 10 dispatch has two paths that determine which branch
 source the gate's checks bind to:
 
 - **Destination path.** When the command shape is `bin/flow
-  finalize-commit <msg> <branch>`, the gate binds its checks to
+  finalize-commit <branch>`, the gate binds its checks to
   the explicit `<branch>` argument. The integration-branch check
   runs `match_finalize_commit_destination(branch_arg, &main_root)`
   and the active-flow check runs at
@@ -337,7 +337,7 @@ arm). Two AND-combined conditions:
    integration trunk — and the carve-out refuses to fire. This
    is the structural bound that prevents the feature-branch-to-
    trunk bypass: without it, a model on a feature-branch worktree
-   could fire `bin/flow finalize-commit msg.txt <trunk>` and the
+   could fire `bin/flow finalize-commit <trunk>` and the
    user-typed slash command would spuriously authorize a trunk
    commit. The active-flow arm's own carve-out
    (`check_active_flow_at`) handles the legitimate feature-branch
@@ -359,7 +359,7 @@ arm). Two AND-combined conditions:
 The caller precondition `is_finalize_commit_invocation(command)`
 is enforced by the destination-path arm itself via
 `extract_finalize_commit_branch_arg` — only `bin/flow ...
-finalize-commit <msg> <branch>` shapes route into the arm, so the
+finalize-commit <branch>` shapes route into the arm, so the
 helper does not re-check it. A future maintainer wiring this
 carve-out into a sibling arm that does NOT pre-filter the
 command shape must add the `is_finalize_commit_invocation(command)`
@@ -400,7 +400,7 @@ Window bound: the carve-out's authorization window stays open from
 the user-typed `/flow:flow-commit` turn until the next real user
 turn — the same documented bound the bootstrap carve-out carries.
 A user message after `/flow:flow-commit` completes — followed by
-a separate `bin/flow finalize-commit msg.txt <trunk>` invocation
+a separate `bin/flow finalize-commit <trunk>` invocation
 — puts the slash-command turn OUTSIDE the carve-out window, so
 `last_user_message_invokes_skill` returns false and the block
 fires.

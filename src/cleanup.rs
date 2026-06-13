@@ -437,8 +437,8 @@ pub fn cleanup(
     // Every per-branch artifact (`state.json`, `log`, `plan.md`,
     // `phases.json`, `ci-passed`, `timings.md`,
     // `closed-issues.json`, `issues.md`, `rule-content.md`,
-    // `commit-msg.txt`, `commit-msg-content.txt`, `start-prompt`)
-    // lives under `branch_dir()`, so one `remove_dir_all` covers the
+    // `start-prompt`) lives under `branch_dir()`, so one
+    // `remove_dir_all` covers the
     // full set and naturally handles future per-branch additions
     // without code changes. Review's adversarial probe lives
     // inside the worktree's test tree (declared per-project via

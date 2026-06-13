@@ -806,17 +806,20 @@ fn extract_dash_c_path(stripped: &str) -> Option<&str> {
 }
 
 /// Extract the explicit `<branch>` positional argument from a
-/// `bin/flow finalize-commit <msg-file> <branch>` invocation.
-/// Returns the dequoted branch token when the shape matches and
-/// both positional arguments are present, `None` otherwise.
+/// `bin/flow finalize-commit <branch>` invocation. Returns the
+/// dequoted branch token when the shape matches and the positional
+/// argument is present, `None` otherwise.
 ///
 /// Mirrors the `bin/flow` arm of `is_commit_invocation_inner`:
 /// dequotes the first token, accepts the bare `bin/flow` form and
 /// the `*/bin/flow` suffix form via `is_bin_flow_token`, and walks
 /// past any future global flags between launcher and subcommand
-/// before locating `finalize-commit`. After the subcommand token,
-/// the next token is the message file; the token after that is the
-/// branch.
+/// before locating `finalize-commit`. The first token after the
+/// subcommand is the branch — finalize-commit no longer takes a
+/// message-file positional, so a legacy two-positional invocation
+/// (`finalize-commit <path> <branch>`) yields a path-like first
+/// token containing `/` that fails `is_valid_branch` below and
+/// returns `None`, falling through to the cwd-based check.
 ///
 /// Production consumer: Layer 10's `check_commit_during_flow` uses
 /// the returned branch arg as the routing key for the destination-
@@ -844,8 +847,7 @@ fn extract_finalize_commit_branch_arg(stripped: &str) -> Option<&str> {
         return None;
     }
     // Walk past any pre-subcommand flags so `bin/flow --verbose
-    // finalize-commit <msg> <branch>` extracts the branch
-    // unchanged.
+    // finalize-commit <branch>` extracts the branch unchanged.
     let mut found_subcommand = false;
     for t in tokens.by_ref() {
         if t == "finalize-commit" {
@@ -856,13 +858,11 @@ fn extract_finalize_commit_branch_arg(stripped: &str) -> Option<&str> {
     if !found_subcommand {
         return None;
     }
-    // Skip the message-file token; require the branch token after.
-    // Both `tokens.next()?` short-circuit when the user invoked
-    // `bin/flow finalize-commit` with no positional args or only
-    // the message file — without the second positional, this
-    // helper has no branch to bind to and the caller falls back
-    // to the cwd-based commit check.
-    tokens.next()?;
+    // The first token after `finalize-commit` is the branch — the
+    // message-file positional was removed. `tokens.next()?`
+    // short-circuits when the user invoked `bin/flow finalize-commit`
+    // with no positional, so the caller falls back to the cwd-based
+    // commit check.
     let branch_raw = tokens.next()?;
     let branch = dequote_token(branch_raw);
     // Validate before returning so downstream path construction
@@ -878,7 +878,7 @@ fn extract_finalize_commit_branch_arg(stripped: &str) -> Option<&str> {
 }
 
 /// Decide whether Layer 10's integration-branch arm fires for a
-/// `bin/flow finalize-commit <msg> <branch>` destination-path
+/// `bin/flow finalize-commit <branch>` destination-path
 /// invocation. Delegates the destination decision to
 /// `crate::flow_paths::finalize_commit_destination` — the same
 /// helper `src/finalize_commit.rs::run_impl` uses to pick its
@@ -1001,7 +1001,7 @@ fn commit_block_message_active_flow(branch: &str) -> String {
 /// Dispatch shape:
 ///
 /// 1. **Finalize-commit destination path** — when the command is
-///    `bin/flow finalize-commit <msg> <branch>` AND the branch
+///    `bin/flow finalize-commit <branch>` AND the branch
 ///    positional argument parses, the branch arg is the routing key.
 ///    The integration-branch check compares the branch arg against
 ///    `default_branch_in(<main_root>)` via
@@ -1056,7 +1056,7 @@ fn check_commit_during_flow(
     home: &Path,
 ) -> Option<String> {
     // Destination path: when the command names an explicit branch
-    // via `bin/flow finalize-commit <msg> <branch>`, route on the
+    // via `bin/flow finalize-commit <branch>`, route on the
     // branch arg rather than the caller's cwd. Extract gates this
     // path on its own — it returns None for non-bin/flow shapes,
     // for bin/flow shapes that lack the `finalize-commit` token,
@@ -1258,7 +1258,7 @@ fn bootstrap_carveout_applies(command: &str, transcript_path: Option<&Path>, hom
 /// Caller precondition: the destination-path arm in
 /// `check_commit_during_flow` invokes this helper only after
 /// `extract_finalize_commit_branch_arg` has already filtered the
-/// command shape to `bin/flow ... finalize-commit <msg> <branch>`,
+/// command shape to `bin/flow ... finalize-commit <branch>`,
 /// so an additional `is_finalize_commit_invocation` check inside
 /// this body would be unreachable defensive code. A future
 /// maintainer who wires this carve-out into a sibling arm that
@@ -1307,9 +1307,8 @@ fn flow_commit_trunk_carveout_applies(
     // the user's `/flow:flow-commit` intent bound to THAT worktree's
     // branch, not to the integration trunk. Without this check, a
     // feature-branch worktree's user-typed slash command could
-    // authorize an arbitrary `bin/flow finalize-commit msg.txt
-    // <trunk>` invocation, bypassing Layer 10 by transcript-
-    // anchoring alone.
+    // authorize an arbitrary `bin/flow finalize-commit <trunk>`
+    // invocation, bypassing Layer 10 by transcript-anchoring alone.
     if let Some(branch) = detect_branch_from_path(cwd) {
         if is_flow_active(&branch, main_root) {
             return false;
@@ -1326,8 +1325,8 @@ fn flow_commit_trunk_carveout_applies(
 /// Scope: serves the cwd path of `check_commit_during_flow` —
 /// `git ... commit`, `git -C <path> commit`, and any
 /// `bin/flow finalize-commit` invocation whose branch argument
-/// cannot be extracted. The `bin/flow finalize-commit <msg>
-/// <branch>` shape with a valid branch argument routes through
+/// cannot be extracted. The `bin/flow finalize-commit <branch>`
+/// shape with a valid branch argument routes through
 /// `match_finalize_commit_destination` instead, where the routing
 /// key is the explicit branch arg rather than `current_branch_in`.
 fn match_branch_at(path: &Path) -> Option<String> {

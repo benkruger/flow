@@ -189,20 +189,15 @@ fn seed_flow_state(
     fs::write(worktree.join(".flow-commit-msg"), "test commit\n").expect("write commit msg");
 }
 
-/// Spawn `flow-rs finalize-commit <msg-file> <branch>` against
-/// the prepared fixture. `current_dir(repo)` so `project_root()`
-/// (via `git worktree list --porcelain`) reports the main clone
-/// as the integration root. The `<msg-file>` arg is an absolute
-/// path under the worktree because `finalize-commit` reads it via
-/// `git -C <worktree> commit -F <abs-path>`.
-fn run_finalize_commit(repo: &Path, worktree: &Path) -> (i32, String, String) {
-    let msg_file = worktree.join(".flow-commit-msg");
+/// Spawn `flow-rs finalize-commit <branch>` against the prepared
+/// fixture. `current_dir(repo)` so `project_root()` (via
+/// `git worktree list --porcelain`) reports the main clone as the
+/// integration root. `finalize-commit` derives the commit-message
+/// file as `<commit_cwd>/.flow-commit-msg` from its commit cwd —
+/// the fixture writes that file at the worktree root.
+fn run_finalize_commit(repo: &Path, _worktree: &Path) -> (i32, String, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_flow-rs"))
-        .args([
-            "finalize-commit",
-            msg_file.to_str().expect("msg file utf8"),
-            BRANCH,
-        ])
+        .args(["finalize-commit", BRANCH])
         .current_dir(repo)
         .env_remove("FLOW_CI_RUNNING")
         .output()

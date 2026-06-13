@@ -11,7 +11,7 @@
 //!             "canonical": "...", "artifact_kind": "..."}      — managed-artifact path mismatch (see canonicalization gate)
 //!
 //! When `--path` names a FLOW-managed artifact (`plan.md`,
-//! `commit-msg.txt`, `.flow-issue-body`, `orchestrate-queue.json`),
+//! `.flow-issue-body`, `orchestrate-queue.json`),
 //! `run_impl_main` rejects any value that doesn't normalize to the
 //! `(project_root, branch)`-derived canonical destination. The gate
 //! runs BEFORE `read_content_file` so a rejection does not destroy
@@ -43,8 +43,6 @@ use crate::protected_paths::is_protected_path;
 pub enum ManagedArtifact {
     /// `<branch_dir>/plan.md`
     PlanMd,
-    /// `<branch_dir>/commit-msg.txt`
-    CommitMsgTxt,
     /// `<project_root>/.flow-issue-body`
     FlowIssueBody,
     /// `<project_root>/.flow-states/orchestrate-queue.json`
@@ -62,7 +60,6 @@ pub fn classify_path(path: &Path) -> Option<ManagedArtifact> {
     let name = path.file_name()?.to_str()?;
     match name {
         "plan.md" => Some(ManagedArtifact::PlanMd),
-        "commit-msg.txt" => Some(ManagedArtifact::CommitMsgTxt),
         ".flow-issue-body" => Some(ManagedArtifact::FlowIssueBody),
         "orchestrate-queue.json" => Some(ManagedArtifact::OrchestrateQueue),
         _ => None,
@@ -71,8 +68,8 @@ pub fn classify_path(path: &Path) -> Option<ManagedArtifact> {
 
 /// Compute the canonical destination for a managed artifact.
 ///
-/// Branch-scoped artifacts (`PlanMd`, `CommitMsgTxt`) live at
-/// `<project_root>/.flow-states/<branch>/<filename>` and require a
+/// The branch-scoped artifact `PlanMd` lives at
+/// `<project_root>/.flow-states/<branch>/plan.md` and requires a
 /// valid branch — `None` is returned when `branch_opt` is absent or
 /// fails `FlowPaths::is_valid_branch` (e.g., contains `/`). Returning
 /// `None` lets `run_impl_main` fall back to pass-through behavior in
@@ -90,9 +87,6 @@ pub fn canonical_path(
 ) -> Option<PathBuf> {
     match art {
         ManagedArtifact::PlanMd => FlowPaths::try_new(root, branch_opt?).map(|p| p.plan_file()),
-        ManagedArtifact::CommitMsgTxt => {
-            FlowPaths::try_new(root, branch_opt?).map(|p| p.commit_msg())
-        }
         ManagedArtifact::FlowIssueBody => Some(root.join(".flow-issue-body")),
         ManagedArtifact::OrchestrateQueue => Some(
             FlowStatesDir::new(root)

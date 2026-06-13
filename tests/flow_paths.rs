@@ -106,22 +106,6 @@ fn rule_content_lives_under_branch_dir() {
 }
 
 #[test]
-fn commit_msg_lives_under_branch_dir() {
-    assert_eq!(
-        paths().commit_msg(),
-        PathBuf::from("/tmp/project/.flow-states/my-feature/commit-msg.txt")
-    );
-}
-
-#[test]
-fn commit_msg_content_lives_under_branch_dir() {
-    assert_eq!(
-        paths().commit_msg_content(),
-        PathBuf::from("/tmp/project/.flow-states/my-feature/commit-msg-content.txt")
-    );
-}
-
-#[test]
 fn start_prompt_lives_under_branch_dir() {
     assert_eq!(
         paths().start_prompt(),

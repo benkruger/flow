@@ -449,7 +449,7 @@ enum Commands {
     #[command(name = "format-pr-timings")]
     FormatPrTimings(format_pr_timings::Args),
 
-    /// Finalize a commit: commit from message file, cleanup, pull, push.
+    /// Finalize a commit: commit, cleanup, pull, push.
     #[command(name = "finalize-commit")]
     FinalizeCommit(finalize_commit::Args),
     /// Post a message to Slack via webhook.

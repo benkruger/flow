@@ -1378,7 +1378,7 @@ fn test_blocks_background_absolute_bin_ci_outside_flow() {
 
 #[test]
 fn test_blocks_background_bin_flow_finalize_commit() {
-    let msg = should_block_background("bin/flow finalize-commit .flow-commit-msg main", false);
+    let msg = should_block_background("bin/flow finalize-commit main", false);
     assert!(msg.is_some());
     assert!(msg.unwrap().contains("bin/flow"));
 }
@@ -1391,10 +1391,7 @@ fn test_blocks_background_bin_flow_phase_transition() {
 
 #[test]
 fn test_blocks_background_absolute_bin_flow_finalize_commit() {
-    let msg = should_block_background(
-        "/Users/ben/code/flow/bin/flow finalize-commit .flow-commit-msg main",
-        false,
-    );
+    let msg = should_block_background("/Users/ben/code/flow/bin/flow finalize-commit main", false);
     assert!(msg.is_some());
 }
 
@@ -3169,7 +3166,7 @@ fn layer_10_carveout_allows_bin_flow_finalize_commit_when_continue_pending_is_co
     let jsonl = assistant_skill_jsonl("flow:flow-commit");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit feat"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
@@ -3192,7 +3189,7 @@ fn layer_10_carveout_allows_absolute_bin_flow_finalize_commit_when_marker_set() 
     let jsonl = assistant_skill_jsonl("flow:flow-commit");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "/Users/me/code/flow/bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "/Users/me/code/flow/bin/flow finalize-commit feat"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
@@ -3231,7 +3228,7 @@ fn layer_10_carveout_blocks_finalize_commit_when_continue_pending_absent() {
     // requires the marker to be definitively the string "commit";
     // absence is fail-closed. Block.
     let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", r#"{}"#);
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit feat"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
     assert_eq!(
         code, 2,
@@ -3250,7 +3247,7 @@ fn layer_10_carveout_blocks_finalize_commit_when_continue_pending_is_other_value
     // The carve-out requires exact equality with "commit". Block.
     let (_dir, _root, cwd) =
         setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "review"}"#);
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit feat"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
     assert_eq!(
         code, 2,
@@ -3266,7 +3263,7 @@ fn layer_10_carveout_blocks_finalize_commit_when_continue_pending_wrong_type() {
     // legacy or corrupted state without bypassing the gate.
     let (_dir, _root, cwd) =
         setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": 1}"#);
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit feat"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
     assert_eq!(
         code, 2,
@@ -3283,7 +3280,7 @@ fn layer_10_carveout_blocks_finalize_commit_when_state_file_is_malformed_json() 
     // Err on malformed content. Fail-closed → carve-out doesn't
     // apply → block. Drives the parse-error let-else arm.
     let (_dir, _root, cwd) = setup_active_flow_worktree_with_state("feat", "this is not json");
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit feat"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
     assert_eq!(
         code, 2,
@@ -3315,7 +3312,7 @@ fn layer_10_carveout_blocks_finalize_commit_when_state_file_is_unreadable() {
     perms.set_mode(0o000);
     std::fs::set_permissions(&state_path, perms).unwrap();
 
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit feat"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
 
     // Restore perms before any assertion can short-circuit tempdir
@@ -3346,7 +3343,7 @@ fn layer_10_carveout_allows_bash_c_wrapped_finalize_commit() {
     // because it does not pass through bash -c at all.
     let (_dir, _root, cwd) =
         setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
-    let input = r#"{"tool_input": {"command": "bash -c 'bin/flow finalize-commit msg.txt feat'"}}"#;
+    let input = r#"{"tool_input": {"command": "bash -c 'bin/flow finalize-commit feat'"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
     assert_eq!(
         code, 2,
@@ -3377,7 +3374,7 @@ fn layer_10_carveout_does_not_apply_on_integration_branch() {
     std::fs::create_dir_all(&claude_dir).unwrap();
     std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
 
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt main"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit main"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
     assert_eq!(
         code, 2,
@@ -3408,7 +3405,7 @@ fn layer_10_closure_blocks_when_transcript_shows_different_skill() {
     let jsonl = assistant_skill_jsonl("decompose:decompose");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit feat"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
@@ -3435,7 +3432,7 @@ fn layer_10_closure_blocks_when_no_skill_since_user_turn() {
     );
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit feat"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
@@ -3458,7 +3455,7 @@ fn layer_10_closure_blocks_when_marker_absent_but_transcript_shows_flow_commit()
     let jsonl = assistant_skill_jsonl("flow:flow-commit");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit feat"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
@@ -3478,7 +3475,7 @@ fn layer_10_closure_blocks_when_transcript_path_missing() {
     // means the surrounding skill choreography cannot be verified.
     let (_dir, _root, cwd) =
         setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit feat"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
     assert_eq!(
         code, 2,
@@ -3499,7 +3496,7 @@ fn layer_10_closure_blocks_when_transcript_path_invalid() {
     let bad_path = root.join("not-in-projects.jsonl");
     std::fs::write(&bad_path, assistant_skill_jsonl("flow:flow-commit")).unwrap();
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit feat"}}, "transcript_path": "{}"}}"#,
         bad_path.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
@@ -3533,7 +3530,7 @@ fn layer_10_closure_integration_branch_message_wins_over_active_flow() {
     let jsonl = assistant_skill_jsonl("flow:flow-commit");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -3556,7 +3553,7 @@ fn layer_10_closure_block_message_cites_no_escape_hatches_rule() {
     let (_dir, root, cwd) =
         setup_active_flow_worktree_with_state("feat", r#"{"_continue_pending": "commit"}"#);
     // No transcript fixture → carve-out fails → block.
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit feat"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input_and_home(input, Some(&cwd), Some(&root));
     assert_eq!(code, 2);
     assert!(stderr.contains("/flow:flow-commit"));
@@ -3606,7 +3603,7 @@ fn layer_10_bootstrap_carveout_allows_on_main_when_flow_start_chain() {
     );
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -3633,7 +3630,7 @@ fn layer_10_bootstrap_carveout_allows_for_flow_prime() {
     );
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -3678,7 +3675,7 @@ fn layer_10_bootstrap_carveout_allows_for_flow_release() {
     let jsonl = assistant_skill_jsonl("flow-release");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -3706,7 +3703,7 @@ fn layer_10_bootstrap_carveout_normalizes_flow_release_uppercase() {
     let jsonl = assistant_skill_jsonl("FLOW-RELEASE");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -3730,7 +3727,7 @@ fn layer_10_bootstrap_carveout_normalizes_flow_release_trailing_whitespace() {
     let jsonl = assistant_skill_jsonl("flow-release  ");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -3781,7 +3778,7 @@ fn layer_10_bootstrap_carveout_allows_finalize_commit_on_staging_during_flow_sta
     );
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt staging"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit staging"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -3845,7 +3842,7 @@ fn layer_10_bootstrap_carveout_blocks_for_flow_orchestrate_parent() {
     );
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -3914,7 +3911,7 @@ fn layer_10_bootstrap_carveout_blocks_after_user_turn_closes_window() {
     );
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -3937,7 +3934,7 @@ fn layer_10_bootstrap_carveout_blocks_when_transcript_path_missing() {
     std::fs::create_dir_all(&claude_dir).unwrap();
     std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
 
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt main"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit main"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input_and_home(input, Some(&root), Some(&root));
     assert_eq!(
         code, 2,
@@ -3965,7 +3962,7 @@ fn layer_10_bootstrap_carveout_blocks_when_transcript_path_invalid() {
     );
     std::fs::write(&bad_path, jsonl).unwrap();
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         bad_path.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -3994,7 +3991,7 @@ fn layer_10_bootstrap_carveout_blocks_user_direct_flow_commit_on_main() {
     let jsonl = assistant_skill_jsonl("flow:flow-commit");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -4009,19 +4006,20 @@ fn layer_10_bootstrap_carveout_blocks_user_direct_flow_commit_on_main() {
 #[test]
 fn layer_10_bootstrap_carveout_does_not_apply_via_dash_c_target_for_cross_repo_safety() {
     // Cwd is a feature-branch tempdir (NOT the integration branch),
-    // but the command carries a `-C <main_root>` token that shifts
-    // git's effective cwd onto the integration branch. The matcher
-    // checks BOTH candidate cwds: the hook's process cwd and any
-    // `-C` target. The first match_branch_at(cwd) returns None for
-    // the feature branch; the -C target's match_branch_at fires.
-    // The bootstrap carve-out is intentionally NOT applied at the
-    // -C target callsite (cwd-only design) because the transcript
-    // walker is session-scoped: a bootstrap chain in session
-    // activity for one repo could otherwise authorize a commit
-    // redirected via -C to another repo's integration branch.
-    // Legitimate bootstrap windows always run with cwd ON the
-    // integration branch, so this tightening has no production
-    // consumer cost.
+    // but the command is `git -C <main_root> commit` — a `-C` token
+    // that shifts git's effective cwd onto the integration branch.
+    // `extract_finalize_commit_branch_arg` returns None for a `git`
+    // command, so the cwd path engages and the matcher checks BOTH
+    // candidate cwds: the hook's process cwd and the `-C` target. The
+    // first match_branch_at(cwd) returns None for the feature branch;
+    // the -C target's match_branch_at fires. The bootstrap carve-out
+    // is intentionally NOT applied at the -C target callsite
+    // (cwd-only design) because the transcript walker is
+    // session-scoped: a bootstrap chain in session activity for one
+    // repo could otherwise authorize a commit redirected via -C to
+    // another repo's integration branch. Legitimate bootstrap windows
+    // always run with cwd ON the integration branch, so this
+    // tightening has no production consumer cost.
     let (_main_dir, main_root) = setup_repo_on_branch("main");
     let (_feat_dir, feat_root) = setup_repo_on_branch("feat-x");
     let main_path = main_root.to_str().expect("utf-8 main path");
@@ -4033,7 +4031,7 @@ fn layer_10_bootstrap_carveout_does_not_apply_via_dash_c_target_for_cross_repo_s
     );
     let transcript = crate::common::transcript_fixture(&main_root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit -C {} msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "git -C {} commit"}}, "transcript_path": "{}"}}"#,
         main_path,
         transcript.to_string_lossy()
     );
@@ -4069,7 +4067,7 @@ fn layer_10_bootstrap_carveout_unaffected_by_active_flow_carveout() {
     );
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit feat"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
@@ -4106,7 +4104,7 @@ fn layer_10_bootstrap_carveout_allows_for_flow_release_user_typed_slash_command(
     let jsonl = user_jsonl("<command-name>/flow-release</command-name>");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -4145,7 +4143,7 @@ fn layer_10_bootstrap_carveout_allows_for_flow_prime_user_typed_slash_command() 
     );
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -4181,7 +4179,7 @@ fn layer_10_bootstrap_carveout_blocks_when_no_bootstrap_skill_in_transcript() {
     let jsonl = user_jsonl("please commit the release for me");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -4217,7 +4215,7 @@ fn layer_10_active_flow_carveout_does_not_fire_on_flow_release_user_turn() {
     let jsonl = user_jsonl("<command-name>/flow-release</command-name>");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit feat"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
@@ -4254,7 +4252,7 @@ fn layer_10_active_flow_carveout_does_not_fire_when_flow_release_precedes_unrela
     );
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit feat"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
@@ -4296,7 +4294,7 @@ fn layer_10_bootstrap_carveout_fires_for_flow_release_with_intervening_non_commi
     );
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -4310,7 +4308,7 @@ fn layer_10_bootstrap_carveout_fires_for_flow_release_with_intervening_non_commi
 //
 // The third carve-out on Layer 10's destination-path integration-
 // branch arm: when the user types `/flow:flow-commit` directly and
-// the command is `bin/flow finalize-commit <msg> <trunk>`, suppress
+// the command is `bin/flow finalize-commit <trunk>`, suppress
 // the block so a maintainer can commit on the trunk through
 // `/flow:flow-commit`. The actual helper signature is
 // `flow_commit_trunk_carveout_applies(transcript_path, home, cwd,
@@ -4348,7 +4346,7 @@ fn layer_10_bootstrap_carveout_fires_for_flow_release_with_intervening_non_commi
 fn layer_10_trunk_carveout_allows_finalize_commit_when_user_typed_flow_commit() {
     // Case 1: cwd is integration branch (`main`), the transcript shows
     // a user-typed `/flow:flow-commit` slash-command turn, and the
-    // command shape is `bin/flow finalize-commit msg.txt main`. The
+    // command shape is `bin/flow finalize-commit main`. The
     // new trunk carve-out fires: both `is_finalize_commit_invocation`
     // and `last_user_message_invokes_skill("flow:flow-commit")` return
     // true → Layer 10 passes through. The maintainer can commit
@@ -4361,7 +4359,7 @@ fn layer_10_trunk_carveout_allows_finalize_commit_when_user_typed_flow_commit() 
     let jsonl = user_jsonl("<command-name>/flow:flow-commit</command-name>");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -4388,7 +4386,7 @@ fn layer_10_trunk_carveout_blocks_when_only_assistant_flow_commit_skill() {
     let jsonl = assistant_skill_jsonl("flow:flow-commit");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -4415,7 +4413,7 @@ fn layer_10_trunk_carveout_blocks_when_user_typed_unrelated_prose() {
     let jsonl = user_jsonl("please commit that for me");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -4463,7 +4461,7 @@ fn layer_10_trunk_carveout_blocks_git_commit_with_user_typed_flow_commit() {
 #[test]
 fn layer_10_trunk_carveout_blocks_when_transcript_path_missing() {
     // Case 5: cwd is integration branch, command is `bin/flow
-    // finalize-commit msg.txt main`, but the hook input omits
+    // finalize-commit main`, but the hook input omits
     // `transcript_path` entirely. The carve-out's
     // `let Some(path) = transcript_path else { return false }`
     // early-returns false — without a transcript, the user-typed
@@ -4473,7 +4471,7 @@ fn layer_10_trunk_carveout_blocks_when_transcript_path_missing() {
     std::fs::create_dir_all(&claude_dir).unwrap();
     std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
 
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt main"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit main"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input_and_home(input, Some(&root), Some(&root));
     assert_eq!(
         code, 2,
@@ -4503,7 +4501,7 @@ fn layer_10_trunk_carveout_bootstrap_path_still_fires() {
     );
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -4528,7 +4526,7 @@ fn layer_10_trunk_carveout_does_not_widen_active_flow_arm() {
     let jsonl = user_jsonl("<command-name>/flow:flow-commit</command-name>");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit feat"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
@@ -4547,7 +4545,7 @@ fn layer_10_trunk_carveout_blocks_when_cwd_is_active_flow_worktree() {
     // active-flow worktree. Without this check, a user typing
     // `/flow:flow-commit` for a feature-branch flow could (per the
     // pre-mortem F1 bypass) authorize an unrelated `bin/flow
-    // finalize-commit msg.txt main` invocation from the same worktree.
+    // finalize-commit main` invocation from the same worktree.
     //
     // Setup: cwd is the feat worktree with an active flow; transcript
     // shows the user typed `/flow:flow-commit`; the command targets
@@ -4562,7 +4560,7 @@ fn layer_10_trunk_carveout_blocks_when_cwd_is_active_flow_worktree() {
     let jsonl = user_jsonl("<command-name>/flow:flow-commit</command-name>");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
@@ -4612,7 +4610,7 @@ fn layer_10_trunk_carveout_allows_on_detached_head_with_user_typed_flow_commit()
     let jsonl = user_jsonl("<command-name>/flow:flow-commit</command-name>");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -4639,7 +4637,7 @@ fn layer_10_trunk_carveout_block_message_points_at_trunk_path() {
 
     // No transcript supplied — both carve-outs fail, the block fires
     // and emits the reworded message.
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt main"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit main"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input_and_home(input, Some(&root), Some(&root));
     assert_eq!(code, 2, "no transcript must block; stderr={stderr}");
     assert!(stderr.contains("BLOCKED"));
@@ -4659,10 +4657,10 @@ fn layer_10_trunk_carveout_block_message_points_at_trunk_path() {
 
 // --- layer_10_finalize_commit_destination ---
 //
-// Layer 10's new destination-aware dispatch fires when the command
-// shape is `bin/flow finalize-commit <msg> <branch>`. The routing
-// key is the explicit branch argument, not the caller's process
-// cwd. The tests below cover:
+// Layer 10's destination-aware dispatch fires when the command
+// shape is `bin/flow finalize-commit <branch>`. The routing key is
+// the explicit branch argument (the first positional after the
+// subcommand), not the caller's process cwd. The tests below cover:
 //
 //   - extract_finalize_commit_branch_arg: per-branch behavior of
 //     the new parser (Task 8 sibling tests).
@@ -4703,14 +4701,35 @@ fn extract_finalize_commit_branch_arg_returns_none_for_bin_flow_status() {
 }
 
 #[test]
+fn extract_finalize_commit_branch_arg_returns_none_for_legacy_two_positional() {
+    // Legacy two-positional shape `bin/flow finalize-commit <path> <branch>`:
+    // the first token after `finalize-commit` is now the branch
+    // candidate, but a path-like token containing `/` fails
+    // `is_valid_branch`, so the parser returns None and the dispatch
+    // falls through to the cwd-based check. With cwd on the
+    // integration branch, the cwd path blocks — proving the
+    // fall-through happened rather than a destination match on the
+    // path-like token.
+    let (_dir, root) = setup_repo_on_branch("main");
+    let input =
+        r#"{"tool_input": {"command": "bin/flow finalize-commit .flow-states/feat/msg.txt feat"}}"#;
+    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
+    assert_eq!(
+        code, 2,
+        "legacy path-like first token must fall through to cwd path and block on integration; stderr={stderr}"
+    );
+    assert!(stderr.contains("integration branch"));
+}
+
+#[test]
 fn extract_finalize_commit_branch_arg_returns_branch_for_happy_path() {
-    // `bin/flow finalize-commit msg.txt main` parses to
+    // `bin/flow finalize-commit main` parses to
     // Some("main"). main_root resolves via the .claude/ fixture
     // and default_branch_in falls back to "main", so the
     // destination match fires and blocks the call from a sibling
     // worktree cwd — proving the parser returned the branch arg.
     let (_dir, _root, cwd) = setup_active_flow_worktree("feat", false);
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt main"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit main"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
     assert_eq!(
         code, 2,
@@ -4722,12 +4741,12 @@ fn extract_finalize_commit_branch_arg_returns_branch_for_happy_path() {
 
 #[test]
 fn extract_finalize_commit_branch_arg_returns_none_for_missing_branch_token() {
-    // `bin/flow finalize-commit msg.txt` has the msg token but
-    // no branch token. The parser returns None. The dispatch
+    // `bin/flow finalize-commit` has no positional branch token, so
+    // `extract_finalize_commit_branch_arg` returns None. The dispatch
     // falls through to the existing cwd path → match_branch_at
     // resolves "main" from the repo's branch.
     let (_dir, root) = setup_repo_on_branch("main");
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
     assert_eq!(
         code, 2,
@@ -4738,11 +4757,11 @@ fn extract_finalize_commit_branch_arg_returns_none_for_missing_branch_token() {
 
 #[test]
 fn extract_finalize_commit_branch_arg_dequotes_branch_token() {
-    // `bin/flow finalize-commit msg.txt "main"` should dequote
+    // `bin/flow finalize-commit "main"` should dequote
     // the branch token to "main" — the destination match fires
     // even though the raw token is `"main"` with quotes.
     let (_dir, _root, cwd) = setup_active_flow_worktree("feat", false);
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt \"main\""}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit \"main\""}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
     assert_eq!(
         code, 2,
@@ -4760,7 +4779,7 @@ fn match_finalize_commit_destination_blocks_integration_branch_arg() {
     // case-variant input to prove normalize_gate_input runs on
     // both sides.
     let (_dir, _root, cwd) = setup_active_flow_worktree("feat", false);
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt MAIN"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit MAIN"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
     assert_eq!(
         code, 2,
@@ -4782,7 +4801,7 @@ fn match_finalize_commit_destination_blocks_integration_branch_arg() {
 #[test]
 fn finalize_commit_destination_block_message_names_canonical_integration_branch() {
     let (_dir, _root, cwd) = setup_active_flow_worktree("feat", false);
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt MAIN"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit MAIN"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
     assert_eq!(
         code, 2,
@@ -4805,7 +4824,7 @@ fn match_finalize_commit_destination_allows_feature_branch_arg() {
     // worktree_path = <root>/.worktrees/some-feature/ has no
     // active state file → active-flow arm returns None. Allow.
     let (_dir, _root, cwd) = setup_active_flow_worktree("feat", false);
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt some-feature"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit some-feature"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
     assert_eq!(
         code, 0,
@@ -4820,7 +4839,7 @@ fn match_finalize_commit_destination_allows_feature_branch_arg() {
 /// block decision and the binary's commit cwd cannot disagree. For
 /// a fixture repo with `origin/HEAD` → `main` and no active flow on
 /// the test branches, the hook's only firing path for a
-/// `bin/flow finalize-commit <msg> <branch>` invocation is the
+/// `bin/flow finalize-commit <branch>` invocation is the
 /// integration-branch destination arm, so "hook blocks via the
 /// destination path" ⟺ "the helper routes to root". The
 /// whitespace-padded `" main "` arm of the helper's normalize-both-
@@ -4838,8 +4857,7 @@ fn hook_blocks_finalize_commit_iff_helper_routes_to_project_root() {
 
     for b in ["main", "MAIN", "feat-x"] {
         let dest_is_root = finalize_commit_destination(&root, b) == root;
-        let input =
-            format!(r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt {b}"}}}}"#);
+        let input = format!(r#"{{"tool_input": {{"command": "bin/flow finalize-commit {b}"}}}}"#);
         let (code, _stdout, stderr) = run_hook_with_input(&input, Some(&root));
         let hook_blocks_via_destination = code == 2 && stderr.contains("integration branch");
         assert_eq!(
@@ -4868,7 +4886,7 @@ fn finalize_commit_invocation_with_integration_branch_arg_blocks_regardless_of_c
     // of where the caller's shell sits — the regression-protection
     // contract.
     let (_dir, _root, cwd) = setup_active_flow_worktree("feat", false);
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt main"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit main"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
     assert_eq!(
         code, 2,
@@ -4891,7 +4909,7 @@ fn finalize_commit_invocation_with_feature_branch_arg_allows_regardless_of_cwd()
     let claude_dir = root.join(".claude");
     std::fs::create_dir_all(&claude_dir).unwrap();
     std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feature-foo"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit feature-foo"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
     assert_eq!(
         code, 0,
@@ -4920,7 +4938,7 @@ fn bootstrap_carveout_fires_for_finalize_commit_integration_branch_arg_with_sanc
     );
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt main"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit main"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -4943,7 +4961,7 @@ fn active_flow_carveout_fires_for_finalize_commit_feature_branch_arg_with_flow_c
     let jsonl = assistant_skill_jsonl("flow:flow-commit");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let allow_input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit feat"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (allow_code, _stdout, allow_stderr) =
@@ -4954,7 +4972,7 @@ fn active_flow_carveout_fires_for_finalize_commit_feature_branch_arg_with_flow_c
     );
 
     // Inverse: no transcript → walker condition fails → block.
-    let block_input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt feat"}}"#;
+    let block_input = r#"{"tool_input": {"command": "bin/flow finalize-commit feat"}}"#;
     let (block_code, _stdout, block_stderr) = run_hook_with_input(block_input, Some(&cwd));
     assert_eq!(
         block_code, 2,
@@ -4983,9 +5001,10 @@ fn cwd_path_bootstrap_carveout_fires_when_finalize_commit_lacks_branch_arg() {
     );
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     // No branch positional — extract_finalize_commit_branch_arg
-    // returns None because tokens.next() after the msg token is None.
+    // returns None because tokens.next() after `finalize-commit` is
+    // None.
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&root), Some(&root));
@@ -5062,7 +5081,7 @@ fn layer_9_returns_none_on_finalize_commit_destination_when_default_branch_resol
     std::fs::create_dir_all(&claude_dir).unwrap();
     std::fs::write(claude_dir.join("settings.json"), "{}").unwrap();
 
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt main"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit main"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
     // No flow active and no integration branch detectable — gate
     // returns None, hook exits 0 (no block).
@@ -5201,7 +5220,7 @@ fn validate_pretool_blocks_finalize_commit_during_halt() {
     let jsonl = assistant_skill_jsonl("flow:flow-commit");
     let transcript = crate::common::transcript_fixture(&root, "p", &jsonl);
     let input = format!(
-        r#"{{"tool_input": {{"command": "bin/flow finalize-commit msg.txt feat"}}, "transcript_path": "{}"}}"#,
+        r#"{{"tool_input": {{"command": "bin/flow finalize-commit feat"}}, "transcript_path": "{}"}}"#,
         transcript.to_string_lossy()
     );
     let (code, _stdout, stderr) = run_hook_with_input_and_home(&input, Some(&cwd), Some(&root));
@@ -5341,7 +5360,7 @@ fn finalize_commit_destination_arm_falls_through_when_project_root_missing() {
     // have no settings.json (tempdir lives under /var/folders/ on
     // macOS, /tmp/ on Linux — neither contains .claude/settings.json).
 
-    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit msg.txt main"}}"#;
+    let input = r#"{"tool_input": {"command": "bin/flow finalize-commit main"}}"#;
     let (code, _stdout, stderr) = run_hook_with_input(input, Some(&root));
     assert_eq!(
         code, 0,

@@ -371,13 +371,13 @@ fn start_lock_cli_roundtrip() {
     assert_eq!(check_json["status"], "free");
 }
 
-/// `flow-rs finalize-commit "" ""` passes Clap but fails the
-/// empty-args check in `run_impl`, exercising the `run()` →
+/// `flow-rs finalize-commit ""` passes Clap (one positional) but fails
+/// the empty-branch check in `run_impl`, exercising the `run()` →
 /// `json_error` → `process::exit(1)` path.
 #[test]
 fn finalize_commit_empty_args_exits_1() {
     let output = flow_rs_no_recursion()
-        .args(["finalize-commit", "", ""])
+        .args(["finalize-commit", ""])
         .output()
         .expect("spawn flow-rs finalize-commit");
     assert_eq!(

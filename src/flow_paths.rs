@@ -313,23 +313,6 @@ impl FlowPaths {
         self.branch_dir().join("rule-content.md")
     }
 
-    /// `<branch_dir>/commit-msg.txt` — final commit message file
-    /// consumed by `bin/flow finalize-commit`. Branch-scoped so
-    /// concurrent flows in different worktrees of the same repo never
-    /// share a single file, and so abort/complete cleanup removes it
-    /// deterministically alongside other branch-scoped state via the
-    /// single `remove_dir_all` over `branch_dir()`.
-    pub fn commit_msg(&self) -> PathBuf {
-        self.branch_dir().join("commit-msg.txt")
-    }
-
-    /// `<branch_dir>/commit-msg-content.txt` — scratch file the commit
-    /// skill writes via the Write tool, then `bin/flow write-rule`
-    /// reads and routes to [`commit_msg`].
-    pub fn commit_msg_content(&self) -> PathBuf {
-        self.branch_dir().join("commit-msg-content.txt")
-    }
-
     /// `<branch_dir>/start-prompt` — verbatim start prompt captured
     /// by `/flow:flow-start` for downstream phases.
     pub fn start_prompt(&self) -> PathBuf {

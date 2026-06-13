@@ -56,7 +56,7 @@ insufficient:
   feature branch with an active FLOW state file at
   `.flow-states/<branch>/state.json`. The effective
   destination has two dispatch paths: for `bin/flow
-  finalize-commit <msg> <branch>` shapes, Layer 10 binds to
+  finalize-commit <branch>` shapes, Layer 10 binds to
   the explicit `<branch>` positional argument (the
   destination path) and checks the integration-branch arm
   via `match_finalize_commit_destination` and the
@@ -90,7 +90,7 @@ insufficient:
   their emission. The third (trunk) carve-out — wired ONLY
   into the destination-path integration-branch arm via
   `flow_commit_trunk_carveout_applies` — passes `bin/flow
-  ... finalize-commit <msg> <trunk>` when BOTH (a) the
+  ... finalize-commit <trunk>` when BOTH (a) the
   caller's cwd is NOT inside an active-flow worktree
   (`detect_branch_from_path(cwd)` + `is_flow_active(branch,
   main_root)`) AND (b) the most recent real user turn in the

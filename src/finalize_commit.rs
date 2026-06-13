@@ -37,15 +37,24 @@
 //!    `step = "plan_deviation"` and a structured stderr message.
 //!
 //! Usage:
-//!   bin/flow finalize-commit <message-file> <branch>
+//!   bin/flow finalize-commit <branch>
+//!
+//! The commit-message file is NOT a caller-supplied argument. After
+//! `commit_cwd` resolves, the message file is always
+//! `<commit_cwd>/.flow-commit-msg` — `/flow:flow-commit` (and the
+//! flow-start / flow-release bootstrap paths) write it there before
+//! invoking this subcommand. A missing or empty file at that path
+//! returns a `message_file_missing` error. The file is deleted on
+//! every exit reached after `commit_cwd` resolution.
 //!
 //! Output (JSON to stdout):
 //!   Success:   {"status": "ok", "sha": "<commit-hash>", "pull_merged": <bool>}
 //!   Conflict:  {"status": "conflict", "files": ["file1.py", ...]}
-//!   Error:     {"status": "error", "step": "resolve_cwd|working_tree_dirty|ci|restage|plan_deviation|commit|pull|push", "message": "..."}
+//!   Error:     {"status": "error", "step": "resolve_cwd|message_file_missing|working_tree_dirty|ci|restage|plan_deviation|commit|pull|push", "message": "..."}
 //!              ("resolve_cwd" also carries "reason": "branch_not_checked_out" when the branch is checked out nowhere)
 
 use std::fs;
+use std::path::Path;
 
 use clap::Parser;
 use serde_json::{json, Value};
@@ -64,14 +73,13 @@ use crate::utils::parse_conflict_files;
     about = "Finalize a commit: commit, cleanup, pull, push"
 )]
 pub struct Args {
-    /// Path to the commit message file
-    pub message_file: String,
-    /// Branch name for git pull
+    /// Branch name — resolves the commit destination and the
+    /// `<commit_cwd>/.flow-commit-msg` message-file path.
     pub branch: String,
 }
 
 /// Remove the commit message file, ignoring errors.
-fn remove_message_file(path: &str) {
+fn remove_message_file(path: &Path) {
     let _ = fs::remove_file(path);
 }
 
@@ -137,12 +145,22 @@ fn run_git_in_dir(
 /// empty commit, the user's identity isn't configured, etc.); pull and
 /// push retain non-zero branches for legit error cases (merge conflict,
 /// push rejected) per `.claude/rules/testability-means-simplicity.md`.
-fn finalize_commit(message_file: &str, branch: &str, commit_cwd: &std::path::Path) -> Value {
+///
+/// The message file is NOT deleted here. `run_impl` deletes it once at
+/// a tail position so every post-resolution exit (working-tree-dirty,
+/// CI failure, restage failure, plan-deviation block) — none of which
+/// reach this function — also disposes of the file.
+fn finalize_commit(message_file: &Path, branch: &str, commit_cwd: &Path) -> Value {
     // Step 1: git commit -F <message_file>
-    let (code, _, stderr) =
-        run_git_in_dir(commit_cwd, &["commit", "-F", message_file], LOCAL_TIMEOUT)
-            .expect("git located by working_tree_dirty gate");
-    remove_message_file(message_file);
+    let message_file_str = message_file
+        .to_str()
+        .expect("commit-msg path is valid UTF-8 (commit_cwd + ASCII basename)");
+    let (code, _, stderr) = run_git_in_dir(
+        commit_cwd,
+        &["commit", "-F", message_file_str],
+        LOCAL_TIMEOUT,
+    )
+    .expect("git located by working_tree_dirty gate");
     if code != 0 {
         return json!({
             "status": "error",
@@ -212,8 +230,8 @@ fn finalize_commit(message_file: &str, branch: &str, commit_cwd: &std::path::Pat
 /// including status-error payloads (CI failure, commit failure, etc.) and
 /// `Err` carries only infrastructure errors (empty arguments).
 pub fn run_impl(args: &Args, root: &std::path::Path) -> Result<Value, String> {
-    if args.message_file.is_empty() || args.branch.is_empty() {
-        return Err("Usage: bin/flow finalize-commit <message-file> <branch>".to_string());
+    if args.branch.is_empty() {
+        return Err("Usage: bin/flow finalize-commit <branch>".to_string());
     }
 
     // `args.branch` is clap-supplied — external input. Validate up
@@ -275,6 +293,30 @@ pub fn run_impl(args: &Args, root: &std::path::Path) -> Result<Value, String> {
             }));
         }
     };
+
+    // The commit-message file path is derived from `commit_cwd`, not
+    // supplied by the caller. `/flow:flow-commit` (and the flow-start /
+    // flow-release bootstrap paths) write `<commit_cwd>/.flow-commit-msg`
+    // before invoking this subcommand. A missing or empty file is a
+    // skill-choreography error, surfaced as `message_file_missing`
+    // BEFORE any other gate so the caller sees a precise reason rather
+    // than a downstream `git commit` failure. This early return precedes
+    // binding any deletion target, so there is nothing to clean up.
+    let message_file = commit_cwd.join(".flow-commit-msg");
+    let message_present = fs::metadata(&message_file)
+        .map(|m| m.len() > 0)
+        .unwrap_or(false);
+    if !message_present {
+        return Ok(json!({
+            "status": "error",
+            "step": "message_file_missing",
+            "message": format!(
+                "commit message file not found (or empty) at {}; \
+                 /flow:flow-commit writes it before invoking finalize-commit",
+                message_file.display()
+            ),
+        }));
+    }
 
     // Derive phase number from state file's current_phase for log prefixes.
     let pn = {
@@ -373,11 +415,13 @@ pub fn run_impl(args: &Args, root: &std::path::Path) -> Result<Value, String> {
             // pre-CI index bytes and `git commit -F` would record them
             // — diverging from what CI tested. `git add -u` updates
             // already-tracked files only: it does NOT sweep untracked
-            // files (the commit-message file under
-            // `.flow-states/<branch>/commit-msg.txt`, scratch files,
-            // CI artifacts the user has not yet `.gitignore`d), so the
-            // commit's scope stays bounded to what the user already
-            // staged in `/flow:flow-commit` Round 3 plus any in-place
+            // files. The commit-message file lives at
+            // `<commit_cwd>/.flow-commit-msg` — an untracked file inside
+            // the commit cwd — so `git add -u` cannot capture it, and
+            // scratch files and CI artifacts the user has not yet
+            // `.gitignore`d are likewise excluded. The commit's scope
+            // stays bounded to what the user already staged in
+            // `/flow:flow-commit` Round 3 plus any in-place
             // modifications CI made to those tracked files. The
             // working_tree_dirty gate above already proved git is
             // alive, so `.expect()` is safe here in the same sense as
@@ -419,7 +463,7 @@ pub fn run_impl(args: &Args, root: &std::path::Path) -> Result<Value, String> {
                 // enforcement of `.claude/rules/plan-commit-atomicity.md`
                 // "Plan Signature Deviations Must Be Logged".
                 match crate::plan_deviation::run_impl(root, &args.branch, &staged_diff) {
-                    Ok(()) => finalize_commit(&args.message_file, &args.branch, &commit_cwd),
+                    Ok(()) => finalize_commit(&message_file, &args.branch, &commit_cwd),
                     Err(deviations) => {
                         emit_deviation_stderr(&args.branch, &deviations);
                         let _ = append_log(
@@ -458,6 +502,16 @@ pub fn run_impl(args: &Args, root: &std::path::Path) -> Result<Value, String> {
             }
         }
     };
+
+    // Delete the commit-message file on every post-resolution exit.
+    // Bound here (rather than inside `finalize_commit`) so the
+    // working-tree-dirty, CI-failure, restage-failure, and
+    // plan-deviation block paths — none of which reach
+    // `finalize_commit` — also dispose of the file. The
+    // `message_file_missing` early return above precedes this point, so
+    // the only path that skips deletion is the one where the file does
+    // not exist anyway.
+    remove_message_file(&message_file);
 
     // Log final result
     let final_status = result["status"].as_str().unwrap_or("unknown");

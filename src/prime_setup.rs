@@ -69,24 +69,31 @@ fn allow_regex_map() -> &'static HashMap<String, Regex> {
 /// Pre-commit hook script content — installed at `.git/hooks/pre-commit`.
 /// Blocks direct `git commit` when a FLOW feature is active on the
 /// current branch (detected by `.flow-states/<branch>/state.json`
-/// existence) unless `.flow-states/<branch>/commit-msg.txt` is present
-/// (set by `/flow:flow-commit` via `bin/flow write-rule`).
+/// existence) unless `.flow-commit-msg` is present at the commit
+/// working directory.
 ///
-/// The `${branch}` segment is a directory under `.flow-states/`, so
-/// the hook's `[ -f ... ]` checks resolve to the per-branch
-/// subdirectory's `state.json` and `commit-msg.txt` rather than
-/// flat-form sibling files. Slash-containing git branches (which
-/// could otherwise produce nested subdirectory paths the hook
-/// inspected) cannot construct a FLOW state via `FlowPaths` per
-/// `.claude/rules/external-input-validation.md`, so the hook simply
-/// finds no `state.json` for them and falls through.
+/// `.flow-commit-msg` is the carve-out token: `finalize-commit`
+/// (invoked by `/flow:flow-commit`) writes it at its commit cwd
+/// immediately before running `git commit -F`, and deletes it on
+/// exit. The token is cwd-relative — the same directory the pre-commit
+/// hook runs from — so finalize-commit's own commit is recognized as
+/// authorized at whatever checkout it commits from. A raw `git commit`
+/// during an active flow carries no such token and is blocked.
+///
+/// `.flow-states/<branch>/state.json` is the per-branch state file
+/// under the canonical project-root `.flow-states/`, so the
+/// active-flow precondition resolves at project-root checkouts
+/// (bootstrap/trunk commits, feature-branch-checked-out-at-root).
+/// Slash-containing git branches cannot construct a FLOW state via
+/// `FlowPaths` per `.claude/rules/external-input-validation.md`, so
+/// the hook finds no `state.json` for them and falls through.
 pub const PRE_COMMIT_HOOK: &str = r#"#!/usr/bin/env bash
 # .git/hooks/pre-commit — installed by /flow:flow-prime
 # Only enforce when the current branch has an active FLOW feature
 branch=$(git symbolic-ref --short HEAD 2>/dev/null)
-if [ -n "$branch" ] && [ -f ".flow-states/${branch}/state.json" ] && [ ! -f ".flow-states/${branch}/commit-msg.txt" ]; then
+if [ -n "$branch" ] && [ -f ".flow-states/${branch}/state.json" ] && [ ! -f ".flow-commit-msg" ]; then
   echo "BLOCKED: FLOW feature in progress on ${branch}. Commits must go through /flow:flow-commit."
-  echo "The file .flow-states/${branch}/commit-msg.txt was not found — this looks like a direct git commit."
+  echo "The carve-out token .flow-commit-msg was not found — this looks like a direct git commit."
   exit 1
 fi
 "#;

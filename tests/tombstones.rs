@@ -427,6 +427,60 @@ fn test_write_rule_no_dag_md_variant() {
     );
 }
 
+/// Tombstone: removed in PR #1894. The `FlowPaths::commit_msg()` and
+/// `FlowPaths::commit_msg_content()` methods (`src/flow_paths.rs`) are
+/// deleted — the commit-message file is now `<commit_cwd>/.flow-commit-msg`,
+/// derived inside `finalize-commit`, with no `.flow-states/<branch>/`
+/// path helper. Must not return.
+///
+/// Byte-substring on `fn commit_msg` scoped to `src/flow_paths.rs`. The
+/// shape is byte-stable:
+///   1. `concat!` reassembly: a Rust method name cannot be assembled by
+///      `concat!` — re-adding the method requires the literal
+///      `fn commit_msg` in source.
+///   2. `format!` reassembly: method declarations are not produced by
+///      `format!` interpolation.
+///   3. Named `constant` reference: a `const` cannot declare a method;
+///      the `fn commit_msg` declaration itself trips the check.
+#[test]
+fn test_flow_paths_no_commit_msg_method() {
+    let root = common::repo_root();
+    let content = fs::read_to_string(root.join("src").join("flow_paths.rs"))
+        .expect("src/flow_paths.rs must exist");
+    assert!(
+        !content.contains("fn commit_msg"),
+        "src/flow_paths.rs must not declare `fn commit_msg` (covers \
+         commit_msg and commit_msg_content) — the commit-message file is \
+         now <commit_cwd>/.flow-commit-msg, derived in finalize-commit."
+    );
+}
+
+/// Tombstone: removed in PR #1894. The `ManagedArtifact::CommitMsgTxt`
+/// variant and its `classify_path`/`canonical_path` arms
+/// (`src/write_rule.rs`) are deleted — `commit-msg.txt` is no longer a
+/// write-rule-managed artifact because finalize-commit derives its own
+/// `.flow-commit-msg` path. Must not return.
+///
+/// Byte-substring on `CommitMsgTxt` scoped to `src/write_rule.rs`. The
+/// PascalCase enum-variant identifier is byte-stable:
+///   1. `concat!` reassembly: a variant name cannot be assembled by
+///      `concat!` — re-adding it requires the literal `CommitMsgTxt` token.
+///   2. `format!` reassembly: enum declarations and match arms are not
+///      produced by `format!` interpolation.
+///   3. Named `constant` reference: a `const` cannot supply an enum
+///      variant; the variant declaration itself trips the check.
+#[test]
+fn test_write_rule_no_commit_msg_txt_variant() {
+    let root = common::repo_root();
+    let content = fs::read_to_string(root.join("src").join("write_rule.rs"))
+        .expect("src/write_rule.rs must exist");
+    assert!(
+        !content.contains("CommitMsgTxt"),
+        "src/write_rule.rs must not contain `CommitMsgTxt` — commit-msg.txt \
+         is no longer a write-rule-managed artifact."
+    );
+}
+
 /// Tombstone: removed in PR #1777. The legacy `plan_file` top-level
 /// state field (`src/state.rs`) is deleted — `files.plan` is the sole
 /// plan-path pointer. Must not return.

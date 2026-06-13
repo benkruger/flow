@@ -282,12 +282,6 @@ fn classify_path_matches_plan_md_basename() {
 }
 
 #[test]
-fn classify_path_matches_commit_msg_txt_basename() {
-    let p = Path::new("/some/where/.flow-states/feat/commit-msg.txt");
-    assert_eq!(classify_path(p), Some(ManagedArtifact::CommitMsgTxt));
-}
-
-#[test]
 fn classify_path_matches_flow_issue_body_basename() {
     let p = Path::new("/some/where/.flow-issue-body");
     assert_eq!(classify_path(p), Some(ManagedArtifact::FlowIssueBody));
@@ -342,14 +336,6 @@ fn canonical_path_branch_scoped_returns_main_repo_path() {
         canonical_path(ManagedArtifact::PlanMd, root, branch),
         Some(root.join(".flow-states").join("feat-x").join("plan.md"))
     );
-    assert_eq!(
-        canonical_path(ManagedArtifact::CommitMsgTxt, root, branch),
-        Some(
-            root.join(".flow-states")
-                .join("feat-x")
-                .join("commit-msg.txt")
-        )
-    );
 }
 
 #[test]
@@ -390,10 +376,6 @@ fn canonical_path_returns_none_when_branch_unavailable_for_branch_scoped() {
     // Branch-scoped variants return None when branch is unavailable
     // (detached HEAD, or invalid branch like one containing '/').
     assert_eq!(canonical_path(ManagedArtifact::PlanMd, root, None), None);
-    assert_eq!(
-        canonical_path(ManagedArtifact::CommitMsgTxt, root, None),
-        None
-    );
     // Invalid branch (slash) is also None — FlowPaths::try_new rejects it.
     assert_eq!(
         canonical_path(ManagedArtifact::PlanMd, root, Some("feature/foo")),
@@ -528,60 +510,6 @@ fn write_rule_subprocess_service_subdir_path_rejects_plan_md() {
     assert_eq!(data["status"], "error");
     assert_eq!(data["step"], "path_canonicalization");
     assert!(!wrong.exists(), "rejected path must not be written");
-}
-
-#[test]
-fn write_rule_subprocess_canonical_path_succeeds_commit_msg() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = setup_branch_repo(dir.path(), "feat-x");
-    let content_file = repo.join("content.txt");
-    fs::write(&content_file, "commit message").unwrap();
-    let canonical = repo
-        .join(".flow-states")
-        .join("feat-x")
-        .join("commit-msg.txt");
-
-    let output = run_wr_canon(
-        &repo,
-        &[
-            "--path",
-            canonical.to_str().unwrap(),
-            "--content-file",
-            content_file.to_str().unwrap(),
-        ],
-    );
-
-    assert_eq!(output.status.code(), Some(0));
-    assert_eq!(fs::read_to_string(&canonical).unwrap(), "commit message");
-}
-
-#[test]
-fn write_rule_subprocess_worktree_root_path_rejects_commit_msg() {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = setup_branch_repo(dir.path(), "feat-x");
-    let content_file = repo.join("content.txt");
-    fs::write(&content_file, "commit message").unwrap();
-    let wrong = repo
-        .join(".worktrees")
-        .join("feat-x")
-        .join(".flow-states")
-        .join("feat-x")
-        .join("commit-msg.txt");
-
-    let output = run_wr_canon(
-        &repo,
-        &[
-            "--path",
-            wrong.to_str().unwrap(),
-            "--content-file",
-            content_file.to_str().unwrap(),
-        ],
-    );
-
-    assert_eq!(output.status.code(), Some(1));
-    let data = parse_output(&output);
-    assert_eq!(data["status"], "error");
-    assert_eq!(data["artifact_kind"], "CommitMsgTxt");
 }
 
 #[test]

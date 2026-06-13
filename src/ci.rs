@@ -400,6 +400,14 @@ fn git_hash_object_stdin_paths(cwd: &Path, paths: &str) -> String {
 /// 3. `git ls-files --others --exclude-standard` (stripped) — untracked file list
 /// 4. `git hash-object --stdin-paths` over the untracked list — untracked content
 ///
+/// The untracked list filters out `.flow-commit-msg` — the commit-message
+/// file `finalize-commit` writes at its commit cwd and deletes on every
+/// exit. This filter is load-bearing for EVERY flow's commit, not only
+/// flow-release: without it, the message file (present in the working tree
+/// at the instant CI's `run_once` snapshots the sentinel, then removed
+/// after the commit) would perturb the untracked hash and the sentinel
+/// would never match on the post-commit refresh.
+///
 /// If `simulate_branch` is Some, the string `"\nsimulate:<name>"` is appended
 /// to the combined input so runs with different simulate values produce
 /// distinct sentinel hashes.

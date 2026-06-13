@@ -6128,7 +6128,7 @@ fn phase_1_hard_gate_requires_rerun_with_arguments() {
 //
 // Code path that produces the regression:
 //   - Write side: a SKILL.md instructs the model to Write to one of the
-//     persistent monitored paths (plan file, commit-msg, issue-body,
+//     persistent monitored paths (plan file, issue-body,
 //     orchestrate queue) without first routing through the
 //     `bin/flow write-rule` subcommand, whose `fs::write` call bypasses
 //     the preflight.
@@ -6157,7 +6157,6 @@ fn phase_1_hard_gate_requires_rerun_with_arguments() {
 /// target.
 const WRITE_MONITORED_PATHS: &[&str] = &[
     ".flow-states/<branch>-plan.md",
-    ".flow-states/<branch>-commit-msg.txt",
     ".flow-issue-body",
     "orchestrate-queue.json",
 ];

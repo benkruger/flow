@@ -206,33 +206,21 @@ commit alongside the manually-staged content. Untracked files are NOT
 swept by the re-stage — only modifications to files already tracked
 by git.
 
-Use the Write tool to write the commit message content to
-`<project_root>/.flow-states/<branch>/commit-msg-content.txt` — a
-branch-scoped temp path, not the final commit-msg file. This avoids
-Claude Code's Write-tool preflight tripping on a pre-existing final
-file from a prior commit retry (see
-`.claude/rules/file-tool-preflights.md`).
+Use the Write tool to write the commit message directly to
+`.flow-commit-msg` at the current worktree root
+(`<worktree>/.flow-commit-msg`, where `<worktree>` is the current
+working directory). `finalize-commit` derives this path from its
+commit cwd — the message file is not a command argument. A plain
+Write is safe on retry: `finalize-commit` deletes the file on every
+exit, so a stale file from a prior attempt does not pre-exist (and
+the path is gitignored via `EXCLUDE_ENTRIES`, so `git add -A` never
+stages it).
 
-- The file is inside the project, so the Write tool has permission without prompting
+- The file is inside the worktree, so the Write tool has permission without prompting
 - The Write tool handles newlines and special characters safely — no shell escaping needed
 - Never write to `/tmp/` — paths outside the project trigger permission prompts that settings.json cannot suppress
 - Never use `python3 -c` to write the message — literal `$(...)` in the body triggers command substitution warnings
 - Never use `git commit -m` with heredoc — the multi-line command fails permission pattern matching
-
-Route the content to the final commit-msg file via `bin/flow
-write-rule`:
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow write-rule --path <project_root>/.flow-states/<branch>/commit-msg.txt --content-file <project_root>/.flow-states/<branch>/commit-msg-content.txt
-```
-
-Both files live inside the per-branch subdirectory
-`.flow-states/<branch>/` (alongside `state.json`, `plan.md`, etc.) so
-concurrent flows in different worktrees of the same repo never collide
-on a single shared file, and `flow-abort`/`flow-complete` cleanup
-removes the whole subdirectory in one `remove_dir_all` call.
-`finalize-commit` reads and deletes the final commit-msg file
-unchanged by this routing.
 
 ### Round 6 — Finalize
 
@@ -245,7 +233,7 @@ background the process, defeating the gate (per
 `.claude/rules/ci-is-a-gate.md`).
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow finalize-commit <project_root>/.flow-states/<current-branch>-commit-msg.txt <current-branch>
+${CLAUDE_PLUGIN_ROOT}/bin/flow finalize-commit <current-branch>
 ```
 
 The script returns JSON:

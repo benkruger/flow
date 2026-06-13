@@ -163,7 +163,7 @@ two pathways: `git ... commit` and `bin/flow ... finalize-commit`
 
 ### Branch-Arg Routing (finalize-commit Destination Path)
 
-For `bin/flow finalize-commit <msg> <branch>` invocations, Layer 10
+For `bin/flow finalize-commit <branch>` invocations, Layer 10
 binds its checks to the explicit `<branch>` argument rather than
 the caller's process cwd. The integration-branch check compares
 the branch arg against `default_branch_in(<main_root>)` via
@@ -439,7 +439,7 @@ command-shape precondition the destination-path arm enforces via
    bound their intent to THAT worktree's branch — not to the
    integration trunk. Without this check, a model on a
    feature-branch worktree could fire `bin/flow finalize-commit
-   msg.txt <trunk>` and the user-typed slash command would
+   <trunk>` and the user-typed slash command would
    spuriously authorize a trunk commit (pre-mortem F1 bypass
    shape). The active-flow arm's own carve-out
    (`check_active_flow_at`) handles the legitimate feature-
@@ -502,7 +502,7 @@ Window bound: the carve-out's authorization window stays open
 from the user-typed `/flow:flow-commit` turn until the next real
 user turn — the same documented bound the bootstrap carve-out
 carries. A user message after `/flow:flow-commit` completes —
-followed by a separate `bin/flow finalize-commit msg.txt
+followed by a separate `bin/flow finalize-commit
 <trunk>` invocation — puts the slash-command turn OUTSIDE the
 carve-out window, so `last_user_message_invokes_skill` returns
 false and the block fires.

@@ -39,13 +39,15 @@ cross-invocation collision unlikely. Writes to the monitored set must
 route through `bin/flow write-rule`:
 
 - `.flow-states/<branch>/plan.md` — the Plan-phase implementation plan
-- `.flow-states/<branch>/commit-msg.txt` — the commit skill's message
-  file consumed by `bin/flow finalize-commit`. Branch-scoped so
-  concurrent flows in different worktrees of the same repo never
-  collide.
 - `.flow-issue-body` — the shared issue body file (project root)
 - `orchestrate-queue.json` — the machine-level orchestration queue
   (in `.flow-states/`)
+
+The commit-message file is NOT monitored: `finalize-commit` derives
+its path as `<commit_cwd>/.flow-commit-msg` and deletes it on every
+exit, so the commit skill writes it with a plain Write tool call (no
+write-rule route) — a stale file from a prior attempt cannot pre-exist
+to trip the preflight.
 
 Session-scoped `-<id>` temp files used by `flow-explore`, `flow-plan`,
 and `flow-qa` are NOT monitored because their
@@ -108,13 +110,12 @@ that names a FLOW-managed artifact, write-rule rejects any path that
 isn't the canonical destination computed from
 `(project_root, current_branch)` via `FlowPaths`.
 
-**The managed-artifact set.** Four basenames are managed; every other
+**The managed-artifact set.** Three basenames are managed; every other
 basename passes through unchanged:
 
 | Basename | Variant | Canonical destination |
 |---|---|---|
 | `plan.md` | `PlanMd` | `<project_root>/.flow-states/<branch>/plan.md` |
-| `commit-msg.txt` | `CommitMsgTxt` | `<project_root>/.flow-states/<branch>/commit-msg.txt` |
 | `.flow-issue-body` | `FlowIssueBody` | `<project_root>/.flow-issue-body` |
 | `orchestrate-queue.json` | `OrchestrateQueue` | `<project_root>/.flow-states/orchestrate-queue.json` |
 
@@ -142,7 +143,7 @@ against the process cwd at write time.
   "message": "write-rule rejects --path <provided> for managed artifact <art>: canonical destination is <canonical>",
   "provided": "<provided>",
   "canonical": "<canonical>",
-  "artifact_kind": "PlanMd|CommitMsgTxt|FlowIssueBody|OrchestrateQueue"
+  "artifact_kind": "PlanMd|FlowIssueBody|OrchestrateQueue"
 }
 ```
 
@@ -152,11 +153,10 @@ arbitrary user-named files), the gate is silent and write-rule writes
 the path verbatim. This is the path the `flow-learn` rule-routing
 pattern depends on.
 
-**Pass-through for branch-unavailable contexts.** Branch-scoped
-artifacts (`PlanMd`, `CommitMsgTxt`) require a valid
-non-empty branch. In detached-HEAD or invalid-branch (slash-
-containing) contexts, `canonical_path` returns `None` and the gate
-stays silent.
+**Pass-through for branch-unavailable contexts.** The branch-scoped
+artifact `PlanMd` requires a valid non-empty branch. In detached-HEAD
+or invalid-branch (slash-containing) contexts, `canonical_path`
+returns `None` and the gate stays silent.
 
 The gate complements the tool-call-layer hook above: write-rule
 canonicalizes its `--path` argument before `fs::write`, and the
@@ -185,7 +185,7 @@ on the final target.
 Intermediate content files follow the pattern
 `.flow-states/<branch>/<purpose>-content.<ext>` where `<purpose>`
 matches the basename of the final target (e.g. `plan`,
-`commit-msg`, `issue-body`, `orchestrate-queue`) and `<ext>` matches the
+`issue-body`, `orchestrate-queue`) and `<ext>` matches the
 target's extension (`.md`, `.json`, `.txt`). The `write-rule` subcommand
 deletes the intermediate file after a successful routing; on error the
 file is left in place so the user can diagnose the routing failure.

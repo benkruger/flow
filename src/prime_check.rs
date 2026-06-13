@@ -335,6 +335,7 @@ pub const EXCLUDE_ENTRIES: &[&str] = &[
     ".flow-states/",
     ".worktrees/",
     ".flow.json",
+    ".flow-commit-msg",
     ".claude/cost/",
     ".claude/scheduled_tasks.lock",
     "test_adversarial_flow.*",

@@ -746,7 +746,12 @@ fn pre_commit_hook_content() {
     prime_setup::install_pre_commit_hook(tmp.path()).unwrap();
     let content =
         fs::read_to_string(tmp.path().join(".git").join("hooks").join("pre-commit")).unwrap();
-    assert!(content.contains("commit-msg.txt"));
+    // The carve-out token is the cwd-relative `.flow-commit-msg`.
+    assert!(content.contains(".flow-commit-msg"));
+    // The old branch-scoped token must NOT survive the migration —
+    // guards against the carve-out condition resurrecting in the
+    // constant (which would block finalize-commit's own commit).
+    assert!(!content.contains("commit-msg.txt"));
     assert!(content.contains(".flow-states/"));
     assert!(content.contains("exit 1"));
 }
