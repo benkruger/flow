@@ -297,21 +297,25 @@ pub fn run_impl(args: &Args, root: &std::path::Path) -> Result<Value, String> {
     // The commit-message file path is derived from `commit_cwd`, not
     // supplied by the caller. `/flow:flow-commit` (and the flow-start /
     // flow-release bootstrap paths) write `<commit_cwd>/.flow-commit-msg`
-    // before invoking this subcommand. A missing or empty file is a
-    // skill-choreography error, surfaced as `message_file_missing`
-    // BEFORE any other gate so the caller sees a precise reason rather
-    // than a downstream `git commit` failure. This early return precedes
-    // binding any deletion target, so there is nothing to clean up.
+    // before invoking this subcommand. A missing, empty, or
+    // whitespace-only file is a skill-choreography error, surfaced as
+    // `message_file_missing` BEFORE any other gate so the caller sees a
+    // precise reason rather than a downstream `git commit` failure (git
+    // rejects an all-whitespace message under the default
+    // `--cleanup=strip`). The byte scan is encoding-agnostic — a
+    // non-UTF-8 message carrying real content still counts as present.
+    // This early return precedes binding any deletion target, so there
+    // is nothing to clean up.
     let message_file = commit_cwd.join(".flow-commit-msg");
-    let message_present = fs::metadata(&message_file)
-        .map(|m| m.len() > 0)
+    let message_present = fs::read(&message_file)
+        .map(|b| b.iter().any(|c| !c.is_ascii_whitespace()))
         .unwrap_or(false);
     if !message_present {
         return Ok(json!({
             "status": "error",
             "step": "message_file_missing",
             "message": format!(
-                "commit message file not found (or empty) at {}; \
+                "commit message file not found (or empty/whitespace-only) at {}; \
                  /flow:flow-commit writes it before invoking finalize-commit",
                 message_file.display()
             ),

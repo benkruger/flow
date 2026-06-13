@@ -187,8 +187,13 @@ git add -A
 ## Step 8 — Write commit message and finalize
 
 Write `Release v<new_version>` to `.flow-commit-msg` via the Write tool.
-The path is gitignored via `EXCLUDE_ENTRIES`, and `finalize-commit`
-deletes it on every exit, so it never lands in the commit.
+Step 7's `git add -A` ran before this write, so it never staged the
+message file, and `finalize-commit`'s internal re-stage uses `git add -u`
+(tracked files only), which skips the untracked `.flow-commit-msg` — that
+stage-before-write ordering is what keeps it out of the commit.
+`EXCLUDE_ENTRIES` additionally hides it from `git status` once the project
+re-primes, and `finalize-commit` deletes it on every exit so a stale file
+never pre-exists a retry.
 
 Then finalize the commit in one call. `finalize-commit` runs
 `ci::run_impl()` before `git commit` (see CLAUDE.md "CI is enforced

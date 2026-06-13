@@ -869,6 +869,28 @@ fn message_file_empty_returns_structured_error() {
     assert_eq!(result["step"], "message_file_missing");
 }
 
+/// A whitespace-only `.flow-commit-msg` (present, non-zero length, but no
+/// usable content) is treated the same as missing/empty. `git commit -F`
+/// rejects an all-whitespace message under the default `--cleanup=strip`,
+/// so the gate catches it as `message_file_missing` — the documented
+/// precise reason — rather than letting the commit step fail with a less
+/// precise `step: "commit"`. The gate's byte scan is encoding-agnostic.
+#[test]
+fn message_file_whitespace_only_returns_structured_error() {
+    let (clone_dir, _bare_dir, worktree_path) = setup_worktree_fixture("msg-ws");
+    let clone_path = clone_dir.path();
+
+    let msg_path = worktree_path.join(".flow-commit-msg");
+    fs::write(&msg_path, "   \n\t\n").unwrap();
+
+    let args = Args {
+        branch: "msg-ws".to_string(),
+    };
+    let result = run_impl(&args, clone_path).unwrap();
+    assert_eq!(result["status"], "error", "got: {}", result);
+    assert_eq!(result["step"], "message_file_missing");
+}
+
 // --- run_impl: CI enforcement ---
 
 #[test]
