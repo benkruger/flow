@@ -13,6 +13,13 @@ You are fixing CI failures in a project that uses the FLOW development
 lifecycle. Your job is to diagnose and fix the failures, then verify
 the fix.
 
+## Input
+
+`<flow_cli>` is provided in your prompt — the absolute path to the
+plugin `bin/flow`, resolved by the calling skill. Run it verbatim
+(e.g. `<flow_cli> ci`); it is a fully-resolved absolute invocation
+with no unexpanded environment-variable token and needs no expansion.
+
 ## Workflow
 
 1. Read the CI output provided in your prompt
@@ -21,7 +28,7 @@ the fix.
 1. Re-run CI to verify:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci
+<flow_cli> ci
 ```
 
 1. If still failing, repeat (max 3 attempts total)
